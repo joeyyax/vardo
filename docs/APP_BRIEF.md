@@ -10,6 +10,39 @@ A time tracking app for freelancers and small teams, replacing Toggl with a focu
 - API-first for data liberation
 - Multi-tenant from day one, SaaS-ready
 
+## Voice & Tone
+
+**Personality:** Friendly and casual, but not silly. Like a helpful coworker, not a corporate robot or a chatbot trying too hard.
+
+- Use plain language, avoid jargon
+- Be encouraging without being patronizing
+- Error messages should be helpful, not blaming
+- Empty states should feel inviting, not empty
+- Microcopy should have personality but stay functional
+
+**Examples:**
+- Good: "No time logged yet. Let's fix that."
+- Bad: "No entries found in the database."
+- Bad: "Woohoo! Time to track some time! 🎉"
+
+## Design Language
+
+**Feel:** Fresh, open, friendly, modern
+
+- **Space** - Generous whitespace, don't crowd the UI
+- **Motion** - Subtle, purposeful animations that feel responsive
+  - Entry appears with a soft fade/slide
+  - Buttons have gentle hover states
+  - Transitions feel snappy (150-200ms), not sluggish
+- **Color** - Clean palette, accent colors for key actions
+- **Typography** - Clear hierarchy, readable at a glance
+
+**Avoid:**
+- Heavy drop shadows
+- Overly rounded everything
+- Gratuitous animations that slow you down
+- Dark patterns or manipulative UI
+
 ## Data Model
 
 ```
