@@ -19,18 +19,6 @@ export const auth = betterAuth({
     },
   }),
 
-  // OAuth providers
-  socialProviders: {
-    github: {
-      clientId: process.env.GITHUB_CLIENT_ID!,
-      clientSecret: process.env.GITHUB_CLIENT_SECRET!,
-    },
-    google: {
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-    },
-  },
-
   plugins: [
     // Passkey authentication (WebAuthn)
     passkey(),
@@ -44,23 +32,30 @@ export const auth = betterAuth({
 
     // Magic link authentication
     magicLink({
-      sendMagicLink: async ({ email, token, url }) => {
-        // TODO: Implement with Resend once email templates are ready
-        // For now, log to console in development
+      sendMagicLink: async ({ email, url }) => {
+        // Log to console in development for debugging
         if (process.env.NODE_ENV === "development") {
-          console.log(`Magic link for ${email}: ${url}`);
-          console.log(`Token: ${token}`);
+          console.log(`\n📧 Magic link for ${email}:\n${url}\n`);
         }
 
-        // Production implementation:
-        // import { Resend } from "resend";
-        // const resend = new Resend(process.env.RESEND_API_KEY);
-        // await resend.emails.send({
-        //   from: "Time Tracker <noreply@yourdomain.com>",
-        //   to: email,
-        //   subject: "Sign in to Time Tracker",
-        //   html: `<a href="${url}">Click here to sign in</a>`,
-        // });
+        // Send via Resend if API key is configured
+        if (process.env.RESEND_API_KEY) {
+          const { Resend } = await import("resend");
+          const resend = new Resend(process.env.RESEND_API_KEY);
+          await resend.emails.send({
+            from: "Time <noreply@resend.dev>",
+            to: email,
+            subject: "Sign in to Time",
+            html: `
+              <div style="font-family: sans-serif; max-width: 400px; margin: 0 auto; padding: 40px 20px;">
+                <h2 style="margin-bottom: 24px;">Sign in to Time</h2>
+                <p style="color: #666; margin-bottom: 24px;">Click the button below to sign in. This link expires in 10 minutes.</p>
+                <a href="${url}" style="display: inline-block; background: #000; color: #fff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 500;">Sign in</a>
+                <p style="color: #999; font-size: 14px; margin-top: 32px;">If you didn't request this, you can safely ignore this email.</p>
+              </div>
+            `,
+          });
+        }
       },
     }),
   ],
