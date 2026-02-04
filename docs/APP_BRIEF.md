@@ -1,6 +1,6 @@
 # Time Tracker - App Brief
 
-A time tracking app for freelancers, replacing Toggl with a focused, keyboard-first experience. No timer - just quick manual entry with smart suggestions.
+A time tracking app for freelancers and small teams, replacing Toggl with a focused, keyboard-first experience. No timer - just quick manual entry with smart suggestions.
 
 ## Core Concept
 
@@ -223,7 +223,7 @@ Slugs are random, unguessable strings. No auth required.
 - API access (costs compute)
 - Multiple members (solo is free, team is paid)
 
-**Philosophy:** Solo freelancer with a few clients uses this free. Paid tiers unlock team/scale features.
+**Philosophy:** Solo freelancer or small team with a few clients uses this free. Paid tiers unlock scale features and higher limits.
 
 ## Implementation Phases
 
