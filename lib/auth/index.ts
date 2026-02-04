@@ -43,7 +43,7 @@ export const auth = betterAuth({
           const { Resend } = await import("resend");
           const resend = new Resend(process.env.RESEND_API_KEY);
           await resend.emails.send({
-            from: "Time <noreply@resend.dev>",
+            from: "Time <joey@joeyyax.com>",
             to: email,
             subject: "Sign in to Time",
             html: `

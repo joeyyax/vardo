@@ -1,4 +1,17 @@
-export default function SettingsPage() {
+import { redirect } from "next/navigation";
+import { getCurrentOrg } from "@/lib/auth/session";
+import { SettingsForm } from "./settings-form";
+
+export default async function SettingsPage() {
+  const orgData = await getCurrentOrg();
+
+  if (!orgData) {
+    redirect("/onboarding");
+  }
+
+  const { organization, membership } = orgData;
+  const canEdit = membership.role === "owner" || membership.role === "admin";
+
   return (
     <div className="space-y-6">
       <div>
@@ -8,12 +21,10 @@ export default function SettingsPage() {
         </p>
       </div>
 
-      {/* Placeholder content - will be replaced in Phase 2.1 */}
-      <div className="rounded-lg border border-dashed p-8 text-center">
-        <p className="text-sm text-muted-foreground">
-          Organization settings coming soon.
-        </p>
-      </div>
+      <SettingsForm
+        organization={organization}
+        canEdit={canEdit}
+      />
     </div>
-  )
+  );
 }

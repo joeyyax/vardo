@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionCookie } from "better-auth/cookies";
 
-// Routes that require authentication
+// Routes that require authentication AND organization membership
 const protectedRoutes = ["/track", "/reports", "/clients", "/projects", "/settings"];
+
+// Routes that require authentication but NOT organization membership
+const authOnlyRoutes = ["/onboarding"];
 
 // Routes that should redirect to app if already authenticated
 const authRoutes = ["/login", "/signup"];
@@ -11,12 +14,15 @@ export async function middleware(request: NextRequest) {
   const sessionCookie = getSessionCookie(request);
   const { pathname } = request.nextUrl;
 
-  // Check if this is a protected route
+  // Check route types
   const isProtectedRoute = protectedRoutes.some(
     (route) => pathname === route || pathname.startsWith(`${route}/`)
   );
 
-  // Check if this is an auth route
+  const isAuthOnlyRoute = authOnlyRoutes.some(
+    (route) => pathname === route || pathname.startsWith(`${route}/`)
+  );
+
   const isAuthRoute = authRoutes.some(
     (route) => pathname === route || pathname.startsWith(`${route}/`)
   );
@@ -27,12 +33,16 @@ export async function middleware(request: NextRequest) {
   }
 
   // Redirect unauthenticated users to login
-  if (!sessionCookie && isProtectedRoute) {
+  if (!sessionCookie && (isProtectedRoute || isAuthOnlyRoute)) {
     const loginUrl = new URL("/login", request.url);
     // Preserve the intended destination for post-login redirect
     loginUrl.searchParams.set("callbackUrl", pathname);
     return NextResponse.redirect(loginUrl);
   }
+
+  // Note: Organization membership check is done at the layout/page level
+  // because middleware can't easily do database queries.
+  // The app layout and pages will redirect to /onboarding if no org.
 
   return NextResponse.next();
 }
@@ -45,6 +55,7 @@ export const config = {
     "/clients/:path*",
     "/projects/:path*",
     "/settings/:path*",
+    "/onboarding/:path*",
     "/login/:path*",
     "/signup/:path*",
   ],

@@ -1,4 +1,13 @@
-export default function TrackPage() {
+import { redirect } from "next/navigation"
+import { getCurrentOrg } from "@/lib/auth/session"
+
+export default async function TrackPage() {
+  const orgData = await getCurrentOrg()
+
+  if (!orgData) {
+    redirect("/onboarding")
+  }
+
   return (
     <div className="space-y-6">
       <div>
