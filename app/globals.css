@@ -123,3 +123,21 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Squircle progressive enhancement */
+@supports (corner-shape: squircle) {
+  .squircle {
+    corner-shape: squircle;
+
+    /* Squircles need larger radii to match visual size of regular rounded corners */
+    &.rounded-sm { corner-radius: calc(var(--radius-sm) * 2); }
+    &.rounded-md { corner-radius: calc(var(--radius-md) * 2); }
+    &.rounded { corner-radius: calc(var(--radius) * 2); }
+    &.rounded-lg { corner-radius: calc(var(--radius-lg) * 2); }
+    &.rounded-xl { corner-radius: calc(var(--radius-xl) * 2); }
+    &.rounded-2xl { corner-radius: calc(var(--radius-2xl) * 2); }
+    &.rounded-3xl { corner-radius: calc(var(--radius-3xl) * 2); }
+    &.rounded-4xl { corner-radius: calc(var(--radius-4xl) * 2); }
+    &.rounded-full { corner-radius: 9999px; }
+  }
+}

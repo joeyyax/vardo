@@ -37,6 +37,8 @@ A time tracking app for freelancers and small teams, replacing Toggl with a focu
 - **Color** - Clean palette, accent colors for key actions
 - **Typography** - Clear hierarchy, readable at a glance
 
+**Squircles:** Use the `.squircle` class alongside rounded classes for smoother corners (progressive enhancement - falls back gracefully). Example: `className="squircle rounded-lg"`
+
 **Avoid:**
 - Heavy drop shadows
 - Overly rounded everything
