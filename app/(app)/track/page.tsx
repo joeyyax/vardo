@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation"
 import { getCurrentOrg } from "@/lib/auth/session"
+import { Timeline } from "@/components/timeline"
 
 export default async function TrackPage() {
   const orgData = await getCurrentOrg()
@@ -17,12 +18,7 @@ export default async function TrackPage() {
         </p>
       </div>
 
-      {/* Placeholder content - will be replaced with timeline view in Phase 3.4 */}
-      <div className="rounded-lg border border-dashed p-8 text-center">
-        <p className="text-sm text-muted-foreground">
-          Timeline view coming soon.
-        </p>
-      </div>
+      <Timeline orgId={orgData.organization.id} />
     </div>
   )
 }

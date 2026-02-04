@@ -22,6 +22,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const { searchParams } = new URL(request.url);
     const clientId = searchParams.get("clientId");
     const includeArchived = searchParams.get("includeArchived") === "true";
+    const includeTasks = searchParams.get("includeTasks") === "true";
 
     // Get all clients for this org to filter projects
     const orgClients = await db.query.clients.findMany({
@@ -30,7 +31,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     });
     const orgClientIds = orgClients.map((c) => c.id);
 
-    // Build query - fetch projects with their client info
+    // Build query - fetch projects with their client info and optionally tasks
     const orgProjects = await db.query.projects.findMany({
       with: {
         client: {
@@ -40,6 +41,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             color: true,
           },
         },
+        ...(includeTasks
+          ? {
+              tasks: {
+                where: (tasks, { eq }) =>
+                  includeArchived ? undefined : eq(tasks.isArchived, false),
+                orderBy: (tasks, { asc }) => [asc(tasks.name)],
+              },
+            }
+          : {}),
       },
       where: (projects, { and, eq, inArray }) => {
         const conditions = [];
