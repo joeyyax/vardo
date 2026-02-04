@@ -42,11 +42,17 @@ Organization (tenant)
 - **Next.js 16** (App Router, Server Actions)
 - **Tailwind CSS + shadcn/ui**
 - **PostgreSQL** - Primary data store
-- **Redis** - Sessions, rate limiting, caching suggestions
+- **Redis** - Sessions, rate limiting, caching suggestions, pub/sub for real-time
 - **Drizzle ORM** - Type-safe database access
 - **Better Auth** - Authentication
 - **Resend + React Email** - Transactional email
 - **Docker Compose** - Local dev (Postgres + Redis)
+
+## Architecture Principles
+
+- **Event-driven over polling** - Use Redis pub/sub or Server-Sent Events for real-time updates. Avoid polling where possible.
+- **API-first** - All data through REST endpoints for data liberation
+- **Keyboard-first** - Full workflows without mouse
 
 ## Authentication
 
