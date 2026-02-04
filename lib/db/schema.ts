@@ -200,6 +200,7 @@ export const tasks = pgTable("tasks", {
 });
 
 // Time entries
+// Entries can be assigned at any level: client only, client+project, or client+project+task
 export const timeEntries = pgTable("time_entries", {
   id: uuid("id").primaryKey().defaultRandom(),
   organizationId: uuid("organization_id")
@@ -208,9 +209,14 @@ export const timeEntries = pgTable("time_entries", {
   userId: text("user_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
-  taskId: uuid("task_id")
+  // At minimum, clientId is required. projectId and taskId are optional.
+  clientId: uuid("client_id")
     .notNull()
-    .references(() => tasks.id, { onDelete: "cascade" }),
+    .references(() => clients.id, { onDelete: "cascade" }),
+  projectId: uuid("project_id").references(() => projects.id, {
+    onDelete: "cascade",
+  }),
+  taskId: uuid("task_id").references(() => tasks.id, { onDelete: "cascade" }),
   description: text("description"),
   date: date("date").notNull(),
   durationMinutes: integer("duration_minutes").notNull(),
@@ -330,6 +336,14 @@ export const timeEntriesRelations = relations(timeEntries, ({ one }) => ({
   user: one(users, {
     fields: [timeEntries.userId],
     references: [users.id],
+  }),
+  client: one(clients, {
+    fields: [timeEntries.clientId],
+    references: [clients.id],
+  }),
+  project: one(projects, {
+    fields: [timeEntries.projectId],
+    references: [projects.id],
   }),
   task: one(tasks, {
     fields: [timeEntries.taskId],

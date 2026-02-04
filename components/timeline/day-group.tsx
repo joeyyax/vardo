@@ -14,7 +14,9 @@ interface DayGroupProps {
     entryId: string,
     updates: Partial<{
       description: string | null;
-      taskId: string;
+      clientId: string;
+      projectId: string | null;
+      taskId: string | null;
       durationMinutes: number;
       isBillableOverride: boolean | null;
     }>

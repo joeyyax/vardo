@@ -5,7 +5,7 @@ import { requireOrg } from "@/lib/auth/session";
 import { eq, and, gte, lte, desc } from "drizzle-orm";
 import {
   resolveEntryBillable,
-  getTaskWithChainForOrg,
+  validateEntryHierarchy,
 } from "@/lib/entries/resolve-billable";
 
 type RouteParams = {
@@ -14,6 +14,7 @@ type RouteParams = {
 
 /**
  * Shape an entry with its relations into the response format.
+ * Handles entries at any level: client, project, or task.
  */
 function shapeEntryResponse(entry: {
   id: string;
@@ -22,35 +23,29 @@ function shapeEntryResponse(entry: {
   durationMinutes: number;
   isBillableOverride: boolean | null;
   createdAt: Date;
-  task: {
+  client: {
+    id: string;
+    name: string;
+    color: string | null;
+    isBillable: boolean | null;
+  };
+  project?: {
+    id: string;
+    name: string;
+    code: string | null;
+    isBillable: boolean | null;
+  } | null;
+  task?: {
     id: string;
     name: string;
     isBillable: boolean | null;
-    project: {
-      id: string;
-      name: string;
-      code: string | null;
-      isBillable: boolean | null;
-      client: {
-        id: string;
-        name: string;
-        color: string | null;
-        isBillable: boolean | null;
-      };
-    };
-  };
+  } | null;
 }) {
   const isBillable = resolveEntryBillable({
     isBillableOverride: entry.isBillableOverride,
-    task: {
-      isBillable: entry.task.isBillable,
-      project: {
-        isBillable: entry.task.project.isBillable,
-        client: {
-          isBillable: entry.task.project.client.isBillable,
-        },
-      },
-    },
+    task: entry.task ? { isBillable: entry.task.isBillable } : null,
+    project: entry.project ? { isBillable: entry.project.isBillable } : null,
+    client: { isBillable: entry.client.isBillable },
   });
 
   return {
@@ -61,20 +56,24 @@ function shapeEntryResponse(entry: {
     isBillableOverride: entry.isBillableOverride,
     isBillable,
     createdAt: entry.createdAt.toISOString(),
-    task: {
-      id: entry.task.id,
-      name: entry.task.name,
-      project: {
-        id: entry.task.project.id,
-        name: entry.task.project.name,
-        code: entry.task.project.code,
-        client: {
-          id: entry.task.project.client.id,
-          name: entry.task.project.client.name,
-          color: entry.task.project.client.color,
-        },
-      },
+    client: {
+      id: entry.client.id,
+      name: entry.client.name,
+      color: entry.client.color,
     },
+    project: entry.project
+      ? {
+          id: entry.project.id,
+          name: entry.project.name,
+          code: entry.project.code,
+        }
+      : null,
+    task: entry.task
+      ? {
+          id: entry.task.id,
+          name: entry.task.name,
+        }
+      : null,
   };
 }
 
@@ -113,8 +112,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Build query - we need to join through tasks -> projects -> clients to filter
-    // Start with the base time entries query
+    // Query entries with all possible relations
     const entries = await db.query.timeEntries.findMany({
       where: and(
         eq(timeEntries.organizationId, orgId),
@@ -123,32 +121,25 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         lte(timeEntries.date, to)
       ),
       with: {
-        task: {
-          with: {
-            project: {
-              with: {
-                client: true,
-              },
-            },
-          },
-        },
+        client: true,
+        project: true,
+        task: true,
       },
       orderBy: [desc(timeEntries.date), desc(timeEntries.createdAt)],
     });
 
-    // Apply client and project filters in memory since drizzle relations don't support
-    // filtering through nested relations directly
+    // Apply client and project filters
     let filteredEntries = entries;
-
-    if (projectId) {
-      filteredEntries = filteredEntries.filter(
-        (entry) => entry.task.projectId === projectId
-      );
-    }
 
     if (clientId) {
       filteredEntries = filteredEntries.filter(
-        (entry) => entry.task.project.clientId === clientId
+        (entry) => entry.clientId === clientId
+      );
+    }
+
+    if (projectId) {
+      filteredEntries = filteredEntries.filter(
+        (entry) => entry.projectId === projectId
       );
     }
 
@@ -161,23 +152,27 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         durationMinutes: entry.durationMinutes,
         isBillableOverride: entry.isBillableOverride,
         createdAt: entry.createdAt,
-        task: {
-          id: entry.task.id,
-          name: entry.task.name,
-          isBillable: entry.task.isBillable,
-          project: {
-            id: entry.task.project.id,
-            name: entry.task.project.name,
-            code: entry.task.project.code,
-            isBillable: entry.task.project.isBillable,
-            client: {
-              id: entry.task.project.client.id,
-              name: entry.task.project.client.name,
-              color: entry.task.project.client.color,
-              isBillable: entry.task.project.client.isBillable,
-            },
-          },
+        client: {
+          id: entry.client.id,
+          name: entry.client.name,
+          color: entry.client.color,
+          isBillable: entry.client.isBillable,
         },
+        project: entry.project
+          ? {
+              id: entry.project.id,
+              name: entry.project.name,
+              code: entry.project.code,
+              isBillable: entry.project.isBillable,
+            }
+          : null,
+        task: entry.task
+          ? {
+              id: entry.task.id,
+              name: entry.task.name,
+              isBillable: entry.task.isBillable,
+            }
+          : null,
       })
     );
 
@@ -228,26 +223,23 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const preparedEntries: Array<{
       organizationId: string;
       userId: string;
-      taskId: string;
+      clientId: string;
+      projectId: string | null;
+      taskId: string | null;
       description: string | null;
       date: string;
       durationMinutes: number;
       isBillableOverride: boolean | null;
     }> = [];
 
-    const taskCache = new Map<
-      string,
-      Awaited<ReturnType<typeof getTaskWithChainForOrg>>
-    >();
-
     for (let i = 0; i < entriesToCreate.length; i++) {
       const entry = entriesToCreate[i];
       const errorPrefix = isBatch ? `Entry ${i}: ` : "";
 
-      // Validate required fields
-      if (!entry.taskId) {
+      // Validate required fields - clientId is required
+      if (!entry.clientId) {
         return NextResponse.json(
-          { error: `${errorPrefix}taskId is required` },
+          { error: `${errorPrefix}clientId is required` },
           { status: 400 }
         );
       }
@@ -285,24 +277,27 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         );
       }
 
-      // Validate task belongs to org (with caching for batch operations)
-      let task = taskCache.get(entry.taskId);
-      if (task === undefined) {
-        task = await getTaskWithChainForOrg(entry.taskId, orgId);
-        taskCache.set(entry.taskId, task);
-      }
+      // Validate hierarchy
+      const validation = await validateEntryHierarchy(
+        orgId,
+        entry.clientId,
+        entry.projectId || null,
+        entry.taskId || null
+      );
 
-      if (!task) {
+      if (!validation.valid) {
         return NextResponse.json(
-          { error: `${errorPrefix}Task not found or does not belong to organization` },
-          { status: 404 }
+          { error: `${errorPrefix}${validation.error}` },
+          { status: 400 }
         );
       }
 
       preparedEntries.push({
         organizationId: orgId,
         userId: session.user.id,
-        taskId: entry.taskId,
+        clientId: entry.clientId,
+        projectId: entry.projectId || null,
+        taskId: entry.taskId || null,
         description: entry.description?.trim() || null,
         date: entry.date,
         durationMinutes: duration,
@@ -317,31 +312,19 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       .returning();
 
     // Fetch full entry data with relations for response
-    const entryIds = createdEntries.map((e) => e.id);
+    const entryIds = new Set(createdEntries.map((e) => e.id));
     const fullEntries = await db.query.timeEntries.findMany({
-      where: and(
-        eq(timeEntries.organizationId, orgId),
-        // Filter to just the created entries
-        // Since drizzle doesn't have inArray in this context, we'll fetch one by one
-        // This is fine for small batch sizes; for large batches we'd optimize differently
-      ),
+      where: eq(timeEntries.organizationId, orgId),
       with: {
-        task: {
-          with: {
-            project: {
-              with: {
-                client: true,
-              },
-            },
-          },
-        },
+        client: true,
+        project: true,
+        task: true,
       },
     });
 
     // Filter to only the created entries and shape response
-    const createdEntrySet = new Set(entryIds);
     const shapedEntries = fullEntries
-      .filter((entry) => createdEntrySet.has(entry.id))
+      .filter((entry) => entryIds.has(entry.id))
       .map((entry) =>
         shapeEntryResponse({
           id: entry.id,
@@ -350,23 +333,27 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           durationMinutes: entry.durationMinutes,
           isBillableOverride: entry.isBillableOverride,
           createdAt: entry.createdAt,
-          task: {
-            id: entry.task.id,
-            name: entry.task.name,
-            isBillable: entry.task.isBillable,
-            project: {
-              id: entry.task.project.id,
-              name: entry.task.project.name,
-              code: entry.task.project.code,
-              isBillable: entry.task.project.isBillable,
-              client: {
-                id: entry.task.project.client.id,
-                name: entry.task.project.client.name,
-                color: entry.task.project.client.color,
-                isBillable: entry.task.project.client.isBillable,
-              },
-            },
+          client: {
+            id: entry.client.id,
+            name: entry.client.name,
+            color: entry.client.color,
+            isBillable: entry.client.isBillable,
           },
+          project: entry.project
+            ? {
+                id: entry.project.id,
+                name: entry.project.name,
+                code: entry.project.code,
+                isBillable: entry.project.isBillable,
+              }
+            : null,
+          task: entry.task
+            ? {
+                id: entry.task.id,
+                name: entry.task.name,
+                isBillable: entry.task.isBillable,
+              }
+            : null,
         })
       );
 

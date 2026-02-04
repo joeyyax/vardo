@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { TimeEntry } from "./types";
 import { formatDuration, parseDuration } from "./utils";
-import { TaskSelector } from "./task-selector";
+import { HierarchySelector } from "./hierarchy-selector";
 
 interface EntryRowProps {
   entry: TimeEntry;
@@ -31,7 +31,9 @@ interface EntryRowProps {
     entryId: string,
     updates: Partial<{
       description: string | null;
-      taskId: string;
+      clientId: string;
+      projectId: string | null;
+      taskId: string | null;
       durationMinutes: number;
       isBillableOverride: boolean | null;
     }>
@@ -41,6 +43,21 @@ interface EntryRowProps {
 }
 
 type EditingField = "description" | "duration" | null;
+
+/**
+ * Format hierarchy display for an entry.
+ * Shows: Client / Project / Task (as available)
+ */
+function formatHierarchyDisplay(entry: TimeEntry): string {
+  const parts = [entry.client.name];
+  if (entry.project) {
+    parts.push(entry.project.name);
+    if (entry.task) {
+      parts.push(entry.task.name);
+    }
+  }
+  return parts.join(" / ");
+}
 
 export function EntryRow({
   entry,
@@ -52,7 +69,7 @@ export function EntryRow({
   const [isHovered, setIsHovered] = useState(false);
   const [editingField, setEditingField] = useState<EditingField>(null);
   const [editValue, setEditValue] = useState("");
-  const [isTaskSelectorOpen, setIsTaskSelectorOpen] = useState(false);
+  const [isSelectorOpen, setIsSelectorOpen] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -145,14 +162,28 @@ export function EntryRow({
     onDuplicate(entry);
   };
 
-  const handleTaskSelect = async (taskId: string) => {
-    if (taskId !== entry.task.id) {
-      await onUpdate(entry.id, { taskId });
+  const handleHierarchySelect = async (selection: {
+    clientId: string;
+    projectId: string | null;
+    taskId: string | null;
+  }) => {
+    // Check if hierarchy actually changed
+    const changed =
+      selection.clientId !== entry.client.id ||
+      selection.projectId !== (entry.project?.id || null) ||
+      selection.taskId !== (entry.task?.id || null);
+
+    if (changed) {
+      await onUpdate(entry.id, {
+        clientId: selection.clientId,
+        projectId: selection.projectId,
+        taskId: selection.taskId,
+      });
     }
-    setIsTaskSelectorOpen(false);
+    setIsSelectorOpen(false);
   };
 
-  const clientColor = entry.task.project.client.color || "#6b7280";
+  const clientColor = entry.client.color || "#6b7280";
 
   return (
     <>
@@ -197,22 +228,23 @@ export function EntryRow({
           )}
         </div>
 
-        {/* Project/Task selector */}
-        <TaskSelector
+        {/* Hierarchy selector (Client/Project/Task) */}
+        <HierarchySelector
           orgId={orgId}
-          selectedTaskId={entry.task.id}
-          onSelect={handleTaskSelect}
-          open={isTaskSelectorOpen}
-          onOpenChange={setIsTaskSelectorOpen}
+          selectedClientId={entry.client.id}
+          selectedProjectId={entry.project?.id || null}
+          selectedTaskId={entry.task?.id || null}
+          onSelect={handleHierarchySelect}
+          open={isSelectorOpen}
+          onOpenChange={setIsSelectorOpen}
         >
           <button
-            onClick={() => setIsTaskSelectorOpen(true)}
+            onClick={() => setIsSelectorOpen(true)}
             className="text-sm text-muted-foreground hover:text-foreground transition-colors truncate max-w-[200px]"
           >
-            {entry.task.project.client.name} / {entry.task.project.name}
-            {entry.task.name !== "Default" && ` / ${entry.task.name}`}
+            {formatHierarchyDisplay(entry)}
           </button>
-        </TaskSelector>
+        </HierarchySelector>
 
         {/* Billable indicator */}
         <Tooltip>

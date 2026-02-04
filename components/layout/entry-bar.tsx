@@ -21,21 +21,25 @@ import {
 } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
 
-type TaskSuggestion = {
-  task: {
-    id: string;
-    name: string;
-  };
-  project: {
-    id: string;
-    name: string;
-    code: string | null;
-  };
+/**
+ * Suggestion with flexible hierarchy.
+ * Can be at client, project, or task level.
+ */
+type Suggestion = {
   client: {
     id: string;
     name: string;
     color: string | null;
   };
+  project: {
+    id: string;
+    name: string;
+    code: string | null;
+  } | null;
+  task: {
+    id: string;
+    name: string;
+  } | null;
   score: number;
   reason: "recent" | "frequent" | "match";
 };
@@ -115,8 +119,31 @@ function formatDuration(minutes: number): string {
 }
 
 /**
+ * Format a suggestion for display.
+ * Shows: Client / Project / Task (as available)
+ */
+function formatSuggestionDisplay(suggestion: Suggestion): string {
+  const parts = [suggestion.client.name];
+  if (suggestion.project) {
+    parts.push(suggestion.project.name);
+    if (suggestion.task) {
+      parts.push(suggestion.task.name);
+    }
+  }
+  return parts.join(" / ");
+}
+
+/**
+ * Get a unique key for a suggestion.
+ */
+function getSuggestionKey(suggestion: Suggestion): string {
+  return `${suggestion.client.id}|${suggestion.project?.id || ""}|${suggestion.task?.id || ""}`;
+}
+
+/**
  * Entry bar component - the main time entry form.
  * Keyboard-first design with tab navigation and shortcuts.
+ * Supports flexible hierarchy: client only, client+project, or client+project+task.
  */
 export function EntryBar({
   orgId,
@@ -125,17 +152,17 @@ export function EntryBar({
 }: EntryBarProps) {
   // Form state
   const [description, setDescription] = useState("");
-  const [selectedTask, setSelectedTask] = useState<TaskSuggestion | null>(null);
+  const [selectedItem, setSelectedItem] = useState<Suggestion | null>(null);
   const [durationInput, setDurationInput] = useState("");
   const [durationMinutes, setDurationMinutes] = useState<number | null>(null);
   const [date, setDate] = useState<Date>(new Date());
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Task selector state
-  const [taskSelectorOpen, setTaskSelectorOpen] = useState(false);
-  const [taskSearchQuery, setTaskSearchQuery] = useState("");
-  const [suggestions, setSuggestions] = useState<TaskSuggestion[]>([]);
+  // Selector state
+  const [selectorOpen, setSelectorOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
 
   // Date picker state
@@ -143,7 +170,7 @@ export function EntryBar({
 
   // Refs for keyboard navigation
   const descriptionRef = useRef<HTMLInputElement>(null);
-  const taskSelectorTriggerRef = useRef<HTMLButtonElement>(null);
+  const selectorTriggerRef = useRef<HTMLButtonElement>(null);
   const durationRef = useRef<HTMLInputElement>(null);
   const datePickerTriggerRef = useRef<HTMLButtonElement>(null);
   const addButtonRef = useRef<HTMLButtonElement>(null);
@@ -157,7 +184,7 @@ export function EntryBar({
 
       setIsLoadingSuggestions(true);
       try {
-        const queryParam = taskSearchQuery ? `?query=${encodeURIComponent(taskSearchQuery)}` : "";
+        const queryParam = searchQuery ? `?query=${encodeURIComponent(searchQuery)}` : "";
         const response = await fetch(
           `/api/v1/organizations/${orgId}/suggestions${queryParam}`,
           { signal: controller.signal }
@@ -182,7 +209,7 @@ export function EntryBar({
       clearTimeout(timeoutId);
       controller.abort();
     };
-  }, [orgId, taskSearchQuery]);
+  }, [orgId, searchQuery]);
 
   // Parse and round duration when input changes
   const handleDurationChange = useCallback(
@@ -209,12 +236,12 @@ export function EntryBar({
   // Clear form
   const clearForm = useCallback(() => {
     setDescription("");
-    setSelectedTask(null);
+    setSelectedItem(null);
     setDurationInput("");
     setDurationMinutes(null);
     setDate(new Date());
     setError(null);
-    setTaskSearchQuery("");
+    setSearchQuery("");
     descriptionRef.current?.focus();
   }, []);
 
@@ -225,9 +252,9 @@ export function EntryBar({
       setError(null);
 
       // Validation
-      if (!selectedTask) {
-        setError("Please select a task");
-        taskSelectorTriggerRef.current?.focus();
+      if (!selectedItem) {
+        setError("Please select a client, project, or task");
+        selectorTriggerRef.current?.focus();
         return;
       }
 
@@ -246,7 +273,9 @@ export function EntryBar({
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            taskId: selectedTask.task.id,
+            clientId: selectedItem.client.id,
+            projectId: selectedItem.project?.id || null,
+            taskId: selectedItem.task?.id || null,
             description: description.trim() || null,
             date: format(date, "yyyy-MM-dd"),
             durationMinutes,
@@ -267,7 +296,7 @@ export function EntryBar({
         setIsSubmitting(false);
       }
     },
-    [orgId, selectedTask, description, date, durationMinutes, clearForm, onEntryCreated]
+    [orgId, selectedItem, description, date, durationMinutes, clearForm, onEntryCreated]
   );
 
   // Global keyboard shortcuts
@@ -296,9 +325,9 @@ export function EntryBar({
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [handleSubmit, clearForm]);
 
-  // Format selected task display
-  const selectedTaskDisplay = selectedTask
-    ? `${selectedTask.client.name} / ${selectedTask.project.name} / ${selectedTask.task.name}`
+  // Format selected item display
+  const selectedItemDisplay = selectedItem
+    ? formatSuggestionDisplay(selectedItem)
     : null;
 
   return (
@@ -318,35 +347,35 @@ export function EntryBar({
         disabled={isSubmitting}
       />
 
-      {/* Task selector */}
-      <Popover open={taskSelectorOpen} onOpenChange={setTaskSelectorOpen}>
+      {/* Client/Project/Task selector */}
+      <Popover open={selectorOpen} onOpenChange={setSelectorOpen}>
         <PopoverTrigger asChild>
           <Button
-            ref={taskSelectorTriggerRef}
+            ref={selectorTriggerRef}
             type="button"
             variant="outline"
             role="combobox"
-            aria-expanded={taskSelectorOpen}
+            aria-expanded={selectorOpen}
             className={cn(
               "squircle w-full sm:w-auto sm:min-w-[200px] sm:max-w-[300px] justify-start text-left font-normal",
-              !selectedTask && "text-muted-foreground"
+              !selectedItem && "text-muted-foreground"
             )}
             disabled={isSubmitting}
           >
-            {selectedTask ? (
+            {selectedItem ? (
               <span className="flex items-center gap-2 truncate">
                 <span
                   className="size-2 shrink-0 rounded-full"
                   style={{
-                    backgroundColor: selectedTask.client.color || "#94a3b8",
+                    backgroundColor: selectedItem.client.color || "#94a3b8",
                   }}
                 />
-                <span className="truncate">{selectedTaskDisplay}</span>
+                <span className="truncate">{selectedItemDisplay}</span>
               </span>
             ) : (
               <span className="flex items-center gap-2">
                 <Search className="size-4 opacity-50" />
-                <span>Select task...</span>
+                <span>Select client/project...</span>
               </span>
             )}
           </Button>
@@ -354,9 +383,9 @@ export function EntryBar({
         <PopoverContent className="w-[300px] p-0" align="start">
           <Command shouldFilter={false}>
             <CommandInput
-              placeholder="Search tasks..."
-              value={taskSearchQuery}
-              onValueChange={setTaskSearchQuery}
+              placeholder="Search..."
+              value={searchQuery}
+              onValueChange={setSearchQuery}
             />
             <CommandList>
               {isLoadingSuggestions ? (
@@ -365,19 +394,19 @@ export function EntryBar({
                 </div>
               ) : suggestions.length === 0 ? (
                 <CommandEmpty>
-                  {taskSearchQuery
-                    ? "No matching tasks found."
-                    : "No recent tasks. Create a project and task first."}
+                  {searchQuery
+                    ? "No matches found."
+                    : "No recent entries. Create a client first."}
                 </CommandEmpty>
               ) : (
                 <CommandGroup>
                   {suggestions.map((suggestion) => (
                     <CommandItem
-                      key={suggestion.task.id}
-                      value={suggestion.task.id}
+                      key={getSuggestionKey(suggestion)}
+                      value={getSuggestionKey(suggestion)}
                       onSelect={() => {
-                        setSelectedTask(suggestion);
-                        setTaskSelectorOpen(false);
+                        setSelectedItem(suggestion);
+                        setSelectorOpen(false);
                         // Move focus to duration after selection
                         setTimeout(() => durationRef.current?.focus(), 0);
                       }}
@@ -391,10 +420,14 @@ export function EntryBar({
                       />
                       <span className="flex flex-col gap-0.5 min-w-0">
                         <span className="text-sm font-medium truncate">
-                          {suggestion.task.name}
+                          {suggestion.task?.name || suggestion.project?.name || suggestion.client.name}
                         </span>
                         <span className="text-xs text-muted-foreground truncate">
-                          {suggestion.client.name} / {suggestion.project.name}
+                          {suggestion.task
+                            ? `${suggestion.client.name} / ${suggestion.project?.name}`
+                            : suggestion.project
+                            ? suggestion.client.name
+                            : "Client only"}
                         </span>
                       </span>
                     </CommandItem>
@@ -467,7 +500,7 @@ export function EntryBar({
         type="submit"
         size="icon"
         className="squircle shrink-0"
-        disabled={isSubmitting || !selectedTask || !durationMinutes}
+        disabled={isSubmitting || !selectedItem || !durationMinutes}
       >
         {isSubmitting ? (
           <Loader2 className="size-4 animate-spin" />

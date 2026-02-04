@@ -291,3 +291,21 @@ Slugs are random, unguessable strings. No auth required.
 14. Usage tracking
 15. Billing integration (Stripe)
 16. Landing page / marketing site
+
+## Future Ideas
+
+Ideas to explore later, not part of initial implementation:
+
+**Calendar Integration:**
+- Connect Google Calendar (OAuth), possibly others later
+- iCal feed import as a simpler alternative
+- Suggestions from calendar events ("Did you work on this meeting?")
+- Match/link time entries to calendar events
+- Pre-fill entry from event (duration, description from event title)
+
+**Other ideas to consider:**
+- Mobile app (React Native, leveraging API-first architecture)
+- CLI tool for quick entry from terminal
+- Browser extension for one-click tracking
+- Integrations (Slack, Linear, GitHub issues)
+- Invoice generation (PDF export with client branding)

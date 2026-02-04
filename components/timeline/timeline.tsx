@@ -93,7 +93,9 @@ export function Timeline({ orgId }: TimelineProps) {
     entryId: string,
     updates: Partial<{
       description: string | null;
-      taskId: string;
+      clientId: string;
+      projectId: string | null;
+      taskId: string | null;
       durationMinutes: number;
       isBillableOverride: boolean | null;
     }>
@@ -153,7 +155,9 @@ export function Timeline({ orgId }: TimelineProps) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          taskId: entry.task.id,
+          clientId: entry.client.id,
+          projectId: entry.project?.id || null,
+          taskId: entry.task?.id || null,
           description: entry.description,
           date: entry.date,
           durationMinutes: entry.durationMinutes,

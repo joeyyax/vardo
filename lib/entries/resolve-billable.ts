@@ -1,21 +1,21 @@
 import { db } from "@/lib/db";
-import { tasks } from "@/lib/db/schema";
+import { clients, projects, tasks } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
 /**
  * Represents the billable chain data needed to resolve billable status.
- * This is the shape returned when fetching a task with its project, client, and org.
+ * Entry can be at client, project, or task level.
  */
 export interface BillableChain {
   isBillableOverride: boolean | null;
-  task: {
+  task?: {
     isBillable: boolean | null;
-    project: {
-      isBillable: boolean | null;
-      client: {
-        isBillable: boolean | null;
-      };
-    };
+  } | null;
+  project?: {
+    isBillable: boolean | null;
+  } | null;
+  client: {
+    isBillable: boolean | null;
   };
 }
 
@@ -32,23 +32,57 @@ export function resolveEntryBillable(chain: BillableChain): boolean {
     return chain.isBillableOverride;
   }
 
-  // Task level
-  if (chain.task.isBillable !== null) {
+  // Task level (if present)
+  if (chain.task?.isBillable !== null && chain.task?.isBillable !== undefined) {
     return chain.task.isBillable;
   }
 
-  // Project level
-  if (chain.task.project.isBillable !== null) {
-    return chain.task.project.isBillable;
+  // Project level (if present)
+  if (chain.project?.isBillable !== null && chain.project?.isBillable !== undefined) {
+    return chain.project.isBillable;
   }
 
   // Client level
-  if (chain.task.project.client.isBillable !== null) {
-    return chain.task.project.client.isBillable;
+  if (chain.client.isBillable !== null) {
+    return chain.client.isBillable;
   }
 
   // Default to billable if nothing in the chain specifies otherwise
   return true;
+}
+
+/**
+ * Verify that a client belongs to the specified organization.
+ */
+export async function getClientForOrg(clientId: string, orgId: string) {
+  const client = await db.query.clients.findFirst({
+    where: eq(clients.id, clientId),
+  });
+
+  if (!client || client.organizationId !== orgId) {
+    return null;
+  }
+
+  return client;
+}
+
+/**
+ * Verify that a project belongs to the specified organization (via client).
+ * Returns the project with client if valid.
+ */
+export async function getProjectWithClientForOrg(projectId: string, orgId: string) {
+  const project = await db.query.projects.findFirst({
+    where: eq(projects.id, projectId),
+    with: {
+      client: true,
+    },
+  });
+
+  if (!project || project.client.organizationId !== orgId) {
+    return null;
+  }
+
+  return project;
 }
 
 /**
@@ -72,4 +106,64 @@ export async function getTaskWithChainForOrg(taskId: string, orgId: string) {
   }
 
   return task;
+}
+
+/**
+ * Validate entry hierarchy and return all the resolved entities.
+ * Ensures clientId, projectId (if provided), and taskId (if provided) form a valid chain.
+ */
+export async function validateEntryHierarchy(
+  orgId: string,
+  clientId: string,
+  projectId?: string | null,
+  taskId?: string | null
+): Promise<{
+  valid: boolean;
+  error?: string;
+  client?: Awaited<ReturnType<typeof getClientForOrg>>;
+  project?: Awaited<ReturnType<typeof getProjectWithClientForOrg>>;
+  task?: Awaited<ReturnType<typeof getTaskWithChainForOrg>>;
+}> {
+  // Validate client
+  const client = await getClientForOrg(clientId, orgId);
+  if (!client) {
+    return { valid: false, error: "Client not found or doesn't belong to organization" };
+  }
+
+  // If no project, we're done (client-level entry)
+  if (!projectId) {
+    if (taskId) {
+      return { valid: false, error: "Cannot specify taskId without projectId" };
+    }
+    return { valid: true, client };
+  }
+
+  // Validate project
+  const project = await getProjectWithClientForOrg(projectId, orgId);
+  if (!project) {
+    return { valid: false, error: "Project not found or doesn't belong to organization" };
+  }
+
+  // Verify project belongs to the specified client
+  if (project.clientId !== clientId) {
+    return { valid: false, error: "Project doesn't belong to the specified client" };
+  }
+
+  // If no task, we're done (project-level entry)
+  if (!taskId) {
+    return { valid: true, client, project };
+  }
+
+  // Validate task
+  const task = await getTaskWithChainForOrg(taskId, orgId);
+  if (!task) {
+    return { valid: false, error: "Task not found or doesn't belong to organization" };
+  }
+
+  // Verify task belongs to the specified project
+  if (task.projectId !== projectId) {
+    return { valid: false, error: "Task doesn't belong to the specified project" };
+  }
+
+  return { valid: true, client, project, task };
 }

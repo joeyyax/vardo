@@ -5,7 +5,7 @@ import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import {
   resolveEntryBillable,
-  getTaskWithChainForOrg,
+  validateEntryHierarchy,
 } from "@/lib/entries/resolve-billable";
 
 type RouteParams = {
@@ -14,6 +14,7 @@ type RouteParams = {
 
 /**
  * Shape an entry with its relations into the response format.
+ * Handles entries at any level: client, project, or task.
  */
 function shapeEntryResponse(entry: {
   id: string;
@@ -22,35 +23,29 @@ function shapeEntryResponse(entry: {
   durationMinutes: number;
   isBillableOverride: boolean | null;
   createdAt: Date;
-  task: {
+  client: {
+    id: string;
+    name: string;
+    color: string | null;
+    isBillable: boolean | null;
+  };
+  project?: {
+    id: string;
+    name: string;
+    code: string | null;
+    isBillable: boolean | null;
+  } | null;
+  task?: {
     id: string;
     name: string;
     isBillable: boolean | null;
-    project: {
-      id: string;
-      name: string;
-      code: string | null;
-      isBillable: boolean | null;
-      client: {
-        id: string;
-        name: string;
-        color: string | null;
-        isBillable: boolean | null;
-      };
-    };
-  };
+  } | null;
 }) {
   const isBillable = resolveEntryBillable({
     isBillableOverride: entry.isBillableOverride,
-    task: {
-      isBillable: entry.task.isBillable,
-      project: {
-        isBillable: entry.task.project.isBillable,
-        client: {
-          isBillable: entry.task.project.client.isBillable,
-        },
-      },
-    },
+    task: entry.task ? { isBillable: entry.task.isBillable } : null,
+    project: entry.project ? { isBillable: entry.project.isBillable } : null,
+    client: { isBillable: entry.client.isBillable },
   });
 
   return {
@@ -61,20 +56,24 @@ function shapeEntryResponse(entry: {
     isBillableOverride: entry.isBillableOverride,
     isBillable,
     createdAt: entry.createdAt.toISOString(),
-    task: {
-      id: entry.task.id,
-      name: entry.task.name,
-      project: {
-        id: entry.task.project.id,
-        name: entry.task.project.name,
-        code: entry.task.project.code,
-        client: {
-          id: entry.task.project.client.id,
-          name: entry.task.project.client.name,
-          color: entry.task.project.client.color,
-        },
-      },
+    client: {
+      id: entry.client.id,
+      name: entry.client.name,
+      color: entry.client.color,
     },
+    project: entry.project
+      ? {
+          id: entry.project.id,
+          name: entry.project.name,
+          code: entry.project.code,
+        }
+      : null,
+    task: entry.task
+      ? {
+          id: entry.task.id,
+          name: entry.task.name,
+        }
+      : null,
   };
 }
 
@@ -89,15 +88,9 @@ async function getEntryForOrg(entryId: string, orgId: string) {
       eq(timeEntries.organizationId, orgId)
     ),
     with: {
-      task: {
-        with: {
-          project: {
-            with: {
-              client: true,
-            },
-          },
-        },
-      },
+      client: true,
+      project: true,
+      task: true,
     },
   });
 
@@ -129,23 +122,27 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         durationMinutes: entry.durationMinutes,
         isBillableOverride: entry.isBillableOverride,
         createdAt: entry.createdAt,
-        task: {
-          id: entry.task.id,
-          name: entry.task.name,
-          isBillable: entry.task.isBillable,
-          project: {
-            id: entry.task.project.id,
-            name: entry.task.project.name,
-            code: entry.task.project.code,
-            isBillable: entry.task.project.isBillable,
-            client: {
-              id: entry.task.project.client.id,
-              name: entry.task.project.client.name,
-              color: entry.task.project.client.color,
-              isBillable: entry.task.project.client.isBillable,
-            },
-          },
+        client: {
+          id: entry.client.id,
+          name: entry.client.name,
+          color: entry.client.color,
+          isBillable: entry.client.isBillable,
         },
+        project: entry.project
+          ? {
+              id: entry.project.id,
+              name: entry.project.name,
+              code: entry.project.code,
+              isBillable: entry.project.isBillable,
+            }
+          : null,
+        task: entry.task
+          ? {
+              id: entry.task.id,
+              name: entry.task.name,
+              isBillable: entry.task.isBillable,
+            }
+          : null,
       })
     );
   } catch (error) {
@@ -184,12 +181,21 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     const body = await request.json();
-    const { taskId, description, date, durationMinutes, isBillableOverride } =
-      body;
+    const {
+      clientId,
+      projectId,
+      taskId,
+      description,
+      date,
+      durationMinutes,
+      isBillableOverride,
+    } = body;
 
     // Build update object with only provided fields
     const updates: Partial<{
-      taskId: string;
+      clientId: string;
+      projectId: string | null;
+      taskId: string | null;
       description: string | null;
       date: string;
       durationMinutes: number;
@@ -199,17 +205,33 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       updatedAt: new Date(),
     };
 
-    // If changing task, verify new task belongs to this org
-    if (taskId !== undefined && taskId !== existingEntry.taskId) {
-      const newTask = await getTaskWithChainForOrg(taskId, orgId);
+    // If changing hierarchy, validate it
+    const newClientId = clientId ?? existingEntry.clientId;
+    const newProjectId =
+      projectId !== undefined ? projectId : existingEntry.projectId;
+    const newTaskId = taskId !== undefined ? taskId : existingEntry.taskId;
 
-      if (!newTask) {
-        return NextResponse.json(
-          { error: "Task not found or does not belong to organization" },
-          { status: 404 }
-        );
+    // Check if hierarchy is changing
+    const hierarchyChanging =
+      clientId !== undefined ||
+      projectId !== undefined ||
+      taskId !== undefined;
+
+    if (hierarchyChanging) {
+      const validation = await validateEntryHierarchy(
+        orgId,
+        newClientId,
+        newProjectId,
+        newTaskId
+      );
+
+      if (!validation.valid) {
+        return NextResponse.json({ error: validation.error }, { status: 400 });
       }
-      updates.taskId = taskId;
+
+      if (clientId !== undefined) updates.clientId = clientId;
+      if (projectId !== undefined) updates.projectId = projectId || null;
+      if (taskId !== undefined) updates.taskId = taskId || null;
     }
 
     if (description !== undefined) {
@@ -264,23 +286,27 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         durationMinutes: updatedEntry.durationMinutes,
         isBillableOverride: updatedEntry.isBillableOverride,
         createdAt: updatedEntry.createdAt,
-        task: {
-          id: updatedEntry.task.id,
-          name: updatedEntry.task.name,
-          isBillable: updatedEntry.task.isBillable,
-          project: {
-            id: updatedEntry.task.project.id,
-            name: updatedEntry.task.project.name,
-            code: updatedEntry.task.project.code,
-            isBillable: updatedEntry.task.project.isBillable,
-            client: {
-              id: updatedEntry.task.project.client.id,
-              name: updatedEntry.task.project.client.name,
-              color: updatedEntry.task.project.client.color,
-              isBillable: updatedEntry.task.project.client.isBillable,
-            },
-          },
+        client: {
+          id: updatedEntry.client.id,
+          name: updatedEntry.client.name,
+          color: updatedEntry.client.color,
+          isBillable: updatedEntry.client.isBillable,
         },
+        project: updatedEntry.project
+          ? {
+              id: updatedEntry.project.id,
+              name: updatedEntry.project.name,
+              code: updatedEntry.project.code,
+              isBillable: updatedEntry.project.isBillable,
+            }
+          : null,
+        task: updatedEntry.task
+          ? {
+              id: updatedEntry.task.id,
+              name: updatedEntry.task.name,
+              isBillable: updatedEntry.task.isBillable,
+            }
+          : null,
       })
     );
   } catch (error) {
