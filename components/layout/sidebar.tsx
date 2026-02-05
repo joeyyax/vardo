@@ -5,6 +5,7 @@ import { Clock } from "lucide-react";
 import { SidebarNav } from "./sidebar-nav";
 import { OrgSwitcher } from "./org-switcher";
 import { UserMenu } from "./user-menu";
+import { NotificationBell } from "@/components/notification-bell";
 import { Separator } from "@/components/ui/separator";
 import type { OrgFeatures } from "@/lib/db/schema";
 
@@ -20,13 +21,14 @@ export function Sidebar({ currentOrgId, features }: SidebarProps) {
   return (
     <aside className="flex h-full w-56 flex-col border-r bg-sidebar">
       {/* Logo/Brand */}
-      <div className="flex h-14 items-center gap-2 px-4">
+      <div className="flex h-14 items-center justify-between px-4">
         <Link href={defaultRoute} className="flex items-center gap-2">
           <div className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
             <Clock className="size-4" />
           </div>
           <span className="text-lg font-semibold">Time</span>
         </Link>
+        <NotificationBell />
       </div>
 
       <Separator />

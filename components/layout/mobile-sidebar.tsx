@@ -13,6 +13,7 @@ import {
 import { SidebarNav } from "./sidebar-nav";
 import { OrgSwitcher } from "./org-switcher";
 import { UserMenu } from "./user-menu";
+import { NotificationBell } from "@/components/notification-bell";
 import type { OrgFeatures } from "@/lib/db/schema";
 
 type MobileSidebarProps = {
@@ -33,13 +34,14 @@ export function MobileSidebar({ currentOrgId, features }: MobileSidebarProps) {
         </Button>
       </SheetTrigger>
       <SheetContent side="left" className="w-64 p-0">
-        <SheetHeader className="flex h-14 flex-row items-center gap-2 px-4 border-b">
+        <SheetHeader className="flex h-14 flex-row items-center justify-between px-4 border-b">
           <Link href={defaultRoute} className="flex items-center gap-2">
             <div className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
               <Clock className="size-4" />
             </div>
             <SheetTitle className="text-lg font-semibold">Time</SheetTitle>
           </Link>
+          <NotificationBell />
         </SheetHeader>
 
         <div className="flex h-[calc(100%-3.5rem)] flex-col">
