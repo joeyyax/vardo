@@ -185,8 +185,8 @@ export function EntryBar({
   // Form state
   const [description, setDescription] = useState("");
   const [selectedItem, setSelectedItem] = useState<Suggestion | null>(null);
-  const [durationInput, setDurationInput] = useState("");
-  const [durationMinutes, setDurationMinutes] = useState<number | null>(null);
+  const [durationInput, setDurationInput] = useState("1h");
+  const [durationMinutes, setDurationMinutes] = useState<number | null>(60);
   const [date, setDate] = useState<Date>(new Date());
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -463,8 +463,8 @@ export function EntryBar({
   const clearForm = useCallback(() => {
     setDescription("");
     setSelectedItem(null);
-    setDurationInput("");
-    setDurationMinutes(null);
+    setDurationInput("1h");
+    setDurationMinutes(60);
     setDate(new Date());
     setError(null);
     setSearchQuery("");
