@@ -15,6 +15,7 @@ import { relations } from "drizzle-orm";
 export type OrgFeatures = {
   time_tracking: boolean;
   invoicing: boolean;
+  expenses: boolean;
   pm: boolean;
   proposals: boolean;
 };
@@ -23,6 +24,7 @@ export type OrgFeatures = {
 export const DEFAULT_ORG_FEATURES: OrgFeatures = {
   time_tracking: true,
   invoicing: true,
+  expenses: true,
   pm: false,
   proposals: false,
 };
@@ -395,6 +397,8 @@ export const timeEntries = pgTable("time_entries", {
     () => recurringTemplates.id,
     { onDelete: "set null" }
   ),
+  // Tags extracted from description (e.g., #meeting #planning)
+  tags: text("tags").array(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -718,6 +722,10 @@ export type DocumentType = (typeof DOCUMENT_TYPES)[number];
 export const DOCUMENT_STATUSES = ["draft", "sent", "viewed", "accepted", "declined"] as const;
 export type DocumentStatus = (typeof DOCUMENT_STATUSES)[number];
 
+// Expense statuses
+export const EXPENSE_STATUSES = ["paid", "unpaid"] as const;
+export type ExpenseStatus = (typeof EXPENSE_STATUSES)[number];
+
 // Document section types for structured content
 export type DocumentSection = {
   id: string;
@@ -816,6 +824,11 @@ export const projectExpenses = pgTable(
     nextOccurrence: date("next_occurrence"), // Next date to generate expense (for cron)
     recurringEndDate: date("recurring_end_date"), // Optional: when to stop recurring
     parentExpenseId: uuid("parent_expense_id"), // Links generated expenses to the recurring template
+    // Vendor for tracking where money is spent
+    vendor: text("vendor"),
+    // Payment status tracking
+    status: text("status").$type<ExpenseStatus>().default("paid"),
+    paidAt: date("paid_at"), // When the expense was marked as paid
     // Tracking
     createdBy: text("created_by")
       .notNull()
@@ -828,8 +841,23 @@ export const projectExpenses = pgTable(
     index("project_expenses_project_id_idx").on(table.projectId),
     index("project_expenses_date_idx").on(table.date),
     index("project_expenses_created_by_idx").on(table.createdBy),
+    index("project_expenses_status_idx").on(table.status),
   ]
 );
+
+// Expense comments (discussion on expenses)
+export const expenseComments = pgTable("expense_comments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  expenseId: uuid("expense_id")
+    .notNull()
+    .references(() => projectExpenses.id, { onDelete: "cascade" }),
+  authorId: text("author_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
 
 // Notification types
 export const NOTIFICATION_TYPES = [
@@ -1108,7 +1136,7 @@ export const documentsRelations = relations(documents, ({ one }) => ({
   }),
 }));
 
-export const projectExpensesRelations = relations(projectExpenses, ({ one }) => ({
+export const projectExpensesRelations = relations(projectExpenses, ({ one, many }) => ({
   organization: one(organizations, {
     fields: [projectExpenses.organizationId],
     references: [organizations.id],
@@ -1123,6 +1151,18 @@ export const projectExpensesRelations = relations(projectExpenses, ({ one }) => 
   }),
   createdByUser: one(users, {
     fields: [projectExpenses.createdBy],
+    references: [users.id],
+  }),
+  comments: many(expenseComments),
+}));
+
+export const expenseCommentsRelations = relations(expenseComments, ({ one }) => ({
+  expense: one(projectExpenses, {
+    fields: [expenseComments.expenseId],
+    references: [projectExpenses.id],
+  }),
+  author: one(users, {
+    fields: [expenseComments.authorId],
     references: [users.id],
   }),
 }));
