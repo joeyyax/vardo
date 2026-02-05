@@ -60,10 +60,14 @@ const TYPE_ICONS: Record<NotificationType, React.ComponentType<{ className?: str
 
 export function NotificationBell() {
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isOpen, setIsOpen] = useState(false);
+
+  // Defer rendering until mounted to avoid Radix ID hydration mismatch
+  useEffect(() => setMounted(true), []);
 
   const fetchNotifications = useCallback(async () => {
     try {
@@ -134,6 +138,15 @@ export function NotificationBell() {
       setIsOpen(false);
     }
   };
+
+  // Show placeholder during SSR to avoid hydration mismatch
+  if (!mounted) {
+    return (
+      <Button variant="ghost" size="icon" className="relative">
+        <Bell className="size-5" />
+      </Button>
+    );
+  }
 
   return (
     <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
