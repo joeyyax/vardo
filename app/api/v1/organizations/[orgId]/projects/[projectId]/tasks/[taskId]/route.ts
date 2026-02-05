@@ -1,8 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { tasks, projects, TASK_STATUSES, type TaskStatus } from "@/lib/db/schema";
+import { tasks, projects, taskRelationships, TASK_STATUSES, type TaskStatus } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
-import { eq, and } from "drizzle-orm";
+import { eq, and, ne } from "drizzle-orm";
+
+// Check if a task has unresolved blockers
+async function hasUnresolvedBlockers(taskId: string): Promise<{ blocked: boolean; blockers: { id: string; name: string; status: TaskStatus | null }[] }> {
+  const blockerRelations = await db.query.taskRelationships.findMany({
+    where: and(
+      eq(taskRelationships.sourceTaskId, taskId),
+      eq(taskRelationships.type, "blocked_by")
+    ),
+    with: {
+      targetTask: {
+        columns: { id: true, name: true, status: true },
+      },
+    },
+  });
+
+  const unresolvedBlockers = blockerRelations
+    .filter((r) => r.targetTask.status !== "done")
+    .map((r) => r.targetTask);
+
+  return {
+    blocked: unresolvedBlockers.length > 0,
+    blockers: unresolvedBlockers,
+  };
+}
 
 type RouteParams = {
   params: Promise<{ orgId: string; projectId: string; taskId: string }>;
@@ -238,6 +262,21 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
           { status: 400 }
         );
       }
+
+      // Block completion if there are unresolved blockers
+      if (status === "done" && existingTask.status !== "done") {
+        const { blocked, blockers } = await hasUnresolvedBlockers(taskId);
+        if (blocked) {
+          return NextResponse.json(
+            {
+              error: "Cannot complete task: blocked by unresolved tasks",
+              blockers: blockers.map((b) => ({ id: b.id, name: b.name })),
+            },
+            { status: 400 }
+          );
+        }
+      }
+
       updates.status = status;
     }
 

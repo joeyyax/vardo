@@ -33,6 +33,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Loader2, Archive, ArchiveRestore, Eye, EyeOff, Link as LinkIcon } from "lucide-react";
+import { TaskRelationships } from "./task-relationships";
 
 export type TaskStatus = "todo" | "in_progress" | "review" | "done";
 
@@ -528,6 +529,19 @@ export function TaskDialog({
               <p className="text-sm text-destructive">{error}</p>
             )}
           </div>
+
+          {/* Relationships section - only for existing tasks when PM is enabled */}
+          {pmEnabled && isEditing && task && (
+            <div className="border-t pt-4 pb-6">
+              <h4 className="text-sm font-medium mb-3">Relationships</h4>
+              <TaskRelationships
+                orgId={orgId}
+                projectId={projectId}
+                taskId={task.id}
+                onUpdate={onSuccess}
+              />
+            </div>
+          )}
 
           <DialogFooter className="gap-2 sm:gap-0">
             {isEditing && (
