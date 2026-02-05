@@ -218,8 +218,9 @@ export function KanbanBoard({ orgId, projectId, currentUserId }: KanbanBoardProp
             {/* Column content */}
             <div className="flex-1 p-2 space-y-2 overflow-y-auto">
               {tasksByStatus[status].length === 0 ? (
-                <div className="flex items-center justify-center h-20 text-sm text-muted-foreground/60">
-                  Drop tasks here
+                <div className="flex flex-col items-center justify-center h-24 rounded-lg border-2 border-dashed border-muted-foreground/20 text-sm text-muted-foreground/60">
+                  <span>No tasks</span>
+                  <span className="text-xs">Drop here or click +</span>
                 </div>
               ) : (
                 tasksByStatus[status].map((task) => (

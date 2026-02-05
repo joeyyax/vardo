@@ -28,6 +28,7 @@ import {
   AlertCircle,
   CheckCircle2,
 } from "lucide-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { type TaskStatus, TASK_STATUS_LABELS, TASK_STATUS_COLORS } from "./task-dialog";
 
@@ -95,11 +96,15 @@ export function TaskRelationships({
         { method: "DELETE" }
       );
       if (response.ok) {
+        toast.success("Relationship removed");
         fetchRelationships();
         onUpdate?.();
+      } else {
+        toast.error("Failed to remove relationship");
       }
     } catch (err) {
       console.error("Error removing relationship:", err);
+      toast.error("Failed to remove relationship");
     }
   };
 
@@ -361,6 +366,7 @@ function AddRelationshipDialog({
         throw new Error(data.error || "Failed to add relationship");
       }
 
+      toast.success(type === "blocked_by" ? "Blocker added" : "Related task linked");
       onSuccess();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
