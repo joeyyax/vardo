@@ -20,6 +20,7 @@ import { RevenueChart } from "@/components/reports/revenue-chart";
 import { UtilizationChart } from "@/components/reports/utilization-chart";
 import { PageToolbar } from "@/components/page-toolbar";
 import { SavedReportsDropdown } from "@/components/reports/saved-reports-dropdown";
+import { ExportDropdown } from "@/components/reports/export-dropdown";
 import {
   Select,
   SelectContent,
@@ -315,32 +316,45 @@ export function ReportsPageContent({
       <TabsContent value="overview" className="space-y-8">
         <PageToolbar
           actions={
-            <SavedReportsDropdown
-              orgId={orgId}
-              currentTab="overview"
-              currentFilters={{
-                period,
-                clientId,
-                projectId,
-                ...(period === "custom" && customRange ? {
-                  customFrom: customRange.from?.toISOString(),
-                  customTo: customRange.to?.toISOString(),
-                } : {}),
-              }}
-              onApplyPreset={(filters) => {
-                setPeriod((filters.period as Period) || "month");
-                setClientId((filters.clientId as string) || null);
-                setProjectId((filters.projectId as string) || null);
-                if (filters.customFrom && filters.customTo) {
-                  setCustomRange({
-                    from: new Date(filters.customFrom as string),
-                    to: new Date(filters.customTo as string),
-                  });
-                } else {
-                  setCustomRange(undefined);
-                }
-              }}
-            />
+            <>
+              <SavedReportsDropdown
+                orgId={orgId}
+                currentTab="overview"
+                currentFilters={{
+                  period,
+                  clientId,
+                  projectId,
+                  ...(period === "custom" && customRange ? {
+                    customFrom: customRange.from?.toISOString(),
+                    customTo: customRange.to?.toISOString(),
+                  } : {}),
+                }}
+                onApplyPreset={(filters) => {
+                  setPeriod((filters.period as Period) || "month");
+                  setClientId((filters.clientId as string) || null);
+                  setProjectId((filters.projectId as string) || null);
+                  if (filters.customFrom && filters.customTo) {
+                    setCustomRange({
+                      from: new Date(filters.customFrom as string),
+                      to: new Date(filters.customTo as string),
+                    });
+                  } else {
+                    setCustomRange(undefined);
+                  }
+                }}
+              />
+              <ExportDropdown
+                orgId={orgId}
+                tab="overview"
+                params={{
+                  period: period !== "custom" ? period : undefined,
+                  from: period === "custom" && customRange?.from ? format(customRange.from, "yyyy-MM-dd") : undefined,
+                  to: period === "custom" && customRange?.to ? format(customRange.to, "yyyy-MM-dd") : undefined,
+                  clientId,
+                  projectId,
+                }}
+              />
+            </>
           }
         >
           <DateRangePicker
