@@ -11,17 +11,25 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { ViewSwitcher } from "@/components/view-switcher";
+import { useViewPreference } from "@/hooks/use-view-preference";
+import { PageToolbar } from "@/components/page-toolbar";
 import {
   GripVertical,
-  Kanban,
-  LayoutList,
   Loader2,
   Plus,
   ListTodo,
   Edit,
   User,
 } from "lucide-react";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import {
   TaskDialog,
@@ -60,7 +68,7 @@ type Project = {
   clientId: string;
 };
 
-type TaskView = "list" | "board";
+const TASK_VIEWS = ["list", "board", "table"] as const;
 
 const KANBAN_COLUMNS: TaskStatus[] = ["todo", "in_progress", "review", "done"];
 
@@ -82,7 +90,7 @@ export function TasksContent({ orgId, currentUserId }: TasksContentProps) {
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
   // View
-  const [view, setView] = useState<TaskView>("board");
+  const [view, setView] = useViewPreference("tasks", TASK_VIEWS, "board");
 
   // Dialog
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -283,81 +291,67 @@ export function TasksContent({ orgId, currentUserId }: TasksContentProps) {
 
   return (
     <div className="space-y-4">
-      {/* Filters and view toggle */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <Select value={clientFilter} onValueChange={setClientFilter}>
-            <SelectTrigger className="w-[180px] squircle">
-              <SelectValue placeholder="All clients" />
+      <PageToolbar
+        actions={
+          <>
+            <ViewSwitcher views={TASK_VIEWS} value={view} onValueChange={setView} />
+            <Button onClick={() => handleNewTask()} className="squircle">
+              <Plus className="size-4" />
+              New Task
+            </Button>
+          </>
+        }
+      >
+        <Select value={clientFilter} onValueChange={setClientFilter}>
+          <SelectTrigger className="w-[180px] squircle">
+            <SelectValue placeholder="All clients" />
+          </SelectTrigger>
+          <SelectContent className="squircle">
+            <SelectItem value="all">All clients</SelectItem>
+            {clients.map((client) => (
+              <SelectItem key={client.id} value={client.id}>
+                <div className="flex items-center gap-2">
+                  <div
+                    className="size-2 rounded-full"
+                    style={{ backgroundColor: client.color || "#94a3b8" }}
+                  />
+                  {client.name}
+                </div>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={projectFilter} onValueChange={setProjectFilter}>
+          <SelectTrigger className="w-[180px] squircle">
+            <SelectValue placeholder="All projects" />
+          </SelectTrigger>
+          <SelectContent className="squircle">
+            <SelectItem value="all">All projects</SelectItem>
+            {filteredProjects.map((project) => (
+              <SelectItem key={project.id} value={project.id}>
+                {project.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {(view === "list" || view === "table") && (
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[150px] squircle">
+              <SelectValue placeholder="All statuses" />
             </SelectTrigger>
             <SelectContent className="squircle">
-              <SelectItem value="all">All clients</SelectItem>
-              {clients.map((client) => (
-                <SelectItem key={client.id} value={client.id}>
-                  <div className="flex items-center gap-2">
-                    <div
-                      className="size-2 rounded-full"
-                      style={{ backgroundColor: client.color || "#94a3b8" }}
-                    />
-                    {client.name}
-                  </div>
+              <SelectItem value="all">All statuses</SelectItem>
+              {KANBAN_COLUMNS.map((status) => (
+                <SelectItem key={status} value={status}>
+                  {TASK_STATUS_LABELS[status]}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-
-          <Select value={projectFilter} onValueChange={setProjectFilter}>
-            <SelectTrigger className="w-[180px] squircle">
-              <SelectValue placeholder="All projects" />
-            </SelectTrigger>
-            <SelectContent className="squircle">
-              <SelectItem value="all">All projects</SelectItem>
-              {filteredProjects.map((project) => (
-                <SelectItem key={project.id} value={project.id}>
-                  {project.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {view === "list" && (
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[150px] squircle">
-                <SelectValue placeholder="All statuses" />
-              </SelectTrigger>
-              <SelectContent className="squircle">
-                <SelectItem value="all">All statuses</SelectItem>
-                {KANBAN_COLUMNS.map((status) => (
-                  <SelectItem key={status} value={status}>
-                    {TASK_STATUS_LABELS[status]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2">
-          <ToggleGroup
-            type="single"
-            value={view}
-            onValueChange={(v) => v && setView(v as TaskView)}
-            size="sm"
-          >
-            <ToggleGroupItem value="list" aria-label="List view">
-              <LayoutList className="size-4" />
-            </ToggleGroupItem>
-            <ToggleGroupItem value="board" aria-label="Board view">
-              <Kanban className="size-4" />
-            </ToggleGroupItem>
-          </ToggleGroup>
-
-          <Button onClick={() => handleNewTask()} className="squircle">
-            <Plus className="size-4" />
-            New Task
-          </Button>
-        </div>
-      </div>
+        )}
+      </PageToolbar>
 
       {/* Content */}
       {isLoading ? (
@@ -441,6 +435,107 @@ export function TasksContent({ orgId, currentUserId }: TasksContentProps) {
               </div>
             </div>
           ))}
+        </div>
+      ) : view === "table" ? (
+        /* Table view */
+        <div className="rounded-lg border squircle overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Task</TableHead>
+                <TableHead>Project</TableHead>
+                <TableHead>Client</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Assignee</TableHead>
+                <TableHead>Estimate</TableHead>
+                <TableHead className="w-[50px]" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {tasks.map((task) => {
+                const estimate = task.estimateMinutes
+                  ? task.estimateMinutes >= 60
+                    ? `${Math.floor(task.estimateMinutes / 60)}h${task.estimateMinutes % 60 ? ` ${task.estimateMinutes % 60}m` : ""}`
+                    : `${task.estimateMinutes}m`
+                  : null;
+
+                return (
+                  <TableRow
+                    key={task.id}
+                    className="cursor-pointer"
+                    onClick={() => handleEditTask(task)}
+                  >
+                    <TableCell>
+                      <div className="flex flex-col gap-0.5">
+                        <span className="font-medium">{task.name}</span>
+                        {task.description && (
+                          <span className="text-xs text-muted-foreground truncate max-w-[300px]">
+                            {task.description}
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          router.push(`/projects/${task.project.id}`);
+                        }}
+                        className="hover:underline"
+                      >
+                        {task.project.name}
+                      </button>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="size-2 rounded-full shrink-0"
+                          style={{ backgroundColor: task.project.client.color || "#94a3b8" }}
+                        />
+                        {task.project.client.name}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <span
+                        className={cn(
+                          "text-xs px-1.5 py-0.5 rounded",
+                          TASK_STATUS_COLORS[task.status!]
+                        )}
+                      >
+                        {TASK_STATUS_LABELS[task.status!]}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      {task.assignedToUser ? (
+                        <div className="flex items-center gap-1 text-sm">
+                          <User className="size-3 text-muted-foreground" />
+                          {task.assignedToUser.name || task.assignedToUser.email}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">--</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {estimate || "--"}
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEditTask(task);
+                        }}
+                        className="size-8 squircle"
+                      >
+                        <Edit className="size-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
         </div>
       ) : (
         /* List view grouped by project */

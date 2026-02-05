@@ -13,7 +13,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { ClientDialog, type Client } from "@/components/clients/client-dialog";
+import { ViewSwitcher } from "@/components/view-switcher";
+import { useViewPreference } from "@/hooks/use-view-preference";
+import { PageToolbar } from "@/components/page-toolbar";
 import {
   DndContext,
   DragOverlay,
@@ -30,7 +41,10 @@ type ClientsContentProps = {
   orgId: string;
 };
 
+const CLIENT_VIEWS = ["list", "table"] as const;
+
 export function ClientsContent({ orgId }: ClientsContentProps) {
+  const [view, setView] = useViewPreference("clients", CLIENT_VIEWS, "list");
   const [clients, setClients] = useState<Client[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -219,50 +233,141 @@ export function ClientsContent({ orgId }: ClientsContentProps) {
   return (
     <>
       <div className="space-y-4">
-        {/* Header with filters and new button */}
-        <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-          <div className="flex flex-1 gap-2">
-            {/* Search */}
-            <div className="relative flex-1 max-w-xs">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-              <Input
-                placeholder="Search clients..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
-              />
-            </div>
-
-            {/* Sort by */}
-            <Select value={sortBy} onValueChange={(v) => setSortBy(v as "name" | "recent")}>
-              <SelectTrigger className="w-[130px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="name">Name</SelectItem>
-                <SelectItem value="recent">Recent</SelectItem>
-              </SelectContent>
-            </Select>
-
-            {/* Sort order */}
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
-              title={sortOrder === "asc" ? "Ascending" : "Descending"}
-            >
-              <ArrowUpDown className={`size-4 transition-transform ${sortOrder === "desc" ? "rotate-180" : ""}`} />
-            </Button>
+        <PageToolbar
+          actions={
+            <>
+              <ViewSwitcher views={CLIENT_VIEWS} value={view} onValueChange={setView} />
+              <Button onClick={handleNewClient} className="squircle">
+                <Plus className="size-4" />
+                New client
+              </Button>
+            </>
+          }
+        >
+          <div className="relative flex-1 max-w-xs min-w-[180px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+            <Input
+              placeholder="Search clients..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9"
+            />
           </div>
 
-          <Button onClick={handleNewClient} className="squircle">
-            <Plus className="size-4" />
-            New client
+          <Select value={sortBy} onValueChange={(v) => setSortBy(v as "name" | "recent")}>
+            <SelectTrigger className="w-[130px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="name">Name</SelectItem>
+              <SelectItem value="recent">Recent</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+            title={sortOrder === "asc" ? "Ascending" : "Descending"}
+          >
+            <ArrowUpDown className={`size-4 transition-transform ${sortOrder === "desc" ? "rotate-180" : ""}`} />
           </Button>
-        </div>
+        </PageToolbar>
 
         {clients.length === 0 ? (
           <EmptyState onNewClient={handleNewClient} />
+        ) : view === "table" ? (
+          <div className="rounded-lg border squircle overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Client</TableHead>
+                  <TableHead>Parent</TableHead>
+                  <TableHead>Billing</TableHead>
+                  <TableHead>Rate</TableHead>
+                  <TableHead>Billable</TableHead>
+                  <TableHead className="w-[50px]" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredAndSortedClients.map((client) => {
+                  const formattedRate = client.rateOverride
+                    ? `$${(client.rateOverride / 100).toFixed(2)}/hr`
+                    : null;
+                  const parentClient = client.parentClientId
+                    ? clients.find((c) => c.id === client.parentClientId)
+                    : null;
+                  const billingLabel = client.billingType
+                    ? client.billingType.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+                    : null;
+
+                  return (
+                    <TableRow
+                      key={client.id}
+                      className="cursor-pointer"
+                      onClick={() => window.location.href = `/clients/${client.id}`}
+                    >
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <div
+                            className="size-3 shrink-0 rounded-full ring-1 ring-border"
+                            style={{ backgroundColor: client.color || "#94a3b8" }}
+                          />
+                          <span className="font-medium">{client.name}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {parentClient ? (
+                          <div className="flex items-center gap-2">
+                            <div
+                              className="size-2 rounded-full shrink-0"
+                              style={{ backgroundColor: parentClient.color || "#94a3b8" }}
+                            />
+                            {parentClient.name}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground/60">&mdash;</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {billingLabel || <span className="text-muted-foreground/60">&mdash;</span>}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {formattedRate || "Default"}
+                      </TableCell>
+                      <TableCell>
+                        {client.isBillable !== null && (
+                          <div
+                            className={`flex items-center gap-1 text-xs ${
+                              client.isBillable
+                                ? "text-emerald-600 dark:text-emerald-400"
+                                : "text-muted-foreground"
+                            }`}
+                          >
+                            <DollarSign className="size-3" />
+                            {client.isBillable ? "Billable" : "Non-billable"}
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEditClient(client);
+                          }}
+                          className="size-8 squircle"
+                        >
+                          <Edit className="size-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
         ) : (
           <DndContext
             sensors={sensors}

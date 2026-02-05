@@ -2,18 +2,59 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { useViewPreference } from "@/hooks/use-view-preference";
+import { PageToolbar } from "@/components/page-toolbar";
+import { ViewSwitcher } from "@/components/view-switcher";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import {
+  MoreHorizontal,
+  Copy,
+  Trash2,
+  Repeat,
+  DollarSign,
+} from "lucide-react";
 import { TimeEntry, WeekRange } from "./types";
 import {
   getWeekRange,
   groupEntriesByDate,
   calculateTotalMinutes,
   calculateTodayTotal,
+  formatDuration,
+  formatDayHeader,
 } from "./utils";
 import { WeekHeader } from "./week-header";
 import { DayGroup } from "./day-group";
 import { RecurringDialog } from "./recurring-dialog";
 import { RecurringTemplate } from "./recurring-entry-row";
 import { format, addDays, parseISO } from "date-fns";
+import { cn } from "@/lib/utils";
+
+const TRACK_VIEWS = ["timeline", "table"] as const;
 
 interface TimelineProps {
   orgId: string;
@@ -22,6 +63,7 @@ interface TimelineProps {
 }
 
 export function Timeline({ orgId, initialDate, highlightEntryId }: TimelineProps) {
+  const [view, setView] = useViewPreference("track", TRACK_VIEWS, "timeline");
   const [entries, setEntries] = useState<TimeEntry[]>([]);
   const [weekRange, setWeekRange] = useState<WeekRange>(() =>
     getWeekRange(initialDate ? new Date(initialDate + "T12:00:00") : new Date())
@@ -458,52 +500,70 @@ export function Timeline({ orgId, initialDate, highlightEntryId }: TimelineProps
     <TooltipProvider>
       <div className="space-y-6">
         {/* Week navigation header */}
-        <WeekHeader
-          weekRange={weekRange}
-          todayTotal={todayTotal}
-          weekTotal={weekTotal}
-          onPreviousWeek={goToPreviousWeek}
-          onNextWeek={goToNextWeek}
-          onToday={goToToday}
-          isCurrentWeek={isCurrentWeek}
-        />
+        <PageToolbar
+          actions={
+            <ViewSwitcher views={TRACK_VIEWS} value={view} onValueChange={setView} />
+          }
+        >
+          <WeekHeader
+            weekRange={weekRange}
+            todayTotal={todayTotal}
+            weekTotal={weekTotal}
+            onPreviousWeek={goToPreviousWeek}
+            onNextWeek={goToNextWeek}
+            onToday={goToToday}
+            isCurrentWeek={isCurrentWeek}
+          />
+        </PageToolbar>
 
         <div className="h-px bg-border" />
 
-        {/* Day groups */}
-        {dayGroups.length === 0 ? (
-          <div className="py-12 text-center">
-            <p className="text-muted-foreground">
-              No time logged yet this week.
-            </p>
-            <p className="text-sm text-muted-foreground mt-1">
-              Use the entry bar above to start tracking.
-            </p>
-          </div>
+        {/* View content */}
+        {view === "table" ? (
+          <TimelineTable
+            entries={entries}
+            onDuplicate={duplicateEntry}
+            onDelete={deleteEntry}
+            onMakeRecurring={makeRecurring}
+          />
         ) : (
-          <div className="space-y-8">
-            {dayGroups.map((group) => (
-              <DayGroup
-                key={group.date}
-                date={group.date}
-                entries={group.entries}
-                totalMinutes={group.totalMinutes}
-                orgId={orgId}
-                onUpdateEntry={updateEntry}
-                onDeleteEntry={deleteEntry}
-                onDuplicateEntry={duplicateEntry}
-                onMakeRecurring={makeRecurring}
-                onMoveEntry={moveEntry}
-                highlightedEntryId={highlightedId}
-                onClearHighlight={() => setHighlightedId(undefined)}
-                recurringTemplates={recurringByDate[group.date] || []}
-                onRecurringAdd={(t) => handleRecurringAdd(t, group.date)}
-                onRecurringSkip={(t) => handleRecurringSkip(t, group.date)}
-                onRecurringPause={handleRecurringPause}
-                onRecurringDelete={handleRecurringDelete}
-              />
-            ))}
-          </div>
+          <>
+            {/* Day groups */}
+            {dayGroups.length === 0 ? (
+              <div className="py-12 text-center">
+                <p className="text-muted-foreground">
+                  No time logged yet this week.
+                </p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Use the entry bar above to start tracking.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-8">
+                {dayGroups.map((group) => (
+                  <DayGroup
+                    key={group.date}
+                    date={group.date}
+                    entries={group.entries}
+                    totalMinutes={group.totalMinutes}
+                    orgId={orgId}
+                    onUpdateEntry={updateEntry}
+                    onDeleteEntry={deleteEntry}
+                    onDuplicateEntry={duplicateEntry}
+                    onMakeRecurring={makeRecurring}
+                    onMoveEntry={moveEntry}
+                    highlightedEntryId={highlightedId}
+                    onClearHighlight={() => setHighlightedId(undefined)}
+                    recurringTemplates={recurringByDate[group.date] || []}
+                    onRecurringAdd={(t) => handleRecurringAdd(t, group.date)}
+                    onRecurringSkip={(t) => handleRecurringSkip(t, group.date)}
+                    onRecurringPause={handleRecurringPause}
+                    onRecurringDelete={handleRecurringDelete}
+                  />
+                ))}
+              </div>
+            )}
+          </>
         )}
 
         {/* Loading indicator when refetching */}
@@ -522,5 +582,214 @@ export function Timeline({ orgId, initialDate, highlightEntryId }: TimelineProps
         orgId={orgId}
       />
     </TooltipProvider>
+  );
+}
+
+// --- Table view ---
+
+type TimelineTableProps = {
+  entries: TimeEntry[];
+  onDuplicate: (entry: TimeEntry) => Promise<void>;
+  onDelete: (entryId: string) => Promise<void>;
+  onMakeRecurring: (entry: TimeEntry) => void;
+};
+
+function TimelineTable({
+  entries,
+  onDuplicate,
+  onDelete,
+  onMakeRecurring,
+}: TimelineTableProps) {
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // Sort entries by date descending, then by createdAt descending
+  const sortedEntries = [...entries].sort((a, b) => {
+    const dateCmp = b.date.localeCompare(a.date);
+    if (dateCmp !== 0) return dateCmp;
+    return b.createdAt.localeCompare(a.createdAt);
+  });
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
+    try {
+      await onDelete(deleteTarget);
+    } finally {
+      setIsDeleting(false);
+      setDeleteTarget(null);
+    }
+  };
+
+  if (sortedEntries.length === 0) {
+    return (
+      <div className="py-12 text-center">
+        <p className="text-muted-foreground">
+          No time logged yet this week.
+        </p>
+        <p className="text-sm text-muted-foreground mt-1">
+          Use the entry bar above to start tracking.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="rounded-lg border squircle overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Date</TableHead>
+              <TableHead>Client</TableHead>
+              <TableHead>Project</TableHead>
+              <TableHead>Task</TableHead>
+              <TableHead>Description</TableHead>
+              <TableHead className="text-right">Duration</TableHead>
+              <TableHead>Billable</TableHead>
+              <TableHead className="w-[50px]" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {sortedEntries.map((entry) => (
+              <TableRow key={entry.id}>
+                <TableCell className="text-muted-foreground">
+                  {formatDayHeader(entry.date)}
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="size-2 rounded-full shrink-0"
+                      style={{ backgroundColor: entry.client.color || "#94a3b8" }}
+                    />
+                    <span>{entry.client.name}</span>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  {entry.project ? (
+                    <div className="flex items-center gap-1.5">
+                      <span>{entry.project.name}</span>
+                      {entry.project.code && (
+                        <span className="text-xs text-muted-foreground font-mono bg-muted px-1 py-0.5 rounded">
+                          {entry.project.code}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-muted-foreground">--</span>
+                  )}
+                </TableCell>
+                <TableCell>
+                  {entry.task ? (
+                    <span>{entry.task.name}</span>
+                  ) : (
+                    <span className="text-muted-foreground">--</span>
+                  )}
+                </TableCell>
+                <TableCell className="max-w-[300px]">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="truncate">
+                      {entry.description || (
+                        <span className="text-muted-foreground italic">
+                          No description
+                        </span>
+                      )}
+                    </span>
+                    {entry.tags.length > 0 && (
+                      <div className="flex items-center gap-1 shrink-0">
+                        {entry.tags.map((tag) => (
+                          <span
+                            key={tag}
+                            className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary/80"
+                          >
+                            #{tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell className="text-right font-medium tabular-nums">
+                  {formatDuration(entry.durationMinutes)}
+                </TableCell>
+                <TableCell>
+                  <div
+                    className={cn(
+                      "flex items-center gap-1 text-xs",
+                      entry.isBillable
+                        ? "text-green-600 dark:text-green-400"
+                        : "text-muted-foreground/40"
+                    )}
+                  >
+                    <DollarSign className="size-3" />
+                    {entry.isBillable ? "Billable" : "Non-billable"}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 squircle"
+                      >
+                        <MoreHorizontal className="size-4" />
+                        <span className="sr-only">Actions</span>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="squircle">
+                      <DropdownMenuItem onClick={() => onDuplicate(entry)}>
+                        <Copy className="size-4" />
+                        Duplicate
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => onMakeRecurring(entry)}>
+                        <Repeat className="size-4" />
+                        Make recurring
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={() => setDeleteTarget(entry.id)}
+                        className="text-destructive focus:text-destructive"
+                      >
+                        <Trash2 className="size-4" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Delete confirmation dialog */}
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+      >
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete entry?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete this time entry. This action cannot
+              be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={isDeleting}
+            >
+              {isDeleting ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
