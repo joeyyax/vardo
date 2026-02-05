@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Plus, CalendarIcon, Loader2, Search, Sparkles, List } from "lucide-react";
+import { Plus, CalendarIcon, Loader2, Search } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,14 +19,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { SmartEntryBar } from "@/components/entry/smart-entry-bar";
 
 /**
  * Suggestion with flexible hierarchy.
@@ -159,9 +152,6 @@ export function EntryBar({
   roundingIncrement = 15,
   onEntryCreated,
 }: EntryBarProps) {
-  // Mode toggle state
-  const [isSmartMode, setIsSmartMode] = useState(false);
-
   // Form state
   const [description, setDescription] = useState("");
   const [selectedItem, setSelectedItem] = useState<Suggestion | null>(null);
@@ -408,58 +398,12 @@ export function EntryBar({
     ? formatSuggestionDisplay(selectedItem)
     : null;
 
-  if (isSmartMode) {
-    return (
-      <TooltipProvider>
-        <div className="flex items-start gap-2">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="shrink-0"
-                onClick={() => setIsSmartMode(false)}
-              >
-                <List className="size-4" />
-                <span className="sr-only">Switch to classic entry</span>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Switch to classic entry</TooltipContent>
-          </Tooltip>
-          <SmartEntryBar
-            orgId={orgId}
-            roundingIncrement={roundingIncrement}
-            onEntryCreated={onEntryCreated}
-          />
-        </div>
-      </TooltipProvider>
-    );
-  }
-
   return (
-    <TooltipProvider>
-      <div className="flex items-start gap-2">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="shrink-0"
-              onClick={() => setIsSmartMode(true)}
-            >
-              <Sparkles className="size-4" />
-              <span className="sr-only">Switch to smart entry</span>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Switch to smart entry</TooltipContent>
-        </Tooltip>
-        <form
-          ref={formRef}
-          onSubmit={handleSubmit}
-          className="flex flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3"
-        >
+    <form
+      ref={formRef}
+      onSubmit={handleSubmit}
+      className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3"
+    >
           {/* Description input */}
           <Input
             ref={descriptionRef}
@@ -637,14 +581,12 @@ export function EntryBar({
             <span className="sr-only">Add entry</span>
           </Button>
 
-          {/* Error message - shows inline on mobile, absolute below on desktop */}
-          {error && (
-            <p className="w-full text-sm text-destructive sm:w-auto">
-              {error}
-            </p>
-          )}
-        </form>
-      </div>
-    </TooltipProvider>
+        {/* Error message - shows inline on mobile, absolute below on desktop */}
+      {error && (
+        <p className="w-full text-sm text-destructive sm:w-auto">
+          {error}
+        </p>
+      )}
+    </form>
   );
 }
