@@ -3,10 +3,9 @@ import {
   notifications,
   notificationPreferences,
   taskWatchers,
-  tasks,
   type NotificationType,
 } from "@/lib/db/schema";
-import { eq, and, ne } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 type CreateNotificationParams = {
   userId: string;

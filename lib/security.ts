@@ -1,5 +1,4 @@
 import { headers } from "next/headers";
-import { db } from "@/lib/db";
 
 /**
  * Simple rate limiting using in-memory store.

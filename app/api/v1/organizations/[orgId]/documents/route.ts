@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { documents, projects, clients, DOCUMENT_TYPES, DOCUMENT_STATUSES, type DocumentType, type DocumentStatus } from "@/lib/db/schema";
+import { documents, projects, DOCUMENT_TYPES, DOCUMENT_STATUSES, type DocumentType, type DocumentStatus } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and, desc, inArray } from "drizzle-orm";
 

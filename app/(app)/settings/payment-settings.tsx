@@ -34,7 +34,7 @@ const ICON_MAP = {
 };
 
 export function PaymentSettings({
-  organizationId,
+  organizationId: _organizationId,
   currentProvider,
   connected,
   canEdit,

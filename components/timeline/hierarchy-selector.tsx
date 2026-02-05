@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, ReactNode } from "react";
-import { Check, ChevronRight, Building2, FolderOpen, ListTodo } from "lucide-react";
+import { Check, Building2, FolderOpen, ListTodo } from "lucide-react";
 import {
   Popover,
   PopoverContent,
@@ -16,7 +16,6 @@ import {
   CommandList,
   CommandSeparator,
 } from "@/components/ui/command";
-import { cn } from "@/lib/utils";
 
 interface Task {
   id: string;

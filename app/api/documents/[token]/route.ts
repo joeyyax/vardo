@@ -2,12 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { documents } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { logActivity } from "@/lib/activity";
 import {
   checkPublicRateLimit,
   isValidToken,
   logSecurityEvent,
-  getRequestMetadata,
 } from "@/lib/security";
 
 type RouteParams = {

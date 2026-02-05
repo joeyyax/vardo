@@ -2,13 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { recurringTemplates, clients, projects, tasks, timeEntries } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import {
   getDay,
   getDate,
   getMonth,
   parseISO,
-  isAfter,
   isBefore,
   startOfDay,
   differenceInWeeks,

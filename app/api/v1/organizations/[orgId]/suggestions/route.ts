@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { timeEntries, tasks, projects, clients } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
-import { eq, and, gte, isNull, sql } from "drizzle-orm";
+import { eq, and, gte, sql } from "drizzle-orm";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;

@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { projectInvitations } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth/session";
-import { eq, isNotNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 // GET /api/portal/projects
 // Returns all projects the current user has been invited to
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
     const session = await getSession();
 

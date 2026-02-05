@@ -3,7 +3,7 @@ import Link from "next/link";
 import { getSession } from "@/lib/auth/session";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
-import { LogOut, ArrowLeft } from "lucide-react";
+import { LogOut } from "lucide-react";
 
 export default async function PortalLayout({
   children,

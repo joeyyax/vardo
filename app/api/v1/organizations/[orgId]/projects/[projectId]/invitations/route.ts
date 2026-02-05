@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { projectInvitations, projects, clients, INVITATION_ROLES, DEFAULT_INVITATION_VISIBILITY, type InvitationRole, type InvitationVisibility } from "@/lib/db/schema";
+import { projectInvitations, projects, INVITATION_ROLES, DEFAULT_INVITATION_VISIBILITY, type InvitationRole, type InvitationVisibility } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";

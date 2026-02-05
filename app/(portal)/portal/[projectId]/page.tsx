@@ -10,7 +10,6 @@ import {
   ArrowLeft,
   CheckCircle2,
   Circle,
-  Clock,
   ListTodo,
   RefreshCw,
   User,

@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { documents, projects, DOCUMENT_STATUSES, type DocumentStatus, type DocumentContent } from "@/lib/db/schema";
+import { documents, projects, type DocumentContent } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
-import { nanoid } from "nanoid";
-import { logActivity } from "@/lib/activity";
 
 type RouteParams = {
   params: Promise<{ orgId: string; projectId: string; documentId: string }>;

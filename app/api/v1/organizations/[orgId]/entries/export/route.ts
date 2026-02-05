@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { timeEntries } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and, gte, lte, desc } from "drizzle-orm";
-import { format, parseISO } from "date-fns";
+import { format } from "date-fns";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;

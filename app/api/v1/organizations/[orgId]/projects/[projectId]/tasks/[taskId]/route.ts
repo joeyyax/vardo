@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { tasks, projects, taskRelationships, users, TASK_STATUSES, type TaskStatus } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
-import { eq, and, ne } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { logTaskStatusChanged, logTaskAssigned } from "@/lib/activities";
 import { notifyAssignment, notifyStatusChange } from "@/lib/notifications";
 
