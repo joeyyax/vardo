@@ -426,6 +426,21 @@ export const reportConfigs = pgTable("report_configs", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// Saved report presets (user-saved filter configurations)
+export const savedReportPresets = pgTable("saved_report_presets", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  tab: text("tab").notNull(), // 'overview' | 'accounting' | 'client-reports'
+  filters: jsonb("filters").$type<Record<string, unknown>>().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Invoices
 export const invoices = pgTable(
   "invoices",
@@ -991,6 +1006,7 @@ export const organizationsRelations = relations(organizations, ({ many }) => ({
   taskTypes: many(taskTypes),
   taskTags: many(taskTags),
   activities: many(activities),
+  savedReportPresets: many(savedReportPresets),
 }));
 
 export const importSessionsRelations = relations(importSessions, ({ one }) => ({
@@ -1232,6 +1248,20 @@ export const reportConfigsRelations = relations(reportConfigs, ({ one }) => ({
     references: [projects.id],
   }),
 }));
+
+export const savedReportPresetsRelations = relations(
+  savedReportPresets,
+  ({ one }) => ({
+    organization: one(organizations, {
+      fields: [savedReportPresets.organizationId],
+      references: [organizations.id],
+    }),
+    user: one(users, {
+      fields: [savedReportPresets.userId],
+      references: [users.id],
+    }),
+  })
+);
 
 export const invoicesRelations = relations(invoices, ({ one, many }) => ({
   organization: one(organizations, {
