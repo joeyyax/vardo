@@ -3,6 +3,7 @@ import { getCurrentOrg } from "@/lib/auth/session";
 import { DEFAULT_ORG_FEATURES, type OrgFeatures } from "@/lib/db/schema";
 import { SettingsForm } from "./settings-form";
 import { FeaturesForm } from "./features-form";
+import { PersonalPreferences } from "./personal-preferences";
 import { PaymentSettings } from "./payment-settings";
 import { ImportWizard } from "@/components/settings/import-wizard";
 import { DangerZone } from "@/components/settings/danger-zone";
@@ -33,8 +34,15 @@ export default async function SettingsPage() {
         </p>
       </div>
 
+      {/* Personal Preferences - only show if time tracking is enabled */}
+      {features.time_tracking && <PersonalPreferences />}
+
       {/* Organization Settings */}
-      <SettingsForm organization={organization} canEdit={canEdit} />
+      <SettingsForm
+        organization={organization}
+        canEdit={canEdit}
+        features={features}
+      />
 
       {/* Features */}
       <FeaturesForm

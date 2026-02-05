@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -12,7 +14,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -20,8 +21,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  newDocumentSchema,
+  type NewDocumentFormData,
+} from "@/lib/schemas/document";
 
 type Project = {
   id: string;
@@ -50,9 +63,13 @@ export function NewDocumentDialog({
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(false);
 
-  // Form state
-  const [title, setTitle] = useState("");
-  const [projectId, setProjectId] = useState("");
+  const form = useForm<NewDocumentFormData>({
+    resolver: zodResolver(newDocumentSchema),
+    defaultValues: {
+      title: "",
+      projectId: "",
+    },
+  });
 
   // Fetch projects when dialog opens
   useEffect(() => {
@@ -64,10 +81,9 @@ export function NewDocumentDialog({
   // Reset form when dialog closes
   useEffect(() => {
     if (!open) {
-      setTitle("");
-      setProjectId("");
+      form.reset();
     }
-  }, [open]);
+  }, [open, form]);
 
   async function fetchProjects() {
     setProjectsLoading(true);
@@ -84,29 +100,17 @@ export function NewDocumentDialog({
     }
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-
-    if (!projectId) {
-      toast.error("Please select a project");
-      return;
-    }
-
-    if (!title.trim()) {
-      toast.error("Title is required");
-      return;
-    }
-
+  async function onSubmit(data: NewDocumentFormData) {
     setIsLoading(true);
     try {
       const response = await fetch(
-        `/api/v1/organizations/${orgId}/projects/${projectId}/documents`,
+        `/api/v1/organizations/${orgId}/projects/${data.projectId}/documents`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             type,
-            title: title.trim(),
+            title: data.title.trim(),
             content: {
               sections: [
                 {
@@ -123,12 +127,14 @@ export function NewDocumentDialog({
 
       if (response.ok) {
         const document = await response.json();
-        toast.success(`${type === "proposal" ? "Proposal" : "Contract"} created`);
+        toast.success(
+          `${type === "proposal" ? "Proposal" : "Contract"} created`
+        );
         onOpenChange(false);
-        router.push(`/projects/${projectId}/documents/${document.id}`);
+        router.push(`/projects/${data.projectId}/documents/${document.id}`);
       } else {
-        const data = await response.json();
-        toast.error(data.error || `Failed to create ${type}`);
+        const errorData = await response.json();
+        toast.error(errorData.error || `Failed to create ${type}`);
       }
     } catch (err) {
       console.error(`Error creating ${type}:`, err);
@@ -139,14 +145,17 @@ export function NewDocumentDialog({
   }
 
   // Group projects by client for the dropdown
-  const projectsByClient = projects.reduce((acc, project) => {
-    const clientName = project.client.name;
-    if (!acc[clientName]) {
-      acc[clientName] = [];
-    }
-    acc[clientName].push(project);
-    return acc;
-  }, {} as Record<string, Project[]>);
+  const projectsByClient = projects.reduce(
+    (acc, project) => {
+      const clientName = project.client.name;
+      if (!acc[clientName]) {
+        acc[clientName] = [];
+      }
+      acc[clientName].push(project);
+      return acc;
+    },
+    {} as Record<string, Project[]>
+  );
 
   const typeLabel = type === "proposal" ? "Proposal" : "Contract";
 
@@ -160,70 +169,93 @@ export function NewDocumentDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="project">Project</Label>
-            <Select value={projectId} onValueChange={setProjectId}>
-              <SelectTrigger id="project" className="squircle">
-                <SelectValue placeholder="Select project" />
-              </SelectTrigger>
-              <SelectContent className="squircle">
-                {projectsLoading ? (
-                  <div className="flex items-center justify-center py-2">
-                    <Loader2 className="size-4 animate-spin" />
-                  </div>
-                ) : projects.length === 0 ? (
-                  <div className="px-2 py-4 text-center text-sm text-muted-foreground">
-                    No projects found. Create a project first.
-                  </div>
-                ) : (
-                  Object.entries(projectsByClient).map(([clientName, clientProjects]) => (
-                    <div key={clientName}>
-                      <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
-                        {clientName}
-                      </div>
-                      {clientProjects.map((project) => (
-                        <SelectItem key={project.id} value={project.id}>
-                          {project.name}
-                        </SelectItem>
-                      ))}
-                    </div>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="title">Title</Label>
-            <Input
-              id="title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder={`e.g., Website Redesign ${typeLabel}`}
-              className="squircle"
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <FormField
+              control={form.control}
+              name="projectId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Project</FormLabel>
+                  <Select
+                    onValueChange={field.onChange}
+                    defaultValue={field.value}
+                  >
+                    <FormControl>
+                      <SelectTrigger className="squircle">
+                        <SelectValue placeholder="Select project" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent className="squircle">
+                      {projectsLoading ? (
+                        <div className="flex items-center justify-center py-2">
+                          <Loader2 className="size-4 animate-spin" />
+                        </div>
+                      ) : projects.length === 0 ? (
+                        <div className="px-2 py-4 text-center text-sm text-muted-foreground">
+                          No projects found. Create a project first.
+                        </div>
+                      ) : (
+                        Object.entries(projectsByClient).map(
+                          ([clientName, clientProjects]) => (
+                            <div key={clientName}>
+                              <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+                                {clientName}
+                              </div>
+                              {clientProjects.map((project) => (
+                                <SelectItem key={project.id} value={project.id}>
+                                  {project.name}
+                                </SelectItem>
+                              ))}
+                            </div>
+                          )
+                        )
+                      )}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
             />
-          </div>
 
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              className="squircle"
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              disabled={isLoading || !projectId}
-              className="squircle"
-            >
-              {isLoading && <Loader2 className="size-4 animate-spin" />}
-              Create {typeLabel}
-            </Button>
-          </DialogFooter>
-        </form>
+            <FormField
+              control={form.control}
+              name="title"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Title</FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      placeholder={`e.g., Website Redesign ${typeLabel}`}
+                      className="squircle"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                className="squircle"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={isLoading || !form.watch("projectId")}
+                className="squircle"
+              >
+                {isLoading && <Loader2 className="size-4 animate-spin" />}
+                Create {typeLabel}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );

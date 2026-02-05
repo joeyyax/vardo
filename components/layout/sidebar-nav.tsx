@@ -30,6 +30,8 @@ type NavItem = {
   description: string;
   // Which feature flag enables this nav item (undefined = always show)
   feature?: keyof OrgFeatures;
+  // Custom visibility check for items that depend on multiple features
+  visibleWhen?: (features: OrgFeatures) => boolean;
 };
 
 const navItems: NavItem[] = [
@@ -73,7 +75,7 @@ const navItems: NavItem[] = [
     href: "/expenses",
     icon: Receipt,
     description: "Track expenses",
-    // Always visible - core financial feature
+    feature: "expenses",
   },
   {
     label: "Clients",
@@ -87,7 +89,8 @@ const navItems: NavItem[] = [
     href: "/projects",
     icon: Folder,
     description: "Manage projects",
-    // Always visible - core feature
+    // Show if time_tracking OR pm is enabled
+    visibleWhen: (features) => features.time_tracking || features.pm,
   },
   {
     label: "Tasks",
@@ -114,9 +117,13 @@ export function SidebarNav({ features }: SidebarNavProps) {
 
   // Filter nav items based on enabled features
   const visibleItems = navItems.filter((item) => {
-    if (!item.feature) return true; // Always show items without feature requirement
     if (!features) return true; // Show all if no features object (backward compat)
-    return features[item.feature];
+    // Custom visibility check takes precedence
+    if (item.visibleWhen) return item.visibleWhen(features);
+    // Single feature flag check
+    if (item.feature) return features[item.feature];
+    // No feature requirement - always show
+    return true;
   });
 
   return (

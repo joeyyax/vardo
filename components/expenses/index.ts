@@ -1,3 +1,4 @@
+export { ExpenseDialog } from "./expense-dialog";
 export { ExpenseDetailModal } from "./expense-detail-modal";
 export { ExpenseDetailView } from "./expense-detail-view";
 export { ExpenseDetailEdit } from "./expense-detail-edit";

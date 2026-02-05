@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { projectExpenses, projects, EXPENSE_STATUSES, type ExpenseStatus } from "@/lib/db/schema";
-import { requireOrg } from "@/lib/auth/session";
+import { projectExpenses, projects, activities, EXPENSE_STATUSES, type ExpenseStatus } from "@/lib/db/schema";
+import { requireOrg, getSession } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 
 type RouteParams = {
@@ -188,11 +188,50 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       updateData.recurringEndDate = recurringEndDate || null;
     }
 
+    const session = await getSession();
+    const actorId = session?.user?.id ?? null;
+
     const [updated] = await db
       .update(projectExpenses)
       .set(updateData)
       .where(eq(projectExpenses.id, expenseId))
       .returning();
+
+    // Log field-level changes to activity feed
+    const trackableFields: { key: string; label: string }[] = [
+      { key: "description", label: "description" },
+      { key: "amountCents", label: "amount" },
+      { key: "category", label: "category" },
+      { key: "date", label: "date" },
+      { key: "vendor", label: "vendor" },
+      { key: "isBillable", label: "billable" },
+      { key: "projectId", label: "project" },
+      { key: "status", label: "status" },
+    ];
+
+    const activityInserts = trackableFields
+      .filter((f) => f.key in updateData && f.key !== "updatedAt")
+      .filter((f) => {
+        const oldVal = expense[f.key as keyof typeof expense];
+        const newVal = updateData[f.key];
+        return String(oldVal ?? "") !== String(newVal ?? "");
+      })
+      .map((f) => ({
+        organizationId: orgId,
+        actorId,
+        actorType: "user" as const,
+        entityType: "expense" as const,
+        entityId: expenseId,
+        projectId: expense.projectId,
+        action: f.key === "status" ? ("status_changed" as const) : ("updated" as const),
+        field: f.label,
+        oldValue: String(expense[f.key as keyof typeof expense] ?? ""),
+        newValue: String(updateData[f.key] ?? ""),
+      }));
+
+    if (activityInserts.length > 0) {
+      await db.insert(activities).values(activityInserts);
+    }
 
     return NextResponse.json(updated);
   } catch (error) {

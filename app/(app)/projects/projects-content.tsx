@@ -7,7 +7,6 @@ import {
   DollarSign,
   FolderKanban,
   Archive,
-  Filter,
   Edit,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -21,6 +20,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { ViewSwitcher } from "@/components/view-switcher";
+import { useViewPreference } from "@/hooks/use-view-preference";
+import { PageToolbar } from "@/components/page-toolbar";
+import { cn } from "@/lib/utils";
+import {
   ProjectDialog,
   type Project,
   type Client,
@@ -33,7 +44,10 @@ type ProjectsContentProps = {
   orgId: string;
 };
 
+const PROJECT_VIEWS = ["list", "table"] as const;
+
 export function ProjectsContent({ orgId }: ProjectsContentProps) {
+  const [view, setView] = useViewPreference("projects", PROJECT_VIEWS, "list");
   const [projects, setProjects] = useState<Project[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -148,91 +162,87 @@ export function ProjectsContent({ orgId }: ProjectsContentProps) {
   return (
     <>
       <div className="space-y-4">
-        {/* Header with filters and new button */}
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            {/* Client filter */}
-            <div className="flex items-center gap-2">
-              <Filter className="size-4 text-muted-foreground" />
-              <Select
-                value={filterClientId || "all"}
-                onValueChange={(value) =>
-                  setFilterClientId(value === "all" ? null : value)
-                }
-              >
-                <SelectTrigger className="squircle w-[180px]">
-                  <SelectValue placeholder="All clients" />
-                </SelectTrigger>
-                <SelectContent className="squircle">
-                  <SelectItem value="all">All clients</SelectItem>
-                  {clients.map((client) => (
-                    <SelectItem key={client.id} value={client.id}>
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="size-2.5 shrink-0 rounded-full ring-1 ring-border"
-                          style={{
-                            backgroundColor: client.color || "#94a3b8",
-                          }}
-                        />
-                        <span>{client.name}</span>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+        <PageToolbar
+          actions={
+            <>
+              <ViewSwitcher views={PROJECT_VIEWS} value={view} onValueChange={setView} />
+              <Button onClick={handleNewProject} className="squircle">
+                <Plus className="size-4" />
+                New project
+              </Button>
+            </>
+          }
+        >
+          <Select
+            value={filterClientId || "all"}
+            onValueChange={(value) =>
+              setFilterClientId(value === "all" ? null : value)
+            }
+          >
+            <SelectTrigger className="squircle w-[180px]">
+              <SelectValue placeholder="All clients" />
+            </SelectTrigger>
+            <SelectContent className="squircle">
+              <SelectItem value="all">All clients</SelectItem>
+              {clients.map((client) => (
+                <SelectItem key={client.id} value={client.id}>
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="size-2.5 shrink-0 rounded-full ring-1 ring-border"
+                      style={{
+                        backgroundColor: client.color || "#94a3b8",
+                      }}
+                    />
+                    <span>{client.name}</span>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-            {/* Stage filter */}
-            <Select
-              value={filterStage}
-              onValueChange={(value) =>
-                setFilterStage(value as ProjectStage | "all")
-              }
+          <Select
+            value={filterStage}
+            onValueChange={(value) =>
+              setFilterStage(value as ProjectStage | "all")
+            }
+          >
+            <SelectTrigger className="squircle w-[160px]">
+              <SelectValue placeholder="All stages" />
+            </SelectTrigger>
+            <SelectContent className="squircle">
+              <SelectItem value="all">All stages</SelectItem>
+              {(Object.keys(PROJECT_STAGE_LABELS) as ProjectStage[]).map(
+                (stageKey) => (
+                  <SelectItem key={stageKey} value={stageKey}>
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={`size-2 rounded-full ${
+                          PROJECT_STAGE_COLORS[stageKey].split(" ")[0]
+                        }`}
+                      />
+                      {PROJECT_STAGE_LABELS[stageKey]}
+                    </div>
+                  </SelectItem>
+                )
+              )}
+            </SelectContent>
+          </Select>
+
+          <div className="flex items-center gap-2">
+            <Switch
+              id="show-archived"
+              checked={showArchived}
+              onCheckedChange={setShowArchived}
+              size="sm"
+            />
+            <Label
+              htmlFor="show-archived"
+              className="cursor-pointer text-sm text-muted-foreground"
             >
-              <SelectTrigger className="squircle w-[160px]">
-                <SelectValue placeholder="All stages" />
-              </SelectTrigger>
-              <SelectContent className="squircle">
-                <SelectItem value="all">All stages</SelectItem>
-                {(Object.keys(PROJECT_STAGE_LABELS) as ProjectStage[]).map(
-                  (stageKey) => (
-                    <SelectItem key={stageKey} value={stageKey}>
-                      <div className="flex items-center gap-2">
-                        <div
-                          className={`size-2 rounded-full ${
-                            PROJECT_STAGE_COLORS[stageKey].split(" ")[0]
-                          }`}
-                        />
-                        {PROJECT_STAGE_LABELS[stageKey]}
-                      </div>
-                    </SelectItem>
-                  )
-                )}
-              </SelectContent>
-            </Select>
-
-            {/* Show archived toggle */}
-            <div className="flex items-center gap-2">
-              <Switch
-                id="show-archived"
-                checked={showArchived}
-                onCheckedChange={setShowArchived}
-                size="sm"
-              />
-              <Label
-                htmlFor="show-archived"
-                className="cursor-pointer text-sm text-muted-foreground"
-              >
-                Show archived
-              </Label>
-            </div>
+              Show archived
+            </Label>
           </div>
-
-          <Button onClick={handleNewProject} className="squircle">
-            <Plus className="size-4" />
-            New project
-          </Button>
-        </div>
+        </PageToolbar>
 
         {/* Projects list or empty state */}
         {(() => {
@@ -251,6 +261,108 @@ export function ProjectsContent({ orgId }: ProjectsContentProps) {
                 hasClients={clients.length > 0}
                 isFiltered={isFiltered}
               />
+            );
+          }
+
+          if (view === "table") {
+            return (
+              <div className="rounded-lg border squircle overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Project</TableHead>
+                      <TableHead>Client</TableHead>
+                      <TableHead>Stage</TableHead>
+                      <TableHead>Rate</TableHead>
+                      <TableHead>Billable</TableHead>
+                      <TableHead className="w-[50px]" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredProjects.map((project) => {
+                      const stage = project.stage || "active";
+                      const formattedRate = project.rateOverride
+                        ? `$${(project.rateOverride / 100).toFixed(2)}/hr`
+                        : null;
+
+                      return (
+                        <TableRow
+                          key={project.id}
+                          className="cursor-pointer"
+                          onClick={() => window.location.href = `/projects/${project.id}`}
+                        >
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">{project.name}</span>
+                              {project.code && (
+                                <span className="text-xs text-muted-foreground font-mono bg-muted px-1.5 py-0.5 rounded">
+                                  {project.code}
+                                </span>
+                              )}
+                              {project.isArchived && (
+                                <span className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+                                  <Archive className="size-3" />
+                                  Archived
+                                </span>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <div
+                                className="size-2 rounded-full shrink-0"
+                                style={{ backgroundColor: project.client.color || "#94a3b8" }}
+                              />
+                              {project.client.name}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <span
+                              className={cn(
+                                "text-xs px-1.5 py-0.5 rounded",
+                                PROJECT_STAGE_COLORS[stage]
+                              )}
+                            >
+                              {PROJECT_STAGE_LABELS[stage]}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {formattedRate || "Inherited"}
+                          </TableCell>
+                          <TableCell>
+                            {project.isBillable !== null && (
+                              <div
+                                className={cn(
+                                  "flex items-center gap-1 text-xs",
+                                  project.isBillable
+                                    ? "text-emerald-600 dark:text-emerald-400"
+                                    : "text-muted-foreground"
+                                )}
+                              >
+                                <DollarSign className="size-3" />
+                                {project.isBillable ? "Billable" : "Non-billable"}
+                              </div>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleEditProject(project);
+                              }}
+                              className="size-8 squircle"
+                            >
+                              <Edit className="size-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
             );
           }
 

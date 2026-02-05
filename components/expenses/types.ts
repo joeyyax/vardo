@@ -30,10 +30,11 @@ export type Expense = {
   } | null;
 };
 
-export type MonthRange = {
-  from: string; // YYYY-MM-DD (first day of month)
-  to: string; // YYYY-MM-DD (last day of month)
-  label: string; // "January 2024"
+export type DateRange = {
+  from: string; // YYYY-MM-DD
+  to: string; // YYYY-MM-DD
+  label: string; // e.g. "January 2024" or "Jan 1 – Mar 31, 2024"
+  preset: string; // Preset key, e.g. "this-month", "custom"
 };
 
 export type ExpenseSummary = {

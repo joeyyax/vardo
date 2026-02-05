@@ -13,6 +13,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { Switch } from "@/components/ui/switch";
 import {
   Form,
@@ -23,8 +36,10 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { Loader2, RefreshCw } from "lucide-react";
+import { Loader2, RefreshCw, Check, ChevronsUpDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { eventBus } from "@/lib/events";
 import { expenseSchema, type ExpenseFormData } from "@/lib/schemas/expense";
 import type { Expense } from "./types";
 
@@ -90,6 +105,8 @@ export function ExpenseDetailEdit({
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(false);
   const [vendors, setVendors] = useState<string[]>([]);
+  const [vendorOpen, setVendorOpen] = useState(false);
+  const [vendorSearch, setVendorSearch] = useState("");
 
   const form = useForm<ExpenseFormData>({
     resolver: zodResolver(expenseSchema),
@@ -178,6 +195,7 @@ export function ExpenseDetailEdit({
       );
 
       if (response.ok) {
+        eventBus.emit("expense:updated", { expenseId: expense.id });
         toast.success("Expense updated");
         onSave();
       } else {
@@ -297,25 +315,113 @@ export function ExpenseDetailEdit({
         <FormField
           control={form.control}
           name="vendor"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Vendor</FormLabel>
-              <FormControl>
-                <Input
-                  {...field}
-                  placeholder="e.g., Adobe, AWS"
-                  className="squircle"
-                  list="vendor-suggestions-edit"
-                />
-              </FormControl>
-              <datalist id="vendor-suggestions-edit">
-                {vendors.map((v) => (
-                  <option key={v} value={v} />
-                ))}
-              </datalist>
-              <FormMessage />
-            </FormItem>
-          )}
+          render={({ field }) => {
+            const filteredVendors = vendors.filter(
+              (v) =>
+                !vendorSearch ||
+                v.toLowerCase().includes(vendorSearch.toLowerCase())
+            );
+
+            return (
+              <FormItem className="flex flex-col">
+                <FormLabel>Vendor</FormLabel>
+                <Popover open={vendorOpen} onOpenChange={setVendorOpen}>
+                  <PopoverTrigger asChild>
+                    <FormControl>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={vendorOpen}
+                        className={cn(
+                          "squircle justify-between font-normal",
+                          !field.value && "text-muted-foreground"
+                        )}
+                      >
+                        {field.value || "Select or type a vendor..."}
+                        <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
+                      </Button>
+                    </FormControl>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                    <Command shouldFilter={false}>
+                      <CommandInput
+                        placeholder="Search vendors..."
+                        value={vendorSearch}
+                        onValueChange={setVendorSearch}
+                      />
+                      <CommandList>
+                        {/* Allow typing a new vendor */}
+                        {vendorSearch &&
+                          !vendors.some(
+                            (v) =>
+                              v.toLowerCase() === vendorSearch.toLowerCase()
+                          ) && (
+                            <CommandGroup heading="New">
+                              <CommandItem
+                                value={vendorSearch}
+                                onSelect={() => {
+                                  field.onChange(vendorSearch);
+                                  setVendorSearch("");
+                                  setVendorOpen(false);
+                                }}
+                              >
+                                Add &ldquo;{vendorSearch}&rdquo;
+                              </CommandItem>
+                            </CommandGroup>
+                          )}
+
+                        {filteredVendors.length === 0 && !vendorSearch && (
+                          <CommandEmpty>No vendors found.</CommandEmpty>
+                        )}
+
+                        {filteredVendors.length > 0 && (
+                          <CommandGroup heading="Recent vendors">
+                            {filteredVendors.map((v) => (
+                              <CommandItem
+                                key={v}
+                                value={v}
+                                onSelect={() => {
+                                  field.onChange(v);
+                                  setVendorSearch("");
+                                  setVendorOpen(false);
+                                }}
+                                className="flex items-center justify-between"
+                              >
+                                {v}
+                                {field.value === v && (
+                                  <Check className="size-4 text-primary shrink-0" />
+                                )}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        )}
+
+                        {/* Clear option when a value is set */}
+                        {field.value && (
+                          <>
+                            <CommandGroup>
+                              <CommandItem
+                                value="__clear__"
+                                onSelect={() => {
+                                  field.onChange("");
+                                  setVendorSearch("");
+                                  setVendorOpen(false);
+                                }}
+                                className="text-muted-foreground"
+                              >
+                                Clear vendor
+                              </CommandItem>
+                            </CommandGroup>
+                          </>
+                        )}
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+                <FormMessage />
+              </FormItem>
+            );
+          }}
         />
 
         <FormField

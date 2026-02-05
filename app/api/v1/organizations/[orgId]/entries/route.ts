@@ -7,6 +7,7 @@ import {
   resolveEntryBillable,
   validateEntryHierarchy,
 } from "@/lib/entries/resolve-billable";
+import { extractTags } from "@/lib/entries/extract-tags";
 import { updateRollingDraftInvoice } from "@/lib/invoices/rolling-draft";
 
 type RouteParams = {
@@ -20,6 +21,7 @@ type RouteParams = {
 function shapeEntryResponse(entry: {
   id: string;
   description: string | null;
+  tags: string[] | null;
   date: string;
   durationMinutes: number;
   isBillableOverride: boolean | null;
@@ -53,6 +55,7 @@ function shapeEntryResponse(entry: {
   return {
     id: entry.id,
     description: entry.description,
+    tags: entry.tags || [],
     date: entry.date,
     durationMinutes: entry.durationMinutes,
     isBillableOverride: entry.isBillableOverride,
@@ -151,6 +154,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       shapeEntryResponse({
         id: entry.id,
         description: entry.description,
+        tags: entry.tags,
         date: entry.date,
         durationMinutes: entry.durationMinutes,
         isBillableOverride: entry.isBillableOverride,
@@ -231,6 +235,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       projectId: string | null;
       taskId: string | null;
       description: string | null;
+      tags: string[] | null;
       date: string;
       durationMinutes: number;
       isBillableOverride: boolean | null;
@@ -297,13 +302,17 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         );
       }
 
+      const description = entry.description?.trim() || null;
+      const tags = extractTags(description);
+
       preparedEntries.push({
         organizationId: orgId,
         userId: session.user.id,
         clientId: entry.clientId,
         projectId: entry.projectId || null,
         taskId: entry.taskId || null,
-        description: entry.description?.trim() || null,
+        description,
+        tags: tags.length > 0 ? tags : null,
         date: entry.date,
         durationMinutes: duration,
         isBillableOverride: entry.isBillableOverride ?? null,
@@ -343,6 +352,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         shapeEntryResponse({
           id: entry.id,
           description: entry.description,
+          tags: entry.tags,
           date: entry.date,
           durationMinutes: entry.durationMinutes,
           isBillableOverride: entry.isBillableOverride,

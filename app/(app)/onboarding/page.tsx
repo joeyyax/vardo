@@ -16,6 +16,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Clock,
   FileText,
+  Receipt,
   Kanban,
   FileSignature,
   ArrowRight,
@@ -43,6 +44,13 @@ const FEATURE_OPTIONS = [
     defaultEnabled: true,
   },
   {
+    key: "expenses" as const,
+    label: "Expense Tracking",
+    description: "Track business expenses, attach receipts, categorize spending",
+    icon: Receipt,
+    defaultEnabled: true,
+  },
+  {
     key: "pm" as const,
     label: "Project Management",
     description: "Task boards, statuses, client portal for collaboration",
@@ -65,6 +73,7 @@ export default function OnboardingPage() {
   const [features, setFeatures] = useState<OrgFeatures>({
     time_tracking: true,
     invoicing: true,
+    expenses: true,
     pm: false,
     proposals: false,
   });

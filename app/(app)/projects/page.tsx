@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { getCurrentOrg } from "@/lib/auth/session";
 import { redirect } from "next/navigation";
+import { DEFAULT_ORG_FEATURES, type OrgFeatures } from "@/lib/db/schema";
 import { ProjectsContent } from "./projects-content";
 
 export default async function ProjectsPage() {
@@ -8,6 +9,16 @@ export default async function ProjectsPage() {
 
   if (!orgData) {
     redirect("/onboarding");
+  }
+
+  // Check if time_tracking OR pm feature is enabled
+  const features: OrgFeatures = {
+    ...DEFAULT_ORG_FEATURES,
+    ...(orgData.organization.features as OrgFeatures | null),
+  };
+
+  if (!features.time_tracking && !features.pm) {
+    redirect("/settings");
   }
 
   return (

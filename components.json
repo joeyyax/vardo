@@ -19,5 +19,9 @@
     "lib": "@/lib",
     "hooks": "@/hooks"
   },
-  "registries": {}
+  "registries": {
+    "@magicui": "https://magicui.design/r/{name}.json",
+    "@8starlabs-ui": "https://ui.8starlabs.com/r/{name}.json",
+    "@diceui": "https://diceui.com/r/{name}.json"
+  }
 }

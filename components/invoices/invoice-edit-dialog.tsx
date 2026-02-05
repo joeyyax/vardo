@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useForm, useFieldArray } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import {
   Dialog,
   DialogContent,
@@ -11,18 +13,19 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Loader2, Trash2 } from "lucide-react";
-
-type LineItem = {
-  id: string;
-  projectName: string;
-  taskName: string | null;
-  description: string | null;
-  minutes: number;
-  rate: number;
-  amount: number;
-};
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+} from "@/components/ui/form";
+import {
+  invoiceEditDialogSchema,
+  type InvoiceEditDialogFormData,
+  type InvoiceLineItem,
+} from "@/lib/schemas/invoice-edit";
 
 type Invoice = {
   id: string;
@@ -55,19 +58,30 @@ export function InvoiceEditDialog({
   orgId,
   onSuccess,
 }: InvoiceEditDialogProps) {
-  const [invoiceNumber, setInvoiceNumber] = useState("");
-  const [lineItems, setLineItems] = useState<LineItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const form = useForm<InvoiceEditDialogFormData>({
+    resolver: zodResolver(invoiceEditDialogSchema),
+    defaultValues: {
+      invoiceNumber: "",
+      lineItems: [],
+    },
+  });
+
+  const { fields, remove, update } = useFieldArray({
+    control: form.control,
+    name: "lineItems",
+  });
+
   // Fetch invoice details when dialog opens
   useEffect(() => {
     if (open && invoice) {
-      setInvoiceNumber(invoice.invoiceNumber);
+      form.setValue("invoiceNumber", invoice.invoiceNumber);
       fetchLineItems();
     }
-  }, [open, invoice]);
+  }, [open, invoice, form]);
 
   const fetchLineItems = async () => {
     if (!invoice) return;
@@ -79,7 +93,7 @@ export function InvoiceEditDialog({
       );
       if (!response.ok) throw new Error("Failed to fetch invoice details");
       const data = await response.json();
-      setLineItems(data.lineItems || []);
+      form.setValue("lineItems", data.lineItems || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load invoice");
     } finally {
@@ -87,36 +101,32 @@ export function InvoiceEditDialog({
     }
   };
 
-  const updateLineItem = (id: string, field: keyof LineItem, value: string | number) => {
-    setLineItems((prev) =>
-      prev.map((item) => {
-        if (item.id !== id) return item;
+  const updateLineItem = (
+    index: number,
+    field: keyof InvoiceLineItem,
+    value: string | number | null
+  ) => {
+    const currentItem = fields[index];
+    const updated = { ...currentItem, [field]: value };
 
-        const updated = { ...item, [field]: value };
+    // Recalculate amount if minutes or rate changed
+    if (field === "minutes" || field === "rate") {
+      const minutes = field === "minutes" ? Number(value) : currentItem.minutes;
+      const rate = field === "rate" ? Number(value) : currentItem.rate;
+      updated.amount = Math.round((minutes / 60) * rate);
+    }
 
-        // Recalculate amount if minutes or rate changed
-        if (field === "minutes" || field === "rate") {
-          const minutes = field === "minutes" ? Number(value) : item.minutes;
-          const rate = field === "rate" ? Number(value) : item.rate;
-          updated.amount = Math.round((minutes / 60) * rate);
-        }
-
-        return updated;
-      })
-    );
-  };
-
-  const removeLineItem = (id: string) => {
-    setLineItems((prev) => prev.filter((item) => item.id !== id));
+    update(index, updated);
   };
 
   const calculateTotals = () => {
-    const totalMinutes = lineItems.reduce((sum, item) => sum + item.minutes, 0);
-    const subtotal = lineItems.reduce((sum, item) => sum + item.amount, 0);
+    const items = form.getValues("lineItems");
+    const totalMinutes = items.reduce((sum, item) => sum + item.minutes, 0);
+    const subtotal = items.reduce((sum, item) => sum + item.amount, 0);
     return { totalMinutes, subtotal };
   };
 
-  const handleSave = async () => {
+  const onSubmit = async (data: InvoiceEditDialogFormData) => {
     if (!invoice) return;
 
     setIsLoading(true);
@@ -131,10 +141,10 @@ export function InvoiceEditDialog({
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            invoiceNumber,
+            invoiceNumber: data.invoiceNumber,
             totalMinutes,
             subtotal,
-            lineItems: lineItems.map((item) => ({
+            lineItems: data.lineItems.map((item) => ({
               id: item.id,
               description: item.description,
               minutes: item.minutes,
@@ -146,8 +156,8 @@ export function InvoiceEditDialog({
       );
 
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Failed to update invoice");
+        const responseData = await response.json();
+        throw new Error(responseData.error || "Failed to update invoice");
       }
 
       onOpenChange(false);
@@ -170,7 +180,8 @@ export function InvoiceEditDialog({
         <DialogHeader>
           <DialogTitle>Edit Invoice</DialogTitle>
           <DialogDescription>
-            {invoice?.client.name} • {invoice?.periodStart} to {invoice?.periodEnd}
+            {invoice?.client.name} • {invoice?.periodStart} to{" "}
+            {invoice?.periodEnd}
           </DialogDescription>
         </DialogHeader>
 
@@ -185,120 +196,154 @@ export function InvoiceEditDialog({
             <Loader2 className="size-6 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <div className="space-y-6">
-            {/* Invoice Number */}
-            <div className="space-y-2">
-              <Label htmlFor="invoice-number">Invoice Number</Label>
-              <Input
-                id="invoice-number"
-                value={invoiceNumber}
-                onChange={(e) => setInvoiceNumber(e.target.value)}
-                className="squircle max-w-xs"
+          <Form {...form}>
+            <form
+              onSubmit={form.handleSubmit(onSubmit)}
+              className="space-y-6"
+              id="invoice-edit-form"
+            >
+              {/* Invoice Number */}
+              <FormField
+                control={form.control}
+                name="invoiceNumber"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Invoice Number</FormLabel>
+                    <FormControl>
+                      <Input {...field} className="squircle max-w-xs" />
+                    </FormControl>
+                  </FormItem>
+                )}
               />
-            </div>
 
-            {/* Line Items */}
-            <div className="space-y-3">
-              <Label>Line Items</Label>
-              <div className="rounded-lg border">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b bg-muted/50">
-                      <th className="px-3 py-2 text-left font-medium">Description</th>
-                      <th className="px-3 py-2 text-right font-medium w-24">Hours</th>
-                      <th className="px-3 py-2 text-right font-medium w-28">Rate</th>
-                      <th className="px-3 py-2 text-right font-medium w-28">Amount</th>
-                      <th className="px-3 py-2 w-10"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {lineItems.map((item) => (
-                      <tr key={item.id} className="border-b last:border-0">
-                        <td className="px-3 py-2">
-                          <div className="space-y-1">
-                            <div className="font-medium">{item.projectName}</div>
-                            {item.taskName && (
-                              <div className="text-xs text-muted-foreground">
-                                {item.taskName}
+              {/* Line Items */}
+              <div className="space-y-3">
+                <FormLabel>Line Items</FormLabel>
+                <div className="rounded-lg border">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-muted/50">
+                        <th className="px-3 py-2 text-left font-medium">
+                          Description
+                        </th>
+                        <th className="px-3 py-2 text-right font-medium w-24">
+                          Hours
+                        </th>
+                        <th className="px-3 py-2 text-right font-medium w-28">
+                          Rate
+                        </th>
+                        <th className="px-3 py-2 text-right font-medium w-28">
+                          Amount
+                        </th>
+                        <th className="px-3 py-2 w-10"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {fields.map((item, index) => (
+                        <tr key={item.id} className="border-b last:border-0">
+                          <td className="px-3 py-2">
+                            <div className="space-y-1">
+                              <div className="font-medium">
+                                {item.projectName}
                               </div>
-                            )}
-                            <Input
-                              value={item.description || ""}
-                              onChange={(e) =>
-                                updateLineItem(item.id, "description", e.target.value)
-                              }
-                              placeholder="Description"
-                              className="squircle h-8 text-sm"
-                            />
-                          </div>
-                        </td>
-                        <td className="px-3 py-2">
-                          <Input
-                            type="number"
-                            step="0.25"
-                            value={formatHours(item.minutes)}
-                            onChange={(e) =>
-                              updateLineItem(
-                                item.id,
-                                "minutes",
-                                Math.round(parseFloat(e.target.value || "0") * 60)
-                              )
-                            }
-                            className="squircle h-8 text-right tabular-nums"
-                          />
-                        </td>
-                        <td className="px-3 py-2">
-                          <div className="flex items-center">
-                            <span className="text-muted-foreground mr-1">$</span>
+                              {item.taskName && (
+                                <div className="text-xs text-muted-foreground">
+                                  {item.taskName}
+                                </div>
+                              )}
+                              <Input
+                                value={item.description || ""}
+                                onChange={(e) =>
+                                  updateLineItem(
+                                    index,
+                                    "description",
+                                    e.target.value
+                                  )
+                                }
+                                placeholder="Description"
+                                className="squircle h-8 text-sm"
+                              />
+                            </div>
+                          </td>
+                          <td className="px-3 py-2">
                             <Input
                               type="number"
-                              step="0.01"
-                              value={(item.rate / 100).toFixed(2)}
+                              step="0.25"
+                              value={formatHours(item.minutes)}
                               onChange={(e) =>
                                 updateLineItem(
-                                  item.id,
-                                  "rate",
-                                  Math.round(parseFloat(e.target.value || "0") * 100)
+                                  index,
+                                  "minutes",
+                                  Math.round(
+                                    parseFloat(e.target.value || "0") * 60
+                                  )
                                 )
                               }
                               className="squircle h-8 text-right tabular-nums"
                             />
-                          </div>
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums font-medium">
-                          {formatCurrency(item.amount)}
-                        </td>
-                        <td className="px-3 py-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="size-8 text-muted-foreground hover:text-destructive"
-                            onClick={() => removeLineItem(item.id)}
-                          >
-                            <Trash2 className="size-4" />
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="flex items-center">
+                              <span className="text-muted-foreground mr-1">
+                                $
+                              </span>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                value={(item.rate / 100).toFixed(2)}
+                                onChange={(e) =>
+                                  updateLineItem(
+                                    index,
+                                    "rate",
+                                    Math.round(
+                                      parseFloat(e.target.value || "0") * 100
+                                    )
+                                  )
+                                }
+                                className="squircle h-8 text-right tabular-nums"
+                              />
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums font-medium">
+                            {formatCurrency(item.amount)}
+                          </td>
+                          <td className="px-3 py-2">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="size-8 text-muted-foreground hover:text-destructive"
+                              onClick={() => remove(index)}
+                            >
+                              <Trash2 className="size-4" />
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
 
-            {/* Totals */}
-            <div className="flex justify-end">
-              <div className="w-64 space-y-2 text-sm">
-                <div className="flex justify-between text-muted-foreground">
-                  <span>Total Hours</span>
-                  <span className="tabular-nums">{formatHours(totalMinutes)}</span>
-                </div>
-                <div className="flex justify-between border-t pt-2 text-lg font-bold">
-                  <span>Total</span>
-                  <span className="tabular-nums">{formatCurrency(subtotal)}</span>
+              {/* Totals */}
+              <div className="flex justify-end">
+                <div className="w-64 space-y-2 text-sm">
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Total Hours</span>
+                    <span className="tabular-nums">
+                      {formatHours(totalMinutes)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between border-t pt-2 text-lg font-bold">
+                    <span>Total</span>
+                    <span className="tabular-nums">
+                      {formatCurrency(subtotal)}
+                    </span>
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
+            </form>
+          </Form>
         )}
 
         <DialogFooter>
@@ -311,7 +356,8 @@ export function InvoiceEditDialog({
             Cancel
           </Button>
           <Button
-            onClick={handleSave}
+            type="submit"
+            form="invoice-edit-form"
             disabled={isLoading || isFetching}
             className="squircle"
           >

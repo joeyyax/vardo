@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { getDay, getDate } from "date-fns";
 import { Loader2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -20,8 +21,31 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+} from "@/components/ui/form";
 import { TimeEntry } from "./types";
 import { toast } from "sonner";
+import { z } from "zod";
+
+const frequencySchema = z.enum([
+  "daily",
+  "weekly",
+  "biweekly",
+  "monthly",
+  "quarterly",
+]);
+
+const recurringSchema = z.object({
+  frequency: frequencySchema,
+});
+
+type RecurringFormData = z.infer<typeof recurringSchema>;
+type Frequency = z.infer<typeof frequencySchema>;
 
 type RecurringDialogProps = {
   open: boolean;
@@ -56,10 +80,16 @@ export function RecurringDialog({
   orgId,
   onSuccess,
 }: RecurringDialogProps) {
-  const [frequency, setFrequency] = useState<string>("weekly");
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(false);
   const [templateData, setTemplateData] = useState<TemplateData | null>(null);
+
+  const form = useForm<RecurringFormData>({
+    resolver: zodResolver(recurringSchema),
+    defaultValues: {
+      frequency: "weekly",
+    },
+  });
 
   const isEditMode = !!entry?.recurringTemplateId;
 
@@ -67,11 +97,13 @@ export function RecurringDialog({
   useEffect(() => {
     if (open && entry?.recurringTemplateId) {
       setIsFetching(true);
-      fetch(`/api/v1/organizations/${orgId}/recurring-templates/${entry.recurringTemplateId}`)
+      fetch(
+        `/api/v1/organizations/${orgId}/recurring-templates/${entry.recurringTemplateId}`
+      )
         .then((res) => res.json())
         .then((data) => {
           setTemplateData(data);
-          setFrequency(data.frequency);
+          form.reset({ frequency: data.frequency as Frequency });
         })
         .catch((err) => {
           console.error("Error fetching template:", err);
@@ -80,16 +112,18 @@ export function RecurringDialog({
         .finally(() => setIsFetching(false));
     } else if (open) {
       // Reset to defaults for create mode
-      setFrequency("weekly");
+      form.reset({ frequency: "weekly" });
       setTemplateData(null);
     }
-  }, [open, entry?.recurringTemplateId, orgId]);
+  }, [open, entry?.recurringTemplateId, orgId, form]);
 
   if (!entry) return null;
 
   const entryDate = new Date(entry.date + "T12:00:00");
   const dayOfWeek = getDay(entryDate);
   const dayOfMonth = getDate(entryDate);
+
+  const frequency = form.watch("frequency");
 
   const handleCreate = async () => {
     setIsLoading(true);
@@ -231,7 +265,9 @@ export function RecurringDialog({
 
       const updated = await res.json();
       setTemplateData(updated);
-      toast.success(updated.isPaused ? "Recurring entry paused" : "Recurring entry resumed");
+      toast.success(
+        updated.isPaused ? "Recurring entry paused" : "Recurring entry resumed"
+      );
     } catch (err) {
       console.error("Error toggling pause:", err);
       toast.error("Failed to update recurring entry");
@@ -294,8 +330,8 @@ export function RecurringDialog({
             <Loader2 className="size-6 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <>
-            <div className="space-y-4 py-4">
+          <Form {...form}>
+            <form className="space-y-4 py-4">
               {/* Entry preview */}
               <div className="rounded-md border p-3 space-y-1">
                 <div className="flex items-center gap-2">
@@ -329,37 +365,47 @@ export function RecurringDialog({
                 </div>
               )}
 
-              {/* Frequency selector */}
-              <div className="space-y-2">
-                <Label htmlFor="frequency">Repeat</Label>
-                <Select value={frequency} onValueChange={setFrequency}>
-                  <SelectTrigger id="frequency" className="squircle">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="squircle">
-                    <SelectItem value="daily">Daily</SelectItem>
-                    <SelectItem value="weekly">
-                      Weekly (every {DAYS_OF_WEEK[dayOfWeek]})
-                    </SelectItem>
-                    <SelectItem value="biweekly">
-                      Biweekly (every other {DAYS_OF_WEEK[dayOfWeek]})
-                    </SelectItem>
-                    <SelectItem value="monthly">
-                      Monthly (on the {dayOfMonth}
-                      {getOrdinalSuffix(dayOfMonth)})
-                    </SelectItem>
-                    <SelectItem value="quarterly">
-                      Quarterly (on the {dayOfMonth}
-                      {getOrdinalSuffix(dayOfMonth)})
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              <FormField
+                control={form.control}
+                name="frequency"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Repeat</FormLabel>
+                    <Select
+                      onValueChange={field.onChange}
+                      value={field.value}
+                    >
+                      <FormControl>
+                        <SelectTrigger className="squircle">
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent className="squircle">
+                        <SelectItem value="daily">Daily</SelectItem>
+                        <SelectItem value="weekly">
+                          Weekly (every {DAYS_OF_WEEK[dayOfWeek]})
+                        </SelectItem>
+                        <SelectItem value="biweekly">
+                          Biweekly (every other {DAYS_OF_WEEK[dayOfWeek]})
+                        </SelectItem>
+                        <SelectItem value="monthly">
+                          Monthly (on the {dayOfMonth}
+                          {getOrdinalSuffix(dayOfMonth)})
+                        </SelectItem>
+                        <SelectItem value="quarterly">
+                          Quarterly (on the {dayOfMonth}
+                          {getOrdinalSuffix(dayOfMonth)})
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </FormItem>
+                )}
+              />
 
               <p className="text-xs text-muted-foreground">
                 {getFrequencyDescription(frequency, dayOfWeek, dayOfMonth)}
               </p>
-            </div>
+            </form>
 
             <DialogFooter className="flex-col sm:flex-row gap-2">
               {isEditMode && (
@@ -402,7 +448,7 @@ export function RecurringDialog({
                 </Button>
               </div>
             </DialogFooter>
-          </>
+          </Form>
         )}
       </DialogContent>
     </Dialog>

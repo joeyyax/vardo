@@ -258,7 +258,7 @@ export function EntryRow({
           style={{ backgroundColor: clientColor }}
         />
 
-        {/* Description */}
+        {/* Description + Tags */}
         <div className="flex-1 min-w-0">
           {editingField === "description" ? (
             <Input
@@ -272,16 +272,30 @@ export function EntryRow({
               disabled={isSaving}
             />
           ) : (
-            <button
-              onClick={() => startEditing("description")}
-              className="text-left text-sm truncate block w-full hover:text-primary transition-colors"
-            >
-              {entry.description || (
-                <span className="text-muted-foreground italic">
-                  No description
-                </span>
+            <div className="flex items-center gap-2 min-w-0">
+              <button
+                onClick={() => startEditing("description")}
+                className="text-left text-sm truncate hover:text-primary transition-colors"
+              >
+                {entry.description || (
+                  <span className="text-muted-foreground italic">
+                    No description
+                  </span>
+                )}
+              </button>
+              {entry.tags.length > 0 && (
+                <div className="flex items-center gap-1 shrink-0">
+                  {entry.tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary/80"
+                    >
+                      #{tag}
+                    </span>
+                  ))}
+                </div>
               )}
-            </button>
+            </div>
           )}
         </div>
 

@@ -7,6 +7,7 @@ import { EntryChipsInput, type Chip } from "./entry-chips-input";
 import { parseEntryText, parseDuration, parseRelativeDate } from "@/lib/entry-parser";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { getUserPreference } from "@/lib/user-preferences";
 
 type Suggestion = {
   client: { id: string; name: string; color: string | null };
@@ -276,7 +277,8 @@ export function SmartEntryBar({
   );
 
   // Submit entry
-  const handleSubmit = useCallback(async () => {
+  // keepSelections: when true, preserve client/project/task/date chips after submit
+  const handleSubmit = useCallback(async (keepSelections?: boolean) => {
     if (!canSubmit || isSubmitting) return;
 
     setIsSubmitting(true);
@@ -313,9 +315,21 @@ export function SmartEntryBar({
         throw new Error(errorData.message || "Failed to create entry");
       }
 
-      // Clear state on success
-      setChips([]);
-      setInputValue("");
+      // Determine whether to keep selections:
+      // - If keepSelections is explicitly passed, use that
+      // - Otherwise check the user preference
+      const stickyEnabled = keepSelections ?? getUserPreference("stickySelections");
+
+      if (stickyEnabled) {
+        // Keep client, project, task, and date chips; only remove duration
+        setChips((prev) => prev.filter((c) => c.type !== "duration"));
+        setInputValue("");
+      } else {
+        // Clear all state
+        setChips([]);
+        setInputValue("");
+      }
+
       setSuggestions([]);
       setHighlightedIndex(0);
       setHasSearched(false);
@@ -356,10 +370,14 @@ export function SmartEntryBar({
       }
 
       // Cmd/Ctrl+Enter to submit
+      // Shift modifier toggles sticky behavior (opposite of setting)
       if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         if (canSubmit && !isSubmitting) {
-          handleSubmit();
+          // If Shift is held, invert the sticky preference
+          const stickyPreference = getUserPreference("stickySelections");
+          const keepSelections = e.shiftKey ? !stickyPreference : stickyPreference;
+          handleSubmit(keepSelections);
         }
         return;
       }
@@ -421,7 +439,7 @@ export function SmartEntryBar({
         </div>
 
         <Button
-          onClick={handleSubmit}
+          onClick={() => handleSubmit()}
           disabled={!canSubmit || isSubmitting}
           size="icon"
           aria-label="Add entry"

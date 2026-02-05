@@ -50,9 +50,11 @@ function DialogOverlay({
 function DialogContent({
   className,
   children,
+  size = "default",
   showCloseButton = true,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
+  size?: "default" | "full"
   showCloseButton?: boolean
 }) {
   return (
@@ -62,6 +64,7 @@ function DialogContent({
         data-slot="dialog-content"
         className={cn(
           "bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border p-6 shadow-lg duration-200 outline-none sm:max-w-lg",
+          size === "full" && "sm:max-w-5xl w-[calc(100vw-4rem)] h-[80vh] overflow-hidden",
           className
         )}
         {...props}

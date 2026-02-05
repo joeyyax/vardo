@@ -12,6 +12,7 @@
 export interface TimeEntry {
   id: string;
   description: string | null;
+  tags: string[]; // Hashtags extracted from description (e.g., ["meeting", "review"])
   date: string; // YYYY-MM-DD
   durationMinutes: number;
   isBillableOverride: boolean | null;

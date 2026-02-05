@@ -1,0 +1,1 @@
+[    1457ms] [WARNING] Please ensure that the container has a non-static position, like 'relative', 'fixed', or 'absolute' to ensure scroll offset is calculated correctly. @ http://localhost:3000/_next/static/chunks/be696_next_dist_0b3f9d57._.js:2297

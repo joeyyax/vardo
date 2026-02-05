@@ -1,12 +1,28 @@
 import { redirect } from "next/navigation";
-import { getCurrentOrg } from "@/lib/auth/session";
-import { ExpensesContent } from "./expenses-content";
+import { getCurrentOrg, getSession } from "@/lib/auth/session";
+import { DEFAULT_ORG_FEATURES, type OrgFeatures } from "@/lib/db/schema";
+import { ExpenseTimeline } from "@/components/expenses";
 
-export default async function ExpensesPage() {
-  const orgData = await getCurrentOrg();
+type ExpensesPageProps = {
+  searchParams: Promise<{ date?: string; expense?: string }>;
+};
+
+export default async function ExpensesPage({ searchParams }: ExpensesPageProps) {
+  const [orgData, session] = await Promise.all([getCurrentOrg(), getSession()]);
+  const { date, expense } = await searchParams;
 
   if (!orgData) {
     redirect("/onboarding");
+  }
+
+  // Check if expenses feature is enabled
+  const features: OrgFeatures = {
+    ...DEFAULT_ORG_FEATURES,
+    ...(orgData.organization.features as OrgFeatures | null),
+  };
+
+  if (!features.expenses) {
+    redirect("/track");
   }
 
   return (
@@ -18,7 +34,12 @@ export default async function ExpensesPage() {
         </p>
       </div>
 
-      <ExpensesContent orgId={orgData.organization.id} />
+      <ExpenseTimeline
+        orgId={orgData.organization.id}
+        currentUserId={session?.user?.id || ""}
+        initialDate={date}
+        highlightExpenseId={expense}
+      />
     </div>
   );
 }

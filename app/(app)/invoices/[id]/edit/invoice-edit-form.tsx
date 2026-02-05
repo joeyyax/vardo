@@ -3,23 +3,27 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useForm, useFieldArray } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft, Loader2, Save, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-
-type LineItem = {
-  id: string;
-  projectName: string;
-  taskName: string | null;
-  description: string | null;
-  minutes: number;
-  rate: number;
-  amount: number;
-};
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+} from "@/components/ui/form";
+import {
+  invoiceEditSchema,
+  type InvoiceEditFormData,
+  type InvoiceLineItem,
+} from "@/lib/schemas/invoice-edit";
 
 type Invoice = {
   id: string;
@@ -40,7 +44,7 @@ type Invoice = {
 
 type InvoiceEditFormProps = {
   invoice: Invoice;
-  lineItems: LineItem[];
+  lineItems: InvoiceLineItem[];
   orgId: string;
 };
 
@@ -50,43 +54,50 @@ export function InvoiceEditForm({
   orgId,
 }: InvoiceEditFormProps) {
   const router = useRouter();
-  const [invoiceNumber, setInvoiceNumber] = useState(initialInvoice.invoiceNumber);
-  const [notes, setNotes] = useState(initialInvoice.notes || "");
-  const [includeTimesheet, setIncludeTimesheet] = useState(initialInvoice.includeTimesheet);
-  const [lineItems, setLineItems] = useState(initialLineItems);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const updateLineItem = (id: string, field: keyof LineItem, value: string | number) => {
-    setLineItems((prev) =>
-      prev.map((item) => {
-        if (item.id !== id) return item;
+  const form = useForm<InvoiceEditFormData>({
+    resolver: zodResolver(invoiceEditSchema),
+    defaultValues: {
+      invoiceNumber: initialInvoice.invoiceNumber,
+      notes: initialInvoice.notes || "",
+      includeTimesheet: initialInvoice.includeTimesheet,
+      lineItems: initialLineItems,
+    },
+  });
 
-        const updated = { ...item, [field]: value };
+  const { fields, remove, update } = useFieldArray({
+    control: form.control,
+    name: "lineItems",
+  });
 
-        // Recalculate amount if minutes or rate changed
-        if (field === "minutes" || field === "rate") {
-          const minutes = field === "minutes" ? Number(value) : item.minutes;
-          const rate = field === "rate" ? Number(value) : item.rate;
-          updated.amount = Math.round((minutes / 60) * rate);
-        }
+  const updateLineItem = (
+    index: number,
+    field: keyof InvoiceLineItem,
+    value: string | number | null
+  ) => {
+    const currentItem = fields[index];
+    const updated = { ...currentItem, [field]: value };
 
-        return updated;
-      })
-    );
-  };
+    // Recalculate amount if minutes or rate changed
+    if (field === "minutes" || field === "rate") {
+      const minutes = field === "minutes" ? Number(value) : currentItem.minutes;
+      const rate = field === "rate" ? Number(value) : currentItem.rate;
+      updated.amount = Math.round((minutes / 60) * rate);
+    }
 
-  const removeLineItem = (id: string) => {
-    setLineItems((prev) => prev.filter((item) => item.id !== id));
+    update(index, updated);
   };
 
   const calculateTotals = () => {
-    const totalMinutes = lineItems.reduce((sum, item) => sum + item.minutes, 0);
-    const subtotal = lineItems.reduce((sum, item) => sum + item.amount, 0);
+    const items = form.getValues("lineItems");
+    const totalMinutes = items.reduce((sum, item) => sum + item.minutes, 0);
+    const subtotal = items.reduce((sum, item) => sum + item.amount, 0);
     return { totalMinutes, subtotal };
   };
 
-  const handleSave = async () => {
+  const onSubmit = async (data: InvoiceEditFormData) => {
     setIsLoading(true);
     setError(null);
 
@@ -99,12 +110,12 @@ export function InvoiceEditForm({
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            invoiceNumber,
-            notes: notes || null,
-            includeTimesheet,
+            invoiceNumber: data.invoiceNumber,
+            notes: data.notes || null,
+            includeTimesheet: data.includeTimesheet,
             totalMinutes,
             subtotal,
-            lineItems: lineItems.map((item) => ({
+            lineItems: data.lineItems.map((item) => ({
               id: item.id,
               description: item.description,
               minutes: item.minutes,
@@ -116,8 +127,8 @@ export function InvoiceEditForm({
       );
 
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Failed to update invoice");
+        const responseData = await response.json();
+        throw new Error(responseData.error || "Failed to update invoice");
       }
 
       router.push("/invoices");
@@ -135,7 +146,7 @@ export function InvoiceEditForm({
   const { totalMinutes, subtotal } = calculateTotals();
 
   return (
-    <>
+    <Form {...form}>
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-4">
@@ -145,14 +156,20 @@ export function InvoiceEditForm({
             </Button>
           </Link>
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Edit Invoice</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">
+              Edit Invoice
+            </h1>
             <p className="text-muted-foreground">
               {initialInvoice.client.name} • {initialInvoice.periodStart} to{" "}
               {initialInvoice.periodEnd}
             </p>
           </div>
         </div>
-        <Button onClick={handleSave} disabled={isLoading} className="squircle">
+        <Button
+          onClick={form.handleSubmit(onSubmit)}
+          disabled={isLoading}
+          className="squircle"
+        >
           {isLoading ? (
             <Loader2 className="size-4 animate-spin" />
           ) : (
@@ -181,20 +198,30 @@ export function InvoiceEditForm({
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b bg-muted/50">
-                      <th className="px-4 py-3 text-left font-medium">Description</th>
-                      <th className="px-4 py-3 text-right font-medium w-24">Hours</th>
-                      <th className="px-4 py-3 text-right font-medium w-28">Rate</th>
-                      <th className="px-4 py-3 text-right font-medium w-28">Amount</th>
+                      <th className="px-4 py-3 text-left font-medium">
+                        Description
+                      </th>
+                      <th className="px-4 py-3 text-right font-medium w-24">
+                        Hours
+                      </th>
+                      <th className="px-4 py-3 text-right font-medium w-28">
+                        Rate
+                      </th>
+                      <th className="px-4 py-3 text-right font-medium w-28">
+                        Amount
+                      </th>
                       <th className="px-4 py-3 w-12"></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {lineItems.map((item) => (
+                    {fields.map((item, index) => (
                       <tr key={item.id} className="border-b last:border-0">
                         <td className="px-4 py-3">
                           <div className="space-y-2">
                             <div>
-                              <div className="font-medium">{item.projectName}</div>
+                              <div className="font-medium">
+                                {item.projectName}
+                              </div>
                               {item.taskName && (
                                 <div className="text-xs text-muted-foreground">
                                   {item.taskName}
@@ -204,7 +231,11 @@ export function InvoiceEditForm({
                             <Textarea
                               value={item.description || ""}
                               onChange={(e) =>
-                                updateLineItem(item.id, "description", e.target.value)
+                                updateLineItem(
+                                  index,
+                                  "description",
+                                  e.target.value
+                                )
                               }
                               placeholder="Add a summary or description..."
                               rows={2}
@@ -219,9 +250,11 @@ export function InvoiceEditForm({
                             value={formatHours(item.minutes)}
                             onChange={(e) =>
                               updateLineItem(
-                                item.id,
+                                index,
                                 "minutes",
-                                Math.round(parseFloat(e.target.value || "0") * 60)
+                                Math.round(
+                                  parseFloat(e.target.value || "0") * 60
+                                )
                               )
                             }
                             className="squircle text-right tabular-nums"
@@ -229,16 +262,20 @@ export function InvoiceEditForm({
                         </td>
                         <td className="px-4 py-3 align-top">
                           <div className="flex items-center">
-                            <span className="text-muted-foreground mr-1">$</span>
+                            <span className="text-muted-foreground mr-1">
+                              $
+                            </span>
                             <Input
                               type="number"
                               step="0.01"
                               value={(item.rate / 100).toFixed(2)}
                               onChange={(e) =>
                                 updateLineItem(
-                                  item.id,
+                                  index,
                                   "rate",
-                                  Math.round(parseFloat(e.target.value || "0") * 100)
+                                  Math.round(
+                                    parseFloat(e.target.value || "0") * 100
+                                  )
                                 )
                               }
                               className="squircle text-right tabular-nums"
@@ -253,7 +290,7 @@ export function InvoiceEditForm({
                             variant="ghost"
                             size="icon"
                             className="size-8 text-muted-foreground hover:text-destructive"
-                            onClick={() => removeLineItem(item.id)}
+                            onClick={() => remove(index)}
                           >
                             <Trash2 className="size-4" />
                           </Button>
@@ -264,7 +301,7 @@ export function InvoiceEditForm({
                 </table>
               </div>
 
-              {lineItems.length === 0 && (
+              {fields.length === 0 && (
                 <p className="text-center py-8 text-muted-foreground">
                   No line items remaining.
                 </p>
@@ -281,41 +318,57 @@ export function InvoiceEditForm({
               <CardTitle>Invoice Details</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="invoice-number">Invoice Number</Label>
-                <Input
-                  id="invoice-number"
-                  value={invoiceNumber}
-                  onChange={(e) => setInvoiceNumber(e.target.value)}
-                  className="squircle"
-                />
-              </div>
+              <FormField
+                control={form.control}
+                name="invoiceNumber"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Invoice Number</FormLabel>
+                    <FormControl>
+                      <Input {...field} className="squircle" />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
 
-              <div className="space-y-2">
-                <Label htmlFor="notes">Notes</Label>
-                <Textarea
-                  id="notes"
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Additional notes for the client..."
-                  rows={4}
-                  className="squircle resize-none"
-                />
-              </div>
+              <FormField
+                control={form.control}
+                name="notes"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Notes</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        {...field}
+                        placeholder="Additional notes for the client..."
+                        rows={4}
+                        className="squircle resize-none"
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
 
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label htmlFor="include-timesheet">Include Timesheet</Label>
-                  <p className="text-xs text-muted-foreground">
-                    Attach detailed time entries
-                  </p>
-                </div>
-                <Switch
-                  id="include-timesheet"
-                  checked={includeTimesheet}
-                  onCheckedChange={setIncludeTimesheet}
-                />
-              </div>
+              <FormField
+                control={form.control}
+                name="includeTimesheet"
+                render={({ field }) => (
+                  <FormItem className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <FormLabel>Include Timesheet</FormLabel>
+                      <FormDescription>
+                        Attach detailed time entries
+                      </FormDescription>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
             </CardContent>
           </Card>
 
@@ -339,6 +392,6 @@ export function InvoiceEditForm({
           </Card>
         </div>
       </div>
-    </>
+    </Form>
   );
 }

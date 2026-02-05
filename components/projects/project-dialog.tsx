@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import {
   Dialog,
   DialogContent,
@@ -29,9 +31,18 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { Loader2, Archive, ArchiveRestore } from "lucide-react";
+import { z } from "zod";
 
 export type Client = {
   id: string;
@@ -68,10 +79,24 @@ export const PROJECT_STAGE_LABELS: Record<ProjectStage, string> = {
 
 export const PROJECT_STAGE_COLORS: Record<ProjectStage, string> = {
   lead: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
-  proposal_sent: "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300",
-  active: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300",
-  completed: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+  proposal_sent:
+    "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300",
+  active:
+    "bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300",
+  completed:
+    "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
 };
+
+const projectSchema = z.object({
+  clientId: z.string().min(1, "Please select a client"),
+  name: z.string().min(1, "Project name is required"),
+  code: z.string(),
+  rateOverride: z.string(),
+  isBillable: z.boolean().nullable(),
+  stage: z.enum(["lead", "proposal_sent", "active", "completed"]),
+});
+
+type ProjectFormData = z.infer<typeof projectSchema>;
 
 type ProjectDialogProps = {
   open: boolean;
@@ -94,13 +119,17 @@ export function ProjectDialog({
 }: ProjectDialogProps) {
   const isEditing = !!project;
 
-  // Form state
-  const [clientId, setClientId] = useState("");
-  const [name, setName] = useState("");
-  const [code, setCode] = useState("");
-  const [rateOverride, setRateOverride] = useState("");
-  const [isBillable, setIsBillable] = useState<boolean | null>(null);
-  const [stage, setStage] = useState<ProjectStage>("active");
+  const form = useForm<ProjectFormData>({
+    resolver: zodResolver(projectSchema),
+    defaultValues: {
+      clientId: "",
+      name: "",
+      code: "",
+      rateOverride: "",
+      isBillable: null,
+      stage: "active",
+    },
+  });
 
   // UI state
   const [isLoading, setIsLoading] = useState(false);
@@ -112,43 +141,43 @@ export function ProjectDialog({
   useEffect(() => {
     if (open) {
       if (project) {
-        setClientId(project.clientId);
-        setName(project.name);
-        setCode(project.code || "");
-        // Convert cents to dollars for display
-        setRateOverride(
-          project.rateOverride !== null
-            ? (project.rateOverride / 100).toString()
-            : ""
-        );
-        setIsBillable(project.isBillable);
-        setStage(project.stage || "active");
+        form.reset({
+          clientId: project.clientId,
+          name: project.name,
+          code: project.code || "",
+          rateOverride:
+            project.rateOverride !== null
+              ? (project.rateOverride / 100).toString()
+              : "",
+          isBillable: project.isBillable,
+          stage: project.stage || "active",
+        });
       } else {
-        // New project - use default client if provided
-        setClientId(defaultClientId || "");
-        setName("");
-        setCode("");
-        setRateOverride("");
-        setIsBillable(null);
-        setStage("active");
+        form.reset({
+          clientId: defaultClientId || "",
+          name: "",
+          code: "",
+          rateOverride: "",
+          isBillable: null,
+          stage: "active",
+        });
       }
       setError(null);
     }
-  }, [open, project, defaultClientId]);
+  }, [open, project, defaultClientId, form]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  async function onSubmit(data: ProjectFormData) {
     setError(null);
     setIsLoading(true);
 
     try {
       const payload = {
-        clientId,
-        name,
-        code: code || null,
-        rateOverride: rateOverride !== "" ? parseFloat(rateOverride) : null,
-        isBillable,
-        stage,
+        clientId: data.clientId,
+        name: data.name,
+        code: data.code || null,
+        rateOverride: data.rateOverride ? parseFloat(data.rateOverride) : null,
+        isBillable: data.isBillable,
+        stage: data.stage,
       };
 
       const url = isEditing
@@ -162,8 +191,8 @@ export function ProjectDialog({
       });
 
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Something went wrong");
+        const responseData = await response.json();
+        throw new Error(responseData.error || "Something went wrong");
       }
 
       onSuccess();
@@ -173,7 +202,7 @@ export function ProjectDialog({
     } finally {
       setIsLoading(false);
     }
-  };
+  }
 
   const handleArchive = async () => {
     if (!project) return;
@@ -232,276 +261,307 @@ export function ProjectDialog({
   };
 
   const isDisabled = isLoading || isDeleting || isArchiving;
+  const isBillable = form.watch("isBillable");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="squircle sm:max-w-md">
-        <form onSubmit={handleSubmit}>
-          <DialogHeader>
-            <DialogTitle>
-              {isEditing ? "Edit project" : "New project"}
-            </DialogTitle>
-            <DialogDescription>
-              {isEditing
-                ? "Update your project details."
-                : "Add a new project to organize your work."}
-            </DialogDescription>
-          </DialogHeader>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)}>
+            <DialogHeader>
+              <DialogTitle>
+                {isEditing ? "Edit project" : "New project"}
+              </DialogTitle>
+              <DialogDescription>
+                {isEditing
+                  ? "Update your project details."
+                  : "Add a new project to organize your work."}
+              </DialogDescription>
+            </DialogHeader>
 
-          <div className="grid gap-5 py-6">
-            {/* Client selector */}
-            <div className="grid gap-2">
-              <Label htmlFor="client">Client</Label>
-              <Select
-                value={clientId}
-                onValueChange={setClientId}
-                disabled={isDisabled}
-              >
-                <SelectTrigger className="squircle">
-                  <SelectValue placeholder="Select a client" />
-                </SelectTrigger>
-                <SelectContent className="squircle">
-                  {clients.map((client) => (
-                    <SelectItem key={client.id} value={client.id}>
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="size-2.5 shrink-0 rounded-full ring-1 ring-border"
-                          style={{
-                            backgroundColor: client.color || "#94a3b8",
-                          }}
-                        />
-                        <span>{client.name}</span>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {clients.length === 0 && (
-                <p className="text-sm text-muted-foreground">
-                  You need to create a client first.
-                </p>
-              )}
-            </div>
-
-            {/* Name */}
-            <div className="grid gap-2">
-              <Label htmlFor="name">Project name</Label>
-              <Input
-                id="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Website redesign"
-                required
-                disabled={isDisabled}
-                className="squircle"
-              />
-            </div>
-
-            {/* Code */}
-            <div className="grid gap-2">
-              <Label htmlFor="code">Project code</Label>
-              <p className="text-sm text-muted-foreground">
-                Optional short code for quick reference.
-              </p>
-              <Input
-                id="code"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                placeholder="ACME-001"
-                disabled={isDisabled}
-                className="squircle"
-              />
-            </div>
-
-            {/* Stage */}
-            <div className="grid gap-2">
-              <Label htmlFor="stage">Stage</Label>
-              <Select
-                value={stage}
-                onValueChange={(value) => setStage(value as ProjectStage)}
-                disabled={isDisabled}
-              >
-                <SelectTrigger className="squircle">
-                  <SelectValue placeholder="Select stage" />
-                </SelectTrigger>
-                <SelectContent className="squircle">
-                  {(Object.keys(PROJECT_STAGE_LABELS) as ProjectStage[]).map(
-                    (stageKey) => (
-                      <SelectItem key={stageKey} value={stageKey}>
-                        <div className="flex items-center gap-2">
-                          <div
-                            className={`size-2 rounded-full ${
-                              PROJECT_STAGE_COLORS[stageKey].split(" ")[0]
-                            }`}
-                          />
-                          {PROJECT_STAGE_LABELS[stageKey]}
-                        </div>
-                      </SelectItem>
-                    )
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Hourly rate override */}
-            <div className="grid gap-2">
-              <Label htmlFor="rate">Hourly rate override</Label>
-              <p className="text-sm text-muted-foreground">
-                Leave blank to inherit from client.
-              </p>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
-                  $
-                </span>
-                <Input
-                  id="rate"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={rateOverride}
-                  onChange={(e) => setRateOverride(e.target.value)}
-                  placeholder="0.00"
-                  disabled={isDisabled}
-                  className="squircle pl-7"
-                />
-              </div>
-            </div>
-
-            {/* Billable toggle */}
-            <div className="flex items-center justify-between gap-3">
-              <div className="grid gap-1">
-                <Label htmlFor="billable" className="cursor-pointer">
-                  Billable
-                </Label>
-                <p className="text-sm text-muted-foreground">
-                  {isBillable === null
-                    ? "Inherits from client settings."
-                    : isBillable
-                    ? "Time tracked is billable."
-                    : "Time tracked is not billable."}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                {isBillable !== null && (
-                  <button
-                    type="button"
-                    onClick={() => setIsBillable(null)}
-                    className="text-xs text-muted-foreground hover:text-foreground"
-                  >
-                    Reset
-                  </button>
-                )}
-                <Switch
-                  id="billable"
-                  checked={isBillable === true}
-                  onCheckedChange={(checked) => {
-                    setIsBillable(checked);
-                  }}
-                  disabled={isDisabled}
-                />
-              </div>
-            </div>
-
-            {/* Archive status (edit mode only) */}
-            {isEditing && project?.isArchived && (
-              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950">
-                <p className="text-sm text-amber-800 dark:text-amber-200">
-                  This project is archived. It won&apos;t appear in time entry
-                  suggestions.
-                </p>
-              </div>
-            )}
-
-            {error && (
-              <p className="text-sm text-destructive">{error}</p>
-            )}
-          </div>
-
-          <DialogFooter className="gap-2 sm:gap-0">
-            {isEditing && (
-              <div className="mr-auto flex gap-2">
-                {/* Archive/Unarchive button */}
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleArchive}
-                  disabled={isDisabled}
-                  className="squircle"
-                >
-                  {isArchiving && (
-                    <Loader2 className="size-4 animate-spin" />
-                  )}
-                  {project?.isArchived ? (
-                    <>
-                      <ArchiveRestore className="size-4" />
-                      Unarchive
-                    </>
-                  ) : (
-                    <>
-                      <Archive className="size-4" />
-                      Archive
-                    </>
-                  )}
-                </Button>
-
-                {/* Delete button */}
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="destructive"
+            <div className="grid gap-5 py-6">
+              <FormField
+                control={form.control}
+                name="clientId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Client</FormLabel>
+                    <Select
+                      onValueChange={field.onChange}
+                      value={field.value}
                       disabled={isDisabled}
-                      className="squircle"
                     >
-                      {isDeleting && (
-                        <Loader2 className="size-4 animate-spin" />
+                      <FormControl>
+                        <SelectTrigger className="squircle">
+                          <SelectValue placeholder="Select a client" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent className="squircle">
+                        {clients.map((client) => (
+                          <SelectItem key={client.id} value={client.id}>
+                            <div className="flex items-center gap-2">
+                              <div
+                                className="size-2.5 shrink-0 rounded-full ring-1 ring-border"
+                                style={{
+                                  backgroundColor: client.color || "#94a3b8",
+                                }}
+                              />
+                              <span>{client.name}</span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {clients.length === 0 && (
+                      <p className="text-sm text-muted-foreground">
+                        You need to create a client first.
+                      </p>
+                    )}
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Project name</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        placeholder="Website redesign"
+                        disabled={isDisabled}
+                        className="squircle"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="code"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Project code</FormLabel>
+                    <FormDescription>
+                      Optional short code for quick reference.
+                    </FormDescription>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        placeholder="ACME-001"
+                        disabled={isDisabled}
+                        className="squircle"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="stage"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Stage</FormLabel>
+                    <Select
+                      onValueChange={field.onChange}
+                      value={field.value}
+                      disabled={isDisabled}
+                    >
+                      <FormControl>
+                        <SelectTrigger className="squircle">
+                          <SelectValue placeholder="Select stage" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent className="squircle">
+                        {(
+                          Object.keys(PROJECT_STAGE_LABELS) as ProjectStage[]
+                        ).map((stageKey) => (
+                          <SelectItem key={stageKey} value={stageKey}>
+                            <div className="flex items-center gap-2">
+                              <div
+                                className={`size-2 rounded-full ${
+                                  PROJECT_STAGE_COLORS[stageKey].split(" ")[0]
+                                }`}
+                              />
+                              {PROJECT_STAGE_LABELS[stageKey]}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="rateOverride"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Hourly rate override</FormLabel>
+                    <FormDescription>
+                      Leave blank to inherit from client.
+                    </FormDescription>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                        $
+                      </span>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder="0.00"
+                          disabled={isDisabled}
+                          className="squircle pl-7"
+                        />
+                      </FormControl>
+                    </div>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="isBillable"
+                render={({ field }) => (
+                  <FormItem className="flex items-center justify-between gap-3">
+                    <div className="grid gap-1">
+                      <FormLabel className="cursor-pointer">Billable</FormLabel>
+                      <FormDescription>
+                        {field.value === null
+                          ? "Inherits from client settings."
+                          : field.value
+                            ? "Time tracked is billable."
+                            : "Time tracked is not billable."}
+                      </FormDescription>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {field.value !== null && (
+                        <button
+                          type="button"
+                          onClick={() => field.onChange(null)}
+                          className="text-xs text-muted-foreground hover:text-foreground"
+                        >
+                          Reset
+                        </button>
                       )}
-                      Delete
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent className="squircle">
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Delete project?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        This will permanently delete &quot;{project?.name}&quot;
-                        and all associated tasks and time entries. This action
-                        cannot be undone.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel className="squircle">
-                        Cancel
-                      </AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={handleDelete}
-                        className="squircle bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      <FormControl>
+                        <Switch
+                          checked={field.value === true}
+                          onCheckedChange={(checked) => {
+                            field.onChange(checked);
+                          }}
+                          disabled={isDisabled}
+                        />
+                      </FormControl>
+                    </div>
+                  </FormItem>
+                )}
+              />
+
+              {isEditing && project?.isArchived && (
+                <div className="rounded-md border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950">
+                  <p className="text-sm text-amber-800 dark:text-amber-200">
+                    This project is archived. It won&apos;t appear in time entry
+                    suggestions.
+                  </p>
+                </div>
+              )}
+
+              {error && <p className="text-sm text-destructive">{error}</p>}
+            </div>
+
+            <DialogFooter className="gap-2 sm:gap-0">
+              {isEditing && (
+                <div className="mr-auto flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleArchive}
+                    disabled={isDisabled}
+                    className="squircle"
+                  >
+                    {isArchiving && (
+                      <Loader2 className="size-4 animate-spin" />
+                    )}
+                    {project?.isArchived ? (
+                      <>
+                        <ArchiveRestore className="size-4" />
+                        Unarchive
+                      </>
+                    ) : (
+                      <>
+                        <Archive className="size-4" />
+                        Archive
+                      </>
+                    )}
+                  </Button>
+
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        disabled={isDisabled}
+                        className="squircle"
                       >
+                        {isDeleting && (
+                          <Loader2 className="size-4 animate-spin" />
+                        )}
                         Delete
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              </div>
-            )}
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={isDisabled}
-              className="squircle"
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              disabled={isDisabled || !name.trim() || !clientId}
-              className="squircle"
-            >
-              {isLoading && <Loader2 className="size-4 animate-spin" />}
-              {isEditing ? "Save changes" : "Create project"}
-            </Button>
-          </DialogFooter>
-        </form>
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent className="squircle">
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Delete project?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This will permanently delete &quot;{project?.name}
+                          &quot; and all associated tasks and time entries. This
+                          action cannot be undone.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel className="squircle">
+                          Cancel
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={handleDelete}
+                          className="squircle bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                          Delete
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
+              )}
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={isDisabled}
+                className="squircle"
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isDisabled} className="squircle">
+                {isLoading && <Loader2 className="size-4 animate-spin" />}
+                {isEditing ? "Save changes" : "Create project"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );

@@ -7,6 +7,7 @@ import {
   resolveEntryBillable,
   validateEntryHierarchy,
 } from "@/lib/entries/resolve-billable";
+import { extractTags } from "@/lib/entries/extract-tags";
 import { updateRollingDraftInvoice } from "@/lib/invoices/rolling-draft";
 
 type RouteParams = {
@@ -20,6 +21,7 @@ type RouteParams = {
 function shapeEntryResponse(entry: {
   id: string;
   description: string | null;
+  tags: string[] | null;
   date: string;
   durationMinutes: number;
   isBillableOverride: boolean | null;
@@ -53,6 +55,7 @@ function shapeEntryResponse(entry: {
   return {
     id: entry.id,
     description: entry.description,
+    tags: entry.tags || [],
     date: entry.date,
     durationMinutes: entry.durationMinutes,
     isBillableOverride: entry.isBillableOverride,
@@ -121,6 +124,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       shapeEntryResponse({
         id: entry.id,
         description: entry.description,
+        tags: entry.tags,
         date: entry.date,
         durationMinutes: entry.durationMinutes,
         isBillableOverride: entry.isBillableOverride,
@@ -202,6 +206,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       projectId: string | null;
       taskId: string | null;
       description: string | null;
+      tags: string[] | null;
       date: string;
       durationMinutes: number;
       isBillableOverride: boolean | null;
@@ -241,7 +246,11 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     if (description !== undefined) {
-      updates.description = description?.trim() || null;
+      const trimmedDescription = description?.trim() || null;
+      updates.description = trimmedDescription;
+      // Re-extract tags whenever description changes
+      const tags = extractTags(trimmedDescription);
+      updates.tags = tags.length > 0 ? tags : null;
     }
 
     if (date !== undefined) {
@@ -303,6 +312,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       shapeEntryResponse({
         id: updatedEntry.id,
         description: updatedEntry.description,
+        tags: updatedEntry.tags,
         date: updatedEntry.date,
         durationMinutes: updatedEntry.durationMinutes,
         isBillableOverride: updatedEntry.isBillableOverride,

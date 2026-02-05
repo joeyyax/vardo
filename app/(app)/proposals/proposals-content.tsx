@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { formatDistanceToNow } from "date-fns";
+import { formatDistanceToNow, format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -15,6 +15,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,6 +43,9 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { NewDocumentDialog } from "@/components/documents/new-document-dialog";
+import { ViewSwitcher } from "@/components/view-switcher";
+import { useViewPreference } from "@/hooks/use-view-preference";
+import { PageToolbar } from "@/components/page-toolbar";
 
 type Document = {
   id: string;
@@ -95,8 +106,11 @@ const STATUS_CONFIG = {
   },
 };
 
+const PROPOSAL_VIEWS = ["list", "table"] as const;
+
 export function ProposalsContent({ orgId }: ProposalsContentProps) {
   const router = useRouter();
+  const [view, setView] = useViewPreference("proposals", PROPOSAL_VIEWS, "list");
   const [documents, setDocuments] = useState<Document[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -145,52 +159,50 @@ export function ProposalsContent({ orgId }: ProposalsContentProps) {
 
   return (
     <div className="space-y-6">
-      {/* Filters and actions */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-2">
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[160px] squircle">
-              <SelectValue placeholder="All statuses" />
-            </SelectTrigger>
-            <SelectContent className="squircle">
-              <SelectItem value="all">All statuses</SelectItem>
-              <SelectItem value="draft">Draft</SelectItem>
-              <SelectItem value="sent">Sent</SelectItem>
-              <SelectItem value="viewed">Viewed</SelectItem>
-              <SelectItem value="accepted">Accepted</SelectItem>
-              <SelectItem value="declined">Declined</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="flex items-center gap-4">
-          {/* Summary badges */}
-          {summary && (
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground">
-                {proposals.length} proposals
-              </span>
-              {summary.byStatus?.accepted && (
-                <span className="text-green-600 dark:text-green-400">
-                  {summary.byStatus.accepted} accepted
+      <PageToolbar
+        actions={
+          <>
+            {summary && (
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-muted-foreground">
+                  {proposals.length} proposals
                 </span>
-              )}
-              {summary.byStatus?.sent && (
-                <span className="text-blue-600 dark:text-blue-400">
-                  {summary.byStatus.sent} pending
-                </span>
-              )}
-            </div>
-          )}
+                {summary.byStatus?.accepted && (
+                  <span className="text-green-600 dark:text-green-400">
+                    {summary.byStatus.accepted} accepted
+                  </span>
+                )}
+                {summary.byStatus?.sent && (
+                  <span className="text-blue-600 dark:text-blue-400">
+                    {summary.byStatus.sent} pending
+                  </span>
+                )}
+              </div>
+            )}
+            <ViewSwitcher views={PROPOSAL_VIEWS} value={view} onValueChange={setView} />
+            <Button onClick={() => setDialogOpen(true)} className="squircle">
+              <Plus className="size-4" />
+              New Proposal
+            </Button>
+          </>
+        }
+      >
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-[160px] squircle">
+            <SelectValue placeholder="All statuses" />
+          </SelectTrigger>
+          <SelectContent className="squircle">
+            <SelectItem value="all">All statuses</SelectItem>
+            <SelectItem value="draft">Draft</SelectItem>
+            <SelectItem value="sent">Sent</SelectItem>
+            <SelectItem value="viewed">Viewed</SelectItem>
+            <SelectItem value="accepted">Accepted</SelectItem>
+            <SelectItem value="declined">Declined</SelectItem>
+          </SelectContent>
+        </Select>
+      </PageToolbar>
 
-          <Button onClick={() => setDialogOpen(true)} className="squircle">
-            <Plus className="size-4" />
-            New Proposal
-          </Button>
-        </div>
-      </div>
-
-      {/* Proposals list */}
+      {/* Proposals */}
       {isLoading ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="size-6 animate-spin text-muted-foreground" />
@@ -211,6 +223,66 @@ export function ProposalsContent({ orgId }: ProposalsContentProps) {
             </Button>
           </CardContent>
         </Card>
+      ) : view === "table" ? (
+        <div className="rounded-lg border squircle overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Title</TableHead>
+                <TableHead>Client</TableHead>
+                <TableHead>Project</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Created</TableHead>
+                <TableHead className="w-[50px]" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {proposals.map((doc) => {
+                const config = STATUS_CONFIG[doc.status];
+                const StatusIcon = config.icon;
+
+                return (
+                  <TableRow
+                    key={doc.id}
+                    className="cursor-pointer"
+                    onClick={() => router.push(`/projects/${doc.project.id}/documents/${doc.id}`)}
+                  >
+                    <TableCell className="font-medium">{doc.title}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="size-2 rounded-full shrink-0"
+                          style={{ backgroundColor: doc.project.client.color || "#94a3b8" }}
+                        />
+                        {doc.project.client.name}
+                      </div>
+                    </TableCell>
+                    <TableCell>{doc.project.name}</TableCell>
+                    <TableCell>
+                      <span
+                        className={cn(
+                          "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs",
+                          config.color
+                        )}
+                      >
+                        <StatusIcon className="size-3" />
+                        {config.label}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {doc.sentAt
+                        ? `Sent ${formatDistanceToNow(new Date(doc.sentAt), { addSuffix: true })}`
+                        : format(new Date(doc.createdAt), "MMM d, yyyy")}
+                    </TableCell>
+                    <TableCell>
+                      <ProposalActions doc={doc} onCopyLink={copyPublicLink} />
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
       ) : (
         <div className="space-y-2">
           {proposals.map((doc) => {
@@ -226,13 +298,10 @@ export function ProposalsContent({ orgId }: ProposalsContentProps) {
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between gap-4">
                     <div className="flex items-center gap-4 min-w-0">
-                      {/* Client color indicator */}
                       <div
                         className="size-3 rounded-full shrink-0"
                         style={{ backgroundColor: doc.project.client.color || "#94a3b8" }}
                       />
-
-                      {/* Document info */}
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="font-medium truncate">{doc.title}</span>
@@ -261,37 +330,7 @@ export function ProposalsContent({ orgId }: ProposalsContentProps) {
                         </div>
                       </div>
                     </div>
-
-                    {/* Actions */}
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                        <Button variant="ghost" size="icon" className="size-8 shrink-0">
-                          <MoreVertical className="size-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="squircle">
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            router.push(`/projects/${doc.project.id}/documents/${doc.id}`);
-                          }}
-                        >
-                          <Eye className="size-4" />
-                          {doc.status === "draft" ? "Edit" : "View"}
-                        </DropdownMenuItem>
-                        {doc.publicToken && doc.status !== "draft" && (
-                          <DropdownMenuItem
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              copyPublicLink(doc);
-                            }}
-                          >
-                            <Copy className="size-4" />
-                            Copy Link
-                          </DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    <ProposalActions doc={doc} onCopyLink={copyPublicLink} />
                   </div>
                 </CardContent>
               </Card>
@@ -307,5 +346,47 @@ export function ProposalsContent({ orgId }: ProposalsContentProps) {
         onOpenChange={setDialogOpen}
       />
     </div>
+  );
+}
+
+function ProposalActions({
+  doc,
+  onCopyLink,
+}: {
+  doc: Document;
+  onCopyLink: (doc: Document) => void;
+}) {
+  const router = useRouter();
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+        <Button variant="ghost" size="icon" className="size-8 shrink-0">
+          <MoreVertical className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="squircle">
+        <DropdownMenuItem
+          onClick={(e) => {
+            e.stopPropagation();
+            router.push(`/projects/${doc.project.id}/documents/${doc.id}`);
+          }}
+        >
+          <Eye className="size-4" />
+          {doc.status === "draft" ? "Edit" : "View"}
+        </DropdownMenuItem>
+        {doc.publicToken && doc.status !== "draft" && (
+          <DropdownMenuItem
+            onClick={(e) => {
+              e.stopPropagation();
+              onCopyLink(doc);
+            }}
+          >
+            <Copy className="size-4" />
+            Copy Link
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

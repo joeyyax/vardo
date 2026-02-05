@@ -10,20 +10,8 @@ type ExpenseDayGroupProps = {
   totalCents: number;
   orgId: string;
   currentUserId: string;
-  onUpdateExpense: (
-    expenseId: string,
-    updates: Partial<{
-      description: string;
-      amountCents: number;
-      category: string | null;
-      isBillable: boolean;
-      projectId: string | null;
-      date: string;
-    }>
-  ) => Promise<void>;
   onDeleteExpense: (expenseId: string) => Promise<void>;
   onDuplicateExpense: (expense: Expense) => Promise<void>;
-  onProjectChange: (expenseId: string, projectId: string | null) => Promise<void>;
   onExpenseClick?: (expense: Expense) => void;
   highlightedExpenseId?: string;
   onClearHighlight?: () => void;
@@ -35,10 +23,8 @@ export function ExpenseDayGroup({
   totalCents,
   orgId,
   currentUserId,
-  onUpdateExpense,
   onDeleteExpense,
   onDuplicateExpense,
-  onProjectChange,
   onExpenseClick,
   highlightedExpenseId,
   onClearHighlight,
@@ -63,10 +49,8 @@ export function ExpenseDayGroup({
             expense={expense}
             orgId={orgId}
             currentUserId={currentUserId}
-            onUpdate={onUpdateExpense}
             onDelete={onDeleteExpense}
             onDuplicate={onDuplicateExpense}
-            onProjectChange={onProjectChange}
             onExpenseClick={onExpenseClick}
             isHighlighted={highlightedExpenseId === expense.id}
             onClearHighlight={onClearHighlight}

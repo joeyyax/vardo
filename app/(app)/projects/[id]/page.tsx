@@ -24,6 +24,11 @@ export default async function ProjectPage({ params }: PageProps) {
     ...(orgData.organization.features as OrgFeatures | null),
   };
 
+  // Check if time_tracking OR pm feature is enabled
+  if (!features.time_tracking && !features.pm) {
+    redirect("/settings");
+  }
+
   // Fetch project with client and tasks
   const project = await db.query.projects.findFirst({
     where: eq(projects.id, id),

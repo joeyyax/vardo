@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { format, parseISO } from "date-fns";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { InvoiceDialog } from "@/components/invoices/invoice-dialog";
 import { InvoiceList } from "@/components/invoices/invoice-list";
 import {
@@ -12,8 +14,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Plus, Loader2, X, RefreshCw } from "lucide-react";
+import { Plus, Loader2, X, RefreshCw, FileText } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { ViewSwitcher } from "@/components/view-switcher";
+import { useViewPreference } from "@/hooks/use-view-preference";
+import { PageToolbar } from "@/components/page-toolbar";
 
 type Invoice = {
   id: string;
@@ -47,7 +52,34 @@ type InvoicesContentProps = {
   orgId: string;
 };
 
+const INVOICE_VIEWS = ["table", "list"] as const;
+
+const INVOICE_STATUS_STYLES: Record<string, string> = {
+  in_progress: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+  draft: "bg-muted text-muted-foreground",
+  sent: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
+  viewed: "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300",
+  paid: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300",
+};
+
+const INVOICE_STATUS_LABELS: Record<string, string> = {
+  in_progress: "In Progress",
+  draft: "Draft",
+  sent: "Sent",
+  viewed: "Viewed",
+  paid: "Paid",
+};
+
+function formatCurrency(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
+function formatHours(minutes: number): string {
+  return (minutes / 60).toFixed(1);
+}
+
 export function InvoicesContent({ orgId }: InvoicesContentProps) {
+  const [view, setView] = useViewPreference("invoices", INVOICE_VIEWS, "table");
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [aiSummaryAvailable, setAiSummaryAvailable] = useState(false);
@@ -153,109 +185,89 @@ export function InvoicesContent({ orgId }: InvoicesContentProps) {
 
   return (
     <div className="space-y-4">
-      {/* Filters */}
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="flex-1 min-w-[150px] max-w-[200px]">
-          <Label htmlFor="client-filter" className="text-xs text-muted-foreground mb-1 block">
-            Client
-          </Label>
-          <Select value={clientFilter} onValueChange={setClientFilter}>
-            <SelectTrigger id="client-filter" className="squircle h-9">
-              <SelectValue placeholder="All clients" />
-            </SelectTrigger>
-            <SelectContent className="squircle">
-              <SelectItem value="all">All clients</SelectItem>
-              {clients.map((client) => (
-                <SelectItem key={client.id} value={client.id}>
-                  <span className="flex items-center gap-2">
-                    {client.color && (
-                      <span
-                        className="size-2 rounded-full shrink-0"
-                        style={{ backgroundColor: client.color }}
-                      />
-                    )}
-                    {client.name}
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+      <PageToolbar
+        actions={
+          <>
+            <Button
+              variant="outline"
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              className="squircle"
+            >
+              <RefreshCw className={`size-4 ${isRefreshing ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+            <ViewSwitcher views={INVOICE_VIEWS} value={view} onValueChange={setView} />
+            <Button onClick={() => setDialogOpen(true)} className="squircle">
+              <Plus className="size-4" />
+              New Invoice
+            </Button>
+          </>
+        }
+      >
+        <Select value={clientFilter} onValueChange={setClientFilter}>
+          <SelectTrigger className="squircle w-[180px]">
+            <SelectValue placeholder="All clients" />
+          </SelectTrigger>
+          <SelectContent className="squircle">
+            <SelectItem value="all">All clients</SelectItem>
+            {clients.map((client) => (
+              <SelectItem key={client.id} value={client.id}>
+                <span className="flex items-center gap-2">
+                  {client.color && (
+                    <span
+                      className="size-2 rounded-full shrink-0"
+                      style={{ backgroundColor: client.color }}
+                    />
+                  )}
+                  {client.name}
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
-        <div className="min-w-[140px]">
-          <Label htmlFor="status-filter" className="text-xs text-muted-foreground mb-1 block">
-            Status
-          </Label>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger id="status-filter" className="squircle h-9">
-              <SelectValue placeholder="All statuses" />
-            </SelectTrigger>
-            <SelectContent className="squircle">
-              <SelectItem value="all">All statuses</SelectItem>
-              <SelectItem value="in_progress">In Progress</SelectItem>
-              <SelectItem value="draft">Draft</SelectItem>
-              <SelectItem value="sent">Sent</SelectItem>
-              <SelectItem value="viewed">Viewed</SelectItem>
-              <SelectItem value="paid">Paid</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="squircle w-[150px]">
+            <SelectValue placeholder="All statuses" />
+          </SelectTrigger>
+          <SelectContent className="squircle">
+            <SelectItem value="all">All statuses</SelectItem>
+            <SelectItem value="in_progress">In Progress</SelectItem>
+            <SelectItem value="draft">Draft</SelectItem>
+            <SelectItem value="sent">Sent</SelectItem>
+            <SelectItem value="viewed">Viewed</SelectItem>
+            <SelectItem value="paid">Paid</SelectItem>
+          </SelectContent>
+        </Select>
 
-        <div className="min-w-[130px]">
-          <Label htmlFor="date-from" className="text-xs text-muted-foreground mb-1 block">
-            From
-          </Label>
-          <Input
-            id="date-from"
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            className="squircle h-9"
-          />
-        </div>
+        <Input
+          type="date"
+          value={dateFrom}
+          onChange={(e) => setDateFrom(e.target.value)}
+          placeholder="From"
+          className="squircle w-[140px]"
+        />
 
-        <div className="min-w-[130px]">
-          <Label htmlFor="date-to" className="text-xs text-muted-foreground mb-1 block">
-            To
-          </Label>
-          <Input
-            id="date-to"
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            className="squircle h-9"
-          />
-        </div>
+        <Input
+          type="date"
+          value={dateTo}
+          onChange={(e) => setDateTo(e.target.value)}
+          placeholder="To"
+          className="squircle w-[140px]"
+        />
 
         {hasActiveFilters && (
           <Button
             variant="ghost"
-            size="sm"
+            size="icon"
             onClick={clearFilters}
-            className="h-9 px-2 text-muted-foreground"
+            title="Clear filters"
           >
-            <X className="size-4 mr-1" />
-            Clear
+            <X className="size-4" />
           </Button>
         )}
-
-        <div className="flex-1" />
-
-        <Button
-          variant="outline"
-          onClick={handleRefresh}
-          disabled={isRefreshing}
-          className="squircle h-9"
-        >
-          <RefreshCw className={`size-4 ${isRefreshing ? "animate-spin" : ""}`} />
-          Refresh
-        </Button>
-
-        <Button onClick={() => setDialogOpen(true)} className="squircle h-9">
-          <Plus className="size-4" />
-          New Invoice
-        </Button>
-      </div>
+      </PageToolbar>
 
       {/* Results count */}
       {hasActiveFilters && (
@@ -268,12 +280,87 @@ export function InvoicesContent({ orgId }: InvoicesContentProps) {
         <div className="flex items-center justify-center py-12">
           <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </div>
-      ) : (
+      ) : filteredInvoices.length === 0 ? (
+        <Card className="squircle">
+          <CardContent className="py-12 text-center">
+            <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-muted">
+              <FileText className="size-6 text-muted-foreground" />
+            </div>
+            <h3 className="mt-4 text-lg font-medium">No invoices yet</h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Generate your first invoice to get started.
+            </p>
+            <Button onClick={() => setDialogOpen(true)} className="mt-4 squircle">
+              <Plus className="size-4" />
+              New Invoice
+            </Button>
+          </CardContent>
+        </Card>
+      ) : view === "table" ? (
         <InvoiceList
           invoices={filteredInvoices}
           orgId={orgId}
           onRefresh={fetchInvoices}
         />
+      ) : (
+        <div className="space-y-2">
+          {filteredInvoices.map((invoice) => {
+            const status = (invoice.status === "draft" && invoice.isAutoGenerated)
+              ? "in_progress"
+              : (invoice.status || "draft");
+
+            return (
+              <Card
+                key={invoice.id}
+                className="squircle hover:bg-accent/50 transition-colors cursor-pointer"
+                onClick={() => window.location.href = `/invoices/${invoice.id}/edit`}
+              >
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-4 min-w-0">
+                      <div
+                        className="size-3 rounded-full shrink-0"
+                        style={{ backgroundColor: invoice.client.color || "#94a3b8" }}
+                      />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{invoice.invoiceNumber}</span>
+                          <span className="text-muted-foreground">{invoice.client.name}</span>
+                          <span
+                            className={cn(
+                              "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium",
+                              INVOICE_STATUS_STYLES[status] || INVOICE_STATUS_STYLES.draft
+                            )}
+                          >
+                            {INVOICE_STATUS_LABELS[status] || status}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground mt-0.5">
+                          <span>
+                            {format(parseISO(invoice.periodStart), "MMM d")} – {format(parseISO(invoice.periodEnd), "MMM d, yyyy")}
+                          </span>
+                          <span>&middot;</span>
+                          <span>{formatHours(invoice.totalMinutes)}h</span>
+                          {invoice.dueDate && (
+                            <>
+                              <span>&middot;</span>
+                              <span>Due {format(parseISO(invoice.dueDate), "MMM d")}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="font-medium tabular-nums">
+                        {formatCurrency(invoice.subtotal)}
+                      </span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
       )}
 
       <InvoiceDialog
