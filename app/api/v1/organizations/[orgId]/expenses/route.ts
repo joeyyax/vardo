@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { projectExpenses, projects } from "@/lib/db/schema";
+import { projectExpenses, projects, EXPENSE_STATUSES, type ExpenseStatus } from "@/lib/db/schema";
 import { requireOrg, getSession } from "@/lib/auth/session";
 import { eq, and, desc, gte, lte, isNull } from "drizzle-orm";
+import { addWeeks, addMonths, addQuarters, addYears, isBefore, startOfDay } from "date-fns";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -28,6 +29,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const billableOnly = searchParams.get("billable") === "true";
     const overheadOnly = searchParams.get("overhead") === "true";
     const recurringOnly = searchParams.get("recurring") === "true";
+    const clientId = searchParams.get("clientId");
+    const vendor = searchParams.get("vendor");
+    const status = searchParams.get("status");
 
     // Build where conditions - always filter by org
     const whereConditions = [eq(projectExpenses.organizationId, orgId)];
@@ -53,6 +57,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
     if (recurringOnly) {
       whereConditions.push(eq(projectExpenses.isRecurring, true));
+    }
+    if (vendor) {
+      whereConditions.push(eq(projectExpenses.vendor, vendor));
+    }
+    if (status && EXPENSE_STATUSES.includes(status as ExpenseStatus)) {
+      whereConditions.push(eq(projectExpenses.status, status as ExpenseStatus));
     }
 
     const expenses = await db.query.projectExpenses.findMany({
@@ -91,7 +101,16 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       },
     });
 
+    // Post-query filter for clientId (needs to filter through project relation)
+    let filteredExpenses = expenses;
+    if (clientId) {
+      filteredExpenses = expenses.filter(
+        (e) => e.project?.client?.id === clientId
+      );
+    }
+
     // Get all expenses for summary (unfiltered by date/category but filtered by org)
+    // Summary is intentionally unfiltered - shows total org expenses regardless of current filter
     const allExpenses = await db.query.projectExpenses.findMany({
       where: eq(projectExpenses.organizationId, orgId),
       columns: {
@@ -99,6 +118,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         isBillable: true,
         category: true,
         projectId: true,
+        vendor: true,
       },
     });
 
@@ -113,8 +133,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     // Get unique categories
     const categories = [...new Set(allExpenses.map((e) => e.category).filter(Boolean))].sort();
 
+    // Get unique vendors
+    const vendors = [...new Set(allExpenses.map((e) => e.vendor).filter(Boolean))].sort();
+
     return NextResponse.json({
-      expenses,
+      expenses: clientId ? filteredExpenses : expenses,
       summary: {
         totalCents,
         billableCents,
@@ -123,6 +146,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         count: allExpenses.length,
       },
       categories,
+      vendors,
     });
   } catch (error) {
     if (error instanceof Error && error.message === "Unauthorized") {
@@ -165,6 +189,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       recurringFrequency,
       nextOccurrence,
       recurringEndDate,
+      backfillRecurring, // Whether to create entries between date and end date
+      backfillEndDate, // End date for backfill (defaults to today if not provided)
+      vendor,
+      status,
+      paidAt,
     } = body;
 
     // Validate required fields
@@ -199,6 +228,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       }
     }
 
+    // Validate status if provided
+    const validStatus = (status && EXPENSE_STATUSES.includes(status as ExpenseStatus))
+      ? (status as ExpenseStatus)
+      : "paid";
+
     const [expense] = await db
       .insert(projectExpenses)
       .values({
@@ -214,11 +248,66 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         recurringFrequency: isRecurring ? recurringFrequency : null,
         nextOccurrence: isRecurring ? nextOccurrence : null,
         recurringEndDate: recurringEndDate || null,
+        vendor: vendor?.trim() || null,
+        status: validStatus,
+        paidAt: paidAt || null,
         createdBy: session.user.id,
       })
       .returning();
 
-    return NextResponse.json(expense, { status: 201 });
+    // Handle backfill for recurring expenses
+    let created = 1;
+    if (isRecurring && backfillRecurring && recurringFrequency) {
+      const startDate = new Date(date + "T12:00:00"); // Noon to avoid timezone issues
+      // Use provided end date or default to today
+      const endDate = backfillEndDate
+        ? startOfDay(new Date(backfillEndDate + "T12:00:00"))
+        : startOfDay(new Date());
+
+      // Calculate the add function based on frequency
+      const addPeriod = (d: Date): Date => {
+        switch (recurringFrequency) {
+          case "weekly": return addWeeks(d, 1);
+          case "monthly": return addMonths(d, 1);
+          case "quarterly": return addQuarters(d, 1);
+          case "yearly": return addYears(d, 1);
+          default: return addMonths(d, 1);
+        }
+      };
+
+      // Generate dates from start to end date
+      const backfillDates: string[] = [];
+      let currentDate = addPeriod(startDate);
+
+      while (isBefore(currentDate, endDate) || currentDate.toDateString() === endDate.toDateString()) {
+        const dateStr = currentDate.toISOString().split("T")[0];
+        backfillDates.push(dateStr);
+        currentDate = addPeriod(currentDate);
+      }
+
+      // Create backfilled entries
+      if (backfillDates.length > 0) {
+        await db.insert(projectExpenses).values(
+          backfillDates.map((backfillDate) => ({
+            organizationId: orgId,
+            projectId: projectId || null,
+            description: description.trim(),
+            amountCents: Math.round(amountCents),
+            date: backfillDate,
+            category: category?.trim() || null,
+            isBillable: isBillable === true,
+            receiptFileId: null, // Don't copy receipt
+            isRecurring: true,
+            recurringFrequency,
+            parentExpenseId: expense.id, // Link to the original expense
+            createdBy: session.user.id,
+          }))
+        );
+        created += backfillDates.length;
+      }
+    }
+
+    return NextResponse.json({ expense, created }, { status: 201 });
   } catch (error) {
     if (error instanceof Error && error.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
