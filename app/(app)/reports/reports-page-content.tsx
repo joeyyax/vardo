@@ -13,6 +13,7 @@ import { InvoiceStatus } from "@/components/reports/invoice-status";
 import { ExpenseBreakdown } from "@/components/reports/expense-breakdown";
 import { ProjectHealth } from "@/components/reports/project-health";
 import { ReportConfigs } from "@/components/reports/report-configs";
+import { AccountingTab } from "@/components/reports/accounting-tab";
 import { DEFAULT_ORG_FEATURES, type OrgFeatures } from "@/lib/db/schema";
 
 type ReportsPageContentProps = {
@@ -278,7 +279,7 @@ export function ReportsPageContent({
       </TabsContent>
 
       <TabsContent value="accounting">
-        <div className="text-muted-foreground">Accounting tab coming soon</div>
+        <AccountingTab orgId={orgId} />
       </TabsContent>
 
       <TabsContent value="client-reports">
