@@ -1,15 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { format } from "date-fns";
 import type { DateRange } from "react-day-picker";
-import { ChevronDown, Loader2, Share2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
+import { Loader2 } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { DateRangePicker, type Period } from "@/components/reports/date-range-picker";
 import { FinancialSummary } from "@/components/reports/financial-summary";
 import { TimeBreakdown } from "@/components/reports/time-breakdown";
@@ -124,9 +120,18 @@ export function ReportsPageContent({
   orgId,
   features = DEFAULT_ORG_FEATURES,
 }: ReportsPageContentProps): React.ReactElement {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const currentTab = searchParams.get("tab") || "overview";
+
+  function setTab(tab: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", tab);
+    router.push(`/reports?${params.toString()}`);
+  }
+
   const [period, setPeriod] = useState<Period>("month");
   const [customRange, setCustomRange] = useState<DateRange | undefined>();
-  const [sharedReportsOpen, setSharedReportsOpen] = useState(false);
 
   const [timeData, setTimeData] = useState<TimeData | null>(null);
   const [invoiceData, setInvoiceData] = useState<InvoiceData | null>(null);
@@ -191,97 +196,94 @@ export function ReportsPageContent({
     !timeData && !invoiceData && !expenseData && !projectData;
 
   return (
-    <div className="space-y-8">
-      <DateRangePicker
-        period={period}
-        customRange={customRange}
-        onPeriodChange={setPeriod}
-        onCustomRangeChange={setCustomRange}
-      />
+    <Tabs value={currentTab} onValueChange={setTab} className="space-y-6">
+      <TabsList className="squircle">
+        <TabsTrigger value="overview">Overview</TabsTrigger>
+        <TabsTrigger value="accounting">Accounting</TabsTrigger>
+        <TabsTrigger value="client-reports">Client Reports</TabsTrigger>
+      </TabsList>
 
-      {isLoading ? (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="size-6 animate-spin text-muted-foreground" />
-        </div>
-      ) : hasNoData ? (
-        <div className="py-12 text-center">
-          <p className="text-muted-foreground">
-            No data available for this period.
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-8">
-          <FinancialSummary
-            revenue={revenue}
-            revenueSource={revenueSource}
-            expenses={expenseData?.totalCents}
-            outstanding={invoiceData ? invoiceData.pending + invoiceData.overdue : undefined}
-            features={features}
-          />
+      <TabsContent value="overview" className="space-y-8">
+        <DateRangePicker
+          period={period}
+          customRange={customRange}
+          onPeriodChange={setPeriod}
+          onCustomRangeChange={setCustomRange}
+        />
 
-          {features.time_tracking && timeData && (
-            <TimeBreakdown
-              totalMinutes={timeData.totalMinutes}
-              totalBillable={timeData.totalBillable}
-              totalUnbillableMinutes={timeData.totalUnbillableMinutes}
-              clientBreakdown={timeData.clientBreakdown}
-              topProjects={timeData.topProjects}
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="size-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : hasNoData ? (
+          <div className="py-12 text-center">
+            <p className="text-muted-foreground">
+              No data available for this period.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-8">
+            <FinancialSummary
+              revenue={revenue}
+              revenueSource={revenueSource}
+              expenses={expenseData?.totalCents}
+              outstanding={invoiceData ? invoiceData.pending + invoiceData.overdue : undefined}
+              features={features}
             />
-          )}
 
-          {features.invoicing && invoiceData && (
-            <InvoiceStatus
-              paid={invoiceData.paid}
-              pending={invoiceData.pending}
-              overdue={invoiceData.overdue}
-              draft={invoiceData.draft}
-              aging={invoiceData.aging}
-              recentActivity={invoiceData.recentActivity}
-            />
-          )}
+            {features.time_tracking && timeData && (
+              <TimeBreakdown
+                totalMinutes={timeData.totalMinutes}
+                totalBillable={timeData.totalBillable}
+                totalUnbillableMinutes={timeData.totalUnbillableMinutes}
+                clientBreakdown={timeData.clientBreakdown}
+                topProjects={timeData.topProjects}
+              />
+            )}
 
-          {features.expenses && expenseData && (
-            <ExpenseBreakdown
-              totalCents={expenseData.totalCents}
-              billableCents={expenseData.billableCents}
-              nonBillableCents={expenseData.nonBillableCents}
-              byCategory={expenseData.byCategory}
-              byProject={expenseData.byProject}
-              recoveryRate={expenseData.recoveryRate}
-            />
-          )}
+            {features.invoicing && invoiceData && (
+              <InvoiceStatus
+                paid={invoiceData.paid}
+                pending={invoiceData.pending}
+                overdue={invoiceData.overdue}
+                draft={invoiceData.draft}
+                aging={invoiceData.aging}
+                recentActivity={invoiceData.recentActivity}
+              />
+            )}
 
-          {features.pm && projectData && (
-            <ProjectHealth
-              activeCount={projectData.activeCount}
-              onBudgetCount={projectData.onBudgetCount}
-              atRiskCount={projectData.atRiskCount}
-              overBudgetCount={projectData.overBudgetCount}
-              projectsWithBudgets={projectData.projectsWithBudgets}
-              projectsWithoutBudgets={projectData.projectsWithoutBudgets}
-            />
-          )}
-        </div>
-      )}
+            {features.expenses && expenseData && (
+              <ExpenseBreakdown
+                totalCents={expenseData.totalCents}
+                billableCents={expenseData.billableCents}
+                nonBillableCents={expenseData.nonBillableCents}
+                byCategory={expenseData.byCategory}
+                byProject={expenseData.byProject}
+                recoveryRate={expenseData.recoveryRate}
+              />
+            )}
 
-      <Collapsible open={sharedReportsOpen} onOpenChange={setSharedReportsOpen}>
-        <CollapsibleTrigger asChild>
-          <Button variant="ghost" className="w-full justify-between squircle">
-            <div className="flex items-center gap-2">
-              <Share2 className="size-4" />
-              <span>Shared Reports</span>
-            </div>
-            <ChevronDown
-              className={`size-4 transition-transform ${
-                sharedReportsOpen ? "rotate-180" : ""
-              }`}
-            />
-          </Button>
-        </CollapsibleTrigger>
-        <CollapsibleContent className="pt-4">
-          <ReportConfigs orgId={orgId} />
-        </CollapsibleContent>
-      </Collapsible>
-    </div>
+            {features.pm && projectData && (
+              <ProjectHealth
+                activeCount={projectData.activeCount}
+                onBudgetCount={projectData.onBudgetCount}
+                atRiskCount={projectData.atRiskCount}
+                overBudgetCount={projectData.overBudgetCount}
+                projectsWithBudgets={projectData.projectsWithBudgets}
+                projectsWithoutBudgets={projectData.projectsWithoutBudgets}
+              />
+            )}
+          </div>
+        )}
+      </TabsContent>
+
+      <TabsContent value="accounting">
+        <div className="text-muted-foreground">Accounting tab coming soon</div>
+      </TabsContent>
+
+      <TabsContent value="client-reports">
+        <ReportConfigs orgId={orgId} />
+      </TabsContent>
+    </Tabs>
   );
 }
