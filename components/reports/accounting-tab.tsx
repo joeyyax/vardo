@@ -20,7 +20,9 @@ import {
   Download,
   ExternalLink,
   Loader2,
+  X,
 } from "lucide-react";
+import { PageToolbar } from "@/components/page-toolbar";
 import { RevenueChart } from "@/components/reports/revenue-chart";
 
 type AccountingTabProps = {
@@ -75,7 +77,7 @@ function getDefaultYear(): string {
   return year.toString();
 }
 
-export function AccountingTab({ orgId }: AccountingTabProps) {
+export function AccountingTab({ orgId, clientId, setClientId, clients = [] }: AccountingTabProps) {
   const [selectedYear, setSelectedYear] = useState<string>(getDefaultYear());
   const [data, setData] = useState<AccountingData | null>(null);
   const [revenueByMonth, setRevenueByMonth] = useState<
@@ -92,12 +94,13 @@ export function AccountingTab({ orgId }: AccountingTabProps) {
 
       const startDate = `${selectedYear}-01-01`;
       const endDate = `${selectedYear}-12-31`;
+      const clientParam = clientId ? `&clientId=${clientId}` : "";
 
       try {
         const [expensesRes, analyticsRes, invoicesRes] = await Promise.all([
-          fetch(`/api/v1/organizations/${orgId}/reports/expenses?from=${startDate}&to=${endDate}`),
-          fetch(`/api/v1/organizations/${orgId}/analytics?from=${startDate}&to=${endDate}`),
-          fetch(`/api/v1/organizations/${orgId}/reports/invoices?from=${startDate}&to=${endDate}`),
+          fetch(`/api/v1/organizations/${orgId}/reports/expenses?from=${startDate}&to=${endDate}${clientParam}`),
+          fetch(`/api/v1/organizations/${orgId}/analytics?from=${startDate}&to=${endDate}${clientParam}`),
+          fetch(`/api/v1/organizations/${orgId}/reports/invoices?from=${startDate}&to=${endDate}${clientParam}`),
         ]);
 
         const expenses = expensesRes.ok ? await expensesRes.json() : null;
@@ -144,7 +147,7 @@ export function AccountingTab({ orgId }: AccountingTabProps) {
     }
 
     fetchData();
-  }, [orgId, selectedYear]);
+  }, [orgId, selectedYear, clientId]);
 
   function handleExportExpenses() {
     const startDate = `${selectedYear}-01-01`;
@@ -157,8 +160,7 @@ export function AccountingTab({ orgId }: AccountingTabProps) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <span className="text-sm text-muted-foreground">Tax Year:</span>
+      <PageToolbar>
         <Select value={selectedYear} onValueChange={setSelectedYear}>
           <SelectTrigger className="w-[120px] squircle">
             <SelectValue />
@@ -171,7 +173,46 @@ export function AccountingTab({ orgId }: AccountingTabProps) {
             ))}
           </SelectContent>
         </Select>
-      </div>
+
+        {clients.length > 0 && setClientId && (
+          <Select
+            value={clientId || "all"}
+            onValueChange={(value) => setClientId(value === "all" ? null : value)}
+          >
+            <SelectTrigger className="w-[180px] squircle">
+              <SelectValue placeholder="All Clients" />
+            </SelectTrigger>
+            <SelectContent className="squircle">
+              <SelectItem value="all">All Clients</SelectItem>
+              {clients.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  <span className="flex items-center gap-2">
+                    {c.color && (
+                      <div
+                        className="size-2.5 rounded-full"
+                        style={{ backgroundColor: c.color }}
+                      />
+                    )}
+                    {c.name}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
+        {clientId && setClientId && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setClientId(null)}
+            className="squircle"
+          >
+            <X className="size-4" />
+            Clear
+          </Button>
+        )}
+      </PageToolbar>
 
       {isLoading ? (
         <div className="flex items-center justify-center py-12">
