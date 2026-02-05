@@ -40,7 +40,7 @@ export type Task = {
 type TaskDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  task: Task;
+  task: Task | null;
   orgId: string;
   projectId: string;
   onSuccess: () => void;
@@ -65,17 +65,26 @@ export function TaskDialog({
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const isEditing = !!task;
+
   // Reset form when dialog opens or task changes
   useEffect(() => {
-    if (open && task) {
-      setName(task.name);
-      // Convert cents to dollars for display
-      setRateOverride(
-        task.rateOverride !== null
-          ? (task.rateOverride / 100).toString()
-          : ""
-      );
-      setIsBillable(task.isBillable);
+    if (open) {
+      if (task) {
+        setName(task.name);
+        // Convert cents to dollars for display
+        setRateOverride(
+          task.rateOverride !== null
+            ? (task.rateOverride / 100).toString()
+            : ""
+        );
+        setIsBillable(task.isBillable);
+      } else {
+        // Creating new task - reset form
+        setName("");
+        setRateOverride("");
+        setIsBillable(null);
+      }
       setError(null);
     }
   }, [open, task]);
@@ -92,14 +101,15 @@ export function TaskDialog({
         isBillable,
       };
 
-      const response = await fetch(
-        `/api/v1/organizations/${orgId}/projects/${projectId}/tasks/${task.id}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        }
-      );
+      const url = isEditing
+        ? `/api/v1/organizations/${orgId}/projects/${projectId}/tasks/${task!.id}`
+        : `/api/v1/organizations/${orgId}/projects/${projectId}/tasks`;
+
+      const response = await fetch(url, {
+        method: isEditing ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
       if (!response.ok) {
         const data = await response.json();
@@ -116,6 +126,7 @@ export function TaskDialog({
   };
 
   const handleArchiveToggle = async () => {
+    if (!task) return;
     setIsArchiving(true);
     setError(null);
 
@@ -144,6 +155,7 @@ export function TaskDialog({
   };
 
   const handleDelete = async () => {
+    if (!task) return;
     setIsDeleting(true);
     setError(null);
 
@@ -174,9 +186,11 @@ export function TaskDialog({
       <DialogContent className="squircle sm:max-w-md">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
-            <DialogTitle>Edit task</DialogTitle>
+            <DialogTitle>{isEditing ? "Edit task" : "New task"}</DialogTitle>
             <DialogDescription>
-              Update task details or manage its status.
+              {isEditing
+                ? "Update task details or manage its status."
+                : "Create a new task for this project."}
             </DialogDescription>
           </DialogHeader>
 
@@ -251,7 +265,7 @@ export function TaskDialog({
             </div>
 
             {/* Archived status indicator */}
-            {task.isArchived && (
+            {task?.isArchived && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 px-3 py-2 rounded-md">
                 <Archive className="size-4" />
                 <span>This task is archived.</span>
@@ -264,49 +278,50 @@ export function TaskDialog({
           </div>
 
           <DialogFooter className="gap-2 sm:gap-0">
-            <div className="flex gap-2 mr-auto">
-              {/* Archive/Unarchive button */}
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleArchiveToggle}
-                disabled={isDisabled}
-                className="squircle"
-              >
-                {isArchiving && <Loader2 className="size-4 animate-spin" />}
-                {task.isArchived ? (
-                  <>
-                    <ArchiveRestore className="size-4" />
-                    Unarchive
-                  </>
-                ) : (
-                  <>
-                    <Archive className="size-4" />
-                    Archive
-                  </>
-                )}
-              </Button>
+            {isEditing && (
+              <div className="flex gap-2 mr-auto">
+                {/* Archive/Unarchive button */}
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleArchiveToggle}
+                  disabled={isDisabled}
+                  className="squircle"
+                >
+                  {isArchiving && <Loader2 className="size-4 animate-spin" />}
+                  {task?.isArchived ? (
+                    <>
+                      <ArchiveRestore className="size-4" />
+                      Unarchive
+                    </>
+                  ) : (
+                    <>
+                      <Archive className="size-4" />
+                      Archive
+                    </>
+                  )}
+                </Button>
 
-              {/* Delete button */}
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    disabled={isDisabled}
-                    className="squircle"
-                  >
-                    {isDeleting && (
-                      <Loader2 className="size-4 animate-spin" />
-                    )}
-                    Delete
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent className="squircle">
+                {/* Delete button */}
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      disabled={isDisabled}
+                      className="squircle"
+                    >
+                      {isDeleting && (
+                        <Loader2 className="size-4 animate-spin" />
+                      )}
+                      Delete
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent className="squircle">
                   <AlertDialogHeader>
                     <AlertDialogTitle>Delete task?</AlertDialogTitle>
                     <AlertDialogDescription>
-                      This will permanently delete &quot;{task.name}&quot; and all
+                      This will permanently delete &quot;{task?.name}&quot; and all
                       associated time entries. This action cannot be undone.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
@@ -321,7 +336,8 @@ export function TaskDialog({
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
-            </div>
+              </div>
+            )}
 
             <Button
               type="button"
@@ -338,7 +354,7 @@ export function TaskDialog({
               className="squircle"
             >
               {isLoading && <Loader2 className="size-4 animate-spin" />}
-              Save changes
+              {isEditing ? "Save changes" : "Create task"}
             </Button>
           </DialogFooter>
         </form>

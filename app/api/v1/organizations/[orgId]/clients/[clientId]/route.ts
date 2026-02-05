@@ -73,7 +73,20 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     const body = await request.json();
-    const { name, color, rateOverride, isBillable } = body;
+    const {
+      name,
+      color,
+      rateOverride,
+      isBillable,
+      billingType,
+      billingFrequency,
+      autoGenerateInvoices,
+      retainerAmount,
+      billingDayOfWeek,
+      billingDayOfMonth,
+      paymentTermsDays,
+      parentClientId,
+    } = body;
 
     // Build update object with only provided fields
     const updates: Partial<{
@@ -81,6 +94,14 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       color: string | null;
       rateOverride: number | null;
       isBillable: boolean | null;
+      billingType: string | null;
+      billingFrequency: string | null;
+      autoGenerateInvoices: boolean;
+      retainerAmount: number | null;
+      billingDayOfWeek: number | null;
+      billingDayOfMonth: number | null;
+      paymentTermsDays: number | null;
+      parentClientId: string | null;
       updatedAt: Date;
     }> = {
       updatedAt: new Date(),
@@ -110,6 +131,87 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     if (isBillable !== undefined) {
       updates.isBillable = isBillable;
+    }
+
+    if (billingType !== undefined) {
+      updates.billingType = billingType || null;
+    }
+
+    if (billingFrequency !== undefined) {
+      updates.billingFrequency = billingFrequency || null;
+    }
+
+    if (autoGenerateInvoices !== undefined) {
+      updates.autoGenerateInvoices = autoGenerateInvoices;
+    }
+
+    if (retainerAmount !== undefined) {
+      // Convert retainer from dollars to cents if provided
+      updates.retainerAmount =
+        retainerAmount !== null && retainerAmount !== "" && retainerAmount !== undefined
+          ? Math.round(parseFloat(retainerAmount) * 100)
+          : null;
+    }
+
+    if (billingDayOfWeek !== undefined) {
+      updates.billingDayOfWeek = billingDayOfWeek;
+    }
+
+    if (billingDayOfMonth !== undefined) {
+      updates.billingDayOfMonth = billingDayOfMonth;
+    }
+
+    if (paymentTermsDays !== undefined) {
+      updates.paymentTermsDays = paymentTermsDays;
+    }
+
+    if (parentClientId !== undefined) {
+      // Allow clearing parent with null or empty string
+      if (parentClientId === null || parentClientId === "") {
+        updates.parentClientId = null;
+      } else {
+        // Cannot set self as parent
+        if (parentClientId === clientId) {
+          return NextResponse.json(
+            { error: "Client cannot be its own parent" },
+            { status: 400 }
+          );
+        }
+        // Validate parent exists and belongs to same org
+        const parentClient = await db.query.clients.findFirst({
+          where: and(
+            eq(clients.id, parentClientId),
+            eq(clients.organizationId, orgId)
+          ),
+        });
+        if (!parentClient) {
+          return NextResponse.json(
+            { error: "Parent client not found" },
+            { status: 400 }
+          );
+        }
+        // Prevent setting a child client as parent (only one level of nesting)
+        if (parentClient.parentClientId) {
+          return NextResponse.json(
+            { error: "Cannot set a child client as parent (max one level of nesting)" },
+            { status: 400 }
+          );
+        }
+        // Check if this client has children - if so, it cannot become a child
+        const hasChildren = await db.query.clients.findFirst({
+          where: and(
+            eq(clients.parentClientId, clientId),
+            eq(clients.organizationId, orgId)
+          ),
+        });
+        if (hasChildren) {
+          return NextResponse.json(
+            { error: "Client with children cannot have a parent (max one level of nesting)" },
+            { status: 400 }
+          );
+        }
+        updates.parentClientId = parentClientId;
+      }
     }
 
     const [updatedClient] = await db

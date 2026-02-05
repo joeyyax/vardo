@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect, KeyboardEvent } from "react";
-import { Copy, Trash2, DollarSign } from "lucide-react";
+import { useState, useRef, useEffect, KeyboardEvent, DragEvent } from "react";
+import { Copy, Trash2, DollarSign, GripVertical, Repeat } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,23 +40,36 @@ interface EntryRowProps {
   ) => Promise<void>;
   onDelete: (entryId: string) => Promise<void>;
   onDuplicate: (entry: TimeEntry) => Promise<void>;
+  onMakeRecurring?: (entry: TimeEntry) => void;
+  isHighlighted?: boolean;
+  onClearHighlight?: () => void;
 }
 
 type EditingField = "description" | "duration" | null;
 
 /**
- * Format hierarchy display for an entry.
- * Shows: Client / Project / Task (as available)
+ * Render hierarchy chips for an entry.
+ * Shows: [Project] [Task] [Client] as styled chips
+ * Falls back to just [Client] if no project.
  */
-function formatHierarchyDisplay(entry: TimeEntry): string {
-  const parts = [entry.client.name];
+function HierarchyChips({ entry }: { entry: TimeEntry }) {
+  const chipClass = "inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-muted/60 text-muted-foreground";
+  const emptyChipClass = "inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-muted/30 text-muted-foreground/50";
+
   if (entry.project) {
-    parts.push(entry.project.name);
-    if (entry.task) {
-      parts.push(entry.task.name);
-    }
+    return (
+      <span className="flex items-center gap-1">
+        <span className={chipClass}>{entry.project.name}</span>
+        {entry.task ? (
+          <span className={chipClass}>{entry.task.name}</span>
+        ) : (
+          <span className={emptyChipClass}>—</span>
+        )}
+        <span className={chipClass}>{entry.client.name}</span>
+      </span>
+    );
   }
-  return parts.join(" / ");
+  return <span className={chipClass}>{entry.client.name}</span>;
 }
 
 export function EntryRow({
@@ -65,6 +78,9 @@ export function EntryRow({
   onUpdate,
   onDelete,
   onDuplicate,
+  onMakeRecurring,
+  isHighlighted,
+  onClearHighlight,
 }: EntryRowProps) {
   const [isHovered, setIsHovered] = useState(false);
   const [editingField, setEditingField] = useState<EditingField>(null);
@@ -73,8 +89,33 @@ export function EntryRow({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
+  const rowRef = useRef<HTMLDivElement>(null);
+
+  // Scroll into view and clear highlight after a delay
+  useEffect(() => {
+    if (isHighlighted && rowRef.current) {
+      rowRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+      const timer = setTimeout(() => {
+        onClearHighlight?.();
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [isHighlighted, onClearHighlight]);
+
+  // Drag handlers
+  const handleDragStart = (e: DragEvent<HTMLDivElement>) => {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", entry.id);
+    e.dataTransfer.setData("application/x-entry-date", entry.date);
+    setIsDragging(true);
+  };
+
+  const handleDragEnd = () => {
+    setIsDragging(false);
+  };
 
   // Focus input when editing starts
   useEffect(() => {
@@ -188,13 +229,29 @@ export function EntryRow({
   return (
     <>
       <div
+        ref={rowRef}
         className={cn(
           "group flex items-center gap-4 py-2 px-3 -mx-3 rounded-lg transition-colors",
-          isHovered && "bg-muted/50"
+          isHovered && "bg-muted/50",
+          isDragging && "opacity-50",
+          isHighlighted && "ring-2 ring-primary ring-offset-2 bg-primary/5"
         )}
+        draggable
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
+        {/* Drag handle */}
+        <div
+          className={cn(
+            "cursor-grab active:cursor-grabbing transition-opacity text-muted-foreground/40 hover:text-muted-foreground",
+            isHovered ? "opacity-100" : "opacity-0"
+          )}
+        >
+          <GripVertical className="size-4" />
+        </div>
+
         {/* Client color dot */}
         <div
           className="size-2 rounded-full shrink-0"
@@ -229,22 +286,79 @@ export function EntryRow({
         </div>
 
         {/* Hierarchy selector (Client/Project/Task) */}
-        <HierarchySelector
-          orgId={orgId}
-          selectedClientId={entry.client.id}
-          selectedProjectId={entry.project?.id || null}
-          selectedTaskId={entry.task?.id || null}
-          onSelect={handleHierarchySelect}
-          open={isSelectorOpen}
-          onOpenChange={setIsSelectorOpen}
-        >
-          <button
-            onClick={() => setIsSelectorOpen(true)}
-            className="text-sm text-muted-foreground hover:text-foreground transition-colors truncate max-w-[200px]"
-          >
-            {formatHierarchyDisplay(entry)}
-          </button>
-        </HierarchySelector>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div>
+              <HierarchySelector
+                orgId={orgId}
+                selectedClientId={entry.client.id}
+                selectedProjectId={entry.project?.id || null}
+                selectedTaskId={entry.task?.id || null}
+                onSelect={handleHierarchySelect}
+                open={isSelectorOpen}
+                onOpenChange={setIsSelectorOpen}
+              >
+                <button
+                  onClick={() => setIsSelectorOpen(true)}
+                  className="text-sm hover:opacity-80 transition-opacity"
+                >
+                  <HierarchyChips entry={entry} />
+                </button>
+              </HierarchySelector>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="top" align="start" className="max-w-xs">
+            <div className="space-y-1">
+              {entry.project ? (
+                <>
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="size-2 rounded-full shrink-0"
+                      style={{ backgroundColor: entry.client.color || "#94a3b8" }}
+                    />
+                    <span className="font-medium">{entry.project.name}</span>
+                    {entry.project.code && (
+                      <span className="ml-2 font-mono text-xs bg-muted px-1 rounded">
+                        {entry.project.code}
+                      </span>
+                    )}
+                  </div>
+                  {entry.task && (
+                    <div className="pl-4 text-muted-foreground text-xs">
+                      {entry.task.name}
+                    </div>
+                  )}
+                  <div className="pl-4 text-muted-foreground text-xs">
+                    {entry.client.name}
+                  </div>
+                </>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <div
+                    className="size-2 rounded-full shrink-0"
+                    style={{ backgroundColor: entry.client.color || "#94a3b8" }}
+                  />
+                  <span className="font-medium">{entry.client.name}</span>
+                </div>
+              )}
+            </div>
+          </TooltipContent>
+        </Tooltip>
+
+        {/* Recurring indicator */}
+        {entry.recurringTemplateId && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => onMakeRecurring?.(entry)}
+                className="size-6 flex items-center justify-center rounded transition-colors text-primary/60 hover:text-primary"
+              >
+                <Repeat className="size-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Recurring entry (click to edit)</TooltipContent>
+          </Tooltip>
+        )}
 
         {/* Billable indicator */}
         <Tooltip>
@@ -310,6 +424,22 @@ export function EntryRow({
             </TooltipTrigger>
             <TooltipContent>Duplicate entry</TooltipContent>
           </Tooltip>
+
+          {onMakeRecurring && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={() => onMakeRecurring(entry)}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <Repeat className="size-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Make recurring</TooltipContent>
+            </Tooltip>
+          )}
 
           <Tooltip>
             <TooltipTrigger asChild>

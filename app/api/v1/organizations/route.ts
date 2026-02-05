@@ -1,7 +1,45 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { organizations, memberships } from "@/lib/db/schema";
+import { organizations, memberships, users } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth/session";
+import { eq, sql } from "drizzle-orm";
+
+/**
+ * GET /api/v1/organizations
+ * List all organizations the authenticated user belongs to.
+ */
+export async function GET() {
+  try {
+    const session = await getSession();
+
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Find all memberships for this user with their organizations
+    const userMemberships = await db.query.memberships.findMany({
+      where: eq(memberships.userId, session.user.id),
+      with: {
+        organization: true,
+      },
+    });
+
+    const orgs = userMemberships.map((m) => ({
+      id: m.organization.id,
+      name: m.organization.name,
+      slug: m.organization.slug,
+      role: m.role,
+    }));
+
+    return NextResponse.json({ organizations: orgs });
+  } catch (error) {
+    console.error("Error fetching organizations:", error);
+    return NextResponse.json(
+      { error: "Failed to fetch organizations" },
+      { status: 500 }
+    );
+  }
+}
 
 /**
  * POST /api/v1/organizations
@@ -26,6 +64,12 @@ export async function POST(request: NextRequest) {
     }
 
     const trimmedName = name.trim();
+
+    // Check if this is the first organization in the system
+    const [{ count: orgCount }] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(organizations);
+    const isFirstOrg = orgCount === 0;
 
     // Generate a slug from the name
     const baseSlug = trimmedName
@@ -53,7 +97,15 @@ export async function POST(request: NextRequest) {
       role: "owner",
     });
 
-    return NextResponse.json({ organization: org }, { status: 201 });
+    // If this is the first organization, make the user an app admin
+    if (isFirstOrg) {
+      await db
+        .update(users)
+        .set({ isAppAdmin: true })
+        .where(eq(users.id, session.user.id));
+    }
+
+    return NextResponse.json({ organization: org, isAppAdmin: isFirstOrg }, { status: 201 });
   } catch (error) {
     console.error("Error creating organization:", error);
     return NextResponse.json(

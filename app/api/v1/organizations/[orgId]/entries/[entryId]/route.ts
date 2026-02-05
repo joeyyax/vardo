@@ -7,6 +7,7 @@ import {
   resolveEntryBillable,
   validateEntryHierarchy,
 } from "@/lib/entries/resolve-billable";
+import { updateRollingDraftInvoice } from "@/lib/invoices/rolling-draft";
 
 type RouteParams = {
   params: Promise<{ orgId: string; entryId: string }>;
@@ -22,6 +23,7 @@ function shapeEntryResponse(entry: {
   date: string;
   durationMinutes: number;
   isBillableOverride: boolean | null;
+  recurringTemplateId?: string | null;
   createdAt: Date;
   client: {
     id: string;
@@ -55,6 +57,7 @@ function shapeEntryResponse(entry: {
     durationMinutes: entry.durationMinutes,
     isBillableOverride: entry.isBillableOverride,
     isBillable,
+    recurringTemplateId: entry.recurringTemplateId || null,
     createdAt: entry.createdAt.toISOString(),
     client: {
       id: entry.client.id,
@@ -121,6 +124,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         date: entry.date,
         durationMinutes: entry.durationMinutes,
         isBillableOverride: entry.isBillableOverride,
+        recurringTemplateId: entry.recurringTemplateId,
         createdAt: entry.createdAt,
         client: {
           id: entry.client.id,
@@ -189,6 +193,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       date,
       durationMinutes,
       isBillableOverride,
+      recurringTemplateId,
     } = body;
 
     // Build update object with only provided fields
@@ -200,6 +205,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       date: string;
       durationMinutes: number;
       isBillableOverride: boolean | null;
+      recurringTemplateId: string | null;
       updatedAt: Date;
     }> = {
       updatedAt: new Date(),
@@ -264,12 +270,27 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       updates.isBillableOverride = isBillableOverride;
     }
 
+    if (recurringTemplateId !== undefined) {
+      updates.recurringTemplateId = recurringTemplateId;
+    }
+
     await db
       .update(timeEntries)
       .set(updates)
       .where(
         and(eq(timeEntries.id, entryId), eq(timeEntries.organizationId, orgId))
       );
+
+    // Update rolling draft invoices for affected clients (non-blocking)
+    const clientsToUpdate = new Set([existingEntry.clientId]);
+    if (clientId && clientId !== existingEntry.clientId) {
+      clientsToUpdate.add(clientId);
+    }
+    for (const cid of clientsToUpdate) {
+      updateRollingDraftInvoice(orgId, cid).catch((err) => {
+        console.error("Error updating rolling draft invoice:", err);
+      });
+    }
 
     // Fetch updated entry with relations
     const updatedEntry = await getEntryForOrg(entryId, orgId);
@@ -285,6 +306,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         date: updatedEntry.date,
         durationMinutes: updatedEntry.durationMinutes,
         isBillableOverride: updatedEntry.isBillableOverride,
+        recurringTemplateId: updatedEntry.recurringTemplateId,
         createdAt: updatedEntry.createdAt,
         client: {
           id: updatedEntry.client.id,
@@ -344,11 +366,18 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Entry not found" }, { status: 404 });
     }
 
+    const clientId = existingEntry.clientId;
+
     await db
       .delete(timeEntries)
       .where(
         and(eq(timeEntries.id, entryId), eq(timeEntries.organizationId, orgId))
       );
+
+    // Update rolling draft invoice for affected client (non-blocking)
+    updateRollingDraftInvoice(orgId, clientId).catch((err) => {
+      console.error("Error updating rolling draft invoice:", err);
+    });
 
     return NextResponse.json({ success: true });
   } catch (error) {

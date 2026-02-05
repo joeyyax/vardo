@@ -214,11 +214,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         task.name
       );
 
-      // Skip non-matching items when query is provided
+      // When query is provided: include matching items (even without usage history)
+      // When no query: only show items with recent usage
       if (query && !matches) continue;
-      // Skip items without recent usage when no query
       if (!query && baseScore === 0) continue;
 
+      // Boost untracked items that match the query so they still appear
       const score = baseScore + boost + (query && baseScore === 0 ? 10 : 0);
       const key = usageKey;
 
@@ -246,11 +247,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         project.code
       );
 
-      // Skip non-matching items when query is provided
+      // When query is provided: include matching items (even without usage history)
+      // When no query: only show items with recent usage
       if (query && !matches) continue;
-      // Skip items without recent usage when no query
       if (!query && baseScore === 0) continue;
 
+      // Boost untracked items that match the query so they still appear
       const score = baseScore + boost + (query && baseScore === 0 ? 8 : 0);
       const key = usageKey;
 
@@ -273,11 +275,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       const { score: baseScore, reason } = calculateScoreAndReason(usageKey);
       const { matches, boost } = getMatchBoost(query, client.name);
 
-      // Skip non-matching items when query is provided
+      // When query is provided: include matching items (even without usage history)
+      // When no query: only show items with recent usage
       if (query && !matches) continue;
-      // Skip items without recent usage when no query
       if (!query && baseScore === 0) continue;
 
+      // Boost untracked items that match the query so they still appear
       const score = baseScore + boost + (query && baseScore === 0 ? 5 : 0);
       const key = usageKey;
 

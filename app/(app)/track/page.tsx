@@ -2,8 +2,13 @@ import { redirect } from "next/navigation"
 import { getCurrentOrg } from "@/lib/auth/session"
 import { Timeline } from "@/components/timeline"
 
-export default async function TrackPage() {
+type TrackPageProps = {
+  searchParams: Promise<{ date?: string; entry?: string }>
+}
+
+export default async function TrackPage({ searchParams }: TrackPageProps) {
   const orgData = await getCurrentOrg()
+  const { date, entry } = await searchParams
 
   if (!orgData) {
     redirect("/onboarding")
@@ -18,7 +23,11 @@ export default async function TrackPage() {
         </p>
       </div>
 
-      <Timeline orgId={orgData.organization.id} />
+      <Timeline
+        orgId={orgData.organization.id}
+        initialDate={date}
+        highlightEntryId={entry}
+      />
     </div>
   )
 }

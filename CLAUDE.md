@@ -65,3 +65,37 @@ Multi-tenant: all queries scoped by `organization_id`.
 - **Keyboard-first entry**: Full entry flow without mouse
 - **Inline editing**: Click any field in timeline to edit
 - **Smart suggestions**: Recent usage + time-of-week patterns
+- **Parent/child clients**: One level of nesting (e.g., Agency → End Client)
+- **Drag-and-drop**: Clients can be nested/un-nested via drag-and-drop
+
+## UI Components
+
+### Toasts (Sonner)
+
+Use `toast` from `sonner` for notifications:
+
+```tsx
+import { toast } from "sonner";
+
+// Success
+toast.success("Changes saved");
+
+// Error
+toast.error("Failed to save");
+
+// With description
+toast.success("Client created", {
+  description: "Acme Corp has been added",
+});
+
+// Promise (auto-handles loading/success/error)
+toast.promise(saveData(), {
+  loading: "Saving...",
+  success: "Saved!",
+  error: "Failed to save",
+});
+```
+
+### Squircle Styling
+
+Apply `className="squircle"` to buttons, cards, dialogs for consistent rounded corners.

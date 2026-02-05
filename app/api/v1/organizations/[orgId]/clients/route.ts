@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { clients } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -55,7 +55,20 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     const body = await request.json();
-    const { name, color, rateOverride, isBillable } = body;
+    const {
+      name,
+      color,
+      rateOverride,
+      isBillable,
+      billingType,
+      billingFrequency,
+      autoGenerateInvoices,
+      retainerAmount,
+      billingDayOfWeek,
+      billingDayOfMonth,
+      paymentTermsDays,
+      parentClientId,
+    } = body;
 
     if (!name || typeof name !== "string" || name.trim().length === 0) {
       return NextResponse.json(
@@ -70,6 +83,35 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         ? Math.round(parseFloat(rateOverride) * 100)
         : null;
 
+    // Convert retainer amount from dollars to cents if provided
+    const retainerInCents =
+      retainerAmount !== null && retainerAmount !== undefined && retainerAmount !== ""
+        ? Math.round(parseFloat(retainerAmount) * 100)
+        : null;
+
+    // Validate parentClientId if provided - must belong to same org
+    if (parentClientId) {
+      const parentClient = await db.query.clients.findFirst({
+        where: and(
+          eq(clients.id, parentClientId),
+          eq(clients.organizationId, orgId)
+        ),
+      });
+      if (!parentClient) {
+        return NextResponse.json(
+          { error: "Parent client not found" },
+          { status: 400 }
+        );
+      }
+      // Prevent setting a child client as parent (only one level of nesting)
+      if (parentClient.parentClientId) {
+        return NextResponse.json(
+          { error: "Cannot set a child client as parent (max one level of nesting)" },
+          { status: 400 }
+        );
+      }
+    }
+
     const [newClient] = await db
       .insert(clients)
       .values({
@@ -78,6 +120,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         color: color || null,
         rateOverride: rateInCents,
         isBillable: isBillable ?? null,
+        billingType: billingType || null,
+        billingFrequency: billingFrequency || null,
+        autoGenerateInvoices: autoGenerateInvoices ?? false,
+        retainerAmount: retainerInCents,
+        billingDayOfWeek: billingDayOfWeek ?? null,
+        billingDayOfMonth: billingDayOfMonth ?? null,
+        paymentTermsDays: paymentTermsDays ?? null,
+        parentClientId: parentClientId || null,
       })
       .returning();
 

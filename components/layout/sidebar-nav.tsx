@@ -4,6 +4,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
   Clock,
+  BarChart3,
   FileText,
   Users,
   Folder,
@@ -26,8 +27,14 @@ const navItems = [
   {
     label: "Reports",
     href: "/reports",
+    icon: BarChart3,
+    description: "Analytics & summaries",
+  },
+  {
+    label: "Invoices",
+    href: "/invoices",
     icon: FileText,
-    description: "Manage reports",
+    description: "Manage invoices",
   },
   {
     label: "Clients",

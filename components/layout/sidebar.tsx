@@ -1,13 +1,17 @@
-"use client"
+"use client";
 
-import Link from "next/link"
-import { Clock } from "lucide-react"
-import { SidebarNav } from "./sidebar-nav"
-import { OrgSwitcher } from "./org-switcher"
-import { UserMenu } from "./user-menu"
-import { Separator } from "@/components/ui/separator"
+import Link from "next/link";
+import { Clock } from "lucide-react";
+import { SidebarNav } from "./sidebar-nav";
+import { OrgSwitcher } from "./org-switcher";
+import { UserMenu } from "./user-menu";
+import { Separator } from "@/components/ui/separator";
 
-export function Sidebar() {
+type SidebarProps = {
+  currentOrgId?: string;
+};
+
+export function Sidebar({ currentOrgId }: SidebarProps) {
   return (
     <aside className="flex h-full w-56 flex-col border-r bg-sidebar">
       {/* Logo/Brand */}
@@ -30,10 +34,10 @@ export function Sidebar() {
       {/* Footer - Org Switcher & User Menu */}
       <div className="mt-auto border-t p-2">
         <div className="flex flex-col gap-1">
-          <OrgSwitcher />
+          <OrgSwitcher currentOrgId={currentOrgId} />
           <UserMenu />
         </div>
       </div>
     </aside>
-  )
+  );
 }

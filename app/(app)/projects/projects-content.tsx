@@ -1,12 +1,14 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import {
   Plus,
   DollarSign,
   FolderKanban,
   Archive,
   Filter,
+  Edit,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -212,7 +214,7 @@ export function ProjectsContent({ orgId }: ProjectsContentProps) {
               <ProjectRow
                 key={project.id}
                 project={project}
-                onClick={() => handleEditProject(project)}
+                onEdit={() => handleEditProject(project)}
               />
             ))}
           </div>
@@ -272,7 +274,7 @@ function EmptyState({
           your first client, then come back here to add projects.
         </p>
         <Button asChild variant="outline" className="mt-6 squircle">
-          <a href="/clients">Go to Clients</a>
+          <Link href="/clients">Go to Clients</Link>
         </Button>
       </div>
     );
@@ -298,10 +300,10 @@ function EmptyState({
 
 function ProjectRow({
   project,
-  onClick,
+  onEdit,
 }: {
   project: Project;
-  onClick: () => void;
+  onEdit: () => void;
 }) {
   // Format rate for display (cents to dollars)
   const formattedRate = project.rateOverride
@@ -309,11 +311,11 @@ function ProjectRow({
     : null;
 
   return (
-    <button
-      onClick={onClick}
-      className="squircle w-full rounded-lg border bg-card p-4 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-    >
-      <div className="flex items-center gap-4">
+    <div className="squircle flex items-center gap-2 rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50">
+      <Link
+        href={`/projects/${project.id}`}
+        className="flex-1 min-w-0 flex items-center gap-4 focus-visible:outline-none"
+      >
         {/* Client color indicator */}
         <div
           className="size-3 shrink-0 rounded-full ring-1 ring-border"
@@ -367,7 +369,21 @@ function ProjectRow({
             </div>
           )}
         </div>
-      </div>
-    </button>
+      </Link>
+
+      {/* Edit button */}
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={(e) => {
+          e.stopPropagation();
+          onEdit();
+        }}
+        className="squircle shrink-0"
+      >
+        <Edit className="size-4" />
+        <span className="sr-only">Edit {project.name}</span>
+      </Button>
+    </div>
   );
 }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { projects, clients } from "@/lib/db/schema";
+import { projects, clients, timeEntries } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 
@@ -158,6 +158,14 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       .update(projects)
       .set(updates)
       .where(eq(projects.id, projectId));
+
+    // If project moved to a different client, update all entries for this project
+    if (updates.clientId) {
+      await db
+        .update(timeEntries)
+        .set({ clientId: updates.clientId })
+        .where(eq(timeEntries.projectId, projectId));
+    }
 
     // Fetch updated project with client info
     const updatedProject = await db.query.projects.findFirst({

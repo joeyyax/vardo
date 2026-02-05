@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { getCurrentOrg } from "@/lib/auth/session";
 import { SettingsForm } from "./settings-form";
+import { ImportWizard } from "@/components/settings/import-wizard";
+import { DangerZone } from "@/components/settings/danger-zone";
 
 export default async function SettingsPage() {
   const orgData = await getCurrentOrg();
@@ -25,6 +27,24 @@ export default async function SettingsPage() {
         organization={organization}
         canEdit={canEdit}
       />
+
+      {/* Import */}
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-lg font-medium">Import</h2>
+          <p className="text-sm text-muted-foreground">
+            Import time entries from other services.
+          </p>
+        </div>
+        <ImportWizard orgId={organization.id} />
+      </div>
+
+      {/* Danger Zone - only show to owners */}
+      {membership.role === "owner" && (
+        <div className="space-y-4">
+          <DangerZone orgId={organization.id} orgName={organization.name} />
+        </div>
+      )}
     </div>
   );
 }

@@ -1,11 +1,12 @@
-import { redirect } from "next/navigation"
-import { getCurrentOrg } from "@/lib/auth/session"
+import { redirect } from "next/navigation";
+import { getCurrentOrg } from "@/lib/auth/session";
+import { ReportsPageContent } from "./reports-page-content";
 
 export default async function ReportsPage() {
-  const orgData = await getCurrentOrg()
+  const orgData = await getCurrentOrg();
 
   if (!orgData) {
-    redirect("/onboarding")
+    redirect("/onboarding");
   }
 
   return (
@@ -13,16 +14,11 @@ export default async function ReportsPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Reports</h1>
         <p className="text-muted-foreground">
-          Manage and share reports with clients.
+          Analytics, summaries, and shareable reports.
         </p>
       </div>
 
-      {/* Placeholder content - will be replaced in Phase 4.1 */}
-      <div className="rounded-lg border border-dashed p-8 text-center">
-        <p className="text-sm text-muted-foreground">
-          Report management coming soon.
-        </p>
-      </div>
+      <ReportsPageContent orgId={orgData.organization.id} />
     </div>
-  )
+  );
 }

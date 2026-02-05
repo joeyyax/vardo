@@ -1,20 +1,24 @@
-"use client"
+"use client";
 
-import { Menu, Clock } from "lucide-react"
-import Link from "next/link"
-import { Button } from "@/components/ui/button"
+import { Menu, Clock } from "lucide-react";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import {
   Sheet,
   SheetContent,
   SheetHeader,
   SheetTitle,
   SheetTrigger,
-} from "@/components/ui/sheet"
-import { SidebarNav } from "./sidebar-nav"
-import { OrgSwitcher } from "./org-switcher"
-import { UserMenu } from "./user-menu"
+} from "@/components/ui/sheet";
+import { SidebarNav } from "./sidebar-nav";
+import { OrgSwitcher } from "./org-switcher";
+import { UserMenu } from "./user-menu";
 
-export function MobileSidebar() {
+type MobileSidebarProps = {
+  currentOrgId?: string;
+};
+
+export function MobileSidebar({ currentOrgId }: MobileSidebarProps) {
   return (
     <Sheet>
       <SheetTrigger asChild>
@@ -42,12 +46,12 @@ export function MobileSidebar() {
           {/* Footer - Org Switcher & User Menu */}
           <div className="mt-auto border-t p-2">
             <div className="flex flex-col gap-1">
-              <OrgSwitcher />
+              <OrgSwitcher currentOrgId={currentOrgId} />
               <UserMenu />
             </div>
           </div>
         </div>
       </SheetContent>
     </Sheet>
-  )
+  );
 }

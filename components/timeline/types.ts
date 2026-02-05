@@ -16,6 +16,7 @@ export interface TimeEntry {
   durationMinutes: number;
   isBillableOverride: boolean | null;
   isBillable: boolean;
+  recurringTemplateId: string | null;
   createdAt: string;
   client: {
     id: string;

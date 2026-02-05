@@ -137,6 +137,44 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       updates.roundingIncrement = increment;
     }
 
+    // Validate and apply billing defaults
+    if (body.defaultBillingType !== undefined) {
+      const validTypes = ["hourly", "retainer_fixed", "retainer_capped", "retainer_uncapped", "fixed_project"];
+      if (body.defaultBillingType !== null && !validTypes.includes(body.defaultBillingType)) {
+        return NextResponse.json(
+          { error: `Billing type must be one of: ${validTypes.join(", ")}` },
+          { status: 400 }
+        );
+      }
+      updates.defaultBillingType = body.defaultBillingType;
+    }
+
+    if (body.defaultBillingFrequency !== undefined) {
+      const validFrequencies = ["weekly", "biweekly", "monthly", "quarterly", "per_project"];
+      if (body.defaultBillingFrequency !== null && !validFrequencies.includes(body.defaultBillingFrequency)) {
+        return NextResponse.json(
+          { error: `Billing frequency must be one of: ${validFrequencies.join(", ")}` },
+          { status: 400 }
+        );
+      }
+      updates.defaultBillingFrequency = body.defaultBillingFrequency;
+    }
+
+    if (body.defaultPaymentTermsDays !== undefined) {
+      if (body.defaultPaymentTermsDays !== null) {
+        const days = Number(body.defaultPaymentTermsDays);
+        if (isNaN(days) || days < 0 || days > 365) {
+          return NextResponse.json(
+            { error: "Payment terms must be between 0 and 365 days" },
+            { status: 400 }
+          );
+        }
+        updates.defaultPaymentTermsDays = days;
+      } else {
+        updates.defaultPaymentTermsDays = null;
+      }
+    }
+
     // Apply updates
     if (Object.keys(updates).length === 0) {
       return NextResponse.json(

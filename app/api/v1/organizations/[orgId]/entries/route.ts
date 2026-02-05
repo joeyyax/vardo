@@ -7,6 +7,7 @@ import {
   resolveEntryBillable,
   validateEntryHierarchy,
 } from "@/lib/entries/resolve-billable";
+import { updateRollingDraftInvoice } from "@/lib/invoices/rolling-draft";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -22,6 +23,7 @@ function shapeEntryResponse(entry: {
   date: string;
   durationMinutes: number;
   isBillableOverride: boolean | null;
+  recurringTemplateId?: string | null;
   createdAt: Date;
   client: {
     id: string;
@@ -55,6 +57,7 @@ function shapeEntryResponse(entry: {
     durationMinutes: entry.durationMinutes,
     isBillableOverride: entry.isBillableOverride,
     isBillable,
+    recurringTemplateId: entry.recurringTemplateId || null,
     createdAt: entry.createdAt.toISOString(),
     client: {
       id: entry.client.id,
@@ -151,6 +154,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         date: entry.date,
         durationMinutes: entry.durationMinutes,
         isBillableOverride: entry.isBillableOverride,
+        recurringTemplateId: entry.recurringTemplateId,
         createdAt: entry.createdAt,
         client: {
           id: entry.client.id,
@@ -230,6 +234,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       date: string;
       durationMinutes: number;
       isBillableOverride: boolean | null;
+      recurringTemplateId: string | null;
     }> = [];
 
     for (let i = 0; i < entriesToCreate.length; i++) {
@@ -302,6 +307,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         date: entry.date,
         durationMinutes: duration,
         isBillableOverride: entry.isBillableOverride ?? null,
+        recurringTemplateId: entry.recurringTemplateId || null,
       });
     }
 
@@ -310,6 +316,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       .insert(timeEntries)
       .values(preparedEntries)
       .returning();
+
+    // Update rolling draft invoices for affected clients (non-blocking)
+    const affectedClientIds = [...new Set(preparedEntries.map((e) => e.clientId))];
+    for (const clientId of affectedClientIds) {
+      updateRollingDraftInvoice(orgId, clientId).catch((err) => {
+        console.error("Error updating rolling draft invoice:", err);
+      });
+    }
 
     // Fetch full entry data with relations for response
     const entryIds = new Set(createdEntries.map((e) => e.id));
@@ -332,6 +346,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           date: entry.date,
           durationMinutes: entry.durationMinutes,
           isBillableOverride: entry.isBillableOverride,
+          recurringTemplateId: entry.recurringTemplateId,
           createdAt: entry.createdAt,
           client: {
             id: entry.client.id,

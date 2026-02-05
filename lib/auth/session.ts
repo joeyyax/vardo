@@ -1,8 +1,10 @@
-import { headers } from "next/headers";
+import { headers, cookies } from "next/headers";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { memberships } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
+
+const CURRENT_ORG_COOKIE = "time_current_org";
 
 /**
  * Get the current session on the server.
@@ -16,8 +18,8 @@ export async function getSession() {
 
 /**
  * Get the current user's organization.
- * Returns the first organization the user belongs to.
- * For now, we don't support org switching - we'll add that later.
+ * Checks for a stored org preference cookie first,
+ * then falls back to the user's first organization.
  */
 export async function getCurrentOrg() {
   const session = await getSession();
@@ -26,7 +28,34 @@ export async function getCurrentOrg() {
     return null;
   }
 
-  // Find the user's first membership and its organization
+  // Check for org preference in cookie
+  const cookieStore = await cookies();
+  const preferredOrgId = cookieStore.get(CURRENT_ORG_COOKIE)?.value;
+
+  // If there's a preferred org, verify user has access to it
+  if (preferredOrgId) {
+    const membership = await db.query.memberships.findFirst({
+      where: and(
+        eq(memberships.userId, session.user.id),
+        eq(memberships.organizationId, preferredOrgId)
+      ),
+      with: {
+        organization: true,
+      },
+    });
+
+    if (membership) {
+      return {
+        organization: membership.organization,
+        membership: {
+          id: membership.id,
+          role: membership.role,
+        },
+      };
+    }
+  }
+
+  // Fall back to first membership
   const membership = await db.query.memberships.findFirst({
     where: eq(memberships.userId, session.user.id),
     with: {

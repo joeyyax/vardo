@@ -45,6 +45,44 @@ A time tracking app for freelancers and small teams, replacing Toggl with a focu
 - Gratuitous animations that slow you down
 - Dark patterns or manipulative UI
 
+## Feedback & Notifications
+
+**Toast Notifications (Sonner):**
+- Use for transient feedback (success, error, info)
+- Position: bottom-right
+- Auto-dismiss after ~4 seconds
+- Don't overuse - only for meaningful state changes
+
+**Usage patterns:**
+```tsx
+import { toast } from "sonner";
+
+// Success feedback
+toast.success("Client moved");
+toast.success("Entry saved");
+
+// Error feedback
+toast.error("Failed to save changes");
+
+// Promise wrapper (loading → success/error)
+toast.promise(saveData(), {
+  loading: "Saving...",
+  success: "Saved!",
+  error: "Failed to save"
+});
+```
+
+**When to use:**
+- Drag-and-drop actions (moved, nested, un-nested)
+- Save/delete operations
+- Import progress and completion
+- Errors that don't need modal attention
+
+**When NOT to use:**
+- Every form submission (inline feedback is often better)
+- Success for expected actions (only when confirming is helpful)
+- Warnings that need acknowledgment (use dialog instead)
+
 ## Data Model
 
 ```
@@ -52,6 +90,7 @@ Organization (tenant)
 ├── Members (users with roles)
 ├── Settings (default rate, rounding increment)
 ├── Clients
+│   ├── parent_id (nullable, for nesting)
 │   ├── rate_override (nullable)
 │   ├── is_billable (default: inherit)
 │   └── Projects
@@ -70,7 +109,17 @@ Organization (tenant)
     └── created_at
 ```
 
+**Client Hierarchy:**
+- Clients can have one level of nesting (parent/child)
+- Drag-and-drop to nest: drop on another client to make it a child
+- Drag to root zone to un-nest (make top-level)
+- Children displayed indented under their parent
+
 **Rate Resolution:** Walk up the tree (Task → Project → Client → Org Settings). First non-null rate wins. Same logic for `is_billable`. Any level can override or mark as non-billable.
+
+**Entry-Project Relationship:**
+- When a project moves to a different client, all associated entries move with it
+- This ensures time tracking data stays consistent with project organization
 
 ## Tech Stack
 
@@ -107,22 +156,30 @@ Organization (tenant)
   /api/v1/[...routes]     # API endpoints
   /(app)                   # Authenticated app routes
     /track
-    /reports
+    /reports               # Analytics dashboard
+    /invoices              # Invoice management
     /clients
+    /clients/[id]          # Client dashboard
     /projects
+    /projects/[id]         # Project dashboard
     /settings
   /(public)
     /r/[slug]             # Public report pages
+    /i/[token]            # Public invoice view
     /login
 /components
   /ui                     # shadcn components
   /entry                  # Entry bar, entry row
   /timeline               # Day groups, week nav
+  /invoices               # Invoice components
+  /analytics              # Charts and metrics
 /lib
   /db                     # Drizzle schema + queries
   /api                    # API client for frontend
   /auth                   # Session management
   /email                  # React Email templates
+  /invoices               # Invoice generation logic
+  /integrations           # Toggl, etc.
 /docker-compose.yml
 ```
 
@@ -199,6 +256,48 @@ Returns ranked list of `{ client, project, task, score, reason }`.
 
 Entire entry completable without mouse.
 
+**Client/Project Selector:**
+- Tab into field → immediately ready to type (search)
+- `↓/↑` navigate suggestions without typing
+- First suggestion highlighted by default
+- `Enter` selects, advances to duration
+
+**Duration Input:**
+- Smart parsing: `1`, `2`, `3` → hours (not minutes)
+- Decimals work: `0.5` → 30m, `1.25` → 1h 15m, `1.5` → 1h 30m
+- Explicit formats also work: `1h`, `30m`, `1h30m`, `1:30`
+- `↑/↓` adjusts by rounding increment (e.g., 15m)
+  - Example: enter `0.75` (45m), press `↑↑` → 1h 15m
+- Displays rounded value after blur
+
+**Date Picker:**
+- `Enter` opens picker
+- `←/→` navigate days, `↑/↓` navigate weeks
+- `Enter` selects date
+- `Escape` closes without selecting
+
+## Command Palette (Cmd+K)
+
+Optional power-user feature. Raycast-style command palette for quick actions.
+
+**Trigger:** `Cmd/Ctrl+K` from anywhere
+
+**Commands:**
+- `track` / `new entry` - Focus entry bar
+- `clients` / `projects` / `settings` - Navigate
+- `new client` / `new project` - Open create dialog
+- `[client name]` - Jump to client dashboard
+- `[project name]` - Jump to project dashboard
+- Recent entries for quick re-log
+
+**Behavior:**
+- Fuzzy search across commands and entities
+- Results grouped: Actions, Navigation, Recent
+- `↓/↑` to navigate, `Enter` to execute
+- `Escape` to close
+
+Not required for basic usage - all actions accessible via normal UI.
+
 ## Timeline Interactions
 
 - Click description → edit inline
@@ -210,9 +309,19 @@ Entire entry completable without mouse.
 
 All fields editable in place, no modal needed.
 
-## Reports
+## Reports & Analytics
 
-**URLs:**
+**Navigation split:**
+- `/reports` - Analytics dashboard (hours, revenue, trends, utilization)
+- `/invoices` - Invoice management (create, send, track)
+
+**Analytics Dashboard (`/reports`):**
+- Period selector (week, month, quarter, year)
+- Summary cards: total time, billable amount, active clients, avg hours/day
+- Hours breakdown by client (with percentage bars)
+- Weekly/monthly trends (charts)
+
+**Public Report URLs:**
 ```
 /r/:slug                    # Client report (all projects)
 /r/:slug/:projectSlug       # Project-specific report
@@ -220,23 +329,145 @@ All fields editable in place, no modal needed.
 
 Slugs are random, unguessable strings. No auth required.
 
-**Report View:**
-- Date range selector (default: current week)
-- Navigate between weeks/months
-- Entries grouped by day or by project (toggle)
-- Totals: hours, billable amount (can hide rates from clients)
-- Print-friendly styling
-
 **Report Config (per client/project):**
 - `enabled` - whether the report URL is active
 - `show_rates` - whether to display dollar amounts
 - `auto_send` - optional weekly email schedule
 - `recipients` - email addresses
 
-**Email:**
-- Weekly summary with key stats
-- "View full report" links to web report
-- Triggered by cron or manual send
+## Client Billing Configuration
+
+Clients have configurable billing settings that determine how invoices are generated.
+
+**Billing Types:**
+- `hourly` - Bill for actual hours worked (default)
+- `retainer_fixed` - Flat fee per billing period
+- `retainer_capped` - Hourly up to a maximum amount
+- `retainer_uncapped` - Hourly with a baseline minimum
+- `fixed_project` - One-time project fee
+
+**Billing Frequency:**
+- `weekly` / `biweekly` - Uses `billing_day_of_week` (0-6, Sunday=0)
+- `monthly` / `quarterly` - Uses `billing_day_of_month` (1-31)
+- `per_project` - Manual invoice generation
+
+**Fields:**
+- `billing_type` - See above (inherits org default if null)
+- `billing_frequency` - See above
+- `retainer_amount` - For retainer types (cents)
+- `billing_day_of_week` / `billing_day_of_month` - When to bill
+- `payment_terms_days` - Net X days (inherits org default if null)
+- `auto_generate_invoices` - Auto-create invoices on schedule
+- `last_invoiced_date` - Track billing cycles
+
+**Organization defaults:**
+- `default_billing_type` - Default for new clients
+- `default_billing_frequency` - Default frequency
+- `default_payment_terms_days` - Net 30, etc.
+
+## Invoices
+
+**Invoice Management (`/invoices`):**
+- List all invoices with status (draft, sent, viewed)
+- Create invoice: select client, date range, auto-populate line items
+- Preview before sending
+- Send via email with PDF attachment
+- Track when viewed
+
+**Public Invoice View (`/i/:token`):**
+- Branded invoice display
+- Download PDF option
+- Mark as viewed on access
+
+**Auto-generation:**
+- Cron job runs daily
+- Checks clients with `auto_generate_invoices = true`
+- Creates invoice when billing cycle is due
+- Updates `last_invoiced_date`
+
+**Line Items:**
+- Snapshot project/task names at time of invoice
+- Group by project with optional task breakdown
+- AI-generated descriptions (optional)
+
+## Client & Project Dashboards
+
+**Client Dashboard (`/clients/:id`):**
+- Header: name, color, billing type indicator
+- Stats cards: hours (month/all-time), revenue, outstanding invoices
+- Active projects list (clickable)
+- Recent entries (last 10, clickable → navigates to `/track?date=&entry=`)
+- Outstanding invoices with status
+- Quick actions: Edit, New Project, New Invoice
+
+**Project Dashboard (`/projects/:id`):**
+- Header: name, client badge, code, archive status
+- Stats cards: hours (month/all-time), revenue, budget remaining (if set)
+- Tasks with hours breakdown
+- Recent entries (last 10, clickable → navigates to `/track?date=&entry=`)
+- Quick actions: Edit, New Task
+
+**Client List (`/clients`):**
+- Drag-and-drop for client hierarchy (nest/un-nest)
+- Filter bar with:
+  - Search: filter by client name
+  - Sort by: Name (alphabetical) or Recent (by last entry)
+  - Sort order: Ascending/Descending toggle
+- Client rows link to dashboards
+- Inline edit button opens modal directly
+
+**Project List (`/projects`):**
+- Filter by client
+- Project rows link to dashboards
+- Inline edit button opens modal directly
+
+## Toggl Import
+
+Import clients and projects from Toggl Track for migrating users.
+
+**How to Import:**
+
+1. Go to Toggl → Settings → Data Export
+2. Select: **Projects** and **Clients**
+3. Click "Export to email"
+4. Download the zip file from your email
+5. Upload the zip in Settings → Import
+
+**What gets imported:**
+
+- Client names
+- Project names with client associations
+- Hourly rates (converted to cents)
+- Billable status
+- Project estimates and actual hours tracked
+- Active/archived status
+- Colors
+
+**Alternative: API Import**
+
+You can also connect via Toggl API token for a quick import. Go to Settings → Import → Toggl API.
+
+**Import Flow:**
+1. Upload CSV or connect API
+2. Preview: X clients, Y projects, Z entries, date range
+3. Map imported clients → existing clients or create new
+4. Map projects with client associations
+5. Import with progress indicator
+6. Summary of imported data
+
+**API Routes:**
+```
+POST /imports              # Create import session from CSV/API data
+GET  /imports              # List in-progress imports
+GET  /imports/:id          # Get import session details
+PATCH /imports/:id         # Update mappings, advance steps
+POST /imports/:id/execute  # Run the import
+```
+
+**Toggl API notes:**
+- Base: `https://api.track.toggl.com/api/v9`
+- Auth: Basic `{api_token}:api_token`
+- Rate limit: Handle with delays between batches
 
 ## Multi-tenancy & Roles
 
@@ -268,29 +499,38 @@ Slugs are random, unguessable strings. No auth required.
 
 ## Implementation Phases
 
-### Phase 1 - Core (MVP)
+### Phase 1 - Core (MVP) ✓
 1. Auth (Better Auth: passkey, OAuth, magic link + 2FA)
 2. Org/Client/Project/Task CRUD
 3. Time entry with quick search
 4. Timeline view with inline editing
 5. Basic settings (rate, rounding increment)
 
-### Phase 2 - Reports
+### Phase 2 - Reports & Invoices ✓
 6. Report configs and public report pages
 7. Date range navigation and grouping
 8. CSV export
+9. Invoice creation and management
+10. Public invoice view
 
-### Phase 3 - Polish & Email
-9. Smart suggestions (recent + patterns)
-10. Email templates (React Email)
-11. Manual report sending via Resend
-12. Auto-send scheduling
+### Phase 3 - Client Management ✓
+11. Client billing configuration
+12. Client/project dashboards
+13. Client hierarchy (parent/child with drag-drop)
+14. Client list filters and sorting
+15. Toggl import (API + CSV)
 
-### Phase 4 - SaaS Prep
-13. Plan/limits infrastructure
-14. Usage tracking
-15. Billing integration (Stripe)
-16. Landing page / marketing site
+### Phase 4 - Polish & Automation
+16. Smart suggestions (recent + patterns)
+17. Auto-invoice generation (cron)
+18. Email templates (React Email)
+19. Manual report/invoice sending via Resend
+
+### Phase 5 - SaaS Prep
+20. Plan/limits infrastructure
+21. Usage tracking
+22. Billing integration (Stripe)
+23. Landing page / marketing site
 
 ## Future Ideas
 
@@ -308,4 +548,3 @@ Ideas to explore later, not part of initial implementation:
 - CLI tool for quick entry from terminal
 - Browser extension for one-click tracking
 - Integrations (Slack, Linear, GitHub issues)
-- Invoice generation (PDF export with client branding)

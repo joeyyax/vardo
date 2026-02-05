@@ -398,8 +398,27 @@ export function Timeline({ orgId, initialDate, highlightEntryId }: TimelineProps
     }
   };
 
-  // Group entries by date
-  const dayGroups = groupEntriesByDate(entries);
+  // Group entries by date, including days that only have recurring templates
+  const entryGroups = groupEntriesByDate(entries);
+  const entryGroupDates = new Set(entryGroups.map((g) => g.date));
+
+  // Find dates that have recurring templates but no entries
+  const recurringOnlyDates = Object.keys(recurringByDate).filter(
+    (date) => !entryGroupDates.has(date) && recurringByDate[date].length > 0
+  );
+
+  // Create empty day groups for dates with only recurring templates
+  const recurringOnlyGroups = recurringOnlyDates.map((date) => ({
+    date,
+    entries: [] as TimeEntry[],
+    totalMinutes: 0,
+  }));
+
+  // Merge and sort all day groups
+  const dayGroups = [...entryGroups, ...recurringOnlyGroups].sort(
+    (a, b) => b.date.localeCompare(a.date)
+  );
+
   const todayTotal = calculateTodayTotal(entries);
   const weekTotal = calculateTotalMinutes(entries);
 

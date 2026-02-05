@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { signIn } from "@/lib/auth/client";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { KeyRound, Mail, Loader2 } from "lucide-react";
 
-export default function LoginPage() {
+function LoginForm() {
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") ?? "/track";
 
@@ -71,113 +71,140 @@ export default function LoginPage() {
 
   if (magicLinkSent) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4 bg-muted/30">
-        <Card className="w-full max-w-md squircle rounded-2xl">
-          <CardHeader className="text-center">
-            <div className="mx-auto mb-4 w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-              <Mail className="w-6 h-6 text-primary" />
-            </div>
-            <CardTitle>Check your email</CardTitle>
-            <CardDescription className="mt-2">
-              We sent a sign-in link to <strong>{email}</strong>
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="text-center">
-            <p className="text-sm text-muted-foreground mb-4">
-              Click the link in your email to sign in. It expires in 10 minutes.
-            </p>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setMagicLinkSent(false);
-                setEmail("");
-              }}
-            >
-              Use a different method
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+      <Card className="w-full max-w-md squircle rounded-2xl">
+        <CardHeader className="text-center">
+          <div className="mx-auto mb-4 w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+            <Mail className="w-6 h-6 text-primary" />
+          </div>
+          <CardTitle>Check your email</CardTitle>
+          <CardDescription className="mt-2">
+            We sent a sign-in link to <strong>{email}</strong>
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="text-center">
+          <p className="text-sm text-muted-foreground mb-4">
+            Click the link in your email to sign in. It expires in 10 minutes.
+          </p>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setMagicLinkSent(false);
+              setEmail("");
+            }}
+          >
+            Use a different method
+          </Button>
+        </CardContent>
+      </Card>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-muted/30">
-      <Card className="w-full max-w-md squircle rounded-2xl">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Welcome back</CardTitle>
-          <CardDescription>
-            Sign in to continue tracking your time
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {error && (
-            <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-lg">
-              {error}
-            </div>
-          )}
+    <Card className="w-full max-w-md squircle rounded-2xl">
+      <CardHeader className="text-center">
+        <CardTitle className="text-2xl">Welcome back</CardTitle>
+        <CardDescription>
+          Sign in to continue tracking your time
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {error && (
+          <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-lg">
+            {error}
+          </div>
+        )}
 
-          {/* Passkey - Primary method */}
+        {/* Passkey - Primary method */}
+        <Button
+          variant="default"
+          className="w-full h-11 squircle rounded-lg"
+          onClick={handlePasskeySignIn}
+          disabled={isLoading !== null}
+        >
+          {isLoading === "passkey" ? (
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          ) : (
+            <KeyRound className="w-4 h-4 mr-2" />
+          )}
+          Sign in with Passkey
+        </Button>
+
+        <div className="relative">
+          <div className="absolute inset-0 flex items-center">
+            <Separator />
+          </div>
+          <div className="relative flex justify-center text-xs uppercase">
+            <span className="bg-card px-2 text-muted-foreground">
+              or use email
+            </span>
+          </div>
+        </div>
+
+        {/* Magic link */}
+        <form onSubmit={handleMagicLinkSignIn} className="space-y-3">
+          <div className="space-y-2">
+            <Label htmlFor="email">Email address</Label>
+            <Input
+              id="email"
+              type="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="h-11 squircle rounded-lg"
+              disabled={isLoading !== null}
+              required
+            />
+          </div>
           <Button
-            variant="default"
+            type="submit"
+            variant="outline"
             className="w-full h-11 squircle rounded-lg"
-            onClick={handlePasskeySignIn}
-            disabled={isLoading !== null}
+            disabled={isLoading !== null || !email}
           >
-            {isLoading === "passkey" ? (
+            {isLoading === "magic" ? (
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
             ) : (
-              <KeyRound className="w-4 h-4 mr-2" />
+              <Mail className="w-4 h-4 mr-2" />
             )}
-            Sign in with Passkey
+            Send magic link
           </Button>
+        </form>
 
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <Separator />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-card px-2 text-muted-foreground">
-                or use email
-              </span>
-            </div>
-          </div>
+        <p className="text-xs text-center text-muted-foreground pt-2">
+          Don&apos;t have an account? Just sign in and we&apos;ll create one.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
 
-          {/* Magic link */}
-          <form onSubmit={handleMagicLinkSignIn} className="space-y-3">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email address</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="h-11 squircle rounded-lg"
-                disabled={isLoading !== null}
-                required
-              />
-            </div>
-            <Button
-              type="submit"
-              variant="outline"
-              className="w-full h-11 squircle rounded-lg"
-              disabled={isLoading !== null || !email}
-            >
-              {isLoading === "magic" ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <Mail className="w-4 h-4 mr-2" />
-              )}
-              Send magic link
-            </Button>
-          </form>
+function LoginSkeleton() {
+  return (
+    <Card className="w-full max-w-md squircle rounded-2xl">
+      <CardHeader className="text-center">
+        <CardTitle className="text-2xl">Welcome back</CardTitle>
+        <CardDescription>
+          Sign in to continue tracking your time
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="h-11 bg-muted animate-pulse rounded-lg" />
+        <div className="h-4" />
+        <div className="space-y-3">
+          <div className="h-11 bg-muted animate-pulse rounded-lg" />
+          <div className="h-11 bg-muted animate-pulse rounded-lg" />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
-          <p className="text-xs text-center text-muted-foreground pt-2">
-            Don&apos;t have an account? Just sign in and we&apos;ll create one.
-          </p>
-        </CardContent>
-      </Card>
+export default function LoginPage() {
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4 bg-muted/30">
+      <Suspense fallback={<LoginSkeleton />}>
+        <LoginForm />
+      </Suspense>
     </div>
   );
 }

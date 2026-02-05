@@ -32,7 +32,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Loader2, Archive, ArchiveRestore } from "lucide-react";
-import { ProjectTasks } from "./project-tasks";
 
 export type Client = {
   id: string;
@@ -211,7 +210,7 @@ export function ProjectDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={`squircle ${isEditing ? "sm:max-w-xl" : "sm:max-w-md"}`}>
+      <DialogContent className="squircle sm:max-w-md">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
             <DialogTitle>
@@ -355,13 +354,6 @@ export function ProjectDialog({
                   This project is archived. It won&apos;t appear in time entry
                   suggestions.
                 </p>
-              </div>
-            )}
-
-            {/* Tasks section (edit mode only) */}
-            {isEditing && project && (
-              <div className="border-t pt-5">
-                <ProjectTasks orgId={orgId} projectId={project.id} />
               </div>
             )}
 
