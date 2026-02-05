@@ -16,6 +16,48 @@ type Suggestion = {
   reason: "recent" | "frequent" | "match";
 };
 
+// Helper functions moved outside component since they don't depend on component state
+
+/** Format duration in minutes to a human-readable string */
+function formatDuration(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+
+  if (hours === 0) {
+    return `${mins}m`;
+  }
+  if (mins === 0) {
+    return `${hours}h`;
+  }
+  return `${hours}h ${mins}m`;
+}
+
+/** Build suggestion label from client/project/task hierarchy */
+function getSuggestionLabel(suggestion: Suggestion): string {
+  const parts = [suggestion.client.name];
+  if (suggestion.project) {
+    parts.push(suggestion.project.code || suggestion.project.name);
+  }
+  if (suggestion.task) {
+    parts.push(suggestion.task.name);
+  }
+  return parts.join(" / ");
+}
+
+/** Get human-readable reason text for suggestion */
+function getReasonText(reason: Suggestion["reason"]): string {
+  switch (reason) {
+    case "recent":
+      return "Recent";
+    case "frequent":
+      return "Frequent";
+    case "match":
+      return "Match";
+    default:
+      return "";
+  }
+}
+
 type SmartEntryBarProps = {
   orgId: string;
   roundingIncrement?: number;
@@ -38,6 +80,7 @@ export function SmartEntryBar({
   const [isFocused, setIsFocused] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasSearched, setHasSearched] = useState(false);
 
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -52,6 +95,7 @@ export function SmartEntryBar({
     async (query: string) => {
       if (!query.trim()) {
         setSuggestions([]);
+        setHasSearched(false);
         return;
       }
 
@@ -63,10 +107,12 @@ export function SmartEntryBar({
           const data = await response.json();
           setSuggestions(data.suggestions || []);
           setHighlightedIndex(0);
+          setHasSearched(true);
         }
       } catch {
         // Silently fail on suggestion fetch errors
         setSuggestions([]);
+        setHasSearched(true);
       }
     },
     [orgId]
@@ -103,10 +149,11 @@ export function SmartEntryBar({
 
           setChips((prev) => [...prev, durationChip]);
 
-          // Remove duration text from input
-          const newValue =
-            value.slice(0, match.index) + value.slice((match.index ?? 0) + match[0].length);
-          setInputValue(newValue.trim());
+          // Remove duration text from input and clean up extra spaces
+          const beforeMatch = value.slice(0, match.index);
+          const afterMatch = value.slice((match.index ?? 0) + match[0].length);
+          const newValue = (beforeMatch + afterMatch).replace(/\s+/g, " ").trim();
+          setInputValue(newValue);
           return;
         }
       }
@@ -223,53 +270,9 @@ export function SmartEntryBar({
       // Clear suggestions
       setSuggestions([]);
       setHighlightedIndex(0);
+      setHasSearched(false);
     },
     [chips, inputValue]
-  );
-
-  // Handle keyboard navigation
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent<HTMLInputElement>) => {
-      // Handle suggestion navigation
-      if (suggestions.length > 0) {
-        if (e.key === "ArrowDown") {
-          e.preventDefault();
-          setHighlightedIndex((prev) => Math.min(prev + 1, suggestions.length - 1));
-          return;
-        }
-
-        if (e.key === "ArrowUp") {
-          e.preventDefault();
-          setHighlightedIndex((prev) => Math.max(prev - 1, 0));
-          return;
-        }
-
-        if (e.key === "Tab" || (e.key === "Enter" && !e.metaKey && !e.ctrlKey)) {
-          e.preventDefault();
-          const selected = suggestions[highlightedIndex];
-          if (selected) {
-            selectSuggestion(selected);
-          }
-          return;
-        }
-      }
-
-      // Cmd/Ctrl+Enter to submit
-      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault();
-        if (canSubmit && !isSubmitting) {
-          handleSubmit();
-        }
-        return;
-      }
-
-      // Escape to close suggestions
-      if (e.key === "Escape") {
-        setSuggestions([]);
-        setHighlightedIndex(0);
-      }
-    },
-    [suggestions, highlightedIndex, selectSuggestion, canSubmit, isSubmitting]
   );
 
   // Submit entry
@@ -315,6 +318,7 @@ export function SmartEntryBar({
       setInputValue("");
       setSuggestions([]);
       setHighlightedIndex(0);
+      setHasSearched(false);
 
       onEntryCreated?.();
     } catch (err) {
@@ -324,17 +328,65 @@ export function SmartEntryBar({
     }
   }, [canSubmit, isSubmitting, chips, inputValue, orgId, onEntryCreated]);
 
+  // Handle keyboard navigation
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent<HTMLInputElement>) => {
+      // Handle suggestion navigation
+      if (suggestions.length > 0) {
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          setHighlightedIndex((prev) => Math.min(prev + 1, suggestions.length - 1));
+          return;
+        }
+
+        if (e.key === "ArrowUp") {
+          e.preventDefault();
+          setHighlightedIndex((prev) => Math.max(prev - 1, 0));
+          return;
+        }
+
+        if (e.key === "Tab" || (e.key === "Enter" && !e.metaKey && !e.ctrlKey)) {
+          e.preventDefault();
+          const selected = suggestions[highlightedIndex];
+          if (selected) {
+            selectSuggestion(selected);
+          }
+          return;
+        }
+      }
+
+      // Cmd/Ctrl+Enter to submit
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        if (canSubmit && !isSubmitting) {
+          handleSubmit();
+        }
+        return;
+      }
+
+      // Escape to close suggestions
+      if (e.key === "Escape") {
+        setSuggestions([]);
+        setHighlightedIndex(0);
+        setHasSearched(false);
+      }
+    },
+    [suggestions, highlightedIndex, selectSuggestion, canSubmit, isSubmitting, handleSubmit]
+  );
+
   // Handle focus
   const handleFocus = useCallback(() => {
     setIsFocused(true);
   }, []);
 
-  // Handle blur with delay for click handling
+  // Handle blur - close dropdown
   const handleBlur = useCallback(() => {
-    // Delay blur to allow click events on dropdown
-    setTimeout(() => {
-      setIsFocused(false);
-    }, 150);
+    setIsFocused(false);
+  }, []);
+
+  // Prevent blur when clicking on dropdown items
+  const handleDropdownMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
   }, []);
 
   // Clean up debounce on unmount
@@ -346,47 +398,9 @@ export function SmartEntryBar({
     };
   }, []);
 
-  // Format duration for display
-  function formatDuration(minutes: number): string {
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-
-    if (hours === 0) {
-      return `${mins}m`;
-    }
-    if (mins === 0) {
-      return `${hours}h`;
-    }
-    return `${hours}h ${mins}m`;
-  }
-
-  // Build suggestion label
-  function getSuggestionLabel(suggestion: Suggestion): string {
-    const parts = [suggestion.client.name];
-    if (suggestion.project) {
-      parts.push(suggestion.project.code || suggestion.project.name);
-    }
-    if (suggestion.task) {
-      parts.push(suggestion.task.name);
-    }
-    return parts.join(" / ");
-  }
-
-  // Get reason text for suggestion
-  function getReasonText(reason: Suggestion["reason"]): string {
-    switch (reason) {
-      case "recent":
-        return "Recent";
-      case "frequent":
-        return "Frequent";
-      case "match":
-        return "Match";
-      default:
-        return "";
-    }
-  }
-
+  // Determine what to show in dropdown
   const showSuggestions = isFocused && suggestions.length > 0;
+  const showEmptyState = isFocused && hasSearched && suggestions.length === 0 && inputValue.trim().length > 0;
 
   return (
     <div className="relative w-full">
@@ -429,6 +443,7 @@ export function SmartEntryBar({
       {showSuggestions && (
         <div
           ref={dropdownRef}
+          onMouseDown={handleDropdownMouseDown}
           className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-auto rounded-md border bg-popover p-1 shadow-md"
         >
           {suggestions.map((suggestion, index) => (
@@ -462,6 +477,18 @@ export function SmartEntryBar({
               </span>
             </button>
           ))}
+        </div>
+      )}
+
+      {/* Empty suggestions state */}
+      {showEmptyState && (
+        <div
+          onMouseDown={handleDropdownMouseDown}
+          className="absolute left-0 right-0 top-full z-50 mt-1 rounded-md border bg-popover p-3 shadow-md"
+        >
+          <p className="text-sm text-muted-foreground">
+            No matching clients or projects found
+          </p>
         </div>
       )}
     </div>

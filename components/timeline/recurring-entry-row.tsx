@@ -142,7 +142,7 @@ export function RecurringEntryRow({
               )}
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Add entry for today</TooltipContent>
+          <TooltipContent>Add entry</TooltipContent>
         </Tooltip>
 
         {/* Skip button */}
