@@ -31,6 +31,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { ViewSwitcher } from "@/components/view-switcher";
+import { useViewPreference } from "@/hooks/use-view-preference";
+import {
   Plus,
   Loader2,
   ExternalLink,
@@ -87,7 +97,10 @@ const HOURS = Array.from({ length: 24 }, (_, i) => ({
   label: `${i.toString().padStart(2, "0")}:00`,
 }));
 
+const REPORT_VIEWS = ["list", "table"] as const;
+
 export function ReportConfigs({ orgId }: ReportConfigsProps) {
+  const [view, setView] = useViewPreference("client-reports", REPORT_VIEWS, "list");
   const [configs, setConfigs] = useState<ReportConfig[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -293,10 +306,13 @@ export function ReportConfigs({ orgId }: ReportConfigsProps) {
               Create shareable report links for clients and projects.
             </p>
           </div>
-          <Button onClick={() => setCreateDialogOpen(true)} className="squircle">
-            <Plus className="size-4" />
-            New Report
-          </Button>
+          <div className="flex items-center gap-2">
+            <ViewSwitcher views={REPORT_VIEWS} value={view} onValueChange={setView} />
+            <Button onClick={() => setCreateDialogOpen(true)} className="squircle">
+              <Plus className="size-4" />
+              New Report
+            </Button>
+          </div>
         </div>
 
         {configs.length === 0 ? (
@@ -305,6 +321,112 @@ export function ReportConfigs({ orgId }: ReportConfigsProps) {
             <p className="text-sm text-muted-foreground mt-1">
               Create a report to share time tracking summaries with clients.
             </p>
+          </div>
+        ) : view === "table" ? (
+          <div className="rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Report</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Auto-Send</TableHead>
+                  <TableHead>Recipients</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {configs.map((config) => (
+                  <TableRow key={config.id}>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        {config.client?.color && (
+                          <div
+                            className="size-3 rounded-full shrink-0"
+                            style={{ backgroundColor: config.client.color }}
+                          />
+                        )}
+                        <span className="font-medium">{getReportName(config)}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                          config.enabled
+                            ? "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300"
+                            : "bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        {config.enabled ? "Active" : "Disabled"}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      {config.autoSend ? (
+                        <span className="text-sm">
+                          {DAYS.find((d) => d.value === config.autoSendDay)?.label} at{" "}
+                          {config.autoSendHour?.toString().padStart(2, "0")}:00
+                        </span>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">Off</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {config.recipients && config.recipients.length > 0 ? (
+                        <span className="text-sm">
+                          {config.recipients.length === 1
+                            ? config.recipients[0]
+                            : `${config.recipients.length} recipients`}
+                        </span>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">None</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => copyReportUrl(config.slug)}
+                          className="squircle"
+                        >
+                          {copiedSlug === config.slug ? (
+                            <Check className="size-4 text-green-600" />
+                          ) : (
+                            <Copy className="size-4" />
+                          )}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => window.open(`/r/${config.slug}`, "_blank")}
+                          className="squircle"
+                        >
+                          <ExternalLink className="size-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleOpenEdit(config)}
+                          className="squircle"
+                        >
+                          <Settings className="size-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            setSelectedConfig(config);
+                            setDeleteDialogOpen(true);
+                          }}
+                          className="squircle text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </div>
         ) : (
           <div className="rounded-lg border divide-y">

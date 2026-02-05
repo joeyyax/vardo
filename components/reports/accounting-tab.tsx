@@ -21,6 +21,7 @@ import {
   ExternalLink,
   Loader2,
 } from "lucide-react";
+import { RevenueChart } from "@/components/reports/revenue-chart";
 
 type AccountingTabProps = {
   orgId: string;
@@ -72,6 +73,9 @@ function getDefaultYear(): string {
 export function AccountingTab({ orgId }: AccountingTabProps) {
   const [selectedYear, setSelectedYear] = useState<string>(getDefaultYear());
   const [data, setData] = useState<AccountingData | null>(null);
+  const [revenueByMonth, setRevenueByMonth] = useState<
+    { month: string; incomeCents: number; expenseCents: number }[]
+  >([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const currentYear = getYear(new Date());
@@ -97,6 +101,8 @@ export function AccountingTab({ orgId }: AccountingTabProps) {
 
         const totalExpenses = expenses?.totalCents || 0;
         const totalIncome = invoices?.paid || analytics?.totalBillable || 0;
+
+        setRevenueByMonth(analytics?.revenueByMonth || []);
 
         setData({
           expenses: {
@@ -278,6 +284,8 @@ export function AccountingTab({ orgId }: AccountingTabProps) {
               </CardContent>
             </Card>
           </div>
+
+          <RevenueChart data={revenueByMonth} showExpenses={true} />
 
           {data.yearInReview && (
             <Card className="squircle">
