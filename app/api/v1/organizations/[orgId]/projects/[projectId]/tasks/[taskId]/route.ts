@@ -56,8 +56,65 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
 
-    // Verify task belongs to project
-    const task = await verifyTaskBelongsToProject(taskId, projectId);
+    // Fetch task with all related data
+    const task = await db.query.tasks.findFirst({
+      where: and(eq(tasks.id, taskId), eq(tasks.projectId, projectId)),
+      with: {
+        type: {
+          columns: { id: true, name: true, color: true, icon: true, defaultFields: true },
+        },
+        assignedToUser: {
+          columns: { id: true, name: true, email: true },
+        },
+        createdByUser: {
+          columns: { id: true, name: true, email: true },
+        },
+        tagAssignments: {
+          with: {
+            tag: {
+              columns: { id: true, name: true, color: true },
+            },
+          },
+        },
+        comments: {
+          orderBy: (comments, { desc }) => [desc(comments.createdAt)],
+          with: {
+            author: {
+              columns: { id: true, name: true, email: true },
+            },
+          },
+        },
+        watchers: {
+          with: {
+            user: {
+              columns: { id: true, name: true, email: true },
+            },
+          },
+        },
+        files: {
+          with: {
+            file: {
+              columns: { id: true, name: true, mimeType: true, sizeBytes: true },
+            },
+          },
+        },
+        outgoingRelationships: {
+          with: {
+            targetTask: {
+              columns: { id: true, name: true, status: true },
+            },
+          },
+        },
+        incomingRelationships: {
+          with: {
+            sourceTask: {
+              columns: { id: true, name: true, status: true },
+            },
+          },
+        },
+      },
+    });
+
     if (!task) {
       return NextResponse.json({ error: "Task not found" }, { status: 404 });
     }
@@ -105,7 +162,23 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     const body = await request.json();
-    const { name, description, rateOverride, isBillable, isArchived, status, isRecurring, assignedTo, position } = body;
+    const {
+      name,
+      description,
+      rateOverride,
+      isBillable,
+      isArchived,
+      status,
+      isRecurring,
+      assignedTo,
+      position,
+      // New fields
+      typeId,
+      estimateMinutes,
+      prLink,
+      isClientVisible,
+      metadata,
+    } = body;
 
     // Build update object with only provided fields
     const updates: Partial<{
@@ -118,6 +191,11 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       isRecurring: boolean;
       assignedTo: string | null;
       position: number;
+      typeId: string | null;
+      estimateMinutes: number | null;
+      prLink: string | null;
+      isClientVisible: boolean;
+      metadata: Record<string, unknown>;
       updatedAt: Date;
     }> = {
       updatedAt: new Date(),
@@ -173,6 +251,27 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     if (position !== undefined) {
       updates.position = Number(position);
+    }
+
+    // New fields
+    if (typeId !== undefined) {
+      updates.typeId = typeId || null;
+    }
+
+    if (estimateMinutes !== undefined) {
+      updates.estimateMinutes = estimateMinutes ? parseInt(estimateMinutes, 10) : null;
+    }
+
+    if (prLink !== undefined) {
+      updates.prLink = prLink?.trim() || null;
+    }
+
+    if (isClientVisible !== undefined) {
+      updates.isClientVisible = isClientVisible;
+    }
+
+    if (metadata !== undefined) {
+      updates.metadata = metadata || {};
     }
 
     const [updatedTask] = await db

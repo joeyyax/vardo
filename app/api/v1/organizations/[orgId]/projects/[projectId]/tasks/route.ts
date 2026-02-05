@@ -71,6 +71,21 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       orderBy: forKanban
         ? (tasks, { asc }) => [asc(tasks.position), asc(tasks.createdAt)]
         : (tasks, { asc }) => [asc(tasks.name)],
+      with: {
+        type: {
+          columns: { id: true, name: true, color: true, icon: true },
+        },
+        assignedToUser: {
+          columns: { id: true, name: true, email: true },
+        },
+        tagAssignments: {
+          with: {
+            tag: {
+              columns: { id: true, name: true, color: true },
+            },
+          },
+        },
+      },
     });
 
     return NextResponse.json(projectTasks);
@@ -111,7 +126,21 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const { session } = await requireOrg();
     const body = await request.json();
-    const { name, description, rateOverride, isBillable, status, isRecurring, assignedTo } = body;
+    const {
+      name,
+      description,
+      rateOverride,
+      isBillable,
+      status,
+      isRecurring,
+      assignedTo,
+      // New fields
+      typeId,
+      estimateMinutes,
+      prLink,
+      isClientVisible,
+      metadata,
+    } = body;
 
     if (!name || typeof name !== "string" || name.trim().length === 0) {
       return NextResponse.json(
@@ -159,6 +188,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         assignedTo: assignedTo || null,
         createdBy: session.user.id,
         position: nextPosition,
+        // New fields
+        typeId: typeId || null,
+        estimateMinutes: estimateMinutes ? parseInt(estimateMinutes, 10) : null,
+        prLink: prLink?.trim() || null,
+        isClientVisible: isClientVisible ?? true,
+        metadata: metadata || {},
       })
       .returning();
 

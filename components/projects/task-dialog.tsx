@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -32,9 +32,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Archive, ArchiveRestore } from "lucide-react";
+import { Loader2, Archive, ArchiveRestore, Eye, EyeOff, Link as LinkIcon } from "lucide-react";
 
 export type TaskStatus = "todo" | "in_progress" | "review" | "done";
+
+export type TaskType = {
+  id: string;
+  name: string;
+  color: string | null;
+  icon: string | null;
+};
 
 export type Task = {
   id: string;
@@ -49,6 +56,13 @@ export type Task = {
   assignedTo: string | null;
   createdBy: string | null;
   position: number | null;
+  // New fields
+  typeId: string | null;
+  estimateMinutes: number | null;
+  prLink: string | null;
+  isClientVisible: boolean;
+  metadata: Record<string, unknown> | null;
+  type?: TaskType | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -94,6 +108,14 @@ export function TaskDialog({
   const [rateOverride, setRateOverride] = useState("");
   const [isBillable, setIsBillable] = useState<boolean | null>(null);
   const [status, setStatus] = useState<TaskStatus | null>(null);
+  // New fields
+  const [typeId, setTypeId] = useState<string | null>(null);
+  const [estimateHours, setEstimateHours] = useState("");
+  const [prLink, setPrLink] = useState("");
+  const [isClientVisible, setIsClientVisible] = useState(true);
+
+  // Task types from org
+  const [taskTypes, setTaskTypes] = useState<TaskType[]>([]);
 
   // UI state
   const [isLoading, setIsLoading] = useState(false);
@@ -102,6 +124,25 @@ export function TaskDialog({
   const [error, setError] = useState<string | null>(null);
 
   const isEditing = !!task;
+
+  // Fetch task types for the org
+  const fetchTaskTypes = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/v1/organizations/${orgId}/task-types`);
+      if (response.ok) {
+        const data = await response.json();
+        setTaskTypes(data);
+      }
+    } catch (err) {
+      console.error("Error fetching task types:", err);
+    }
+  }, [orgId]);
+
+  useEffect(() => {
+    if (open && pmEnabled) {
+      fetchTaskTypes();
+    }
+  }, [open, pmEnabled, fetchTaskTypes]);
 
   // Reset form when dialog opens or task changes
   useEffect(() => {
@@ -117,6 +158,15 @@ export function TaskDialog({
         );
         setIsBillable(task.isBillable);
         setStatus(task.status);
+        // New fields
+        setTypeId(task.typeId);
+        setEstimateHours(
+          task.estimateMinutes !== null
+            ? (task.estimateMinutes / 60).toString()
+            : ""
+        );
+        setPrLink(task.prLink || "");
+        setIsClientVisible(task.isClientVisible ?? true);
       } else {
         // Creating new task - reset form
         setName("");
@@ -124,6 +174,11 @@ export function TaskDialog({
         setRateOverride("");
         setIsBillable(null);
         setStatus(defaultStatus);
+        // New fields
+        setTypeId(null);
+        setEstimateHours("");
+        setPrLink("");
+        setIsClientVisible(true);
       }
       setError(null);
     }
@@ -141,6 +196,11 @@ export function TaskDialog({
         rateOverride: rateOverride !== "" ? parseFloat(rateOverride) : null,
         isBillable,
         status,
+        // New fields
+        typeId: typeId || null,
+        estimateMinutes: estimateHours !== "" ? Math.round(parseFloat(estimateHours) * 60) : null,
+        prLink: prLink || null,
+        isClientVisible,
       };
 
       const url = isEditing
@@ -302,6 +362,102 @@ export function TaskDialog({
                 <p className="text-xs text-muted-foreground">
                   Category-only tasks appear in time entry dropdowns but not on the board.
                 </p>
+              </div>
+            )}
+
+            {/* Task Type - only show when PM is enabled and types exist */}
+            {pmEnabled && taskTypes.length > 0 && (
+              <div className="grid gap-2">
+                <Label htmlFor="task-type">Type</Label>
+                <Select
+                  value={typeId || "none"}
+                  onValueChange={(value) =>
+                    setTypeId(value === "none" ? null : value)
+                  }
+                >
+                  <SelectTrigger id="task-type" className="squircle">
+                    <SelectValue placeholder="Select type" />
+                  </SelectTrigger>
+                  <SelectContent className="squircle">
+                    <SelectItem value="none">
+                      <span className="text-muted-foreground">No type</span>
+                    </SelectItem>
+                    {taskTypes.map((type) => (
+                      <SelectItem key={type.id} value={type.id}>
+                        <div className="flex items-center gap-2">
+                          {type.color && (
+                            <div
+                              className="size-2 rounded-full"
+                              style={{ backgroundColor: type.color }}
+                            />
+                          )}
+                          {type.name}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Estimate - only show when PM is enabled */}
+            {pmEnabled && (
+              <div className="grid gap-2">
+                <Label htmlFor="task-estimate">Time estimate (hours)</Label>
+                <Input
+                  id="task-estimate"
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  value={estimateHours}
+                  onChange={(e) => setEstimateHours(e.target.value)}
+                  placeholder="e.g. 4"
+                  className="squircle"
+                />
+              </div>
+            )}
+
+            {/* PR Link - only show when PM is enabled */}
+            {pmEnabled && (
+              <div className="grid gap-2">
+                <Label htmlFor="task-pr-link">PR / Code link</Label>
+                <div className="relative">
+                  <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                  <Input
+                    id="task-pr-link"
+                    type="url"
+                    value={prLink}
+                    onChange={(e) => setPrLink(e.target.value)}
+                    placeholder="https://github.com/..."
+                    className="squircle pl-9"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Client Visibility - only show when PM is enabled */}
+            {pmEnabled && (
+              <div className="flex items-center justify-between gap-4">
+                <div className="grid gap-1">
+                  <Label htmlFor="task-visibility">Client visibility</Label>
+                  <p className="text-sm text-muted-foreground">
+                    {isClientVisible
+                      ? "Clients can see this task in the portal."
+                      : "This task is hidden from clients."}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {isClientVisible ? (
+                    <Eye className="size-4 text-muted-foreground" />
+                  ) : (
+                    <EyeOff className="size-4 text-muted-foreground" />
+                  )}
+                  <Switch
+                    id="task-visibility"
+                    checked={isClientVisible}
+                    onCheckedChange={setIsClientVisible}
+                  />
+                </div>
               </div>
             )}
 
