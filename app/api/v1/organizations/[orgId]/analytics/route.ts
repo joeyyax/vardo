@@ -1,13 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { timeEntries, clients, projects, tasks } from "@/lib/db/schema";
+import {
+  timeEntries,
+  clients,
+  projects,
+  tasks,
+  invoices,
+  projectExpenses,
+} from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
-import { eq, and, gte, lte } from "drizzle-orm";
+import { eq, and, gte, lte, sql } from "drizzle-orm";
 import {
   startOfWeek,
   startOfMonth,
   startOfQuarter,
   startOfYear,
+  differenceInDays,
+  parseISO,
   format,
 } from "date-fns";
 
@@ -94,6 +103,70 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         )
       );
 
+    // --- Revenue by month (invoices + expenses) ---
+    // These queries run regardless of whether time entries exist
+    const paidInvoicesByMonth = await db
+      .select({
+        month: sql<string>`to_char(${invoices.periodEnd}::date, 'YYYY-MM')`,
+        total: sql<number>`COALESCE(SUM(${invoices.subtotal}), 0)`,
+      })
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.organizationId, orgId),
+          sql`${invoices.status} = 'paid'`,
+          gte(invoices.periodEnd, fromDateStr),
+          lte(invoices.periodEnd, toDateStr)
+        )
+      )
+      .groupBy(sql`to_char(${invoices.periodEnd}::date, 'YYYY-MM')`)
+      .orderBy(sql`to_char(${invoices.periodEnd}::date, 'YYYY-MM')`);
+
+    const expensesByMonth = await db
+      .select({
+        month: sql<string>`to_char(${projectExpenses.date}::date, 'YYYY-MM')`,
+        total: sql<number>`COALESCE(SUM(${projectExpenses.amountCents}), 0)`,
+      })
+      .from(projectExpenses)
+      .where(
+        and(
+          eq(projectExpenses.organizationId, orgId),
+          gte(projectExpenses.date, fromDateStr),
+          lte(projectExpenses.date, toDateStr)
+        )
+      )
+      .groupBy(sql`to_char(${projectExpenses.date}::date, 'YYYY-MM')`)
+      .orderBy(sql`to_char(${projectExpenses.date}::date, 'YYYY-MM')`);
+
+    // Merge invoices + expenses into unified revenueByMonth
+    const revenueMonthMap = new Map<
+      string,
+      { incomeCents: number; expenseCents: number }
+    >();
+
+    for (const row of paidInvoicesByMonth) {
+      revenueMonthMap.set(row.month, {
+        incomeCents: Number(row.total),
+        expenseCents: 0,
+      });
+    }
+
+    for (const row of expensesByMonth) {
+      const existing = revenueMonthMap.get(row.month);
+      if (existing) {
+        existing.expenseCents = Number(row.total);
+      } else {
+        revenueMonthMap.set(row.month, {
+          incomeCents: 0,
+          expenseCents: Number(row.total),
+        });
+      }
+    }
+
+    const revenueByMonth = Array.from(revenueMonthMap.entries())
+      .map(([month, data]) => ({ month, ...data }))
+      .sort((a, b) => a.month.localeCompare(b.month));
+
     if (entriesWithRelations.length === 0) {
       return NextResponse.json({
         totalMinutes: 0,
@@ -103,6 +176,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         averageHoursPerDay: 0,
         clientBreakdown: [],
         topProjects: [],
+        hoursByPeriod: [],
+        utilizationByWeek: [],
+        revenueByMonth,
       });
     }
 
@@ -246,6 +322,89 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const averageHoursPerDay =
       daysWithEntries > 0 ? totalMinutes / 60 / daysWithEntries : 0;
 
+    // --- Hours by period (daily / weekly / monthly buckets) ---
+    const daySpan = differenceInDays(parseISO(toDateStr), parseISO(fromDateStr));
+
+    const getBucketKey = (dateStr: string): string => {
+      if (daySpan <= 31) {
+        // daily: YYYY-MM-DD
+        return dateStr;
+      } else if (daySpan <= 90) {
+        // weekly: Monday of that week
+        const d = parseISO(dateStr);
+        return format(startOfWeek(d, { weekStartsOn: 1 }), "yyyy-MM-dd");
+      } else {
+        // monthly: YYYY-MM
+        return dateStr.slice(0, 7);
+      }
+    };
+
+    const hoursBucketMap = new Map<
+      string,
+      { billableMinutes: number; unbillableMinutes: number }
+    >();
+
+    for (const entry of entriesWithRelations) {
+      const key = getBucketKey(entry.date);
+      const isBillable = getIsBillable(entry);
+      const existing = hoursBucketMap.get(key);
+
+      if (existing) {
+        if (isBillable) {
+          existing.billableMinutes += entry.durationMinutes;
+        } else {
+          existing.unbillableMinutes += entry.durationMinutes;
+        }
+      } else {
+        hoursBucketMap.set(key, {
+          billableMinutes: isBillable ? entry.durationMinutes : 0,
+          unbillableMinutes: isBillable ? 0 : entry.durationMinutes,
+        });
+      }
+    }
+
+    const hoursByPeriod = Array.from(hoursBucketMap.entries())
+      .map(([date, data]) => ({ date, ...data }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    // --- Utilization by week ---
+    const utilizationWeekMap = new Map<
+      string,
+      { totalMinutes: number; billableMinutes: number }
+    >();
+
+    for (const entry of entriesWithRelations) {
+      const weekStart = format(
+        startOfWeek(parseISO(entry.date), { weekStartsOn: 1 }),
+        "yyyy-MM-dd"
+      );
+      const isBillable = getIsBillable(entry);
+      const existing = utilizationWeekMap.get(weekStart);
+
+      if (existing) {
+        existing.totalMinutes += entry.durationMinutes;
+        if (isBillable) {
+          existing.billableMinutes += entry.durationMinutes;
+        }
+      } else {
+        utilizationWeekMap.set(weekStart, {
+          totalMinutes: entry.durationMinutes,
+          billableMinutes: isBillable ? entry.durationMinutes : 0,
+        });
+      }
+    }
+
+    const utilizationByWeek = Array.from(utilizationWeekMap.entries())
+      .map(([week, data]) => ({
+        week,
+        totalMinutes: data.totalMinutes,
+        billableMinutes: data.billableMinutes,
+        percentage: Math.round(
+          (data.billableMinutes / data.totalMinutes) * 100
+        ),
+      }))
+      .sort((a, b) => a.week.localeCompare(b.week));
+
     return NextResponse.json({
       totalMinutes,
       totalBillable,
@@ -254,6 +413,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       averageHoursPerDay,
       clientBreakdown,
       topProjects,
+      hoursByPeriod,
+      utilizationByWeek,
+      revenueByMonth,
     });
   } catch (error) {
     if (error instanceof Error && error.message === "Unauthorized") {
