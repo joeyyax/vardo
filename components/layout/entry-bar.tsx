@@ -44,6 +44,29 @@ type Suggestion = {
   reason: "recent" | "frequent" | "match";
 };
 
+/**
+ * Description suggestion from past entries.
+ */
+type DescriptionSuggestion = {
+  description: string;
+  client: {
+    id: string;
+    name: string;
+    color: string | null;
+  };
+  project: {
+    id: string;
+    name: string;
+    code: string | null;
+  } | null;
+  task: {
+    id: string;
+    name: string;
+  } | null;
+  durationMinutes: number;
+  usageCount: number;
+};
+
 type EntryBarProps = {
   orgId: string;
   roundingIncrement?: number;
@@ -170,8 +193,14 @@ export function EntryBar({
   // Date picker state
   const [datePickerOpen, setDatePickerOpen] = useState(false);
 
+  // Description autocomplete state
+  const [descriptionSuggestions, setDescriptionSuggestions] = useState<DescriptionSuggestion[]>([]);
+  const [descriptionDropdownOpen, setDescriptionDropdownOpen] = useState(false);
+  const [descriptionHighlightedIndex, setDescriptionHighlightedIndex] = useState(0);
+
   // Refs for keyboard navigation
   const descriptionRef = useRef<HTMLInputElement>(null);
+  const descriptionDropdownRef = useRef<HTMLDivElement>(null);
   const selectorTriggerRef = useRef<HTMLButtonElement>(null);
   const durationRef = useRef<HTMLInputElement>(null);
   const datePickerTriggerRef = useRef<HTMLButtonElement>(null);
@@ -212,6 +241,52 @@ export function EntryBar({
       controller.abort();
     };
   }, [orgId, searchQuery]);
+
+  // Debounced search for description suggestions
+  useEffect(() => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(async () => {
+      if (!orgId || description.length < 2) {
+        setDescriptionSuggestions([]);
+        setDescriptionDropdownOpen(false);
+        return;
+      }
+
+      try {
+        const params = new URLSearchParams({ query: description });
+        if (selectedItem?.client.id) {
+          params.set("clientId", selectedItem.client.id);
+        }
+        if (selectedItem?.project?.id) {
+          params.set("projectId", selectedItem.project.id);
+        }
+
+        const response = await fetch(
+          `/api/v1/organizations/${orgId}/entry-suggestions?${params}`,
+          { signal: controller.signal }
+        );
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch description suggestions");
+        }
+
+        const data = await response.json();
+        const suggestions = data.suggestions || [];
+        setDescriptionSuggestions(suggestions);
+        setDescriptionDropdownOpen(suggestions.length > 0);
+        setDescriptionHighlightedIndex(0);
+      } catch (err) {
+        if (err instanceof Error && err.name !== "AbortError") {
+          console.error("Error fetching description suggestions:", err);
+        }
+      }
+    }, 200);
+
+    return () => {
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [orgId, description, selectedItem?.client.id, selectedItem?.project?.id]);
 
   // Parse and round duration when input changes
   const handleDurationChange = useCallback(
@@ -257,6 +332,65 @@ export function EntryBar({
       }
     },
     [durationMinutes, roundingIncrement]
+  );
+
+  // Handle description suggestion selection
+  const selectDescriptionSuggestion = useCallback(
+    (suggestion: DescriptionSuggestion) => {
+      setDescription(suggestion.description);
+      setSelectedItem({
+        client: suggestion.client,
+        project: suggestion.project,
+        task: suggestion.task,
+        score: 0,
+        reason: "recent",
+      });
+      const rounded = roundUpToIncrement(suggestion.durationMinutes, roundingIncrement);
+      setDurationMinutes(rounded);
+      setDurationInput(formatDuration(rounded));
+      setDescriptionDropdownOpen(false);
+      setDescriptionSuggestions([]);
+      // Keep focus on description
+      descriptionRef.current?.focus();
+    },
+    [roundingIncrement]
+  );
+
+  // Handle keyboard navigation in description field
+  const handleDescriptionKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (!descriptionDropdownOpen || descriptionSuggestions.length === 0) {
+        return;
+      }
+
+      switch (e.key) {
+        case "ArrowDown":
+          e.preventDefault();
+          setDescriptionHighlightedIndex((prev) =>
+            Math.min(prev + 1, descriptionSuggestions.length - 1)
+          );
+          break;
+        case "ArrowUp":
+          e.preventDefault();
+          setDescriptionHighlightedIndex((prev) => Math.max(prev - 1, 0));
+          break;
+        case "Enter":
+          e.preventDefault();
+          const selected = descriptionSuggestions[descriptionHighlightedIndex];
+          if (selected) {
+            selectDescriptionSuggestion(selected);
+          }
+          break;
+        case "Escape":
+          e.preventDefault();
+          setDescriptionDropdownOpen(false);
+          break;
+        case "Tab":
+          setDescriptionDropdownOpen(false);
+          break;
+      }
+    },
+    [descriptionDropdownOpen, descriptionSuggestions, descriptionHighlightedIndex, selectDescriptionSuggestion]
   );
 
   // Handle keyboard shortcuts for date picker (without opening popover)
@@ -307,6 +441,8 @@ export function EntryBar({
     setDate(new Date());
     setError(null);
     setSearchQuery("");
+    setDescriptionSuggestions([]);
+    setDescriptionDropdownOpen(false);
     descriptionRef.current?.focus();
   }, []);
 
@@ -404,16 +540,77 @@ export function EntryBar({
       onSubmit={handleSubmit}
       className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3"
     >
-          {/* Description input */}
-          <Input
-            ref={descriptionRef}
-            type="text"
-            placeholder="What did you work on?"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            className="squircle flex-1 min-w-0"
-            disabled={isSubmitting}
-          />
+          {/* Description input with autocomplete */}
+          <div className="relative flex-1 min-w-0">
+            <Input
+              ref={descriptionRef}
+              type="text"
+              placeholder="What did you work on?"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              onKeyDown={handleDescriptionKeyDown}
+              onFocus={() => {
+                if (descriptionSuggestions.length > 0) {
+                  setDescriptionDropdownOpen(true);
+                }
+              }}
+              onBlur={(e) => {
+                // Delay closing to allow click on dropdown items
+                if (!descriptionDropdownRef.current?.contains(e.relatedTarget as Node)) {
+                  setTimeout(() => setDescriptionDropdownOpen(false), 150);
+                }
+              }}
+              className="squircle w-full"
+              disabled={isSubmitting}
+              autoComplete="off"
+            />
+
+            {/* Description suggestions dropdown */}
+            {descriptionDropdownOpen && descriptionSuggestions.length > 0 && (
+              <div
+                ref={descriptionDropdownRef}
+                className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-auto rounded-md border bg-popover p-1 shadow-md"
+              >
+                {descriptionSuggestions.map((suggestion, index) => (
+                  <button
+                    key={`${suggestion.description}-${suggestion.client.id}-${suggestion.project?.id || ""}`}
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      selectDescriptionSuggestion(suggestion);
+                    }}
+                    className={cn(
+                      "flex w-full items-start gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-none",
+                      index === descriptionHighlightedIndex
+                        ? "bg-accent text-accent-foreground"
+                        : "hover:bg-accent hover:text-accent-foreground"
+                    )}
+                  >
+                    {/* Color dot */}
+                    <span
+                      className="mt-1 size-2 shrink-0 rounded-full"
+                      style={{
+                        backgroundColor: suggestion.client.color || "#94a3b8",
+                      }}
+                    />
+                    <span className="flex flex-1 flex-col gap-0.5 min-w-0">
+                      {/* Description */}
+                      <span className="font-medium truncate">
+                        {suggestion.description}
+                      </span>
+                      {/* Context: Client / Project + Duration */}
+                      <span className="text-xs text-muted-foreground truncate">
+                        {suggestion.client.name}
+                        {suggestion.project && ` / ${suggestion.project.name}`}
+                        {" · "}
+                        {formatDuration(suggestion.durationMinutes)}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
           {/* Client/Project/Task selector */}
           <Popover open={selectorOpen} onOpenChange={setSelectorOpen}>
