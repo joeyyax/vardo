@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Plus, CalendarIcon, Loader2, Search } from "lucide-react";
+import { Plus, CalendarIcon, Loader2, Search, Sparkles, List } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,7 +19,14 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { SmartEntryBar } from "@/components/entry/smart-entry-bar";
 
 /**
  * Suggestion with flexible hierarchy.
@@ -52,7 +59,8 @@ type EntryBarProps = {
 
 /**
  * Parse duration string into minutes.
- * Accepts formats: "1h", "1.5h", "1h30m", "90m", "1:30", or just "90" (minutes)
+ * Accepts formats: "1h", "1.5h", "1h30m", "90m", "1:30", or just "1" (hours)
+ * Bare numbers are treated as hours: "1" = 60min, "0.5" = 30min, "1.25" = 75min
  */
 function parseDuration(input: string): number | null {
   const trimmed = input.trim().toLowerCase();
@@ -86,10 +94,11 @@ function parseDuration(input: string): number | null {
     return parseInt(minutesMatch[1], 10);
   }
 
-  // Format: just a number (assume minutes)
+  // Format: just a number (assume hours)
+  // e.g., "1" = 1h, "0.5" = 30m, "1.25" = 1h 15m
   const numberMatch = trimmed.match(/^(\d+(?:\.\d+)?)$/);
   if (numberMatch) {
-    return Math.round(parseFloat(numberMatch[1]));
+    return Math.round(parseFloat(numberMatch[1]) * 60);
   }
 
   return null;
@@ -150,6 +159,9 @@ export function EntryBar({
   roundingIncrement = 15,
   onEntryCreated,
 }: EntryBarProps) {
+  // Mode toggle state
+  const [isSmartMode, setIsSmartMode] = useState(false);
+
   // Form state
   const [description, setDescription] = useState("");
   const [selectedItem, setSelectedItem] = useState<Suggestion | null>(null);
@@ -233,6 +245,69 @@ export function EntryBar({
     }
   }, [durationMinutes]);
 
+  // Handle arrow keys for duration increment/decrement
+  const handleDurationKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+        e.preventDefault();
+        const direction = e.key === "ArrowUp" ? 1 : -1;
+        const current = durationMinutes ?? 0;
+
+        // Round to nearest increment boundary first, then step
+        const rounded = Math.round(current / roundingIncrement) * roundingIncrement;
+        let newValue = rounded + direction * roundingIncrement;
+
+        // Ensure minimum of one increment
+        if (newValue < roundingIncrement) {
+          newValue = roundingIncrement;
+        }
+
+        setDurationMinutes(newValue);
+        setDurationInput(formatDuration(newValue));
+      }
+    },
+    [durationMinutes, roundingIncrement]
+  );
+
+  // Handle keyboard shortcuts for date picker (without opening popover)
+  const handleDateKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLButtonElement>) => {
+      // Don't handle if popover is open (let calendar handle navigation)
+      if (datePickerOpen) return;
+
+      const currentDate = new Date(date);
+
+      switch (e.key) {
+        case "ArrowLeft":
+          e.preventDefault();
+          currentDate.setDate(currentDate.getDate() - 1);
+          setDate(currentDate);
+          break;
+        case "ArrowRight":
+          e.preventDefault();
+          currentDate.setDate(currentDate.getDate() + 1);
+          setDate(currentDate);
+          break;
+        case "ArrowUp":
+          e.preventDefault();
+          currentDate.setDate(currentDate.getDate() - 7);
+          setDate(currentDate);
+          break;
+        case "ArrowDown":
+          e.preventDefault();
+          currentDate.setDate(currentDate.getDate() + 7);
+          setDate(currentDate);
+          break;
+        case "t":
+        case "T":
+          e.preventDefault();
+          setDate(new Date());
+          break;
+      }
+    },
+    [date, datePickerOpen]
+  );
+
   // Clear form
   const clearForm = useCallback(() => {
     setDescription("");
@@ -290,6 +365,9 @@ export function EntryBar({
         // Success - clear form and notify
         clearForm();
         onEntryCreated?.();
+
+        // Dispatch custom event for Timeline and other listeners
+        window.dispatchEvent(new CustomEvent("entry-created"));
       } catch (err) {
         setError(err instanceof Error ? err.message : "Something went wrong");
       } finally {
@@ -330,192 +408,243 @@ export function EntryBar({
     ? formatSuggestionDisplay(selectedItem)
     : null;
 
-  return (
-    <form
-      ref={formRef}
-      onSubmit={handleSubmit}
-      className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3"
-    >
-      {/* Description input */}
-      <Input
-        ref={descriptionRef}
-        type="text"
-        placeholder="What did you work on?"
-        value={description}
-        onChange={(e) => setDescription(e.target.value)}
-        className="squircle flex-1 min-w-0"
-        disabled={isSubmitting}
-      />
-
-      {/* Client/Project/Task selector */}
-      <Popover open={selectorOpen} onOpenChange={setSelectorOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            ref={selectorTriggerRef}
-            type="button"
-            variant="outline"
-            role="combobox"
-            aria-expanded={selectorOpen}
-            className={cn(
-              "squircle w-full sm:w-auto sm:min-w-[200px] sm:max-w-[300px] justify-start text-left font-normal",
-              !selectedItem && "text-muted-foreground"
-            )}
-            disabled={isSubmitting}
-          >
-            {selectedItem ? (
-              <span className="flex items-center gap-2 truncate">
-                <span
-                  className="size-2 shrink-0 rounded-full"
-                  style={{
-                    backgroundColor: selectedItem.client.color || "#94a3b8",
-                  }}
-                />
-                <span className="truncate">{selectedItemDisplay}</span>
-              </span>
-            ) : (
-              <span className="flex items-center gap-2">
-                <Search className="size-4 opacity-50" />
-                <span>Select client/project...</span>
-              </span>
-            )}
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-[300px] p-0" align="start">
-          <Command shouldFilter={false}>
-            <CommandInput
-              placeholder="Search..."
-              value={searchQuery}
-              onValueChange={setSearchQuery}
-            />
-            <CommandList>
-              {isLoadingSuggestions ? (
-                <div className="flex items-center justify-center py-6">
-                  <Loader2 className="size-4 animate-spin text-muted-foreground" />
-                </div>
-              ) : suggestions.length === 0 ? (
-                <CommandEmpty>
-                  {searchQuery
-                    ? "No matches found."
-                    : "No recent entries. Create a client first."}
-                </CommandEmpty>
-              ) : (
-                <CommandGroup>
-                  {suggestions.map((suggestion) => (
-                    <CommandItem
-                      key={getSuggestionKey(suggestion)}
-                      value={getSuggestionKey(suggestion)}
-                      onSelect={() => {
-                        setSelectedItem(suggestion);
-                        setSelectorOpen(false);
-                        // Move focus to duration after selection
-                        setTimeout(() => durationRef.current?.focus(), 0);
-                      }}
-                      className="flex items-start gap-2 py-2"
-                    >
-                      <span
-                        className="mt-1.5 size-2 shrink-0 rounded-full"
-                        style={{
-                          backgroundColor: suggestion.client.color || "#94a3b8",
-                        }}
-                      />
-                      <span className="flex flex-col gap-0.5 min-w-0">
-                        <span className="text-sm font-medium truncate">
-                          {suggestion.task?.name || suggestion.project?.name || suggestion.client.name}
-                        </span>
-                        <span className="text-xs text-muted-foreground truncate">
-                          {suggestion.task
-                            ? `${suggestion.client.name} / ${suggestion.project?.name}`
-                            : suggestion.project
-                            ? suggestion.client.name
-                            : "Client only"}
-                        </span>
-                      </span>
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              )}
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      </Popover>
-
-      {/* Duration input */}
-      <div className="relative flex items-center gap-1">
-        <Input
-          ref={durationRef}
-          type="text"
-          placeholder="0:00"
-          value={durationInput}
-          onChange={(e) => handleDurationChange(e.target.value)}
-          onBlur={handleDurationBlur}
-          className="squircle w-full sm:w-24 text-center"
-          disabled={isSubmitting}
-        />
-        {durationMinutes !== null &&
-          durationInput &&
-          parseDuration(durationInput) !== durationMinutes && (
-            <span className="hidden sm:inline text-xs text-muted-foreground whitespace-nowrap">
-              ({formatDuration(durationMinutes)})
-            </span>
-          )}
-      </div>
-
-      {/* Date picker */}
-      <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            ref={datePickerTriggerRef}
-            type="button"
-            variant="outline"
-            className={cn(
-              "squircle w-full sm:w-auto justify-start text-left font-normal",
-              !date && "text-muted-foreground"
-            )}
-            disabled={isSubmitting}
-          >
-            <CalendarIcon className="size-4 mr-2" />
-            {date ? format(date, "MMM d") : "Pick date"}
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-auto p-0" align="start">
-          <Calendar
-            mode="single"
-            selected={date}
-            onSelect={(newDate) => {
-              if (newDate) {
-                setDate(newDate);
-                setDatePickerOpen(false);
-                // Move focus to add button after date selection
-                setTimeout(() => addButtonRef.current?.focus(), 0);
-              }
-            }}
-            initialFocus
+  if (isSmartMode) {
+    return (
+      <TooltipProvider>
+        <div className="flex items-start gap-2">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="shrink-0"
+                onClick={() => setIsSmartMode(false)}
+              >
+                <List className="size-4" />
+                <span className="sr-only">Switch to classic entry</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Switch to classic entry</TooltipContent>
+          </Tooltip>
+          <SmartEntryBar
+            orgId={orgId}
+            roundingIncrement={roundingIncrement}
+            onEntryCreated={onEntryCreated}
           />
-        </PopoverContent>
-      </Popover>
+        </div>
+      </TooltipProvider>
+    );
+  }
 
-      {/* Add button */}
-      <Button
-        ref={addButtonRef}
-        type="submit"
-        size="icon"
-        className="squircle shrink-0"
-        disabled={isSubmitting || !selectedItem || !durationMinutes}
-      >
-        {isSubmitting ? (
-          <Loader2 className="size-4 animate-spin" />
-        ) : (
-          <Plus className="size-4" />
-        )}
-        <span className="sr-only">Add entry</span>
-      </Button>
+  return (
+    <TooltipProvider>
+      <div className="flex items-start gap-2">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="shrink-0"
+              onClick={() => setIsSmartMode(true)}
+            >
+              <Sparkles className="size-4" />
+              <span className="sr-only">Switch to smart entry</span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Switch to smart entry</TooltipContent>
+        </Tooltip>
+        <form
+          ref={formRef}
+          onSubmit={handleSubmit}
+          className="flex flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3"
+        >
+          {/* Description input */}
+          <Input
+            ref={descriptionRef}
+            type="text"
+            placeholder="What did you work on?"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            className="squircle flex-1 min-w-0"
+            disabled={isSubmitting}
+          />
 
-      {/* Error message - shows inline on mobile, absolute below on desktop */}
-      {error && (
-        <p className="w-full text-sm text-destructive sm:w-auto">
-          {error}
-        </p>
-      )}
-    </form>
+          {/* Client/Project/Task selector */}
+          <Popover open={selectorOpen} onOpenChange={setSelectorOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                ref={selectorTriggerRef}
+                type="button"
+                variant="outline"
+                role="combobox"
+                aria-expanded={selectorOpen}
+                className={cn(
+                  "squircle w-full sm:w-auto sm:min-w-[200px] sm:max-w-[300px] justify-start text-left font-normal",
+                  !selectedItem && "text-muted-foreground"
+                )}
+                disabled={isSubmitting}
+              >
+                {selectedItem ? (
+                  <span className="flex items-center gap-2 truncate">
+                    <span
+                      className="size-2 shrink-0 rounded-full"
+                      style={{
+                        backgroundColor: selectedItem.client.color || "#94a3b8",
+                      }}
+                    />
+                    <span className="truncate">{selectedItemDisplay}</span>
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-2">
+                    <Search className="size-4 opacity-50" />
+                    <span>Select client/project...</span>
+                  </span>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[300px] p-0" align="start">
+              <Command shouldFilter={false}>
+                <CommandInput
+                  placeholder="Search..."
+                  value={searchQuery}
+                  onValueChange={setSearchQuery}
+                  autoFocus
+                />
+                <CommandList>
+                  {isLoadingSuggestions ? (
+                    <div className="flex items-center justify-center py-6">
+                      <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : suggestions.length === 0 ? (
+                    <CommandEmpty>
+                      {searchQuery
+                        ? "No matches found."
+                        : "No recent entries. Create a client first."}
+                    </CommandEmpty>
+                  ) : (
+                    <CommandGroup>
+                      {suggestions.map((suggestion) => (
+                        <CommandItem
+                          key={getSuggestionKey(suggestion)}
+                          value={getSuggestionKey(suggestion)}
+                          onSelect={() => {
+                            setSelectedItem(suggestion);
+                            setSelectorOpen(false);
+                            // Move focus to duration after selection
+                            setTimeout(() => durationRef.current?.focus(), 0);
+                          }}
+                          className="flex items-start gap-2 py-2"
+                        >
+                          <span
+                            className="mt-1.5 size-2 shrink-0 rounded-full"
+                            style={{
+                              backgroundColor: suggestion.client.color || "#94a3b8",
+                            }}
+                          />
+                          <span className="flex flex-col gap-0.5 min-w-0">
+                            <span className="text-sm font-medium truncate">
+                              {suggestion.task?.name || suggestion.project?.name || suggestion.client.name}
+                            </span>
+                            <span className="text-xs text-muted-foreground truncate">
+                              {suggestion.task
+                                ? `${suggestion.client.name} / ${suggestion.project?.name}`
+                                : suggestion.project
+                                ? suggestion.client.name
+                                : "Client only"}
+                            </span>
+                          </span>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  )}
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
+
+          {/* Duration input */}
+          <div className="relative flex items-center gap-1">
+            <Input
+              ref={durationRef}
+              type="text"
+              placeholder="0:00"
+              value={durationInput}
+              onChange={(e) => handleDurationChange(e.target.value)}
+              onBlur={handleDurationBlur}
+              onKeyDown={handleDurationKeyDown}
+              className="squircle w-full sm:w-24 text-center"
+              disabled={isSubmitting}
+            />
+            {durationMinutes !== null &&
+              durationInput &&
+              parseDuration(durationInput) !== durationMinutes && (
+                <span className="hidden sm:inline text-xs text-muted-foreground whitespace-nowrap">
+                  ({formatDuration(durationMinutes)})
+                </span>
+              )}
+          </div>
+
+          {/* Date picker */}
+          <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                ref={datePickerTriggerRef}
+                type="button"
+                variant="outline"
+                className={cn(
+                  "squircle w-full sm:w-auto justify-start text-left font-normal",
+                  !date && "text-muted-foreground"
+                )}
+                disabled={isSubmitting}
+                onKeyDown={handleDateKeyDown}
+              >
+                <CalendarIcon className="size-4 mr-2" />
+                {date ? format(date, "MMM d") : "Pick date"}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar
+                mode="single"
+                selected={date}
+                onSelect={(newDate) => {
+                  if (newDate) {
+                    setDate(newDate);
+                    setDatePickerOpen(false);
+                    // Move focus to add button after date selection
+                    setTimeout(() => addButtonRef.current?.focus(), 0);
+                  }
+                }}
+                initialFocus
+              />
+            </PopoverContent>
+          </Popover>
+
+          {/* Add button */}
+          <Button
+            ref={addButtonRef}
+            type="submit"
+            size="icon"
+            className="squircle shrink-0"
+            disabled={isSubmitting || !selectedItem || !durationMinutes}
+          >
+            {isSubmitting ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Plus className="size-4" />
+            )}
+            <span className="sr-only">Add entry</span>
+          </Button>
+
+          {/* Error message - shows inline on mobile, absolute below on desktop */}
+          {error && (
+            <p className="w-full text-sm text-destructive sm:w-auto">
+              {error}
+            </p>
+          )}
+        </form>
+      </div>
+    </TooltipProvider>
   );
 }
