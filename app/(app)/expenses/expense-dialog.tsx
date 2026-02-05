@@ -51,6 +51,7 @@ type Expense = {
   date: string;
   category: string | null;
   vendor?: string | null;
+  status?: string | null;
   isBillable: boolean;
   isRecurring: boolean;
   recurringFrequency: string | null;
@@ -134,6 +135,7 @@ export function ExpenseDialog({
       isRecurring: false,
       recurringFrequency: "monthly",
       vendor: "",
+      status: "paid" as const,
     },
   });
 
@@ -177,6 +179,7 @@ export function ExpenseDialog({
         isRecurring: expense.isRecurring,
         recurringFrequency: expense.recurringFrequency || "monthly",
         vendor: expense.vendor || "",
+        status: (expense.status as "paid" | "unpaid") || "paid",
       });
     } else if (!open) {
       // Reset to defaults when closing
@@ -190,6 +193,7 @@ export function ExpenseDialog({
         isRecurring: false,
         recurringFrequency: "monthly",
         vendor: "",
+        status: "paid",
       });
     }
   }, [open, expense, form]);
@@ -231,6 +235,7 @@ export function ExpenseDialog({
           ? calculateNextOccurrence(data.date, data.recurringFrequency)
           : null,
         vendor: data.vendor || null,
+        status: data.status || "paid",
       };
 
       const url = isEditMode
@@ -396,6 +401,28 @@ export function ExpenseDialog({
                       <option key={v} value={v} />
                     ))}
                   </datalist>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="status"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Payment Status</FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <FormControl>
+                      <SelectTrigger className="squircle">
+                        <SelectValue placeholder="Select status" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent className="squircle">
+                      <SelectItem value="paid">Paid</SelectItem>
+                      <SelectItem value="unpaid">Unpaid</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <FormMessage />
                 </FormItem>
               )}

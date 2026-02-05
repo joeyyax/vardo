@@ -45,6 +45,7 @@ type Expense = {
   amountCents: number;
   date: string;
   category: string | null;
+  status?: string | null;
   isBillable: boolean;
   isRecurring: boolean;
   recurringFrequency: string | null;
@@ -408,6 +409,11 @@ export function ExpensesContent({ orgId }: ExpensesContentProps) {
                           {isOverhead && (
                             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs text-amber-600 bg-amber-100 dark:text-amber-400 dark:bg-amber-900">
                               Overhead
+                            </span>
+                          )}
+                          {expense.status === "unpaid" && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs text-red-600 bg-red-100 dark:text-red-400 dark:bg-red-900">
+                              Unpaid
                             </span>
                           )}
                           {expense.category && (

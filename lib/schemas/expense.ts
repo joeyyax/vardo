@@ -10,6 +10,7 @@ export const expenseSchema = z.object({
   isRecurring: z.boolean(),
   recurringFrequency: z.string(),
   vendor: z.string().optional(),
+  status: z.enum(["paid", "unpaid"]),
 });
 
 export type ExpenseFormData = z.infer<typeof expenseSchema>;
