@@ -1,5 +1,12 @@
 import { CheckCircle, Clock, AlertTriangle, FileText } from "lucide-react";
+import { Bar, BarChart, XAxis, YAxis, CartesianGrid, Cell } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
 
 type RecentActivity = {
   invoiceId: string;
@@ -63,35 +70,6 @@ function StatCard({
   );
 }
 
-function AgingBar({
-  label,
-  amount,
-  maxAmount,
-  colorClass,
-}: {
-  label: string;
-  amount: number;
-  maxAmount: number;
-  colorClass: string;
-}) {
-  const percentage = maxAmount > 0 ? (amount / maxAmount) * 100 : 0;
-
-  return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between text-sm">
-        <span>{label}</span>
-        <span className="font-medium">{formatCurrency(amount)}</span>
-      </div>
-      <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-        <div
-          className={`h-full transition-all ${colorClass}`}
-          style={{ width: `${percentage}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
 function getEventIcon(event: RecentActivity["event"]): {
   icon: React.ElementType;
   className: string;
@@ -125,13 +103,20 @@ export function InvoiceStatus({
   aging,
   recentActivity,
 }: InvoiceStatusProps) {
-  const maxAgingAmount = Math.max(
-    aging.current,
-    aging.days1to30,
-    aging.days31to60,
-    aging.days60plus,
-    1
-  );
+  const agingConfig = {
+    amount: { label: "Amount" },
+    current: { label: "Current", color: "hsl(142, 71%, 45%)" },
+    days1to30: { label: "1-30 days", color: "hsl(48, 96%, 53%)" },
+    days31to60: { label: "31-60 days", color: "hsl(25, 95%, 53%)" },
+    days60plus: { label: "60+ days", color: "hsl(0, 84%, 60%)" },
+  } satisfies ChartConfig;
+
+  const agingChartData = [
+    { bucket: "Current", amount: aging.current / 100, fill: "var(--color-current)" },
+    { bucket: "1-30 days", amount: aging.days1to30 / 100, fill: "var(--color-days1to30)" },
+    { bucket: "31-60 days", amount: aging.days31to60 / 100, fill: "var(--color-days31to60)" },
+    { bucket: "60+ days", amount: aging.days60plus / 100, fill: "var(--color-days60plus)" },
+  ];
 
   return (
     <section className="space-y-4">
@@ -169,31 +154,42 @@ export function InvoiceStatus({
           <CardHeader>
             <CardTitle className="text-base">Aging Breakdown</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <AgingBar
-              label="Current"
-              amount={aging.current}
-              maxAmount={maxAgingAmount}
-              colorClass="bg-green-500"
-            />
-            <AgingBar
-              label="1-30 days"
-              amount={aging.days1to30}
-              maxAmount={maxAgingAmount}
-              colorClass="bg-yellow-500"
-            />
-            <AgingBar
-              label="31-60 days"
-              amount={aging.days31to60}
-              maxAmount={maxAgingAmount}
-              colorClass="bg-orange-500"
-            />
-            <AgingBar
-              label="60+ days"
-              amount={aging.days60plus}
-              maxAmount={maxAgingAmount}
-              colorClass="bg-red-500"
-            />
+          <CardContent>
+            <ChartContainer config={agingConfig} className="aspect-auto h-[200px] w-full">
+              <BarChart
+                accessibilityLayer
+                data={agingChartData}
+                layout="vertical"
+                margin={{ left: 8, right: 8 }}
+              >
+                <CartesianGrid horizontal={false} />
+                <YAxis
+                  dataKey="bucket"
+                  type="category"
+                  tickLine={false}
+                  axisLine={false}
+                  width={80}
+                />
+                <XAxis
+                  type="number"
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(value) => `$${Number(value).toLocaleString()}`}
+                />
+                <ChartTooltip
+                  content={
+                    <ChartTooltipContent
+                      formatter={(value) => formatCurrency(Number(value) * 100)}
+                    />
+                  }
+                />
+                <Bar dataKey="amount" radius={[0, 4, 4, 0]}>
+                  {agingChartData.map((entry) => (
+                    <Cell key={entry.bucket} fill={entry.fill} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ChartContainer>
           </CardContent>
         </Card>
 

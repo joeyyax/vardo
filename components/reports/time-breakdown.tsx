@@ -1,5 +1,14 @@
 import { Clock, DollarSign, ClockArrowDown, Percent } from "lucide-react";
+import { Bar, BarChart, XAxis, YAxis, CartesianGrid } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  ChartLegend,
+  ChartLegendContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
 
 type ClientBreakdown = {
   id: string;
@@ -71,37 +80,6 @@ function StatCard({
   );
 }
 
-function HorizontalBar({
-  billablePercent,
-  unbillablePercent,
-  color,
-}: {
-  billablePercent: number;
-  unbillablePercent: number;
-  color: string | null;
-}) {
-  const barColor = color ?? "#6b7280";
-
-  return (
-    <div className="flex h-3 w-full overflow-hidden rounded-full bg-muted">
-      <div
-        className="h-full transition-all"
-        style={{
-          width: `${billablePercent}%`,
-          backgroundColor: barColor,
-        }}
-      />
-      <div
-        className="h-full transition-all opacity-40"
-        style={{
-          width: `${unbillablePercent}%`,
-          backgroundColor: barColor,
-        }}
-      />
-    </div>
-  );
-}
-
 export function TimeBreakdown({
   totalMinutes,
   totalBillable,
@@ -113,10 +91,16 @@ export function TimeBreakdown({
   const utilization =
     totalMinutes > 0 ? Math.round((billableMinutes / totalMinutes) * 100) : 0;
 
-  const maxClientMinutes = Math.max(
-    ...clientBreakdown.map((c) => c.totalMinutes),
-    1
-  );
+  const clientChartConfig = {
+    billable: { label: "Billable", color: "var(--chart-1)" },
+    unbillable: { label: "Unbillable", color: "var(--chart-2)" },
+  } satisfies ChartConfig;
+
+  const clientChartData = clientBreakdown.map((c) => ({
+    name: c.name,
+    billable: +(c.billableMinutes / 60).toFixed(1),
+    unbillable: +(c.unbillableMinutes / 60).toFixed(1),
+  }));
 
   return (
     <section className="space-y-4">
@@ -151,51 +135,61 @@ export function TimeBreakdown({
           <CardHeader>
             <CardTitle className="text-base">Hours by Client</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent>
             {clientBreakdown.length === 0 ? (
               <p className="text-sm text-muted-foreground">No data available</p>
             ) : (
-              clientBreakdown.map((client) => {
-                const billablePercent =
-                  (client.billableMinutes / maxClientMinutes) * 100;
-                const unbillablePercent =
-                  (client.unbillableMinutes / maxClientMinutes) * 100;
-
-                return (
-                  <div key={client.id} className="space-y-1">
-                    <div className="flex items-center justify-between text-sm">
-                      <div className="flex items-center gap-2">
-                        {client.color && (
-                          <div
-                            className="size-2.5 rounded-full"
-                            style={{ backgroundColor: client.color }}
-                          />
-                        )}
-                        <span className="font-medium">{client.name}</span>
-                      </div>
-                      <span className="text-muted-foreground">
-                        {formatDuration(client.totalMinutes)}
-                      </span>
-                    </div>
-                    <HorizontalBar
-                      billablePercent={billablePercent}
-                      unbillablePercent={unbillablePercent}
-                      color={client.color}
-                    />
-                  </div>
-                );
-              })
+              <ChartContainer
+                config={clientChartConfig}
+                className="aspect-auto w-full"
+                style={{ height: Math.max(clientBreakdown.length * 48, 120) }}
+              >
+                <BarChart
+                  accessibilityLayer
+                  data={clientChartData}
+                  layout="vertical"
+                  margin={{ left: 8, right: 8 }}
+                >
+                  <CartesianGrid horizontal={false} />
+                  <YAxis
+                    dataKey="name"
+                    type="category"
+                    tickLine={false}
+                    axisLine={false}
+                    width={100}
+                    tickFormatter={(value) =>
+                      value.length > 14 ? value.slice(0, 14) + "..." : value
+                    }
+                  />
+                  <XAxis
+                    type="number"
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(value) => `${value}h`}
+                  />
+                  <ChartTooltip
+                    content={
+                      <ChartTooltipContent
+                        formatter={(value) => `${value}h`}
+                      />
+                    }
+                  />
+                  <ChartLegend content={<ChartLegendContent />} />
+                  <Bar
+                    dataKey="billable"
+                    stackId="hours"
+                    fill="var(--color-billable)"
+                    radius={[0, 0, 0, 0]}
+                  />
+                  <Bar
+                    dataKey="unbillable"
+                    stackId="hours"
+                    fill="var(--color-unbillable)"
+                    radius={[0, 4, 4, 0]}
+                  />
+                </BarChart>
+              </ChartContainer>
             )}
-            <div className="flex items-center gap-4 text-xs text-muted-foreground pt-2">
-              <div className="flex items-center gap-1">
-                <div className="size-2.5 rounded-full bg-primary" />
-                <span>Billable</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <div className="size-2.5 rounded-full bg-primary/40" />
-                <span>Unbillable</span>
-              </div>
-            </div>
           </CardContent>
         </Card>
 

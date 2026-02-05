@@ -1,5 +1,14 @@
 import { Receipt, CircleDollarSign, TrendingUp } from "lucide-react";
+import { Pie, PieChart, Cell } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  ChartLegend,
+  ChartLegendContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
 
 type CategoryExpense = {
   category: string;
@@ -66,33 +75,6 @@ function StatCard({
   );
 }
 
-function CategoryBar({
-  category,
-  amount,
-  maxAmount,
-}: {
-  category: string;
-  amount: number;
-  maxAmount: number;
-}) {
-  const percentage = maxAmount > 0 ? (amount / maxAmount) * 100 : 0;
-
-  return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between text-sm">
-        <span className="capitalize">{category}</span>
-        <span className="font-medium">{formatCurrency(amount)}</span>
-      </div>
-      <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-        <div
-          className="h-full bg-primary transition-all"
-          style={{ width: `${percentage}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
 export function ExpenseBreakdown({
   totalCents,
   billableCents,
@@ -101,10 +83,26 @@ export function ExpenseBreakdown({
   byProject,
   recoveryRate,
 }: ExpenseBreakdownProps) {
-  const maxCategoryAmount = Math.max(
-    ...byCategory.map((c) => c.amountCents),
-    1
+  const CATEGORY_COLORS = [
+    "var(--chart-1)", "var(--chart-2)", "var(--chart-3)",
+    "var(--chart-4)", "var(--chart-5)",
+  ];
+
+  const categoryConfig: ChartConfig = Object.fromEntries(
+    byCategory.map((cat, i) => [
+      cat.category,
+      {
+        label: cat.category.charAt(0).toUpperCase() + cat.category.slice(1),
+        color: CATEGORY_COLORS[i % CATEGORY_COLORS.length],
+      },
+    ])
   );
+
+  const pieData = byCategory.map((cat, i) => ({
+    name: cat.category,
+    value: cat.amountCents / 100,
+    fill: CATEGORY_COLORS[i % CATEGORY_COLORS.length],
+  }));
 
   return (
     <section className="space-y-4">
@@ -141,18 +139,34 @@ export function ExpenseBreakdown({
           <CardHeader>
             <CardTitle className="text-base">By Category</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent>
             {byCategory.length === 0 ? (
               <p className="text-sm text-muted-foreground">No expenses recorded</p>
             ) : (
-              byCategory.map((item) => (
-                <CategoryBar
-                  key={item.category}
-                  category={item.category}
-                  amount={item.amountCents}
-                  maxAmount={maxCategoryAmount}
-                />
-              ))
+              <ChartContainer config={categoryConfig} className="aspect-square h-[250px] w-full">
+                <PieChart>
+                  <ChartTooltip
+                    content={
+                      <ChartTooltipContent
+                        formatter={(value) => formatCurrency(Number(value) * 100)}
+                      />
+                    }
+                  />
+                  <Pie
+                    data={pieData}
+                    dataKey="value"
+                    nameKey="name"
+                    innerRadius={60}
+                    outerRadius={90}
+                    strokeWidth={2}
+                  >
+                    {pieData.map((entry) => (
+                      <Cell key={entry.name} fill={entry.fill} />
+                    ))}
+                  </Pie>
+                  <ChartLegend content={<ChartLegendContent nameKey="name" />} />
+                </PieChart>
+              </ChartContainer>
             )}
           </CardContent>
         </Card>
