@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { Plus, CalendarIcon, Loader2, Search } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
@@ -198,6 +199,9 @@ export function EntryBar({
   const [descriptionDropdownOpen, setDescriptionDropdownOpen] = useState(false);
   const [descriptionHighlightedIndex, setDescriptionHighlightedIndex] = useState(0);
 
+  // Animation state for when fields are populated from suggestion
+  const [justPopulated, setJustPopulated] = useState(false);
+
   // Refs for keyboard navigation
   const descriptionRef = useRef<HTMLInputElement>(null);
   const descriptionDropdownRef = useRef<HTMLDivElement>(null);
@@ -350,6 +354,11 @@ export function EntryBar({
       setDurationInput(formatDuration(rounded));
       setDescriptionDropdownOpen(false);
       setDescriptionSuggestions([]);
+
+      // Trigger pulse animation on populated fields
+      setJustPopulated(true);
+      setTimeout(() => setJustPopulated(false), 600);
+
       // Keep focus on description
       descriptionRef.current?.focus();
     },
@@ -615,35 +624,42 @@ export function EntryBar({
           {/* Client/Project/Task selector */}
           <Popover open={selectorOpen} onOpenChange={setSelectorOpen}>
             <PopoverTrigger asChild>
-              <Button
-                ref={selectorTriggerRef}
-                type="button"
-                variant="outline"
-                role="combobox"
-                aria-expanded={selectorOpen}
-                className={cn(
-                  "squircle w-full sm:w-auto sm:min-w-[200px] sm:max-w-[300px] justify-start text-left font-normal",
-                  !selectedItem && "text-muted-foreground"
-                )}
-                disabled={isSubmitting}
+              <motion.div
+                animate={justPopulated ? {
+                  scale: [1, 1.03, 1],
+                  transition: { duration: 0.4, ease: [0.4, 0, 0.2, 1] }
+                } : {}}
               >
-                {selectedItem ? (
-                  <span className="flex items-center gap-2 truncate">
-                    <span
-                      className="size-2 shrink-0 rounded-full"
-                      style={{
-                        backgroundColor: selectedItem.client.color || "#94a3b8",
-                      }}
-                    />
-                    <span className="truncate">{selectedItemDisplay}</span>
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-2">
-                    <Search className="size-4 opacity-50" />
-                    <span>Select client/project...</span>
-                  </span>
-                )}
-              </Button>
+                <Button
+                  ref={selectorTriggerRef}
+                  type="button"
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={selectorOpen}
+                  className={cn(
+                    "squircle w-full sm:w-auto sm:min-w-[200px] sm:max-w-[300px] justify-start text-left font-normal",
+                    !selectedItem && "text-muted-foreground"
+                  )}
+                  disabled={isSubmitting}
+                >
+                  {selectedItem ? (
+                    <span className="flex items-center gap-2 truncate">
+                      <span
+                        className="size-2 shrink-0 rounded-full"
+                        style={{
+                          backgroundColor: selectedItem.client.color || "#94a3b8",
+                        }}
+                      />
+                      <span className="truncate">{selectedItemDisplay}</span>
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-2">
+                      <Search className="size-4 opacity-50" />
+                      <span>Select client/project...</span>
+                    </span>
+                  )}
+                </Button>
+              </motion.div>
             </PopoverTrigger>
             <PopoverContent className="w-[300px] p-0" align="start">
               <Command shouldFilter={false}>
@@ -706,7 +722,13 @@ export function EntryBar({
           </Popover>
 
           {/* Duration input */}
-          <div className="relative flex items-center gap-1">
+          <motion.div
+            className="relative flex items-center gap-1"
+            animate={justPopulated ? {
+              scale: [1, 1.03, 1],
+              transition: { duration: 0.4, delay: 0.1, ease: [0.4, 0, 0.2, 1] }
+            } : {}}
+          >
             <Input
               ref={durationRef}
               type="text"
@@ -725,7 +747,7 @@ export function EntryBar({
                   ({formatDuration(durationMinutes)})
                 </span>
               )}
-          </div>
+          </motion.div>
 
           {/* Date picker */}
           <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
@@ -762,21 +784,40 @@ export function EntryBar({
             </PopoverContent>
           </Popover>
 
-          {/* Add button */}
-          <Button
-            ref={addButtonRef}
-            type="submit"
-            size="icon"
-            className="squircle shrink-0"
-            disabled={isSubmitting || !selectedItem || !durationMinutes}
-          >
-            {isSubmitting ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Plus className="size-4" />
-            )}
-            <span className="sr-only">Add entry</span>
-          </Button>
+          {/* Add button with submit hint */}
+          <div className="relative shrink-0">
+            <Button
+              ref={addButtonRef}
+              type="submit"
+              size="icon"
+              className="squircle"
+              disabled={isSubmitting || !selectedItem || !durationMinutes}
+            >
+              {isSubmitting ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Plus className="size-4" />
+              )}
+              <span className="sr-only">Add entry</span>
+            </Button>
+
+            {/* Submit shortcut hint */}
+            <AnimatePresence>
+              {selectedItem && durationMinutes && !isSubmitting && (
+                <motion.div
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.2 }}
+                  className="absolute left-1/2 top-full mt-1.5 -translate-x-1/2 whitespace-nowrap"
+                >
+                  <span className="text-[10px] text-muted-foreground/70 font-medium">
+                    ⌘↵
+                  </span>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
 
         {/* Error message - shows inline on mobile, absolute below on desktop */}
       {error && (
