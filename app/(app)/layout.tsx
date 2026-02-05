@@ -4,6 +4,7 @@ import { Sidebar, MobileSidebar, EntryBar } from "@/components/layout";
 import { CommandPalette } from "@/components/command-palette";
 import { getCurrentOrg } from "@/lib/auth/session";
 import { DEFAULT_ORG_FEATURES, type OrgFeatures } from "@/lib/db/schema";
+import { cn } from "@/lib/utils";
 
 export default async function AppLayout({
   children,
@@ -34,8 +35,13 @@ export default async function AppLayout({
 
         {/* Main Content */}
         <div className="flex flex-1 flex-col overflow-hidden">
-          {/* Top Bar with Entry Bar */}
-          <header className="relative flex h-auto min-h-14 items-center gap-3 border-b bg-background px-4 py-3">
+          {/* Top Bar with Entry Bar - only shown when time tracking enabled or on mobile */}
+          <header
+            className={cn(
+              "relative flex h-auto min-h-14 items-center gap-3 border-b bg-background px-4 py-3",
+              !features.time_tracking && "lg:hidden"
+            )}
+          >
             <MobileSidebar currentOrgId={organization.id} features={features} />
             {features.time_tracking && (
               <div className="flex-1">
