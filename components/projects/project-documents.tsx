@@ -410,7 +410,7 @@ export function ProjectDocuments({ orgId, projectId }: ProjectDocumentsProps) {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete document?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete "{deleteDocument?.title}". This action cannot be undone.
+              This will permanently delete &ldquo;{deleteDocument?.title}&rdquo;. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

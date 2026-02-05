@@ -289,7 +289,7 @@ export function ProjectFiles({ orgId, projectId }: ProjectFilesProps) {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete file?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete "{fileToDelete?.name}". This action
+              This will permanently delete &ldquo;{fileToDelete?.name}&rdquo;. This action
               cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>

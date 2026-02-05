@@ -96,7 +96,7 @@ export default function PortalPage() {
             </div>
             <h3 className="mt-4 text-lg font-medium">No projects yet</h3>
             <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-              You haven't been invited to any projects. When someone invites
+              You haven&apos;t been invited to any projects. When someone invites
               you, those projects will appear here.
             </p>
           </CardContent>

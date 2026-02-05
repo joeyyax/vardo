@@ -426,7 +426,7 @@ export function DocumentEditor({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete section?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete "{deleteSection?.title}". This action cannot be undone.
+              This will permanently delete &ldquo;{deleteSection?.title}&rdquo;. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

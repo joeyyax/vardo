@@ -162,9 +162,9 @@ export default function InvitePage({
           <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-full bg-primary/10">
             <Folder className="size-6 text-primary" />
           </div>
-          <CardTitle>You're Invited!</CardTitle>
+          <CardTitle>You&apos;re Invited!</CardTitle>
           <CardDescription>
-            You've been invited to collaborate on a project
+            You&apos;ve been invited to collaborate on a project
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">

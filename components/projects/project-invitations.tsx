@@ -281,7 +281,7 @@ function InvitationRow({
               <AlertDialogHeader>
                 <AlertDialogTitle>Revoke access?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This will remove {invitation.email}'s access to this project. They
+                  This will remove {invitation.email}&apos;s access to this project. They
                   will no longer be able to view project progress.
                 </AlertDialogDescription>
               </AlertDialogHeader>
@@ -382,7 +382,7 @@ function InviteDialog({
           <DialogHeader>
             <DialogTitle>Invite Client</DialogTitle>
             <DialogDescription>
-              Invite a client to view this project's progress
+              Invite a client to view this project&apos;s progress
             </DialogDescription>
           </DialogHeader>
 
