@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { tasks, projects, TASK_STATUSES, type TaskStatus } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and, isNull, sql } from "drizzle-orm";
+import { logTaskCreated } from "@/lib/activities";
 
 type RouteParams = {
   params: Promise<{ orgId: string; projectId: string }>;
@@ -196,6 +197,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         metadata: metadata || {},
       })
       .returning();
+
+    // Log activity
+    await logTaskCreated({
+      organizationId: orgId,
+      actorId: session.user.id,
+      projectId,
+      taskId: newTask.id,
+      taskName: newTask.name,
+      isClientVisible: newTask.isClientVisible ?? undefined,
+    });
 
     return NextResponse.json(newTask, { status: 201 });
   } catch (error) {

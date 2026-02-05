@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { tasks, projects, taskComments, taskWatchers } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and, desc } from "drizzle-orm";
+import { logCommentAdded } from "@/lib/activities";
 
 type RouteParams = {
   params: Promise<{ orgId: string; projectId: string; taskId: string }>;
@@ -128,6 +129,17 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     // Auto-watch on comment
     await ensureWatcher(taskId, session.user.id, "commenter");
+
+    // Log activity
+    await logCommentAdded({
+      organizationId: orgId,
+      actorId: session.user.id,
+      projectId,
+      taskId,
+      taskName: task.name,
+      commentId: comment.id,
+      isShared: comment.isShared ?? false,
+    });
 
     // Fetch the full comment with author info
     const fullComment = await db.query.taskComments.findFirst({

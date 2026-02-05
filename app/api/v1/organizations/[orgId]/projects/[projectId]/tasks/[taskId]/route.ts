@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { tasks, projects, taskRelationships, TASK_STATUSES, type TaskStatus } from "@/lib/db/schema";
+import { tasks, projects, taskRelationships, users, TASK_STATUSES, type TaskStatus } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and, ne } from "drizzle-orm";
+import { logTaskStatusChanged, logTaskAssigned } from "@/lib/activities";
 
 // Check if a task has unresolved blockers
 async function hasUnresolvedBlockers(taskId: string): Promise<{ blocked: boolean; blockers: { id: string; name: string; status: TaskStatus | null }[] }> {
@@ -166,7 +167,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, projectId, taskId } = await params;
-    const { organization } = await requireOrg();
+    const { organization, session } = await requireOrg();
 
     // Verify orgId matches user's org
     if (organization.id !== orgId) {
@@ -318,6 +319,44 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       .set(updates)
       .where(and(eq(tasks.id, taskId), eq(tasks.projectId, projectId)))
       .returning();
+
+    // Log activity for status changes
+    if (status !== undefined && status !== existingTask.status) {
+      await logTaskStatusChanged({
+        organizationId: orgId,
+        actorId: session.user.id,
+        projectId,
+        taskId,
+        taskName: updatedTask.name,
+        fromStatus: existingTask.status,
+        toStatus: status,
+        isClientVisible: updatedTask.isClientVisible ?? undefined,
+      });
+    }
+
+    // Log activity for assignment changes
+    if (assignedTo !== undefined && assignedTo !== existingTask.assignedTo) {
+      // Fetch assignee name if assigned
+      let assigneeName: string | null = null;
+      if (assignedTo) {
+        const assignee = await db.query.users.findFirst({
+          where: eq(users.id, assignedTo),
+          columns: { name: true, email: true },
+        });
+        assigneeName = assignee?.name || assignee?.email || null;
+      }
+
+      await logTaskAssigned({
+        organizationId: orgId,
+        actorId: session.user.id,
+        projectId,
+        taskId,
+        taskName: updatedTask.name,
+        assigneeId: assignedTo || null,
+        assigneeName,
+        isClientVisible: updatedTask.isClientVisible ?? undefined,
+      });
+    }
 
     return NextResponse.json(updatedTask);
   } catch (error) {
