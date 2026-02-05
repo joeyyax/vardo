@@ -48,7 +48,9 @@ import {
   Trash2,
   Settings,
   Check,
+  X,
 } from "lucide-react";
+import { PageToolbar } from "@/components/page-toolbar";
 
 type Client = {
   id: string;
@@ -105,6 +107,10 @@ export function ReportConfigs({ orgId }: ReportConfigsProps) {
   const [clients, setClients] = useState<Client[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Toolbar filter state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "disabled">("all");
 
   // Dialog states
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -288,6 +294,18 @@ export function ReportConfigs({ orgId }: ReportConfigsProps) {
     (p) => !configs.some((cfg) => cfg.projectId === p.id)
   );
 
+  const filtersActive = searchQuery !== "" || statusFilter !== "all";
+
+  const filteredConfigs = configs.filter((config) => {
+    if (searchQuery) {
+      const name = getReportName(config).toLowerCase();
+      if (!name.includes(searchQuery.toLowerCase())) return false;
+    }
+    if (statusFilter === "active" && !config.enabled) return false;
+    if (statusFilter === "disabled" && config.enabled) return false;
+    return true;
+  });
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -299,27 +317,64 @@ export function ReportConfigs({ orgId }: ReportConfigsProps) {
   return (
     <>
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-lg font-medium">Shared Reports</h3>
-            <p className="text-sm text-muted-foreground">
-              Create shareable report links for clients and projects.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <ViewSwitcher views={REPORT_VIEWS} value={view} onValueChange={setView} />
-            <Button onClick={() => setCreateDialogOpen(true)} className="squircle">
-              <Plus className="size-4" />
-              New Report
+        <PageToolbar
+          actions={
+            <>
+              <ViewSwitcher views={REPORT_VIEWS} value={view} onValueChange={setView} />
+              <Button onClick={() => setCreateDialogOpen(true)} className="squircle">
+                <Plus className="size-4" />
+                New Report
+              </Button>
+            </>
+          }
+        >
+          <Input
+            placeholder="Search reports..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="squircle w-[200px]"
+          />
+          <Select
+            value={statusFilter}
+            onValueChange={(v) => setStatusFilter(v as "all" | "active" | "disabled")}
+          >
+            <SelectTrigger className="squircle w-[140px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="squircle">
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="disabled">Disabled</SelectItem>
+            </SelectContent>
+          </Select>
+          {filtersActive && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setSearchQuery("");
+                setStatusFilter("all");
+              }}
+              className="squircle"
+            >
+              <X className="size-4" />
+              Clear
             </Button>
-          </div>
-        </div>
+          )}
+        </PageToolbar>
 
         {configs.length === 0 ? (
           <div className="rounded-lg border border-dashed p-12 text-center">
             <p className="text-muted-foreground">No shared reports yet.</p>
             <p className="text-sm text-muted-foreground mt-1">
               Create a report to share time tracking summaries with clients.
+            </p>
+          </div>
+        ) : filteredConfigs.length === 0 ? (
+          <div className="rounded-lg border border-dashed p-12 text-center">
+            <p className="text-muted-foreground">No matching reports.</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              Try adjusting your search or filters.
             </p>
           </div>
         ) : view === "table" ? (
@@ -335,7 +390,7 @@ export function ReportConfigs({ orgId }: ReportConfigsProps) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {configs.map((config) => (
+                {filteredConfigs.map((config) => (
                   <TableRow key={config.id}>
                     <TableCell>
                       <div className="flex items-center gap-2">
@@ -430,7 +485,7 @@ export function ReportConfigs({ orgId }: ReportConfigsProps) {
           </div>
         ) : (
           <div className="rounded-lg border divide-y">
-            {configs.map((config) => (
+            {filteredConfigs.map((config) => (
               <div
                 key={config.id}
                 className="p-4 flex items-center justify-between gap-4"

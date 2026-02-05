@@ -25,6 +25,11 @@ import { RevenueChart } from "@/components/reports/revenue-chart";
 
 type AccountingTabProps = {
   orgId: string;
+  clientId?: string | null;
+  setClientId?: (id: string | null) => void;
+  clients?: { id: string; name: string; color: string | null }[];
+  projects?: { id: string; name: string; clientId: string }[];
+  filteredProjects?: { id: string; name: string; clientId: string }[];
 };
 
 type AccountingData = {
