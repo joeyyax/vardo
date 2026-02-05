@@ -382,7 +382,7 @@ export function TasksContent({ orgId, currentUserId }: TasksContentProps) {
         </Card>
       ) : view === "board" ? (
         /* Kanban board view */
-        <div className="grid grid-cols-4 gap-4 min-h-[500px]">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 min-h-[500px]">
           {KANBAN_COLUMNS.map((status) => (
             <div
               key={status}

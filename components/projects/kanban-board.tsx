@@ -178,7 +178,7 @@ export function KanbanBoard({ orgId, projectId, currentUserId }: KanbanBoardProp
 
   return (
     <>
-      <div className="grid grid-cols-4 gap-4 min-h-[400px]">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 min-h-[400px]">
         {KANBAN_COLUMNS.map((status) => (
           <div
             key={status}

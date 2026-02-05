@@ -23,6 +23,7 @@ import {
   ArrowRight,
   Link as LinkIcon,
 } from "lucide-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import type { NotificationType } from "@/lib/db/schema";
 
@@ -89,11 +90,15 @@ export function NotificationBell() {
 
   const markAsRead = async (notificationId: string) => {
     try {
-      await fetch(`/api/v1/notifications/${notificationId}`, {
+      const response = await fetch(`/api/v1/notifications/${notificationId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isRead: true }),
       });
+      if (!response.ok) {
+        toast.error("Failed to mark as read");
+        return;
+      }
       setNotifications((prev) =>
         prev.map((n) =>
           n.id === notificationId ? { ...n, isRead: true } : n
@@ -102,16 +107,22 @@ export function NotificationBell() {
       setUnreadCount((prev) => Math.max(0, prev - 1));
     } catch (err) {
       console.error("Error marking notification as read:", err);
+      toast.error("Failed to mark as read");
     }
   };
 
   const markAllAsRead = async () => {
     try {
-      await fetch("/api/v1/notifications", { method: "PATCH" });
+      const response = await fetch("/api/v1/notifications", { method: "PATCH" });
+      if (!response.ok) {
+        toast.error("Failed to mark all as read");
+        return;
+      }
       setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
       setUnreadCount(0);
     } catch (err) {
       console.error("Error marking all as read:", err);
+      toast.error("Failed to mark all as read");
     }
   };
 
