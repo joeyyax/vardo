@@ -805,14 +805,16 @@ export function EntryBar({
             <AnimatePresence>
               {selectedItem && durationMinutes && !isSubmitting && (
                 <motion.div
-                  initial={{ opacity: 0, y: -4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -4 }}
-                  transition={{ duration: 0.2 }}
-                  className="absolute left-1/2 top-full mt-1.5 -translate-x-1/2 whitespace-nowrap"
+                  initial={{ opacity: 0, y: -8, scale: 0.9 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -4, scale: 0.95 }}
+                  transition={{ type: "spring", duration: 0.4, bounce: 0.3 }}
+                  className="absolute left-1/2 top-full mt-2 -translate-x-1/2 whitespace-nowrap"
                 >
-                  <span className="text-[10px] text-muted-foreground/70 font-medium">
-                    ⌘↵
+                  <span className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-xs font-medium text-primary">
+                    <kbd className="rounded bg-primary/20 px-1.5 py-0.5 font-mono text-[11px]">⌘</kbd>
+                    <kbd className="rounded bg-primary/20 px-1.5 py-0.5 font-mono text-[11px]">↵</kbd>
+                    <span className="ml-0.5 text-primary/80">to save</span>
                   </span>
                 </motion.div>
               )}
