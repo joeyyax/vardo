@@ -15,6 +15,9 @@ import { ProjectHealth } from "@/components/reports/project-health";
 import { ReportConfigs } from "@/components/reports/report-configs";
 import { AccountingTab } from "@/components/reports/accounting-tab";
 import { DEFAULT_ORG_FEATURES, type OrgFeatures } from "@/lib/db/schema";
+import { HoursChart } from "@/components/reports/hours-chart";
+import { RevenueChart } from "@/components/reports/revenue-chart";
+import { UtilizationChart } from "@/components/reports/utilization-chart";
 
 type ReportsPageContentProps = {
   orgId: string;
@@ -40,6 +43,22 @@ type TimeData = {
     clientName: string;
     totalMinutes: number;
     totalAmount: number;
+  }>;
+  hoursByPeriod: Array<{
+    date: string;
+    billableMinutes: number;
+    unbillableMinutes: number;
+  }>;
+  revenueByMonth: Array<{
+    month: string;
+    incomeCents: number;
+    expenseCents: number;
+  }>;
+  utilizationByWeek: Array<{
+    weekStart: string;
+    totalMinutes: number;
+    billableMinutes: number;
+    percentage: number;
   }>;
 };
 
@@ -231,6 +250,20 @@ export function ReportsPageContent({
               outstanding={invoiceData ? invoiceData.pending + invoiceData.overdue : undefined}
               features={features}
             />
+
+            {timeData && (timeData.hoursByPeriod.length > 0 || timeData.revenueByMonth.length > 0 || timeData.utilizationByWeek.length > 0) && (
+              <section className="space-y-4">
+                <h2 className="text-lg font-semibold">Trends</h2>
+                <HoursChart data={timeData.hoursByPeriod} />
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <RevenueChart
+                    data={timeData.revenueByMonth}
+                    showExpenses={features.expenses}
+                  />
+                  <UtilizationChart data={timeData.utilizationByWeek} />
+                </div>
+              </section>
+            )}
 
             {features.time_tracking && timeData && (
               <TimeBreakdown
