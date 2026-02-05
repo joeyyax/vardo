@@ -10,6 +10,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Plus, X, Tag, Loader2, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 type Tag = {
   id: string;
@@ -75,11 +76,15 @@ export function TaskTags({ orgId, projectId, taskId, onUpdate }: TaskTagsProps) 
         const tag = availableTags.find((t) => t.id === tagId);
         if (tag) {
           setAssignedTags((prev) => [...prev, tag]);
+          toast.success(`Tag "${tag.name}" added`);
         }
         onUpdate?.();
+      } else {
+        toast.error("Failed to add tag");
       }
     } catch (err) {
       console.error("Error assigning tag:", err);
+      toast.error("Failed to add tag");
     }
   };
 
@@ -93,9 +98,13 @@ export function TaskTags({ orgId, projectId, taskId, onUpdate }: TaskTagsProps) 
       if (response.ok) {
         setAssignedTags((prev) => prev.filter((t) => t.id !== tagId));
         onUpdate?.();
+        toast.success("Tag removed");
+      } else {
+        toast.error("Failed to remove tag");
       }
     } catch (err) {
       console.error("Error removing tag:", err);
+      toast.error("Failed to remove tag");
     }
   };
 

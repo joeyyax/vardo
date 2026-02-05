@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
+import { toast } from "sonner";
 
 type CommentAuthor = {
   id: string;
@@ -124,9 +125,13 @@ export function TaskComments({
         setIsShared(false);
         fetchComments();
         onUpdate?.();
+        toast.success("Comment added");
+      } else {
+        toast.error("Failed to add comment");
       }
     } catch (err) {
       console.error("Error creating comment:", err);
+      toast.error("Failed to add comment");
     } finally {
       setIsSubmitting(false);
     }
@@ -149,9 +154,13 @@ export function TaskComments({
         setEditingId(null);
         setEditContent("");
         fetchComments();
+        toast.success("Comment updated");
+      } else {
+        toast.error("Failed to update comment");
       }
     } catch (err) {
       console.error("Error updating comment:", err);
+      toast.error("Failed to update comment");
     }
   };
 
@@ -168,9 +177,13 @@ export function TaskComments({
 
       if (response.ok) {
         fetchComments();
+        toast.success(comment.isShared ? "Comment made private" : "Comment shared with client");
+      } else {
+        toast.error("Failed to update sharing");
       }
     } catch (err) {
       console.error("Error toggling share:", err);
+      toast.error("Failed to update sharing");
     }
   };
 
@@ -187,9 +200,13 @@ export function TaskComments({
         setDeleteId(null);
         fetchComments();
         onUpdate?.();
+        toast.success("Comment deleted");
+      } else {
+        toast.error("Failed to delete comment");
       }
     } catch (err) {
       console.error("Error deleting comment:", err);
+      toast.error("Failed to delete comment");
     }
   };
 

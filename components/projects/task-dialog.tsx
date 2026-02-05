@@ -536,7 +536,7 @@ export function TaskDialog({
 
           {/* Relationships section - only for existing tasks when PM is enabled */}
           {pmEnabled && isEditing && task && (
-            <div className="border-t pt-4 pb-6">
+            <div className="border-t pt-6">
               <h4 className="text-sm font-medium mb-3">Relationships</h4>
               <TaskRelationships
                 orgId={orgId}
@@ -549,7 +549,7 @@ export function TaskDialog({
 
           {/* Tags section - only for existing tasks when PM is enabled */}
           {pmEnabled && isEditing && task && (
-            <div className="border-t pt-4 pb-6">
+            <div className="border-t pt-6">
               <h4 className="text-sm font-medium mb-3">Tags</h4>
               <TaskTags
                 orgId={orgId}
@@ -562,7 +562,7 @@ export function TaskDialog({
 
           {/* Comments section - only for existing tasks when PM is enabled */}
           {pmEnabled && isEditing && task && currentUserId && (
-            <div className="border-t pt-4 pb-6">
+            <div className="border-t pt-6">
               <h4 className="text-sm font-medium mb-3">Comments</h4>
               <TaskComments
                 orgId={orgId}
