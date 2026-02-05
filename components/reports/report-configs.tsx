@@ -51,6 +51,7 @@ import {
   X,
 } from "lucide-react";
 import { PageToolbar } from "@/components/page-toolbar";
+import { SavedReportsDropdown } from "@/components/reports/saved-reports-dropdown";
 
 type Client = {
   id: string;
@@ -320,6 +321,15 @@ export function ReportConfigs({ orgId }: ReportConfigsProps) {
         <PageToolbar
           actions={
             <>
+              <SavedReportsDropdown
+                orgId={orgId}
+                currentTab="client-reports"
+                currentFilters={{ searchQuery, statusFilter }}
+                onApplyPreset={(filters) => {
+                  setSearchQuery((filters.searchQuery as string) || "");
+                  setStatusFilter((filters.statusFilter as "all" | "active" | "disabled") || "all");
+                }}
+              />
               <ViewSwitcher views={REPORT_VIEWS} value={view} onValueChange={setView} />
               <Button onClick={() => setCreateDialogOpen(true)} className="squircle">
                 <Plus className="size-4" />

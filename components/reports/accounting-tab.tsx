@@ -23,6 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { PageToolbar } from "@/components/page-toolbar";
+import { SavedReportsDropdown } from "@/components/reports/saved-reports-dropdown";
 import { RevenueChart } from "@/components/reports/revenue-chart";
 
 type AccountingTabProps = {
@@ -160,7 +161,19 @@ export function AccountingTab({ orgId, clientId, setClientId, clients = [] }: Ac
 
   return (
     <div className="space-y-6">
-      <PageToolbar>
+      <PageToolbar
+        actions={
+          <SavedReportsDropdown
+            orgId={orgId}
+            currentTab="accounting"
+            currentFilters={{ year: selectedYear, clientId }}
+            onApplyPreset={(filters) => {
+              if (filters.year) setSelectedYear(filters.year as string);
+              if (setClientId) setClientId((filters.clientId as string) || null);
+            }}
+          />
+        }
+      >
         <Select value={selectedYear} onValueChange={setSelectedYear}>
           <SelectTrigger className="w-[120px] squircle">
             <SelectValue />

@@ -21,6 +21,8 @@ import {
   endOfQuarter,
   endOfYear,
 } from "date-fns";
+import { generateReportPdf } from "@/lib/reports/pdf";
+import type { ReportPdfData } from "@/lib/reports/pdf-template";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -92,30 +94,104 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const projectId = searchParams.get("projectId");
     const { from, to } = getDateRange(searchParams);
 
-    if (formatParam === "pdf") {
-      return NextResponse.json(
-        { error: "PDF export not yet implemented" },
-        { status: 501 }
-      );
-    }
-
-    const csvSections: string[] = [];
-
     if (tab === "overview") {
-      await buildOverviewCsv(csvSections, orgId, from, to, clientId, projectId, organization);
+      const overviewData = await fetchOverviewData(orgId, from, to, clientId, projectId, organization);
+
+      if (formatParam === "pdf") {
+        const pdfData: ReportPdfData = {
+          organizationName: organization.name,
+          reportTitle: "Overview Report",
+          dateRange: `${from} - ${to}`,
+          generatedAt: new Date().toLocaleDateString("en-US", {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+          }),
+          financial: {
+            revenue: overviewData.totalRevenue,
+            expenses: overviewData.totalExpenses,
+            profit: overviewData.totalRevenue - overviewData.totalExpenses,
+            outstanding: 0,
+          },
+          timeByClient: overviewData.clientRows.map((row) => ({
+            name: row.name,
+            billableHours: row.billableMinutes / 60,
+            unbillableHours: row.unbillableMinutes / 60,
+            amount: row.amountCents,
+          })),
+          expensesByCategory: overviewData.expensesByCategory.map((row) => ({
+            category: row.category,
+            amount: Number(row.totalCents),
+          })),
+        };
+
+        const pdfBuffer = await generateReportPdf(pdfData);
+        return new NextResponse(Buffer.from(pdfBuffer), {
+          headers: {
+            "Content-Type": "application/pdf",
+            "Content-Disposition": `attachment; filename="report-${tab}-${from}-to-${to}.pdf"`,
+          },
+        });
+      }
+
+      // CSV
+      const csvSections: string[] = [];
+      buildOverviewCsv(csvSections, overviewData);
+      const csvContent = csvSections.join("\n");
+      const filename = `report-${tab}-${from}-to-${to}.csv`;
+
+      return new NextResponse(csvContent, {
+        headers: {
+          "Content-Type": "text/csv",
+          "Content-Disposition": `attachment; filename="${filename}"`,
+        },
+      });
     } else if (tab === "accounting") {
-      await buildAccountingCsv(csvSections, orgId, from, to, clientId, projectId);
+      const accountingData = await fetchAccountingData(orgId, from, to, clientId, projectId);
+
+      if (formatParam === "pdf") {
+        const pdfData: ReportPdfData = {
+          organizationName: organization.name,
+          reportTitle: "Accounting Report",
+          dateRange: `${from} - ${to}`,
+          generatedAt: new Date().toLocaleDateString("en-US", {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+          }),
+          accountingMonths: accountingData.sortedMonths.map(([month, data]) => ({
+            month,
+            income: data.income,
+            expenses: data.expenses,
+            profit: data.income - data.expenses,
+          })),
+        };
+
+        const pdfBuffer = await generateReportPdf(pdfData);
+        return new NextResponse(Buffer.from(pdfBuffer), {
+          headers: {
+            "Content-Type": "application/pdf",
+            "Content-Disposition": `attachment; filename="report-${tab}-${from}-to-${to}.pdf"`,
+          },
+        });
+      }
+
+      // CSV
+      const csvSections: string[] = [];
+      buildAccountingCsv(csvSections, accountingData);
+      const csvContent = csvSections.join("\n");
+      const filename = `report-${tab}-${from}-to-${to}.csv`;
+
+      return new NextResponse(csvContent, {
+        headers: {
+          "Content-Type": "text/csv",
+          "Content-Disposition": `attachment; filename="${filename}"`,
+        },
+      });
     }
 
-    const csvContent = csvSections.join("\n");
-    const filename = `report-${tab}-${from}-to-${to}.csv`;
-
-    return new NextResponse(csvContent, {
-      headers: {
-        "Content-Type": "text/csv",
-        "Content-Disposition": `attachment; filename="${filename}"`,
-      },
-    });
+    // Unknown tab
+    return NextResponse.json({ error: "Invalid tab" }, { status: 400 });
   } catch (error) {
     if (error instanceof Error && error.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -135,18 +211,43 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 }
 
 // ---------------------------------------------------------------------------
-// Overview tab: financial summary, time by client, expenses by category
+// Data types for shared fetching
 // ---------------------------------------------------------------------------
 
-async function buildOverviewCsv(
-  csvSections: string[],
+type OverviewData = {
+  totalRevenue: number;
+  totalExpenses: number;
+  totalBillableMinutes: number;
+  totalUnbillableMinutes: number;
+  totalMinutes: number;
+  clientRows: Array<{
+    name: string;
+    billableMinutes: number;
+    unbillableMinutes: number;
+    amountCents: number;
+  }>;
+  expensesByCategory: Array<{
+    category: string;
+    totalCents: number;
+  }>;
+};
+
+type AccountingData = {
+  sortedMonths: Array<[string, { income: number; expenses: number }]>;
+};
+
+// ---------------------------------------------------------------------------
+// Overview tab: fetch data
+// ---------------------------------------------------------------------------
+
+async function fetchOverviewData(
   orgId: string,
   from: string,
   to: string,
   clientId: string | null,
   projectId: string | null,
   organization: { defaultRate: number | null }
-) {
+): Promise<OverviewData> {
   // Fetch time entries with rate/billability info (mirrors analytics route)
   const entriesWithRelations = await db
     .select({
@@ -265,38 +366,58 @@ async function buildOverviewCsv(
     0
   );
 
-  // Build CSV sections
+  // Sort clients by total time descending
+  const clientRows = [...clientMap.values()].sort(
+    (a, b) => b.billableMinutes + b.unbillableMinutes - (a.billableMinutes + a.unbillableMinutes)
+  );
+
+  return {
+    totalRevenue,
+    totalExpenses,
+    totalBillableMinutes,
+    totalUnbillableMinutes,
+    totalMinutes,
+    clientRows,
+    expensesByCategory: expensesByCategory.map((row) => ({
+      category: row.category,
+      totalCents: Number(row.totalCents),
+    })),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Overview tab: build CSV from fetched data
+// ---------------------------------------------------------------------------
+
+function buildOverviewCsv(csvSections: string[], data: OverviewData) {
   csvSections.push("FINANCIAL SUMMARY");
   csvSections.push("Metric,Value");
-  csvSections.push(`Billable Revenue,${formatCurrency(totalRevenue)}`);
-  csvSections.push(`Expenses,${formatCurrency(totalExpenses)}`);
-  csvSections.push(`Profit,${formatCurrency(totalRevenue - totalExpenses)}`);
-  csvSections.push(`Total Hours,${(totalMinutes / 60).toFixed(1)}`);
-  csvSections.push(`Billable Hours,${(totalBillableMinutes / 60).toFixed(1)}`);
-  csvSections.push(`Unbillable Hours,${(totalUnbillableMinutes / 60).toFixed(1)}`);
+  csvSections.push(`Billable Revenue,${formatCurrency(data.totalRevenue)}`);
+  csvSections.push(`Expenses,${formatCurrency(data.totalExpenses)}`);
+  csvSections.push(`Profit,${formatCurrency(data.totalRevenue - data.totalExpenses)}`);
+  csvSections.push(`Total Hours,${(data.totalMinutes / 60).toFixed(1)}`);
+  csvSections.push(`Billable Hours,${(data.totalBillableMinutes / 60).toFixed(1)}`);
+  csvSections.push(`Unbillable Hours,${(data.totalUnbillableMinutes / 60).toFixed(1)}`);
   csvSections.push("");
 
   csvSections.push("TIME BY CLIENT");
   csvSections.push("Client,Billable Hours,Unbillable Hours,Total Hours,Amount");
-  const sortedClients = [...clientMap.values()].sort(
-    (a, b) => b.billableMinutes + b.unbillableMinutes - (a.billableMinutes + a.unbillableMinutes)
-  );
-  for (const data of sortedClients) {
-    const billable = data.billableMinutes / 60;
-    const unbillable = data.unbillableMinutes / 60;
+  for (const row of data.clientRows) {
+    const billable = row.billableMinutes / 60;
+    const unbillable = row.unbillableMinutes / 60;
     const total = billable + unbillable;
     csvSections.push(
-      `${escapeCell(data.name)},${billable.toFixed(1)},${unbillable.toFixed(1)},${total.toFixed(1)},${formatCurrency(data.amountCents)}`
+      `${escapeCell(row.name)},${billable.toFixed(1)},${unbillable.toFixed(1)},${total.toFixed(1)},${formatCurrency(row.amountCents)}`
     );
   }
   csvSections.push("");
 
-  if (expensesByCategory.length > 0) {
+  if (data.expensesByCategory.length > 0) {
     csvSections.push("EXPENSES BY CATEGORY");
     csvSections.push("Category,Amount");
-    for (const row of expensesByCategory) {
+    for (const row of data.expensesByCategory) {
       csvSections.push(
-        `${escapeCell(row.category)},${formatCurrency(Number(row.totalCents))}`
+        `${escapeCell(row.category)},${formatCurrency(row.totalCents)}`
       );
     }
     csvSections.push("");
@@ -304,17 +425,16 @@ async function buildOverviewCsv(
 }
 
 // ---------------------------------------------------------------------------
-// Accounting tab: monthly income (from paid invoices) vs expenses
+// Accounting tab: fetch data
 // ---------------------------------------------------------------------------
 
-async function buildAccountingCsv(
-  csvSections: string[],
+async function fetchAccountingData(
   orgId: string,
   from: string,
   to: string,
   clientId: string | null,
   projectId: string | null
-) {
+): Promise<AccountingData> {
   // Paid invoices by month
   const paidInvoicesByMonth = await db
     .select({
@@ -371,16 +491,25 @@ async function buildAccountingCsv(
     months.set(row.month, existing);
   }
 
-  csvSections.push("ACCOUNTING BY MONTH");
-  csvSections.push("Month,Income,Expenses,Profit");
-
   const sortedMonths = [...months.entries()].sort(([a], [b]) =>
     a.localeCompare(b)
   );
-  for (const [month, data] of sortedMonths) {
-    const profit = data.income - data.expenses;
+
+  return { sortedMonths };
+}
+
+// ---------------------------------------------------------------------------
+// Accounting tab: build CSV from fetched data
+// ---------------------------------------------------------------------------
+
+function buildAccountingCsv(csvSections: string[], data: AccountingData) {
+  csvSections.push("ACCOUNTING BY MONTH");
+  csvSections.push("Month,Income,Expenses,Profit");
+
+  for (const [month, row] of data.sortedMonths) {
+    const profit = row.income - row.expenses;
     csvSections.push(
-      `${month},${formatCurrency(data.income)},${formatCurrency(data.expenses)},${formatCurrency(profit)}`
+      `${month},${formatCurrency(row.income)},${formatCurrency(row.expenses)},${formatCurrency(profit)}`
     );
   }
 }

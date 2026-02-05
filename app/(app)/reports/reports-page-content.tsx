@@ -19,6 +19,7 @@ import { HoursChart } from "@/components/reports/hours-chart";
 import { RevenueChart } from "@/components/reports/revenue-chart";
 import { UtilizationChart } from "@/components/reports/utilization-chart";
 import { PageToolbar } from "@/components/page-toolbar";
+import { SavedReportsDropdown } from "@/components/reports/saved-reports-dropdown";
 import {
   Select,
   SelectContent,
@@ -312,7 +313,36 @@ export function ReportsPageContent({
       </TabsList>
 
       <TabsContent value="overview" className="space-y-8">
-        <PageToolbar>
+        <PageToolbar
+          actions={
+            <SavedReportsDropdown
+              orgId={orgId}
+              currentTab="overview"
+              currentFilters={{
+                period,
+                clientId,
+                projectId,
+                ...(period === "custom" && customRange ? {
+                  customFrom: customRange.from?.toISOString(),
+                  customTo: customRange.to?.toISOString(),
+                } : {}),
+              }}
+              onApplyPreset={(filters) => {
+                setPeriod((filters.period as Period) || "month");
+                setClientId((filters.clientId as string) || null);
+                setProjectId((filters.projectId as string) || null);
+                if (filters.customFrom && filters.customTo) {
+                  setCustomRange({
+                    from: new Date(filters.customFrom as string),
+                    to: new Date(filters.customTo as string),
+                  });
+                } else {
+                  setCustomRange(undefined);
+                }
+              }}
+            />
+          }
+        >
           <DateRangePicker
             period={period}
             customRange={customRange}
