@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,13 +25,17 @@ import {
 import {
   Building2,
   DollarSign,
+  Download,
   Eye,
   Loader2,
   MoreVertical,
+  Pencil,
   Plus,
   Receipt,
   RefreshCw,
+  Trash2,
 } from "lucide-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ExpenseDialog } from "./expense-dialog";
 
@@ -81,7 +86,12 @@ export function ExpensesContent({ orgId }: ExpensesContentProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [clientFilter, setClientFilter] = useState<string>("all");
+  const [vendorFilter, setVendorFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
   const [categories, setCategories] = useState<string[]>([]);
+  const [clients, setClients] = useState<Array<{ id: string; name: string; color: string | null }>>([]);
+  const [vendors, setVendors] = useState<string[]>([]);
   const [summary, setSummary] = useState<{
     totalCents: number;
     billableCents: number;
@@ -90,6 +100,7 @@ export function ExpensesContent({ orgId }: ExpensesContentProps) {
     count: number;
   } | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
 
   const fetchExpenses = useCallback(async () => {
     setIsLoading(true);
@@ -105,6 +116,15 @@ export function ExpensesContent({ orgId }: ExpensesContentProps) {
       } else if (typeFilter === "recurring") {
         params.set("recurring", "true");
       }
+      if (clientFilter !== "all") {
+        params.set("clientId", clientFilter);
+      }
+      if (vendorFilter !== "all") {
+        params.set("vendor", vendorFilter);
+      }
+      if (statusFilter !== "all") {
+        params.set("status", statusFilter);
+      }
 
       const response = await fetch(
         `/api/v1/organizations/${orgId}/expenses?${params}`
@@ -114,21 +134,87 @@ export function ExpensesContent({ orgId }: ExpensesContentProps) {
         setExpenses(data.expenses);
         setSummary(data.summary);
         setCategories(data.categories || []);
+        setVendors(data.vendors || []);
       }
     } catch (err) {
       console.error("Error fetching expenses:", err);
     } finally {
       setIsLoading(false);
     }
-  }, [orgId, categoryFilter, typeFilter]);
+  }, [orgId, categoryFilter, typeFilter, clientFilter, vendorFilter, statusFilter]);
 
   useEffect(() => {
     fetchExpenses();
   }, [fetchExpenses]);
 
+  useEffect(() => {
+    async function fetchClients() {
+      try {
+        const response = await fetch(`/api/v1/organizations/${orgId}/clients`);
+        if (response.ok) {
+          const data = await response.json();
+          setClients(data);
+        }
+      } catch (err) {
+        console.error("Error fetching clients:", err);
+      }
+    }
+    fetchClients();
+  }, [orgId]);
+
+  function handleExport() {
+    const params = new URLSearchParams();
+    if (clientFilter !== "all") params.set("clientId", clientFilter);
+    if (categoryFilter !== "all") params.set("category", categoryFilter);
+    if (vendorFilter !== "all") params.set("vendor", vendorFilter);
+    if (statusFilter !== "all") params.set("status", statusFilter);
+    if (typeFilter === "billable") params.set("billable", "true");
+    if (typeFilter === "overhead") params.set("overhead", "true");
+    if (typeFilter === "recurring") params.set("recurring", "true");
+
+    window.open(`/api/v1/organizations/${orgId}/expenses/export?${params}`, "_blank");
+  }
+
   function handleExpenseCreated() {
     fetchExpenses();
     setDialogOpen(false);
+    setEditingExpense(null);
+  }
+
+  function handleEditExpense(expense: Expense) {
+    setEditingExpense(expense);
+    setDialogOpen(true);
+  }
+
+  function handleDialogClose(open: boolean) {
+    setDialogOpen(open);
+    if (!open) {
+      setEditingExpense(null);
+    }
+  }
+
+  async function handleDeleteExpense(expense: Expense) {
+    if (!confirm(`Delete "${expense.description}"? This cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `/api/v1/organizations/${orgId}/expenses/${expense.id}`,
+        { method: "DELETE" }
+      );
+
+      if (response.ok) {
+        toast.success("Expense deleted");
+        fetchExpenses();
+      } else {
+        const data = await response.json();
+        toast.error(data.error || "Failed to delete expense");
+      }
+    } catch (err) {
+      console.error("Error deleting expense:", err);
+      toast.error("Failed to delete expense");
+    }
   }
 
   return (
@@ -162,6 +248,53 @@ export function ExpensesContent({ orgId }: ExpensesContentProps) {
               ))}
             </SelectContent>
           </Select>
+
+          <Select value={clientFilter} onValueChange={setClientFilter}>
+            <SelectTrigger className="w-[160px] squircle">
+              <SelectValue placeholder="All clients" />
+            </SelectTrigger>
+            <SelectContent className="squircle">
+              <SelectItem value="all">All clients</SelectItem>
+              {clients.map((client) => (
+                <SelectItem key={client.id} value={client.id}>
+                  <div className="flex items-center gap-2">
+                    {client.color && (
+                      <div
+                        className="size-2.5 rounded-full"
+                        style={{ backgroundColor: client.color }}
+                      />
+                    )}
+                    {client.name}
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={vendorFilter} onValueChange={setVendorFilter}>
+            <SelectTrigger className="w-[140px] squircle">
+              <SelectValue placeholder="All vendors" />
+            </SelectTrigger>
+            <SelectContent className="squircle">
+              <SelectItem value="all">All vendors</SelectItem>
+              {vendors.map((vendor) => (
+                <SelectItem key={vendor} value={vendor}>
+                  {vendor}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[120px] squircle">
+              <SelectValue placeholder="All status" />
+            </SelectTrigger>
+            <SelectContent className="squircle">
+              <SelectItem value="all">All status</SelectItem>
+              <SelectItem value="paid">Paid</SelectItem>
+              <SelectItem value="unpaid">Unpaid</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="flex items-center gap-4">
@@ -187,12 +320,24 @@ export function ExpensesContent({ orgId }: ExpensesContentProps) {
             </div>
           )}
 
+          <Button variant="outline" onClick={handleExport} className="squircle">
+            <Download className="size-4" />
+            Export
+          </Button>
+
           <Button onClick={() => setDialogOpen(true)} className="squircle">
             <Plus className="size-4" />
             New Expense
           </Button>
         </div>
       </div>
+
+      <p className="text-xs text-muted-foreground">
+        Need full tax export?{" "}
+        <Link href="/reports?tab=accounting" className="text-primary hover:underline">
+          Go to Accounting →
+        </Link>
+      </p>
 
       {/* Expenses list */}
       {isLoading ? (
@@ -296,14 +441,23 @@ export function ExpensesContent({ orgId }: ExpensesContentProps) {
                         {formatCurrency(expense.amountCents)}
                       </span>
 
-                      {expense.project && (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                            <Button variant="ghost" size="icon" className="size-8 shrink-0">
-                              <MoreVertical className="size-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="squircle">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                          <Button variant="ghost" size="icon" className="size-8 shrink-0">
+                            <MoreVertical className="size-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="squircle">
+                          <DropdownMenuItem
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEditExpense(expense);
+                            }}
+                          >
+                            <Pencil className="size-4" />
+                            Edit
+                          </DropdownMenuItem>
+                          {expense.project && (
                             <DropdownMenuItem
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -313,9 +467,19 @@ export function ExpensesContent({ orgId }: ExpensesContentProps) {
                               <Eye className="size-4" />
                               View Project
                             </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      )}
+                          )}
+                          <DropdownMenuItem
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteExpense(expense);
+                            }}
+                            className="text-destructive focus:text-destructive"
+                          >
+                            <Trash2 className="size-4" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </div>
                 </CardContent>
@@ -328,8 +492,9 @@ export function ExpensesContent({ orgId }: ExpensesContentProps) {
       <ExpenseDialog
         orgId={orgId}
         open={dialogOpen}
-        onOpenChange={setDialogOpen}
+        onOpenChange={handleDialogClose}
         onSuccess={handleExpenseCreated}
+        expense={editingExpense}
       />
     </div>
   );
