@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { motion, AnimatePresence } from "motion/react";
+import { motion } from "motion/react";
 import { Plus, CalendarIcon, Loader2, Search } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,12 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 /**
  * Suggestion with flexible hierarchy.
@@ -202,6 +208,9 @@ export function EntryBar({
   // Animation state for when fields are populated from suggestion
   const [justPopulated, setJustPopulated] = useState(false);
 
+  // Track if a suggestion was accepted (disable further suggestions until cleared)
+  const [suggestionAccepted, setSuggestionAccepted] = useState(false);
+
   // Refs for keyboard navigation
   const descriptionRef = useRef<HTMLInputElement>(null);
   const descriptionDropdownRef = useRef<HTMLDivElement>(null);
@@ -250,7 +259,13 @@ export function EntryBar({
   useEffect(() => {
     const controller = new AbortController();
     const timeoutId = setTimeout(async () => {
-      if (!orgId || description.length < 2) {
+      // Reset suggestionAccepted when description is cleared
+      if (description.length === 0) {
+        setSuggestionAccepted(false);
+      }
+
+      // Don't search if suggestion was accepted or description too short
+      if (!orgId || description.length < 2 || suggestionAccepted) {
         setDescriptionSuggestions([]);
         setDescriptionDropdownOpen(false);
         return;
@@ -290,7 +305,7 @@ export function EntryBar({
       clearTimeout(timeoutId);
       controller.abort();
     };
-  }, [orgId, description, selectedItem?.client.id, selectedItem?.project?.id]);
+  }, [orgId, description, selectedItem?.client.id, selectedItem?.project?.id, suggestionAccepted]);
 
   // Parse and round duration when input changes
   const handleDurationChange = useCallback(
@@ -358,6 +373,9 @@ export function EntryBar({
       // Trigger pulse animation on populated fields
       setJustPopulated(true);
       setTimeout(() => setJustPopulated(false), 600);
+
+      // Mark suggestion as accepted (disables further suggestions until cleared)
+      setSuggestionAccepted(true);
 
       // Keep focus on description
       descriptionRef.current?.focus();
@@ -452,6 +470,7 @@ export function EntryBar({
     setSearchQuery("");
     setDescriptionSuggestions([]);
     setDescriptionDropdownOpen(false);
+    setSuggestionAccepted(false);
     descriptionRef.current?.focus();
   }, []);
 
@@ -785,41 +804,33 @@ export function EntryBar({
           </Popover>
 
           {/* Add button with submit hint */}
-          <div className="relative shrink-0">
-            <Button
-              ref={addButtonRef}
-              type="submit"
-              size="icon"
-              className="squircle"
-              disabled={isSubmitting || !selectedItem || !durationMinutes}
-            >
-              {isSubmitting ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Plus className="size-4" />
-              )}
-              <span className="sr-only">Add entry</span>
-            </Button>
-
-            {/* Submit shortcut hint */}
-            <AnimatePresence>
-              {selectedItem && durationMinutes && !isSubmitting && (
-                <motion.div
-                  initial={{ opacity: 0, y: -8, scale: 0.9 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -4, scale: 0.95 }}
-                  transition={{ type: "spring", duration: 0.4, bounce: 0.3 }}
-                  className="absolute left-1/2 top-full mt-2 -translate-x-1/2 whitespace-nowrap"
+          <TooltipProvider>
+            <Tooltip open={selectedItem && durationMinutes && !isSubmitting ? undefined : false}>
+              <TooltipTrigger asChild>
+                <Button
+                  ref={addButtonRef}
+                  type="submit"
+                  size="icon"
+                  className="squircle shrink-0"
+                  disabled={isSubmitting || !selectedItem || !durationMinutes}
                 >
-                  <span className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-xs font-medium text-primary">
-                    <kbd className="rounded bg-primary/20 px-1.5 py-0.5 font-mono text-[11px]">⌘</kbd>
-                    <kbd className="rounded bg-primary/20 px-1.5 py-0.5 font-mono text-[11px]">↵</kbd>
-                    <span className="ml-0.5 text-primary/80">to save</span>
-                  </span>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
+                  {isSubmitting ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Plus className="size-4" />
+                  )}
+                  <span className="sr-only">Add entry</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" sideOffset={8}>
+                <span className="flex items-center gap-1.5">
+                  <kbd className="rounded bg-background/20 px-1.5 py-0.5 font-mono text-[11px]">⌘</kbd>
+                  <kbd className="rounded bg-background/20 px-1.5 py-0.5 font-mono text-[11px]">↵</kbd>
+                  <span>to save</span>
+                </span>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
 
         {/* Error message - shows inline on mobile, absolute below on desktop */}
       {error && (
