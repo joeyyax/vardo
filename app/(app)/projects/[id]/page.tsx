@@ -1,7 +1,7 @@
 import { redirect, notFound } from "next/navigation";
 import { getCurrentOrg } from "@/lib/auth/session";
 import { db } from "@/lib/db";
-import { projects, tasks } from "@/lib/db/schema";
+import { projects, tasks, DEFAULT_ORG_FEATURES, type OrgFeatures } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { ProjectDashboard } from "./project-dashboard";
 
@@ -17,6 +17,12 @@ export default async function ProjectPage({ params }: PageProps) {
   }
 
   const { id } = await params;
+
+  // Merge org features with defaults
+  const features: OrgFeatures = {
+    ...DEFAULT_ORG_FEATURES,
+    ...(orgData.organization.features as OrgFeatures | null),
+  };
 
   // Fetch project with client and tasks
   const project = await db.query.projects.findFirst({
@@ -43,6 +49,7 @@ export default async function ProjectPage({ params }: PageProps) {
     <ProjectDashboard
       project={project}
       orgId={orgData.organization.id}
+      pmEnabled={features.pm}
     />
   );
 }

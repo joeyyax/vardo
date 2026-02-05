@@ -24,6 +24,9 @@ import {
   ProjectDialog,
   type Project,
   type Client,
+  type ProjectStage,
+  PROJECT_STAGE_LABELS,
+  PROJECT_STAGE_COLORS,
 } from "@/components/projects/project-dialog";
 
 type ProjectsContentProps = {
@@ -38,6 +41,7 @@ export function ProjectsContent({ orgId }: ProjectsContentProps) {
 
   // Filter state
   const [filterClientId, setFilterClientId] = useState<string | null>(null);
+  const [filterStage, setFilterStage] = useState<ProjectStage | "all">("all");
   const [showArchived, setShowArchived] = useState(false);
 
   // Dialog state
@@ -178,6 +182,35 @@ export function ProjectsContent({ orgId }: ProjectsContentProps) {
               </Select>
             </div>
 
+            {/* Stage filter */}
+            <Select
+              value={filterStage}
+              onValueChange={(value) =>
+                setFilterStage(value as ProjectStage | "all")
+              }
+            >
+              <SelectTrigger className="squircle w-[160px]">
+                <SelectValue placeholder="All stages" />
+              </SelectTrigger>
+              <SelectContent className="squircle">
+                <SelectItem value="all">All stages</SelectItem>
+                {(Object.keys(PROJECT_STAGE_LABELS) as ProjectStage[]).map(
+                  (stageKey) => (
+                    <SelectItem key={stageKey} value={stageKey}>
+                      <div className="flex items-center gap-2">
+                        <div
+                          className={`size-2 rounded-full ${
+                            PROJECT_STAGE_COLORS[stageKey].split(" ")[0]
+                          }`}
+                        />
+                        {PROJECT_STAGE_LABELS[stageKey]}
+                      </div>
+                    </SelectItem>
+                  )
+                )}
+              </SelectContent>
+            </Select>
+
             {/* Show archived toggle */}
             <div className="flex items-center gap-2">
               <Switch
@@ -202,23 +235,37 @@ export function ProjectsContent({ orgId }: ProjectsContentProps) {
         </div>
 
         {/* Projects list or empty state */}
-        {projects.length === 0 ? (
-          <EmptyState
-            onNewProject={handleNewProject}
-            hasClients={clients.length > 0}
-            isFiltered={!!filterClientId || showArchived}
-          />
-        ) : (
-          <div className="space-y-2">
-            {projects.map((project) => (
-              <ProjectRow
-                key={project.id}
-                project={project}
-                onEdit={() => handleEditProject(project)}
+        {(() => {
+          // Filter projects by stage on client side
+          const filteredProjects =
+            filterStage === "all"
+              ? projects
+              : projects.filter((p) => (p.stage || "active") === filterStage);
+
+          const isFiltered = !!filterClientId || filterStage !== "all" || showArchived;
+
+          if (filteredProjects.length === 0) {
+            return (
+              <EmptyState
+                onNewProject={handleNewProject}
+                hasClients={clients.length > 0}
+                isFiltered={isFiltered}
               />
-            ))}
-          </div>
-        )}
+            );
+          }
+
+          return (
+            <div className="space-y-2">
+              {filteredProjects.map((project) => (
+                <ProjectRow
+                  key={project.id}
+                  project={project}
+                  onEdit={() => handleEditProject(project)}
+                />
+              ))}
+            </div>
+          );
+        })()}
       </div>
 
       <ProjectDialog
@@ -310,6 +357,8 @@ function ProjectRow({
     ? `$${(project.rateOverride / 100).toFixed(2)}/hr`
     : null;
 
+  const stage = project.stage || "active";
+
   return (
     <div className="squircle flex items-center gap-2 rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50">
       <Link
@@ -333,6 +382,12 @@ function ProjectRow({
                 {project.code}
               </span>
             )}
+            {/* Stage badge */}
+            <span
+              className={`text-xs px-1.5 py-0.5 rounded ${PROJECT_STAGE_COLORS[stage]}`}
+            >
+              {PROJECT_STAGE_LABELS[stage]}
+            </span>
             {project.isArchived && (
               <span className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
                 <Archive className="size-3" />

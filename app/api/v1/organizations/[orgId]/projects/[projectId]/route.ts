@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { projects, clients, timeEntries } from "@/lib/db/schema";
+import { projects, clients, timeEntries, PROJECT_STAGES, BUDGET_TYPES, type ProjectStage, type BudgetType } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 
@@ -92,7 +92,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     const body = await request.json();
-    const { clientId, name, code, rateOverride, isBillable, isArchived } = body;
+    const { clientId, name, code, rateOverride, isBillable, isArchived, stage, budgetType, budgetHours, budgetAmountCents } = body;
 
     // Build update object with only provided fields
     const updates: Partial<{
@@ -102,6 +102,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       rateOverride: number | null;
       isBillable: boolean | null;
       isArchived: boolean;
+      stage: ProjectStage;
+      budgetType: BudgetType | null;
+      budgetHours: number | null;
+      budgetAmountCents: number | null;
       updatedAt: Date;
     }> = {
       updatedAt: new Date(),
@@ -152,6 +156,34 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     if (isArchived !== undefined) {
       updates.isArchived = isArchived;
+    }
+
+    if (stage !== undefined) {
+      if (stage !== null && !PROJECT_STAGES.includes(stage)) {
+        return NextResponse.json(
+          { error: `Stage must be one of: ${PROJECT_STAGES.join(", ")}` },
+          { status: 400 }
+        );
+      }
+      updates.stage = stage;
+    }
+
+    if (budgetType !== undefined) {
+      if (budgetType !== null && !BUDGET_TYPES.includes(budgetType)) {
+        return NextResponse.json(
+          { error: `Budget type must be one of: ${BUDGET_TYPES.join(", ")}` },
+          { status: 400 }
+        );
+      }
+      updates.budgetType = budgetType;
+    }
+
+    if (budgetHours !== undefined) {
+      updates.budgetHours = budgetHours !== null && budgetHours !== "" ? Number(budgetHours) : null;
+    }
+
+    if (budgetAmountCents !== undefined) {
+      updates.budgetAmountCents = budgetAmountCents !== null && budgetAmountCents !== "" ? Number(budgetAmountCents) : null;
     }
 
     await db

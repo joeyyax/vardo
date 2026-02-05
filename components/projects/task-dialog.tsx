@@ -24,17 +24,47 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Loader2, Archive, ArchiveRestore } from "lucide-react";
+
+export type TaskStatus = "todo" | "in_progress" | "review" | "done";
 
 export type Task = {
   id: string;
   projectId: string;
   name: string;
+  description: string | null;
   rateOverride: number | null;
   isBillable: boolean | null;
   isArchived: boolean;
+  status: TaskStatus | null;
+  isRecurring: boolean | null;
+  assignedTo: string | null;
+  createdBy: string | null;
+  position: number | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
+  todo: "To Do",
+  in_progress: "In Progress",
+  review: "Review",
+  done: "Done",
+};
+
+export const TASK_STATUS_COLORS: Record<TaskStatus, string> = {
+  todo: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+  in_progress: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
+  review: "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300",
+  done: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300",
 };
 
 type TaskDialogProps = {
@@ -44,6 +74,8 @@ type TaskDialogProps = {
   orgId: string;
   projectId: string;
   onSuccess: () => void;
+  pmEnabled?: boolean; // Show PM fields (status, description)
+  defaultStatus?: TaskStatus | null; // Default status for new tasks
 };
 
 export function TaskDialog({
@@ -53,11 +85,15 @@ export function TaskDialog({
   orgId,
   projectId,
   onSuccess,
+  pmEnabled = false,
+  defaultStatus = null,
 }: TaskDialogProps) {
   // Form state
   const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
   const [rateOverride, setRateOverride] = useState("");
   const [isBillable, setIsBillable] = useState<boolean | null>(null);
+  const [status, setStatus] = useState<TaskStatus | null>(null);
 
   // UI state
   const [isLoading, setIsLoading] = useState(false);
@@ -72,6 +108,7 @@ export function TaskDialog({
     if (open) {
       if (task) {
         setName(task.name);
+        setDescription(task.description || "");
         // Convert cents to dollars for display
         setRateOverride(
           task.rateOverride !== null
@@ -79,15 +116,18 @@ export function TaskDialog({
             : ""
         );
         setIsBillable(task.isBillable);
+        setStatus(task.status);
       } else {
         // Creating new task - reset form
         setName("");
+        setDescription("");
         setRateOverride("");
         setIsBillable(null);
+        setStatus(defaultStatus);
       }
       setError(null);
     }
-  }, [open, task]);
+  }, [open, task, defaultStatus]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -97,8 +137,10 @@ export function TaskDialog({
     try {
       const payload = {
         name,
+        description: description || null,
         rateOverride: rateOverride !== "" ? parseFloat(rateOverride) : null,
         isBillable,
+        status,
       };
 
       const url = isEditing
@@ -208,6 +250,60 @@ export function TaskDialog({
                 className="squircle"
               />
             </div>
+
+            {/* Description - only show when PM is enabled */}
+            {pmEnabled && (
+              <div className="grid gap-2">
+                <Label htmlFor="task-description">Description</Label>
+                <Textarea
+                  id="task-description"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Add details or notes..."
+                  rows={3}
+                  className="squircle resize-none"
+                />
+              </div>
+            )}
+
+            {/* Status - only show when PM is enabled */}
+            {pmEnabled && (
+              <div className="grid gap-2">
+                <Label htmlFor="task-status">Status</Label>
+                <Select
+                  value={status || "category"}
+                  onValueChange={(value) =>
+                    setStatus(value === "category" ? null : (value as TaskStatus))
+                  }
+                >
+                  <SelectTrigger id="task-status" className="squircle">
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent className="squircle">
+                    <SelectItem value="category">
+                      <span className="text-muted-foreground">Category only</span>
+                    </SelectItem>
+                    {(Object.keys(TASK_STATUS_LABELS) as TaskStatus[]).map(
+                      (statusKey) => (
+                        <SelectItem key={statusKey} value={statusKey}>
+                          <div className="flex items-center gap-2">
+                            <div
+                              className={`size-2 rounded-full ${
+                                TASK_STATUS_COLORS[statusKey].split(" ")[0]
+                              }`}
+                            />
+                            {TASK_STATUS_LABELS[statusKey]}
+                          </div>
+                        </SelectItem>
+                      )
+                    )}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Category-only tasks appear in time entry dropdowns but not on the board.
+                </p>
+              </div>
+            )}
 
             {/* Hourly rate override */}
             <div className="grid gap-2">

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { tasks, projects } from "@/lib/db/schema";
+import { tasks, projects, TASK_STATUSES, type TaskStatus } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull, sql } from "drizzle-orm";
 
 type RouteParams = {
   params: Promise<{ orgId: string; projectId: string }>;
@@ -44,15 +44,33 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
 
-    // Check for includeArchived query param
+    // Check for query params
     const url = new URL(request.url);
     const includeArchived = url.searchParams.get("includeArchived") === "true";
+    const statusFilter = url.searchParams.get("status"); // 'todo', 'in_progress', 'review', 'done', 'category' (null status)
+    const forKanban = url.searchParams.get("forKanban") === "true"; // Order by position for kanban
+
+    // Build where conditions
+    const conditions = [eq(tasks.projectId, projectId)];
+
+    if (!includeArchived) {
+      conditions.push(eq(tasks.isArchived, false));
+    }
+
+    if (statusFilter) {
+      if (statusFilter === "category") {
+        // Tasks without a status (category-only)
+        conditions.push(isNull(tasks.status));
+      } else if (TASK_STATUSES.includes(statusFilter as TaskStatus)) {
+        conditions.push(eq(tasks.status, statusFilter as TaskStatus));
+      }
+    }
 
     const projectTasks = await db.query.tasks.findMany({
-      where: includeArchived
-        ? eq(tasks.projectId, projectId)
-        : and(eq(tasks.projectId, projectId), eq(tasks.isArchived, false)),
-      orderBy: (tasks, { asc }) => [asc(tasks.name)],
+      where: and(...conditions),
+      orderBy: forKanban
+        ? (tasks, { asc }) => [asc(tasks.position), asc(tasks.createdAt)]
+        : (tasks, { asc }) => [asc(tasks.name)],
     });
 
     return NextResponse.json(projectTasks);
@@ -91,12 +109,21 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
 
+    const { session } = await requireOrg();
     const body = await request.json();
-    const { name, rateOverride, isBillable } = body;
+    const { name, description, rateOverride, isBillable, status, isRecurring, assignedTo } = body;
 
     if (!name || typeof name !== "string" || name.trim().length === 0) {
       return NextResponse.json(
         { error: "Name is required" },
+        { status: 400 }
+      );
+    }
+
+    // Validate status if provided
+    if (status !== undefined && status !== null && !TASK_STATUSES.includes(status)) {
+      return NextResponse.json(
+        { error: `Status must be one of: ${TASK_STATUSES.join(", ")}` },
         { status: 400 }
       );
     }
@@ -107,13 +134,31 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         ? Math.round(parseFloat(rateOverride) * 100)
         : null;
 
+    // Get max position for this status to add at end
+    const maxPositionResult = await db
+      .select({ maxPos: sql<number>`COALESCE(MAX(position), 0)` })
+      .from(tasks)
+      .where(
+        and(
+          eq(tasks.projectId, projectId),
+          status ? eq(tasks.status, status) : isNull(tasks.status)
+        )
+      );
+    const nextPosition = (maxPositionResult[0]?.maxPos ?? 0) + 1;
+
     const [newTask] = await db
       .insert(tasks)
       .values({
         projectId,
         name: name.trim(),
+        description: description?.trim() || null,
         rateOverride: rateInCents,
         isBillable: isBillable ?? null,
+        status: status || null,
+        isRecurring: isRecurring ?? false,
+        assignedTo: assignedTo || null,
+        createdBy: session.user.id,
+        position: nextPosition,
       })
       .returning();
 

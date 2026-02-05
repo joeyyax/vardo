@@ -12,11 +12,20 @@ import {
   Archive,
   ListTodo,
   Loader2,
+  LayoutList,
+  Kanban,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ProjectDialog } from "@/components/projects/project-dialog";
 import { TaskDialog } from "@/components/projects/task-dialog";
+import { KanbanBoard } from "@/components/projects/kanban-board";
+import { ProjectInvitations } from "@/components/projects/project-invitations";
+import { ProjectFiles } from "@/components/projects/project-files";
+import { ProjectActivity } from "@/components/projects/project-activity";
+import { ProjectDocuments } from "@/components/projects/project-documents";
+import { ProjectExpenses } from "@/components/projects/project-expenses";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 // Server-side types (Date objects from DB)
 type ServerClient = {
@@ -47,6 +56,10 @@ type ServerProject = {
   rateOverride: number | null;
   isBillable: boolean | null;
   isArchived: boolean | null;
+  stage: "lead" | "proposal_sent" | "active" | "completed" | null;
+  budgetType: "hours" | "fixed" | null;
+  budgetHours: number | null;
+  budgetAmountCents: number | null;
   createdAt: Date;
   updatedAt: Date;
   client: ServerClient;
@@ -77,7 +90,10 @@ type RecentEntry = {
 type ProjectDashboardProps = {
   project: ServerProject;
   orgId: string;
+  pmEnabled?: boolean;
 };
+
+type TaskView = "list" | "board";
 
 // Convert server types to client-side types with string dates
 // Handles both Date objects (from server) and strings (from JSON/props)
@@ -97,6 +113,10 @@ function toProjectType(serverProject: ServerProject & { createdAt: Date | string
     rateOverride: serverProject.rateOverride,
     isBillable: serverProject.isBillable,
     isArchived: serverProject.isArchived ?? false,
+    stage: serverProject.stage,
+    budgetType: serverProject.budgetType,
+    budgetHours: serverProject.budgetHours,
+    budgetAmountCents: serverProject.budgetAmountCents,
     createdAt,
     updatedAt,
     client: {
@@ -107,12 +127,15 @@ function toProjectType(serverProject: ServerProject & { createdAt: Date | string
   };
 }
 
-export function ProjectDashboard({ project: initialProject, orgId }: ProjectDashboardProps) {
+export function ProjectDashboard({ project: initialProject, orgId, pmEnabled = false }: ProjectDashboardProps) {
   const [project, setProject] = useState(initialProject);
   const [allClients, setAllClients] = useState<{ id: string; name: string; color: string | null }[]>([]);
   const [stats, setStats] = useState<ProjectStats | null>(null);
   const [recentEntries, setRecentEntries] = useState<RecentEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  // View state (board view only available when PM is enabled)
+  const [taskView, setTaskView] = useState<TaskView>(pmEnabled ? "board" : "list");
 
   // Dialog state
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -339,55 +362,110 @@ export function ProjectDashboard({ project: initialProject, orgId }: ProjectDash
             )}
           </div>
 
-          <div className="grid gap-6 lg:grid-cols-2">
-            {/* Tasks with Hours */}
+          {/* Tasks section - full width when board view */}
+          {pmEnabled && taskView === "board" ? (
             <Card className="squircle">
               <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle className="flex items-center gap-2">
-                  <ListTodo className="size-5" />
-                  Tasks
+                  <Kanban className="size-5" />
+                  Task Board
                 </CardTitle>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setTaskDialogOpen(true)}
-                  className="squircle"
-                >
-                  <Plus className="size-4" />
-                  Add
-                </Button>
+                <div className="flex items-center gap-2">
+                  <ToggleGroup
+                    type="single"
+                    value={taskView}
+                    onValueChange={(v) => v && setTaskView(v as TaskView)}
+                    size="sm"
+                  >
+                    <ToggleGroupItem value="list" aria-label="List view">
+                      <LayoutList className="size-4" />
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="board" aria-label="Board view">
+                      <Kanban className="size-4" />
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setTaskDialogOpen(true)}
+                    className="squircle"
+                  >
+                    <Plus className="size-4" />
+                    Add
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
-                {project.tasks.length === 0 ? (
-                  <p className="text-sm text-muted-foreground py-4 text-center">
-                    No tasks yet. Create one to organize your work.
-                  </p>
-                ) : (
-                  <div className="space-y-3">
-                    {project.tasks.map((task) => {
-                      const taskStats = stats?.taskBreakdown.find(
-                        (t) => t.id === task.id
-                      );
-                      return (
-                        <div
-                          key={task.id}
-                          className="flex items-center justify-between p-3 rounded-lg border"
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">{task.name}</span>
-                          </div>
-                          <span className="text-sm text-muted-foreground">
-                            {taskStats ? formatHours(taskStats.minutes) : "0h"}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+                <KanbanBoard orgId={orgId} projectId={project.id} />
               </CardContent>
             </Card>
+          ) : (
+            <div className="grid gap-6 lg:grid-cols-2">
+              {/* Tasks with Hours */}
+              <Card className="squircle">
+                <CardHeader className="flex flex-row items-center justify-between">
+                  <CardTitle className="flex items-center gap-2">
+                    <ListTodo className="size-5" />
+                    Tasks
+                  </CardTitle>
+                  <div className="flex items-center gap-2">
+                    {pmEnabled && (
+                      <ToggleGroup
+                        type="single"
+                        value={taskView}
+                        onValueChange={(v) => v && setTaskView(v as TaskView)}
+                        size="sm"
+                      >
+                        <ToggleGroupItem value="list" aria-label="List view">
+                          <LayoutList className="size-4" />
+                        </ToggleGroupItem>
+                        <ToggleGroupItem value="board" aria-label="Board view">
+                          <Kanban className="size-4" />
+                        </ToggleGroupItem>
+                      </ToggleGroup>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setTaskDialogOpen(true)}
+                      className="squircle"
+                    >
+                      <Plus className="size-4" />
+                      Add
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {project.tasks.length === 0 ? (
+                    <p className="text-sm text-muted-foreground py-4 text-center">
+                      No tasks yet. Create one to organize your work.
+                    </p>
+                  ) : (
+                    <div className="space-y-3">
+                      {project.tasks.map((task) => {
+                        const taskStats = stats?.taskBreakdown.find(
+                          (t) => t.id === task.id
+                        );
+                        return (
+                          <div
+                            key={task.id}
+                            className="flex items-center justify-between p-3 rounded-lg border"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">{task.name}</span>
+                            </div>
+                            <span className="text-sm text-muted-foreground">
+                              {taskStats ? formatHours(taskStats.minutes) : "0h"}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
 
-            {/* Recent Entries */}
+              {/* Recent Entries */}
             <Card className="squircle">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -434,7 +512,23 @@ export function ProjectDashboard({ project: initialProject, orgId }: ProjectDash
                 )}
               </CardContent>
             </Card>
+            </div>
+          )}
+
+          {/* Documents and Files */}
+          <div className="grid gap-6 lg:grid-cols-2">
+            <ProjectDocuments orgId={orgId} projectId={project.id} />
+            <ProjectFiles orgId={orgId} projectId={project.id} />
           </div>
+
+          {/* Expenses and Client Access */}
+          <div className="grid gap-6 lg:grid-cols-2">
+            <ProjectExpenses orgId={orgId} projectId={project.id} />
+            <ProjectInvitations orgId={orgId} projectId={project.id} />
+          </div>
+
+          {/* Activity Log */}
+          <ProjectActivity orgId={orgId} projectId={project.id} />
         </>
       )}
 

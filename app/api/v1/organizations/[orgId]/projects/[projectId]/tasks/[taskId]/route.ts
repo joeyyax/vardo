@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { tasks, projects } from "@/lib/db/schema";
+import { tasks, projects, TASK_STATUSES, type TaskStatus } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 
@@ -105,14 +105,19 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     const body = await request.json();
-    const { name, rateOverride, isBillable, isArchived } = body;
+    const { name, description, rateOverride, isBillable, isArchived, status, isRecurring, assignedTo, position } = body;
 
     // Build update object with only provided fields
     const updates: Partial<{
       name: string;
+      description: string | null;
       rateOverride: number | null;
       isBillable: boolean | null;
       isArchived: boolean;
+      status: TaskStatus | null;
+      isRecurring: boolean;
+      assignedTo: string | null;
+      position: number;
       updatedAt: Date;
     }> = {
       updatedAt: new Date(),
@@ -126,6 +131,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         );
       }
       updates.name = name.trim();
+    }
+
+    if (description !== undefined) {
+      updates.description = description?.trim() || null;
     }
 
     if (rateOverride !== undefined) {
@@ -142,6 +151,28 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     if (isArchived !== undefined) {
       updates.isArchived = isArchived;
+    }
+
+    if (status !== undefined) {
+      if (status !== null && !TASK_STATUSES.includes(status)) {
+        return NextResponse.json(
+          { error: `Status must be one of: ${TASK_STATUSES.join(", ")}` },
+          { status: 400 }
+        );
+      }
+      updates.status = status;
+    }
+
+    if (isRecurring !== undefined) {
+      updates.isRecurring = isRecurring;
+    }
+
+    if (assignedTo !== undefined) {
+      updates.assignedTo = assignedTo || null;
+    }
+
+    if (position !== undefined) {
+      updates.position = Number(position);
     }
 
     const [updatedTask] = await db

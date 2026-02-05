@@ -39,6 +39,9 @@ export type Client = {
   color: string | null;
 };
 
+export type ProjectStage = "lead" | "proposal_sent" | "active" | "completed";
+export type BudgetType = "hours" | "fixed";
+
 export type Project = {
   id: string;
   clientId: string;
@@ -47,9 +50,27 @@ export type Project = {
   rateOverride: number | null;
   isBillable: boolean | null;
   isArchived: boolean;
+  stage: ProjectStage | null;
+  budgetType: BudgetType | null;
+  budgetHours: number | null;
+  budgetAmountCents: number | null;
   createdAt: string;
   updatedAt: string;
   client: Client;
+};
+
+export const PROJECT_STAGE_LABELS: Record<ProjectStage, string> = {
+  lead: "Lead",
+  proposal_sent: "Proposal Sent",
+  active: "Active",
+  completed: "Completed",
+};
+
+export const PROJECT_STAGE_COLORS: Record<ProjectStage, string> = {
+  lead: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
+  proposal_sent: "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300",
+  active: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300",
+  completed: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
 };
 
 type ProjectDialogProps = {
@@ -79,6 +100,7 @@ export function ProjectDialog({
   const [code, setCode] = useState("");
   const [rateOverride, setRateOverride] = useState("");
   const [isBillable, setIsBillable] = useState<boolean | null>(null);
+  const [stage, setStage] = useState<ProjectStage>("active");
 
   // UI state
   const [isLoading, setIsLoading] = useState(false);
@@ -100,6 +122,7 @@ export function ProjectDialog({
             : ""
         );
         setIsBillable(project.isBillable);
+        setStage(project.stage || "active");
       } else {
         // New project - use default client if provided
         setClientId(defaultClientId || "");
@@ -107,6 +130,7 @@ export function ProjectDialog({
         setCode("");
         setRateOverride("");
         setIsBillable(null);
+        setStage("active");
       }
       setError(null);
     }
@@ -124,6 +148,7 @@ export function ProjectDialog({
         code: code || null,
         rateOverride: rateOverride !== "" ? parseFloat(rateOverride) : null,
         isBillable,
+        stage,
       };
 
       const url = isEditing
@@ -286,6 +311,36 @@ export function ProjectDialog({
                 disabled={isDisabled}
                 className="squircle"
               />
+            </div>
+
+            {/* Stage */}
+            <div className="grid gap-2">
+              <Label htmlFor="stage">Stage</Label>
+              <Select
+                value={stage}
+                onValueChange={(value) => setStage(value as ProjectStage)}
+                disabled={isDisabled}
+              >
+                <SelectTrigger className="squircle">
+                  <SelectValue placeholder="Select stage" />
+                </SelectTrigger>
+                <SelectContent className="squircle">
+                  {(Object.keys(PROJECT_STAGE_LABELS) as ProjectStage[]).map(
+                    (stageKey) => (
+                      <SelectItem key={stageKey} value={stageKey}>
+                        <div className="flex items-center gap-2">
+                          <div
+                            className={`size-2 rounded-full ${
+                              PROJECT_STAGE_COLORS[stageKey].split(" ")[0]
+                            }`}
+                          />
+                          {PROJECT_STAGE_LABELS[stageKey]}
+                        </div>
+                      </SelectItem>
+                    )
+                  )}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Hourly rate override */}

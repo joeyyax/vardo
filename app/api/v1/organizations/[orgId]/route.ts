@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { organizations, memberships } from "@/lib/db/schema";
+import { organizations, memberships, type OrgFeatures } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 
@@ -172,6 +172,37 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         updates.defaultPaymentTermsDays = days;
       } else {
         updates.defaultPaymentTermsDays = null;
+      }
+    }
+
+    // Validate and apply feature flags
+    if (body.features !== undefined) {
+      if (typeof body.features !== "object" || body.features === null) {
+        return NextResponse.json(
+          { error: "Features must be an object" },
+          { status: 400 }
+        );
+      }
+
+      const validFeatureKeys: (keyof OrgFeatures)[] = ["time_tracking", "invoicing", "pm", "proposals"];
+      const features: Partial<OrgFeatures> = {};
+
+      for (const key of validFeatureKeys) {
+        if (key in body.features) {
+          features[key] = Boolean(body.features[key]);
+        }
+      }
+
+      // Get current org to merge features
+      const currentOrg = await db.query.organizations.findFirst({
+        where: eq(organizations.id, orgId),
+      });
+
+      if (currentOrg) {
+        updates.features = {
+          ...(currentOrg.features as OrgFeatures),
+          ...features,
+        };
       }
     }
 

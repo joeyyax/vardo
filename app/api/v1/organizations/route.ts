@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { organizations, memberships, users } from "@/lib/db/schema";
+import { organizations, memberships, users, DEFAULT_ORG_FEATURES, type OrgFeatures } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth/session";
 import { eq, sql } from "drizzle-orm";
 
@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { name } = body;
+    const { name, features } = body;
 
     if (!name || typeof name !== "string" || name.trim().length === 0) {
       return NextResponse.json(
@@ -64,6 +64,17 @@ export async function POST(request: NextRequest) {
     }
 
     const trimmedName = name.trim();
+
+    // Merge provided features with defaults
+    const orgFeatures: OrgFeatures = {
+      ...DEFAULT_ORG_FEATURES,
+      ...(features && typeof features === "object" ? features : {}),
+    };
+
+    // Ensure all feature values are booleans
+    for (const key of Object.keys(orgFeatures) as (keyof OrgFeatures)[]) {
+      orgFeatures[key] = Boolean(orgFeatures[key]);
+    }
 
     // Check if this is the first organization in the system
     const [{ count: orgCount }] = await db
@@ -87,6 +98,7 @@ export async function POST(request: NextRequest) {
         name: trimmedName,
         slug,
         roundingIncrement: 15, // default 15 minutes
+        features: orgFeatures,
       })
       .returning();
 

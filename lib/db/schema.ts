@@ -11,6 +11,22 @@ import {
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
+// Feature flags type for organizations
+export type OrgFeatures = {
+  time_tracking: boolean;
+  invoicing: boolean;
+  pm: boolean;
+  proposals: boolean;
+};
+
+// Default features for new organizations (backward compatible)
+export const DEFAULT_ORG_FEATURES: OrgFeatures = {
+  time_tracking: true,
+  invoicing: true,
+  pm: false,
+  proposals: false,
+};
+
 // Organizations (tenants)
 export const organizations = pgTable("organizations", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -20,10 +36,15 @@ export const organizations = pgTable("organizations", {
   roundingIncrement: integer("rounding_increment").default(15), // minutes
   plan: text("plan").default("free"),
   limits: jsonb("limits"),
+  // Feature flags - controls which modules are enabled
+  features: jsonb("features").$type<OrgFeatures>().default(DEFAULT_ORG_FEATURES),
   // Billing defaults
   defaultBillingType: text("default_billing_type").default("hourly"), // 'hourly' | 'retainer_fixed' | 'retainer_capped' | 'retainer_uncapped' | 'fixed_project'
   defaultBillingFrequency: text("default_billing_frequency"), // 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'per_project'
   defaultPaymentTermsDays: integer("default_payment_terms_days").default(30),
+  // Payment provider integration
+  paymentProvider: text("payment_provider"), // 'stripe' | 'paypal' | 'square' | null
+  paymentConfig: jsonb("payment_config"), // Encrypted API keys or OAuth tokens
   // Toggl integration
   togglApiToken: text("toggl_api_token"),
   togglWorkspaceId: text("toggl_workspace_id"),
@@ -190,6 +211,14 @@ export const clients = pgTable("clients", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// Project stages
+export const PROJECT_STAGES = ["lead", "proposal_sent", "active", "completed"] as const;
+export type ProjectStage = (typeof PROJECT_STAGES)[number];
+
+// Budget types
+export const BUDGET_TYPES = ["hours", "fixed"] as const;
+export type BudgetType = (typeof BUDGET_TYPES)[number];
+
 // Projects
 export const projects = pgTable("projects", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -201,22 +230,142 @@ export const projects = pgTable("projects", {
   rateOverride: integer("rate_override"),
   isBillable: boolean("is_billable"),
   isArchived: boolean("is_archived").default(false),
+  // Project lifecycle stage
+  stage: text("stage").$type<ProjectStage>().default("active"),
+  // Budget tracking
+  budgetType: text("budget_type").$type<BudgetType>(), // 'hours' | 'fixed' | null
+  budgetHours: integer("budget_hours"), // total hours budget
+  budgetAmountCents: integer("budget_amount_cents"), // fixed price budget in cents
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-// Tasks
+// Task statuses for PM feature
+// null = category-only task (for time tracking), other values = work item
+export const TASK_STATUSES = ["todo", "in_progress", "review", "done"] as const;
+export type TaskStatus = (typeof TASK_STATUSES)[number];
+
+// Task relationship types
+export const TASK_RELATIONSHIP_TYPES = ["blocked_by", "related_to"] as const;
+export type TaskRelationshipType = (typeof TASK_RELATIONSHIP_TYPES)[number];
+
+// Task types - org-defined (Bug, Feature, Task, etc.)
+export const taskTypes = pgTable("task_types", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  color: text("color"),
+  icon: text("icon"),
+  defaultFields: jsonb("default_fields"), // { "severity": true, "steps_to_reproduce": true }
+  position: integer("position").default(0),
+  isArchived: boolean("is_archived").default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Task tags - org-defined with hybrid creation
+export const taskTags = pgTable("task_tags", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  color: text("color"),
+  isPredefined: boolean("is_predefined").default(true), // false = created ad-hoc
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Tasks - unified model for both time tracking categories and PM work items
 export const tasks = pgTable("tasks", {
   id: uuid("id").primaryKey().defaultRandom(),
   projectId: uuid("project_id")
     .notNull()
     .references(() => projects.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
+  description: text("description"),
   rateOverride: integer("rate_override"),
   isBillable: boolean("is_billable"),
   isArchived: boolean("is_archived").default(false),
+  // PM fields
+  status: text("status").$type<TaskStatus>(),
+  isRecurring: boolean("is_recurring").default(false),
+  assignedTo: text("assigned_to").references(() => users.id, { onDelete: "set null" }),
+  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  position: integer("position").default(0),
+  // Expanded task fields
+  typeId: uuid("type_id").references(() => taskTypes.id, { onDelete: "set null" }),
+  estimateMinutes: integer("estimate_minutes"),
+  prLink: text("pr_link"),
+  isClientVisible: boolean("is_client_visible").default(true),
+  metadata: jsonb("metadata").default({}), // Type-specific fields (severity, steps_to_reproduce, etc.)
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Task tag assignments (many-to-many)
+export const taskTagAssignments = pgTable("task_tag_assignments", {
+  taskId: uuid("task_id")
+    .notNull()
+    .references(() => tasks.id, { onDelete: "cascade" }),
+  tagId: uuid("tag_id")
+    .notNull()
+    .references(() => taskTags.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Task relationships (blocked_by, related_to)
+export const taskRelationships = pgTable("task_relationships", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sourceTaskId: uuid("source_task_id")
+    .notNull()
+    .references(() => tasks.id, { onDelete: "cascade" }),
+  targetTaskId: uuid("target_task_id")
+    .notNull()
+    .references(() => tasks.id, { onDelete: "cascade" }),
+  type: text("type").$type<TaskRelationshipType>().notNull(),
+  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Task files (links to project_files)
+export const taskFiles = pgTable("task_files", {
+  taskId: uuid("task_id")
+    .notNull()
+    .references(() => tasks.id, { onDelete: "cascade" }),
+  fileId: uuid("file_id")
+    .notNull()
+    .references(() => projectFiles.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Task comments (internal by default)
+export const taskComments = pgTable("task_comments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  taskId: uuid("task_id")
+    .notNull()
+    .references(() => tasks.id, { onDelete: "cascade" }),
+  authorId: text("author_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  content: text("content").notNull(),
+  isShared: boolean("is_shared").default(false), // false = internal, true = client-visible
+  sharedAt: timestamp("shared_at"),
+  sharedBy: text("shared_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Task watchers
+export const taskWatchers = pgTable("task_watchers", {
+  taskId: uuid("task_id")
+    .notNull()
+    .references(() => tasks.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  reason: text("reason"), // 'creator', 'assignee', 'commenter', 'manual'
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 // Time entries
@@ -411,6 +560,395 @@ export const recurringTemplates = pgTable("recurring_templates", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// Invitation roles for client portal
+export const INVITATION_ROLES = ["viewer", "contributor"] as const;
+export type InvitationRole = (typeof INVITATION_ROLES)[number];
+
+// Visibility settings type for invitations
+export type InvitationVisibility = {
+  show_rates: boolean;
+  show_time: boolean;
+  show_costs: boolean;
+};
+
+export const DEFAULT_INVITATION_VISIBILITY: InvitationVisibility = {
+  show_rates: false,
+  show_time: true,
+  show_costs: false,
+};
+
+// Project invitations for client portal access
+export const projectInvitations = pgTable(
+  "project_invitations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    role: text("role").$type<InvitationRole>().notNull().default("viewer"),
+    visibility: jsonb("visibility").$type<InvitationVisibility>().default(DEFAULT_INVITATION_VISIBILITY),
+    invitedBy: text("invited_by").references(() => users.id, { onDelete: "set null" }),
+    // Invitation token for accepting
+    token: text("token").notNull().unique(),
+    // Status tracking
+    sentAt: timestamp("sent_at"),
+    viewedAt: timestamp("viewed_at"),
+    acceptedAt: timestamp("accepted_at"),
+    // Links to user once accepted
+    userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("project_invitations_project_id_idx").on(table.projectId),
+    index("project_invitations_email_idx").on(table.email),
+    index("project_invitations_token_idx").on(table.token),
+  ]
+);
+
+// Project files (R2 storage)
+export const projectFiles = pgTable(
+  "project_files",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    uploadedBy: text("uploaded_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(), // Original filename
+    sizeBytes: integer("size_bytes").notNull(),
+    mimeType: text("mime_type").notNull(),
+    r2Key: text("r2_key").notNull(), // Path in R2: /{org_id}/{project_id}/{file_id}/{filename}
+    tags: jsonb("tags").$type<string[]>().default([]),
+    // Portal visibility - if true, clients can see this file
+    isPublic: boolean("is_public").default(false),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("project_files_project_id_idx").on(table.projectId),
+    index("project_files_uploaded_by_idx").on(table.uploadedBy),
+  ]
+);
+
+// Activity types for project activity log
+export const ACTIVITY_TYPES = [
+  "note",
+  "stage_change",
+  "task_created",
+  "task_status_changed",
+  "task_completed",
+  "file_uploaded",
+  "file_deleted",
+  "invitation_sent",
+  "invitation_accepted",
+  "invoice_created",
+  "invoice_sent",
+  "document_sent",
+  "document_accepted",
+] as const;
+export type ActivityType = (typeof ACTIVITY_TYPES)[number];
+
+// Actor types for activity log
+export const ACTOR_TYPES = ["user", "client", "system"] as const;
+export type ActorType = (typeof ACTOR_TYPES)[number];
+
+// Activity metadata types
+export type ActivityMetadata = {
+  // Stage changes
+  fromStage?: string;
+  toStage?: string;
+  // Task changes
+  taskId?: string;
+  taskName?: string;
+  fromStatus?: string;
+  toStatus?: string;
+  // File events
+  fileId?: string;
+  fileName?: string;
+  fileSize?: number;
+  // Invitation events
+  invitationId?: string;
+  inviteeEmail?: string;
+  inviteeRole?: string;
+  // Invoice events
+  invoiceId?: string;
+  invoiceNumber?: string;
+  // Document events
+  documentId?: string;
+  documentTitle?: string;
+  documentType?: string;
+  // Generic
+  [key: string]: unknown;
+};
+
+// Project activity log
+export const projectActivities = pgTable(
+  "project_activities",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    type: text("type").$type<ActivityType>().notNull(),
+    // Who performed the action
+    actorId: text("actor_id").references(() => users.id, { onDelete: "set null" }),
+    actorType: text("actor_type").$type<ActorType>().default("user"),
+    // Content for notes
+    content: text("content"),
+    // Structured data for different event types
+    metadata: jsonb("metadata").$type<ActivityMetadata>().default({}),
+    // Visibility
+    isPublic: boolean("is_public").default(false), // If true, visible to clients in portal
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("project_activities_project_id_idx").on(table.projectId),
+    index("project_activities_type_idx").on(table.type),
+    index("project_activities_created_at_idx").on(table.createdAt),
+  ]
+);
+
+// Document types for proposals and contracts
+export const DOCUMENT_TYPES = ["proposal", "contract"] as const;
+export type DocumentType = (typeof DOCUMENT_TYPES)[number];
+
+// Document statuses
+export const DOCUMENT_STATUSES = ["draft", "sent", "viewed", "accepted", "declined"] as const;
+export type DocumentStatus = (typeof DOCUMENT_STATUSES)[number];
+
+// Document section types for structured content
+export type DocumentSection = {
+  id: string;
+  type: "intro" | "scope" | "deliverables" | "timeline" | "pricing" | "terms" | "custom";
+  title: string;
+  content: string; // Markdown content
+  order: number;
+};
+
+export type DocumentContent = {
+  sections: DocumentSection[];
+  // Pricing specific fields
+  pricing?: {
+    type: "fixed" | "hourly" | "retainer";
+    amount?: number; // cents
+    rate?: number; // cents per hour
+    estimatedHours?: number;
+    items?: Array<{
+      description: string;
+      quantity: number;
+      unitPrice: number; // cents
+      total: number; // cents
+    }>;
+  };
+};
+
+// Documents (proposals and contracts)
+export const documents = pgTable(
+  "documents",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    type: text("type").$type<DocumentType>().notNull(),
+    status: text("status").$type<DocumentStatus>().notNull().default("draft"),
+    title: text("title").notNull(),
+    // Structured content with sections
+    content: jsonb("content").$type<DocumentContent>().notNull().default({ sections: [] }),
+    // For proposals - whether accepting requires signing a contract
+    requiresContract: boolean("requires_contract").default(false),
+    // Public access token for client viewing/accepting
+    publicToken: text("public_token").unique(),
+    // Tracking timestamps
+    sentAt: timestamp("sent_at"),
+    viewedAt: timestamp("viewed_at"),
+    acceptedAt: timestamp("accepted_at"),
+    declinedAt: timestamp("declined_at"),
+    // Who accepted/declined (email address)
+    acceptedBy: text("accepted_by"),
+    declinedBy: text("declined_by"),
+    declineReason: text("decline_reason"),
+    // Created by
+    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("documents_organization_id_idx").on(table.organizationId),
+    index("documents_project_id_idx").on(table.projectId),
+    index("documents_public_token_idx").on(table.publicToken),
+    index("documents_status_idx").on(table.status),
+  ]
+);
+
+// Expenses for cost tracking (project-specific or general business overhead)
+export const projectExpenses = pgTable(
+  "project_expenses",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // Organization is required - expenses always belong to an org
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    // Project is optional - null means general business expense (overhead)
+    projectId: uuid("project_id")
+      .references(() => projects.id, { onDelete: "cascade" }),
+    description: text("description").notNull(),
+    amountCents: integer("amount_cents").notNull(), // Amount in cents
+    date: date("date").notNull(),
+    // Optional receipt attachment
+    receiptFileId: uuid("receipt_file_id").references(() => projectFiles.id, { onDelete: "set null" }),
+    // Category for grouping/filtering
+    category: text("category"), // e.g., 'software', 'hosting', 'contractor', 'travel', 'supplies'
+    // Whether this expense should be billed to the client
+    isBillable: boolean("is_billable").default(false),
+    // Source of the expense (for Plaid/email imports)
+    source: text("source").default("manual"), // 'manual', 'plaid', 'email'
+    externalId: text("external_id"), // Plaid transaction ID or email message ID
+    // Recurring expense support
+    isRecurring: boolean("is_recurring").default(false),
+    recurringFrequency: text("recurring_frequency"), // 'weekly', 'monthly', 'quarterly', 'yearly'
+    nextOccurrence: date("next_occurrence"), // Next date to generate expense (for cron)
+    recurringEndDate: date("recurring_end_date"), // Optional: when to stop recurring
+    parentExpenseId: uuid("parent_expense_id"), // Links generated expenses to the recurring template
+    // Tracking
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("project_expenses_org_id_idx").on(table.organizationId),
+    index("project_expenses_project_id_idx").on(table.projectId),
+    index("project_expenses_date_idx").on(table.date),
+    index("project_expenses_created_by_idx").on(table.createdBy),
+  ]
+);
+
+// Notification types
+export const NOTIFICATION_TYPES = [
+  "assigned",
+  "mentioned",
+  "status_changed",
+  "comment",
+  "blocker_resolved",
+  "client_comment",
+] as const;
+export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
+
+// User notification preferences
+export const notificationPreferences = pgTable("notification_preferences", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  assignedToYou: boolean("assigned_to_you").default(true),
+  mentioned: boolean("mentioned").default(true),
+  watchedTaskChanged: boolean("watched_task_changed").default(true),
+  blockerResolved: boolean("blocker_resolved").default(true),
+  clientComment: boolean("client_comment").default(true),
+  emailEnabled: boolean("email_enabled").default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Notifications inbox
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    type: text("type").$type<NotificationType>().notNull(),
+    taskId: uuid("task_id").references(() => tasks.id, { onDelete: "cascade" }),
+    actorId: text("actor_id").references(() => users.id, { onDelete: "set null" }),
+    content: text("content"),
+    isRead: boolean("is_read").default(false),
+    emailSent: boolean("email_sent").default(false),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("notifications_user_id_idx").on(table.userId),
+    index("notifications_user_read_idx").on(table.userId, table.isRead),
+  ]
+);
+
+// Activity entity types
+export const ACTIVITY_ENTITY_TYPES = [
+  "task",
+  "project",
+  "expense",
+  "invoice",
+  "document",
+  "time_entry",
+] as const;
+export type ActivityEntityType = (typeof ACTIVITY_ENTITY_TYPES)[number];
+
+// Activity actions
+export const ACTIVITY_ACTIONS = [
+  "created",
+  "updated",
+  "deleted",
+  "archived",
+  "status_changed",
+  "assigned",
+  "unassigned",
+  "estimate_changed",
+  "type_changed",
+  "blocker_added",
+  "blocker_removed",
+  "blocker_resolved",
+  "related_added",
+  "related_removed",
+  "commented",
+  "comment_shared",
+  "file_attached",
+  "file_removed",
+  "visibility_changed",
+] as const;
+export type ActivityAction = (typeof ACTIVITY_ACTIONS)[number];
+
+// Global activity log (replaces project_activities for new usage)
+export const activities = pgTable(
+  "activities",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    // Who
+    actorId: text("actor_id").references(() => users.id, { onDelete: "set null" }),
+    actorType: text("actor_type").default("user"), // 'user', 'client', 'system'
+    // What entity
+    entityType: text("entity_type").$type<ActivityEntityType>().notNull(),
+    entityId: uuid("entity_id").notNull(),
+    // Parent context (for contextual queries)
+    projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }),
+    taskId: uuid("task_id").references(() => tasks.id, { onDelete: "cascade" }),
+    // What happened
+    action: text("action").$type<ActivityAction>().notNull(),
+    field: text("field"), // Which field changed
+    oldValue: text("old_value"),
+    newValue: text("new_value"),
+    metadata: jsonb("metadata"), // Extra context
+    // Visibility
+    isClientVisible: boolean("is_client_visible").default(false),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("activities_org_idx").on(table.organizationId, table.createdAt),
+    index("activities_project_idx").on(table.projectId, table.createdAt),
+    index("activities_task_idx").on(table.taskId, table.createdAt),
+    index("activities_entity_idx").on(table.entityType, table.entityId),
+  ]
+);
+
 // Relations
 export const organizationsRelations = relations(organizations, ({ many }) => ({
   memberships: many(memberships),
@@ -420,6 +958,11 @@ export const organizationsRelations = relations(organizations, ({ many }) => ({
   invoices: many(invoices),
   importSessions: many(importSessions),
   recurringTemplates: many(recurringTemplates),
+  documents: many(documents),
+  expenses: many(projectExpenses),
+  taskTypes: many(taskTypes),
+  taskTags: many(taskTags),
+  activities: many(activities),
 }));
 
 export const importSessionsRelations = relations(importSessions, ({ one }) => ({
@@ -504,6 +1047,84 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
     references: [clients.id],
   }),
   tasks: many(tasks),
+  invitations: many(projectInvitations),
+  files: many(projectFiles),
+  activities: many(projectActivities),
+  documents: many(documents),
+  expenses: many(projectExpenses),
+}));
+
+export const projectInvitationsRelations = relations(projectInvitations, ({ one }) => ({
+  project: one(projects, {
+    fields: [projectInvitations.projectId],
+    references: [projects.id],
+  }),
+  invitedByUser: one(users, {
+    fields: [projectInvitations.invitedBy],
+    references: [users.id],
+    relationName: "invitedBy",
+  }),
+  user: one(users, {
+    fields: [projectInvitations.userId],
+    references: [users.id],
+    relationName: "acceptedUser",
+  }),
+}));
+
+export const projectFilesRelations = relations(projectFiles, ({ one }) => ({
+  project: one(projects, {
+    fields: [projectFiles.projectId],
+    references: [projects.id],
+  }),
+  uploadedByUser: one(users, {
+    fields: [projectFiles.uploadedBy],
+    references: [users.id],
+  }),
+}));
+
+export const projectActivitiesRelations = relations(projectActivities, ({ one }) => ({
+  project: one(projects, {
+    fields: [projectActivities.projectId],
+    references: [projects.id],
+  }),
+  actor: one(users, {
+    fields: [projectActivities.actorId],
+    references: [users.id],
+  }),
+}));
+
+export const documentsRelations = relations(documents, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [documents.organizationId],
+    references: [organizations.id],
+  }),
+  project: one(projects, {
+    fields: [documents.projectId],
+    references: [projects.id],
+  }),
+  createdByUser: one(users, {
+    fields: [documents.createdBy],
+    references: [users.id],
+  }),
+}));
+
+export const projectExpensesRelations = relations(projectExpenses, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [projectExpenses.organizationId],
+    references: [organizations.id],
+  }),
+  project: one(projects, {
+    fields: [projectExpenses.projectId],
+    references: [projects.id],
+  }),
+  receiptFile: one(projectFiles, {
+    fields: [projectExpenses.receiptFileId],
+    references: [projectFiles.id],
+  }),
+  createdByUser: one(users, {
+    fields: [projectExpenses.createdBy],
+    references: [users.id],
+  }),
 }));
 
 export const tasksRelations = relations(tasks, ({ one, many }) => ({
@@ -511,7 +1132,27 @@ export const tasksRelations = relations(tasks, ({ one, many }) => ({
     fields: [tasks.projectId],
     references: [projects.id],
   }),
+  type: one(taskTypes, {
+    fields: [tasks.typeId],
+    references: [taskTypes.id],
+  }),
+  assignedToUser: one(users, {
+    fields: [tasks.assignedTo],
+    references: [users.id],
+  }),
+  createdByUser: one(users, {
+    fields: [tasks.createdBy],
+    references: [users.id],
+  }),
   timeEntries: many(timeEntries),
+  tagAssignments: many(taskTagAssignments),
+  comments: many(taskComments),
+  watchers: many(taskWatchers),
+  files: many(taskFiles),
+  // Relationships where this task is the source
+  outgoingRelationships: many(taskRelationships, { relationName: "sourceTask" }),
+  // Relationships where this task is the target
+  incomingRelationships: many(taskRelationships, { relationName: "targetTask" }),
 }));
 
 export const timeEntriesRelations = relations(timeEntries, ({ one }) => ({
@@ -599,3 +1240,135 @@ export const recurringTemplatesRelations = relations(
     }),
   })
 );
+
+// Task types relations
+export const taskTypesRelations = relations(taskTypes, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [taskTypes.organizationId],
+    references: [organizations.id],
+  }),
+  tasks: many(tasks),
+}));
+
+// Task tags relations
+export const taskTagsRelations = relations(taskTags, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [taskTags.organizationId],
+    references: [organizations.id],
+  }),
+  assignments: many(taskTagAssignments),
+}));
+
+// Task tag assignments relations
+export const taskTagAssignmentsRelations = relations(taskTagAssignments, ({ one }) => ({
+  task: one(tasks, {
+    fields: [taskTagAssignments.taskId],
+    references: [tasks.id],
+  }),
+  tag: one(taskTags, {
+    fields: [taskTagAssignments.tagId],
+    references: [taskTags.id],
+  }),
+}));
+
+// Task relationships relations
+export const taskRelationshipsRelations = relations(taskRelationships, ({ one }) => ({
+  sourceTask: one(tasks, {
+    fields: [taskRelationships.sourceTaskId],
+    references: [tasks.id],
+    relationName: "sourceTask",
+  }),
+  targetTask: one(tasks, {
+    fields: [taskRelationships.targetTaskId],
+    references: [tasks.id],
+    relationName: "targetTask",
+  }),
+  createdByUser: one(users, {
+    fields: [taskRelationships.createdBy],
+    references: [users.id],
+  }),
+}));
+
+// Task files relations
+export const taskFilesRelations = relations(taskFiles, ({ one }) => ({
+  task: one(tasks, {
+    fields: [taskFiles.taskId],
+    references: [tasks.id],
+  }),
+  file: one(projectFiles, {
+    fields: [taskFiles.fileId],
+    references: [projectFiles.id],
+  }),
+}));
+
+// Task comments relations
+export const taskCommentsRelations = relations(taskComments, ({ one }) => ({
+  task: one(tasks, {
+    fields: [taskComments.taskId],
+    references: [tasks.id],
+  }),
+  author: one(users, {
+    fields: [taskComments.authorId],
+    references: [users.id],
+  }),
+  sharedByUser: one(users, {
+    fields: [taskComments.sharedBy],
+    references: [users.id],
+  }),
+}));
+
+// Task watchers relations
+export const taskWatchersRelations = relations(taskWatchers, ({ one }) => ({
+  task: one(tasks, {
+    fields: [taskWatchers.taskId],
+    references: [tasks.id],
+  }),
+  user: one(users, {
+    fields: [taskWatchers.userId],
+    references: [users.id],
+  }),
+}));
+
+// Notification preferences relations
+export const notificationPreferencesRelations = relations(notificationPreferences, ({ one }) => ({
+  user: one(users, {
+    fields: [notificationPreferences.userId],
+    references: [users.id],
+  }),
+}));
+
+// Notifications relations
+export const notificationsRelations = relations(notifications, ({ one }) => ({
+  user: one(users, {
+    fields: [notifications.userId],
+    references: [users.id],
+  }),
+  task: one(tasks, {
+    fields: [notifications.taskId],
+    references: [tasks.id],
+  }),
+  actor: one(users, {
+    fields: [notifications.actorId],
+    references: [users.id],
+  }),
+}));
+
+// Activities relations
+export const activitiesRelations = relations(activities, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [activities.organizationId],
+    references: [organizations.id],
+  }),
+  actor: one(users, {
+    fields: [activities.actorId],
+    references: [users.id],
+  }),
+  project: one(projects, {
+    fields: [activities.projectId],
+    references: [projects.id],
+  }),
+  task: one(tasks, {
+    fields: [activities.taskId],
+    references: [tasks.id],
+  }),
+}));

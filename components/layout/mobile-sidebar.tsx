@@ -13,12 +13,17 @@ import {
 import { SidebarNav } from "./sidebar-nav";
 import { OrgSwitcher } from "./org-switcher";
 import { UserMenu } from "./user-menu";
+import type { OrgFeatures } from "@/lib/db/schema";
 
 type MobileSidebarProps = {
   currentOrgId?: string;
+  features?: OrgFeatures;
 };
 
-export function MobileSidebar({ currentOrgId }: MobileSidebarProps) {
+export function MobileSidebar({ currentOrgId, features }: MobileSidebarProps) {
+  // Determine default route based on features
+  const defaultRoute = features?.time_tracking ? "/track" : "/projects";
+
   return (
     <Sheet>
       <SheetTrigger asChild>
@@ -29,7 +34,7 @@ export function MobileSidebar({ currentOrgId }: MobileSidebarProps) {
       </SheetTrigger>
       <SheetContent side="left" className="w-64 p-0">
         <SheetHeader className="flex h-14 flex-row items-center gap-2 px-4 border-b">
-          <Link href="/track" className="flex items-center gap-2">
+          <Link href={defaultRoute} className="flex items-center gap-2">
             <div className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
               <Clock className="size-4" />
             </div>
@@ -40,7 +45,7 @@ export function MobileSidebar({ currentOrgId }: MobileSidebarProps) {
         <div className="flex h-[calc(100%-3.5rem)] flex-col">
           {/* Navigation */}
           <div className="flex-1 overflow-y-auto py-4">
-            <SidebarNav />
+            <SidebarNav features={features} />
           </div>
 
           {/* Footer - Org Switcher & User Menu */}

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { projects, clients } from "@/lib/db/schema";
+import { projects, clients, PROJECT_STAGES, BUDGET_TYPES, type ProjectStage, type BudgetType } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 
@@ -107,7 +107,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     const body = await request.json();
-    const { clientId, name, code, rateOverride, isBillable } = body;
+    const { clientId, name, code, rateOverride, isBillable, stage, budgetType, budgetHours, budgetAmountCents } = body;
 
     // Validate required fields
     if (!name || typeof name !== "string" || name.trim().length === 0) {
@@ -145,6 +145,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         ? Math.round(parseFloat(rateOverride) * 100)
         : null;
 
+    // Validate stage if provided
+    const projectStage: ProjectStage | undefined = stage && PROJECT_STAGES.includes(stage) ? stage : undefined;
+
+    // Validate budget type if provided
+    const projectBudgetType: BudgetType | null = budgetType && BUDGET_TYPES.includes(budgetType) ? budgetType : null;
+
     const [newProject] = await db
       .insert(projects)
       .values({
@@ -153,6 +159,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         code: code?.trim() || null,
         rateOverride: rateInCents,
         isBillable: isBillable ?? null,
+        stage: projectStage,
+        budgetType: projectBudgetType,
+        budgetHours: budgetHours ? Number(budgetHours) : null,
+        budgetAmountCents: budgetAmountCents ? Number(budgetAmountCents) : null,
       })
       .returning();
 
