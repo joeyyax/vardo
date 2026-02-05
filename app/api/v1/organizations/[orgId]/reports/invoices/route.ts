@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { invoices, clients } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -19,7 +19,7 @@ type ActivityEvent = {
 
 // GET /api/v1/organizations/[orgId]/reports/invoices
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: RouteParams
 ): Promise<NextResponse> {
   const { orgId } = await params;
@@ -45,6 +45,15 @@ export async function GET(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  const { searchParams } = new URL(request.url);
+  const clientId = searchParams.get("clientId");
+
+  // Build where conditions
+  const whereConditions = [eq(invoices.organizationId, orgId)];
+  if (clientId) {
+    whereConditions.push(eq(invoices.clientId, clientId));
+  }
+
   // Fetch all invoices with client info
   const invoiceList = await db
     .select({
@@ -59,7 +68,7 @@ export async function GET(
     })
     .from(invoices)
     .innerJoin(clients, eq(invoices.clientId, clients.id))
-    .where(eq(invoices.organizationId, orgId));
+    .where(and(...whereConditions));
 
   const now = new Date();
   const todayStr = now.toISOString().split("T")[0];

@@ -59,7 +59,7 @@ function getStatusSortOrder(status: BudgetStatus): number {
 // GET /api/v1/organizations/[orgId]/reports/projects
 // Returns project budget health data
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: RouteParams
 ): Promise<NextResponse<ProjectHealthResponse | { error: string }>> {
   const { orgId } = await params;
@@ -82,11 +82,20 @@ export async function GET(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  const { searchParams } = new URL(request.url);
+  const clientId = searchParams.get("clientId");
+  const projectId = searchParams.get("projectId");
+
   // Get org's clients
+  const clientWhereConditions = [eq(clients.organizationId, orgId)];
+  if (clientId) {
+    clientWhereConditions.push(eq(clients.id, clientId));
+  }
+
   const orgClients = await db
     .select({ id: clients.id })
     .from(clients)
-    .where(eq(clients.organizationId, orgId));
+    .where(and(...clientWhereConditions));
 
   // Handle empty case
   if (orgClients.length === 0) {
@@ -103,6 +112,14 @@ export async function GET(
   const clientIds = orgClients.map((c) => c.id);
 
   // Get active projects with client info
+  const projectWhereConditions = [
+    inArray(projects.clientId, clientIds),
+    eq(projects.isArchived, false),
+  ];
+  if (projectId) {
+    projectWhereConditions.push(eq(projects.id, projectId));
+  }
+
   const activeProjects = await db
     .select({
       id: projects.id,
@@ -115,9 +132,7 @@ export async function GET(
     })
     .from(projects)
     .innerJoin(clients, eq(projects.clientId, clients.id))
-    .where(
-      and(inArray(projects.clientId, clientIds), eq(projects.isArchived, false))
-    );
+    .where(and(...projectWhereConditions));
 
   // Handle empty projects
   if (activeProjects.length === 0) {

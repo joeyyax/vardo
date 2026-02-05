@@ -39,6 +39,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const fromParam = url.searchParams.get("from");
     const toParam = url.searchParams.get("to");
     const period = url.searchParams.get("period") || "month";
+    const clientId = url.searchParams.get("clientId");
+    const projectId = url.searchParams.get("projectId");
 
     let fromDateStr: string;
     let toDateStr: string;
@@ -99,7 +101,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         and(
           eq(timeEntries.organizationId, orgId),
           gte(timeEntries.date, fromDateStr),
-          lte(timeEntries.date, toDateStr)
+          lte(timeEntries.date, toDateStr),
+          ...(clientId ? [eq(timeEntries.clientId, clientId)] : []),
+          ...(projectId ? [eq(timeEntries.projectId, projectId)] : [])
         )
       );
 
@@ -116,23 +120,33 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           eq(invoices.organizationId, orgId),
           sql`${invoices.status} = 'paid'`,
           gte(invoices.periodEnd, fromDateStr),
-          lte(invoices.periodEnd, toDateStr)
+          lte(invoices.periodEnd, toDateStr),
+          ...(clientId ? [eq(invoices.clientId, clientId)] : [])
         )
       )
       .groupBy(sql`to_char(${invoices.periodEnd}::date, 'YYYY-MM')`)
       .orderBy(sql`to_char(${invoices.periodEnd}::date, 'YYYY-MM')`);
 
-    const expensesByMonth = await db
+    const expensesQuery = db
       .select({
         month: sql<string>`to_char(${projectExpenses.date}::date, 'YYYY-MM')`,
         total: sql<number>`COALESCE(SUM(${projectExpenses.amountCents}), 0)`,
       })
-      .from(projectExpenses)
+      .from(projectExpenses);
+
+    // Join through projects when filtering by clientId (projectExpenses has no clientId column)
+    const expensesWithJoin = clientId
+      ? expensesQuery.innerJoin(projects, eq(projectExpenses.projectId, projects.id))
+      : expensesQuery;
+
+    const expensesByMonth = await expensesWithJoin
       .where(
         and(
           eq(projectExpenses.organizationId, orgId),
           gte(projectExpenses.date, fromDateStr),
-          lte(projectExpenses.date, toDateStr)
+          lte(projectExpenses.date, toDateStr),
+          ...(clientId ? [eq(projects.clientId, clientId)] : []),
+          ...(projectId ? [eq(projectExpenses.projectId, projectId)] : [])
         )
       )
       .groupBy(sql`to_char(${projectExpenses.date}::date, 'YYYY-MM')`)

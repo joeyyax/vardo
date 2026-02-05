@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { projectExpenses, projects, clients } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
-import { eq, and, gte, lte, sql, isNotNull } from "drizzle-orm";
+import { eq, and, gte, lte, sql, isNotNull, inArray } from "drizzle-orm";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -46,6 +46,8 @@ export async function GET(
     const { searchParams } = new URL(request.url);
     const from = searchParams.get("from");
     const to = searchParams.get("to");
+    const clientId = searchParams.get("clientId");
+    const projectId = searchParams.get("projectId");
 
     // Build where conditions
     const whereConditions = [eq(projectExpenses.organizationId, orgId)];
@@ -55,6 +57,16 @@ export async function GET(
     }
     if (to) {
       whereConditions.push(lte(projectExpenses.date, to));
+    }
+    if (clientId) {
+      const clientProjectIds = db
+        .select({ id: projects.id })
+        .from(projects)
+        .where(eq(projects.clientId, clientId));
+      whereConditions.push(inArray(projectExpenses.projectId, clientProjectIds));
+    }
+    if (projectId) {
+      whereConditions.push(eq(projectExpenses.projectId, projectId));
     }
 
     const whereClause = and(...whereConditions);
