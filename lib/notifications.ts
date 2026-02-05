@@ -1,0 +1,205 @@
+import { db } from "@/lib/db";
+import {
+  notifications,
+  notificationPreferences,
+  taskWatchers,
+  tasks,
+  type NotificationType,
+} from "@/lib/db/schema";
+import { eq, and, ne } from "drizzle-orm";
+
+type CreateNotificationParams = {
+  userId: string;
+  type: NotificationType;
+  taskId?: string;
+  actorId?: string;
+  content: string;
+};
+
+/**
+ * Create a notification for a user.
+ */
+export async function createNotification(params: CreateNotificationParams) {
+  const { userId, type, taskId, actorId, content } = params;
+
+  try {
+    // Check user's notification preferences
+    const prefs = await db.query.notificationPreferences.findFirst({
+      where: eq(notificationPreferences.userId, userId),
+    });
+
+    // If no preferences exist, notifications are enabled by default
+    // Check if this notification type is enabled
+    if (prefs) {
+      const typeToPreference: Record<NotificationType, keyof typeof prefs> = {
+        assigned: "assignedToYou",
+        mentioned: "mentioned",
+        comment: "watchedTaskChanged",
+        status_changed: "watchedTaskChanged",
+        blocker_resolved: "blockerResolved",
+        client_comment: "clientComment",
+      };
+
+      const prefKey = typeToPreference[type];
+      if (prefKey && prefs[prefKey] === false) {
+        return null; // User has disabled this notification type
+      }
+    }
+
+    const [notification] = await db
+      .insert(notifications)
+      .values({
+        userId,
+        type,
+        taskId: taskId || null,
+        actorId: actorId || null,
+        content,
+      })
+      .returning();
+
+    return notification;
+  } catch (error) {
+    console.error("Error creating notification:", error);
+    return null;
+  }
+}
+
+/**
+ * Notify all watchers of a task about an event.
+ * Excludes the actor from receiving the notification.
+ */
+export async function notifyTaskWatchers(params: {
+  taskId: string;
+  actorId: string;
+  type: NotificationType;
+  content: string;
+}) {
+  const { taskId, actorId, type, content } = params;
+
+  try {
+    // Get all watchers except the actor
+    const watchers = await db.query.taskWatchers.findMany({
+      where: and(
+        eq(taskWatchers.taskId, taskId),
+        ne(taskWatchers.userId, actorId)
+      ),
+    });
+
+    // Create notifications for each watcher
+    const notifications = await Promise.all(
+      watchers.map((watcher) =>
+        createNotification({
+          userId: watcher.userId,
+          type,
+          taskId,
+          actorId,
+          content,
+        })
+      )
+    );
+
+    return notifications.filter(Boolean);
+  } catch (error) {
+    console.error("Error notifying watchers:", error);
+    return [];
+  }
+}
+
+/**
+ * Notify a specific user about being assigned to a task.
+ */
+export async function notifyAssignment(params: {
+  assigneeId: string;
+  actorId: string;
+  taskId: string;
+  taskName: string;
+  actorName: string;
+}) {
+  const { assigneeId, actorId, taskId, taskName, actorName } = params;
+
+  // Don't notify if assigning to self
+  if (assigneeId === actorId) return null;
+
+  return createNotification({
+    userId: assigneeId,
+    type: "assigned",
+    taskId,
+    actorId,
+    content: `${actorName} assigned you to "${taskName}"`,
+  });
+}
+
+/**
+ * Notify watchers about a status change.
+ */
+export async function notifyStatusChange(params: {
+  taskId: string;
+  taskName: string;
+  actorId: string;
+  actorName: string;
+  fromStatus: string | null;
+  toStatus: string | null;
+}) {
+  const { taskId, taskName, actorId, actorName, fromStatus, toStatus } = params;
+
+  const statusLabels: Record<string, string> = {
+    todo: "To Do",
+    in_progress: "In Progress",
+    review: "Review",
+    done: "Done",
+  };
+
+  const toLabel = toStatus ? statusLabels[toStatus] || toStatus : "category";
+  const content = `${actorName} changed "${taskName}" to ${toLabel}`;
+
+  return notifyTaskWatchers({
+    taskId,
+    actorId,
+    type: "status_changed",
+    content,
+  });
+}
+
+/**
+ * Notify watchers about a new comment.
+ */
+export async function notifyComment(params: {
+  taskId: string;
+  taskName: string;
+  actorId: string;
+  actorName: string;
+  isShared: boolean;
+}) {
+  const { taskId, taskName, actorId, actorName, isShared } = params;
+
+  const content = `${actorName} commented on "${taskName}"`;
+
+  return notifyTaskWatchers({
+    taskId,
+    actorId,
+    type: isShared ? "client_comment" : "comment",
+    content,
+  });
+}
+
+/**
+ * Notify watchers when a blocker is resolved.
+ */
+export async function notifyBlockerResolved(params: {
+  taskId: string;
+  taskName: string;
+  blockerName: string;
+  actorId: string;
+  actorName: string;
+}) {
+  const { taskId, taskName, blockerName, actorId, actorName } = params;
+
+  const content = `Blocker "${blockerName}" was resolved for "${taskName}"`;
+
+  return notifyTaskWatchers({
+    taskId,
+    actorId,
+    type: "blocker_resolved",
+    content,
+  });
+}

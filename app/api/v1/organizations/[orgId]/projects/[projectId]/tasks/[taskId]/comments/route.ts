@@ -4,6 +4,8 @@ import { tasks, projects, taskComments, taskWatchers } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and, desc } from "drizzle-orm";
 import { logCommentAdded } from "@/lib/activities";
+import { notifyComment } from "@/lib/notifications";
+import { users } from "@/lib/db/schema";
 
 type RouteParams = {
   params: Promise<{ orgId: string; projectId: string; taskId: string }>;
@@ -138,6 +140,21 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       taskId,
       taskName: task.name,
       commentId: comment.id,
+      isShared: comment.isShared ?? false,
+    });
+
+    // Notify watchers about the comment
+    const actor = await db.query.users.findFirst({
+      where: eq(users.id, session.user.id),
+      columns: { name: true, email: true },
+    });
+    const actorName = actor?.name || actor?.email || "Someone";
+
+    await notifyComment({
+      taskId,
+      taskName: task.name,
+      actorId: session.user.id,
+      actorName,
       isShared: comment.isShared ?? false,
     });
 

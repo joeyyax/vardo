@@ -4,6 +4,7 @@ import { tasks, projects, taskRelationships, users, TASK_STATUSES, type TaskStat
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and, ne } from "drizzle-orm";
 import { logTaskStatusChanged, logTaskAssigned } from "@/lib/activities";
+import { notifyAssignment, notifyStatusChange } from "@/lib/notifications";
 
 // Check if a task has unresolved blockers
 async function hasUnresolvedBlockers(taskId: string): Promise<{ blocked: boolean; blockers: { id: string; name: string; status: TaskStatus | null }[] }> {
@@ -320,7 +321,14 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       .where(and(eq(tasks.id, taskId), eq(tasks.projectId, projectId)))
       .returning();
 
-    // Log activity for status changes
+    // Get actor name for notifications
+    const actor = await db.query.users.findFirst({
+      where: eq(users.id, session.user.id),
+      columns: { name: true, email: true },
+    });
+    const actorName = actor?.name || actor?.email || "Someone";
+
+    // Log activity and notify for status changes
     if (status !== undefined && status !== existingTask.status) {
       await logTaskStatusChanged({
         organizationId: orgId,
@@ -332,9 +340,19 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         toStatus: status,
         isClientVisible: updatedTask.isClientVisible ?? undefined,
       });
+
+      // Notify watchers about status change
+      await notifyStatusChange({
+        taskId,
+        taskName: updatedTask.name,
+        actorId: session.user.id,
+        actorName,
+        fromStatus: existingTask.status,
+        toStatus: status,
+      });
     }
 
-    // Log activity for assignment changes
+    // Log activity and notify for assignment changes
     if (assignedTo !== undefined && assignedTo !== existingTask.assignedTo) {
       // Fetch assignee name if assigned
       let assigneeName: string | null = null;
@@ -356,6 +374,17 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         assigneeName,
         isClientVisible: updatedTask.isClientVisible ?? undefined,
       });
+
+      // Notify assignee
+      if (assignedTo) {
+        await notifyAssignment({
+          assigneeId: assignedTo,
+          actorId: session.user.id,
+          taskId,
+          taskName: updatedTask.name,
+          actorName,
+        });
+      }
     }
 
     return NextResponse.json(updatedTask);
