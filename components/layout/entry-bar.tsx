@@ -660,6 +660,7 @@ export function EntryBar({
                     !selectedItem && "text-muted-foreground"
                   )}
                   disabled={isSubmitting}
+                  onFocus={() => setSelectorOpen(true)}
                 >
                   {selectedItem ? (
                     <span className="flex items-center gap-2 truncate">
