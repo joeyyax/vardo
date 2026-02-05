@@ -35,6 +35,7 @@ import {
 import { Loader2, Archive, ArchiveRestore, Eye, EyeOff, Link as LinkIcon } from "lucide-react";
 import { TaskRelationships } from "./task-relationships";
 import { TaskComments } from "./task-comments";
+import { TaskTags } from "./task-tags";
 
 export type TaskStatus = "todo" | "in_progress" | "review" | "done";
 
@@ -538,6 +539,19 @@ export function TaskDialog({
             <div className="border-t pt-4 pb-6">
               <h4 className="text-sm font-medium mb-3">Relationships</h4>
               <TaskRelationships
+                orgId={orgId}
+                projectId={projectId}
+                taskId={task.id}
+                onUpdate={onSuccess}
+              />
+            </div>
+          )}
+
+          {/* Tags section - only for existing tasks when PM is enabled */}
+          {pmEnabled && isEditing && task && (
+            <div className="border-t pt-4 pb-6">
+              <h4 className="text-sm font-medium mb-3">Tags</h4>
+              <TaskTags
                 orgId={orgId}
                 projectId={projectId}
                 taskId={task.id}
