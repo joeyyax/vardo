@@ -1,5 +1,5 @@
 import { redirect, notFound } from "next/navigation";
-import { getCurrentOrg } from "@/lib/auth/session";
+import { getCurrentOrg, getSession } from "@/lib/auth/session";
 import { db } from "@/lib/db";
 import { projects, tasks, DEFAULT_ORG_FEATURES, type OrgFeatures } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -10,9 +10,9 @@ type PageProps = {
 };
 
 export default async function ProjectPage({ params }: PageProps) {
-  const orgData = await getCurrentOrg();
+  const [orgData, session] = await Promise.all([getCurrentOrg(), getSession()]);
 
-  if (!orgData) {
+  if (!orgData || !session?.user?.id) {
     redirect("/onboarding");
   }
 
@@ -50,6 +50,7 @@ export default async function ProjectPage({ params }: PageProps) {
       project={project}
       orgId={orgData.organization.id}
       pmEnabled={features.pm}
+      currentUserId={session.user.id}
     />
   );
 }

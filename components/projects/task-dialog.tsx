@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/select";
 import { Loader2, Archive, ArchiveRestore, Eye, EyeOff, Link as LinkIcon } from "lucide-react";
 import { TaskRelationships } from "./task-relationships";
+import { TaskComments } from "./task-comments";
 
 export type TaskStatus = "todo" | "in_progress" | "review" | "done";
 
@@ -91,6 +92,7 @@ type TaskDialogProps = {
   onSuccess: () => void;
   pmEnabled?: boolean; // Show PM fields (status, description)
   defaultStatus?: TaskStatus | null; // Default status for new tasks
+  currentUserId?: string; // For comment ownership
 };
 
 export function TaskDialog({
@@ -102,6 +104,7 @@ export function TaskDialog({
   onSuccess,
   pmEnabled = false,
   defaultStatus = null,
+  currentUserId,
 }: TaskDialogProps) {
   // Form state
   const [name, setName] = useState("");
@@ -538,6 +541,20 @@ export function TaskDialog({
                 orgId={orgId}
                 projectId={projectId}
                 taskId={task.id}
+                onUpdate={onSuccess}
+              />
+            </div>
+          )}
+
+          {/* Comments section - only for existing tasks when PM is enabled */}
+          {pmEnabled && isEditing && task && currentUserId && (
+            <div className="border-t pt-4 pb-6">
+              <h4 className="text-sm font-medium mb-3">Comments</h4>
+              <TaskComments
+                orgId={orgId}
+                projectId={projectId}
+                taskId={task.id}
+                currentUserId={currentUserId}
                 onUpdate={onSuccess}
               />
             </div>

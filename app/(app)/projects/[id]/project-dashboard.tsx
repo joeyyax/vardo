@@ -91,6 +91,7 @@ type ProjectDashboardProps = {
   project: ServerProject;
   orgId: string;
   pmEnabled?: boolean;
+  currentUserId?: string;
 };
 
 type TaskView = "list" | "board";
@@ -127,7 +128,7 @@ function toProjectType(serverProject: ServerProject & { createdAt: Date | string
   };
 }
 
-export function ProjectDashboard({ project: initialProject, orgId, pmEnabled = false }: ProjectDashboardProps) {
+export function ProjectDashboard({ project: initialProject, orgId, pmEnabled = false, currentUserId }: ProjectDashboardProps) {
   const [project, setProject] = useState(initialProject);
   const [allClients, setAllClients] = useState<{ id: string; name: string; color: string | null }[]>([]);
   const [stats, setStats] = useState<ProjectStats | null>(null);
@@ -396,7 +397,7 @@ export function ProjectDashboard({ project: initialProject, orgId, pmEnabled = f
                 </div>
               </CardHeader>
               <CardContent>
-                <KanbanBoard orgId={orgId} projectId={project.id} />
+                <KanbanBoard orgId={orgId} projectId={project.id} currentUserId={currentUserId} />
               </CardContent>
             </Card>
           ) : (
@@ -549,6 +550,8 @@ export function ProjectDashboard({ project: initialProject, orgId, pmEnabled = f
         projectId={project.id}
         orgId={orgId}
         onSuccess={fetchData}
+        pmEnabled={pmEnabled}
+        currentUserId={currentUserId}
       />
     </div>
   );

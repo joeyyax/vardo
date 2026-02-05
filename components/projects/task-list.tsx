@@ -32,9 +32,10 @@ type TaskListProps = {
   orgId: string;
   projectId: string;
   pmEnabled?: boolean;
+  currentUserId?: string;
 };
 
-export function TaskList({ orgId, projectId, pmEnabled = false }: TaskListProps) {
+export function TaskList({ orgId, projectId, pmEnabled = false, currentUserId }: TaskListProps) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -276,6 +277,7 @@ export function TaskList({ orgId, projectId, pmEnabled = false }: TaskListProps)
         onSuccess={handleSuccess}
         pmEnabled={pmEnabled}
         defaultStatus={defaultStatus}
+        currentUserId={currentUserId}
       />
     </>
   );

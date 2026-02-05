@@ -66,9 +66,10 @@ const KANBAN_COLUMNS: TaskStatus[] = ["todo", "in_progress", "review", "done"];
 
 type TasksContentProps = {
   orgId: string;
+  currentUserId?: string;
 };
 
-export function TasksContent({ orgId }: TasksContentProps) {
+export function TasksContent({ orgId, currentUserId }: TasksContentProps) {
   const router = useRouter();
   const [tasks, setTasks] = useState<TaskWithProject[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -521,6 +522,7 @@ export function TasksContent({ orgId }: TasksContentProps) {
           onSuccess={handleSuccess}
           pmEnabled={true}
           defaultStatus={defaultStatus}
+          currentUserId={currentUserId}
         />
       ) : dialogOpen ? (
         <ProjectSelectorDialog

@@ -17,9 +17,10 @@ const KANBAN_COLUMNS: TaskStatus[] = ["todo", "in_progress", "review", "done"];
 type KanbanBoardProps = {
   orgId: string;
   projectId: string;
+  currentUserId?: string;
 };
 
-export function KanbanBoard({ orgId, projectId }: KanbanBoardProps) {
+export function KanbanBoard({ orgId, projectId, currentUserId }: KanbanBoardProps) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -245,6 +246,7 @@ export function KanbanBoard({ orgId, projectId }: KanbanBoardProps) {
         onSuccess={handleSuccess}
         pmEnabled={true}
         defaultStatus={defaultStatus}
+        currentUserId={currentUserId}
       />
     </>
   );

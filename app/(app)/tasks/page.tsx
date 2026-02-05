@@ -1,12 +1,12 @@
 import { redirect } from "next/navigation";
-import { getCurrentOrg } from "@/lib/auth/session";
+import { getCurrentOrg, getSession } from "@/lib/auth/session";
 import { DEFAULT_ORG_FEATURES, type OrgFeatures } from "@/lib/db/schema";
 import { TasksContent } from "./tasks-content";
 
 export default async function TasksPage() {
-  const orgData = await getCurrentOrg();
+  const [orgData, session] = await Promise.all([getCurrentOrg(), getSession()]);
 
-  if (!orgData) {
+  if (!orgData || !session?.user?.id) {
     redirect("/onboarding");
   }
 
@@ -34,7 +34,7 @@ export default async function TasksPage() {
         </div>
       </div>
 
-      <TasksContent orgId={organization.id} />
+      <TasksContent orgId={organization.id} currentUserId={session.user.id} />
     </div>
   );
 }
