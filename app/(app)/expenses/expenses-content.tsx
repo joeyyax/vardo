@@ -43,6 +43,7 @@ import type { Expense } from "@/components/expenses/types";
 
 type ExpensesContentProps = {
   orgId: string;
+  currentUserId: string;
 };
 
 function formatCurrency(cents: number): string {
@@ -52,7 +53,7 @@ function formatCurrency(cents: number): string {
   }).format(cents / 100);
 }
 
-export function ExpensesContent({ orgId }: ExpensesContentProps) {
+export function ExpensesContent({ orgId, currentUserId }: ExpensesContentProps) {
   const router = useRouter();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -487,7 +488,7 @@ export function ExpensesContent({ orgId }: ExpensesContentProps) {
 
       <ExpenseDetailModal
         orgId={orgId}
-        currentUserId=""
+        currentUserId={currentUserId}
         expense={detailExpense}
         open={detailModalOpen}
         onOpenChange={handleDetailModalClose}
