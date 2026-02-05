@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/tooltip";
 import { formatDuration } from "./utils";
 
-type RecurringTemplate = {
+export type RecurringTemplate = {
   id: string;
   clientId: string;
   projectId: string | null;
