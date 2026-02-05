@@ -38,37 +38,8 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ExpenseDialog } from "./expense-dialog";
-
-type Expense = {
-  id: string;
-  description: string;
-  amountCents: number;
-  date: string;
-  category: string | null;
-  status?: string | null;
-  isBillable: boolean;
-  isRecurring: boolean;
-  recurringFrequency: string | null;
-  project: {
-    id: string;
-    name: string;
-    client: {
-      id: string;
-      name: string;
-      color: string | null;
-    };
-  } | null;
-  receiptFile?: {
-    id: string;
-    name: string;
-    mimeType: string;
-  } | null;
-  createdByUser?: {
-    id: string;
-    name: string | null;
-    email: string;
-  } | null;
-};
+import { ExpenseDetailModal } from "@/components/expenses/expense-detail-modal";
+import type { Expense } from "@/components/expenses/types";
 
 type ExpensesContentProps = {
   orgId: string;
@@ -102,6 +73,8 @@ export function ExpensesContent({ orgId }: ExpensesContentProps) {
   } | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [detailExpense, setDetailExpense] = useState<Expense | null>(null);
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
 
   const fetchExpenses = useCallback(async () => {
     setIsLoading(true);
@@ -191,6 +164,18 @@ export function ExpensesContent({ orgId }: ExpensesContentProps) {
     setDialogOpen(open);
     if (!open) {
       setEditingExpense(null);
+    }
+  }
+
+  function handleExpenseClick(expense: Expense) {
+    setDetailExpense(expense);
+    setDetailModalOpen(true);
+  }
+
+  function handleDetailModalClose(open: boolean) {
+    setDetailModalOpen(open);
+    if (!open) {
+      setDetailExpense(null);
     }
   }
 
@@ -369,11 +354,8 @@ export function ExpensesContent({ orgId }: ExpensesContentProps) {
             return (
               <Card
                 key={expense.id}
-                className={cn(
-                  "squircle hover:bg-accent/50 transition-colors",
-                  expense.project && "cursor-pointer"
-                )}
-                onClick={() => expense.project && router.push(`/projects/${expense.project.id}`)}
+                className="squircle hover:bg-accent/50 transition-colors cursor-pointer"
+                onClick={() => handleExpenseClick(expense)}
               >
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between gap-4">
@@ -501,6 +483,15 @@ export function ExpensesContent({ orgId }: ExpensesContentProps) {
         onOpenChange={handleDialogClose}
         onSuccess={handleExpenseCreated}
         expense={editingExpense}
+      />
+
+      <ExpenseDetailModal
+        orgId={orgId}
+        currentUserId=""
+        expense={detailExpense}
+        open={detailModalOpen}
+        onOpenChange={handleDetailModalClose}
+        onUpdate={fetchExpenses}
       />
     </div>
   );
