@@ -805,7 +805,7 @@ export function EntryBar({
 
           {/* Add button with submit hint */}
           <TooltipProvider>
-            <Tooltip open={selectedItem && durationMinutes && !isSubmitting ? undefined : false}>
+            <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   ref={addButtonRef}
