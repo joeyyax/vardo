@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
 }
 
 // PATCH /api/v1/notifications - Mark all as read
-export async function PATCH(request: NextRequest) {
+export async function PATCH(_request: NextRequest) {
   try {
     const session = await requireSession();
     const userId = session.user.id;

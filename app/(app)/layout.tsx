@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Sidebar, MobileSidebar, EntryBar } from "@/components/layout";
 import { CommandPalette } from "@/components/command-palette";
+import { NotificationBell } from "@/components/notification-bell";
 import { getCurrentOrg } from "@/lib/auth/session";
 import { DEFAULT_ORG_FEATURES, type OrgFeatures } from "@/lib/db/schema";
 
@@ -45,6 +46,8 @@ export default async function AppLayout({
                 />
               </div>
             )}
+            {!features.time_tracking && <div className="flex-1" />}
+            <NotificationBell />
           </header>
 
           {/* Page Content */}
