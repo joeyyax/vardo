@@ -25,6 +25,7 @@ import { ClientDialog, type Client } from "@/components/clients/client-dialog";
 import { ViewSwitcher } from "@/components/view-switcher";
 import { useViewPreference } from "@/hooks/use-view-preference";
 import { PageToolbar } from "@/components/page-toolbar";
+import { ListRow, ListContainer } from "@/components/ui/list-row";
 import {
   DndContext,
   DragOverlay,
@@ -277,7 +278,7 @@ export function ClientsContent({ orgId }: ClientsContentProps) {
         {clients.length === 0 ? (
           <EmptyState onNewClient={handleNewClient} />
         ) : view === "table" ? (
-          <div className="rounded-lg border squircle overflow-hidden">
+          <div className="overflow-hidden">
             <Table>
               <TableHeader>
                 <TableRow>

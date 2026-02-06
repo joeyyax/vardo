@@ -36,29 +36,7 @@ import { cn } from "@/lib/utils";
 import { ExpenseDialog } from "./expense-dialog";
 import { ExpenseDetailModal } from "@/components/expenses/expense-detail-modal";
 import type { Expense } from "@/components/expenses/types";
-
-// List row component for borderless items
-interface ListRowProps {
-  children: React.ReactNode;
-  onClick?: () => void;
-  className?: string;
-  isLast?: boolean;
-}
-
-function ListRow({ children, onClick, className, isLast }: ListRowProps) {
-  return (
-    <div
-      onClick={onClick}
-      className={cn(
-        "group flex items-center gap-4 px-3 py-3 hover:bg-card/40 transition-colors cursor-pointer",
-        !isLast && "border-b border-border/40",
-        className
-      )}
-    >
-      {children}
-    </div>
-  );
-}
+import { ListRow, ListContainer } from "@/components/ui/list-row";
 
 type ExpensesContentProps = {
   orgId: string;
@@ -365,7 +343,7 @@ export function ExpensesContent({ orgId, currentUserId }: ExpensesContentProps) 
           </Button>
         </div>
       ) : (
-        <div className="bg-card/30 ring-1 ring-border/40">
+        <ListContainer>
           {expenses.map((expense, index) => {
             const isOverhead = !expense.project;
             const isLast = index === expenses.length - 1;
@@ -488,7 +466,7 @@ export function ExpensesContent({ orgId, currentUserId }: ExpensesContentProps) 
               </ListRow>
             );
           })}
-        </div>
+        </ListContainer>
       )}
 
       <ExpenseDialog
