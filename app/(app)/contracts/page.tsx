@@ -10,15 +10,12 @@ export default async function ContractsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Contracts</h1>
-        <p className="text-muted-foreground">
-          Manage contracts across all projects.
-        </p>
+    <>
+      <div className="mb-8">
+        <h1 className="text-xl font-semibold tracking-tight">Contracts</h1>
       </div>
 
       <ContractsContent orgId={orgData.organization.id} />
-    </div>
+    </>
   );
 }

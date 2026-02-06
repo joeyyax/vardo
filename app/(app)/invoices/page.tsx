@@ -10,15 +10,12 @@ export default async function InvoicesPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Invoices</h1>
-        <p className="text-muted-foreground">
-          Generate and manage invoices from your time entries.
-        </p>
+    <>
+      <div className="mb-8">
+        <h1 className="text-xl font-semibold tracking-tight">Invoices</h1>
       </div>
 
       <InvoicesContent orgId={orgData.organization.id} />
-    </div>
+    </>
   );
 }

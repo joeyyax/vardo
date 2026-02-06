@@ -6,10 +6,6 @@ import Link from "next/link";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import {
-  Card,
-  CardContent,
-} from "@/components/ui/card";
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -40,6 +36,7 @@ import { cn } from "@/lib/utils";
 import { ExpenseDialog } from "./expense-dialog";
 import { ExpenseDetailModal } from "@/components/expenses/expense-detail-modal";
 import type { Expense } from "@/components/expenses/types";
+import { ListRow, ListContainer } from "@/components/ui/list-row";
 
 type ExpensesContentProps = {
   orgId: string;
@@ -332,150 +329,144 @@ export function ExpensesContent({ orgId, currentUserId }: ExpensesContentProps) 
           <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </div>
       ) : expenses.length === 0 ? (
-        <Card className="squircle">
-          <CardContent className="py-12 text-center">
-            <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-muted">
-              <Receipt className="size-6 text-muted-foreground" />
-            </div>
-            <h3 className="mt-4 text-lg font-medium">No expenses yet</h3>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Track project costs and overhead expenses.
-            </p>
-            <Button onClick={() => setDialogOpen(true)} className="mt-4 squircle">
-              <Plus className="size-4" />
-              Add Expense
-            </Button>
-          </CardContent>
-        </Card>
+        <div className="py-12 text-center">
+          <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-muted">
+            <Receipt className="size-6 text-muted-foreground" />
+          </div>
+          <h3 className="mt-4 text-lg font-medium">No expenses yet</h3>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Track project costs and overhead expenses.
+          </p>
+          <Button onClick={() => setDialogOpen(true)} className="mt-4 squircle">
+            <Plus className="size-4" />
+            Add Expense
+          </Button>
+        </div>
       ) : (
-        <div className="space-y-2">
-          {expenses.map((expense) => {
+        <ListContainer>
+          {expenses.map((expense, index) => {
             const isOverhead = !expense.project;
+            const isLast = index === expenses.length - 1;
 
             return (
-              <Card
+              <ListRow
                 key={expense.id}
-                className="squircle hover:bg-accent/50 transition-colors cursor-pointer"
                 onClick={() => handleExpenseClick(expense)}
+                isLast={isLast}
               >
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-4 min-w-0">
-                      {/* Color indicator */}
-                      {isOverhead ? (
-                        <div className="flex size-3 items-center justify-center shrink-0">
-                          <Building2 className="size-3 text-amber-500" />
-                        </div>
-                      ) : (
-                        <div
-                          className="size-3 rounded-full shrink-0"
-                          style={{ backgroundColor: expense.project?.client.color || "#94a3b8" }}
-                        />
-                      )}
-
-                      {/* Expense info */}
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium truncate">{expense.description}</span>
-                          {expense.isBillable && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs text-green-600 bg-green-100 dark:text-green-400 dark:bg-green-900">
-                              <DollarSign className="size-3" />
-                              Billable
-                            </span>
-                          )}
-                          {expense.isRecurring && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs text-blue-600 bg-blue-100 dark:text-blue-400 dark:bg-blue-900">
-                              <RefreshCw className="size-3" />
-                              {expense.recurringFrequency}
-                            </span>
-                          )}
-                          {isOverhead && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs text-amber-600 bg-amber-100 dark:text-amber-400 dark:bg-amber-900">
-                              Overhead
-                            </span>
-                          )}
-                          {expense.status === "unpaid" && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs text-red-600 bg-red-100 dark:text-red-400 dark:bg-red-900">
-                              Unpaid
-                            </span>
-                          )}
-                          {expense.category && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs text-muted-foreground bg-muted">
-                              {expense.category}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground mt-0.5">
-                          {isOverhead ? (
-                            <span>General Business</span>
-                          ) : (
-                            <>
-                              <span>{expense.project?.client.name}</span>
-                              <span>&middot;</span>
-                              <span>{expense.project?.name}</span>
-                            </>
-                          )}
-                          <span>&middot;</span>
-                          <span>{format(new Date(expense.date), "MMM d, yyyy")}</span>
-                        </div>
-                      </div>
+                {/* Left content */}
+                <div className="flex items-center gap-4 min-w-0 flex-1">
+                  {isOverhead ? (
+                    <div className="flex size-3 items-center justify-center shrink-0">
+                      <Building2 className="size-3 text-amber-500" />
                     </div>
+                  ) : (
+                    <div
+                      className="size-3 rounded-full shrink-0"
+                      style={{ backgroundColor: expense.project?.client.color || "#94a3b8" }}
+                    />
+                  )}
 
-                    {/* Amount and actions */}
-                    <div className="flex items-center gap-4">
-                      <span className={cn(
-                        "font-medium tabular-nums",
-                        expense.isBillable ? "text-green-600 dark:text-green-400" : ""
-                      )}>
-                        {formatCurrency(expense.amountCents)}
-                      </span>
-
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                          <Button variant="ghost" size="icon" className="size-8 shrink-0">
-                            <MoreVertical className="size-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="squircle">
-                          <DropdownMenuItem
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleEditExpense(expense);
-                            }}
-                          >
-                            <Pencil className="size-4" />
-                            Edit
-                          </DropdownMenuItem>
-                          {expense.project && (
-                            <DropdownMenuItem
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                router.push(`/projects/${expense.project!.id}`);
-                              }}
-                            >
-                              <Eye className="size-4" />
-                              View Project
-                            </DropdownMenuItem>
-                          )}
-                          <DropdownMenuItem
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteExpense(expense);
-                            }}
-                            className="text-destructive focus:text-destructive"
-                          >
-                            <Trash2 className="size-4" />
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium truncate">{expense.description}</span>
+                      {expense.isBillable && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs text-green-600 bg-green-100 dark:text-green-400 dark:bg-green-900">
+                          <DollarSign className="size-3" />
+                          Billable
+                        </span>
+                      )}
+                      {expense.isRecurring && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs text-blue-600 bg-blue-100 dark:text-blue-400 dark:bg-blue-900">
+                          <RefreshCw className="size-3" />
+                          {expense.recurringFrequency}
+                        </span>
+                      )}
+                      {isOverhead && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs text-amber-600 bg-amber-100 dark:text-amber-400 dark:bg-amber-900">
+                          Overhead
+                        </span>
+                      )}
+                      {expense.status === "unpaid" && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs text-red-600 bg-red-100 dark:text-red-400 dark:bg-red-900">
+                          Unpaid
+                        </span>
+                      )}
+                      {expense.category && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs text-muted-foreground bg-muted">
+                          {expense.category}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground mt-0.5">
+                      {isOverhead ? (
+                        <span>General Business</span>
+                      ) : (
+                        <>
+                          <span>{expense.project?.client.name}</span>
+                          <span className="text-muted-foreground/50">&middot;</span>
+                          <span>{expense.project?.name}</span>
+                        </>
+                      )}
+                      <span className="text-muted-foreground/50">&middot;</span>
+                      <span>{format(new Date(expense.date), "MMM d, yyyy")}</span>
                     </div>
                   </div>
-                </CardContent>
-              </Card>
+                </div>
+
+                {/* Amount and actions */}
+                <div className="flex items-center gap-4">
+                  <span className={cn(
+                    "font-medium tabular-nums",
+                    expense.isBillable ? "text-green-600 dark:text-green-400" : ""
+                  )}>
+                    {formatCurrency(expense.amountCents)}
+                  </span>
+
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                      <Button variant="ghost" size="icon" className="size-8 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <MoreVertical className="size-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="squircle">
+                      <DropdownMenuItem
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEditExpense(expense);
+                        }}
+                      >
+                        <Pencil className="size-4" />
+                        Edit
+                      </DropdownMenuItem>
+                      {expense.project && (
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            router.push(`/projects/${expense.project!.id}`);
+                          }}
+                        >
+                          <Eye className="size-4" />
+                          View Project
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuItem
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteExpense(expense);
+                        }}
+                        className="text-destructive focus:text-destructive"
+                      >
+                        <Trash2 className="size-4" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </ListRow>
             );
           })}
-        </div>
+        </ListContainer>
       )}
 
       <ExpenseDialog

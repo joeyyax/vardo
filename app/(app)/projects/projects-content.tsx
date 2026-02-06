@@ -39,6 +39,7 @@ import {
   PROJECT_STAGE_LABELS,
   PROJECT_STAGE_COLORS,
 } from "@/components/projects/project-dialog";
+import { ListRow, ListContainer } from "@/components/ui/list-row";
 
 type ProjectsContentProps = {
   orgId: string;
@@ -367,15 +368,16 @@ export function ProjectsContent({ orgId }: ProjectsContentProps) {
           }
 
           return (
-            <div className="space-y-2">
-              {filteredProjects.map((project) => (
+            <ListContainer>
+              {filteredProjects.map((project, index) => (
                 <ProjectRow
                   key={project.id}
                   project={project}
                   onEdit={() => handleEditProject(project)}
+                  isLast={index === filteredProjects.length - 1}
                 />
               ))}
-            </div>
+            </ListContainer>
           );
         })()}
       </div>
@@ -460,9 +462,11 @@ function EmptyState({
 function ProjectRow({
   project,
   onEdit,
+  isLast,
 }: {
   project: Project;
   onEdit: () => void;
+  isLast: boolean;
 }) {
   // Format rate for display (cents to dollars)
   const formattedRate = project.rateOverride
@@ -472,7 +476,7 @@ function ProjectRow({
   const stage = project.stage || "active";
 
   return (
-    <div className="squircle flex items-center gap-2 rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50">
+    <ListRow isLast={isLast}>
       <Link
         href={`/projects/${project.id}`}
         className="flex-1 min-w-0 flex items-center gap-4 focus-visible:outline-none"
@@ -546,11 +550,11 @@ function ProjectRow({
           e.stopPropagation();
           onEdit();
         }}
-        className="squircle shrink-0"
+        className="opacity-0 group-hover:opacity-100 transition-opacity"
       >
         <Edit className="size-4" />
         <span className="sr-only">Edit {project.name}</span>
       </Button>
-    </div>
+    </ListRow>
   );
 }

@@ -5,10 +5,6 @@ import { useRouter } from "next/navigation";
 import { formatDistanceToNow, format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import {
-  Card,
-  CardContent,
-} from "@/components/ui/card";
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -46,6 +42,7 @@ import { NewDocumentDialog } from "@/components/documents/new-document-dialog";
 import { ViewSwitcher } from "@/components/view-switcher";
 import { useViewPreference } from "@/hooks/use-view-preference";
 import { PageToolbar } from "@/components/page-toolbar";
+import { ListRow, ListContainer } from "@/components/ui/list-row";
 
 type Document = {
   id: string;
@@ -208,6 +205,7 @@ export function ContractsContent({ orgId }: ContractsContentProps) {
           <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </div>
       ) : contracts.length === 0 ? (
+<<<<<<< HEAD
         <Card className="squircle">
           <CardContent className="py-12 text-center">
             <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-muted">
@@ -282,19 +280,35 @@ export function ContractsContent({ orgId }: ContractsContentProps) {
               })}
             </TableBody>
           </Table>
+=======
+        <div className="py-12 text-center">
+          <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-muted">
+            <FileText className="size-6 text-muted-foreground" />
+          </div>
+          <h3 className="mt-4 text-lg font-medium">No contracts yet</h3>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Create contracts to formalize agreements with clients.
+          </p>
+          <Button onClick={() => setDialogOpen(true)} className="mt-4 squircle">
+            <Plus className="size-4" />
+            New Contract
+          </Button>
+>>>>>>> feat/ui-design-refresh
         </div>
       ) : (
-        <div className="space-y-2">
-          {contracts.map((doc) => {
+        <ListContainer>
+          {contracts.map((doc, index) => {
             const config = STATUS_CONFIG[doc.status];
             const StatusIcon = config.icon;
+            const isLast = index === contracts.length - 1;
 
             return (
-              <Card
+              <ListRow
                 key={doc.id}
-                className="squircle hover:bg-accent/50 transition-colors cursor-pointer"
                 onClick={() => router.push(`/projects/${doc.project.id}/documents/${doc.id}`)}
+                isLast={isLast}
               >
+<<<<<<< HEAD
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between gap-4">
                     <div className="flex items-center gap-4 min-w-0">
@@ -331,12 +345,77 @@ export function ContractsContent({ orgId }: ContractsContentProps) {
                       </div>
                     </div>
                     <ContractActions doc={doc} onCopyLink={copyPublicLink} />
+=======
+                {/* Client color indicator */}
+                <div
+                  className="size-3 rounded-full shrink-0"
+                  style={{ backgroundColor: doc.project.client.color || "#94a3b8" }}
+                />
+
+                {/* Document info */}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium truncate">{doc.title}</span>
+                    <span
+                      className={cn(
+                        "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs",
+                        config.color
+                      )}
+                    >
+                      <StatusIcon className="size-3" />
+                      {config.label}
+                    </span>
+>>>>>>> feat/ui-design-refresh
                   </div>
-                </CardContent>
-              </Card>
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground mt-0.5">
+                    <span>{doc.project.client.name}</span>
+                    <span className="text-muted-foreground/50">&middot;</span>
+                    <span>{doc.project.name}</span>
+                    {doc.acceptedAt && (
+                      <>
+                        <span className="text-muted-foreground/50">&middot;</span>
+                        <span>
+                          Signed {formatDistanceToNow(new Date(doc.acceptedAt), { addSuffix: true })}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                    <Button variant="ghost" size="icon" className="size-8 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <MoreVertical className="size-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="squircle">
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        router.push(`/projects/${doc.project.id}/documents/${doc.id}`);
+                      }}
+                    >
+                      <Eye className="size-4" />
+                      {doc.status === "draft" ? "Edit" : "View"}
+                    </DropdownMenuItem>
+                    {doc.publicToken && doc.status !== "draft" && (
+                      <DropdownMenuItem
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          copyPublicLink(doc);
+                        }}
+                      >
+                        <Copy className="size-4" />
+                        Copy Link
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </ListRow>
             );
           })}
-        </div>
+        </ListContainer>
       )}
 
       <NewDocumentDialog

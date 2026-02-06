@@ -22,18 +22,15 @@ export default async function ProjectsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
-        <p className="text-muted-foreground">
-          Organize your work into projects within each client.
-        </p>
+    <>
+      <div className="mb-8">
+        <h1 className="text-xl font-semibold tracking-tight">Projects</h1>
       </div>
 
       <Suspense fallback={<ProjectsLoading />}>
         <ProjectsContent orgId={orgData.organization.id} />
       </Suspense>
-    </div>
+    </>
   );
 }
 
