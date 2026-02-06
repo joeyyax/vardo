@@ -16,11 +16,8 @@ export default async function TrackPage({ searchParams }: TrackPageProps) {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Track</h1>
-        <p className="text-muted-foreground">
-          View and manage your time entries.
-        </p>
+      <div className="mb-8">
+        <h1 className="text-xl font-semibold tracking-tight">Track</h1>
       </div>
 
       <Timeline

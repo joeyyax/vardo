@@ -27,11 +27,8 @@ export default async function SettingsPage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-        <p className="text-muted-foreground">
-          Configure your organization settings.
-        </p>
+      <div className="mb-8">
+        <h1 className="text-xl font-semibold tracking-tight">Settings</h1>
       </div>
 
       {/* Personal Preferences - only show if time tracking is enabled */}

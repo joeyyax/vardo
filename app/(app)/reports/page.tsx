@@ -14,11 +14,8 @@ export default async function ReportsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Reports</h1>
-        <p className="text-muted-foreground">
-          Analytics and business insights
-        </p>
+      <div className="mb-8">
+        <h1 className="text-xl font-semibold tracking-tight">Reports</h1>
       </div>
 
       <ReportsPageContent

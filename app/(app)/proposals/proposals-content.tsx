@@ -205,24 +205,21 @@ export function ProposalsContent({ orgId }: ProposalsContentProps) {
           <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </div>
       ) : proposals.length === 0 ? (
-<<<<<<< HEAD
-        <Card className="squircle">
-          <CardContent className="py-12 text-center">
-            <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-muted">
-              <FileText className="size-6 text-muted-foreground" />
-            </div>
-            <h3 className="mt-4 text-lg font-medium">No proposals yet</h3>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Create proposals to send to clients.
-            </p>
-            <Button onClick={() => setDialogOpen(true)} className="mt-4 squircle">
-              <Plus className="size-4" />
-              New Proposal
-            </Button>
-          </CardContent>
-        </Card>
+        <div className="py-12 text-center">
+          <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-muted">
+            <FileText className="size-6 text-muted-foreground" />
+          </div>
+          <h3 className="mt-4 text-lg font-medium">No proposals yet</h3>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Create proposals to send to clients.
+          </p>
+          <Button onClick={() => setDialogOpen(true)} className="mt-4 squircle">
+            <Plus className="size-4" />
+            New Proposal
+          </Button>
+        </div>
       ) : view === "table" ? (
-        <div className="rounded-lg border squircle overflow-hidden">
+        <div className="overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>
@@ -280,20 +277,6 @@ export function ProposalsContent({ orgId }: ProposalsContentProps) {
               })}
             </TableBody>
           </Table>
-=======
-        <div className="py-12 text-center">
-          <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-muted">
-            <FileText className="size-6 text-muted-foreground" />
-          </div>
-          <h3 className="mt-4 text-lg font-medium">No proposals yet</h3>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Create proposals to send to clients.
-          </p>
-          <Button onClick={() => setDialogOpen(true)} className="mt-4 squircle">
-            <Plus className="size-4" />
-            New Proposal
-          </Button>
->>>>>>> feat/ui-design-refresh
         </div>
       ) : (
         <ListContainer>
@@ -308,44 +291,6 @@ export function ProposalsContent({ orgId }: ProposalsContentProps) {
                 onClick={() => router.push(`/projects/${doc.project.id}/documents/${doc.id}`)}
                 isLast={isLast}
               >
-<<<<<<< HEAD
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-4 min-w-0">
-                      <div
-                        className="size-3 rounded-full shrink-0"
-                        style={{ backgroundColor: doc.project.client.color || "#94a3b8" }}
-                      />
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium truncate">{doc.title}</span>
-                          <span
-                            className={cn(
-                              "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs",
-                              config.color
-                            )}
-                          >
-                            <StatusIcon className="size-3" />
-                            {config.label}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground mt-0.5">
-                          <span>{doc.project.client.name}</span>
-                          <span>&middot;</span>
-                          <span>{doc.project.name}</span>
-                          {doc.sentAt && (
-                            <>
-                              <span>&middot;</span>
-                              <span>
-                                Sent {formatDistanceToNow(new Date(doc.sentAt), { addSuffix: true })}
-                              </span>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    <ProposalActions doc={doc} onCopyLink={copyPublicLink} />
-=======
                 {/* Left: Color indicator */}
                 <div
                   className="size-3 rounded-full shrink-0"
@@ -365,7 +310,6 @@ export function ProposalsContent({ orgId }: ProposalsContentProps) {
                       <StatusIcon className="size-3" />
                       {config.label}
                     </span>
->>>>>>> feat/ui-design-refresh
                   </div>
                   <div className="flex items-center gap-2 text-sm text-muted-foreground mt-0.5">
                     <span>{doc.project.client.name}</span>

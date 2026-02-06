@@ -25,13 +25,8 @@ export default async function TasksPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Tasks</h1>
-          <p className="text-muted-foreground">
-            All tasks across your projects
-          </p>
-        </div>
+      <div className="mb-8 flex items-center justify-between">
+        <h1 className="text-xl font-semibold tracking-tight">Tasks</h1>
       </div>
 
       <TasksContent orgId={organization.id} currentUserId={session.user.id} />

@@ -251,7 +251,7 @@ export function ClientsContent({ orgId }: ClientsContentProps) {
               placeholder="Search clients..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
+              className="pl-9 squircle"
             />
           </div>
 
@@ -376,9 +376,10 @@ export function ClientsContent({ orgId }: ClientsContentProps) {
             onDragEnd={handleDragEnd}
           >
             <RootDropZone isActive={!!activeId && !!activeClient?.parentClientId}>
-              <div className="space-y-2">
-                {topLevel.map((client) => {
+              <ListContainer>
+                {topLevel.map((client, index) => {
                   const children = childrenByParent.get(client.id) || [];
+                  const isLast = index === topLevel.length - 1 && children.length === 0;
                   return (
                     <div key={client.id}>
                       <DroppableClientRow
@@ -387,24 +388,29 @@ export function ClientsContent({ orgId }: ClientsContentProps) {
                         childCount={children.length}
                         isDragging={activeId === client.id}
                         isValidTarget={!!activeId && activeId !== client.id && !clients.some((c) => c.parentClientId === clients.find((cl) => cl.id === activeId)?.id)}
+                        isLast={isLast}
                       />
                       {children.length > 0 && (
-                        <div className="ml-6 mt-1 space-y-1 border-l-2 border-muted pl-4">
-                          {children.map((child) => (
-                            <DraggableClientRow
-                              key={child.id}
-                              client={child}
-                              onEdit={() => handleEditClient(child)}
-                              isChild
-                              isDragging={activeId === child.id}
-                            />
-                          ))}
+                        <div className="ml-6 border-l border-border/40">
+                          {children.map((child, childIndex) => {
+                            const isLastChild = isLast && childIndex === children.length - 1;
+                            return (
+                              <DraggableClientRow
+                                key={child.id}
+                                client={child}
+                                onEdit={() => handleEditClient(child)}
+                                isChild
+                                isDragging={activeId === child.id}
+                                isLast={isLastChild}
+                              />
+                            );
+                          })}
                         </div>
                       )}
                     </div>
                   );
                 })}
-              </div>
+              </ListContainer>
             </RootDropZone>
 
             <DragOverlay>
@@ -456,12 +462,14 @@ function DroppableClientRow({
   childCount = 0,
   isDragging = false,
   isValidTarget = false,
+  isLast = false,
 }: {
   client: Client;
   onEdit: () => void;
   childCount?: number;
   isDragging?: boolean;
   isValidTarget?: boolean;
+  isLast?: boolean;
 }) {
   const { attributes, listeners, setNodeRef: setDragRef, transform } = useDraggable({ id: client.id });
   const { setNodeRef: setDropRef, isOver } = useDroppable({ id: client.id });
@@ -477,9 +485,9 @@ function DroppableClientRow({
         setDropRef(node);
       }}
       style={style}
-      className={`squircle flex items-center gap-2 rounded-lg border bg-card p-4 transition-all ${
-        isOver && isValidTarget ? "ring-2 ring-primary ring-offset-2 bg-primary/5" : "hover:bg-accent/50"
-      } ${isDragging ? "opacity-50" : ""}`}
+      className={`group flex items-center gap-2 px-3 py-3 transition-all cursor-pointer ${
+        isOver && isValidTarget ? "ring-2 ring-primary ring-offset-2 bg-primary/5" : "hover:bg-card/40"
+      } ${isDragging ? "opacity-50" : ""} ${!isLast ? "border-b border-border/40" : ""}`}
     >
       <button
         {...attributes}
@@ -517,7 +525,7 @@ function DroppableClientRow({
         </div>
       </Link>
 
-      <Button variant="ghost" size="icon" onClick={onEdit} className="squircle shrink-0">
+      <Button variant="ghost" size="icon" onClick={onEdit} className="size-8 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
         <Edit className="size-4" />
       </Button>
     </div>
@@ -530,11 +538,13 @@ function DraggableClientRow({
   onEdit,
   isChild = false,
   isDragging = false,
+  isLast = false,
 }: {
   client: Client;
   onEdit: () => void;
   isChild?: boolean;
   isDragging?: boolean;
+  isLast?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform } = useDraggable({ id: client.id });
 
@@ -546,7 +556,7 @@ function DraggableClientRow({
     <div
       ref={setNodeRef}
       style={style}
-      className={`squircle flex items-center gap-2 rounded-lg border bg-card p-4 transition-all hover:bg-accent/50 ${isDragging ? "opacity-50" : ""}`}
+      className={`group flex items-center gap-2 px-3 py-3 transition-all cursor-pointer hover:bg-card/40 ${isDragging ? "opacity-50" : ""} ${!isLast ? "border-b border-border/40" : ""}`}
     >
       <button
         {...attributes}
@@ -579,7 +589,7 @@ function DraggableClientRow({
         </div>
       </Link>
 
-      <Button variant="ghost" size="icon" onClick={onEdit} className="squircle shrink-0">
+      <Button variant="ghost" size="icon" onClick={onEdit} className="size-8 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
         <Edit className="size-4" />
       </Button>
     </div>
@@ -603,15 +613,15 @@ function ClientRowOverlay({ client }: { client: Client }) {
 
 function EmptyState({ onNewClient }: { onNewClient: () => void }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed p-12 text-center">
-      <div className="flex size-12 items-center justify-center rounded-full bg-muted">
+    <div className="py-12 text-center">
+      <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-muted">
         <Users className="size-6 text-muted-foreground" />
       </div>
       <h3 className="mt-4 text-lg font-medium">No clients yet</h3>
-      <p className="mt-1 text-sm text-muted-foreground max-w-sm">
+      <p className="mt-2 text-sm text-muted-foreground max-w-sm">
         Clients help you organize your work and track time by customer. Add your first one to get started.
       </p>
-      <Button onClick={onNewClient} className="mt-6 squircle">
+      <Button onClick={onNewClient} className="mt-4 squircle">
         <Plus className="size-4" />
         Add your first client
       </Button>

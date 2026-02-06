@@ -1,6 +1,6 @@
 # Time Tracker - App Brief
 
-A time tracking app for freelancers and small teams, replacing Toggl with a focused, keyboard-first experience. No timer - just quick manual entry with smart suggestions.
+A time tracking and project management app for freelancers and small teams, replacing Toggl with a focused, keyboard-first experience. No timer - just quick manual entry with smart suggestions.
 
 ## Core Concept
 
@@ -9,6 +9,7 @@ A time tracking app for freelancers and small teams, replacing Toggl with a focu
 - Quick search with recent + smart suggestions (learns patterns)
 - API-first for data liberation
 - Multi-tenant from day one, SaaS-ready
+- Modular features - enable only what you need
 
 ## Voice & Tone
 
@@ -83,30 +84,62 @@ toast.promise(saveData(), {
 - Success for expected actions (only when confirming is helpful)
 - Warnings that need acknowledgment (use dialog instead)
 
+## Feature Flags
+
+Organizations can enable/disable features via `features` JSON field:
+
+- `time_tracking` - Core time tracking, timeline, entries
+- `invoicing` - Invoice generation, management, PDF
+- `expenses` - Expense tracking, receipts, recurring expenses
+- `pm` - Project management with tasks, kanban, assignments
+- `proposals` - Proposals and contracts
+
+Default: `{ time_tracking: true, invoicing: true, expenses: true, pm: false, proposals: false }`
+
 ## Data Model
 
 ```
 Organization (tenant)
-├── Members (users with roles)
-├── Settings (default rate, rounding increment)
+├── Members (users with roles: owner, admin, member)
+├── Settings (default rate, rounding increment, billing defaults)
+├── Features (feature flags)
 ├── Clients
 │   ├── parent_id (nullable, for nesting)
 │   ├── rate_override (nullable)
 │   ├── is_billable (default: inherit)
+│   ├── billing_type, billing_frequency, retainer_amount
 │   └── Projects
 │       ├── rate_override (nullable)
 │       ├── is_billable (default: inherit)
+│       ├── stage (lead/proposal_sent/active/completed)
+│       ├── budget tracking (hours or fixed)
 │       └── Tasks
 │           ├── rate_override (nullable)
-│           └── is_billable (default: inherit)
-└── Time Entries
-    ├── user_id
-    ├── task_id (→ implies project → client)
-    ├── description
-    ├── date
-    ├── duration_minutes
-    ├── is_billable (computed or override)
-    └── created_at
+│           ├── is_billable (default: inherit)
+│           ├── status (todo/in_progress/review/done) - PM only
+│           ├── assigned_to, created_by
+│           ├── type, tags, estimate, metadata
+│           └── relationships (blocked_by, related_to)
+├── Time Entries
+│   ├── user_id
+│   ├── client_id (required)
+│   ├── project_id, task_id (optional)
+│   ├── description, tags (extracted from #hashtags)
+│   ├── date, duration_minutes
+│   ├── is_billable_override
+│   └── recurring_template_id
+├── Recurring Templates (for automated entries)
+├── Invoices
+│   ├── line items (snapshot of project/task names)
+│   └── public_token for client access
+├── Documents (proposals & contracts)
+│   └── public_token for client signing
+├── Expenses (project-specific or overhead)
+│   ├── receipt file attachment
+│   └── recurring support
+├── Project Files (R2 storage)
+├── Activities (global audit log)
+└── Notifications (user inbox)
 ```
 
 **Client Hierarchy:**
@@ -126,17 +159,19 @@ Organization (tenant)
 - **Next.js 16** (App Router, Server Actions)
 - **Tailwind CSS + shadcn/ui**
 - **PostgreSQL** - Primary data store
-- **Redis** - Sessions, rate limiting, caching suggestions, pub/sub for real-time
+- **Redis** - Sessions, rate limiting, caching suggestions
 - **Drizzle ORM** - Type-safe database access
-- **Better Auth** - Authentication
+- **Better Auth** - Authentication (passkey, OAuth, magic link + 2FA)
 - **Resend + React Email** - Transactional email
+- **Cloudflare R2** - File storage
 - **Docker Compose** - Local dev (Postgres + Redis)
 
 ## Architecture Principles
 
-- **Event-driven over polling** - Use Redis pub/sub or Server-Sent Events for real-time updates. Avoid polling where possible.
 - **API-first** - All data through REST endpoints for data liberation
 - **Keyboard-first** - Full workflows without mouse
+- **Feature flags** - Modular functionality, enable what you need
+- **Multi-tenancy** - All queries scoped by `organization_id`
 
 ## Authentication
 
@@ -154,64 +189,109 @@ Organization (tenant)
 ```
 /app
   /api/v1/[...routes]     # API endpoints
-  /(app)                   # Authenticated app routes
-    /track
-    /reports               # Analytics dashboard
-    /invoices              # Invoice management
-    /clients
-    /clients/[id]          # Client dashboard
-    /projects
-    /projects/[id]         # Project dashboard
-    /settings
+  /api/cron               # Cron jobs (auto-invoices, reports, recurring)
+  /api/portal             # Client portal public routes
+  /api/documents          # Public document access
+  /(app)                  # Authenticated app routes
+    /track                # Timeline view (home)
+    /reports              # Analytics dashboard
+    /invoices             # Invoice management
+    /proposals            # Proposals list
+    /contracts            # Contracts list
+    /expenses             # Expense tracking
+    /clients              # Client management
+    /clients/[id]         # Client dashboard
+    /projects             # Project management
+    /projects/[id]        # Project dashboard (with PM features)
+    /tasks                # All tasks across projects
+    /settings             # Org settings
+    /profile              # User profile
+    /onboarding           # New user/org onboarding
   /(public)
     /r/[slug]             # Public report pages
     /i/[token]            # Public invoice view
+    /d/[token]            # Public document view
     /login
 /components
   /ui                     # shadcn components
-  /entry                  # Entry bar, entry row
-  /timeline               # Day groups, week nav
-  /invoices               # Invoice components
-  /analytics              # Charts and metrics
+  /layout                 # Sidebar, nav, entry bar
+  /entry                  # Smart entry bar, chips input
+  /timeline               # Day groups, week nav, entry rows
+  /invoices               # Invoice dialogs, list
+  /clients                # Client dialogs
+  /projects               # Project dialogs, kanban, task lists
+  /documents              # Document editor, dialogs
+  /expenses               # Expense dialogs, rows
+  /settings               # Import wizards, Toggl integration
 /lib
   /db                     # Drizzle schema + queries
   /api                    # API client for frontend
-  /auth                   # Session management
+  /auth                   # Better Auth config
   /email                  # React Email templates
-  /invoices               # Invoice generation logic
-  /integrations           # Toggl, etc.
-/docker-compose.yml
+  /invoices               # Invoice generation, PDF, auto-generate
+  /reports                # Auto-send reports
+  /integrations           # Toggl import
+  /expenses               # Recurring expense logic
 ```
+
+## Navigation
+
+**Sidebar Navigation (feature-gated):**
+- Track - Main timeline view (time_tracking)
+- Reports - Analytics & summaries (time_tracking)
+- Invoices - Manage invoices (invoicing)
+- Proposals - Track proposals (proposals)
+- Contracts - Manage contracts (proposals)
+- Expenses - Track expenses (expenses)
+- Clients - Manage clients (always visible)
+- Projects - Manage projects (time_tracking OR pm)
+- Tasks - All tasks across projects (pm)
+- Settings - Organization settings
 
 ## API Structure
 
 ```
 /api/v1/
-├── /auth
-│   ├── POST /magic-link
-│   └── POST /verify
-├── /organizations/:orgId
-│   ├── GET/PATCH /settings
-│   ├── /clients              # CRUD
-│   ├── /projects             # CRUD
-│   ├── /tasks                # CRUD
-│   ├── /entries              # CRUD + bulk
-│   │   ├── GET    ?from=&to=&client=&project=
-│   │   ├── POST   (single or batch)
-│   │   └── GET /export?format=csv&from=&to=
-│   ├── /reports              # Report configs
-│   └── /members              # User management
-└── /reports/:slug            # Public report access (no auth)
-```
+├── /organizations
+│   ├── POST /              # Create organization
+│   ├── GET /:orgId         # Get org details
+│   ├── PATCH /:orgId       # Update org
+│   ├── /clients            # CRUD + reorder (drag-drop hierarchy)
+│   ├── /projects           # CRUD
+│   ├── /tasks              # CRUD (global tasks)
+│   ├── /entries            # CRUD + bulk + export
+│   ├── /recurring-templates # CRUD
+│   ├── /invoices           # CRUD + generate + send
+│   ├── /expenses           # CRUD + export
+│   ├── /reports            # Report configs + analytics
+│   ├── /report-presets     # Saved filter configs
+│   ├── /documents          # Proposals & contracts
+│   ├── /activities         # Global activity log
+│   ├── /suggestions        # Entry suggestions
+│   ├── /entry-suggestions  # Alternative suggestions endpoint
+│   ├── /content            # Content for selectors
+│   ├── /analytics          # Dashboard analytics
+│   ├── /imports            # Toggl import sessions
+│   ├── /integrations/toggl # Toggl API integration
+│   ├── /task-types         # PM task types
+│   └── /task-tags          # PM task tags
+├── /notifications          # User notifications
+├── /notifications/preferences
+└── /reports/:slug          # Public report access
 
-**Suggestions Endpoint:**
-```
-GET /api/v1/organizations/:orgId/suggestions
-  ?query=           # optional search text
-  &context=dow,hour # day-of-week, hour for pattern matching
-```
+/api/cron/
+├── /                       # Cron health check
+├── /generate-invoices      # Daily auto-invoice generation
+├── /send-reports           # Weekly auto-report sending
+└── /recurring-expenses     # Daily recurring expense creation
 
-Returns ranked list of `{ client, project, task, score, reason }`.
+/api/portal/
+├── /projects/:id           # Client portal project view
+└── /projects               # List accessible projects
+
+/api/documents/:token       # Public document view/accept
+/api/invitations/:token     # Accept project invitation
+```
 
 ## UI Layout
 
@@ -226,20 +306,20 @@ Returns ranked list of `{ client, project, task, score, reason }`.
 │ Reports│    Bug fix • Acme / App               $  1:00 │
 │ Clients│                                                │
 │ Projects│  Tue, Jan 27                             5:30 │
-│ Settings│    Meeting • Beta Corp / Retainer    $  1:00 │
-│        │                                                │
+│ ...    │    Meeting • Beta Corp / Retainer    $  1:00 │
 │────────│                                                │
 │ [Org ▾]│                                                │
 │ [User] │                                                │
 └────────┴────────────────────────────────────────────────┘
 ```
 
-**Navigation (Left Sidebar):**
-- Track - Main timeline view (home)
-- Reports - Manage report configs, preview, send
-- Clients - CRUD clients
-- Projects - CRUD projects (filterable by client)
-- Settings - Org settings, rates, rounding, members
+**Top Bar:**
+- Mobile menu button (mobile only)
+- Entry bar (when time_tracking enabled, or mobile always)
+
+**Sidebar:**
+- Logo/brand with notification bell
+- Navigation links (feature-gated)
 - Org switcher + User menu at bottom
 
 ## Entry Bar & Keyboard Navigation
@@ -256,7 +336,7 @@ Returns ranked list of `{ client, project, task, score, reason }`.
 
 Entire entry completable without mouse.
 
-**Client/Project Selector:**
+**Client/Project/Task Selector:**
 - Tab into field → immediately ready to type (search)
 - `↓/↑` navigate suggestions without typing
 - First suggestion highlighted by default
@@ -278,8 +358,6 @@ Entire entry completable without mouse.
 
 ## Command Palette (Cmd+K)
 
-Optional power-user feature. Raycast-style command palette for quick actions.
-
 **Trigger:** `Cmd/Ctrl+K` from anywhere
 
 **Commands:**
@@ -296,8 +374,6 @@ Optional power-user feature. Raycast-style command palette for quick actions.
 - `↓/↑` to navigate, `Enter` to execute
 - `Escape` to close
 
-Not required for basic usage - all actions accessible via normal UI.
-
 ## Timeline Interactions
 
 - Click description → edit inline
@@ -306,13 +382,26 @@ Not required for basic usage - all actions accessible via normal UI.
 - Click billable ($) → toggle
 - Hover reveals: delete, duplicate icons
 - Drag entry to different day → updates date
+- Recurring suggestions appear for matching patterns
 
 All fields editable in place, no modal needed.
+
+## Recurring Time Entries
+
+Create templates that generate entries automatically:
+
+- **Frequency:** daily, weekly, biweekly, monthly, quarterly
+- **Day selection:** Day of week (weekly) or day of month (monthly)
+- **Start date:** When to begin showing suggestions
+- **Skip dates:** One-off skips (holidays, vacation)
+- **Pause/Resume:** Temporarily disable without deleting
+
+Recurring entries appear as suggestions on the timeline. Click to apply, or dismiss for that occurrence.
 
 ## Reports & Analytics
 
 **Navigation split:**
-- `/reports` - Analytics dashboard (hours, revenue, trends, utilization)
+- `/reports` - Analytics dashboard (hours, revenue, trends)
 - `/invoices` - Invoice management (create, send, track)
 
 **Analytics Dashboard (`/reports`):**
@@ -320,11 +409,16 @@ All fields editable in place, no modal needed.
 - Summary cards: total time, billable amount, active clients, avg hours/day
 - Hours breakdown by client (with percentage bars)
 - Weekly/monthly trends (charts)
+- Export to CSV
+
+**Saved Report Presets:**
+- Save filter configurations for quick access
+- User-specific, not org-wide
+- Available in Overview, Accounting, and Client Reports tabs
 
 **Public Report URLs:**
 ```
 /r/:slug                    # Client report (all projects)
-/r/:slug/:projectSlug       # Project-specific report
 ```
 
 Slugs are random, unguessable strings. No auth required.
@@ -351,15 +445,6 @@ Clients have configurable billing settings that determine how invoices are gener
 - `monthly` / `quarterly` - Uses `billing_day_of_month` (1-31)
 - `per_project` - Manual invoice generation
 
-**Fields:**
-- `billing_type` - See above (inherits org default if null)
-- `billing_frequency` - See above
-- `retainer_amount` - For retainer types (cents)
-- `billing_day_of_week` / `billing_day_of_month` - When to bill
-- `payment_terms_days` - Net X days (inherits org default if null)
-- `auto_generate_invoices` - Auto-create invoices on schedule
-- `last_invoiced_date` - Track billing cycles
-
 **Organization defaults:**
 - `default_billing_type` - Default for new clients
 - `default_billing_frequency` - Default frequency
@@ -368,11 +453,16 @@ Clients have configurable billing settings that determine how invoices are gener
 ## Invoices
 
 **Invoice Management (`/invoices`):**
-- List all invoices with status (draft, sent, viewed)
+- List all invoices with status (draft, sent, viewed, paid)
 - Create invoice: select client, date range, auto-populate line items
+- Edit invoice: modify line items, descriptions, amounts
 - Preview before sending
 - Send via email with PDF attachment
 - Track when viewed
+
+**Invoice Types:**
+- Standard invoices - Fixed billing period
+- Rolling draft invoices - Continuously accumulate entries until finalized
 
 **Public Invoice View (`/i/:token`):**
 - Branded invoice display
@@ -380,7 +470,7 @@ Clients have configurable billing settings that determine how invoices are gener
 - Mark as viewed on access
 
 **Auto-generation:**
-- Cron job runs daily
+- Cron job runs daily (`/api/cron/generate-invoices`)
 - Checks clients with `auto_generate_invoices = true`
 - Creates invoice when billing cycle is due
 - Updates `last_invoiced_date`
@@ -388,7 +478,96 @@ Clients have configurable billing settings that determine how invoices are gener
 **Line Items:**
 - Snapshot project/task names at time of invoice
 - Group by project with optional task breakdown
-- AI-generated descriptions (optional)
+- Editable descriptions
+
+## Proposals & Contracts
+
+**Document Types:**
+- **Proposals** - Project scopes, pricing, timelines
+- **Contracts** - Formal agreements with acceptance flow
+
+**Document Editor:**
+- Structured sections (intro, scope, deliverables, timeline, pricing, terms)
+- Markdown content support
+- Pricing tables for proposals
+- E-signature flow for contracts
+
+**Status Flow:**
+- `draft` → `sent` → `viewed` → `accepted`/`declined`
+
+**Public Access:**
+- `/d/:token` - Client can view, download PDF, accept/decline
+- Email notifications on send, view, accept, decline
+
+## Expense Tracking
+
+**Expense Management (`/expenses`):**
+- Track project-specific or general business expenses
+- Receipt upload and attachment
+- Categories for grouping
+- Billable toggle (pass through to client)
+- Payment status tracking (paid/unpaid)
+
+**Recurring Expenses:**
+- Weekly, monthly, quarterly, yearly frequencies
+- Auto-generate on schedule via cron
+- End date or indefinite recurrence
+
+**Expense Details:**
+- Description, amount, date, category
+- Vendor tracking
+- Project association (optional)
+- Comments/discussion on expenses
+- Activity log
+
+## Project Management (PM Feature)
+
+**Kanban Board:**
+- Columns: Todo, In Progress, Review, Done
+- Drag-and-drop task management
+- Swimlane view options
+
+**Task Features:**
+- Status workflow (todo → in_progress → review → done)
+- Assignment to team members
+- Task types (org-defined: Bug, Feature, Task, etc.)
+- Tags (org-defined + ad-hoc hybrid)
+- Estimates (time tracking)
+- Due dates
+- PR links
+- Client visibility toggle
+
+**Task Relationships:**
+- `blocked_by` - Task cannot start until blocker resolved
+- `related_to` - Loose coupling for context
+
+**Task Comments:**
+- Internal comments (team only by default)
+- Share to client portal (make visible)
+- @mentions support
+
+**Task Watchers:**
+- Auto-watch: creator, assignee, commenters
+- Manual watch/unwatch
+- Notifications on changes
+
+**Project Files:**
+- Upload to Cloudflare R2
+- Tagging support
+- Public/private visibility (client portal)
+- Attach to tasks
+
+**Project Activity Log:**
+- Chronological feed of all project events
+- Stage changes, task updates, file uploads
+- Client-visible vs internal activities
+- Activity timeline view
+
+**Client Portal:**
+- Invite clients via email
+- Role-based access (viewer, contributor)
+- Visibility controls (rates, time, costs)
+- Public project view at `/portal/projects/:token`
 
 ## Client & Project Dashboards
 
@@ -402,23 +581,27 @@ Clients have configurable billing settings that determine how invoices are gener
 
 **Project Dashboard (`/projects/:id`):**
 - Header: name, client badge, code, archive status
-- Stats cards: hours (month/all-time), revenue, budget remaining (if set)
-- Tasks with hours breakdown
-- Recent entries (last 10, clickable → navigates to `/track?date=&entry=`)
-- Quick actions: Edit, New Task
+- Stats cards: hours (month/all-time), revenue, budget remaining
+- Kanban board (when PM enabled)
+- Task list with filtering
+- Documents (proposals/contracts)
+- Expenses
+- Files
+- Activity timeline
+- Team/invitations
+- Quick actions: Edit, New Task, Upload File
 
 **Client List (`/clients`):**
 - Drag-and-drop for client hierarchy (nest/un-nest)
-- Filter bar with:
-  - Search: filter by client name
-  - Sort by: Name (alphabetical) or Recent (by last entry)
-  - Sort order: Ascending/Descending toggle
+- Filter bar with search, sort by name/recent
 - Client rows link to dashboards
 - Inline edit button opens modal directly
 
 **Project List (`/projects`):**
 - Filter by client
 - Project rows link to dashboards
+- Stage badges (lead/proposal_sent/active/completed)
+- Budget progress indicators
 - Inline edit button opens modal directly
 
 ## Toggl Import
@@ -445,29 +628,33 @@ Import clients and projects from Toggl Track for migrating users.
 
 **Alternative: API Import**
 
-You can also connect via Toggl API token for a quick import. Go to Settings → Import → Toggl API.
+Connect via Toggl API token for quick import. Go to Settings → Import → Toggl API.
 
 **Import Flow:**
 1. Upload CSV or connect API
-2. Preview: X clients, Y projects, Z entries, date range
+2. Preview: X clients, Y projects, date range
 3. Map imported clients → existing clients or create new
-4. Map projects with client associations
-5. Import with progress indicator
-6. Summary of imported data
+4. Import with progress indicator
+5. Summary of imported data
 
-**API Routes:**
-```
-POST /imports              # Create import session from CSV/API data
-GET  /imports              # List in-progress imports
-GET  /imports/:id          # Get import session details
-PATCH /imports/:id         # Update mappings, advance steps
-POST /imports/:id/execute  # Run the import
-```
+## Notifications
 
-**Toggl API notes:**
-- Base: `https://api.track.toggl.com/api/v9`
-- Auth: Basic `{api_token}:api_token`
-- Rate limit: Handle with delays between batches
+**Notification Types:**
+- Assigned to task
+- Mentioned in comment
+- Task status changed
+- New comment on watched task
+- Blocker resolved
+- Client comment
+
+**Delivery:**
+- In-app notification bell
+- Email notifications (user preference)
+- Real-time updates
+
+**Preferences:**
+- Per-type enable/disable
+- Email on/off toggle
 
 ## Multi-tenancy & Roles
 
@@ -477,64 +664,77 @@ POST /imports/:id/execute  # Run the import
 - `orgId` from session context, never user input for writes
 
 **Roles:**
-- **Owner** - Full access, billing, can delete org
+- **Owner** - Full access, billing, can delete org, manage features
 - **Admin** - Manage clients/projects/members, view all entries
 - **Member** - Track own time, view own entries
 
-## SaaS & Billing (Future)
+## Settings
 
-**Data Model Hooks:**
-- `organizations.plan` - free, pro, etc.
-- `organizations.limits` - JSON for plan-specific limits
-- Metered usage: entries count, report email sends, API calls
-- `canUseFeature(org, 'feature-name')` abstraction
+**Organization Settings:**
+- Name and slug
+- Default rate and rounding increment
+- Billing defaults (type, frequency, payment terms)
+- Feature flags (enable/disable modules)
+- Payment provider integration (Stripe, PayPal, Square)
+- Toggl integration (API token, workspace)
 
-**Potential Gates:**
-- Number of clients/projects (generous free tier)
-- Auto-send reports (costs email sends)
-- API access (costs compute)
-- Multiple members (solo is free, team is paid)
+**Personal Preferences:**
+- Name and email
+- Notification preferences
+- Theme (system/light/dark)
+- Default view modes (list/table preferences)
 
-**Philosophy:** Solo freelancer or small team with a few clients uses this free. Paid tiers unlock scale features and higher limits.
+**Danger Zone:**
+- Leave organization
+- Transfer ownership (owners)
+- Delete organization (owners)
 
-## Implementation Phases
+## Cron Jobs
 
-### Phase 1 - Core (MVP) ✓
-1. Auth (Better Auth: passkey, OAuth, magic link + 2FA)
-2. Org/Client/Project/Task CRUD
-3. Time entry with quick search
-4. Timeline view with inline editing
-5. Basic settings (rate, rounding increment)
+**Daily Jobs:**
+- `/api/cron/generate-invoices` - Check for billing cycles due, create invoices
+- `/api/cron/recurring-expenses` - Generate recurring expenses
 
-### Phase 2 - Reports & Invoices ✓
-6. Report configs and public report pages
-7. Date range navigation and grouping
-8. CSV export
-9. Invoice creation and management
-10. Public invoice view
+**Weekly Jobs:**
+- `/api/cron/send-reports` - Auto-send scheduled reports to clients
 
-### Phase 3 - Client Management ✓
-11. Client billing configuration
-12. Client/project dashboards
-13. Client hierarchy (parent/child with drag-drop)
-14. Client list filters and sorting
-15. Toggl import (API + CSV)
+## Implementation Status
 
-### Phase 4 - Polish & Automation
-16. Smart suggestions (recent + patterns)
-17. Auto-invoice generation (cron)
-18. Email templates (React Email)
-19. Manual report/invoice sending via Resend
+### Completed
+- [x] Auth (Better Auth: passkey, OAuth, magic link + 2FA)
+- [x] Org/Client/Project/Task CRUD
+- [x] Time entry with quick search
+- [x] Timeline view with inline editing
+- [x] Basic settings (rate, rounding increment)
+- [x] Report configs and public report pages
+- [x] Date range navigation and grouping
+- [x] CSV export
+- [x] Invoice creation and management
+- [x] Public invoice view
+- [x] Invoice PDF generation
+- [x] Client billing configuration
+- [x] Client/project dashboards
+- [x] Client hierarchy (parent/child with drag-drop)
+- [x] Client list filters and sorting
+- [x] Toggl import (API + CSV)
+- [x] Feature flags system
+- [x] Expense tracking
+- [x] Recurring expenses
+- [x] Proposals & contracts
+- [x] Project management (tasks, kanban, assignments)
+- [x] Task types and tags
+- [x] Task relationships (blocked_by, related_to)
+- [x] Project files (R2 storage)
+- [x] Project activity log
+- [x] Client portal with invitations
+- [x] Notifications system
+- [x] Recurring time entry templates
+- [x] Auto-invoice generation (cron)
+- [x] Auto-report sending (cron)
+- [x] Command palette
+- [x] Onboarding flow
 
-### Phase 5 - SaaS Prep
-20. Plan/limits infrastructure
-21. Usage tracking
-22. Billing integration (Stripe)
-23. Landing page / marketing site
-
-## Future Ideas
-
-Ideas to explore later, not part of initial implementation:
+### Future Ideas
 
 **Calendar Integration:**
 - Connect Google Calendar (OAuth), possibly others later
@@ -548,3 +748,6 @@ Ideas to explore later, not part of initial implementation:
 - CLI tool for quick entry from terminal
 - Browser extension for one-click tracking
 - Integrations (Slack, Linear, GitHub issues)
+- Time tracking reminders
+- Budget alerts
+- Team utilization reports

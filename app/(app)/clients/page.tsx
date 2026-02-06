@@ -12,11 +12,8 @@ export default async function ClientsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Clients</h1>
-        <p className="text-muted-foreground">
-          Manage your clients and their billing settings.
-        </p>
+      <div className="mb-8">
+        <h1 className="text-xl font-semibold tracking-tight">Clients</h1>
       </div>
 
       <Suspense fallback={<ClientsLoading />}>
