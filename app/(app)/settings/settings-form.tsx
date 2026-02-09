@@ -32,10 +32,49 @@ import {
 import { z } from "zod";
 import type { OrgFeatures } from "@/lib/db/schema";
 
+const BILLING_TYPES = [
+  {
+    value: "hourly",
+    label: "Hourly",
+    description: "Bill for actual hours worked",
+  },
+  {
+    value: "retainer_fixed",
+    label: "Fixed Retainer",
+    description: "Flat fee per billing period",
+  },
+  {
+    value: "retainer_capped",
+    label: "Capped Retainer",
+    description: "Hourly up to a maximum amount",
+  },
+  {
+    value: "retainer_uncapped",
+    label: "Uncapped Retainer",
+    description: "Hourly with a baseline minimum",
+  },
+  {
+    value: "fixed_project",
+    label: "Fixed Project",
+    description: "One-time project fee",
+  },
+] as const;
+
+const BILLING_FREQUENCIES = [
+  { value: "weekly", label: "Weekly" },
+  { value: "biweekly", label: "Bi-weekly" },
+  { value: "monthly", label: "Monthly" },
+  { value: "quarterly", label: "Quarterly" },
+  { value: "per_project", label: "Per Project" },
+] as const;
+
 const organizationSettingsSchema = z.object({
   name: z.string().min(1, "Organization name is required"),
   defaultRate: z.string(),
   roundingIncrement: z.string(),
+  defaultBillingType: z.string(),
+  defaultBillingFrequency: z.string(),
+  defaultPaymentTermsDays: z.string(),
 });
 
 type OrganizationSettingsFormData = z.infer<typeof organizationSettingsSchema>;
@@ -46,6 +85,9 @@ type Organization = {
   slug: string;
   defaultRate: number | null;
   roundingIncrement: number | null;
+  defaultBillingType: string | null;
+  defaultBillingFrequency: string | null;
+  defaultPaymentTermsDays: number | null;
 };
 
 type Props = {
@@ -68,6 +110,11 @@ export function SettingsForm({ organization, canEdit, features }: Props) {
         ? (organization.defaultRate / 100).toString()
         : "",
       roundingIncrement: (organization.roundingIncrement ?? 15).toString(),
+      defaultBillingType: organization.defaultBillingType || "none",
+      defaultBillingFrequency: organization.defaultBillingFrequency || "none",
+      defaultPaymentTermsDays: (
+        organization.defaultPaymentTermsDays ?? 30
+      ).toString(),
     },
   });
 
@@ -77,7 +124,6 @@ export function SettingsForm({ organization, canEdit, features }: Props) {
     setIsLoading(true);
 
     try {
-      // Convert rate from dollars to cents
       const rateInCents = data.defaultRate
         ? Math.round(parseFloat(data.defaultRate) * 100)
         : null;
@@ -91,6 +137,17 @@ export function SettingsForm({ organization, canEdit, features }: Props) {
           name: data.name.trim(),
           defaultRate: rateInCents,
           roundingIncrement: parseInt(data.roundingIncrement, 10),
+          defaultBillingType:
+            data.defaultBillingType === "none"
+              ? null
+              : data.defaultBillingType,
+          defaultBillingFrequency:
+            data.defaultBillingFrequency === "none"
+              ? null
+              : data.defaultBillingFrequency,
+          defaultPaymentTermsDays: data.defaultPaymentTermsDays
+            ? parseInt(data.defaultPaymentTermsDays, 10)
+            : null,
         }),
       });
 
@@ -102,7 +159,6 @@ export function SettingsForm({ organization, canEdit, features }: Props) {
       setSuccess(true);
       router.refresh();
 
-      // Clear success message after 3 seconds
       setTimeout(() => setSuccess(false), 3000);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
@@ -200,6 +256,121 @@ export function SettingsForm({ organization, canEdit, features }: Props) {
                       </Select>
                       <FormDescription>
                         Time entries will be rounded to the nearest increment.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </>
+            )}
+
+            {features.invoicing && (
+              <>
+                <div className="border-t pt-6">
+                  <h3 className="text-sm font-medium mb-1">Billing Defaults</h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Default billing settings applied to new clients.
+                  </p>
+                </div>
+
+                <FormField
+                  control={form.control}
+                  name="defaultBillingType"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Default billing type</FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        defaultValue={field.value}
+                        disabled={!canEdit || isLoading}
+                      >
+                        <FormControl>
+                          <SelectTrigger className="max-w-sm squircle">
+                            <SelectValue placeholder="Select billing type" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent className="squircle">
+                          <SelectItem value="none">None</SelectItem>
+                          {BILLING_TYPES.map((type) => (
+                            <SelectItem key={type.value} value={type.value}>
+                              <div className="grid gap-0.5">
+                                <div className="font-medium">{type.label}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {type.description}
+                                </div>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>
+                        New clients will default to this billing type.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="defaultBillingFrequency"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Default billing frequency</FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        defaultValue={field.value}
+                        disabled={!canEdit || isLoading}
+                      >
+                        <FormControl>
+                          <SelectTrigger className="max-w-sm squircle">
+                            <SelectValue placeholder="Select frequency" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent className="squircle">
+                          <SelectItem value="none">None</SelectItem>
+                          {BILLING_FREQUENCIES.map((freq) => (
+                            <SelectItem key={freq.value} value={freq.value}>
+                              {freq.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>
+                        How often new clients will be billed by default.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="defaultPaymentTermsDays"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Default payment terms</FormLabel>
+                      <div className="flex items-center gap-2 max-w-sm">
+                        <span className="text-muted-foreground text-sm">
+                          Net
+                        </span>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            type="number"
+                            min="0"
+                            max="365"
+                            placeholder="30"
+                            disabled={!canEdit || isLoading}
+                            className="w-24 squircle"
+                          />
+                        </FormControl>
+                        <span className="text-muted-foreground text-sm">
+                          days
+                        </span>
+                      </div>
+                      <FormDescription>
+                        Number of days clients have to pay after invoicing.
                       </FormDescription>
                       <FormMessage />
                     </FormItem>

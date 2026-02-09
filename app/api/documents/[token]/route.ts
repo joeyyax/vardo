@@ -7,6 +7,7 @@ import {
   isValidToken,
   logSecurityEvent,
 } from "@/lib/security";
+import { logActivity } from "@/lib/activity";
 
 type RouteParams = {
   params: Promise<{ token: string }>;
