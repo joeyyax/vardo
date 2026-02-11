@@ -1,0 +1,6 @@
+Total messages: 4 (Errors: 0, Warnings: 1)
+
+[INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3000/_next/static/chunks/be696_next_dist_0b3f9d57._.js:2297
+[LOG] [HMR] connected @ http://localhost:3000/_next/static/chunks/be696_next_dist_0b3f9d57._.js:2297
+[WARNING] Please ensure that the container has a non-static position, like 'relative', 'fixed', or 'absolute' to ensure scroll offset is calculated correctly. @ http://localhost:3000/_next/static/chunks/be696_next_dist_0b3f9d57._.js:2297
+[LOG] [HMR] connected @ http://localhost:3000/_next/static/chunks/be696_next_dist_0b3f9d57._.js:2297

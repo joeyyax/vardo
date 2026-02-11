@@ -1,0 +1,348 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e5]:
+        - link "[ scope ]" [ref=e6] [cursor=pointer]:
+          - /url: /
+          - generic [ref=e7]: "["
+          - generic [ref=e8]: scope
+          - generic [ref=e9]: "]"
+        - navigation [ref=e10]:
+          - link "How it works" [ref=e11] [cursor=pointer]:
+            - /url: /how-it-works
+          - link "Who it's for" [ref=e12] [cursor=pointer]:
+            - /url: /for-you
+          - link "Why" [ref=e13] [cursor=pointer]:
+            - /url: /why
+          - link "Pricing" [ref=e14] [cursor=pointer]:
+            - /url: /pricing
+        - generic [ref=e15]:
+          - link "Sign in" [ref=e16] [cursor=pointer]:
+            - /url: /login
+          - link "Build your workflow" [ref=e17] [cursor=pointer]:
+            - /url: /login
+    - generic [ref=e18]:
+      - generic [ref=e20]:
+        - generic [ref=e21]:
+          - img [ref=e22]
+          - generic [ref=e25]: Client work, simplified
+        - heading "Run client work without chaos." [level=1] [ref=e26]:
+          - text: Run client work
+          - text: without chaos.
+        - paragraph [ref=e27]: Time tracking, tasks, proposals, invoicing — connected by default, not duct-taped together.
+        - paragraph [ref=e28]:
+          - strong [ref=e29]: Scope
+          - text: is the workspace for freelancers and small teams who want structure without overhead.
+        - generic [ref=e30]:
+          - link "Get started free" [ref=e31] [cursor=pointer]:
+            - /url: /login
+            - text: Get started free
+            - img
+          - link "See how it works" [ref=e32] [cursor=pointer]:
+            - /url: /how-it-works
+        - paragraph [ref=e33]: Free forever for solo use. No credit card required.
+      - generic [ref=e64]:
+        - generic [ref=e65]:
+          - heading "Client work gets messy fast" [level=2] [ref=e66]
+          - paragraph [ref=e67]: Structure erodes over time. Work rarely breaks because of effort—it breaks because the systems fail.
+          - generic [ref=e68]:
+            - generic [ref=e70]:
+              - img [ref=e72]
+              - generic [ref=e73]: Work starts before terms are clear
+            - generic [ref=e75]:
+              - img [ref=e77]
+              - generic [ref=e78]: Tasks quietly expand scope
+            - generic [ref=e80]:
+              - img [ref=e82]
+              - generic [ref=e83]: Time tracking lives in isolation
+            - generic [ref=e85]:
+              - img [ref=e87]
+              - generic [ref=e88]: Billing feels reactive instead of inevitable
+            - generic [ref=e90]:
+              - img [ref=e92]
+              - generic [ref=e93]: Tools are flexible, but disconnected
+          - paragraph [ref=e94]:
+            - text: If this feels familiar, it's not a personal failure.
+            - generic [ref=e95]: It's a tooling problem.
+        - generic [ref=e97]:
+          - generic [ref=e100]:
+            - img [ref=e102]
+            - img [ref=e106]
+            - img [ref=e110]
+            - img [ref=e114]
+            - img [ref=e120]
+            - img [ref=e124]
+          - img
+      - generic [ref=e130]:
+        - generic [ref=e131]:
+          - heading "A calmer way to work" [level=2] [ref=e132]
+          - paragraph [ref=e133]:
+            - text: Most tools give you flexibility and leave you with the mess.
+            - strong [ref=e134]: Scope gives you structure — then gets out of the way.
+        - generic [ref=e135]:
+          - generic [ref=e140]:
+            - img [ref=e142]
+            - generic [ref=e144]:
+              - heading "Opinionated workflows" [level=3] [ref=e145]
+              - paragraph [ref=e146]: Built-in guardrails that protect scope without getting in the way.
+          - generic [ref=e151]:
+            - img [ref=e153]
+            - generic [ref=e155]:
+              - heading "Clear visibility" [level=3] [ref=e156]
+              - paragraph [ref=e157]: Clients see progress without micromanaging your process.
+          - generic [ref=e162]:
+            - img [ref=e164]
+            - generic [ref=e166]:
+              - heading "Projects define rules" [level=3] [ref=e167]
+              - paragraph [ref=e168]: Set expectations once. Tasks execute inside clear boundaries.
+          - generic [ref=e173]:
+            - img [ref=e175]
+            - generic [ref=e178]:
+              - heading "Smart automation" [level=3] [ref=e179]
+              - paragraph [ref=e180]: Supports your judgment, never replaces it.
+        - generic [ref=e182]:
+          - text: One system, not a stack of duct-taped tools.
+          - img [ref=e184]
+      - generic [ref=e189]:
+        - generic [ref=e190]:
+          - heading "Work has a lifecycle" [level=2] [ref=e191]
+          - paragraph [ref=e192]:
+            - text: Client work follows a natural sequence.
+            - strong [ref=e193]: Scope
+            - text: is built around it.
+        - generic [ref=e195]:
+          - generic [ref=e196]:
+            - generic [ref=e198]:
+              - img [ref=e200]
+              - generic [ref=e204]:
+                - generic [ref=e205]: Proposal
+                - generic [ref=e206]: Define scope & terms
+            - generic [ref=e208]:
+              - img [ref=e210]
+              - generic [ref=e216]:
+                - generic [ref=e217]: Agreement
+                - generic [ref=e218]: Clear acceptance
+            - generic [ref=e220]:
+              - img [ref=e222]
+              - generic [ref=e228]:
+                - generic [ref=e229]: Onboarding
+                - generic [ref=e230]: Set expectations
+            - generic [ref=e232]:
+              - img [ref=e234]
+              - generic [ref=e238]:
+                - generic [ref=e239]: Active work
+                - generic [ref=e240]: Execute with clarity
+            - generic [ref=e242]:
+              - img [ref=e244]
+              - generic [ref=e248]:
+                - generic [ref=e249]: Ongoing
+                - generic [ref=e250]: Maintain or close
+          - img
+          - img
+          - img
+          - img
+        - generic [ref=e251]:
+          - generic [ref=e255]:
+            - img [ref=e256]
+            - paragraph [ref=e259]: Work doesn't start until it's agreed
+          - generic [ref=e263]:
+            - img [ref=e264]
+            - paragraph [ref=e266]: Scope doesn't change without intention
+          - generic [ref=e270]:
+            - img [ref=e271]
+            - paragraph [ref=e274]: Everyone knows where things stand
+        - paragraph [ref=e275]: Nothing is implicit. Nothing is surprising.
+      - generic [ref=e278]:
+        - generic [ref=e279]:
+          - heading "What you get with Scope" [level=2] [ref=e280]
+          - paragraph [ref=e281]: Everything you need to run client work, nothing you don't.
+        - generic [ref=e282]:
+          - generic [ref=e286]:
+            - img [ref=e289]
+            - generic [ref=e292]:
+              - generic [ref=e293]:
+                - img [ref=e295]
+                - heading "Time tracking that stays out of the way" [level=3] [ref=e298]
+              - paragraph [ref=e299]: Keyboard-first, manual entry. No timers running in the background. Just capture what you did and move on.
+          - generic [ref=e303]:
+            - img [ref=e306]
+            - generic [ref=e309]:
+              - generic [ref=e310]:
+                - img [ref=e312]
+                - heading "Tasks with clear boundaries" [level=3] [ref=e315]
+              - paragraph [ref=e316]: A structured board that clients can see — without giving up workflow control.
+          - generic [ref=e320]:
+            - img [ref=e323]
+            - generic [ref=e326]:
+              - generic [ref=e327]:
+                - img [ref=e329]
+                - heading "Proposals and contracts that mean something" [level=3] [ref=e332]
+              - paragraph [ref=e333]: Define scope before work starts. Clear acceptance, clear terms, no ambiguity.
+          - generic [ref=e337]:
+            - img [ref=e340]
+            - generic [ref=e343]:
+              - generic [ref=e344]:
+                - img [ref=e346]
+                - heading "Billing that follows naturally" [level=3] [ref=e349]
+              - paragraph [ref=e350]: Time, scope, and expenses are already connected. Invoicing becomes a formality, not a project.
+      - generic [ref=e353]:
+        - generic [ref=e354]:
+          - heading "Built for how you actually work" [level=2] [ref=e355]
+          - paragraph [ref=e356]: You don't need more features. You need clearer boundaries.
+        - generic [ref=e357]:
+          - generic [ref=e358]:
+            - img [ref=e360]
+            - generic [ref=e365]:
+              - generic:
+                - img
+                - heading "Scope is for" [level=3]
+                - paragraph: Freelancers, consultants, small studios, and boutique agencies who know how to work but need better systems.
+            - link "See who it's for" [ref=e366] [cursor=pointer]:
+              - /url: /for-you
+              - text: See who it's for
+              - img
+          - generic [ref=e367]:
+            - generic [ref=e369]:
+              - generic:
+                - img
+                - heading "Care about boundaries" [level=3]
+                - paragraph: Set clear limits without awkward conversations.
+            - link "Learn more" [ref=e370] [cursor=pointer]:
+              - /url: /how-it-works
+              - text: Learn more
+              - img
+          - generic [ref=e371]:
+            - generic [ref=e373]:
+              - generic:
+                - img
+                - heading "Already know how to work" [level=3]
+                - paragraph: Tools that support your judgment, not replace it.
+            - link "Learn more" [ref=e374] [cursor=pointer]:
+              - /url: /how-it-works
+              - text: Learn more
+              - img
+          - generic [ref=e375]:
+            - img [ref=e377]
+            - generic [ref=e380]:
+              - generic:
+                - img
+                - heading "Transparency without micromanagement" [level=3]
+                - paragraph: Clients see progress without standing over your shoulder. Automated updates, clear status, no explanations needed.
+            - link "See how it works" [ref=e381] [cursor=pointer]:
+              - /url: /how-it-works
+              - text: See how it works
+              - img
+          - generic [ref=e382]:
+            - generic [ref=e384]:
+              - generic:
+                - img
+                - heading "Reduce cognitive load" [level=3]
+                - paragraph: Clear structure means less decision fatigue.
+            - link "Get started" [ref=e385] [cursor=pointer]:
+              - /url: /pricing
+              - text: Get started
+              - img
+          - generic [ref=e386]:
+            - generic [ref=e388]:
+              - generic:
+                - img
+                - heading "Opinionated workflows" [level=3]
+                - paragraph: Built-in guardrails that protect scope without getting in the way.
+            - link "Learn more" [ref=e389] [cursor=pointer]:
+              - /url: /how-it-works
+              - text: Learn more
+              - img
+          - generic [ref=e390] [cursor=pointer]:
+            - link [ref=e391]:
+              - /url: /login
+            - img [ref=e392]
+            - heading "Ready?" [level=3] [ref=e395]
+            - paragraph [ref=e396]: Free forever for solo use. No credit card.
+            - generic [ref=e397]:
+              - text: Get started
+              - img [ref=e398]
+      - generic [ref=e403]:
+        - generic [ref=e404]:
+          - img [ref=e405]
+          - generic [ref=e407]: Our philosophy
+        - heading "Opinionated by design" [level=2] [ref=e408]
+        - paragraph [ref=e409]:
+          - strong [ref=e410]: Scope
+          - text: "chooses:"
+        - generic [ref=e411]:
+          - generic [ref=e412]:
+            - generic [ref=e413]: Clarity
+            - generic [ref=e414]: over flexibility
+          - generic [ref=e415]:
+            - generic [ref=e416]: Structure
+            - generic [ref=e417]: over configuration
+          - generic [ref=e418]:
+            - generic [ref=e419]: Calm
+            - generic [ref=e420]: over cleverness
+        - paragraph [ref=e421]: Because client work already has enough uncertainty.
+      - generic [ref=e425]:
+        - generic [ref=e426]:
+          - img [ref=e428]
+          - generic [ref=e431]:
+            - heading "Internal work is measured, not billed" [level=3] [ref=e432]
+            - paragraph [ref=e433]: Not all work is client work — and it still counts.
+        - paragraph [ref=e434]: Planning, admin, marketing, learning — tracked the same way, visible in reports, always free. Understanding effort vs revenue is how you make better decisions.
+      - generic [ref=e438]:
+        - heading "Your tools should feel lighter than the work itself." [level=2] [ref=e439]:
+          - text: Your tools should feel lighter
+          - text: than the work itself.
+        - paragraph [ref=e440]: Start with Starter — it's free forever, no credit card required. Upgrade when your client work grows.
+        - generic [ref=e441]:
+          - link "Get started free" [ref=e442] [cursor=pointer]:
+            - /url: /login
+            - text: Get started free
+            - img
+          - link "See pricing" [ref=e443] [cursor=pointer]:
+            - /url: /pricing
+    - contentinfo [ref=e444]:
+      - generic [ref=e445]:
+        - generic [ref=e446]:
+          - link "[ scope ]" [ref=e448] [cursor=pointer]:
+            - /url: /
+            - generic [ref=e449]: "["
+            - generic [ref=e450]: scope
+            - generic [ref=e451]: "]"
+          - generic [ref=e452]:
+            - heading "Product" [level=4] [ref=e453]
+            - list [ref=e454]:
+              - listitem [ref=e455]:
+                - link "How it works" [ref=e456] [cursor=pointer]:
+                  - /url: /how-it-works
+              - listitem [ref=e457]:
+                - link "Who it's for" [ref=e458] [cursor=pointer]:
+                  - /url: /for-you
+              - listitem [ref=e459]:
+                - link "Pricing" [ref=e460] [cursor=pointer]:
+                  - /url: /pricing
+          - generic [ref=e461]:
+            - heading "Philosophy" [level=4] [ref=e462]
+            - list [ref=e463]:
+              - listitem [ref=e464]:
+                - link "Why Scope exists" [ref=e465] [cursor=pointer]:
+                  - /url: /why
+              - listitem [ref=e466]:
+                - link "Choosing the right tool" [ref=e467] [cursor=pointer]:
+                  - /url: /choosing-the-right-tool
+          - generic [ref=e468]:
+            - heading "Account" [level=4] [ref=e469]
+            - list [ref=e470]:
+              - listitem [ref=e471]:
+                - link "Sign in" [ref=e472] [cursor=pointer]:
+                  - /url: /login
+              - listitem [ref=e473]:
+                - link "Privacy" [ref=e474] [cursor=pointer]:
+                  - /url: /privacy
+              - listitem [ref=e475]:
+                - link "Terms" [ref=e476] [cursor=pointer]:
+                  - /url: /terms
+        - generic [ref=e477]:
+          - paragraph [ref=e478]: © 2026 Scope. All rights reserved.
+          - paragraph [ref=e479]: Built for freelancers and small teams.
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=e485] [cursor=pointer]:
+    - img [ref=e486]
