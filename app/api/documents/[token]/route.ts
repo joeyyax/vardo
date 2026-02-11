@@ -8,6 +8,7 @@ import {
   logSecurityEvent,
 } from "@/lib/security";
 import { logActivity } from "@/lib/activity";
+import { handleDocumentAcceptance } from "@/lib/agreement-generator";
 
 type RouteParams = {
   params: Promise<{ token: string }>;
@@ -142,7 +143,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const document = await db.query.documents.findFirst({
       where: eq(documents.publicToken, token),
       with: {
-        project: true,
+        project: {
+          with: {
+            client: {
+              columns: { organizationId: true },
+            },
+          },
+        },
       },
     });
 
@@ -216,6 +223,19 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         documentType: document.type,
         acceptedBy: normalizedEmail,
       });
+
+      // Trigger lifecycle stage transition
+      try {
+        await handleDocumentAcceptance(
+          document.id,
+          document.type as "proposal" | "contract" | "change_order",
+          document.projectId,
+          document.project.client.organizationId
+        );
+      } catch (err) {
+        // Log but don't fail the acceptance
+        console.error("Error handling document acceptance lifecycle:", err);
+      }
 
       return NextResponse.json({
         success: true,

@@ -37,6 +37,14 @@ export default async function ProjectPage({ params }: PageProps) {
       tasks: {
         where: eq(tasks.isArchived, false),
         orderBy: (tasks, { asc }) => [asc(tasks.name)],
+        with: {
+          type: {
+            columns: { id: true, name: true, color: true, icon: true },
+          },
+          assignedToUser: {
+            columns: { id: true, name: true, email: true },
+          },
+        },
       },
     },
   });
@@ -54,6 +62,7 @@ export default async function ProjectPage({ params }: PageProps) {
     <ProjectDashboard
       project={project}
       orgId={orgData.organization.id}
+      orgName={orgData.organization.name}
       pmEnabled={features.pm}
       currentUserId={session.user.id}
     />

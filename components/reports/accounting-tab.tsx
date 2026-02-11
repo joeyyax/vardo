@@ -22,6 +22,7 @@ import {
   Loader2,
   X,
 } from "lucide-react";
+import { formatCurrency } from "@/lib/formatting";
 import { PageToolbar } from "@/components/page-toolbar";
 import { SavedReportsDropdown } from "@/components/reports/saved-reports-dropdown";
 import { ExportDropdown } from "@/components/reports/export-dropdown";
@@ -59,13 +60,6 @@ type AccountingData = {
     topClient: { name: string; hours: number; amount: number } | null;
   };
 };
-
-function formatCurrency(cents: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(cents / 100);
-}
 
 function getDefaultYear(): string {
   const now = new Date();

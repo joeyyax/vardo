@@ -46,7 +46,7 @@ import { ListRow, ListContainer } from "@/components/ui/list-row";
 
 type Document = {
   id: string;
-  type: "proposal" | "contract";
+  type: "proposal" | "contract" | "change_order" | "orientation";
   status: "draft" | "sent" | "viewed" | "accepted" | "declined";
   title: string;
   publicToken: string | null;

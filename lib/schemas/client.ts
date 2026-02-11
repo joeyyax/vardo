@@ -3,6 +3,7 @@ import { z } from "zod";
 export const clientSchema = z.object({
   name: z.string().min(1, "Name is required"),
   color: z.string().nullable(),
+  contactEmail: z.string().email().nullable().or(z.literal("")),
   rateOverride: z.string(),
   isBillable: z.boolean().nullable(),
   parentClientId: z.string().nullable(),

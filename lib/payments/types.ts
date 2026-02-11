@@ -1,6 +1,4 @@
 // Payment provider types
-// Note: This is the foundation for payment integration.
-// Actual payments are not enabled yet.
 
 export type PaymentProvider = "stripe" | "polar" | null;
 
@@ -10,18 +8,13 @@ export type PaymentProviderConfig = {
 };
 
 export type StripeConfig = {
-  // For client invoices - Stripe Connect (payments go directly to freelancer)
-  accountId?: string; // Connected account ID
   connected: boolean;
   livemode: boolean;
-  // We don't store API keys - use OAuth flow
 };
 
 export type PolarConfig = {
-  // For SaaS subscriptions (if/when productized)
   organizationId?: string;
   connected: boolean;
-  // We don't store API keys - use OAuth flow
 };
 
 export type PaymentProviderInfo = {

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { format } from "date-fns";
 import {
+  AlertTriangle,
   ArrowLeft,
   Edit,
   Plus,
@@ -18,14 +19,29 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ProjectDialog } from "@/components/projects/project-dialog";
-import { TaskDialog } from "@/components/projects/task-dialog";
+import { ProjectLifecycleTimeline } from "@/components/projects/project-lifecycle-timeline";
+import {
+  TaskDialog,
+  TASK_STATUS_LABELS,
+  TASK_STATUS_COLORS,
+  TASK_PRIORITY_LABELS,
+  TASK_PRIORITY_COLORS,
+} from "@/components/projects/task-dialog";
 import { KanbanBoard } from "@/components/projects/kanban-board";
 import { ProjectInvitations } from "@/components/projects/project-invitations";
 import { ProjectFiles } from "@/components/projects/project-files";
 import { ProjectActivity } from "@/components/projects/project-activity";
 import { ProjectDocuments } from "@/components/projects/project-documents";
 import { ProjectExpenses } from "@/components/projects/project-expenses";
+import { ProjectOnboardingChecklist } from "@/components/projects/project-onboarding-checklist";
+import { ProjectOffboardingPanel } from "@/components/projects/project-offboarding-panel";
+import { StageGuidance } from "@/components/projects/stage-guidance";
+import { ScopeTaskPrompt } from "@/components/projects/scope-task-prompt";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { formatHoursHuman } from "@/lib/formatting";
+import { getStageCapabilities } from "@/lib/project-stages";
+import type { ProjectStage } from "@/lib/db/schema";
+import type { DocumentContent } from "@/lib/template-engine/types";
 
 // Server-side types (Date objects from DB)
 type ServerClient = {
@@ -41,9 +57,15 @@ type ServerTask = {
   id: string;
   projectId: string;
   name: string;
+  description: string | null;
   rateOverride: number | null;
   isBillable: boolean | null;
   isArchived: boolean | null;
+  status: "todo" | "in_progress" | "review" | "done" | null;
+  priority: "low" | "medium" | "high" | "urgent" | null;
+  assignedTo: string | null;
+  type?: { id: string; name: string; color: string | null; icon: string | null } | null;
+  assignedToUser?: { id: string; name: string | null; email: string } | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -56,7 +78,7 @@ type ServerProject = {
   rateOverride: number | null;
   isBillable: boolean | null;
   isArchived: boolean | null;
-  stage: "lead" | "proposal_sent" | "active" | "completed" | null;
+  stage: "getting_started" | "proposal" | "agreement" | "onboarding" | "active" | "ongoing" | "offboarding" | "completed" | null;
   budgetType: "hours" | "fixed" | null;
   budgetHours: number | null;
   budgetAmountCents: number | null;
@@ -72,6 +94,9 @@ type ProjectStats = {
   totalBillable: number;
   budgetMinutes: number | null;
   budgetRemaining: number | null;
+  budgetType: string | null;
+  budgetAmount: number | null;
+  budgetUsedAmount: number | null;
   taskBreakdown: {
     id: string;
     name: string;
@@ -90,8 +115,23 @@ type RecentEntry = {
 type ProjectDashboardProps = {
   project: ServerProject;
   orgId: string;
+  orgName: string;
   pmEnabled?: boolean;
   currentUserId?: string;
+};
+
+type ProjectDocument = {
+  id: string;
+  type: "proposal" | "contract" | "change_order" | "orientation";
+  status: "draft" | "sent" | "viewed" | "accepted" | "declined";
+  title: string;
+  content: DocumentContent;
+  publicToken: string | null;
+  sentAt: string | null;
+  viewedAt: string | null;
+  acceptedAt: string | null;
+  declinedAt: string | null;
+  createdAt: string;
 };
 
 type TaskView = "list" | "board";
@@ -128,11 +168,12 @@ function toProjectType(serverProject: ServerProject & { createdAt: Date | string
   };
 }
 
-export function ProjectDashboard({ project: initialProject, orgId, pmEnabled = false, currentUserId }: ProjectDashboardProps) {
+export function ProjectDashboard({ project: initialProject, orgId, orgName, pmEnabled = false, currentUserId }: ProjectDashboardProps) {
   const [project, setProject] = useState(initialProject);
   const [allClients, setAllClients] = useState<{ id: string; name: string; color: string | null }[]>([]);
   const [stats, setStats] = useState<ProjectStats | null>(null);
   const [recentEntries, setRecentEntries] = useState<RecentEntry[]>([]);
+  const [projectDocuments, setProjectDocuments] = useState<ProjectDocument[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // View state (board view only available when PM is enabled)
@@ -142,13 +183,17 @@ export function ProjectDashboard({ project: initialProject, orgId, pmEnabled = f
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
 
+  // Stage guidance → template wizard bridge
+  const [guidanceSuggestedTemplateId, setGuidanceSuggestedTemplateId] = useState<string | undefined>();
+
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [statsRes, entriesRes, clientsRes] = await Promise.all([
+      const [statsRes, entriesRes, clientsRes, docsRes] = await Promise.all([
         fetch(`/api/v1/organizations/${orgId}/projects/${project.id}/stats`),
         fetch(`/api/v1/organizations/${orgId}/projects/${project.id}/entries?limit=10`),
         fetch(`/api/v1/organizations/${orgId}/clients`),
+        fetch(`/api/v1/organizations/${orgId}/projects/${project.id}/documents`),
       ]);
 
       if (statsRes.ok) {
@@ -164,6 +209,11 @@ export function ProjectDashboard({ project: initialProject, orgId, pmEnabled = f
       if (clientsRes.ok) {
         const clientsData = await clientsRes.json();
         setAllClients(clientsData || []);
+      }
+
+      if (docsRes.ok) {
+        const docsData = await docsRes.json();
+        setProjectDocuments(docsData || []);
       }
     } catch (err) {
       console.error("Error fetching project data:", err);
@@ -190,12 +240,7 @@ export function ProjectDashboard({ project: initialProject, orgId, pmEnabled = f
     fetchData();
   }, [orgId, project.id, fetchData]);
 
-  const formatHours = (minutes: number) => {
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    if (mins === 0) return `${hours}h`;
-    return `${hours}h ${mins}m`;
-  };
+  const formatHours = formatHoursHuman;
 
   const formatCurrency = (cents: number) => {
     return new Intl.NumberFormat("en-US", {
@@ -203,6 +248,23 @@ export function ProjectDashboard({ project: initialProject, orgId, pmEnabled = f
       currency: "USD",
     }).format(cents / 100);
   };
+
+  // Stage gating
+  const stage = (project.stage || "getting_started") as ProjectStage;
+  const capabilities = getStageCapabilities(stage);
+
+  // Handler for stage guidance "Create Proposal" / "Create Contract" actions
+  // Scrolls to the documents section and opens the template wizard via ref
+  const handleDocumentAction = useCallback(
+    (type: "proposal" | "contract" | "change_order", suggestedTemplateId?: string) => {
+      setGuidanceSuggestedTemplateId(suggestedTemplateId);
+      // Dispatch a custom event that ProjectDocuments can listen to
+      window.dispatchEvent(
+        new CustomEvent("open-document-wizard", { detail: { type, suggestedTemplateId } })
+      );
+    },
+    []
+  );
 
   return (
     <div className="space-y-6">
@@ -246,23 +308,68 @@ export function ProjectDashboard({ project: initialProject, orgId, pmEnabled = f
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            onClick={() => setEditDialogOpen(true)}
-            className="squircle"
-          >
-            <Edit className="size-4" />
-            Edit
-          </Button>
-          <Button
-            onClick={() => setTaskDialogOpen(true)}
-            className="squircle"
-          >
-            <Plus className="size-4" />
-            New Task
-          </Button>
+          {capabilities.editProject && (
+            <Button
+              variant="outline"
+              onClick={() => setEditDialogOpen(true)}
+              className="squircle"
+            >
+              <Edit className="size-4" />
+              Edit
+            </Button>
+          )}
+          {capabilities.newTask && (
+            <Button
+              onClick={() => setTaskDialogOpen(true)}
+              className="squircle"
+            >
+              <Plus className="size-4" />
+              New Task
+            </Button>
+          )}
         </div>
       </div>
+
+      {/* Lifecycle timeline */}
+      <Card className="squircle">
+        <CardContent className="py-4 px-6">
+          <ProjectLifecycleTimeline
+            currentStage={(project.stage as import("@/components/projects/project-dialog").ProjectStage) || "getting_started"}
+          />
+        </CardContent>
+      </Card>
+
+      {/* Stage guidance */}
+      <StageGuidance
+        stage={stage}
+        projectId={project.id}
+        orgId={orgId}
+        projectName={project.name}
+        clientName={project.client.name}
+        organizationName={orgName}
+        documents={projectDocuments}
+        hasActiveTasks={project.tasks.some((t) => !t.isArchived)}
+        onStageAdvanced={handleProjectUpdated}
+        onDocumentAction={handleDocumentAction}
+      />
+
+      {/* Onboarding checklist — shown during onboarding stage */}
+      {stage === "onboarding" && (
+        <ProjectOnboardingChecklist
+          orgId={orgId}
+          projectId={project.id}
+          onComplete={handleProjectUpdated}
+        />
+      )}
+
+      {/* Offboarding panel — shown during offboarding stage */}
+      {stage === "offboarding" && (
+        <ProjectOffboardingPanel
+          orgId={orgId}
+          projectId={project.id}
+          onComplete={handleProjectUpdated}
+        />
+      )}
 
       {isLoading ? (
         <div className="flex items-center justify-center py-12">
@@ -270,8 +377,8 @@ export function ProjectDashboard({ project: initialProject, orgId, pmEnabled = f
         </div>
       ) : (
         <>
-          {/* Stats cards */}
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {/* Stats cards — only shown when work has started */}
+          {capabilities.stats && <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Card className="squircle">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">This Month</CardTitle>
@@ -317,35 +424,59 @@ export function ProjectDashboard({ project: initialProject, orgId, pmEnabled = f
               </CardContent>
             </Card>
 
-            {stats?.budgetMinutes ? (
-              <Card className="squircle">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Budget</CardTitle>
-                  <Clock className="size-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">
-                    {formatHours(stats.budgetRemaining ?? 0)}
-                  </div>
-                  <p className="text-xs text-muted-foreground mb-2">
-                    Remaining of {formatHours(stats.budgetMinutes)}
-                  </p>
-                  <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-primary transition-all"
-                      style={{
-                        width: `${Math.min(
-                          100,
-                          ((stats.budgetMinutes - (stats.budgetRemaining ?? 0)) /
-                            stats.budgetMinutes) *
-                            100
-                        )}%`,
-                      }}
-                    />
-                  </div>
-                </CardContent>
-              </Card>
-            ) : (
+            {stats?.budgetMinutes ? (() => {
+              const used = stats.budgetMinutes - (stats.budgetRemaining ?? 0);
+              const pct = Math.min(100, (used / stats.budgetMinutes) * 100);
+              const barColor =
+                pct >= 100
+                  ? "bg-red-500"
+                  : pct >= 80
+                    ? "bg-amber-500"
+                    : "bg-primary";
+              const isFixed = stats.budgetType === "fixed";
+
+              return (
+                <Card className="squircle">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">
+                      {isFixed ? "Budget" : "Hours Budget"}
+                    </CardTitle>
+                    {isFixed ? (
+                      <DollarSign className="size-4 text-muted-foreground" />
+                    ) : (
+                      <Clock className="size-4 text-muted-foreground" />
+                    )}
+                  </CardHeader>
+                  <CardContent>
+                    {isFixed && stats.budgetAmount ? (
+                      <>
+                        <div className="text-2xl font-bold">
+                          {formatCurrency(stats.budgetAmount - (stats.budgetUsedAmount ?? 0))}
+                        </div>
+                        <p className="text-xs text-muted-foreground mb-2">
+                          Remaining of {formatCurrency(stats.budgetAmount)}
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-2xl font-bold">
+                          {formatHours(stats.budgetRemaining ?? 0)}
+                        </div>
+                        <p className="text-xs text-muted-foreground mb-2">
+                          Remaining of {formatHours(stats.budgetMinutes)}
+                        </p>
+                      </>
+                    )}
+                    <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${barColor}`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })() : (
               <Card className="squircle">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">Tasks</CardTitle>
@@ -361,10 +492,33 @@ export function ProjectDashboard({ project: initialProject, orgId, pmEnabled = f
                 </CardContent>
               </Card>
             )}
-          </div>
+          </div>}
 
-          {/* Tasks section - full width when board view */}
-          {pmEnabled && taskView === "board" ? (
+          {/* Task warning banner — pre-active stages */}
+          {capabilities.tasks && !capabilities.timeEntry && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800/50 dark:bg-amber-950/30 p-3">
+              <p className="text-sm text-amber-800 dark:text-amber-200 flex items-center gap-2">
+                <AlertTriangle className="size-4 shrink-0" />
+                <span>
+                  <strong>Work has not yet been approved.</strong>{" "}
+                  Tasks are for planning purposes — time tracking is available once the project is active.
+                </span>
+              </p>
+            </div>
+          )}
+
+          {/* Scope task prompt — active stage with no tasks and accepted docs */}
+          {stage === "active" && project.tasks.length === 0 && (
+            <ScopeTaskPrompt
+              projectId={project.id}
+              orgId={orgId}
+              documents={projectDocuments}
+              onTasksCreated={handleProjectUpdated}
+            />
+          )}
+
+          {/* Tasks section */}
+          {capabilities.tasks && (pmEnabled && taskView === "board" ? (
             <Card className="squircle">
               <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle className="flex items-center gap-2">
@@ -514,19 +668,33 @@ export function ProjectDashboard({ project: initialProject, orgId, pmEnabled = f
               </CardContent>
             </Card>
             </div>
-          )}
+          ))}
 
           {/* Documents and Files */}
           <div className="grid gap-6 lg:grid-cols-2">
-            <ProjectDocuments orgId={orgId} projectId={project.id} />
+            <ProjectDocuments
+              orgId={orgId}
+              projectId={project.id}
+              projectName={project.name}
+              clientName={project.client.name}
+              organizationName={orgName}
+              initialDocuments={projectDocuments}
+              suggestedTemplateId={guidanceSuggestedTemplateId}
+            />
             <ProjectFiles orgId={orgId} projectId={project.id} />
           </div>
 
           {/* Expenses and Client Access */}
-          <div className="grid gap-6 lg:grid-cols-2">
-            <ProjectExpenses orgId={orgId} projectId={project.id} />
-            <ProjectInvitations orgId={orgId} projectId={project.id} />
-          </div>
+          {(capabilities.expenses || capabilities.invitations) && (
+            <div className="grid gap-6 lg:grid-cols-2">
+              {capabilities.expenses && (
+                <ProjectExpenses orgId={orgId} projectId={project.id} />
+              )}
+              {capabilities.invitations && (
+                <ProjectInvitations orgId={orgId} projectId={project.id} />
+              )}
+            </div>
+          )}
 
           {/* Activity Log */}
           <ProjectActivity orgId={orgId} projectId={project.id} />

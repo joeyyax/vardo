@@ -22,6 +22,10 @@ import {
 } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
 import {
+  formatHoursHuman as formatDuration,
+  parseDurationMinutes,
+} from "@/lib/formatting";
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -85,69 +89,12 @@ type EntryBarProps = {
  * Accepts formats: "1h", "1.5h", "1h30m", "90m", "1:30", or just "1" (hours)
  * Bare numbers are treated as hours: "1" = 60min, "0.5" = 30min, "1.25" = 75min
  */
-function parseDuration(input: string): number | null {
-  const trimmed = input.trim().toLowerCase();
-  if (!trimmed) return null;
-
-  // Format: 1:30 (hours:minutes)
-  const colonMatch = trimmed.match(/^(\d+):(\d{1,2})$/);
-  if (colonMatch) {
-    const hours = parseInt(colonMatch[1], 10);
-    const minutes = parseInt(colonMatch[2], 10);
-    return hours * 60 + minutes;
-  }
-
-  // Format: 1h30m or 1h 30m
-  const hoursMinutesMatch = trimmed.match(/^(\d+(?:\.\d+)?)\s*h(?:ours?)?\s*(\d+)?\s*m?(?:in(?:ute)?s?)?$/);
-  if (hoursMinutesMatch) {
-    const hours = parseFloat(hoursMinutesMatch[1]);
-    const minutes = hoursMinutesMatch[2] ? parseInt(hoursMinutesMatch[2], 10) : 0;
-    return Math.round(hours * 60) + minutes;
-  }
-
-  // Format: 1.5h or 1h
-  const hoursMatch = trimmed.match(/^(\d+(?:\.\d+)?)\s*h(?:ours?)?$/);
-  if (hoursMatch) {
-    return Math.round(parseFloat(hoursMatch[1]) * 60);
-  }
-
-  // Format: 90m or 90min
-  const minutesMatch = trimmed.match(/^(\d+)\s*m(?:in(?:ute)?s?)?$/);
-  if (minutesMatch) {
-    return parseInt(minutesMatch[1], 10);
-  }
-
-  // Format: just a number (assume hours)
-  // e.g., "1" = 1h, "0.5" = 30m, "1.25" = 1h 15m
-  const numberMatch = trimmed.match(/^(\d+(?:\.\d+)?)$/);
-  if (numberMatch) {
-    return Math.round(parseFloat(numberMatch[1]) * 60);
-  }
-
-  return null;
-}
-
 /**
  * Round minutes up to the nearest increment.
  */
 function roundUpToIncrement(minutes: number, increment: number): number {
   if (increment <= 0) return minutes;
   return Math.ceil(minutes / increment) * increment;
-}
-
-/**
- * Format minutes as human-readable duration.
- */
-function formatDuration(minutes: number): string {
-  if (minutes < 60) {
-    return `${minutes}m`;
-  }
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  if (mins === 0) {
-    return `${hours}h`;
-  }
-  return `${hours}h ${mins}m`;
 }
 
 /**
@@ -311,7 +258,7 @@ export function EntryBar({
   const handleDurationChange = useCallback(
     (value: string) => {
       setDurationInput(value);
-      const parsed = parseDuration(value);
+      const parsed = parseDurationMinutes(value);
       if (parsed !== null && parsed > 0) {
         const rounded = roundUpToIncrement(parsed, roundingIncrement);
         setDurationMinutes(rounded);
@@ -762,7 +709,7 @@ export function EntryBar({
             />
             {durationMinutes !== null &&
               durationInput &&
-              parseDuration(durationInput) !== durationMinutes && (
+              parseDurationMinutes(durationInput) !== durationMinutes && (
                 <span className="hidden sm:inline text-xs text-muted-foreground whitespace-nowrap">
                   ({formatDuration(durationMinutes)})
                 </span>

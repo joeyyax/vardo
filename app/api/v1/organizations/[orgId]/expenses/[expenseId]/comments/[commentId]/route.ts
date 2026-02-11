@@ -52,18 +52,50 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     const body = await request.json();
-    const { content } = body;
+    const { content, isShared } = body;
 
-    if (!content || typeof content !== "string" || !content.trim()) {
-      return NextResponse.json({ error: "Content is required" }, { status: 400 });
+    // Build updates
+    const updates: Partial<{
+      content: string;
+      isShared: boolean;
+      sharedAt: Date | null;
+      sharedBy: string | null;
+      updatedAt: Date;
+    }> = {
+      updatedAt: new Date(),
+    };
+
+    // Content update - only author can edit content
+    if (content !== undefined) {
+      if (comment.authorId !== session.user.id) {
+        return NextResponse.json(
+          { error: "Only the author can edit comment content" },
+          { status: 403 }
+        );
+      }
+      if (typeof content !== "string" || !content.trim()) {
+        return NextResponse.json({ error: "Content cannot be empty" }, { status: 400 });
+      }
+      updates.content = content.trim();
+    }
+
+    // Sharing update - any team member can share/unshare
+    if (isShared !== undefined) {
+      updates.isShared = isShared;
+      if (isShared && !comment.isShared) {
+        // Sharing for the first time (or re-sharing)
+        updates.sharedAt = new Date();
+        updates.sharedBy = session.user.id;
+      } else if (!isShared) {
+        // Unsharing
+        updates.sharedAt = null;
+        updates.sharedBy = null;
+      }
     }
 
     const [updated] = await db
       .update(expenseComments)
-      .set({
-        content: content.trim(),
-        updatedAt: new Date(),
-      })
+      .set(updates)
       .where(eq(expenseComments.id, commentId))
       .returning();
 
@@ -77,6 +109,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
             name: true,
             email: true,
             image: true,
+          },
+        },
+        sharedByUser: {
+          columns: {
+            id: true,
+            name: true,
+            email: true,
           },
         },
       },

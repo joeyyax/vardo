@@ -1,6 +1,7 @@
 import { Receipt, CircleDollarSign, TrendingUp } from "lucide-react";
 import { Pie, PieChart, Cell } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatCurrency } from "@/lib/formatting";
 import {
   ChartContainer,
   ChartTooltip,
@@ -30,13 +31,6 @@ type ExpenseBreakdownProps = {
   byProject: ProjectExpense[];
   recoveryRate: number;
 };
-
-function formatCurrency(cents: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(cents / 100);
-}
 
 function StatCard({
   icon: Icon,

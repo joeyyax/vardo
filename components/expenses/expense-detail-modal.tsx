@@ -1,12 +1,10 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { DetailModal } from "@/components/ui/detail-modal";
+import { IconButton } from "@/components/ui/icon-button";
+import { Pencil, Save, X } from "lucide-react";
 import { ExpenseDetailView } from "./expense-detail-view";
 import { ExpenseDetailEdit } from "./expense-detail-edit";
 import { ExpenseComments } from "./expense-comments";
@@ -33,12 +31,10 @@ export function ExpenseDetailModal({
   const [isEditing, setIsEditing] = useState(false);
   const [expense, setExpense] = useState<Expense | null>(initialExpense);
 
-  // Sync with prop when a new expense is opened
   useEffect(() => {
     setExpense(initialExpense);
   }, [initialExpense]);
 
-  // Refetch expense when it's updated
   const refetchExpense = useCallback(async () => {
     if (!expense) return;
     try {
@@ -63,9 +59,7 @@ export function ExpenseDetailModal({
 
   const handleClose = useCallback(
     (open: boolean) => {
-      if (!open) {
-        setIsEditing(false);
-      }
+      if (!open) setIsEditing(false);
       onOpenChange(open);
     },
     [onOpenChange]
@@ -82,41 +76,54 @@ export function ExpenseDetailModal({
 
   if (!expense) return null;
 
+  const actions = isEditing ? (
+    <>
+      <IconButton icon={X} tooltip="Cancel" onClick={handleCancel} />
+      <Button
+        type="submit"
+        form="expense-edit-form"
+        variant="ghost"
+        size="icon"
+        className="size-8"
+      >
+        <Save className="size-4" />
+      </Button>
+    </>
+  ) : (
+    <IconButton
+      icon={Pencil}
+      tooltip="Edit"
+      onClick={() => setIsEditing(true)}
+    />
+  );
+
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent size="full" className="squircle p-0 overflow-hidden">
-        <div className="flex h-full min-h-0">
-          {/* Left panel: Details (2/3 width) */}
-          <div className="flex-[2] overflow-y-auto p-6">
-            <DialogHeader className="mb-4">
-              <DialogTitle className="text-lg">Expense Details</DialogTitle>
-            </DialogHeader>
-
-            {isEditing ? (
-              <ExpenseDetailEdit
-                orgId={orgId}
-                expense={expense}
-                onSave={handleSave}
-                onCancel={handleCancel}
-              />
-            ) : (
-              <ExpenseDetailView
-                expense={expense}
-                onEdit={() => setIsEditing(true)}
-              />
-            )}
-          </div>
-
-          {/* Right panel: Discussion */}
-          <div className="flex-1 overflow-hidden p-6 border-l bg-muted/40">
-            <ExpenseComments
-              orgId={orgId}
-              expenseId={expense.id}
-              currentUserId={currentUserId}
-            />
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+    <DetailModal
+      open={open}
+      onOpenChange={handleClose}
+      title="Expense Details"
+      actions={actions}
+      sidebar={
+        <ExpenseComments
+          orgId={orgId}
+          expenseId={expense.id}
+          currentUserId={currentUserId}
+        />
+      }
+    >
+      {isEditing ? (
+        <ExpenseDetailEdit
+          orgId={orgId}
+          expense={expense}
+          onSave={handleSave}
+          onCancel={handleCancel}
+        />
+      ) : (
+        <ExpenseDetailView
+          expense={expense}
+          onEdit={() => setIsEditing(true)}
+        />
+      )}
+    </DetailModal>
   );
 }

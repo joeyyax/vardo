@@ -258,15 +258,7 @@ export function groupExpensesByDate(
     .sort((a, b) => b.date.localeCompare(a.date));
 }
 
-/**
- * Format cents as currency.
- */
-export function formatCurrency(cents: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(cents / 100);
-}
+export { formatCurrency } from "@/lib/formatting";
 
 /**
  * Parse a currency string to cents.

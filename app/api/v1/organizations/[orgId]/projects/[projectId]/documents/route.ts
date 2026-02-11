@@ -98,7 +98,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     const body = await request.json();
-    const { type, title, content, requiresContract } = body;
+    const { type, title, content, requiresContract, templateId, variableValues } = body;
 
     // Validate type
     if (!type || !DOCUMENT_TYPES.includes(type)) {
@@ -113,50 +113,62 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Title is required" }, { status: 400 });
     }
 
-    // Default content structure
+    // Default content structure (blank document with basic editable sections)
     const defaultContent: DocumentContent = {
       sections: [
         {
           id: nanoid(8),
-          type: "intro",
+          key: "intro",
           title: "Introduction",
           content: "",
+          mode: "editable",
           order: 0,
+          visible: true,
         },
         {
           id: nanoid(8),
-          type: "scope",
+          key: "scope",
           title: "Scope of Work",
           content: "",
+          mode: "editable",
           order: 1,
+          visible: true,
         },
         {
           id: nanoid(8),
-          type: "deliverables",
+          key: "deliverables",
           title: "Deliverables",
           content: "",
+          mode: "editable",
           order: 2,
+          visible: true,
         },
         {
           id: nanoid(8),
-          type: "timeline",
+          key: "timeline",
           title: "Timeline",
           content: "",
+          mode: "editable",
           order: 3,
+          visible: true,
         },
         {
           id: nanoid(8),
-          type: "pricing",
+          key: "pricing",
           title: "Pricing",
           content: "",
+          mode: "editable",
           order: 4,
+          visible: true,
         },
         {
           id: nanoid(8),
-          type: "terms",
+          key: "terms",
           title: "Terms & Conditions",
           content: "",
+          mode: "editable",
           order: 5,
+          visible: true,
         },
       ],
     };
@@ -179,6 +191,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         content: documentContent,
         requiresContract: type === "proposal" ? (requiresContract === true) : false,
         publicToken,
+        templateId: templateId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(templateId) ? templateId : null,
+        variableValues: variableValues || null,
         createdBy: session.user.id,
       })
       .returning();

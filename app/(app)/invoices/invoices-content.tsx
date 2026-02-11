@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { format, parseISO } from "date-fns";
+import { formatCurrency, formatHoursDecimal } from "@/lib/formatting";
 import { Button } from "@/components/ui/button";
 import { InvoiceDialog } from "@/components/invoices/invoice-dialog";
 import { InvoiceList } from "@/components/invoices/invoice-list";
@@ -70,12 +71,8 @@ const INVOICE_STATUS_LABELS: Record<string, string> = {
   paid: "Paid",
 };
 
-function formatCurrency(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`;
-}
-
 function formatHours(minutes: number): string {
-  return (minutes / 60).toFixed(1);
+  return formatHoursDecimal(minutes, 1);
 }
 
 export function InvoicesContent({ orgId }: InvoicesContentProps) {

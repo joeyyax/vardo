@@ -84,14 +84,37 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const rate =
       project.rateOverride ?? project.client.rateOverride ?? organization.defaultRate ?? 0;
     const totalMinutes = Number(monthEntries[0]?.totalMinutes || 0);
+    const totalMinutesAllTime = Number(allTimeEntries[0]?.totalMinutes || 0);
     const totalBillable = Math.round((totalMinutes / 60) * rate);
+
+    // Calculate budget values based on budget type
+    let budgetMinutes: number | null = null;
+    let budgetRemaining: number | null = null;
+    let budgetAmount: number | null = null;
+    let budgetUsedAmount: number | null = null;
+
+    if (project.budgetType === "hours" && project.budgetHours) {
+      budgetMinutes = project.budgetHours * 60;
+      budgetRemaining = Math.max(0, budgetMinutes - totalMinutesAllTime);
+    } else if (project.budgetType === "fixed" && project.budgetAmountCents) {
+      // For fixed budgets, convert to equivalent minutes for progress bar
+      budgetAmount = project.budgetAmountCents;
+      budgetUsedAmount = Math.round((totalMinutesAllTime / 60) * rate);
+      if (rate > 0) {
+        budgetMinutes = Math.round((project.budgetAmountCents / rate) * 60);
+        budgetRemaining = Math.max(0, budgetMinutes - totalMinutesAllTime);
+      }
+    }
 
     return NextResponse.json({
       totalMinutes,
-      totalMinutesAllTime: Number(allTimeEntries[0]?.totalMinutes || 0),
+      totalMinutesAllTime,
       totalBillable,
-      budgetMinutes: null, // TODO: implement project budgets
-      budgetRemaining: null,
+      budgetMinutes,
+      budgetRemaining,
+      budgetType: project.budgetType || null,
+      budgetAmount,
+      budgetUsedAmount,
       taskBreakdown: taskBreakdown.map((t) => ({
         id: t.id,
         name: t.name,

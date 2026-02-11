@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight, Clock, DollarSign, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatCurrency, formatHoursHuman } from "@/lib/formatting";
 
 type ReportEntry = {
   id: string;
@@ -44,20 +45,6 @@ type PublicReportContentProps = {
   slug: string;
   initialData: ReportData;
 };
-
-function formatHours(minutes: number): string {
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  if (mins === 0) return `${hours}h`;
-  return `${hours}h ${mins}m`;
-}
-
-function formatCurrency(cents: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(cents / 100);
-}
 
 export function PublicReportContent({ slug, initialData }: PublicReportContentProps) {
   const router = useRouter();
@@ -185,7 +172,7 @@ export function PublicReportContent({ slug, initialData }: PublicReportContentPr
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {formatHours(data.summary.totalMinutes)}
+                {formatHoursHuman(data.summary.totalMinutes)}
               </div>
               <p className="text-xs text-muted-foreground">
                 {data.summary.entryCount} entries
@@ -216,7 +203,7 @@ export function PublicReportContent({ slug, initialData }: PublicReportContentPr
             <CardContent>
               <div className="text-2xl font-bold">
                 {data.entriesByDate.length > 0
-                  ? formatHours(
+                  ? formatHoursHuman(
                       Math.round(data.summary.totalMinutes / data.entriesByDate.length)
                     )
                   : "0h"}
@@ -242,7 +229,7 @@ export function PublicReportContent({ slug, initialData }: PublicReportContentPr
                     {format(parseISO(group.date), "EEEE, MMMM d")}
                   </h3>
                   <span className="text-sm text-muted-foreground">
-                    {formatHours(group.totalMinutes)}
+                    {formatHoursHuman(group.totalMinutes)}
                   </span>
                 </div>
 
@@ -264,7 +251,7 @@ export function PublicReportContent({ slug, initialData }: PublicReportContentPr
                       </div>
                       <div className="flex items-center gap-4 shrink-0">
                         <span className="text-sm tabular-nums">
-                          {formatHours(entry.minutes)}
+                          {formatHoursHuman(entry.minutes)}
                         </span>
                         {data.report.showRates && entry.amount !== undefined && (
                           <span className="text-sm text-muted-foreground tabular-nums">

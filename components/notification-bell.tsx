@@ -18,6 +18,7 @@ import {
   CheckCheck,
   Loader2,
   MessageSquare,
+  Pencil,
   UserPlus,
   ArrowRight,
   Link as LinkIcon,
@@ -56,6 +57,7 @@ const TYPE_ICONS: Record<NotificationType, React.ComponentType<{ className?: str
   status_changed: ArrowRight,
   blocker_resolved: LinkIcon,
   client_comment: MessageSquare,
+  edit_requested: Pencil,
 };
 
 export function NotificationBell() {
@@ -200,7 +202,7 @@ export function NotificationBell() {
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={() => {
-            router.push("/settings/notifications");
+            router.push("/settings#notifications");
             setIsOpen(false);
           }}
           className="justify-center text-sm text-muted-foreground"

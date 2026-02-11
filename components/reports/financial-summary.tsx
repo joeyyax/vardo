@@ -6,6 +6,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { formatCurrency } from "@/lib/formatting";
 import type { OrgFeatures } from "@/lib/db/schema";
 
 type FinancialSummaryProps = {
@@ -15,13 +16,6 @@ type FinancialSummaryProps = {
   outstanding?: number;
   features: OrgFeatures;
 };
-
-function formatCurrency(cents: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(cents / 100);
-}
 
 function StatCard({
   icon: Icon,

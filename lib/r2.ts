@@ -73,6 +73,24 @@ export async function getViewUrl(
 }
 
 /**
+ * Upload a buffer directly to R2 (server-side upload).
+ */
+export async function uploadBuffer(
+  key: string,
+  body: Buffer | Uint8Array,
+  contentType: string
+): Promise<void> {
+  const command = new PutObjectCommand({
+    Bucket: bucketName,
+    Key: key,
+    Body: body,
+    ContentType: contentType,
+  });
+
+  await r2Client.send(command);
+}
+
+/**
  * Delete a file from R2.
  */
 export async function deleteFile(key: string): Promise<void> {

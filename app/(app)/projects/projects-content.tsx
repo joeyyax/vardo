@@ -251,7 +251,7 @@ export function ProjectsContent({ orgId }: ProjectsContentProps) {
           const filteredProjects =
             filterStage === "all"
               ? projects
-              : projects.filter((p) => (p.stage || "active") === filterStage);
+              : projects.filter((p) => (p.stage || "getting_started") === filterStage);
 
           const isFiltered = !!filterClientId || filterStage !== "all" || showArchived;
 
@@ -281,7 +281,7 @@ export function ProjectsContent({ orgId }: ProjectsContentProps) {
                   </TableHeader>
                   <TableBody>
                     {filteredProjects.map((project) => {
-                      const stage = project.stage || "active";
+                      const stage = project.stage || "getting_started";
                       const formattedRate = project.rateOverride
                         ? `$${(project.rateOverride / 100).toFixed(2)}/hr`
                         : null;
@@ -473,7 +473,7 @@ function ProjectRow({
     ? `$${(project.rateOverride / 100).toFixed(2)}/hr`
     : null;
 
-  const stage = project.stage || "active";
+  const stage = project.stage || "getting_started";
 
   return (
     <ListRow isLast={isLast}>

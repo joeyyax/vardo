@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { tasks, projects, taskRelationships, users, TASK_STATUSES, type TaskStatus } from "@/lib/db/schema";
+import { tasks, projects, taskRelationships, users, TASK_STATUSES, TASK_PRIORITIES, type TaskStatus, type TaskPriority } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { logTaskStatusChanged, logTaskAssigned } from "@/lib/activities";
@@ -198,6 +198,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       isRecurring,
       assignedTo,
       position,
+      priority,
       // New fields
       typeId,
       estimateMinutes,
@@ -214,6 +215,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       isBillable: boolean | null;
       isArchived: boolean;
       status: TaskStatus | null;
+      priority: TaskPriority | null;
       isRecurring: boolean;
       assignedTo: string | null;
       position: number;
@@ -280,6 +282,16 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       }
 
       updates.status = status;
+    }
+
+    if (priority !== undefined) {
+      if (priority !== null && !TASK_PRIORITIES.includes(priority)) {
+        return NextResponse.json(
+          { error: `Priority must be one of: ${TASK_PRIORITIES.join(", ")}` },
+          { status: 400 }
+        );
+      }
+      updates.priority = priority;
     }
 
     if (isRecurring !== undefined) {

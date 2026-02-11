@@ -16,12 +16,20 @@ import { UserMenu } from "./user-menu";
 import { NotificationBell } from "@/components/notification-bell";
 import type { OrgFeatures } from "@/lib/db/schema";
 
+type Organization = {
+  id: string;
+  name: string;
+  slug: string;
+  role: string;
+};
+
 type MobileSidebarProps = {
   currentOrgId?: string;
   features?: OrgFeatures;
+  organizations?: Organization[];
 };
 
-export function MobileSidebar({ currentOrgId, features }: MobileSidebarProps) {
+export function MobileSidebar({ currentOrgId, features, organizations }: MobileSidebarProps) {
   // Determine default route based on features
   const defaultRoute = features?.time_tracking ? "/track" : "/projects";
 
@@ -53,7 +61,7 @@ export function MobileSidebar({ currentOrgId, features }: MobileSidebarProps) {
           {/* Footer - Org Switcher & User Menu */}
           <div className="mt-auto border-t p-2">
             <div className="flex flex-col gap-1">
-              <OrgSwitcher currentOrgId={currentOrgId} />
+              <OrgSwitcher currentOrgId={currentOrgId} organizations={organizations} />
               <UserMenu />
             </div>
           </div>

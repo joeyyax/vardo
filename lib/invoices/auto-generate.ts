@@ -3,6 +3,10 @@ import { clients } from "@/lib/db/schema";
 import { eq, and, isNotNull } from "drizzle-orm";
 import { generateInvoice } from "./generate";
 import {
+  isRetainerBilling,
+  createRetainerPeriod,
+} from "@/lib/retainer";
+import {
   startOfWeek,
   startOfMonth,
   startOfQuarter,
@@ -253,6 +257,19 @@ export async function generateScheduledInvoice(
       period.from,
       period.to
     );
+
+    // Create retainer period record if applicable
+    if (isRetainerBilling(client.billingType) && client.includedMinutes) {
+      await createRetainerPeriod({
+        clientId: client.id,
+        organizationId: orgId,
+        periodStart: period.from,
+        periodEnd: period.to,
+        includedMinutes: client.includedMinutes,
+        usedMinutes: result.invoice.totalMinutes,
+        invoiceId: result.invoice.id,
+      });
+    }
 
     // Update lastInvoicedDate
     await db

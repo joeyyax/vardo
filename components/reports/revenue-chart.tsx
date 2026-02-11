@@ -10,6 +10,7 @@ import {
   ChartLegendContent,
   type ChartConfig,
 } from "@/components/ui/chart";
+import { formatCurrency } from "@/lib/formatting";
 
 type RevenueBucket = {
   month: string;
@@ -21,15 +22,6 @@ type RevenueChartProps = {
   data: RevenueBucket[];
   showExpenses?: boolean;
 };
-
-function formatCurrency(cents: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(cents / 100);
-}
 
 function formatMonthTick(value: string): string {
   const date = new Date(value + "-01");

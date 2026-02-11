@@ -3,9 +3,15 @@ import {
   notifications,
   notificationPreferences,
   taskWatchers,
+  expenseWatchers,
+  users,
+  tasks,
+  projects,
   type NotificationType,
 } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, ne } from "drizzle-orm";
+import { sendEmail, isEmailConfigured } from "@/lib/email/send";
+import { TaskAssignmentEmail } from "@/lib/email/templates/task-assignment";
 
 type CreateNotificationParams = {
   userId: string;
@@ -30,13 +36,14 @@ export async function createNotification(params: CreateNotificationParams) {
     // If no preferences exist, notifications are enabled by default
     // Check if this notification type is enabled
     if (prefs) {
-      const typeToPreference: Record<NotificationType, keyof typeof prefs> = {
+      const typeToPreference: Partial<Record<NotificationType, keyof typeof prefs>> = {
         assigned: "assignedToYou",
         mentioned: "mentioned",
         comment: "watchedTaskChanged",
         status_changed: "watchedTaskChanged",
         blocker_resolved: "blockerResolved",
         client_comment: "clientComment",
+        // edit_requested: always delivered (no preference toggle)
       };
 
       const prefKey = typeToPreference[type];
@@ -106,6 +113,7 @@ export async function notifyTaskWatchers(params: {
 
 /**
  * Notify a specific user about being assigned to a task.
+ * Creates in-app notification and sends email if enabled.
  */
 export async function notifyAssignment(params: {
   assigneeId: string;
@@ -119,12 +127,73 @@ export async function notifyAssignment(params: {
   // Don't notify if assigning to self
   if (assigneeId === actorId) return null;
 
-  return createNotification({
+  const notification = await createNotification({
     userId: assigneeId,
     type: "assigned",
     taskId,
     actorId,
     content: `${actorName} assigned you to "${taskName}"`,
+  });
+
+  // Send email notification (fire-and-forget)
+  sendAssignmentEmail({ assigneeId, taskId, taskName, actorName }).catch(
+    (err) => console.error("Error sending assignment email:", err)
+  );
+
+  return notification;
+}
+
+/**
+ * Send assignment email to the assignee if email is configured and enabled.
+ */
+async function sendAssignmentEmail(params: {
+  assigneeId: string;
+  taskId: string;
+  taskName: string;
+  actorName: string;
+}) {
+  if (!isEmailConfigured()) return;
+
+  const { assigneeId, taskId, taskName, actorName } = params;
+
+  // Check if user has email notifications enabled
+  const prefs = await db.query.notificationPreferences.findFirst({
+    where: eq(notificationPreferences.userId, assigneeId),
+  });
+  if (prefs?.emailEnabled === false) return;
+
+  // Get assignee email
+  const assignee = await db.query.users.findFirst({
+    where: eq(users.id, assigneeId),
+    columns: { email: true },
+  });
+  if (!assignee?.email) return;
+
+  // Get task → project info for the email
+  const task = await db.query.tasks.findFirst({
+    where: eq(tasks.id, taskId),
+    columns: { projectId: true },
+  });
+  if (!task) return;
+
+  const project = await db.query.projects.findFirst({
+    where: eq(projects.id, task.projectId),
+    columns: { id: true, name: true },
+  });
+  const projectName = project?.name || "Unknown project";
+
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  const taskUrl = `${baseUrl}/projects/${task.projectId}`;
+
+  await sendEmail({
+    to: assignee.email,
+    subject: `${actorName} assigned you to "${taskName}"`,
+    react: TaskAssignmentEmail({
+      actorName,
+      taskName,
+      projectName,
+      taskUrl,
+    }),
   });
 }
 
@@ -201,4 +270,45 @@ export async function notifyBlockerResolved(params: {
     type: "blocker_resolved",
     content,
   });
+}
+
+/**
+ * Notify all watchers of an expense about a comment.
+ * Excludes the actor from receiving the notification.
+ */
+export async function notifyExpenseWatchers(params: {
+  expenseId: string;
+  actorId: string;
+  actorName: string;
+  isShared: boolean;
+}) {
+  const { expenseId, actorId, actorName, isShared } = params;
+
+  try {
+    // Get all watchers except the actor
+    const watchers = await db.query.expenseWatchers.findMany({
+      where: and(
+        eq(expenseWatchers.expenseId, expenseId),
+        ne(expenseWatchers.userId, actorId)
+      ),
+    });
+
+    // Create notifications for each watcher
+    const content = `${actorName} commented on an expense`;
+    const notifications = await Promise.all(
+      watchers.map((watcher) =>
+        createNotification({
+          userId: watcher.userId,
+          type: isShared ? "client_comment" : "comment",
+          actorId,
+          content,
+        })
+      )
+    );
+
+    return notifications.filter(Boolean);
+  } catch (error) {
+    console.error("Error notifying expense watchers:", error);
+    return [];
+  }
 }

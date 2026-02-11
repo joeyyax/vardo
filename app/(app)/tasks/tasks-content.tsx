@@ -15,11 +15,13 @@ import { ViewSwitcher } from "@/components/view-switcher";
 import { useViewPreference } from "@/hooks/use-view-preference";
 import { PageToolbar } from "@/components/page-toolbar";
 import {
-  GripVertical,
+  Archive,
+  Bug,
+  Edit,
   Loader2,
+  Paperclip,
   Plus,
   ListTodo,
-  Edit,
   User,
 } from "lucide-react";
 import {
@@ -32,11 +34,19 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   TaskDialog,
   type Task,
   type TaskStatus,
   TASK_STATUS_LABELS,
   TASK_STATUS_COLORS,
+  TASK_PRIORITY_LABELS,
+  TASK_PRIORITY_COLORS,
 } from "@/components/projects/task-dialog";
 
 type TaskWithProject = Task & {
@@ -446,6 +456,7 @@ export function TasksContent({ orgId, currentUserId }: TasksContentProps) {
                 <TableHead>Project</TableHead>
                 <TableHead>Client</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Priority</TableHead>
                 <TableHead>Assignee</TableHead>
                 <TableHead>Estimate</TableHead>
                 <TableHead className="w-[50px]" />
@@ -504,6 +515,20 @@ export function TasksContent({ orgId, currentUserId }: TasksContentProps) {
                       >
                         {TASK_STATUS_LABELS[task.status!]}
                       </span>
+                    </TableCell>
+                    <TableCell>
+                      {task.priority ? (
+                        <span
+                          className={cn(
+                            "text-xs px-1.5 py-0.5 rounded",
+                            TASK_PRIORITY_COLORS[task.priority]
+                          )}
+                        >
+                          {TASK_PRIORITY_LABELS[task.priority]}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">--</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       {task.assignedToUser ? (
@@ -584,6 +609,16 @@ export function TasksContent({ orgId, currentUserId }: TasksContentProps) {
                           </p>
                         )}
                       </div>
+                      {task.priority && (
+                        <span
+                          className={cn(
+                            "text-xs px-2 py-0.5 rounded-full",
+                            TASK_PRIORITY_COLORS[task.priority]
+                          )}
+                        >
+                          {TASK_PRIORITY_LABELS[task.priority]}
+                        </span>
+                      )}
                       <span
                         className={cn(
                           "text-xs px-2 py-0.5 rounded-full",
@@ -648,65 +683,129 @@ function GlobalKanbanCard({
   onDragEnd: (e: React.DragEvent) => void;
   onProjectClick: () => void;
 }) {
+  const isBugReport = task.metadata?.source === "widget" || !!task.metadata?.bugReportId;
+  const hasFiles = (task.files?.length ?? 0) > 0;
+  const assignee = task.assignedToUser;
+  const typeBadge = task.type;
+  const priority = task.priority;
+  const hasBadges = typeBadge || isBugReport || priority;
+
   return (
-    <div
-      draggable
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-      className="squircle group flex flex-col gap-2 rounded-lg border bg-card p-3 cursor-grab active:cursor-grabbing transition-all hover:shadow-sm"
-    >
-      <div className="flex items-start gap-2">
-        <GripVertical className="size-4 text-muted-foreground/50 mt-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-2">
-            <span className="font-medium text-sm leading-tight">{task.name}</span>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={(e) => {
-                e.stopPropagation();
-                onEdit();
-              }}
-              className="shrink-0 size-6 opacity-0 group-hover:opacity-100 transition-opacity"
-            >
-              <Edit className="size-3" />
-            </Button>
+    <TooltipProvider delayDuration={300}>
+      <div
+        draggable
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
+        onClick={onEdit}
+        className="squircle group flex flex-col gap-2 rounded-lg border bg-card p-3 cursor-pointer active:cursor-grabbing transition-all hover:shadow-sm hover:border-foreground/20"
+      >
+        {/* Badge row: priority, type, bug */}
+        {hasBadges && (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {priority && (
+              <span
+                className={cn(
+                  "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium leading-none",
+                  TASK_PRIORITY_COLORS[priority]
+                )}
+              >
+                {TASK_PRIORITY_LABELS[priority]}
+              </span>
+            )}
+            {typeBadge && (
+              <span
+                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium leading-none"
+                style={{
+                  backgroundColor: typeBadge.color ? `${typeBadge.color}20` : undefined,
+                  color: typeBadge.color || undefined,
+                }}
+              >
+                {typeBadge.icon && <span className="text-[10px]">{typeBadge.icon}</span>}
+                {typeBadge.name}
+              </span>
+            )}
+            {isBugReport && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-medium leading-none text-red-600 dark:text-red-400">
+                    <Bug className="size-2.5" />
+                    Bug
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top">From bug report</TooltipContent>
+              </Tooltip>
+            )}
           </div>
-          {task.description && (
-            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
-              {task.description}
-            </p>
+        )}
+
+        {/* Task name */}
+        <span className="font-medium text-sm leading-tight">{task.name}</span>
+
+        {/* Description */}
+        {task.description && (
+          <p className="text-xs text-muted-foreground line-clamp-2">
+            {task.description}
+          </p>
+        )}
+
+        {/* Project link */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onProjectClick();
+          }}
+          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors self-start"
+        >
+          <div
+            className="size-2 rounded-full"
+            style={{ backgroundColor: task.project.client.color || "#94a3b8" }}
+          />
+          <span className="truncate">
+            {task.project.client.name} / {task.project.name}
+          </span>
+        </button>
+
+        {/* Footer: indicators + assignee */}
+        <div className="flex items-center gap-2 mt-auto pt-1">
+          {task.isArchived && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Archive className="size-3 text-amber-600 dark:text-amber-400" />
+              </TooltipTrigger>
+              <TooltipContent side="top">Archived</TooltipContent>
+            </Tooltip>
+          )}
+          {hasFiles && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex items-center gap-0.5 text-muted-foreground">
+                  <Paperclip className="size-3" />
+                  <span className="text-[10px]">{task.files!.length}</span>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                {task.files!.length} attachment{task.files!.length !== 1 ? "s" : ""}
+              </TooltipContent>
+            </Tooltip>
+          )}
+
+          <div className="flex-1" />
+
+          {assignee && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex items-center justify-center size-5 rounded-full bg-primary/10 text-[10px] font-medium text-primary shrink-0">
+                  {(assignee.name || assignee.email)[0].toUpperCase()}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                {assignee.name || assignee.email}
+              </TooltipContent>
+            </Tooltip>
           )}
         </div>
       </div>
-
-      {/* Project link */}
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onProjectClick();
-        }}
-        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <div
-          className="size-2 rounded-full"
-          style={{ backgroundColor: task.project.client.color || "#94a3b8" }}
-        />
-        <span className="truncate">{task.project.name}</span>
-      </button>
-
-      {/* Footer with assignee */}
-      {task.assignedToUser && (
-        <div className="flex items-center gap-1 text-xs text-muted-foreground mt-auto">
-          <div className="flex items-center justify-center size-5 rounded-full bg-muted">
-            <User className="size-3" />
-          </div>
-          <span className="truncate">
-            {task.assignedToUser.name || task.assignedToUser.email}
-          </span>
-        </div>
-      )}
-    </div>
+    </TooltipProvider>
   );
 }
 

@@ -8,6 +8,7 @@ import {
   date,
   jsonb,
   index,
+  primaryKey,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
@@ -198,6 +199,7 @@ export const clients = pgTable("clients", {
   parentClientId: uuid("parent_client_id"), // Optional parent for hierarchy (e.g., Agency → End Client)
   name: text("name").notNull(),
   color: text("color"), // for UI display
+  contactEmail: text("contact_email"), // primary contact email for sending documents
   rateOverride: integer("rate_override"), // cents per hour, null = inherit
   isBillable: boolean("is_billable"), // null = inherit from org
   // Billing configuration
@@ -205,6 +207,8 @@ export const clients = pgTable("clients", {
   billingFrequency: text("billing_frequency"), // 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'per_project'
   autoGenerateInvoices: boolean("auto_generate_invoices").default(false),
   retainerAmount: integer("retainer_amount"), // cents
+  includedMinutes: integer("included_minutes"), // monthly included hours (stored as minutes)
+  overageRate: integer("overage_rate"), // cents per hour for overage beyond included hours
   billingDayOfWeek: integer("billing_day_of_week"), // 0-6 for weekly/biweekly (0=Sunday)
   billingDayOfMonth: integer("billing_day_of_month"), // 1-31 for monthly/quarterly
   paymentTermsDays: integer("payment_terms_days"), // Net X days, null = inherit from org
@@ -213,9 +217,122 @@ export const clients = pgTable("clients", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-// Project stages
-export const PROJECT_STAGES = ["lead", "proposal_sent", "active", "completed"] as const;
+// Client comments (discussion on clients)
+export const clientComments = pgTable("client_comments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => clients.id, { onDelete: "cascade" }),
+  authorId: text("author_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  content: text("content").notNull(),
+  isShared: boolean("is_shared").default(false), // false = internal, true = client-visible
+  sharedAt: timestamp("shared_at"),
+  sharedBy: text("shared_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Client watchers
+export const clientWatchers = pgTable(
+  "client_watchers",
+  {
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    reason: text("reason"), // 'creator', 'commenter', 'manual'
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.clientId, t.userId] }),
+  })
+);
+
+// Client contacts
+export const CONTACT_TYPES = ["primary", "billing", "other"] as const;
+export type ContactType = (typeof CONTACT_TYPES)[number];
+
+export const clientContacts = pgTable(
+  "client_contacts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    type: text("type").$type<ContactType>().notNull().default("other"),
+    name: text("name").notNull(),
+    email: text("email"),
+    phone: text("phone"),
+    title: text("title"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [index("client_contacts_client_id_idx").on(table.clientId)]
+);
+
+// Retainer periods — tracks monthly retainer consumption and rollover
+export type RetainerPeriodStatus = "active" | "closed";
+export const retainerPeriods = pgTable("retainer_periods", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  clientId: uuid("client_id")
+    .notNull()
+    .references(() => clients.id, { onDelete: "cascade" }),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  periodStart: date("period_start").notNull(),
+  periodEnd: date("period_end").notNull(),
+  includedMinutes: integer("included_minutes").notNull(), // snapshot of client's included hours at period creation
+  usedMinutes: integer("used_minutes").notNull().default(0),
+  rolloverMinutes: integer("rollover_minutes").notNull().default(0), // unused minutes from previous period (max 1 period rollover)
+  invoiceId: uuid("invoice_id").references(() => invoices.id, { onDelete: "set null" }),
+  status: text("status").$type<RetainerPeriodStatus>().notNull().default("active"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Project stages — 8-stage lifecycle
+export const PROJECT_STAGES = [
+  "getting_started",
+  "proposal",
+  "agreement",
+  "onboarding",
+  "active",
+  "ongoing",
+  "offboarding",
+  "completed",
+] as const;
 export type ProjectStage = (typeof PROJECT_STAGES)[number];
+
+// Valid stage transitions — any stage can move to any other stage.
+// Forward transitions are the natural flow; backward transitions let users
+// revisit earlier stages when needed.
+export const VALID_STAGE_TRANSITIONS: Record<ProjectStage, readonly ProjectStage[]> = {
+  getting_started: ["proposal", "agreement", "onboarding", "active", "ongoing", "offboarding", "completed"],
+  proposal: ["getting_started", "agreement", "onboarding", "active", "ongoing", "offboarding", "completed"],
+  agreement: ["getting_started", "proposal", "onboarding", "active", "ongoing", "offboarding", "completed"],
+  onboarding: ["getting_started", "proposal", "agreement", "active", "ongoing", "offboarding", "completed"],
+  active: ["getting_started", "proposal", "agreement", "onboarding", "ongoing", "offboarding", "completed"],
+  ongoing: ["getting_started", "proposal", "agreement", "onboarding", "active", "offboarding", "completed"],
+  offboarding: ["getting_started", "proposal", "agreement", "onboarding", "active", "ongoing", "completed"],
+  completed: ["getting_started", "proposal", "agreement", "onboarding", "active", "ongoing", "offboarding"],
+} as const;
+
+// Forward-only transitions — the natural lifecycle progression.
+// Used by auto-advancement logic in StageGuidance.
+export const FORWARD_STAGE_TRANSITIONS: Record<ProjectStage, readonly ProjectStage[]> = {
+  getting_started: ["proposal"],
+  proposal: ["agreement"],
+  agreement: ["onboarding"],
+  onboarding: ["active"],
+  active: ["ongoing", "offboarding"],
+  ongoing: ["offboarding"],
+  offboarding: ["completed"],
+  completed: [],
+} as const;
 
 // Budget types
 export const BUDGET_TYPES = ["hours", "fixed"] as const;
@@ -233,7 +350,7 @@ export const projects = pgTable("projects", {
   isBillable: boolean("is_billable"),
   isArchived: boolean("is_archived").default(false),
   // Project lifecycle stage
-  stage: text("stage").$type<ProjectStage>().default("active"),
+  stage: text("stage").$type<ProjectStage>().default("getting_started"),
   // Budget tracking
   budgetType: text("budget_type").$type<BudgetType>(), // 'hours' | 'fixed' | null
   budgetHours: integer("budget_hours"), // total hours budget
@@ -242,10 +359,53 @@ export const projects = pgTable("projects", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// Onboarding checklist items
+export const ONBOARDING_CATEGORIES = ["contacts", "access", "assets", "hosting", "review"] as const;
+export type OnboardingCategory = (typeof ONBOARDING_CATEGORIES)[number];
+
+export const onboardingItems = pgTable("onboarding_items", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  label: text("label").notNull(),
+  description: text("description"),
+  category: text("category").$type<OnboardingCategory>().notNull(),
+  isRequired: boolean("is_required").default(true).notNull(),
+  isCompleted: boolean("is_completed").default(false).notNull(),
+  completedAt: timestamp("completed_at"),
+  completedBy: text("completed_by").references(() => users.id, { onDelete: "set null" }),
+  position: integer("position").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Data export requests (offboarding)
+export const DATA_EXPORT_STATUSES = ["requested", "processing", "ready", "expired"] as const;
+export type DataExportStatus = (typeof DATA_EXPORT_STATUSES)[number];
+
+export const dataExportRequests = pgTable("data_export_requests", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  requestedBy: text("requested_by").references(() => users.id, { onDelete: "set null" }),
+  status: text("status").$type<DataExportStatus>().notNull().default("requested"),
+  includes: jsonb("includes").$type<{ code: boolean; database: boolean; media: boolean }>(),
+  notes: text("notes"),
+  requestedAt: timestamp("requested_at").defaultNow().notNull(),
+  completedAt: timestamp("completed_at"),
+});
+
 // Task statuses for PM feature
 // null = category-only task (for time tracking), other values = work item
 export const TASK_STATUSES = ["todo", "in_progress", "review", "done"] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
+
+export const TASK_PRIORITIES = ["low", "medium", "high", "urgent"] as const;
+export type TaskPriority = (typeof TASK_PRIORITIES)[number];
 
 // Task relationship types
 export const TASK_RELATIONSHIP_TYPES = ["blocked_by", "related_to"] as const;
@@ -295,6 +455,7 @@ export const tasks = pgTable("tasks", {
   assignedTo: text("assigned_to").references(() => users.id, { onDelete: "set null" }),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   position: integer("position").default(0),
+  priority: text("priority").$type<TaskPriority>(),
   // Expanded task fields
   typeId: uuid("type_id").references(() => taskTypes.id, { onDelete: "set null" }),
   estimateMinutes: integer("estimate_minutes"),
@@ -369,6 +530,41 @@ export const taskWatchers = pgTable("task_watchers", {
   reason: text("reason"), // 'creator', 'assignee', 'commenter', 'manual'
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+// Project comments (discussion on projects)
+export const projectComments = pgTable("project_comments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  authorId: text("author_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  content: text("content").notNull(),
+  isShared: boolean("is_shared").default(false), // false = internal, true = client-visible
+  sharedAt: timestamp("shared_at"),
+  sharedBy: text("shared_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Project watchers
+export const projectWatchers = pgTable(
+  "project_watchers",
+  {
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    reason: text("reason"), // 'creator', 'commenter', 'manual'
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.projectId, t.userId] }),
+  })
+);
 
 // Time entries
 // Entries can be assigned at any level: client only, client+project, or client+project+task
@@ -465,6 +661,12 @@ export const invoices = pgTable(
     includeTimesheet: boolean("include_timesheet").default(false), // include detailed timesheet
     sentAt: timestamp("sent_at"),
     viewedAt: timestamp("viewed_at"),
+    paidAt: timestamp("paid_at"),
+    // Stripe payment fields
+    stripePaymentIntentId: text("stripe_payment_intent_id"),
+    stripeCheckoutSessionId: text("stripe_checkout_session_id"),
+    paymentMethod: text("payment_method"), // 'card', 'us_bank_account', etc.
+    paymentUrl: text("payment_url"), // Stripe Checkout URL for client payment
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
@@ -493,6 +695,41 @@ export const invoiceLineItems = pgTable(
     entryIds: jsonb("entry_ids").$type<string[]>().default([]),
   },
   (table) => [index("invoice_line_items_invoice_id_idx").on(table.invoiceId)]
+);
+
+// Invoice comments (discussion on invoices)
+export const invoiceComments = pgTable("invoice_comments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  invoiceId: uuid("invoice_id")
+    .notNull()
+    .references(() => invoices.id, { onDelete: "cascade" }),
+  authorId: text("author_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  content: text("content").notNull(),
+  isShared: boolean("is_shared").default(false),
+  sharedAt: timestamp("shared_at"),
+  sharedBy: text("shared_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Invoice watchers (users subscribed to invoice updates)
+export const invoiceWatchers = pgTable(
+  "invoice_watchers",
+  {
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    reason: text("reason"), // 'creator', 'commenter', 'manual'
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.invoiceId, t.userId] }),
+  })
 );
 
 // Import sessions (for resumable imports)
@@ -666,6 +903,7 @@ export const ACTIVITY_TYPES = [
   "invoice_sent",
   "document_sent",
   "document_accepted",
+  "document_declined",
 ] as const;
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 
@@ -729,8 +967,8 @@ export const projectActivities = pgTable(
   ]
 );
 
-// Document types for proposals and contracts
-export const DOCUMENT_TYPES = ["proposal", "contract"] as const;
+// Document types for proposals, contracts, and change orders
+export const DOCUMENT_TYPES = ["proposal", "contract", "change_order", "orientation", "addendum"] as const;
 export type DocumentType = (typeof DOCUMENT_TYPES)[number];
 
 // Document statuses
@@ -741,31 +979,49 @@ export type DocumentStatus = (typeof DOCUMENT_STATUSES)[number];
 export const EXPENSE_STATUSES = ["paid", "unpaid"] as const;
 export type ExpenseStatus = (typeof EXPENSE_STATUSES)[number];
 
-// Document section types for structured content
-export type DocumentSection = {
-  id: string;
-  type: "intro" | "scope" | "deliverables" | "timeline" | "pricing" | "terms" | "custom";
-  title: string;
-  content: string; // Markdown content
-  order: number;
-};
+// Re-export document content types from template engine
+export type {
+  DocumentContent,
+  RenderedSection,
+  TemplateSection as TemplateSectionDef,
+  TemplateVariable as TemplateVariableDef,
+  TemplatePricingConfig,
+} from "@/lib/template-engine/types";
 
-export type DocumentContent = {
-  sections: DocumentSection[];
-  // Pricing specific fields
-  pricing?: {
-    type: "fixed" | "hourly" | "retainer";
-    amount?: number; // cents
-    rate?: number; // cents per hour
-    estimatedHours?: number;
-    items?: Array<{
-      description: string;
-      quantity: number;
-      unitPrice: number; // cents
-      total: number; // cents
-    }>;
-  };
-};
+// Import types for jsonb column typing
+import type {
+  DocumentContent,
+  TemplateSection as TemplateSectionDef,
+  TemplateVariable as TemplateVariableDef,
+  TemplatePricingConfig,
+} from "@/lib/template-engine/types";
+
+// Document templates — org-scoped, user-configurable document structures
+export const documentTemplates = pgTable(
+  "document_templates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    documentType: text("document_type").$type<DocumentType>().notNull(),
+    name: text("name").notNull(),
+    displayLabel: text("display_label"), // overrides generic type label in UI
+    description: text("description"),
+    category: text("category"), // free-form grouping (e.g. "hourly", "retainer")
+    sections: jsonb("sections").$type<TemplateSectionDef[]>().notNull().default([]),
+    variableSchema: jsonb("variable_schema").$type<TemplateVariableDef[]>().notNull().default([]),
+    pricingConfig: jsonb("pricing_config").$type<TemplatePricingConfig>(),
+    sortOrder: integer("sort_order").default(0),
+    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("document_templates_org_idx").on(table.organizationId),
+    index("document_templates_org_type_idx").on(table.organizationId, table.documentType),
+  ]
+);
 
 // Documents (proposals and contracts)
 export const documents = pgTable(
@@ -783,6 +1039,9 @@ export const documents = pgTable(
     title: text("title").notNull(),
     // Structured content with sections
     content: jsonb("content").$type<DocumentContent>().notNull().default({ sections: [] }),
+    // Template reference (audit trail -- documents are frozen snapshots)
+    templateId: uuid("template_id").references(() => documentTemplates.id, { onDelete: "set null" }),
+    variableValues: jsonb("variable_values").$type<Record<string, string>>(),
     // For proposals - whether accepting requires signing a contract
     requiresContract: boolean("requires_contract").default(false),
     // Public access token for client viewing/accepting
@@ -796,6 +1055,10 @@ export const documents = pgTable(
     acceptedBy: text("accepted_by"),
     declinedBy: text("declined_by"),
     declineReason: text("decline_reason"),
+    // Document locking
+    lockedBy: text("locked_by").references(() => users.id, { onDelete: "set null" }),
+    lockedAt: timestamp("locked_at"),
+    lastActiveAt: timestamp("last_active_at"),
     // Created by
     createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -807,6 +1070,65 @@ export const documents = pgTable(
     index("documents_public_token_idx").on(table.publicToken),
     index("documents_status_idx").on(table.status),
   ]
+);
+
+// Document revision reasons
+export const REVISION_REASONS = ["manual", "lock_transfer", "auto_save"] as const;
+export type RevisionReason = (typeof REVISION_REASONS)[number];
+
+// Document revisions (snapshots saved before lock transfers, manual saves, etc.)
+export const documentRevisions = pgTable(
+  "document_revisions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    content: jsonb("content").$type<DocumentContent>(),
+    variableValues: jsonb("variable_values").$type<Record<string, string>>(),
+    title: text("title"),
+    savedBy: text("saved_by").references(() => users.id, { onDelete: "set null" }),
+    reason: text("reason").$type<RevisionReason>().notNull().default("manual"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("document_revisions_document_id_idx").on(table.documentId, table.createdAt),
+  ]
+);
+
+// Document comments (discussion on proposals/contracts)
+export const documentComments = pgTable("document_comments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  documentId: uuid("document_id")
+    .notNull()
+    .references(() => documents.id, { onDelete: "cascade" }),
+  authorId: text("author_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  content: text("content").notNull(),
+  isShared: boolean("is_shared").default(false),
+  sharedAt: timestamp("shared_at"),
+  sharedBy: text("shared_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Document watchers (users subscribed to document updates)
+export const documentWatchers = pgTable(
+  "document_watchers",
+  {
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    reason: text("reason"), // 'creator', 'commenter', 'manual'
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.documentId, t.userId] }),
+  })
 );
 
 // Expenses for cost tracking (project-specific or general business overhead)
@@ -870,9 +1192,30 @@ export const expenseComments = pgTable("expense_comments", {
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   content: text("content").notNull(),
+  isShared: boolean("is_shared").default(false), // false = internal, true = client-visible
+  sharedAt: timestamp("shared_at"),
+  sharedBy: text("shared_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+// Expense watchers
+export const expenseWatchers = pgTable(
+  "expense_watchers",
+  {
+    expenseId: uuid("expense_id")
+      .notNull()
+      .references(() => projectExpenses.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    reason: text("reason"), // 'creator', 'commenter', 'manual'
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.expenseId, t.userId] }),
+  })
+);
 
 // Notification types
 export const NOTIFICATION_TYPES = [
@@ -882,6 +1225,7 @@ export const NOTIFICATION_TYPES = [
   "comment",
   "blocker_resolved",
   "client_comment",
+  "edit_requested",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -992,6 +1336,58 @@ export const activities = pgTable(
   ]
 );
 
+// Scope clients (widget installations on client sites)
+export const scopeClients = pgTable(
+  "scope_clients",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    defaultProjectId: uuid("default_project_id")
+      .references(() => projects.id, { onDelete: "set null" }),
+    name: text("name").notNull(),
+    token: text("token").notNull().unique(),
+    domains: jsonb("domains").$type<string[]>().default([]),
+    publicAccess: boolean("public_access").default(false),
+    enabled: boolean("enabled").default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("scope_clients_token_idx").on(table.token),
+    index("scope_clients_org_idx").on(table.organizationId),
+    index("scope_clients_client_idx").on(table.clientId),
+  ]
+);
+
+// Site heartbeats (passive monitoring data from scope clients)
+export const siteHeartbeats = pgTable(
+  "site_heartbeats",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    scopeClientId: uuid("scope_client_id")
+      .notNull()
+      .references(() => scopeClients.id, { onDelete: "cascade" }),
+    pageUrl: text("page_url").notNull(),
+    metrics: jsonb("metrics").notNull(),
+    metadata: jsonb("metadata"),
+    pingMs: integer("ping_ms"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("site_heartbeats_scope_client_created_idx").on(table.scopeClientId, table.createdAt),
+    index("site_heartbeats_org_created_idx").on(table.organizationId, table.createdAt),
+  ]
+);
+
+
 // Relations
 export const organizationsRelations = relations(organizations, ({ many }) => ({
   memberships: many(memberships),
@@ -1002,11 +1398,13 @@ export const organizationsRelations = relations(organizations, ({ many }) => ({
   importSessions: many(importSessions),
   recurringTemplates: many(recurringTemplates),
   documents: many(documents),
+  documentTemplates: many(documentTemplates),
   expenses: many(projectExpenses),
   taskTypes: many(taskTypes),
   taskTags: many(taskTags),
   activities: many(activities),
   savedReportPresets: many(savedReportPresets),
+  scopeClients: many(scopeClients),
 }));
 
 export const importSessionsRelations = relations(importSessions, ({ one }) => ({
@@ -1083,6 +1481,25 @@ export const clientsRelations = relations(clients, ({ one, many }) => ({
   }),
   projects: many(projects),
   invoices: many(invoices),
+  comments: many(clientComments),
+  contacts: many(clientContacts),
+  retainerPeriods: many(retainerPeriods),
+  scopeClients: many(scopeClients),
+}));
+
+export const retainerPeriodsRelations = relations(retainerPeriods, ({ one }) => ({
+  client: one(clients, {
+    fields: [retainerPeriods.clientId],
+    references: [clients.id],
+  }),
+  organization: one(organizations, {
+    fields: [retainerPeriods.organizationId],
+    references: [organizations.id],
+  }),
+  invoice: one(invoices, {
+    fields: [retainerPeriods.invoiceId],
+    references: [invoices.id],
+  }),
 }));
 
 export const projectsRelations = relations(projects, ({ one, many }) => ({
@@ -1096,6 +1513,35 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   activities: many(projectActivities),
   documents: many(documents),
   expenses: many(projectExpenses),
+  comments: many(projectComments),
+  onboardingItems: many(onboardingItems),
+  dataExportRequests: many(dataExportRequests),
+}));
+
+export const onboardingItemsRelations = relations(onboardingItems, ({ one }) => ({
+  project: one(projects, {
+    fields: [onboardingItems.projectId],
+    references: [projects.id],
+  }),
+  completedByUser: one(users, {
+    fields: [onboardingItems.completedBy],
+    references: [users.id],
+  }),
+}));
+
+export const dataExportRequestsRelations = relations(dataExportRequests, ({ one }) => ({
+  project: one(projects, {
+    fields: [dataExportRequests.projectId],
+    references: [projects.id],
+  }),
+  organization: one(organizations, {
+    fields: [dataExportRequests.organizationId],
+    references: [organizations.id],
+  }),
+  requestedByUser: one(users, {
+    fields: [dataExportRequests.requestedBy],
+    references: [users.id],
+  }),
 }));
 
 export const projectInvitationsRelations = relations(projectInvitations, ({ one }) => ({
@@ -1137,7 +1583,8 @@ export const projectActivitiesRelations = relations(projectActivities, ({ one })
   }),
 }));
 
-export const documentsRelations = relations(documents, ({ one }) => ({
+export const documentsRelations = relations(documents, ({ one, many }) => ({
+  revisions: many(documentRevisions),
   organization: one(organizations, {
     fields: [documents.organizationId],
     references: [organizations.id],
@@ -1146,8 +1593,34 @@ export const documentsRelations = relations(documents, ({ one }) => ({
     fields: [documents.projectId],
     references: [projects.id],
   }),
+  template: one(documentTemplates, {
+    fields: [documents.templateId],
+    references: [documentTemplates.id],
+  }),
   createdByUser: one(users, {
     fields: [documents.createdBy],
+    references: [users.id],
+  }),
+}));
+
+export const documentRevisionsRelations = relations(documentRevisions, ({ one }) => ({
+  document: one(documents, {
+    fields: [documentRevisions.documentId],
+    references: [documents.id],
+  }),
+  savedByUser: one(users, {
+    fields: [documentRevisions.savedBy],
+    references: [users.id],
+  }),
+}));
+
+export const documentTemplatesRelations = relations(documentTemplates, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [documentTemplates.organizationId],
+    references: [organizations.id],
+  }),
+  createdByUser: one(users, {
+    fields: [documentTemplates.createdBy],
     references: [users.id],
   }),
 }));
@@ -1179,6 +1652,77 @@ export const expenseCommentsRelations = relations(expenseComments, ({ one }) => 
   }),
   author: one(users, {
     fields: [expenseComments.authorId],
+    references: [users.id],
+  }),
+  sharedByUser: one(users, {
+    fields: [expenseComments.sharedBy],
+    references: [users.id],
+  }),
+}));
+
+export const projectCommentsRelations = relations(projectComments, ({ one }) => ({
+  project: one(projects, {
+    fields: [projectComments.projectId],
+    references: [projects.id],
+  }),
+  author: one(users, {
+    fields: [projectComments.authorId],
+    references: [users.id],
+  }),
+  sharedByUser: one(users, {
+    fields: [projectComments.sharedBy],
+    references: [users.id],
+  }),
+}));
+
+export const clientCommentsRelations = relations(clientComments, ({ one }) => ({
+  client: one(clients, {
+    fields: [clientComments.clientId],
+    references: [clients.id],
+  }),
+  author: one(users, {
+    fields: [clientComments.authorId],
+    references: [users.id],
+  }),
+  sharedByUser: one(users, {
+    fields: [clientComments.sharedBy],
+    references: [users.id],
+  }),
+}));
+
+export const clientContactsRelations = relations(clientContacts, ({ one }) => ({
+  client: one(clients, {
+    fields: [clientContacts.clientId],
+    references: [clients.id],
+  }),
+}));
+
+export const invoiceCommentsRelations = relations(invoiceComments, ({ one }) => ({
+  invoice: one(invoices, {
+    fields: [invoiceComments.invoiceId],
+    references: [invoices.id],
+  }),
+  author: one(users, {
+    fields: [invoiceComments.authorId],
+    references: [users.id],
+  }),
+  sharedByUser: one(users, {
+    fields: [invoiceComments.sharedBy],
+    references: [users.id],
+  }),
+}));
+
+export const documentCommentsRelations = relations(documentComments, ({ one }) => ({
+  document: one(documents, {
+    fields: [documentComments.documentId],
+    references: [documents.id],
+  }),
+  author: one(users, {
+    fields: [documentComments.authorId],
+    references: [users.id],
+  }),
+  sharedByUser: one(users, {
+    fields: [documentComments.sharedBy],
     references: [users.id],
   }),
 }));
@@ -1442,3 +1986,33 @@ export const activitiesRelations = relations(activities, ({ one }) => ({
     references: [tasks.id],
   }),
 }));
+
+// Scope clients relations
+export const scopeClientsRelations = relations(scopeClients, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [scopeClients.organizationId],
+    references: [organizations.id],
+  }),
+  client: one(clients, {
+    fields: [scopeClients.clientId],
+    references: [clients.id],
+  }),
+  defaultProject: one(projects, {
+    fields: [scopeClients.defaultProjectId],
+    references: [projects.id],
+  }),
+  heartbeats: many(siteHeartbeats),
+}));
+
+// Site heartbeats relations
+export const siteHeartbeatsRelations = relations(siteHeartbeats, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [siteHeartbeats.organizationId],
+    references: [organizations.id],
+  }),
+  scopeClient: one(scopeClients, {
+    fields: [siteHeartbeats.scopeClientId],
+    references: [scopeClients.id],
+  }),
+}));
+

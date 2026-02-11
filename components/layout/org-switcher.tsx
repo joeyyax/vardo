@@ -32,19 +32,26 @@ type Organization = {
 
 type OrgSwitcherProps = {
   currentOrgId?: string;
+  organizations?: Organization[];
 };
 
-export function OrgSwitcher({ currentOrgId }: OrgSwitcherProps) {
+export function OrgSwitcher({ currentOrgId, organizations: initialOrganizations }: OrgSwitcherProps) {
   const router = useRouter();
-  const [organizations, setOrganizations] = useState<Organization[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [organizations, setOrganizations] = useState<Organization[]>(initialOrganizations || []);
+  const [loading, setLoading] = useState(!initialOrganizations);
   const [switching, setSwitching] = useState(false);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newOrgName, setNewOrgName] = useState("");
   const [creating, setCreating] = useState(false);
 
-  // Fetch organizations on mount
+  // Fetch organizations on mount only if not provided
   useEffect(() => {
+    if (initialOrganizations) {
+      setOrganizations(initialOrganizations);
+      setLoading(false);
+      return;
+    }
+
     async function fetchOrgs() {
       try {
         const res = await fetch("/api/v1/organizations");
@@ -59,7 +66,7 @@ export function OrgSwitcher({ currentOrgId }: OrgSwitcherProps) {
       }
     }
     fetchOrgs();
-  }, []);
+  }, [initialOrganizations]);
 
   const currentOrg = organizations.find((o) => o.id === currentOrgId) || organizations[0];
 

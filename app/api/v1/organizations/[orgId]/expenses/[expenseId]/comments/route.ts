@@ -1,12 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { expenseComments, projectExpenses } from "@/lib/db/schema";
+import { expenseComments, projectExpenses, expenseWatchers, users } from "@/lib/db/schema";
 import { requireOrg, getSession } from "@/lib/auth/session";
 import { eq, and, desc } from "drizzle-orm";
+import { logCommentAdded } from "@/lib/activities";
+import { notifyExpenseWatchers } from "@/lib/notifications";
 
 type RouteParams = {
   params: Promise<{ orgId: string; expenseId: string }>;
 };
+
+// Auto-add commenter as watcher
+async function ensureWatcher(expenseId: string, userId: string, reason: string) {
+  const existing = await db.query.expenseWatchers.findFirst({
+    where: and(
+      eq(expenseWatchers.expenseId, expenseId),
+      eq(expenseWatchers.userId, userId)
+    ),
+  });
+
+  if (!existing) {
+    await db.insert(expenseWatchers).values({
+      expenseId,
+      userId,
+      reason,
+    });
+  }
+}
 
 // GET /api/v1/organizations/[orgId]/expenses/[expenseId]/comments
 export async function GET(request: NextRequest, { params }: RouteParams) {
@@ -40,6 +60,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             name: true,
             email: true,
             image: true,
+          },
+        },
+        sharedByUser: {
+          columns: {
+            id: true,
+            name: true,
+            email: true,
           },
         },
       },
@@ -86,7 +113,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     const body = await request.json();
-    const { content } = body;
+    const { content, isShared } = body;
 
     if (!content || typeof content !== "string" || !content.trim()) {
       return NextResponse.json({ error: "Content is required" }, { status: 400 });
@@ -98,8 +125,37 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         expenseId,
         authorId: session.user.id,
         content: content.trim(),
+        isShared: isShared ?? false,
+        sharedAt: isShared ? new Date() : null,
+        sharedBy: isShared ? session.user.id : null,
       })
       .returning();
+
+    // Auto-watch on comment
+    await ensureWatcher(expenseId, session.user.id, "commenter");
+
+    // Log activity
+    await logCommentAdded({
+      organizationId: orgId,
+      actorId: session.user.id,
+      expenseId,
+      commentId: comment.id,
+      isShared: comment.isShared ?? false,
+    });
+
+    // Notify watchers about the comment
+    const actor = await db.query.users.findFirst({
+      where: eq(users.id, session.user.id),
+      columns: { name: true, email: true },
+    });
+    const actorName = actor?.name || actor?.email || "Someone";
+
+    await notifyExpenseWatchers({
+      expenseId,
+      actorId: session.user.id,
+      actorName,
+      isShared: comment.isShared ?? false,
+    });
 
     // Fetch the comment with author info
     const commentWithAuthor = await db.query.expenseComments.findFirst({
@@ -111,6 +167,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             name: true,
             email: true,
             image: true,
+          },
+        },
+        sharedByUser: {
+          columns: {
+            id: true,
+            name: true,
+            email: true,
           },
         },
       },

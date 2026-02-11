@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { documents, projects, type DocumentContent } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
+import { getLockStatus, heartbeat } from "@/lib/document-locks";
 
 type RouteParams = {
   params: Promise<{ orgId: string; projectId: string; documentId: string }>;
@@ -124,8 +125,17 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    // Check document lock — only the lock holder can save
+    const lock = await getLockStatus(documentId);
+    if (lock && lock.userId !== session.user.id) {
+      return NextResponse.json(
+        { error: "Document is locked", lockedBy: lock.userName },
+        { status: 423 }
+      );
+    }
+
     const body = await request.json();
-    const { title, content, requiresContract } = body;
+    const { title, content, requiresContract, variableValues } = body;
 
     const updateData: Record<string, unknown> = {
       updatedAt: new Date(),
@@ -139,6 +149,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       updateData.content = content as DocumentContent;
     }
 
+    if (variableValues && typeof variableValues === "object") {
+      updateData.variableValues = variableValues;
+    }
+
     if (document.type === "proposal" && typeof requiresContract === "boolean") {
       updateData.requiresContract = requiresContract;
     }
@@ -148,6 +162,11 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       .set(updateData)
       .where(eq(documents.id, documentId))
       .returning();
+
+    // Refresh lock heartbeat on successful save
+    if (lock) {
+      await heartbeat(documentId, session.user.id);
+    }
 
     return NextResponse.json(updated);
   } catch (error) {

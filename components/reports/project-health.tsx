@@ -1,5 +1,6 @@
 import { FolderOpen, CheckCircle, AlertTriangle, XCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatHoursHuman as formatDuration } from "@/lib/formatting";
 
 type BudgetStatus = "on_budget" | "at_risk" | "over_budget";
 
@@ -31,12 +32,6 @@ type ProjectHealthProps = {
   projectsWithBudgets: ProjectWithBudget[];
   projectsWithoutBudgets: ProjectWithoutBudget[];
 };
-
-function formatDuration(minutes: number): string {
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  return `${hours}h ${mins}m`;
-}
 
 function StatCard({
   icon: Icon,

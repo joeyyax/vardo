@@ -76,12 +76,15 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const {
       name,
       color,
+      contactEmail,
       rateOverride,
       isBillable,
       billingType,
       billingFrequency,
       autoGenerateInvoices,
       retainerAmount,
+      includedMinutes,
+      overageRate,
       billingDayOfWeek,
       billingDayOfMonth,
       paymentTermsDays,
@@ -92,12 +95,15 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const updates: Partial<{
       name: string;
       color: string | null;
+      contactEmail: string | null;
       rateOverride: number | null;
       isBillable: boolean | null;
       billingType: string | null;
       billingFrequency: string | null;
       autoGenerateInvoices: boolean;
       retainerAmount: number | null;
+      includedMinutes: number | null;
+      overageRate: number | null;
       billingDayOfWeek: number | null;
       billingDayOfMonth: number | null;
       paymentTermsDays: number | null;
@@ -119,6 +125,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     if (color !== undefined) {
       updates.color = color || null;
+    }
+
+    if (contactEmail !== undefined) {
+      updates.contactEmail = contactEmail || null;
     }
 
     if (rateOverride !== undefined) {
@@ -150,6 +160,21 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       updates.retainerAmount =
         retainerAmount !== null && retainerAmount !== "" && retainerAmount !== undefined
           ? Math.round(parseFloat(retainerAmount) * 100)
+          : null;
+    }
+
+    if (includedMinutes !== undefined) {
+      updates.includedMinutes =
+        includedMinutes !== null && includedMinutes !== ""
+          ? Math.round(Number(includedMinutes))
+          : null;
+    }
+
+    if (overageRate !== undefined) {
+      // Convert from dollars to cents if provided
+      updates.overageRate =
+        overageRate !== null && overageRate !== "" && overageRate !== undefined
+          ? Math.round(parseFloat(overageRate) * 100)
           : null;
     }
 

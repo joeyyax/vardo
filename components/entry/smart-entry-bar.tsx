@@ -7,6 +7,7 @@ import { EntryChipsInput, type Chip } from "./entry-chips-input";
 import { parseEntryText, parseDuration, parseRelativeDate } from "@/lib/entry-parser";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { formatHoursHuman as formatDuration } from "@/lib/formatting";
 import { getUserPreference } from "@/lib/user-preferences";
 
 type Suggestion = {
@@ -18,20 +19,6 @@ type Suggestion = {
 };
 
 // Helper functions moved outside component since they don't depend on component state
-
-/** Format duration in minutes to a human-readable string */
-function formatDuration(minutes: number): string {
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-
-  if (hours === 0) {
-    return `${mins}m`;
-  }
-  if (mins === 0) {
-    return `${hours}h`;
-  }
-  return `${hours}h ${mins}m`;
-}
 
 /** Build suggestion label from client/project/task hierarchy */
 function getSuggestionLabel(suggestion: Suggestion): string {

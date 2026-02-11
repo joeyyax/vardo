@@ -17,6 +17,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ClientDialog } from "@/components/clients/client-dialog";
 import { ProjectDialog } from "@/components/projects/project-dialog";
+import { RetainerWidget } from "@/components/clients/retainer-widget";
+import { ScopeClientPanel } from "@/components/clients/scope-client-panel";
+import { ScopeClientHealth } from "@/components/clients/scope-client-health";
+import { formatHoursHuman } from "@/lib/formatting";
 
 // Server-side types (Date objects from DB)
 type ServerClient = {
@@ -24,6 +28,7 @@ type ServerClient = {
   organizationId: string;
   name: string;
   color: string | null;
+  contactEmail: string | null;
   rateOverride: number | null;
   isBillable: boolean | null;
   parentClientId: string | null;
@@ -31,6 +36,8 @@ type ServerClient = {
   billingFrequency: string | null;
   autoGenerateInvoices: boolean | null;
   retainerAmount: number | null;
+  includedMinutes: number | null;
+  overageRate: number | null;
   billingDayOfWeek: number | null;
   billingDayOfMonth: number | null;
   paymentTermsDays: number | null;
@@ -111,6 +118,7 @@ export function ClientDashboard({ client: initialClient, orgId }: ClientDashboar
   const [stats, setStats] = useState<ClientStats | null>(null);
   const [recentEntries, setRecentEntries] = useState<RecentEntry[]>([]);
   const [invoices, setInvoices] = useState<OutstandingInvoice[]>([]);
+  const [scopeClientsData, setScopeClientsData] = useState<Array<{ id: string; name: string }>>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // Dialog state
@@ -120,11 +128,12 @@ export function ClientDashboard({ client: initialClient, orgId }: ClientDashboar
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [statsRes, entriesRes, invoicesRes, clientsRes] = await Promise.all([
+      const [statsRes, entriesRes, invoicesRes, clientsRes, scopeClientsRes] = await Promise.all([
         fetch(`/api/v1/organizations/${orgId}/clients/${client.id}/stats`),
         fetch(`/api/v1/organizations/${orgId}/clients/${client.id}/entries?limit=10`),
         fetch(`/api/v1/organizations/${orgId}/invoices?clientId=${client.id}&status=draft,sent`),
         fetch(`/api/v1/organizations/${orgId}/clients`),
+        fetch(`/api/v1/organizations/${orgId}/scope-clients?clientId=${client.id}`),
       ]);
 
       if (statsRes.ok) {
@@ -145,6 +154,11 @@ export function ClientDashboard({ client: initialClient, orgId }: ClientDashboar
       if (clientsRes.ok) {
         const clientsData = await clientsRes.json();
         setAllClients(clientsData || []);
+      }
+
+      if (scopeClientsRes.ok) {
+        const scData = await scopeClientsRes.json();
+        setScopeClientsData(scData.map((sc: { id: string; name: string }) => ({ id: sc.id, name: sc.name })));
       }
     } catch (err) {
       console.error("Error fetching client data:", err);
@@ -171,12 +185,7 @@ export function ClientDashboard({ client: initialClient, orgId }: ClientDashboar
     fetchData();
   }, [orgId, client.id, fetchData]);
 
-  const formatHours = (minutes: number) => {
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    if (mins === 0) return `${hours}h`;
-    return `${hours}h ${mins}m`;
-  };
+  const formatHours = formatHoursHuman;
 
   const formatCurrency = (cents: number) => {
     return new Intl.NumberFormat("en-US", {
@@ -332,6 +341,17 @@ export function ClientDashboard({ client: initialClient, orgId }: ClientDashboar
             </Card>
           </div>
 
+          {/* Retainer widget - only for retainer billing types */}
+          {(client.billingType === "retainer_fixed" ||
+            client.billingType === "retainer_capped" ||
+            client.billingType === "retainer_uncapped") && (
+            <RetainerWidget
+              orgId={orgId}
+              clientId={client.id}
+              billingType={client.billingType}
+            />
+          )}
+
           <div className="grid gap-6 lg:grid-cols-2">
             {/* Active Projects */}
             <Card className="squircle">
@@ -476,6 +496,23 @@ export function ClientDashboard({ client: initialClient, orgId }: ClientDashboar
               </CardContent>
             </Card>
           )}
+
+          {/* Connected Sites (Scope Clients) */}
+          <ScopeClientPanel
+            clientId={client.id}
+            orgId={orgId}
+            projects={client.projects.map((p) => ({ id: p.id, name: p.name }))}
+          />
+
+          {/* Site Health — one dashboard per scope client with data */}
+          {scopeClientsData.map((sc) => (
+            <ScopeClientHealth
+              key={sc.id}
+              scopeClientId={sc.id}
+              scopeClientName={sc.name}
+              orgId={orgId}
+            />
+          ))}
         </>
       )}
 

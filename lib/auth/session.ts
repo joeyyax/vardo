@@ -107,3 +107,29 @@ export async function requireOrg() {
     ...orgData,
   };
 }
+
+/**
+ * Get all organizations the current user has access to.
+ * Returns an empty array if not authenticated.
+ */
+export async function getUserOrganizations() {
+  const session = await getSession();
+
+  if (!session?.user?.id) {
+    return [];
+  }
+
+  const userMemberships = await db.query.memberships.findMany({
+    where: eq(memberships.userId, session.user.id),
+    with: {
+      organization: true,
+    },
+  });
+
+  return userMemberships.map((m) => ({
+    id: m.organization.id,
+    name: m.organization.name,
+    slug: m.organization.slug,
+    role: m.role,
+  }));
+}

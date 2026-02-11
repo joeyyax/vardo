@@ -99,3 +99,51 @@ toast.promise(saveData(), {
 ### Squircle Styling
 
 Apply `className="squircle"` to buttons, cards, dialogs for consistent rounded corners.
+
+### Two-Panel Modal Pattern
+
+Standard modal layout for entity detail dialogs (Tasks, Expenses, Projects, Clients, Invoices).
+
+**Structure:**
+- Full-size dialog with sticky header containing action buttons
+- Left panel (flex-[2]): Content area with view/edit toggle
+- Right panel (flex-1): Discussion sidebar with comments and activities
+
+**Reference implementations:**
+- `components/projects/task-dialog.tsx` - Full pattern with PM features
+- `components/expenses/expense-detail-modal.tsx` - Simpler implementation
+
+**Standard features:**
+- View/edit mode toggle (existing entities start in view mode, new entities in edit mode)
+- Sticky header with Edit/Archive/Delete icon buttons with tooltips
+- Discussion sidebar with unified comment+activity timeline
+- Client visibility toggle for comments (internal vs shared)
+- Auto-subscribe watchers on comment creation
+- Event bus integration for real-time updates
+
+**Example:**
+```tsx
+<DialogContent size="full" className="squircle p-0 gap-0 overflow-hidden flex flex-col" showCloseButton={false}>
+  {/* Sticky header */}
+  <div className="sticky top-0 z-10 bg-muted/30 border-b px-6 py-4">
+    <DialogHeader>
+      <DialogTitle>Entity Details</DialogTitle>
+    </DialogHeader>
+    <div className="flex items-center gap-1">
+      {/* Edit, Archive, Delete, Close icon buttons with Tooltips */}
+    </div>
+  </div>
+
+  <div className="flex h-full min-h-0 flex-1">
+    {/* Left: Content (2/3) */}
+    <div className="flex-[2] overflow-y-auto p-6">
+      {isEditing ? <EntityDetailEdit /> : <EntityDetailView />}
+    </div>
+
+    {/* Right: Discussion (1/3) */}
+    <div className="flex-1 overflow-y-auto p-6 border-l bg-muted/40">
+      <EntityComments />
+    </div>
+  </div>
+</DialogContent>
+```

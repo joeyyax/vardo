@@ -42,6 +42,7 @@ import {
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { format, parseISO } from "date-fns";
+import { formatCurrency, formatHoursDecimal } from "@/lib/formatting";
 
 type Invoice = {
   id: string;
@@ -71,12 +72,8 @@ type InvoiceListProps = {
   onRefresh: () => void;
 };
 
-function formatCurrency(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`;
-}
-
 function formatHours(minutes: number): string {
-  return (minutes / 60).toFixed(1);
+  return formatHoursDecimal(minutes, 1);
 }
 
 function formatDateRange(start: string, end: string): string {

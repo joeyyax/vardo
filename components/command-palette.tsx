@@ -75,8 +75,8 @@ export function CommandPalette({ orgId }: CommandPaletteProps) {
         return;
       }
 
-      // "/" or "n" focuses entry bar (only when not typing in an input)
-      if ((e.key === "/" || e.key === "n") && !open) {
+      // "/" focuses entry bar (only when not typing in an input)
+      if (e.key === "/" && !open) {
         const target = e.target as HTMLElement;
         const isInInput =
           target.tagName === "INPUT" ||

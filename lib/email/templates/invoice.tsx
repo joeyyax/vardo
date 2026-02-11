@@ -23,6 +23,7 @@ interface InvoiceEmailProps {
   totalMinutes: number;
   subtotal: number; // cents
   publicUrl: string;
+  paymentUrl?: string;
   message?: string;
 }
 
@@ -52,6 +53,7 @@ export function InvoiceEmail({
   totalMinutes,
   subtotal,
   publicUrl,
+  paymentUrl,
   message,
 }: InvoiceEmailProps) {
   const previewText = `Invoice ${invoiceNumber} from ${organizationName} - ${formatCurrency(subtotal)}`;
@@ -106,7 +108,12 @@ export function InvoiceEmail({
           </Section>
 
           <Section style={buttonContainer}>
-            <Button style={button} href={publicUrl}>
+            {paymentUrl && (
+              <Button style={payButton} href={paymentUrl}>
+                Pay {formatCurrency(subtotal)} Now
+              </Button>
+            )}
+            <Button style={paymentUrl ? secondaryButton : button} href={publicUrl}>
               View Invoice
             </Button>
           </Section>
@@ -224,6 +231,32 @@ const button = {
   textAlign: "center" as const,
   display: "inline-block",
   padding: "12px 32px",
+};
+
+const payButton = {
+  backgroundColor: "#4f46e5",
+  borderRadius: "8px",
+  color: "#fff",
+  fontSize: "14px",
+  fontWeight: "600",
+  textDecoration: "none",
+  textAlign: "center" as const,
+  display: "inline-block",
+  padding: "12px 32px",
+  marginBottom: "12px",
+};
+
+const secondaryButton = {
+  backgroundColor: "transparent",
+  borderRadius: "8px",
+  border: "1px solid #d1d5db",
+  color: "#374151",
+  fontSize: "14px",
+  fontWeight: "500",
+  textDecoration: "none",
+  textAlign: "center" as const,
+  display: "inline-block",
+  padding: "10px 24px",
 };
 
 const footer = {

@@ -30,6 +30,11 @@ export default function RootLayout({
       >
         {children}
         <Toaster position="bottom-right" />
+        <script
+          src="/widget/scope.js"
+          data-key="sc_ecZV91FK0a1gV9VD6j9R_Gm2"
+          defer
+        />
       </body>
     </html>
   );

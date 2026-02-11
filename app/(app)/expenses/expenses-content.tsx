@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { formatCurrency } from "@/lib/formatting";
 import { ExpenseDialog } from "./expense-dialog";
 import { ExpenseDetailModal } from "@/components/expenses/expense-detail-modal";
 import type { Expense } from "@/components/expenses/types";
@@ -42,13 +43,6 @@ type ExpensesContentProps = {
   orgId: string;
   currentUserId: string;
 };
-
-function formatCurrency(cents: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(cents / 100);
-}
 
 export function ExpensesContent({ orgId, currentUserId }: ExpensesContentProps) {
   const router = useRouter();

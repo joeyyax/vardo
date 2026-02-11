@@ -7,11 +7,11 @@ Organized by priority and dependency order.
 
 ## Current State Summary
 
-**What's production-ready:** Time tracking, invoicing, expenses, proposals/contracts (manual editor), reports, basic PM (feature-flagged), client portal with invitations, notifications, activity tracking, discussion/comments across all entities.
+**What's production-ready:** Time tracking, invoicing (with Stripe payments), expenses, proposals/contracts (manual editor + wizard), reports, basic PM (feature-flagged), client portal with invitations and lifecycle view (timeline, stage messaging, orientation doc, onboarding checklist), notifications with user preferences, activity tracking, discussion/comments across all entities, 8-stage project lifecycle with gated UI, onboarding checklist, agreement generation, change orders, document templates (7 engagement types), orientation auto-docs, retainer tracking (3 types with consumption dashboard, rollover, period management), project budget tracking (hours + fixed price), client notification emails (proposal-ready, agreement-ready, agreement-accepted, onboarding-complete, offboarding-started, offboarding-complete, document-shared via Resend), offboarding workflow (data export requests, migration checklist, assistance tiers, completion transition), bug reporting overlay (screenshot capture, auto-metadata, R2 storage).
 
-**What's in schema but limited UI:** Complex billing types (retainer variants), payment provider config, expense import source tracking.
+**What's in schema but limited UI:** Expense import source tracking. Data export processing (request tracking built, actual export generation requires background job infrastructure).
 
-**What's documented but not started:** Hosting management, offboarding workflow, document generation wizard, full 8-stage lifecycle, AI document review, external integrations.
+**What's documented but not started:** Hosting management, AI document review, external integrations.
 
 ---
 
@@ -38,191 +38,139 @@ Organized by priority and dependency order.
 
 ---
 
-## Tier 2: Project Lifecycle & Workflow
+## ~~Tier 2: Project Lifecycle & Workflow~~ COMPLETE
 
-These bring the core product vision to life. The docs describe a precise, gated lifecycle — the code currently has a simplified version.
+### 2.1 Expand Project Stages — DONE
+- Expanded from 4 to 8 stages: `getting_started` → `proposal` → `agreement` → `onboarding` → `active` → `ongoing` → `offboarding` → `completed`
+- Added `VALID_STAGE_TRANSITIONS` map enforcing allowed transitions
+- Built `ProjectLifecycleTimeline` visual component for project dashboard
+- Updated all UI components (dialog, detail view/edit, dashboard, list page)
+- Migration script maps old → new stages
 
-### 2.1 Expand Project Stages
-- **Effort:** Medium-Large (3-5 sessions)
-- **What:** Expand project stages from current 4 (`lead`, `proposal_sent`, `active`, `completed`) to match docs:
-  - `getting_started` → `proposal` → `agreement` → `onboarding` → `active` → `ongoing` → `offboarding` → `completed`
-- **Schema changes:** Update `projectStages` enum, add migration
-- **UI changes:** Project dashboard stage indicator, stage transition controls, gated actions per stage
-- **Why:** This is THE core product concept. Everything else builds on it.
-- **Dependencies:** None (but blocks 2.2-2.5)
-- **Docs:** `docs/ux/client-project-lifecycle.md`, `docs/ux/project-state-transition-table.md`, `docs/ux/permissions-by-state.md`
+### 2.2 Stage-Gated UI — DONE
+- Created `lib/project-stages.ts` with `getStageCapabilities()` — controls visibility of tasks, time entry, stats, expenses, documents, etc. per stage
+- Added `getStageContext()` for stage description + hint banners
+- Dashboard conditionally shows/hides sections based on current stage
+- Pre-active stages: no tasks, time entry, or stats. Completed: read-only.
 
-### 2.2 Stage-Gated UI
-- **Effort:** Medium (2-3 sessions)
-- **What:** Implement `docs/ux/ui-enabled-elements-by-state.md` — show/hide/disable UI elements based on current project stage:
-  - Getting Started: Only proposal creation available
-  - Proposal: Proposal editing/sending, no task creation
-  - Agreement: Agreement review, no work execution
-  - Onboarding: Checklist visible, no time entry
-  - Active: Full access
-  - Ongoing: Capacity tracking, maintenance mode
-  - Offboarding: Data export, migration tools
-  - Completed: Read-only
-- **Why:** Prevents accidental early work. Core UX principle: "Never start work before agreement."
-- **Dependencies:** 2.1
+### 2.3 Onboarding Checklist System — DONE
+- Added `onboardingItems` table with categories (contacts, access, assets, review)
+- Created `lib/onboarding-templates.ts` with 10 default items (2 required)
+- Built `ProjectOnboardingChecklist` component with category grouping, progress bar, required badges
+- API routes for init, toggle, and complete (advances to active stage)
+- Auto-initializes from template on first load
 
-### 2.3 Onboarding Checklist System
-- **Effort:** Medium (2-3 sessions)
-- **What:** Build structured onboarding checklist that appears after agreement acceptance:
-  - Dynamic checklist items based on project type
-  - Items like: gather access credentials, confirm contacts, upload assets
-  - Provider marks complete → advances to Active
-  - Delta-based for repeat clients (skip items that exist from prior projects)
-- **Why:** Bridges agreement → active work. Prevents "work starts before we're ready."
-- **Dependencies:** 2.1
-- **Docs:** `docs/ux/onboarding-stage-ux.md`, `docs/ux/onboarding-first-project.md`
+### 2.4 Agreement Generation from Proposals — DONE
+- Created `lib/agreement-generator.ts` — generates contract from accepted proposal content
+- `handleDocumentAcceptance()` orchestrates stage transitions:
+  - Proposal accepted → agreement stage + contract doc generated
+  - Contract accepted → onboarding stage + checklist initialized
+- Wired into public document acceptance endpoint
 
-### 2.4 Agreement Generation from Proposals
-- **Effort:** Medium (2-3 sessions)
-- **What:** When a proposal is accepted, auto-generate an agreement document:
-  - Snapshot proposal terms into agreement
-  - Add relevant addenda (SOW, support expectations, etc.)
-  - Client reviews and accepts agreement separately
-  - Acceptance triggers onboarding stage
-- **Why:** Currently proposals and contracts are separate manual documents. The lifecycle expects them to be connected.
-- **Dependencies:** 2.1, existing proposals/contracts system
-- **Docs:** `docs/ux/agreement-stage-ux.md`
-
-### 2.5 Change Order System
-- **Effort:** Small-Medium (1-2 sessions)
-- **What:** When scope needs to change mid-project:
-  - Create a change order document (predefined structure)
-  - Client reviews and accepts
-  - Updates project terms/pricing
-- **Why:** Scope changes are a core concern. Currently no mechanism to handle them formally.
-- **Dependencies:** 2.1, document system
-- **Docs:** `docs/legal/change-order.md`
+### 2.5 Change Order System — DONE
+- Added `change_order` to `DOCUMENT_TYPES`
+- Updated all document UI components, editors, and type annotations
+- Change orders available in project documents panel with orange theming
 
 ---
 
-## Tier 3: Document Generation & Wizard
+## ~~Tier 3: Document Generation & Wizard~~ COMPLETE
 
-The docs describe a sophisticated document assembly system. Currently documents are manually edited section-by-section.
+### 3.1 Document Generation Wizard — DONE
+- Built 4-step engagement wizard: Type → Terms → Extras → Review
+- 7 engagement types: hourly, retainer, retainer+hybrid, fixed, maintenance, task, consulting
+- Dynamic form fields per engagement type (rates, amounts, dates, deliverables)
+- Optional addenda toggles for contracts (hosting, support expectations, responsibility matrix)
+- Preview with rendered document summary before creation
+- Creates document via API and navigates to editor
+- `components/documents/engagement-wizard.tsx`
 
-### 3.1 Document Generation Wizard
-- **Effort:** Large (5-8 sessions)
-- **What:** Multi-step guided interface for creating proposals and contracts:
-  1. Client info (auto-filled from project)
-  2. Link existing proposal or create new
-  3. Engagement type selection (hourly, retainer, fixed, maintenance, consulting, task)
-  4. Core terms (varies by type — rates, amounts, deliverables)
-  5. Hosting toggle (if applicable)
-  6. Optional addenda (SOW, support expectations, responsibility matrix)
-  7. Review & preview
-  8. Send for acceptance
-- **Why:** Currently requires manual section-by-section editing. The wizard would make document creation fast and consistent.
-- **Dependencies:** 1.4 (billing config), 2.1 (stages)
-- **Docs:** `docs/legal/wizard-schema.md`, all files in `docs/legal/contracts/` and `docs/legal/proposals/`
+### 3.2 Document Templates — DONE (built as part of 3.1)
+- 7 proposal templates in `lib/document-templates/proposals.ts`
+- 7 contract templates in `lib/document-templates/contracts.ts` with shared common terms (IP, confidentiality, warranties, liability, termination, governing law)
+- 3 addenda in `lib/document-templates/addenda.ts` (hosting, support expectations, responsibility matrix)
+- Template renderer with `{Variable}` substitution in `lib/document-renderer.ts`
+- Type system and engagement configs in `lib/document-templates/types.ts`
 
-### 3.2 Document Templates
-- **Effort:** Medium (3-4 sessions)
-- **What:** Pre-built templates for each engagement type:
-  - 7 proposal templates (hourly, fixed, retainer, retainer+hybrid, maintenance, task, consulting)
-  - 7 contract templates (matching)
-  - Supporting document templates (SOW, change order, responsibility matrix, etc.)
-- **Why:** The docs contain full template content. This is the content layer for the wizard.
-- **Dependencies:** 3.1
-- **Docs:** All files in `docs/legal/contracts/` and `docs/legal/proposals/`
-
-### 3.3 "How We'll Work Together" Auto-Document
-- **Effort:** Small (1 session)
-- **What:** Auto-generate a "How We'll Work Together" document when a new client project enters Getting Started stage. Sets communication norms and expectations.
-- **Why:** Establishes trust before scope discussions. Core UX principle.
-- **Dependencies:** 2.1
-- **Docs:** `docs/legal/how-we-will-work-together.md`
+### 3.3 "How We'll Work Together" Auto-Document — DONE
+- Added `orientation` to `DOCUMENT_TYPES`
+- Created `lib/orientation-template.ts` with 7-section template
+- Auto-creates orientation doc on every new project (POST projects route)
+- Updated all document type annotations across codebase
 
 ---
 
-## Tier 4: Payment & Financial
+## ~~Tier 4: Payment & Financial~~ COMPLETE
 
-### 4.1 Stripe Payment Integration
-- **Effort:** Medium (3-4 sessions)
-- **What:** Connect Stripe for invoice payments:
-  - Payment links on sent invoices
-  - Webhook handlers for payment confirmation
-  - Auto-update invoice status on payment
-  - Payment method storage (optional)
-- **Why:** Currently invoices are sent but payment is tracked manually. Schema has `paymentConfig` ready.
-- **Dependencies:** None
-- **Docs:** `docs/PLATFORM_EXPANSION.md` (Phase 9)
+### 4.1 Stripe Payment Integration — DONE
+- Installed Stripe SDK (v20.3.1), added `lib/payments/stripe.ts` with client, checkout session, and webhook verification utilities.
+- Added invoice payment schema fields: `paidAt`, `stripePaymentIntentId`, `stripeCheckoutSessionId`, `paymentMethod`, `paymentUrl`.
+- Settings page shows real Stripe connection status (connected/not configured, test/live mode, key checklist).
+- Invoice send route creates Stripe Checkout Session automatically, stores payment URL on invoice.
+- Email template includes "Pay Now" button when payment URL is available.
+- Public invoice page shows "Pay Now" button for unpaid invoices with Stripe configured.
+- Webhook handler at `/api/webhooks/stripe` verifies signatures, handles `checkout.session.completed` (marks invoice paid) and `checkout.session.expired` (clears stale URL).
 
-### 4.2 Retainer Tracking
-- **Effort:** Medium (2-3 sessions)
-- **What:** For retainer-type billing:
-  - Track included hours vs used hours per period
-  - Rollover logic (one month only, as defined in docs)
-  - Dashboard widget showing retainer status
-  - Auto-invoice for overage hours
-- **Why:** Schema supports retainer billing types. No UI to track/manage retainer consumption.
-- **Dependencies:** 1.4
+### 4.2 Retainer Tracking — DONE
+- Added `includedMinutes`, `overageRate` fields to clients table and `retainerPeriods` table for period tracking.
+- Invoice generation now handles all 3 retainer types: fixed (flat fee), capped (min of hours*rate, cap), uncapped (max of hours*rate, floor).
+- Fixed retainer generates invoices even with zero hours worked.
+- Auto-invoice generation creates retainer period records with rollover (max 1 period).
+- Client edit form exposes included hours and overage rate fields for retainer types.
+- `RetainerWidget` on client dashboard shows usage progress, included/remaining/overage hours, rollover balance, and warnings.
+- API endpoint `GET /clients/[id]/retainer` returns retainer status summary.
+- `lib/retainer.ts` module for all retainer logic (period management, adjustments, status).
 
-### 4.3 Budget vs Actual Dashboard
-- **Effort:** Small-Medium (1-2 sessions)
-- **What:** Project-level widget showing estimated vs actual time and cost.
-- **Why:** Key insight tool for project profitability. Reports exist but per-project budget tracking doesn't.
-- **Dependencies:** None
+### 4.3 Budget vs Actual Dashboard — DONE
+- Fixed project stats API to calculate real `budgetMinutes` and `budgetRemaining` (was hardcoded to null).
+- Supports both hours-based and fixed-price budgets with proper conversion.
+- Added budget fields (type, hours, amount) to project edit form.
+- Dashboard budget card now color-codes progress bar (green < 80%, amber 80-100%, red > 100%).
+- Fixed price budgets show currency remaining; hours budgets show time remaining.
 
 ---
 
-## Tier 5: Client Experience
+## ~~Tier 5: Client Experience~~ COMPLETE
 
-### 5.1 Client Portal Improvements
-- **Effort:** Medium (2-3 sessions)
-- **What:**
-  - Lifecycle timeline visible to clients (shows current stage, what's next)
-  - Stage-appropriate messaging per phase
-  - "How We'll Work Together" document visible from portal
-  - Onboarding checklist items clients can complete
-  - Data export request button (for offboarding)
-- **Why:** Portal exists but doesn't reflect the lifecycle concept.
-- **Dependencies:** 2.1, 2.3
-- **Docs:** `docs/ux/client-visibility-model.md`, `docs/ux/client-board-behavior.md`
+### 5.1 Client Portal Improvements — DONE
+- Added lifecycle timeline to portal project view — visual pill-based timeline showing past stages (with checkmarks), current stage (highlighted), and next stage.
+- Added stage-appropriate messaging for all 8 phases with client-facing descriptions and hints.
+- Orientation document ("How We'll Work Together") now visible in portal with expand/collapse.
+- Onboarding checklist visible during onboarding stage — grouped by category, contributors can toggle items, viewers see read-only.
+- Created portal-facing onboarding toggle API (`/api/portal/projects/[projectId]/onboarding/[itemId]`) with invitation-based auth and contributor role check.
+- Portal API updated to return `stage`, `orientationDoc`, and `onboardingChecklist`.
+- Tasks and stats sections conditionally shown only for active/ongoing/offboarding/completed stages.
+- Data export button deferred to Tier 6 (offboarding workflow).
 
-### 5.2 Client Notification Emails
-- **Effort:** Medium (2-3 sessions)
-- **What:** Build transactional email templates for client-facing events:
-  - Proposal ready for review
-  - Agreement ready for signing
-  - Onboarding started
-  - Project active
-  - Invoice sent
-  - Document shared
-- **Why:** Email templates are fully written in `docs/emails/content/`. Currently limited email support.
-- **Dependencies:** None
-- **Docs:** All files in `docs/emails/content/`
+### 5.2 Client Notification Emails — DONE
+- Created centralized email service (`lib/email/send.ts`) with `sendEmail()` helper and `getProjectRecipients()`.
+- Built reusable `LifecycleEmail` React Email template matching existing invoice/report styling.
+- Created 5 lifecycle email builders (`lib/email/lifecycle-emails.ts`): proposal-ready, agreement-ready, agreement-accepted, onboarding-complete, document-shared.
+- Wired into document send route — sends proposal-ready, agreement-ready, or document-shared email when a document is published (replaces TODO).
+- Wired into `handleDocumentAcceptance` — sends agreement-ready email when proposal accepted, agreement-accepted email when contract accepted.
+- Wired into onboarding complete route — sends onboarding-complete email when project advances to active.
+- All emails sent fire-and-forget to project invitation recipients. Invoice-sent email was already built in Tier 4.
 
-### 5.3 Repeat Client Experience
-- **Effort:** Small-Medium (1-2 sessions)
-- **What:** When creating a new project for an existing client:
-  - Lighter "Getting Started" messaging ("This will look familiar")
-  - Delta-based onboarding (reuse existing contacts/access, only request new items)
-  - Pre-fill from previous project data
-- **Why:** Reduces friction for ongoing client relationships.
-- **Dependencies:** 2.1, 2.3
-- **Docs:** `docs/ux/repeat-client-new-project-ux.md`
+### 5.3 Repeat Client Experience — DONE
+- Portal API detects repeat clients (client has multiple projects) and returns `isRepeatClient` flag.
+- Portal shows lighter stage messaging for repeat clients: "The process will look familiar" (getting_started), "Since we've worked together before, some items may already be completed" (onboarding).
+- Orientation document shows "Previously reviewed" badge for repeat clients with different description text.
+- Delta-based onboarding: when contract is accepted, onboarding checklist items that were completed in any previous project for the same client are automatically pre-completed.
+- Project creation API detects existing client projects for internal tracking.
 
 ---
 
 ## Tier 6: Offboarding & Hosting
 
-These features are fully documented but entirely absent from the codebase.
-
-### 6.1 Offboarding Workflow
-- **Effort:** Medium (2-3 sessions)
-- **What:**
-  - Offboarding project stage with structured exit flow
-  - Data export request (automated: code, DB backup, media files)
-  - Migration checklist generation (self-serve guide)
-  - Optional migration assistance tiers (guided, hands-on)
-  - Transition to Completed state
-- **Why:** "Never lock clients in" is a core principle. No exit mechanism exists.
-- **Dependencies:** 2.1
-- **Docs:** `docs/ux/offboarding-and-hosting-ux.md`, `docs/legal/migration-*`
+### 6.1 Offboarding Workflow — DONE
+- Added `dataExportRequests` table for tracking export request status (requested → processing → ready → expired).
+- Created `lib/offboarding-templates.ts` with 8-phase migration checklist content and 3 migration assistance tier definitions (self-service, guided, hands-on).
+- Built `ProjectOffboardingPanel` component with: data export request section (button + status + included/excluded info), expandable migration checklist guide, migration assistance tiers display, complete offboarding button.
+- API routes: `offboarding/export` (GET status, POST request), `offboarding/complete` (POST → advances to completed stage).
+- Offboarding email sent when project transitions to offboarding stage; completion email sent when project advances to completed.
+- Added 3 lifecycle email builders: `offboardingStartedEmail`, `dataExportReadyEmail`, `offboardingCompleteEmail`.
+- Portal shows offboarding section with data export info, migration checklist, and migration assistance options.
+- Dashboard conditionally shows offboarding panel when stage === "offboarding".
 
 ### 6.2 Hosting Management (Future)
 - **Effort:** Large (5+ sessions)
@@ -274,14 +222,21 @@ These features are fully documented but entirely absent from the codebase.
 - **What:** AI-powered review of proposals/contracts for clarity and completeness
 - **Docs:** `docs/PLATFORM_EXPANSION.md`
 
-### 8.4 Bug Reporting Overlay
-- **Effort:** Small-Medium (1-2 sessions)
-- **What:** In-app bug reporting overlay with screenshot capture and context payload
-- **Docs:** `docs/bug-reporting/`
+### 8.4 Bug Reporting Overlay — DONE
+- Added `bugReports` table with status tracking (new/reviewed/resolved/dismissed), automatic metadata capture, and R2 screenshot storage key.
+- Built `BugReportOverlay` component: floating bug icon button → click activates → auto-captures screenshot via html2canvas → description textarea → submit.
+- Automatically captures: page URL, viewport size, browser, OS, user agent, theme (dark/light).
+- Screenshot uploaded to R2 via presigned URL (non-blocking, report created even if upload fails).
+- API route `POST /api/v1/bug-reports` creates report + returns presigned upload URL; `GET` lists reports for org.
+- Overlay mounted in app layout — visible only to authenticated users, never on public pages.
+- Follows philosophy: invisible until needed, minimal UI, zero configuration, no cognitive load.
 
-### 8.5 Notification Preferences
-- **Effort:** Small (1 session)
-- **What:** User preferences for which notifications they receive and how (in-app, email, both)
+### 8.5 Notification Preferences — DONE
+- Created `NotificationPreferences` component on settings page with toggle switches for all 5 notification types + email toggle.
+- Uses existing `GET/PATCH /api/v1/notifications/preferences` API.
+- Optimistic updates with automatic save.
+- Notification bell's "Settings" link updated to scroll to preferences section (`/settings#notifications`).
+- Schema and API were already complete — this adds the missing UI.
 
 ---
 

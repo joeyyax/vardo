@@ -141,19 +141,24 @@ export async function logTaskAssigned(params: {
 export async function logCommentAdded(params: {
   organizationId: string;
   actorId: string;
-  projectId: string;
-  taskId: string;
-  taskName: string;
+  projectId?: string;
+  taskId?: string;
+  taskName?: string;
+  expenseId?: string;
   commentId: string;
   isShared: boolean;
   isClientVisible?: boolean;
 }) {
+  // Determine entity type based on what's provided
+  const entityType = params.taskId ? "task" : params.expenseId ? "expense" : "project";
+  const entityId = params.taskId || params.expenseId || params.projectId || "";
+
   return logActivity({
     organizationId: params.organizationId,
     actorId: params.actorId,
     action: "commented",
-    entityType: "task",
-    entityId: params.taskId,
+    entityType,
+    entityId,
     projectId: params.projectId,
     taskId: params.taskId,
     metadata: {

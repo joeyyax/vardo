@@ -258,8 +258,8 @@ export function EntryRow({
           style={{ backgroundColor: clientColor }}
         />
 
-        {/* Description + Tags */}
-        <div className="flex-1 min-w-0">
+        {/* Description + context cluster */}
+        <div className="flex items-center gap-8 min-w-0">
           {editingField === "description" ? (
             <Input
               ref={inputRef}
@@ -272,10 +272,10 @@ export function EntryRow({
               disabled={isSaving}
             />
           ) : (
-            <div className="flex items-center gap-2 min-w-0">
+            <span className="text-sm truncate">
               <button
                 onClick={() => startEditing("description")}
-                className="text-left text-sm truncate hover:text-primary transition-colors"
+                className="text-left hover:text-primary transition-colors"
               >
                 {entry.description || (
                   <span className="text-muted-foreground italic">
@@ -283,8 +283,75 @@ export function EntryRow({
                   </span>
                 )}
               </button>
+            </span>
+          )}
+
+          {/* Badges */}
+          {editingField !== "description" && (
+            <div className="flex items-center gap-3 shrink-0">
+              {/* Hierarchy (Client/Project/Task) */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div>
+                    <HierarchySelector
+                      orgId={orgId}
+                      selectedClientId={entry.client.id}
+                      selectedProjectId={entry.project?.id || null}
+                      selectedTaskId={entry.task?.id || null}
+                      onSelect={handleHierarchySelect}
+                      open={isSelectorOpen}
+                      onOpenChange={setIsSelectorOpen}
+                    >
+                      <button
+                        onClick={() => setIsSelectorOpen(true)}
+                        className="text-sm hover:opacity-80 transition-opacity"
+                      >
+                        <HierarchyChips entry={entry} />
+                      </button>
+                    </HierarchySelector>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent side="top" align="start" className="max-w-xs">
+                  <div className="space-y-1">
+                    {entry.project ? (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <div
+                            className="size-2 rounded-full shrink-0"
+                            style={{ backgroundColor: entry.client.color || "#94a3b8" }}
+                          />
+                          <span className="font-medium">{entry.project.name}</span>
+                          {entry.project.code && (
+                            <span className="ml-2 font-mono text-xs bg-muted px-1 rounded">
+                              {entry.project.code}
+                            </span>
+                          )}
+                        </div>
+                        {entry.task && (
+                          <div className="pl-4 text-muted-foreground text-xs">
+                            {entry.task.name}
+                          </div>
+                        )}
+                        <div className="pl-4 text-muted-foreground text-xs">
+                          {entry.client.name}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="size-2 rounded-full shrink-0"
+                          style={{ backgroundColor: entry.client.color || "#94a3b8" }}
+                        />
+                        <span className="font-medium">{entry.client.name}</span>
+                      </div>
+                    )}
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+
+              {/* Tags */}
               {entry.tags.length > 0 && (
-                <div className="flex items-center gap-1 shrink-0">
+                <div className="flex items-center gap-1">
                   {entry.tags.map((tag) => (
                     <span
                       key={tag}
@@ -299,65 +366,8 @@ export function EntryRow({
           )}
         </div>
 
-        {/* Hierarchy selector (Client/Project/Task) */}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <div>
-              <HierarchySelector
-                orgId={orgId}
-                selectedClientId={entry.client.id}
-                selectedProjectId={entry.project?.id || null}
-                selectedTaskId={entry.task?.id || null}
-                onSelect={handleHierarchySelect}
-                open={isSelectorOpen}
-                onOpenChange={setIsSelectorOpen}
-              >
-                <button
-                  onClick={() => setIsSelectorOpen(true)}
-                  className="text-sm hover:opacity-80 transition-opacity"
-                >
-                  <HierarchyChips entry={entry} />
-                </button>
-              </HierarchySelector>
-            </div>
-          </TooltipTrigger>
-          <TooltipContent side="top" align="start" className="max-w-xs">
-            <div className="space-y-1">
-              {entry.project ? (
-                <>
-                  <div className="flex items-center gap-2">
-                    <div
-                      className="size-2 rounded-full shrink-0"
-                      style={{ backgroundColor: entry.client.color || "#94a3b8" }}
-                    />
-                    <span className="font-medium">{entry.project.name}</span>
-                    {entry.project.code && (
-                      <span className="ml-2 font-mono text-xs bg-muted px-1 rounded">
-                        {entry.project.code}
-                      </span>
-                    )}
-                  </div>
-                  {entry.task && (
-                    <div className="pl-4 text-muted-foreground text-xs">
-                      {entry.task.name}
-                    </div>
-                  )}
-                  <div className="pl-4 text-muted-foreground text-xs">
-                    {entry.client.name}
-                  </div>
-                </>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <div
-                    className="size-2 rounded-full shrink-0"
-                    style={{ backgroundColor: entry.client.color || "#94a3b8" }}
-                  />
-                  <span className="font-medium">{entry.client.name}</span>
-                </div>
-              )}
-            </div>
-          </TooltipContent>
-        </Tooltip>
+        {/* Spacer */}
+        <div className="flex-1" />
 
         {/* Recurring indicator */}
         {entry.recurringTemplateId && (

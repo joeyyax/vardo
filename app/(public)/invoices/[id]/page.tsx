@@ -1,18 +1,13 @@
 import { notFound } from "next/navigation";
 import { getInvoiceByToken, markInvoiceViewed } from "@/lib/invoices/generate";
+import { formatCurrency, formatHoursDecimal } from "@/lib/formatting";
 import { PrintButton } from "./print-button";
+import { PayNowButton } from "./pay-now-button";
 
 type RouteParams = {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ payment?: string }>;
 };
-
-function formatCurrency(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`;
-}
-
-function formatHours(minutes: number): string {
-  return (minutes / 60).toFixed(2);
-}
 
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr + "T00:00:00");
@@ -23,8 +18,9 @@ function formatDate(dateStr: string): string {
   });
 }
 
-export default async function PublicInvoicePage({ params }: RouteParams) {
+export default async function PublicInvoicePage({ params, searchParams }: RouteParams) {
   const { id: token } = await params;
+  const { payment } = await searchParams;
 
   const data = await getInvoiceByToken(token);
 
@@ -36,6 +32,10 @@ export default async function PublicInvoicePage({ params }: RouteParams) {
 
   // Mark as viewed (non-blocking)
   markInvoiceViewed(invoice.id).catch(console.error);
+
+  const isPaid = invoice.status === "paid";
+  const paymentSuccess = payment === "success";
+  const showPayButton = !isPaid && !paymentSuccess && !!invoice.paymentUrl;
 
   return (
     <div className="min-h-screen bg-gray-50 py-8 print:bg-white print:py-0">
@@ -107,7 +107,7 @@ export default async function PublicInvoicePage({ params }: RouteParams) {
                       )}
                     </td>
                     <td className="py-4 text-right tabular-nums text-gray-600">
-                      {formatHours(item.minutes)}
+                      {formatHoursDecimal(item.minutes)}
                     </td>
                     <td className="py-4 text-right tabular-nums text-gray-600">
                       {formatCurrency(item.rate)}/hr
@@ -128,7 +128,7 @@ export default async function PublicInvoicePage({ params }: RouteParams) {
                 <div className="flex justify-between text-gray-600">
                   <span>Total Hours</span>
                   <span className="tabular-nums">
-                    {formatHours(invoice.totalMinutes)}
+                    {formatHoursDecimal(invoice.totalMinutes)}
                   </span>
                 </div>
                 <div className="flex justify-between border-t pt-3 text-xl font-bold text-gray-900">
@@ -143,12 +143,24 @@ export default async function PublicInvoicePage({ params }: RouteParams) {
 
           {/* Footer */}
           <div className="border-t p-8 text-center text-sm text-gray-500 print:hidden">
-            <p>Thank you for your business</p>
+            {isPaid || paymentSuccess ? (
+              <p className="text-green-600 font-medium">
+                {paymentSuccess ? "Payment received — thank you!" : "This invoice has been paid."}
+              </p>
+            ) : (
+              <p>Thank you for your business</p>
+            )}
           </div>
         </div>
 
-        {/* Print button */}
+        {/* Actions */}
         <div className="mt-6 flex justify-center gap-4 print:hidden">
+          {showPayButton && (
+            <PayNowButton
+              paymentUrl={invoice.paymentUrl!}
+              amount={formatCurrency(invoice.subtotal)}
+            />
+          )}
           <PrintButton />
         </div>
       </div>

@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { getCurrentOrg } from "@/lib/auth/session";
 import { DEFAULT_ORG_FEATURES, type OrgFeatures } from "@/lib/db/schema";
 import { SettingsForm } from "./settings-form";
@@ -7,7 +8,8 @@ import { PersonalPreferences } from "./personal-preferences";
 import { PaymentSettings } from "./payment-settings";
 import { ImportWizard } from "@/components/settings/import-wizard";
 import { DangerZone } from "@/components/settings/danger-zone";
-import type { PaymentProvider } from "@/lib/payments/types";
+import { NotificationPreferences } from "./notification-preferences";
+import { getStripeStatus } from "@/lib/payments/stripe";
 
 export default async function SettingsPage() {
   const orgData = await getCurrentOrg();
@@ -48,12 +50,34 @@ export default async function SettingsPage() {
         canEdit={canEdit}
       />
 
+      {/* Document Templates - only show if proposals feature is enabled */}
+      {features.proposals && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-medium">Document Templates</h2>
+              <p className="text-sm text-muted-foreground">
+                Manage templates for proposals, contracts, and change orders.
+              </p>
+            </div>
+            <Link
+              href="/settings/templates"
+              className="text-sm text-primary hover:underline"
+            >
+              Manage Templates
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {/* Notification Preferences */}
+      <NotificationPreferences />
+
       {/* Payment Providers - only show if invoicing is enabled */}
       {features.invoicing && (
         <PaymentSettings
           organizationId={organization.id}
-          currentProvider={organization.paymentProvider as PaymentProvider}
-          connected={Boolean(organization.paymentConfig)}
+          stripeStatus={getStripeStatus()}
           canEdit={canEdit}
         />
       )}

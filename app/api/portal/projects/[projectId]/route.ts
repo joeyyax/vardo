@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { projectInvitations, tasks, timeEntries } from "@/lib/db/schema";
+import { projectInvitations, projects, tasks, timeEntries, documents, onboardingItems } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth/session";
 import { eq, and, or, sql, isNull } from "drizzle-orm";
 
@@ -89,19 +89,75 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         assignedTo: t.assignedTo,
       }));
 
+    // Fetch orientation document (if published)
+    const orientationDoc = await db.query.documents.findFirst({
+      where: and(
+        eq(documents.projectId, projectId),
+        eq(documents.type, "orientation")
+      ),
+      columns: {
+        id: true,
+        title: true,
+        content: true,
+        status: true,
+      },
+    });
+
+    // Fetch onboarding items (if project is in onboarding stage)
+    let onboardingChecklist: {
+      id: string;
+      label: string;
+      description: string | null;
+      category: string;
+      isRequired: boolean;
+      isCompleted: boolean;
+    }[] = [];
+
+    if (project.stage === "onboarding") {
+      const items = await db.query.onboardingItems.findMany({
+        where: eq(onboardingItems.projectId, projectId),
+        orderBy: (i, { asc }) => [asc(i.position)],
+      });
+
+      onboardingChecklist = items.map((item) => ({
+        id: item.id,
+        label: item.label,
+        description: item.description,
+        category: item.category,
+        isRequired: item.isRequired ?? false,
+        isCompleted: item.isCompleted ?? false,
+      }));
+    }
+
+    // Check if this is a repeat client
+    const clientProjects = await db.query.projects.findMany({
+      where: eq(projects.clientId, project.clientId),
+      columns: { id: true },
+    });
+    const isRepeatClient = clientProjects.length > 1;
+
     return NextResponse.json({
       id: project.id,
       name: project.name,
+      stage: project.stage || "getting_started",
       clientName: project.client.name,
       organizationName: project.client.organization.name,
       role: invitation.role,
       visibility,
+      isRepeatClient,
       tasks: responseTasks,
       stats: {
         totalTasks: projectTasks.length,
         completedTasks,
         totalHours: visibility.show_time ? totalHours : undefined,
       },
+      orientationDoc: orientationDoc && orientationDoc.status !== "draft"
+        ? {
+            title: orientationDoc.title,
+            content: orientationDoc.content,
+          }
+        : null,
+      onboardingChecklist,
     });
   } catch (error) {
     console.error("Error fetching portal project:", error);

@@ -96,8 +96,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             },
           },
         },
+        type: {
+          columns: { id: true, name: true, color: true, icon: true },
+        },
         assignedToUser: {
           columns: { id: true, name: true, email: true },
+        },
+        files: {
+          columns: { taskId: true },
         },
       },
       orderBy: (tasks, { asc, desc }) => [

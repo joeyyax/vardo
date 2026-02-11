@@ -1,9 +1,13 @@
 import { z } from "zod";
 
 export const projectStageSchema = z.enum([
-  "lead",
-  "proposal_sent",
+  "getting_started",
+  "proposal",
+  "agreement",
+  "onboarding",
   "active",
+  "ongoing",
+  "offboarding",
   "completed",
 ]);
 

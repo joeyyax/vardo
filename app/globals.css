@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@plugin "@tailwindcss/typography";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -161,6 +162,38 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  @media (hover: hover) and (pointer: fine) {
+  a,
+  button,
+  [role="button"],
+  [role="link"],
+  [data-clickable="true"] {
+    transition: background-color 120ms ease,
+                color 120ms ease,
+                box-shadow 120ms ease,
+                transform 120ms ease;
+  }
+
+  a:hover {
+    /* text-decoration: underline; */
+  }
+
+  button:hover,
+  [role="button"]:hover,
+  [data-clickable="true"]:hover {
+    filter: brightness(0.97);
+  }
+}
+}
+
+/* Tiptap editor styles */
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--muted-foreground);
+  pointer-events: none;
+  height: 0;
 }
 
 /* Squircle progressive enhancement */
@@ -180,3 +213,4 @@
     &.rounded-full { corner-radius: 9999px; }
   }
 }
+

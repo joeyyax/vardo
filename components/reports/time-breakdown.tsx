@@ -1,6 +1,7 @@
 import { Clock, DollarSign, ClockArrowDown, Percent } from "lucide-react";
 import { Bar, BarChart, XAxis, YAxis, CartesianGrid } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatCurrency, formatHoursHuman as formatDuration } from "@/lib/formatting";
 import {
   ChartContainer,
   ChartTooltip,
@@ -35,19 +36,6 @@ type TimeBreakdownProps = {
   clientBreakdown: ClientBreakdown[];
   topProjects?: TopProject[];
 };
-
-function formatCurrency(cents: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(cents / 100);
-}
-
-function formatDuration(minutes: number): string {
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  return `${hours}h ${mins}m`;
-}
 
 function StatCard({
   icon: Icon,

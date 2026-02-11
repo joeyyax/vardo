@@ -4,6 +4,12 @@ import { documents, projects } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { logActivity } from "@/lib/activity";
+import { sendEmail, getProjectRecipients } from "@/lib/email/send";
+import {
+  proposalReadyEmail,
+  agreementReadyEmail,
+  documentSharedEmail,
+} from "@/lib/email/lifecycle-emails";
 
 type RouteParams = {
   params: Promise<{ orgId: string; projectId: string; documentId: string }>;
@@ -32,6 +38,7 @@ async function verifyProjectBelongsToOrg(projectId: string, orgId: string) {
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, projectId, documentId } = await params;
+    const body = await request.json().catch(() => ({}));
     const { organization, session } = await requireOrg();
 
     if (organization.id !== orgId) {
@@ -97,10 +104,51 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       isPublic: true, // Sending a document is visible to clients
     });
 
-    // TODO: Send email notification to client
-    // For now, just return the updated document with the public URL
-
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
     const publicUrl = `/d/${updated.publicToken}`;
+    const fullPublicUrl = `${baseUrl}${publicUrl}`;
+
+    // Send email notification to project recipients
+    const recipientEmail = body?.recipientEmail;
+
+    // Use provided email or fall back to project invitation recipients
+    const recipients = recipientEmail
+      ? [recipientEmail]
+      : await getProjectRecipients(projectId);
+
+    if (recipients.length > 0) {
+      const emailCtx = {
+        organizationName: organization.name,
+        clientName: project.client.name,
+        projectName: project.name,
+        workspaceUrl: fullPublicUrl,
+      };
+
+      let emailData;
+      if (document.type === "proposal") {
+        emailData = proposalReadyEmail(emailCtx);
+      } else if (document.type === "contract") {
+        emailData = agreementReadyEmail(emailCtx);
+      } else {
+        emailData = documentSharedEmail({
+          ...emailCtx,
+          documentTitle: document.title,
+          documentType: document.type,
+        });
+      }
+
+      // Send to each recipient (fire and forget — don't block response)
+      for (const email of recipients) {
+        sendEmail({
+          to: email,
+          subject: emailData.subject,
+          react: emailData.react,
+          from: `${organization.name} <${process.env.EMAIL_FROM || "notifications@joeyyax.com"}>`,
+        }).catch((err) =>
+          console.error("Failed to send document email:", err)
+        );
+      }
+    }
 
     return NextResponse.json({
       ...updated,

@@ -39,13 +39,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   CheckCircle2,
   Copy,
   Eye,
@@ -60,10 +53,11 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { TemplateWizard } from "@/components/documents/template-wizard";
 
 type Document = {
   id: string;
-  type: "proposal" | "contract";
+  type: "proposal" | "contract" | "change_order" | "orientation";
   status: "draft" | "sent" | "viewed" | "accepted" | "declined";
   title: string;
   publicToken: string | null;
@@ -82,6 +76,11 @@ type Document = {
 type ProjectDocumentsProps = {
   orgId: string;
   projectId: string;
+  projectName: string;
+  clientName: string;
+  organizationName: string;
+  initialDocuments?: Document[];
+  suggestedTemplateId?: string;
 };
 
 const STATUS_CONFIG = {
@@ -112,15 +111,31 @@ const STATUS_CONFIG = {
   },
 };
 
-export function ProjectDocuments({ orgId, projectId }: ProjectDocumentsProps) {
+export function ProjectDocuments({ orgId, projectId, projectName, clientName, organizationName, initialDocuments, suggestedTemplateId }: ProjectDocumentsProps) {
   const router = useRouter();
-  const [documents, setDocuments] = useState<Document[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [documents, setDocuments] = useState<Document[]>(initialDocuments || []);
+  const [isLoading, setIsLoading] = useState(!initialDocuments);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteDocument, setDeleteDocument] = useState<Document | null>(null);
   const [isCreating, setIsCreating] = useState(false);
-  const [newDocType, setNewDocType] = useState<"proposal" | "contract">("proposal");
+  const [newDocType, setNewDocType] = useState<"proposal" | "contract" | "change_order">("proposal");
   const [newDocTitle, setNewDocTitle] = useState("");
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardDocType, setWizardDocType] = useState<"proposal" | "contract" | "change_order">("proposal");
+
+  // Listen for open-document-wizard events from StageGuidance
+  useEffect(() => {
+    function handleOpenWizard(e: Event) {
+      const detail = (e as CustomEvent).detail as {
+        type: "proposal" | "contract" | "change_order";
+        suggestedTemplateId?: string;
+      };
+      setWizardDocType(detail.type);
+      setWizardOpen(true);
+    }
+    window.addEventListener("open-document-wizard", handleOpenWizard);
+    return () => window.removeEventListener("open-document-wizard", handleOpenWizard);
+  }, []);
 
   const fetchDocuments = useCallback(async () => {
     try {
@@ -167,7 +182,8 @@ export function ProjectDocuments({ orgId, projectId }: ProjectDocumentsProps) {
         setCreateDialogOpen(false);
         setNewDocTitle("");
         setNewDocType("proposal");
-        toast.success(`${newDocType === "proposal" ? "Proposal" : "Contract"} created`);
+        const typeLabels = { proposal: "Proposal", contract: "Contract", change_order: "Change Order" };
+        toast.success(`${typeLabels[newDocType]} created`);
         // Navigate to edit the document
         router.push(`/projects/${projectId}/documents/${document.id}`);
       } else {
@@ -220,16 +236,46 @@ export function ProjectDocuments({ orgId, projectId }: ProjectDocumentsProps) {
               <FileCheck className="size-5" />
               Documents
             </CardTitle>
-            <CardDescription>Proposals and contracts</CardDescription>
+            <CardDescription>Proposals, contracts, and change orders</CardDescription>
           </div>
-          <Button
-            size="sm"
-            onClick={() => setCreateDialogOpen(true)}
-            className="squircle"
-          >
-            <Plus className="size-4" />
-            New
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" className="squircle">
+                <Plus className="size-4" />
+                New
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="squircle">
+              <DropdownMenuItem
+                onClick={() => {
+                  setWizardDocType("proposal");
+                  setWizardOpen(true);
+                }}
+              >
+                <FileText className="size-4 text-blue-600" />
+                Proposal
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  setWizardDocType("contract");
+                  setWizardOpen(true);
+                }}
+              >
+                <FileText className="size-4 text-purple-600" />
+                Contract
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => {
+                  setWizardDocType("change_order");
+                  setWizardOpen(true);
+                }}
+              >
+                <FileText className="size-4 text-orange-600" />
+                Change Order
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </CardHeader>
       <CardContent>
@@ -270,20 +316,28 @@ export function ProjectDocuments({ orgId, projectId }: ProjectDocumentsProps) {
                     <div
                       className={cn(
                         "flex size-8 items-center justify-center rounded-full shrink-0",
-                        doc.type === "proposal" ? "bg-blue-100 dark:bg-blue-900" : "bg-purple-100 dark:bg-purple-900"
+                        doc.type === "proposal"
+                          ? "bg-blue-100 dark:bg-blue-900"
+                          : doc.type === "change_order"
+                            ? "bg-orange-100 dark:bg-orange-900"
+                            : "bg-purple-100 dark:bg-purple-900"
                       )}
                     >
                       <FileText
                         className={cn(
                           "size-4",
-                          doc.type === "proposal" ? "text-blue-600 dark:text-blue-400" : "text-purple-600 dark:text-purple-400"
+                          doc.type === "proposal"
+                            ? "text-blue-600 dark:text-blue-400"
+                            : doc.type === "change_order"
+                              ? "text-orange-600 dark:text-orange-400"
+                              : "text-purple-600 dark:text-purple-400"
                         )}
                       />
                     </div>
                     <div className="min-w-0">
                       <p className="font-medium truncate">{doc.title}</p>
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <span className="capitalize">{doc.type}</span>
+                        <span className="capitalize">{doc.type === "change_order" ? "Change Order" : doc.type}</span>
                         <span>&middot;</span>
                         <StatusIcon className={cn("size-3", config.color)} />
                         <span className={config.color}>{config.label}</span>
@@ -350,35 +404,23 @@ export function ProjectDocuments({ orgId, projectId }: ProjectDocumentsProps) {
         )}
       </CardContent>
 
-      {/* Create Document Dialog */}
+      {/* Create Change Order Dialog */}
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
         <DialogContent className="squircle">
           <DialogHeader>
-            <DialogTitle>Create Document</DialogTitle>
+            <DialogTitle>Create Change Order</DialogTitle>
             <DialogDescription>
-              Create a new proposal or contract for this project.
+              Document a scope change for this project.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="doc-type">Type</Label>
-              <Select value={newDocType} onValueChange={(v) => setNewDocType(v as "proposal" | "contract")}>
-                <SelectTrigger id="doc-type" className="squircle">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="squircle">
-                  <SelectItem value="proposal">Proposal</SelectItem>
-                  <SelectItem value="contract">Contract</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
             <div className="space-y-2">
               <Label htmlFor="doc-title">Title</Label>
               <Input
                 id="doc-title"
                 value={newDocTitle}
                 onChange={(e) => setNewDocTitle(e.target.value)}
-                placeholder={newDocType === "proposal" ? "Project Proposal" : "Service Agreement"}
+                placeholder="Scope Change — Additional Pages"
                 className="squircle"
               />
             </div>
@@ -423,6 +465,22 @@ export function ProjectDocuments({ orgId, projectId }: ProjectDocumentsProps) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Template Wizard */}
+      <TemplateWizard
+        orgId={orgId}
+        projectId={projectId}
+        projectName={projectName}
+        clientName={clientName}
+        organizationName={organizationName}
+        documentType={wizardDocType}
+        open={wizardOpen}
+        onOpenChange={(open) => {
+          setWizardOpen(open);
+          if (!open) fetchDocuments();
+        }}
+        suggestedTemplateId={suggestedTemplateId}
+      />
     </Card>
   );
 }

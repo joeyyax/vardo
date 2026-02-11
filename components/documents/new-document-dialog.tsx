@@ -29,12 +29,21 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { Loader2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { ArrowLeft, FileText, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 import {
   newDocumentSchema,
   type NewDocumentFormData,
 } from "@/lib/schemas/document";
+import { renderTemplate } from "@/lib/template-engine";
+import type {
+  TemplateSection,
+  TemplateVariable,
+  TemplatePricingConfig,
+  DocumentType,
+} from "@/lib/template-engine/types";
+import { cn } from "@/lib/utils";
 
 type Project = {
   id: string;
@@ -45,9 +54,21 @@ type Project = {
   };
 };
 
+type Template = {
+  id: string;
+  name: string;
+  description: string | null;
+  category: string | null;
+  documentType: DocumentType;
+  sections: TemplateSection[];
+  variableSchema: TemplateVariable[];
+  pricingConfig: TemplatePricingConfig | null;
+  isStarter?: boolean;
+};
+
 type NewDocumentDialogProps = {
   orgId: string;
-  type: "proposal" | "contract";
+  type: "proposal" | "contract" | "change_order" | "orientation";
   open: boolean;
   onOpenChange: (open: boolean) => void;
 };
@@ -62,6 +83,12 @@ export function NewDocumentDialog({
   const [isLoading, setIsLoading] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(false);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [step, setStep] = useState<1 | 2>(1);
+  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(
+    null
+  );
 
   const form = useForm<NewDocumentFormData>({
     resolver: zodResolver(newDocumentSchema),
@@ -71,10 +98,13 @@ export function NewDocumentDialog({
     },
   });
 
-  // Fetch projects when dialog opens
+  // Fetch projects and templates when dialog opens
   useEffect(() => {
-    if (open && projects.length === 0) {
-      fetchProjects();
+    if (open) {
+      if (projects.length === 0) fetchProjects();
+      if (templates.length === 0) fetchTemplates();
+      setStep(1);
+      setSelectedTemplate(null);
     }
   }, [open]);
 
@@ -82,6 +112,8 @@ export function NewDocumentDialog({
   useEffect(() => {
     if (!open) {
       form.reset();
+      setStep(1);
+      setSelectedTemplate(null);
     }
   }, [open, form]);
 
@@ -100,28 +132,86 @@ export function NewDocumentDialog({
     }
   }
 
+  async function fetchTemplates() {
+    setTemplatesLoading(true);
+    try {
+      const response = await fetch(
+        `/api/v1/organizations/${orgId}/templates?documentType=${type}`
+      );
+      if (response.ok) {
+        const data = await response.json();
+        setTemplates(data);
+      }
+    } catch (err) {
+      console.error("Error fetching templates:", err);
+    } finally {
+      setTemplatesLoading(false);
+    }
+  }
+
+  function handleSelectTemplate(template: Template | null) {
+    setSelectedTemplate(template);
+    if (template) {
+      form.setValue("title", template.name);
+    }
+    setStep(2);
+  }
+
   async function onSubmit(data: NewDocumentFormData) {
     setIsLoading(true);
     try {
+      // Look up project + client for render context
+      const project = projects.find((p) => p.id === data.projectId);
+      const clientName = project?.client.name ?? "";
+      const projectName = project?.name ?? "";
+
+      let body: Record<string, unknown>;
+
+      if (selectedTemplate) {
+        // Render the template with context
+        const rendered = renderTemplate(
+          selectedTemplate.sections,
+          selectedTemplate.variableSchema,
+          selectedTemplate.pricingConfig,
+          {},
+          {
+            clientName,
+            projectName,
+            organizationName: "",
+          }
+        );
+
+        // Store template metadata in content so the builder can reconstruct
+        // the editing experience even without a templateId FK.
+        rendered.templateSections = selectedTemplate.sections;
+        rendered.variableSchema = selectedTemplate.variableSchema;
+        rendered.pricingConfig = selectedTemplate.pricingConfig ?? undefined;
+        rendered.templateName = selectedTemplate.name;
+
+        // Starter template IDs use "starter:" prefix — not valid UUIDs for the DB
+        const isDbTemplate = !selectedTemplate.id.startsWith("starter:");
+
+        body = {
+          type,
+          title: data.title.trim(),
+          content: rendered,
+          ...(isDbTemplate && { templateId: selectedTemplate.id }),
+          variableValues: {},
+        };
+      } else {
+        // Blank document
+        body = {
+          type,
+          title: data.title.trim(),
+        };
+      }
+
       const response = await fetch(
         `/api/v1/organizations/${orgId}/projects/${data.projectId}/documents`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            type,
-            title: data.title.trim(),
-            content: {
-              sections: [
-                {
-                  id: crypto.randomUUID(),
-                  type: "text",
-                  title: type === "proposal" ? "Overview" : "Agreement",
-                  content: "",
-                },
-              ],
-            },
-          }),
+          body: JSON.stringify(body),
         }
       );
 
@@ -161,101 +251,224 @@ export function NewDocumentDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="squircle sm:max-w-[425px]">
-        <DialogHeader>
-          <DialogTitle>New {typeLabel}</DialogTitle>
-          <DialogDescription>
-            Create a new {type} for a project.
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent
+        className={cn(
+          "squircle",
+          step === 1 ? "sm:max-w-2xl" : "sm:max-w-[425px]"
+        )}
+      >
+        {step === 1 ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>New {typeLabel}</DialogTitle>
+              <DialogDescription>
+                Choose a template or start from scratch.
+              </DialogDescription>
+            </DialogHeader>
 
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="projectId"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Project</FormLabel>
-                  <Select
-                    onValueChange={field.onChange}
-                    defaultValue={field.value}
+            {templatesLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="size-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[400px] overflow-y-auto py-2">
+                {/* Blank document card */}
+                <button
+                  type="button"
+                  className="flex flex-col items-start gap-2 rounded-lg border-2 border-dashed p-4 text-left transition-colors hover:border-primary/40 hover:bg-muted/50"
+                  onClick={() => handleSelectTemplate(null)}
+                >
+                  <FileText className="size-5 text-muted-foreground" />
+                  <div>
+                    <p className="text-sm font-medium">Blank Document</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Start with empty sections
+                    </p>
+                  </div>
+                </button>
+
+                {/* Template cards */}
+                {templates.map((template) => (
+                  <button
+                    key={template.id}
+                    type="button"
+                    className="flex flex-col items-start gap-2 rounded-lg border p-4 text-left transition-colors hover:border-primary/40 hover:bg-muted/50"
+                    onClick={() => handleSelectTemplate(template)}
                   >
-                    <FormControl>
-                      <SelectTrigger className="squircle">
-                        <SelectValue placeholder="Select project" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent className="squircle">
-                      {projectsLoading ? (
-                        <div className="flex items-center justify-center py-2">
-                          <Loader2 className="size-4 animate-spin" />
-                        </div>
-                      ) : projects.length === 0 ? (
-                        <div className="px-2 py-4 text-center text-sm text-muted-foreground">
-                          No projects found. Create a project first.
-                        </div>
-                      ) : (
-                        Object.entries(projectsByClient).map(
-                          ([clientName, clientProjects]) => (
-                            <div key={clientName}>
-                              <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
-                                {clientName}
-                              </div>
-                              {clientProjects.map((project) => (
-                                <SelectItem key={project.id} value={project.id}>
-                                  {project.name}
-                                </SelectItem>
-                              ))}
-                            </div>
-                          )
-                        )
+                    <FileText className="size-5 text-primary/70" />
+                    <div className="min-w-0 w-full">
+                      <p className="text-sm font-medium truncate">
+                        {template.name}
+                      </p>
+                      {template.description && (
+                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                          {template.description}
+                        </p>
                       )}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+                      <div className="flex items-center gap-1.5 mt-2">
+                        {template.category && (
+                          <Badge
+                            variant="secondary"
+                            className="text-[10px] px-1.5 py-0"
+                          >
+                            {template.category}
+                          </Badge>
+                        )}
+                        {template.isStarter && (
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] px-1.5 py-0"
+                          >
+                            Built-in
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <DialogHeader>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="size-7 shrink-0"
+                  onClick={() => setStep(1)}
+                >
+                  <ArrowLeft className="size-4" />
+                </Button>
+                <div>
+                  <DialogTitle>New {typeLabel}</DialogTitle>
+                  <DialogDescription>
+                    Configure your{" "}
+                    {selectedTemplate
+                      ? `"${selectedTemplate.name}" document`
+                      : "blank document"}
+                    .
+                  </DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
 
-            <FormField
-              control={form.control}
-              name="title"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Title</FormLabel>
-                  <FormControl>
-                    <Input
-                      {...field}
-                      placeholder={`e.g., Website Redesign ${typeLabel}`}
-                      className="squircle"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            {selectedTemplate && (
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary" className="gap-1.5">
+                  <FileText className="size-3" />
+                  {selectedTemplate.name}
+                  <button
+                    type="button"
+                    className="ml-0.5 hover:text-foreground"
+                    onClick={() => {
+                      setSelectedTemplate(null);
+                      form.setValue("title", "");
+                    }}
+                  >
+                    <X className="size-3" />
+                  </button>
+                </Badge>
+              </div>
+            )}
 
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-                className="squircle"
+            <Form {...form}>
+              <form
+                onSubmit={form.handleSubmit(onSubmit)}
+                className="space-y-4"
               >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={isLoading || !form.watch("projectId")}
-                className="squircle"
-              >
-                {isLoading && <Loader2 className="size-4 animate-spin" />}
-                Create {typeLabel}
-              </Button>
-            </DialogFooter>
-          </form>
-        </Form>
+                <FormField
+                  control={form.control}
+                  name="projectId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Project</FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        defaultValue={field.value}
+                      >
+                        <FormControl>
+                          <SelectTrigger className="squircle">
+                            <SelectValue placeholder="Select project" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent className="squircle">
+                          {projectsLoading ? (
+                            <div className="flex items-center justify-center py-2">
+                              <Loader2 className="size-4 animate-spin" />
+                            </div>
+                          ) : projects.length === 0 ? (
+                            <div className="px-2 py-4 text-center text-sm text-muted-foreground">
+                              No projects found. Create a project first.
+                            </div>
+                          ) : (
+                            Object.entries(projectsByClient).map(
+                              ([clientName, clientProjects]) => (
+                                <div key={clientName}>
+                                  <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+                                    {clientName}
+                                  </div>
+                                  {clientProjects.map((project) => (
+                                    <SelectItem
+                                      key={project.id}
+                                      value={project.id}
+                                    >
+                                      {project.name}
+                                    </SelectItem>
+                                  ))}
+                                </div>
+                              )
+                            )
+                          )}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="title"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Title</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          placeholder={`e.g., Website Redesign ${typeLabel}`}
+                          className="squircle"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => onOpenChange(false)}
+                    className="squircle"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={isLoading || !form.watch("projectId")}
+                    className="squircle"
+                  >
+                    {isLoading && <Loader2 className="size-4 animate-spin" />}
+                    Create {typeLabel}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </Form>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );

@@ -10,6 +10,7 @@ import { eq, and, gte, lte, desc, sql } from "drizzle-orm";
 import { resolveRate, buildRateChain } from "./resolve-rate";
 import { resolveEntryBillable } from "@/lib/entries/resolve-billable";
 import { randomBytes } from "crypto";
+import { isRetainerBilling, applyRetainerAdjustment } from "@/lib/retainer";
 
 export interface InvoiceGenerationOptions {
   includeSummaries?: boolean;
@@ -210,8 +211,60 @@ export async function generateInvoice(
   // Fetch billable entries
   const entries = await fetchBillableEntries(orgId, clientId, from, to);
 
-  if (entries.length === 0) {
+  const isRetainer = isRetainerBilling(client.billingType);
+
+  // For non-retainer billing, entries are required
+  if (entries.length === 0 && !isRetainer) {
     throw new Error("No billable entries found for the specified period");
+  }
+
+  // For fixed retainer with no entries, still generate the invoice
+  if (entries.length === 0 && client.billingType === "retainer_fixed") {
+    const retainerAmount = client.retainerAmount || 0;
+    if (retainerAmount <= 0) {
+      throw new Error("Fixed retainer client has no retainer amount configured");
+    }
+
+    // Generate invoice with just the retainer line item
+    const invoiceNumber = await generateInvoiceNumber(orgId);
+    const publicToken = generatePublicToken();
+
+    return await db.transaction(async (tx) => {
+      const [invoice] = await tx
+        .insert(invoices)
+        .values({
+          organizationId: orgId,
+          clientId,
+          invoiceNumber,
+          status: "draft",
+          periodStart: from,
+          periodEnd: to,
+          subtotal: retainerAmount,
+          totalMinutes: 0,
+          publicToken,
+        })
+        .returning();
+
+      const createdLineItems = await tx
+        .insert(invoiceLineItems)
+        .values([
+          {
+            invoiceId: invoice.id,
+            projectId: null,
+            projectName: `Monthly Retainer — ${client.name}`,
+            taskId: null,
+            taskName: null,
+            description: "Fixed monthly retainer fee",
+            minutes: 0,
+            rate: 0,
+            amount: retainerAmount,
+            entryIds: [],
+          },
+        ])
+        .returning();
+
+      return { invoice, lineItems: createdLineItems };
+    });
   }
 
   // Group entries by project/task
@@ -230,7 +283,7 @@ export async function generateInvoice(
     entryIds: string[];
   }> = [];
 
-  let subtotal = 0;
+  let hourlySubtotal = 0;
   let totalMinutes = 0;
 
   for (const group of groups) {
@@ -274,9 +327,16 @@ export async function generateInvoice(
       entryIds: group.entries.map((e) => e.id),
     });
 
-    subtotal += amount;
+    hourlySubtotal += amount;
     totalMinutes += group.totalMinutes;
   }
+
+  // Apply retainer adjustment if applicable
+  const subtotal = applyRetainerAdjustment(
+    client.billingType,
+    hourlySubtotal,
+    client.retainerAmount
+  );
 
   // Generate invoice number and public token
   const invoiceNumber = await generateInvoiceNumber(orgId);

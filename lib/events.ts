@@ -4,6 +4,20 @@ type EventMap = {
   "expense:comment:created": { expenseId: string };
   "expense:comment:updated": { expenseId: string; commentId: string };
   "expense:comment:deleted": { expenseId: string; commentId: string };
+  "project:comment:created": { projectId: string };
+  "project:comment:updated": { projectId: string; commentId: string };
+  "project:comment:deleted": { projectId: string; commentId: string };
+  "client:comment:created": { clientId: string };
+  "client:comment:updated": { clientId: string; commentId: string };
+  "client:comment:deleted": { clientId: string; commentId: string };
+  "invoice:comment:created": { invoiceId: string };
+  "invoice:comment:updated": { invoiceId: string; commentId: string };
+  "invoice:comment:deleted": { invoiceId: string; commentId: string };
+  "document:comment:created": { documentId: string };
+  "document:comment:updated": { documentId: string; commentId: string };
+  "document:comment:deleted": { documentId: string; commentId: string };
+  "document:status:changed": { documentId: string; projectId: string; newStatus: string };
+  "project:stage:changed": { projectId: string; newStage: string };
 };
 
 type EventName = keyof EventMap;

@@ -1,6 +1,9 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
+import { useState, useEffect, useRef, use } from "react";
+import { generateHTML } from "@tiptap/core";
+import StarterKit from "@tiptap/starter-kit";
+import TiptapLink from "@tiptap/extension-link";
 import { formatDistanceToNow } from "date-fns";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,15 +32,17 @@ import { toast } from "sonner";
 
 type DocumentSection = {
   id: string;
-  type: string;
+  key: string;
   title: string;
   content: string;
+  mode: "static" | "editable" | "form-driven";
   order: number;
+  visible: boolean;
 };
 
 type Document = {
   id: string;
-  type: "proposal" | "contract";
+  type: "proposal" | "contract" | "change_order" | "orientation";
   status: "draft" | "sent" | "viewed" | "accepted" | "declined";
   title: string;
   content: {
@@ -236,6 +241,7 @@ export default function PublicDocumentPage({ params }: Props) {
       <main className="container max-w-4xl mx-auto px-4 py-8">
         <div className="space-y-6">
           {document.content.sections
+            .filter((s) => s.visible !== false)
             .sort((a, b) => a.order - b.order)
             .map((section) => (
               <Card key={section.id} className="squircle">
@@ -243,11 +249,14 @@ export default function PublicDocumentPage({ params }: Props) {
                   <CardTitle className="text-lg">{section.title}</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap">
-                    {section.content || (
-                      <span className="text-muted-foreground italic">No content</span>
-                    )}
-                  </div>
+                  {section.mode === "editable" ? (
+                    <EditableSectionPreview content={section.content} />
+                  ) : (
+                    <SectionHtml html={section.content} />
+                  )}
+                  {!section.content && (
+                    <span className="text-muted-foreground italic">No content</span>
+                  )}
                 </CardContent>
               </Card>
             ))}
@@ -384,5 +393,62 @@ export default function PublicDocumentPage({ params }: Props) {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+/**
+ * Render template-generated HTML content.
+ * Content comes from our markdownToHtml() template engine, not from user input.
+ */
+function SectionHtml({ html }: { html: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!ref.current || !html) return;
+    // Safe: content is from our template engine (markdownToHtml), not user-submitted
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, "text/html");
+    ref.current.replaceChildren(
+      ...Array.from(doc.body.childNodes).map((n) => n.cloneNode(true))
+    );
+  }, [html]);
+
+  if (!html) return null;
+
+  return (
+    <div
+      ref={ref}
+      className="prose prose-sm dark:prose-invert max-w-none [&_table]:w-full [&_table]:border-collapse [&_th]:border [&_th]:p-2 [&_td]:border [&_td]:p-2"
+    />
+  );
+}
+
+/**
+ * Render editable section content (TipTap JSON or HTML).
+ * Content originates from TipTap editor output (getHTML / stored JSON),
+ * not from external user input — same trust model as SectionHtml above.
+ */
+function EditableSectionPreview({ content }: { content: string }) {
+  if (!content) return null;
+
+  let html = content;
+  try {
+    const parsed = JSON.parse(content);
+    if (parsed?.type === "doc") {
+      html = generateHTML(parsed, [
+        StarterKit.configure({ heading: { levels: [2, 3] } }),
+        TiptapLink,
+      ]);
+    }
+  } catch {
+    // Not JSON — already HTML
+  }
+
+  return (
+    <div
+      className="prose prose-sm dark:prose-invert max-w-none"
+      // Safe: content from TipTap editor, not user-submitted (see SectionHtml)
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
   );
 }

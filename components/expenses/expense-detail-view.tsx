@@ -4,19 +4,13 @@ import { format, parseISO } from "date-fns";
 import { DollarSign, Building2, RefreshCw, Paperclip } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { formatCurrency } from "@/lib/formatting";
 import type { Expense } from "./types";
 
 type ExpenseDetailViewProps = {
   expense: Expense;
   onEdit: () => void;
 };
-
-function formatCurrency(cents: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(cents / 100);
-}
 
 export function ExpenseDetailView({ expense, onEdit }: ExpenseDetailViewProps) {
   const isOverhead = !expense.project;
@@ -101,12 +95,6 @@ export function ExpenseDetailView({ expense, onEdit }: ExpenseDetailViewProps) {
         </div>
       )}
 
-      {/* Edit button */}
-      <div className="pt-2">
-        <Button onClick={onEdit} variant="outline" className="squircle">
-          Edit
-        </Button>
-      </div>
     </div>
   );
 }

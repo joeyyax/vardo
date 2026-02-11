@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { projects, clients, timeEntries, PROJECT_STAGES, BUDGET_TYPES, type ProjectStage, type BudgetType } from "@/lib/db/schema";
+import { projects, clients, timeEntries, PROJECT_STAGES, VALID_STAGE_TRANSITIONS, BUDGET_TYPES, type ProjectStage, type BudgetType } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
+import { sendEmail, getProjectRecipients } from "@/lib/email/send";
+import { offboardingStartedEmail } from "@/lib/email/lifecycle-emails";
 
 type RouteParams = {
   params: Promise<{ orgId: string; projectId: string }>;
@@ -18,6 +20,7 @@ async function getProjectForOrg(projectId: string, orgId: string) {
           id: true,
           name: true,
           color: true,
+          contactEmail: true,
           organizationId: true,
         },
       },
@@ -165,6 +168,19 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
           { status: 400 }
         );
       }
+
+      // Validate stage transition
+      const currentStage = existingProject.stage || "getting_started";
+      if (stage && stage !== currentStage) {
+        const allowed = VALID_STAGE_TRANSITIONS[currentStage as ProjectStage] || [];
+        if (!allowed.includes(stage as ProjectStage)) {
+          return NextResponse.json(
+            { error: `Cannot transition from "${currentStage}" to "${stage}". Valid transitions: ${allowed.join(", ") || "none (terminal state)"}` },
+            { status: 400 }
+          );
+        }
+      }
+
       updates.stage = stage;
     }
 
@@ -190,6 +206,31 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       .update(projects)
       .set(updates)
       .where(eq(projects.id, projectId));
+
+    // Send offboarding notification email when stage changes to offboarding
+    if (updates.stage === "offboarding") {
+      const recipients = await getProjectRecipients(projectId);
+      if (recipients.length > 0) {
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+        const emailData = offboardingStartedEmail({
+          organizationName: organization.name,
+          clientName: existingProject.client.name,
+          projectName: existingProject.name,
+          workspaceUrl: baseUrl,
+        });
+
+        for (const recipient of recipients) {
+          sendEmail({
+            to: recipient,
+            subject: emailData.subject,
+            react: emailData.react,
+            from: `${organization.name} <${process.env.EMAIL_FROM || "notifications@joeyyax.com"}>`,
+          }).catch((err) =>
+            console.error("Failed to send offboarding email:", err)
+          );
+        }
+      }
+    }
 
     // If project moved to a different client, update all entries for this project
     if (updates.clientId) {

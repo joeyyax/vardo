@@ -24,6 +24,7 @@ import {
   type InvoiceEditFormData,
   type InvoiceLineItem,
 } from "@/lib/schemas/invoice-edit";
+import { formatHoursDecimal } from "@/lib/formatting";
 
 type Invoice = {
   id: string;
@@ -141,7 +142,7 @@ export function InvoiceEditForm({
   };
 
   const formatCurrency = (cents: number) => `$${(cents / 100).toFixed(2)}`;
-  const formatHours = (minutes: number) => (minutes / 60).toFixed(2);
+  const formatHours = formatHoursDecimal;
 
   const { totalMinutes, subtotal } = calculateTotals();
 

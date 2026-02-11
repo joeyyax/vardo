@@ -8,6 +8,10 @@ import {
   markInvoiceSent,
 } from "@/lib/invoices";
 import { InvoiceEmail } from "@/lib/email/templates/invoice";
+import { createCheckoutSession, isStripeConfigured } from "@/lib/payments/stripe";
+import { db } from "@/lib/db";
+import { invoices } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 
 type RouteParams = {
   params: Promise<{ orgId: string; invoiceId: string }>;
@@ -66,6 +70,32 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
     const publicUrl = `${baseUrl}/invoices/${data.invoice.publicToken}`;
 
+    // Create Stripe Checkout session if Stripe is configured
+    let paymentUrl: string | undefined;
+    if (isStripeConfigured() && data.invoice.subtotal > 0) {
+      const session = await createCheckoutSession({
+        invoiceId,
+        invoiceNumber: data.invoice.invoiceNumber,
+        amountCents: data.invoice.subtotal,
+        clientName: data.client.name,
+        clientEmail: email,
+        successUrl: `${publicUrl}?payment=success`,
+        cancelUrl: publicUrl,
+      });
+
+      if (session) {
+        paymentUrl = session.url;
+        // Store payment URL and session ID on the invoice
+        await db
+          .update(invoices)
+          .set({
+            paymentUrl: session.url,
+            stripeCheckoutSessionId: session.sessionId,
+          })
+          .where(eq(invoices.id, invoiceId));
+      }
+    }
+
     // Build email subject
     const defaultSubject = `Invoice ${data.invoice.invoiceNumber} from ${data.organization.name}`;
     const emailSubject = subject || defaultSubject;
@@ -81,6 +111,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         totalMinutes: data.invoice.totalMinutes,
         subtotal: data.invoice.subtotal,
         publicUrl,
+        paymentUrl,
         message,
       })
     );
@@ -109,6 +140,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       success: true,
       sentTo: email,
       invoiceNumber: data.invoice.invoiceNumber,
+      paymentUrl,
     });
   } catch (error) {
     if (error instanceof Error && error.message === "Unauthorized") {

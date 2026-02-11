@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { projects, clients, PROJECT_STAGES, BUDGET_TYPES, type ProjectStage, type BudgetType } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
+import { createOrientationDocument } from "@/lib/orientation-template";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -99,7 +100,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { organization } = await requireOrg();
+    const { session, organization } = await requireOrg();
 
     // Verify orgId matches user's org
     if (organization.id !== orgId) {
@@ -165,6 +166,25 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         budgetAmountCents: budgetAmountCents ? Number(budgetAmountCents) : null,
       })
       .returning();
+
+    // Check if this is a repeat client (already has other projects)
+    const existingProjects = await db.query.projects.findMany({
+      where: eq(projects.clientId, clientId),
+      columns: { id: true },
+    });
+    const isRepeatClient = existingProjects.length > 1; // > 1 because we just created one
+
+    // Auto-create orientation document for new projects
+    try {
+      await createOrientationDocument(
+        newProject.id,
+        orgId,
+        session.user.id
+      );
+    } catch (err) {
+      // Log but don't fail project creation
+      console.error("Error creating orientation document:", err);
+    }
 
     // Fetch the project with client info
     const projectWithClient = await db.query.projects.findFirst({

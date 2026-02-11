@@ -1,6 +1,7 @@
 import { CheckCircle, Clock, AlertTriangle, FileText } from "lucide-react";
 import { Bar, BarChart, XAxis, YAxis, CartesianGrid, Cell } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatCurrency } from "@/lib/formatting";
 import {
   ChartContainer,
   ChartTooltip,
@@ -30,13 +31,6 @@ type InvoiceStatusProps = {
   };
   recentActivity: RecentActivity[];
 };
-
-function formatCurrency(cents: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(cents / 100);
-}
 
 function StatCard({
   icon: Icon,

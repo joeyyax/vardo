@@ -8,13 +8,22 @@ import { UserMenu } from "./user-menu";
 import { NotificationBell } from "@/components/notification-bell";
 import { Separator } from "@/components/ui/separator";
 import type { OrgFeatures } from "@/lib/db/schema";
+import { Brand } from "../brand";
+
+type Organization = {
+  id: string;
+  name: string;
+  slug: string;
+  role: string;
+};
 
 type SidebarProps = {
   currentOrgId?: string;
   features?: OrgFeatures;
+  organizations?: Organization[];
 };
 
-export function Sidebar({ currentOrgId, features }: SidebarProps) {
+export function Sidebar({ currentOrgId, features, organizations }: SidebarProps) {
   // Determine default route based on features
   const defaultRoute = features?.time_tracking ? "/track" : "/projects";
 
@@ -22,12 +31,7 @@ export function Sidebar({ currentOrgId, features }: SidebarProps) {
     <aside className="flex h-full w-56 flex-col border-r bg-sidebar">
       {/* Logo/Brand */}
       <div className="flex h-14 items-center justify-between px-4">
-        <Link href={defaultRoute} className="flex items-center gap-2">
-          <div className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <Clock className="size-4" />
-          </div>
-          <span className="text-lg font-semibold">Time</span>
-        </Link>
+        <Brand />
         <NotificationBell />
       </div>
 
@@ -41,7 +45,7 @@ export function Sidebar({ currentOrgId, features }: SidebarProps) {
       {/* Footer - Org Switcher & User Menu */}
       <div className="mt-auto border-t p-2">
         <div className="flex flex-col gap-1">
-          <OrgSwitcher currentOrgId={currentOrgId} />
+          <OrgSwitcher currentOrgId={currentOrgId} organizations={organizations} />
           <UserMenu />
         </div>
       </div>

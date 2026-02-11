@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Sidebar, MobileSidebar, EntryBar } from "@/components/layout";
 import { CommandPalette } from "@/components/command-palette";
-import { getCurrentOrg } from "@/lib/auth/session";
+import { getCurrentOrg, getUserOrganizations } from "@/lib/auth/session";
 import { DEFAULT_ORG_FEATURES, type OrgFeatures } from "@/lib/db/schema";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +18,7 @@ export default async function AppLayout({
   }
 
   const { organization } = orgData;
+  const organizations = await getUserOrganizations();
 
   // Merge org features with defaults (handle legacy orgs without features)
   const features: OrgFeatures = {
@@ -30,7 +31,11 @@ export default async function AppLayout({
       <div className="flex h-dvh bg-background">
         {/* Desktop Sidebar */}
         <div className="hidden lg:block">
-          <Sidebar currentOrgId={organization.id} features={features} />
+          <Sidebar
+            currentOrgId={organization.id}
+            features={features}
+            organizations={organizations}
+          />
         </div>
 
         {/* Main Content */}
@@ -42,7 +47,11 @@ export default async function AppLayout({
               !features.time_tracking && "lg:hidden"
             )}
           >
-            <MobileSidebar currentOrgId={organization.id} features={features} />
+            <MobileSidebar
+              currentOrgId={organization.id}
+              features={features}
+              organizations={organizations}
+            />
             {features.time_tracking && (
               <div className="flex-1">
                 <EntryBar

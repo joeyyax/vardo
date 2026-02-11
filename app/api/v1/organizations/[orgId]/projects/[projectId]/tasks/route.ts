@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { tasks, projects, TASK_STATUSES, type TaskStatus } from "@/lib/db/schema";
+import { tasks, projects, TASK_STATUSES, TASK_PRIORITIES, type TaskStatus } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and, isNull, sql } from "drizzle-orm";
 import { logTaskCreated } from "@/lib/activities";
@@ -86,6 +86,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             },
           },
         },
+        files: {
+          columns: { taskId: true },
+        },
       },
     });
 
@@ -135,6 +138,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       status,
       isRecurring,
       assignedTo,
+      priority,
       // New fields
       typeId,
       estimateMinutes,
@@ -185,6 +189,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         rateOverride: rateInCents,
         isBillable: isBillable ?? null,
         status: status || null,
+        priority: priority && TASK_PRIORITIES.includes(priority) ? priority : null,
         isRecurring: isRecurring ?? false,
         assignedTo: assignedTo || null,
         createdBy: session.user.id,

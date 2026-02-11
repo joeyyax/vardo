@@ -1,37 +1,6 @@
 import { DayGroup, TimeEntry, WeekRange } from "./types";
 
-/**
- * Format duration in minutes as "X:XX" (hours:minutes)
- */
-export function formatDuration(minutes: number): string {
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  return `${hours}:${mins.toString().padStart(2, "0")}`;
-}
-
-/**
- * Parse a duration string like "1:30" or "1.5" into minutes
- */
-export function parseDuration(input: string): number | null {
-  const trimmed = input.trim();
-
-  // Format: "H:MM" or "HH:MM"
-  if (trimmed.includes(":")) {
-    const [hours, mins] = trimmed.split(":");
-    const h = parseInt(hours, 10);
-    const m = parseInt(mins, 10);
-    if (isNaN(h) || isNaN(m) || m < 0 || m > 59) return null;
-    return h * 60 + m;
-  }
-
-  // Format: decimal hours like "1.5"
-  const decimal = parseFloat(trimmed);
-  if (!isNaN(decimal) && decimal >= 0) {
-    return Math.round(decimal * 60);
-  }
-
-  return null;
-}
+export { formatDuration, parseDurationMinutes as parseDuration } from "@/lib/formatting";
 
 /**
  * Format a date string as "Wed, Jan 29"
