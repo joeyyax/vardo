@@ -47,7 +47,7 @@ export function MobileSidebar({ currentOrgId, features, organizations }: MobileS
             <div className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
               <Clock className="size-4" />
             </div>
-            <SheetTitle className="text-lg font-semibold">Time</SheetTitle>
+            <SheetTitle className="text-lg font-semibold">Scope</SheetTitle>
           </Link>
           <NotificationBell />
         </SheetHeader>

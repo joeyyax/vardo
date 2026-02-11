@@ -153,7 +153,7 @@ export default function OnboardingPage() {
       <Card className="w-full max-w-lg squircle">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl">
-            {step === "name" ? "Welcome to Time" : "What do you need?"}
+            {step === "name" ? "Welcome to Scope" : "What do you need?"}
           </CardTitle>
           <CardDescription>
             {step === "name"

@@ -9,7 +9,7 @@ test.describe("Authentication", () => {
 
   test("login page should render correctly", async ({ page }) => {
     await page.goto("/login");
-    await expect(page).toHaveTitle(/Time/);
+    await expect(page).toHaveTitle(/Scope/);
     // Page should load without errors
     await expect(page.locator("body")).toBeVisible();
   });

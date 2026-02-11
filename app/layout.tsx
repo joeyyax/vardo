@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Time Tracker",
+  title: "Scope",
   description: "Time tracking for freelancers and small teams",
 };
 

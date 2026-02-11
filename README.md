@@ -1,4 +1,4 @@
-# Time Tracker
+# Scope
 
 A time tracking app for freelancers and small teams. Manual entry (no timer), keyboard-first UX, API-driven.
 
@@ -56,7 +56,7 @@ BETTER_AUTH_URL=http://localhost:3000
 
 # Email (Resend)
 RESEND_API_KEY=re_xxxx
-EMAIL_FROM=Time Tracker <noreply@yourdomain.com>
+EMAIL_FROM=Scope <noreply@yourdomain.com>
 ```
 
 ### Optional

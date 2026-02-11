@@ -25,7 +25,7 @@ export const auth = betterAuth({
 
     // Two-factor authentication (TOTP only, no SMS)
     twoFactor({
-      issuer: "Time Tracker",
+      issuer: "Scope",
       // TOTP is enabled by default
       // Backup codes are enabled by default
     }),
@@ -43,12 +43,12 @@ export const auth = betterAuth({
           const { Resend } = await import("resend");
           const resend = new Resend(process.env.RESEND_API_KEY);
           await resend.emails.send({
-            from: "Time <joey@joeyyax.com>",
+            from: "Scope <joey@joeyyax.com>",
             to: email,
-            subject: "Sign in to Time",
+            subject: "Sign in to Scope",
             html: `
               <div style="font-family: sans-serif; max-width: 400px; margin: 0 auto; padding: 40px 20px;">
-                <h2 style="margin-bottom: 24px;">Sign in to Time</h2>
+                <h2 style="margin-bottom: 24px;">Sign in to Scope</h2>
                 <p style="color: #666; margin-bottom: 24px;">Click the button below to sign in. This link expires in 10 minutes.</p>
                 <a href="${url}" style="display: inline-block; background: #000; color: #fff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 500;">Sign in</a>
                 <p style="color: #999; font-size: 14px; margin-top: 32px;">If you didn't request this, you can safely ignore this email.</p>
