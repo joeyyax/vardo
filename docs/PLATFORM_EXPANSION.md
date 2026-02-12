@@ -138,7 +138,9 @@ ALTER TABLE tasks ADD COLUMN position INTEGER;
 - `components/projects/kanban-board.tsx` - Drag-and-drop kanban board
 - `components/projects/task-dialog.tsx` - Updated with PM fields (status, description)
 
-### Phase 3: Client Portal ✅ COMPLETE
+### Phase 3: Client Portal ⚠️ FOUNDATION COMPLETE
+
+> **Note:** Invitation system and API are built. The actual portal experience (layout, dashboard, project views, client-scoped auth) is incomplete — see Phase 13 for remaining work.
 
 **Schema:**
 ```sql
@@ -401,215 +403,116 @@ Add org-wide views for documents, expenses, etc. Same data, different entry poin
 **Deferred:**
 - `/estimates` page - Would add estimate type to documents if needed
 
-### Phase 9: Payment Provider Integration ✅ FOUNDATION COMPLETE
+### Phase 9: Housekeeping & Route Separation
 
-**Architecture:**
-- [x] Payment provider type definitions (`lib/payments/types.ts`)
-- [x] Support for multiple providers (Stripe now, Polar later)
-- [x] Payment settings UI in organization settings
-- [x] No API keys configured until ready to enable
+Structural cleanup before building new features.
 
-**Files created:**
-- `lib/payments/types.ts` - Type definitions for Stripe and Polar
-- `app/(app)/settings/payment-settings.tsx` - Payment provider settings UI
+**Route group split:**
+- [ ] Create `(marketing)` route group with its own layout (header/footer)
+- [ ] Move marketing pages: homepage, pricing, for-you, how-it-works, why, choosing-the-right-tool, faq, privacy, terms
+- [ ] Keep `(public)` for functional unauthenticated routes only (login, `/d/[token]`, `/r/[slug]`, `/invite/[token]`, `/invoices/[id]`)
 
-**Stripe Integration (pending keys):**
-- [ ] Stripe client setup (no keys yet)
-- [ ] OAuth connection flow
-- [ ] Payment link generation for invoices
-- [ ] Webhook handler for payment confirmation
-- [ ] Invoice status updates on payment
+### Phase 10: Settings & Management UI
 
-**Polar Integration (Future):**
-- [ ] For SaaS subscriptions if tool is productized
-- [ ] Simpler than Stripe for subscription management
+Completing UI for features that already have backend support. Schema and API endpoints exist for all of these — they just need settings pages.
 
-**Note:** Keys not added until payments are enabled. UI shows "Coming Soon" badge.
+**Settings Pages:**
+- [ ] Task type management (CRUD — define org-level task types)
+- [ ] Task tag management (CRUD — create, color, assign)
+- [ ] Notification preferences (per-entity, per-channel controls)
+- [ ] Organization feature flags UI (toggle modules)
 
-### Phase 10: Expense Import Integrations
+### Phase 11: Notifications
 
-Automatic expense capture from multiple sources, all feeding into a central inbox for review.
+Schema and tables exist. Needs UI and email delivery.
 
-**Import Sources:**
+**UI:**
+- [ ] Notification bell + dropdown in app header
+- [ ] Mark as read / mark all read
+- [ ] Notification list page (full history)
+- [ ] Watch/unwatch buttons visible in entity detail modals
 
-| Source | What it captures | Status |
-|--------|------------------|--------|
-| **Plaid** | Bank/card transactions | Planned |
-| **Paperless-ngx** | Scanned receipts (OCR) | Planned |
-| **Email** | Forwarded receipts | Planned |
-| **Manual** | Direct entry | ✅ Done |
+**Email Delivery:**
+- [ ] Email notification delivery via Resend
+- [ ] Digest option (immediate vs daily summary)
+- [ ] Email templates for notification types (task assigned, comment added, document accepted, etc.)
 
-**Architecture:**
-```
-Plaid API ─────────┐
-                   │
-Paperless webhook ─┼──→ Expense Inbox ──→ Review/Categorize ──→ Expenses
-                   │
-Email parser ──────┘
-```
+### Phase 12: Reports Expansion
 
-**Expense Inbox Features:**
-- [ ] Unmatched expenses from all sources
-- [ ] Quick assign to project (or mark as overhead)
-- [ ] Category assignment with autocomplete
-- [ ] Rules engine: "vendor contains 'Figma' → Software category"
-- [ ] Rules auto-apply to future imports
+Chart components exist. Needs tabbed layout and additional views.
 
-**Plaid Integration:**
-- [ ] Plaid Link for bank account connection
-- [ ] Transaction sync (daily or webhook)
-- [ ] Vendor name extraction
-- [ ] Duplicate detection
+- [ ] Tabbed layout (Overview, Accounting, Client Reports)
+- [ ] Accounting tab (P&L, expense categories, tax prep)
+- [ ] Client Reports tab (per-client summary, hours, revenue)
+- [ ] Tax year selector (default to previous year before April 15)
 
-**Paperless-ngx Integration:**
-- [ ] Webhook receiver for new documents
-- [ ] Extract amount, vendor, date from OCR
-- [ ] Link receipt file to expense
+### Phase 13: Client Portal Completion
 
-**Implementation:**
-- [ ] `lib/integrations/plaid.ts` - Plaid client
-- [ ] `lib/integrations/paperless.ts` - Paperless API client
-- [ ] `app/api/webhooks/paperless/route.ts` - Webhook receiver
-- [ ] `app/(app)/expenses/inbox/page.tsx` - Expense inbox UI
-- [ ] `lib/db/schema.ts` - Add expense_rules table
+Reopening Phase 3. Invitation system and API are built. The actual portal experience needs to be built.
 
-### Phase 11: Email Forwarding
+- [ ] Portal layout (`app/(portal)/layout.tsx`)
+- [ ] Portal dashboard (list of invited projects with status)
+- [ ] Portal project view (progress, tasks, files — filtered by visibility settings)
+- [ ] Client-scoped authentication context
+- [ ] Mobile-responsive portal design
 
-**Implementation:**
+### Phase 14: Cron Jobs & Automation
+
+Background jobs for recurring operations. Cron route directory exists at `/app/api/cron/` but nothing is implemented.
+
+- [ ] Recurring expense generation
+- [ ] Rolling invoice draft generation
+- [ ] Auto-close completed retainer periods
+- [ ] Scheduled report delivery (email)
+
+### Phase 15: Project Lifecycle & Onboarding
+
+Stage fields exist in schema. Needs workflow logic and stage-specific UX.
+
+**Stage Transitions:**
+- [ ] Stage transition rules and validation
+- [ ] Proposal acceptance → agreement stage flow
+- [ ] Agreement acceptance → onboarding stage flow
+- [ ] Auto-advancement where appropriate
+
+**Onboarding:**
+- [ ] Contextual onboarding checklists by client type
+- [ ] Delta-based onboarding for repeat clients
+- [ ] Completion triggers for stage transition
+
+**Offboarding:**
+- [ ] Data export generation workflow
+- [ ] Migration assistance tiers
+
+**Documents:**
+- [ ] Contract generation from accepted proposal
+- [ ] Change order document type
+- [ ] Addendum document type
+
+### Phase 16: Email Forwarding
+
 - [ ] Inbound email setup (Resend or dedicated service)
 - [ ] Email parsing + activity creation
 - [ ] Attachment extraction to R2
 - [ ] Unique email address per project
 
-### Phase 12: Polish
+### Phase 17: Data Imports
 
-- [ ] Markdown editor with WYSIWYG option (Tiptap)
-- [ ] Mobile-responsive portal
-- [ ] Notification preferences
-- [ ] Email templates for all flows
-- [ ] Disable public signups (admin-controlled)
+One-time imports from external PM tools — not bidirectional sync.
 
-### Phase 13: External Integrations (Basecamp, ClickUp, Asana)
+- [ ] Basecamp project/task import
+- [ ] ClickUp project/task import
+- [ ] Import wizard with field mapping UI
+- [ ] Duplicate detection
 
-**Goal:** Single source of truth. Changes in external systems appear here; changes here sync back.
+### Phase 18: Payment Integration (Deprioritized)
 
-**Schema:**
-```sql
-CREATE TABLE integrations (
-  id UUID PRIMARY KEY,
-  organization_id UUID NOT NULL REFERENCES organizations(id),
-  provider TEXT NOT NULL, -- 'basecamp', 'clickup', 'asana', 'linear', 'notion'
-  status TEXT NOT NULL DEFAULT 'active', -- 'active', 'paused', 'error'
-  credentials JSONB NOT NULL, -- Encrypted OAuth tokens
-  settings JSONB DEFAULT '{}', -- Provider-specific settings
-  webhook_secret TEXT, -- For verifying incoming webhooks
-  last_sync_at TIMESTAMP,
-  error_message TEXT, -- Last error if status is 'error'
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
+Foundation exists (`lib/payments/types.ts`, settings UI). Activate when invoicing is actively used with clients.
 
-CREATE TABLE integration_mappings (
-  id UUID PRIMARY KEY,
-  integration_id UUID NOT NULL REFERENCES integrations(id),
-  local_type TEXT NOT NULL, -- 'project', 'task', 'comment', 'file'
-  local_id UUID NOT NULL,
-  external_id TEXT NOT NULL,
-  external_url TEXT, -- Direct link to item in external system
-  sync_direction TEXT DEFAULT 'bidirectional', -- 'inbound', 'outbound', 'bidirectional'
-  last_synced_at TIMESTAMP,
-  last_local_hash TEXT, -- For conflict detection
-  last_external_hash TEXT,
-  created_at TIMESTAMP DEFAULT NOW(),
-  UNIQUE(integration_id, local_type, external_id)
-);
-
-CREATE TABLE integration_sync_log (
-  id UUID PRIMARY KEY,
-  integration_id UUID NOT NULL REFERENCES integrations(id),
-  direction TEXT NOT NULL, -- 'inbound', 'outbound'
-  entity_type TEXT NOT NULL,
-  entity_id TEXT NOT NULL,
-  action TEXT NOT NULL, -- 'create', 'update', 'delete'
-  status TEXT NOT NULL, -- 'success', 'failed', 'conflict'
-  error_message TEXT,
-  created_at TIMESTAMP DEFAULT NOW()
-);
-```
-
-**Sync Architecture:**
-
-```
-┌─────────────────┐     Webhooks      ┌─────────────────┐
-│    Basecamp     │ ───────────────▶  │   Webhook API   │
-│    ClickUp      │                   │  /api/webhooks  │
-│    Asana        │                   │    /[provider]  │
-└─────────────────┘                   └────────┬────────┘
-                                               │
-                                               ▼
-                                      ┌─────────────────┐
-                                      │   Sync Queue    │
-                                      │  (Redis/BullMQ) │
-                                      └────────┬────────┘
-                                               │
-              ┌────────────────────────────────┼────────────────────────────────┐
-              ▼                                ▼                                ▼
-     ┌─────────────────┐              ┌─────────────────┐              ┌─────────────────┐
-     │  Inbound Sync   │              │ Conflict Check  │              │  Outbound Sync  │
-     │  External→Local │              │  & Resolution   │              │  Local→External │
-     └─────────────────┘              └─────────────────┘              └─────────────────┘
-```
-
-**Supported Sync Items:**
-
-| Item | Basecamp | ClickUp | Asana | Linear |
-|------|----------|---------|-------|--------|
-| Projects | ✓ | ✓ | ✓ | ✓ |
-| Tasks | ✓ To-dos | ✓ Tasks | ✓ Tasks | ✓ Issues |
-| Comments | ✓ | ✓ | ✓ | ✓ |
-| Attachments | ✓ | ✓ | ✓ | ✓ |
-| Status Changes | ✓ | ✓ | ✓ | ✓ |
-
-**Webhook Events to Handle:**
-
-```typescript
-// Basecamp
-'todo.created' | 'todo.updated' | 'todo.completed' | 'comment.created'
-
-// ClickUp
-'taskCreated' | 'taskUpdated' | 'taskDeleted' | 'taskCommentPosted'
-
-// Asana
-'task.added' | 'task.changed' | 'task.deleted' | 'story.added'
-```
-
-**Conflict Resolution Strategy:**
-1. **Last-write-wins** for simple fields (title, description)
-2. **Merge** for comments (keep all)
-3. **Manual resolution** UI for complex conflicts
-4. **Always sync** status changes (no conflict possible)
-
-**UI:**
-- [ ] Settings → Integrations page
-- [ ] OAuth connection flow per provider
-- [ ] Project mapping UI (connect external project → local project)
-- [ ] Sync status indicator on tasks
-- [ ] Manual sync trigger
-- [ ] Sync history/log viewer
-
-**API Endpoints:**
-```
-POST   /api/v1/integrations                    # Connect new integration
-GET    /api/v1/integrations                    # List connected integrations
-DELETE /api/v1/integrations/[id]               # Disconnect
-POST   /api/v1/integrations/[id]/sync          # Trigger manual sync
-GET    /api/v1/integrations/[id]/mappings      # View mappings
-POST   /api/v1/integrations/[id]/mappings      # Create mapping
-
-POST   /api/webhooks/basecamp                  # Basecamp webhook receiver
-POST   /api/webhooks/clickup                   # ClickUp webhook receiver
-POST   /api/webhooks/asana                     # Asana webhook receiver
-```
+- [ ] Stripe client setup + OAuth connection
+- [ ] Payment link generation for invoices
+- [ ] Webhook handler for payment confirmation
+- [ ] Invoice status updates on payment
 
 ---
 
@@ -651,7 +554,7 @@ Navigation, forms, and options adapt based on enabled features.
 
 ---
 
-## Out of Scope (Future)
+## Out of Scope
 
 - DocuSign-level signatures (simple acceptance is enough for now)
 - Custom task statuses or workflows
@@ -660,6 +563,9 @@ Navigation, forms, and options adapt based on enabled features.
 - Real-time collaboration (multiple editors)
 - Automated payment reminders
 - Multi-currency support
+- Plaid bank integration
+- Paperless-ngx receipt OCR
+- Bidirectional sync with external PM tools (import only)
 
 ---
 
@@ -671,5 +577,5 @@ This expansion transforms the time tracker into a complete freelancer business p
 - **Unified concepts** - tasks serve multiple purposes
 - **Two-audience UX** - power user + client experiences
 - **Fixed workflows** - opinionated, not customizable
-- **External integrations** - single source of truth across tools
+- **Internal-first priority** - finish what's started before adding new surface area
 - **Direct payments** - BYO Stripe, not a payment processor
