@@ -2,13 +2,13 @@
 
 import { useState, useEffect, useCallback } from "react";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  BottomSheet,
+  BottomSheetContent,
+  BottomSheetDescription,
+  BottomSheetFooter,
+  BottomSheetHeader,
+  BottomSheetTitle,
+} from "@/components/ui/bottom-sheet";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,6 +40,10 @@ import {
 } from "@/components/ui/table";
 import { ViewSwitcher } from "@/components/view-switcher";
 import { useViewPreference } from "@/hooks/use-view-preference";
+import {
+  ContactSuggestions,
+  type SuggestableContact,
+} from "@/components/contacts/contact-suggestions";
 import {
   Plus,
   Loader2,
@@ -133,6 +137,7 @@ export function ReportConfigs({ orgId }: ReportConfigsProps) {
   const [editAutoSendDay, setEditAutoSendDay] = useState<number>(1);
   const [editAutoSendHour, setEditAutoSendHour] = useState<number>(9);
   const [editRecipients, setEditRecipients] = useState("");
+  const [editContacts, setEditContacts] = useState<SuggestableContact[]>([]);
 
   const fetchConfigs = useCallback(async () => {
     try {
@@ -211,7 +216,16 @@ export function ReportConfigs({ orgId }: ReportConfigsProps) {
     setEditAutoSendDay(config.autoSendDay ?? 1);
     setEditAutoSendHour(config.autoSendHour ?? 9);
     setEditRecipients((config.recipients || []).join(", "));
+    setEditContacts([]);
     setEditDialogOpen(true);
+
+    // Fetch contacts for suggestions
+    if (config.clientId) {
+      fetch(`/api/v1/organizations/${orgId}/clients/${config.clientId}/contacts`)
+        .then((res) => (res.ok ? res.json() : []))
+        .then((data) => setEditContacts(data || []))
+        .catch(() => {});
+    }
   };
 
   const handleSaveEdit = async () => {
@@ -574,14 +588,15 @@ export function ReportConfigs({ orgId }: ReportConfigsProps) {
       </div>
 
       {/* Create Dialog */}
-      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogContent className="squircle sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Create Shared Report</DialogTitle>
-            <DialogDescription>
+      <BottomSheet open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        <BottomSheetContent>
+          <BottomSheetHeader>
+            <BottomSheetTitle>Create Shared Report</BottomSheetTitle>
+            <BottomSheetDescription>
               Create a shareable report link for a client or project.
-            </DialogDescription>
-          </DialogHeader>
+            </BottomSheetDescription>
+          </BottomSheetHeader>
+          <div className="flex-1 overflow-y-auto px-6 pb-6">
 
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
@@ -654,7 +669,7 @@ export function ReportConfigs({ orgId }: ReportConfigsProps) {
             )}
           </div>
 
-          <DialogFooter>
+          <BottomSheetFooter>
             <Button
               variant="outline"
               onClick={() => setCreateDialogOpen(false)}
@@ -674,19 +689,21 @@ export function ReportConfigs({ orgId }: ReportConfigsProps) {
               {isSaving && <Loader2 className="size-4 animate-spin" />}
               Create Report
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </BottomSheetFooter>
+          </div>
+        </BottomSheetContent>
+      </BottomSheet>
 
       {/* Edit Dialog */}
-      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent className="squircle sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Report Settings</DialogTitle>
-            <DialogDescription>
+      <BottomSheet open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <BottomSheetContent>
+          <BottomSheetHeader>
+            <BottomSheetTitle>Report Settings</BottomSheetTitle>
+            <BottomSheetDescription>
               Configure settings for {selectedConfig && getReportName(selectedConfig)}
-            </DialogDescription>
-          </DialogHeader>
+            </BottomSheetDescription>
+          </BottomSheetHeader>
+          <div className="flex-1 overflow-y-auto px-6 pb-6">
 
           <div className="grid gap-4 py-4">
             <div className="flex items-center justify-between">
@@ -762,6 +779,21 @@ export function ReportConfigs({ orgId }: ReportConfigsProps) {
 
                 <div className="grid gap-2">
                   <Label>Recipients</Label>
+                  <ContactSuggestions
+                    contacts={editContacts}
+                    onSelect={(email) => {
+                      const current = editRecipients
+                        .split(",")
+                        .map((e) => e.trim())
+                        .filter((e) => e.length > 0);
+                      if (!current.includes(email)) {
+                        setEditRecipients(
+                          [...current, email].join(", ")
+                        );
+                      }
+                    }}
+                    label="Add from contacts"
+                  />
                   <Input
                     value={editRecipients}
                     onChange={(e) => setEditRecipients(e.target.value)}
@@ -776,7 +808,7 @@ export function ReportConfigs({ orgId }: ReportConfigsProps) {
             )}
           </div>
 
-          <DialogFooter>
+          <BottomSheetFooter>
             <Button
               variant="outline"
               onClick={() => setEditDialogOpen(false)}
@@ -789,9 +821,10 @@ export function ReportConfigs({ orgId }: ReportConfigsProps) {
               {isSaving && <Loader2 className="size-4 animate-spin" />}
               Save Changes
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </BottomSheetFooter>
+          </div>
+        </BottomSheetContent>
+      </BottomSheet>
 
       {/* Delete Confirmation */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>

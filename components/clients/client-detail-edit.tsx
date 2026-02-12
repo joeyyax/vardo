@@ -24,10 +24,9 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { z } from "zod";
-import { toast } from "sonner";
-import type { Client, ClientContact } from "./client-dialog";
+import type { Client } from "./client-dialog";
 
 // Preset colors for client identification
 const PRESET_COLORS = [
@@ -89,12 +88,6 @@ const DAYS_OF_WEEK = [
   { value: 6, label: "Saturday" },
 ] as const;
 
-const CONTACT_TYPES = [
-  { value: "primary", label: "Primary" },
-  { value: "billing", label: "Billing" },
-  { value: "other", label: "Other" },
-] as const;
-
 const clientSchema = z.object({
   name: z.string().min(1, "Name is required"),
   color: z.string().nullable(),
@@ -118,8 +111,6 @@ type ClientDetailEditProps = {
   client: Client | null;
   orgId: string;
   allClients: Client[];
-  contacts: ClientContact[];
-  onContactsChange: () => void;
   onSave: () => void;
   onCancel: () => void;
 };
@@ -128,8 +119,6 @@ export function ClientDetailEdit({
   client,
   orgId,
   allClients,
-  contacts,
-  onContactsChange,
   onSave,
   onCancel,
 }: ClientDetailEditProps) {
@@ -300,16 +289,6 @@ export function ClientDetailEdit({
             </FormItem>
           )}
         />
-
-        {/* Contacts section */}
-        {client && (
-          <ContactsEditor
-            contacts={contacts}
-            clientId={client.id}
-            orgId={orgId}
-            onContactsChange={onContactsChange}
-          />
-        )}
 
         {availableParents.length > 0 && !hasChildren && (
           <FormField
@@ -728,241 +707,5 @@ export function ClientDetailEdit({
         </div>
       </form>
     </Form>
-  );
-}
-
-// --- Contacts editor sub-component ---
-
-type ContactsEditorProps = {
-  contacts: ClientContact[];
-  clientId: string;
-  orgId: string;
-  onContactsChange: () => void;
-};
-
-function ContactsEditor({ contacts, clientId, orgId, onContactsChange }: ContactsEditorProps) {
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
-
-  const baseUrl = `/api/v1/organizations/${orgId}/clients/${clientId}/contacts`;
-
-  async function handleAdd() {
-    setAdding(true);
-    try {
-      const res = await fetch(baseUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: "New Contact", type: "other" }),
-      });
-      if (!res.ok) throw new Error("Failed to create contact");
-      onContactsChange();
-      const created = await res.json();
-      setEditingId(created.id);
-    } catch {
-      toast.error("Failed to add contact");
-    } finally {
-      setAdding(false);
-    }
-  }
-
-  async function handleUpdate(contactId: string, field: string, value: string) {
-    try {
-      const res = await fetch(`${baseUrl}/${contactId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [field]: value }),
-      });
-      if (!res.ok) throw new Error("Failed to update contact");
-      onContactsChange();
-    } catch {
-      toast.error("Failed to update contact");
-    }
-  }
-
-  async function handleDelete(contactId: string) {
-    try {
-      const res = await fetch(`${baseUrl}/${contactId}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to delete contact");
-      onContactsChange();
-    } catch {
-      toast.error("Failed to delete contact");
-    }
-  }
-
-  return (
-    <div className="border-t pt-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <h4 className="text-sm font-medium">Contacts</h4>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={handleAdd}
-          disabled={adding}
-          className="h-7 gap-1 text-xs"
-        >
-          <Plus className="size-3" />
-          Add contact
-        </Button>
-      </div>
-
-      {contacts.length === 0 && (
-        <p className="text-sm text-muted-foreground italic">No contacts yet. Add one above.</p>
-      )}
-
-      {contacts.map((contact) => (
-        <ContactRow
-          key={contact.id}
-          contact={contact}
-          isEditing={editingId === contact.id}
-          onStartEdit={() => setEditingId(contact.id)}
-          onStopEdit={() => setEditingId(null)}
-          onUpdate={(field, value) => handleUpdate(contact.id, field, value)}
-          onDelete={() => handleDelete(contact.id)}
-        />
-      ))}
-    </div>
-  );
-}
-
-type ContactRowProps = {
-  contact: ClientContact;
-  isEditing: boolean;
-  onStartEdit: () => void;
-  onStopEdit: () => void;
-  onUpdate: (field: string, value: string) => void;
-  onDelete: () => void;
-};
-
-function ContactRow({ contact, isEditing, onStartEdit, onStopEdit, onUpdate, onDelete }: ContactRowProps) {
-  if (!isEditing) {
-    return (
-      <div
-        className="flex items-center gap-2 rounded-md border p-2 cursor-pointer hover:bg-muted/50 transition-colors"
-        onClick={onStartEdit}
-      >
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium truncate">{contact.name}</span>
-            <span className="text-[10px] text-muted-foreground capitalize">{contact.type}</span>
-          </div>
-          <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            {contact.email && <span>{contact.email}</span>}
-            {contact.phone && <span>{contact.phone}</span>}
-            {contact.title && <span>{contact.title}</span>}
-          </div>
-        </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={(e) => { e.stopPropagation(); onDelete(); }}
-          className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive shrink-0"
-        >
-          <Trash2 className="size-3" />
-        </Button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="rounded-md border p-3 space-y-2 bg-muted/30">
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label className="text-xs text-muted-foreground">Name *</label>
-          <Input
-            defaultValue={contact.name}
-            onBlur={(e) => {
-              if (e.target.value.trim() && e.target.value !== contact.name) {
-                onUpdate("name", e.target.value.trim());
-              }
-            }}
-            className="squircle h-8 text-sm"
-            autoFocus
-          />
-        </div>
-        <div>
-          <label className="text-xs text-muted-foreground">Type</label>
-          <Select
-            defaultValue={contact.type}
-            onValueChange={(value) => onUpdate("type", value)}
-          >
-            <SelectTrigger className="squircle h-8 text-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="squircle">
-              {CONTACT_TYPES.map((t) => (
-                <SelectItem key={t.value} value={t.value}>
-                  {t.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label className="text-xs text-muted-foreground">Email</label>
-          <Input
-            defaultValue={contact.email ?? ""}
-            type="email"
-            placeholder="email@example.com"
-            onBlur={(e) => {
-              if (e.target.value !== (contact.email ?? "")) {
-                onUpdate("email", e.target.value);
-              }
-            }}
-            className="squircle h-8 text-sm"
-          />
-        </div>
-        <div>
-          <label className="text-xs text-muted-foreground">Phone</label>
-          <Input
-            defaultValue={contact.phone ?? ""}
-            placeholder="555-0100"
-            onBlur={(e) => {
-              if (e.target.value !== (contact.phone ?? "")) {
-                onUpdate("phone", e.target.value);
-              }
-            }}
-            className="squircle h-8 text-sm"
-          />
-        </div>
-      </div>
-      <div>
-        <label className="text-xs text-muted-foreground">Title</label>
-        <Input
-          defaultValue={contact.title ?? ""}
-          placeholder="e.g. Project Manager"
-          onBlur={(e) => {
-            if (e.target.value !== (contact.title ?? "")) {
-              onUpdate("title", e.target.value);
-            }
-          }}
-          className="squircle h-8 text-sm"
-        />
-      </div>
-      <div className="flex justify-between">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={onDelete}
-          className="h-7 text-xs text-destructive hover:text-destructive"
-        >
-          <Trash2 className="size-3 mr-1" />
-          Remove
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={onStopEdit}
-          className="h-7 text-xs"
-        >
-          Done
-        </Button>
-      </div>
-    </div>
   );
 }

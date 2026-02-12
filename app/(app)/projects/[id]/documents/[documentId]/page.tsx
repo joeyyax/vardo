@@ -1,8 +1,9 @@
 import { redirect, notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { documents, projects, clientContacts } from "@/lib/db/schema";
+import { documents, projects } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
+import { resolveProjectContacts } from "@/lib/contacts/resolve";
 import { DocumentBuilderWrapper } from "@/components/documents/document-builder-wrapper";
 
 type Props = {
@@ -53,21 +54,24 @@ export default async function DocumentEditorPage({ params }: Props) {
     notFound();
   }
 
-  // Find primary contact email, falling back to client's contactEmail
-  const primaryContacts = await db
-    .select()
-    .from(clientContacts)
-    .where(
-      and(
-        eq(clientContacts.clientId, project.client.id),
-        eq(clientContacts.type, "primary")
-      )
-    );
+  // Resolve contacts with project-level override support
+  const { contacts: resolvedContacts } = await resolveProjectContacts(
+    projectId,
+    project.client.id
+  );
 
   const clientContactEmail =
-    primaryContacts.find((c) => c.email)?.email ??
+    resolvedContacts.find((c) => c.type === "primary" && c.email)?.email ??
+    resolvedContacts.find((c) => c.email)?.email ??
     project.client.contactEmail ??
     undefined;
+
+  const serializedContacts = resolvedContacts.map((c) => ({
+    id: c.id,
+    name: c.name,
+    email: c.email,
+    type: c.type,
+  }));
 
   // Serialize the document for the client
   const serializedDocument = {
@@ -97,6 +101,7 @@ export default async function DocumentEditorPage({ params }: Props) {
       projectName={project.name}
       clientName={project.client.name}
       clientContactEmail={clientContactEmail}
+      resolvedContacts={serializedContacts}
       organizationName={organization.name}
       currentUserId={session.user.id}
     />

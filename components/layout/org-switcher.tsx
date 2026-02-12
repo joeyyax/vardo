@@ -13,13 +13,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  BottomSheet,
+  BottomSheetContent,
+  BottomSheetDescription,
+  BottomSheetFooter,
+  BottomSheetHeader,
+  BottomSheetTitle,
+} from "@/components/ui/bottom-sheet";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
@@ -33,9 +33,10 @@ type Organization = {
 type OrgSwitcherProps = {
   currentOrgId?: string;
   organizations?: Organization[];
+  collapsed?: boolean;
 };
 
-export function OrgSwitcher({ currentOrgId, organizations: initialOrganizations }: OrgSwitcherProps) {
+export function OrgSwitcher({ currentOrgId, organizations: initialOrganizations, collapsed }: OrgSwitcherProps) {
   const router = useRouter();
   const [organizations, setOrganizations] = useState<Organization[]>(initialOrganizations || []);
   const [loading, setLoading] = useState(!initialOrganizations);
@@ -116,11 +117,11 @@ export function OrgSwitcher({ currentOrgId, organizations: initialOrganizations 
     return (
       <Button
         variant="ghost"
-        className="w-full justify-start gap-2 px-2 py-1.5 h-auto"
+        className={`w-full px-2 py-1.5 h-auto ${collapsed ? "justify-center" : "justify-start gap-2"}`}
         disabled
       >
         <Loader2 className="size-6 animate-spin" />
-        <span className="text-sm text-muted-foreground">Loading...</span>
+        {!collapsed && <span className="text-sm text-muted-foreground">Loading...</span>}
       </Button>
     );
   }
@@ -131,7 +132,7 @@ export function OrgSwitcher({ currentOrgId, organizations: initialOrganizations 
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
-            className="w-full justify-start gap-2 px-2 py-1.5 h-auto"
+            className={`w-full px-2 py-1.5 h-auto ${collapsed ? "justify-center" : "justify-start gap-2"}`}
             disabled={switching}
           >
             <div className="flex size-6 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground">
@@ -141,10 +142,14 @@ export function OrgSwitcher({ currentOrgId, organizations: initialOrganizations 
                 <Building2 className="size-3.5" />
               )}
             </div>
-            <span className="flex-1 truncate text-left text-sm font-medium">
-              {currentOrg?.name || "Select organization"}
-            </span>
-            <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
+            {!collapsed && (
+              <>
+                <span className="flex-1 truncate text-left text-sm font-medium">
+                  {currentOrg?.name || "Select organization"}
+                </span>
+                <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
+              </>
+            )}
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent
@@ -182,32 +187,34 @@ export function OrgSwitcher({ currentOrgId, organizations: initialOrganizations 
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Create organization</DialogTitle>
-            <DialogDescription>
+      <BottomSheet open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+        <BottomSheetContent>
+          <BottomSheetHeader>
+            <BottomSheetTitle>Create organization</BottomSheetTitle>
+            <BottomSheetDescription>
               Create a new organization to track time for a different team or client.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="org-name">Organization name</Label>
-              <Input
-                id="org-name"
-                placeholder="My Company"
-                value={newOrgName}
-                onChange={(e) => setNewOrgName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    handleCreateOrg();
-                  }
-                }}
-              />
+            </BottomSheetDescription>
+          </BottomSheetHeader>
+          <div className="flex-1 overflow-y-auto px-6 pb-6">
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label htmlFor="org-name">Organization name</Label>
+                <Input
+                  id="org-name"
+                  placeholder="My Company"
+                  value={newOrgName}
+                  onChange={(e) => setNewOrgName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleCreateOrg();
+                    }
+                  }}
+                />
+              </div>
             </div>
           </div>
-          <DialogFooter>
+          <BottomSheetFooter>
             <Button
               variant="outline"
               onClick={() => setShowCreateDialog(false)}
@@ -225,9 +232,9 @@ export function OrgSwitcher({ currentOrgId, organizations: initialOrganizations 
                 "Create"
               )}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </BottomSheetFooter>
+        </BottomSheetContent>
+      </BottomSheet>
     </>
   );
 }

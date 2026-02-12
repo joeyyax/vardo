@@ -20,13 +20,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  BottomSheet,
+  BottomSheetContent,
+  BottomSheetDescription,
+  BottomSheetFooter,
+  BottomSheetHeader,
+  BottomSheetTitle,
+} from "@/components/ui/bottom-sheet";
 import {
   Tooltip,
   TooltipContent,
@@ -87,6 +87,7 @@ import { CurrencyInput } from "@/components/ui/currency-input";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
+import { ContactSuggestions } from "@/components/contacts/contact-suggestions";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -120,6 +121,7 @@ type DocumentBuilderProps = {
     recipientEmail?: string;
   }) => Promise<void>;
   initialSendEmail?: string;
+  resolvedContacts?: { id: string; name: string; email: string | null; type: "primary" | "billing" | "other" }[];
   onStatusChange?: (newStatus: string, reason?: string) => Promise<void>;
   onBack?: () => void;
   publicToken?: string | null;
@@ -154,6 +156,7 @@ export function DocumentBuilder({
   onSave,
   onSend,
   initialSendEmail,
+  resolvedContacts,
   onStatusChange,
   onBack,
   publicToken,
@@ -600,25 +603,33 @@ export function DocumentBuilder({
       </div>
 
       {/* Send confirmation dialog */}
-      <Dialog open={showSendDialog} onOpenChange={setShowSendDialog}>
-        <DialogContent className="squircle sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Send Document</DialogTitle>
-            <DialogDescription>
+      <BottomSheet open={showSendDialog} onOpenChange={setShowSendDialog}>
+        <BottomSheetContent>
+          <BottomSheetHeader>
+            <BottomSheetTitle>Send Document</BottomSheetTitle>
+            <BottomSheetDescription>
               Enter the recipient&apos;s email address to send this document.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="send-email">Recipient Email</Label>
-            <Input
-              id="send-email"
-              type="email"
-              value={sendEmail}
-              onChange={(e) => setSendEmail(e.target.value)}
-              placeholder="client@example.com"
-            />
+            </BottomSheetDescription>
+          </BottomSheetHeader>
+          <div className="flex-1 overflow-y-auto px-6 pb-6">
+            <div className="space-y-2">
+              <Label htmlFor="send-email">Recipient Email</Label>
+              {resolvedContacts && resolvedContacts.length > 0 && (
+                <ContactSuggestions
+                  contacts={resolvedContacts}
+                  onSelect={(email) => setSendEmail(email)}
+                />
+              )}
+              <Input
+                id="send-email"
+                type="email"
+                value={sendEmail}
+                onChange={(e) => setSendEmail(e.target.value)}
+                placeholder="client@example.com"
+              />
+            </div>
           </div>
-          <DialogFooter>
+          <BottomSheetFooter>
             <Button
               variant="outline"
               onClick={() => setShowSendDialog(false)}
@@ -635,9 +646,9 @@ export function DocumentBuilder({
               <Send className="size-3.5 mr-1" />
               {sending ? "Sending..." : "Confirm & Send"}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </BottomSheetFooter>
+        </BottomSheetContent>
+      </BottomSheet>
     </div>
   );
 }
@@ -906,21 +917,23 @@ function BuilderHeader({
       </div>
 
       {/* Decline reason dialog */}
-      <Dialog open={showDeclineDialog} onOpenChange={setShowDeclineDialog}>
-        <DialogContent className="squircle sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Mark as Declined</DialogTitle>
-            <DialogDescription>
+      <BottomSheet open={showDeclineDialog} onOpenChange={setShowDeclineDialog}>
+        <BottomSheetContent>
+          <BottomSheetHeader>
+            <BottomSheetTitle>Mark as Declined</BottomSheetTitle>
+            <BottomSheetDescription>
               Optionally provide a reason for declining this document.
-            </DialogDescription>
-          </DialogHeader>
-          <Textarea
-            value={declineReasonInput}
-            onChange={(e) => setDeclineReasonInput(e.target.value)}
-            placeholder="Reason (optional)"
-            rows={3}
-          />
-          <DialogFooter>
+            </BottomSheetDescription>
+          </BottomSheetHeader>
+          <div className="flex-1 overflow-y-auto px-6 pb-6">
+            <Textarea
+              value={declineReasonInput}
+              onChange={(e) => setDeclineReasonInput(e.target.value)}
+              placeholder="Reason (optional)"
+              rows={3}
+            />
+          </div>
+          <BottomSheetFooter>
             <Button
               variant="outline"
               onClick={() => {
@@ -937,9 +950,9 @@ function BuilderHeader({
             >
               {changingStatus ? "Updating..." : "Decline"}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </BottomSheetFooter>
+        </BottomSheetContent>
+      </BottomSheet>
     </TooltipProvider>
   );
 }

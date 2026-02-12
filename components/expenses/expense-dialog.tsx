@@ -5,11 +5,12 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { format, addMonths, addWeeks, addYears } from "date-fns";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  BottomSheet,
+  BottomSheetContent,
+  BottomSheetFooter,
+  BottomSheetHeader,
+  BottomSheetTitle,
+} from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -249,14 +250,14 @@ export function ExpenseDialog({
   );
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="squircle sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Add Expense</DialogTitle>
-        </DialogHeader>
-
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+    <BottomSheet open={open} onOpenChange={onOpenChange}>
+      <BottomSheetContent size="lg">
+        <BottomSheetHeader>
+          <BottomSheetTitle>Add Expense</BottomSheetTitle>
+        </BottomSheetHeader>
+        <div className="flex-1 overflow-y-auto px-6 pb-6">
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <FormField
               control={form.control}
               name="description"
@@ -600,23 +601,24 @@ export function ExpenseDialog({
               )}
             />
 
-            <div className="flex justify-end gap-2 pt-4">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-                className="squircle"
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={isLoading} className="squircle">
-                {isLoading && <Loader2 className="size-4 animate-spin" />}
-                Add Expense
-              </Button>
-            </div>
-          </form>
-        </Form>
-      </DialogContent>
-    </Dialog>
+              <BottomSheetFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => onOpenChange(false)}
+                  className="squircle"
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={isLoading} className="squircle">
+                  {isLoading && <Loader2 className="size-4 animate-spin" />}
+                  Add Expense
+                </Button>
+              </BottomSheetFooter>
+            </form>
+          </Form>
+        </div>
+      </BottomSheetContent>
+    </BottomSheet>
   );
 }

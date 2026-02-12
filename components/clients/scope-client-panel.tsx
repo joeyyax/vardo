@@ -17,12 +17,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
+  BottomSheet,
+  BottomSheetContent,
+  BottomSheetHeader,
+  BottomSheetTitle,
+  BottomSheetFooter,
+} from "@/components/ui/bottom-sheet";
 import {
   Select,
   SelectContent,
@@ -297,126 +297,128 @@ export function ScopeClientPanel({ clientId, orgId, projects }: ScopeClientPanel
       </CardContent>
 
       {/* Create dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="squircle">
-          <DialogHeader>
-            <DialogTitle>
+      <BottomSheet open={dialogOpen} onOpenChange={setDialogOpen}>
+        <BottomSheetContent className="squircle">
+          <BottomSheetHeader>
+            <BottomSheetTitle>
               {createdToken ? "Scope Client Created" : "Add Scope Client"}
-            </DialogTitle>
-          </DialogHeader>
+            </BottomSheetTitle>
+          </BottomSheetHeader>
 
-          {createdToken ? (
-            <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Copy the embed code below and add it to your client's site.
-                The token is shown once — copy it now.
-              </p>
-              <div className="rounded-lg bg-muted p-3 font-mono text-xs break-all">
-                {`<script src="${apiUrl}/widget/scope.js" data-key="${createdToken}"></script>`}
-              </div>
-              <Button
-                className="squircle w-full"
-                onClick={() => {
-                  navigator.clipboard.writeText(
-                    `<script src="${apiUrl}/widget/scope.js" data-key="${createdToken}"></script>`
-                  );
-                  toast.success("Copied to clipboard");
-                }}
-              >
-                <Copy className="size-4" />
-                Copy Embed Code
-              </Button>
-              <Button
-                variant="outline"
-                className="squircle w-full"
-                onClick={() => {
-                  setCreatedToken(null);
-                  setDialogOpen(false);
-                }}
-              >
-                Done
-              </Button>
-            </div>
-          ) : (
-            <>
+          <div className="flex-1 overflow-y-auto px-6 pb-6">
+            {createdToken ? (
               <div className="space-y-4">
-                <div>
-                  <Label>Name</Label>
-                  <Input
-                    placeholder="e.g., Acme Corp Production"
-                    value={formName}
-                    onChange={(e) => setFormName(e.target.value)}
-                    className="squircle"
-                  />
+                <p className="text-sm text-muted-foreground">
+                  Copy the embed code below and add it to your client's site.
+                  The token is shown once — copy it now.
+                </p>
+                <div className="rounded-lg bg-muted p-3 font-mono text-xs break-all">
+                  {`<script src="${apiUrl}/widget/scope.js" data-key="${createdToken}"></script>`}
                 </div>
-
-                <div>
-                  <Label>Default Project</Label>
-                  <Select value={formProjectId} onValueChange={setFormProjectId}>
-                    <SelectTrigger className="squircle">
-                      <SelectValue placeholder="Select project..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {projects.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>
-                          {p.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Bug reports will be routed to this project.
-                  </p>
-                </div>
-
-                <div>
-                  <Label>Allowed Domains</Label>
-                  <Input
-                    placeholder="example.com, staging.example.com"
-                    value={formDomains}
-                    onChange={(e) => setFormDomains(e.target.value)}
-                    className="squircle"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Comma-separated. Leave empty to allow any domain.
-                  </p>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label>Public Access</Label>
-                    <p className="text-xs text-muted-foreground">
-                      Allow anonymous users to submit bug reports
-                    </p>
-                  </div>
-                  <Switch
-                    checked={formPublicAccess}
-                    onCheckedChange={setFormPublicAccess}
-                  />
-                </div>
-              </div>
-
-              <DialogFooter>
+                <Button
+                  className="squircle w-full"
+                  onClick={() => {
+                    navigator.clipboard.writeText(
+                      `<script src="${apiUrl}/widget/scope.js" data-key="${createdToken}"></script>`
+                    );
+                    toast.success("Copied to clipboard");
+                  }}
+                >
+                  <Copy className="size-4" />
+                  Copy Embed Code
+                </Button>
                 <Button
                   variant="outline"
-                  onClick={() => setDialogOpen(false)}
-                  className="squircle"
+                  className="squircle w-full"
+                  onClick={() => {
+                    setCreatedToken(null);
+                    setDialogOpen(false);
+                  }}
                 >
-                  Cancel
+                  Done
                 </Button>
-                <Button
-                  onClick={handleCreate}
-                  disabled={isSaving}
-                  className="squircle"
-                >
-                  {isSaving && <Loader2 className="size-4 animate-spin" />}
-                  Create
-                </Button>
-              </DialogFooter>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-4">
+                  <div>
+                    <Label>Name</Label>
+                    <Input
+                      placeholder="e.g., Acme Corp Production"
+                      value={formName}
+                      onChange={(e) => setFormName(e.target.value)}
+                      className="squircle"
+                    />
+                  </div>
+
+                  <div>
+                    <Label>Default Project</Label>
+                    <Select value={formProjectId} onValueChange={setFormProjectId}>
+                      <SelectTrigger className="squircle">
+                        <SelectValue placeholder="Select project..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {projects.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Bug reports will be routed to this project.
+                    </p>
+                  </div>
+
+                  <div>
+                    <Label>Allowed Domains</Label>
+                    <Input
+                      placeholder="example.com, staging.example.com"
+                      value={formDomains}
+                      onChange={(e) => setFormDomains(e.target.value)}
+                      className="squircle"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Comma-separated. Leave empty to allow any domain.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label>Public Access</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Allow anonymous users to submit bug reports
+                      </p>
+                    </div>
+                    <Switch
+                      checked={formPublicAccess}
+                      onCheckedChange={setFormPublicAccess}
+                    />
+                  </div>
+                </div>
+
+                <BottomSheetFooter>
+                  <Button
+                    variant="outline"
+                    onClick={() => setDialogOpen(false)}
+                    className="squircle"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleCreate}
+                    disabled={isSaving}
+                    className="squircle"
+                  >
+                    {isSaving && <Loader2 className="size-4 animate-spin" />}
+                    Create
+                  </Button>
+                </BottomSheetFooter>
+              </>
+            )}
+          </div>
+        </BottomSheetContent>
+      </BottomSheet>
     </Card>
   );
 }

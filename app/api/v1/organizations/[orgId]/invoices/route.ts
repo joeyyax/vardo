@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { invoices } from "@/lib/db/schema";
+import { invoices, retainerPeriods } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
-import { eq, desc } from "drizzle-orm";
+import { eq, and, ne, desc, lte, gte, inArray } from "drizzle-orm";
 import {
   generateInvoice,
   groupEntriesByProjectTask,
@@ -27,8 +27,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
+    const { searchParams } = new URL(request.url);
+    const includeVoided = searchParams.get("includeVoided") === "true";
+
     const invoiceList = await db.query.invoices.findMany({
-      where: eq(invoices.organizationId, orgId),
+      where: includeVoided
+        ? eq(invoices.organizationId, orgId)
+        : and(eq(invoices.organizationId, orgId), ne(invoices.status, "voided")),
       with: {
         client: {
           columns: { id: true, name: true, color: true },
@@ -87,7 +92,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     const body = await request.json();
-    const { clientId, from, to, includeSummaries = false } = body;
+    const { clientId, from, to, includeSummaries = false, force = false, deleteOverlapping = false } = body;
 
     // Validate required fields
     if (!clientId) {
@@ -111,6 +116,46 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         { error: "Dates must be in YYYY-MM-DD format" },
         { status: 400 }
       );
+    }
+
+    // Check for overlapping draft invoices
+    if (!force) {
+      const overlapping = await db.query.invoices.findMany({
+        where: and(
+          eq(invoices.organizationId, orgId),
+          eq(invoices.clientId, clientId),
+          eq(invoices.status, "draft"),
+          lte(invoices.periodStart, to),
+          gte(invoices.periodEnd, from)
+        ),
+        with: {
+          client: { columns: { id: true, name: true, color: true } },
+        },
+      });
+
+      if (overlapping.length > 0) {
+        if (deleteOverlapping) {
+          // Delete overlapping drafts before generating
+          await db
+            .delete(invoices)
+            .where(inArray(invoices.id, overlapping.map((inv) => inv.id)));
+        } else {
+          return NextResponse.json(
+            {
+              error: "Overlapping draft invoices found",
+              overlapping: overlapping.map((inv) => ({
+                id: inv.id,
+                invoiceNumber: inv.invoiceNumber,
+                periodStart: inv.periodStart,
+                periodEnd: inv.periodEnd,
+                subtotal: inv.subtotal,
+                client: inv.client,
+              })),
+            },
+            { status: 409 }
+          );
+        }
+      }
     }
 
     // Generate invoice
@@ -194,6 +239,86 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       }
     }
     console.error("Error creating invoice:", error);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE /api/v1/organizations/[orgId]/invoices (bulk)
+export async function DELETE(request: NextRequest, { params }: RouteParams) {
+  try {
+    const { orgId } = await params;
+    const { organization } = await requireOrg();
+
+    if (organization.id !== orgId) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const body = await request.json();
+    const { invoiceIds } = body as { invoiceIds: string[] };
+
+    if (!invoiceIds || !Array.isArray(invoiceIds) || invoiceIds.length === 0) {
+      return NextResponse.json(
+        { error: "invoiceIds array is required" },
+        { status: 400 }
+      );
+    }
+
+    // Fetch all requested invoices
+    const targetInvoices = await db.query.invoices.findMany({
+      where: and(
+        eq(invoices.organizationId, orgId),
+        inArray(invoices.id, invoiceIds)
+      ),
+    });
+
+    const drafts = targetInvoices.filter((inv) => inv.status === "draft");
+    const nonDrafts = targetInvoices.filter(
+      (inv) => inv.status !== "draft" && inv.status !== "voided"
+    );
+
+    let deleted = 0;
+    let voided = 0;
+
+    await db.transaction(async (tx) => {
+      // Hard delete drafts
+      if (drafts.length > 0) {
+        await tx
+          .delete(invoices)
+          .where(inArray(invoices.id, drafts.map((inv) => inv.id)));
+        deleted = drafts.length;
+      }
+
+      // Void non-drafts
+      for (const inv of nonDrafts) {
+        await tx
+          .update(invoices)
+          .set({ status: "voided", voidedAt: new Date() })
+          .where(eq(invoices.id, inv.id));
+
+        await tx
+          .update(retainerPeriods)
+          .set({ invoiceId: null, status: "active" })
+          .where(eq(retainerPeriods.invoiceId, inv.id));
+
+        voided++;
+      }
+    });
+
+    return NextResponse.json({ success: true, deleted, voided });
+  } catch (error) {
+    if (error instanceof Error && error.message === "Unauthorized") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (error instanceof Error && error.message === "No organization found") {
+      return NextResponse.json(
+        { error: "No organization found" },
+        { status: 404 }
+      );
+    }
+    console.error("Error bulk deleting invoices:", error);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

@@ -89,6 +89,25 @@ Internal work is excluded only from:
 - Invoices
 - External portals
 
+Users may:
+- Filter internal work in reports
+- Compare internal vs external time
+- Understand effort vs revenue gaps
+
+Hiding internal work should be a conscious choice, not the default.
+
+---
+
+## Design Guardrail
+
+When designing features:
+- Internal work must behave like real work
+- Exceptions should be billing-related only
+- Reporting should remain honest
+- UX should never imply internal work is "lesser"
+
+If a decision makes internal work harder to track, removes it from totals, or treats it as second-class — that decision should be reconsidered.
+
 ---
 
 ## What Internal Is Not

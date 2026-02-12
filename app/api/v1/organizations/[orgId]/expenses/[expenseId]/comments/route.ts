@@ -69,6 +69,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             email: true,
           },
         },
+        pinnedByUser: {
+          columns: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
       },
     });
 
@@ -170,6 +177,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           },
         },
         sharedByUser: {
+          columns: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        pinnedByUser: {
           columns: {
             id: true,
             name: true,

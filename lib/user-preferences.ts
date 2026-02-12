@@ -8,10 +8,13 @@ const PREFERENCES_KEY = "time-user-preferences";
 export interface UserPreferences {
   /** Keep client/project/task/date selections after saving an entry */
   stickySelections: boolean;
+  /** Collapse desktop sidebar to icon-only mode */
+  sidebarCollapsed: boolean;
 }
 
 const defaultPreferences: UserPreferences = {
   stickySelections: false,
+  sidebarCollapsed: false,
 };
 
 /**

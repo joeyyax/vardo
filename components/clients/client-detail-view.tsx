@@ -2,8 +2,7 @@
 
 import { Badge } from "@/components/ui/badge";
 import { DetailField } from "@/components/ui/detail-field";
-import { Mail, Phone } from "lucide-react";
-import type { Client, ClientContact } from "./client-dialog";
+import type { Client } from "./client-dialog";
 
 const BILLING_TYPE_LABELS: Record<string, string> = {
   hourly: "Hourly",
@@ -31,26 +30,13 @@ const DAYS_OF_WEEK_LABELS: Record<number, string> = {
   6: "Saturday",
 };
 
-const CONTACT_TYPE_LABELS: Record<string, string> = {
-  primary: "Primary",
-  billing: "Billing",
-  other: "Other",
-};
-
-const CONTACT_TYPE_VARIANTS: Record<string, "default" | "secondary" | "outline"> = {
-  primary: "default",
-  billing: "secondary",
-  other: "outline",
-};
-
 type ClientDetailViewProps = {
   client: Client;
-  contacts: ClientContact[];
   parentClient?: Client | null;
   onEdit: () => void;
 };
 
-export function ClientDetailView({ client, contacts, parentClient }: ClientDetailViewProps) {
+export function ClientDetailView({ client, parentClient }: ClientDetailViewProps) {
   const formatRate = (cents: number | null) => {
     if (cents === null) return null;
     return `$${(cents / 100).toFixed(2)}`;
@@ -113,49 +99,6 @@ export function ClientDetailView({ client, contacts, parentClient }: ClientDetai
             "No"
           )}
         </DetailField>
-      </div>
-
-      {/* Contacts */}
-      <div className="border-t pt-4">
-        <h4 className="text-sm font-medium mb-3">Contacts</h4>
-        {contacts.length === 0 ? (
-          <p className="text-sm text-muted-foreground italic">No contacts added yet</p>
-        ) : (
-          <div className="space-y-3">
-            {contacts.map((contact) => (
-              <div key={contact.id} className="flex items-start gap-3 rounded-md border p-3">
-                <div className="min-w-0 flex-1 space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">{contact.name}</span>
-                    <Badge variant={CONTACT_TYPE_VARIANTS[contact.type] ?? "outline"} className="text-[10px] px-1.5 py-0">
-                      {CONTACT_TYPE_LABELS[contact.type] ?? contact.type}
-                    </Badge>
-                  </div>
-                  {contact.title && (
-                    <p className="text-xs text-muted-foreground">{contact.title}</p>
-                  )}
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                    {contact.email && (
-                      <a
-                        href={`mailto:${contact.email}`}
-                        className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                      >
-                        <Mail className="size-3" />
-                        {contact.email}
-                      </a>
-                    )}
-                    {contact.phone && (
-                      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                        <Phone className="size-3" />
-                        {contact.phone}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
 
       {/* Billing settings */}

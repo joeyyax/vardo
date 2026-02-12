@@ -11,13 +11,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  BottomSheet,
+  BottomSheetContent,
+  BottomSheetDescription,
+  BottomSheetFooter,
+  BottomSheetHeader,
+  BottomSheetTitle,
+} from "@/components/ui/bottom-sheet";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -346,88 +346,90 @@ export function ProjectExpenses({ orgId, projectId }: ProjectExpensesProps) {
         )}
       </CardContent>
 
-      {/* Add/Edit Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={(open) => {
+      {/* Add/Edit BottomSheet */}
+      <BottomSheet open={dialogOpen} onOpenChange={(open) => {
         setDialogOpen(open);
         if (!open) resetForm();
       }}>
-        <DialogContent className="squircle">
-          <DialogHeader>
-            <DialogTitle>
+        <BottomSheetContent className="squircle">
+          <BottomSheetHeader>
+            <BottomSheetTitle>
               {editingExpense ? "Edit Expense" : "Add Expense"}
-            </DialogTitle>
-            <DialogDescription>
+            </BottomSheetTitle>
+            <BottomSheetDescription>
               Record a project-related expense.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
-              <Input
-                id="description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Software license, hosting, etc."
-                className="squircle"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
+            </BottomSheetDescription>
+          </BottomSheetHeader>
+          <div className="flex-1 overflow-y-auto px-6 pb-6">
+            <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="amount">Amount</Label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
-                    $
-                  </span>
+                <Label htmlFor="description">Description</Label>
+                <Input
+                  id="description"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Software license, hosting, etc."
+                  className="squircle"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="amount">Amount</Label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                      $
+                    </span>
+                    <Input
+                      id="amount"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      placeholder="0.00"
+                      className="squircle pl-7"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="date">Date</Label>
                   <Input
-                    id="amount"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    placeholder="0.00"
-                    className="squircle pl-7"
+                    id="date"
+                    type="date"
+                    value={date}
+                    onChange={(e) => setDate(e.target.value)}
+                    className="squircle"
                   />
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="date">Date</Label>
-                <Input
-                  id="date"
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  className="squircle"
+                <Label htmlFor="category">Category</Label>
+                <Select value={category} onValueChange={setCategory}>
+                  <SelectTrigger id="category" className="squircle">
+                    <SelectValue placeholder="Select a category" />
+                  </SelectTrigger>
+                  <SelectContent className="squircle">
+                    {allCategories.map((cat) => (
+                      <SelectItem key={cat} value={cat}>
+                        {cat}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="billable"
+                  checked={isBillable}
+                  onCheckedChange={setIsBillable}
                 />
+                <Label htmlFor="billable" className="cursor-pointer">
+                  Billable to client
+                </Label>
               </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="category">Category</Label>
-              <Select value={category} onValueChange={setCategory}>
-                <SelectTrigger id="category" className="squircle">
-                  <SelectValue placeholder="Select a category" />
-                </SelectTrigger>
-                <SelectContent className="squircle">
-                  {allCategories.map((cat) => (
-                    <SelectItem key={cat} value={cat}>
-                      {cat}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-center gap-2">
-              <Switch
-                id="billable"
-                checked={isBillable}
-                onCheckedChange={setIsBillable}
-              />
-              <Label htmlFor="billable" className="cursor-pointer">
-                Billable to client
-              </Label>
-            </div>
           </div>
-          <DialogFooter>
+          <BottomSheetFooter>
             <Button
               variant="outline"
               onClick={() => setDialogOpen(false)}
@@ -444,9 +446,9 @@ export function ProjectExpenses({ orgId, projectId }: ProjectExpensesProps) {
               {isSubmitting && <Loader2 className="size-4 animate-spin" />}
               {editingExpense ? "Update" : "Add"}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </BottomSheetFooter>
+        </BottomSheetContent>
+      </BottomSheet>
 
       {/* Delete Dialog */}
       <AlertDialog open={!!deleteExpense} onOpenChange={() => setDeleteExpense(null)}>

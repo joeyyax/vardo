@@ -28,12 +28,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  BottomSheet,
+  BottomSheetContent,
+  BottomSheetDescription,
+  BottomSheetHeader,
+  BottomSheetTitle,
+} from "@/components/ui/bottom-sheet";
 import { Progress } from "@/components/ui/progress";
 
 type ImportSource = "toggl_api" | "toggl_workspace" | "toggl_entries";
@@ -650,8 +650,8 @@ export function ImportWizard({ orgId }: ImportWizardProps) {
     <>
       {renderTrigger()}
 
-      <Dialog open={isOpen} onOpenChange={(open) => !open && closeWizard()}>
-        <DialogContent className="squircle max-w-lg">
+      <BottomSheet open={isOpen} onOpenChange={(open) => !open && closeWizard()}>
+        <BottomSheetContent size="lg">
           {error && (
             <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
               {error}
@@ -661,12 +661,12 @@ export function ImportWizard({ orgId }: ImportWizardProps) {
           {/* Step: Intro */}
           {wizardStep === "intro" && (
             <>
-              <DialogHeader>
-                <DialogTitle>Import Wizard</DialogTitle>
-                <DialogDescription>
+              <BottomSheetHeader>
+                <BottomSheetTitle>Import Wizard</BottomSheetTitle>
+                <BottomSheetDescription>
                   Import your time tracking data from another service.
-                </DialogDescription>
-              </DialogHeader>
+                </BottomSheetDescription>
+              </BottomSheetHeader>
 
               <div className="space-y-4 py-4">
                 <p className="text-sm text-muted-foreground">
@@ -703,12 +703,12 @@ export function ImportWizard({ orgId }: ImportWizardProps) {
           {/* Step: Source Selection */}
           {wizardStep === "source" && (
             <>
-              <DialogHeader>
-                <DialogTitle>Choose Import Source</DialogTitle>
-                <DialogDescription>
+              <BottomSheetHeader>
+                <BottomSheetTitle>Choose Import Source</BottomSheetTitle>
+                <BottomSheetDescription>
                   Where would you like to import from?
-                </DialogDescription>
-              </DialogHeader>
+                </BottomSheetDescription>
+              </BottomSheetHeader>
 
               <div className="space-y-3 py-4">
                 <button
@@ -754,12 +754,12 @@ export function ImportWizard({ orgId }: ImportWizardProps) {
           {/* Step: Toggl Connect */}
           {wizardStep === "toggl_connect" && (
             <>
-              <DialogHeader>
-                <DialogTitle>Connect to Toggl</DialogTitle>
-                <DialogDescription>
+              <BottomSheetHeader>
+                <BottomSheetTitle>Connect to Toggl</BottomSheetTitle>
+                <BottomSheetDescription>
                   Enter your Toggl API token to get started.
-                </DialogDescription>
-              </DialogHeader>
+                </BottomSheetDescription>
+              </BottomSheetHeader>
 
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
@@ -808,12 +808,12 @@ export function ImportWizard({ orgId }: ImportWizardProps) {
           {/* Step: Toggl API Workspace Selection */}
           {wizardStep === "toggl_workspace_select" && (
             <>
-              <DialogHeader>
-                <DialogTitle>Select Workspace & Date Range</DialogTitle>
-                <DialogDescription>
+              <BottomSheetHeader>
+                <BottomSheetTitle>Select Workspace & Date Range</BottomSheetTitle>
+                <BottomSheetDescription>
                   Choose which workspace to import from.
-                </DialogDescription>
-              </DialogHeader>
+                </BottomSheetDescription>
+              </BottomSheetHeader>
 
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
@@ -895,12 +895,12 @@ export function ImportWizard({ orgId }: ImportWizardProps) {
           {/* Step: Workspace Upload - accepts zip + CSV files */}
           {wizardStep === "workspace_upload" && (
             <>
-              <DialogHeader>
-                <DialogTitle>Upload Toggl Files</DialogTitle>
-                <DialogDescription>
+              <BottomSheetHeader>
+                <BottomSheetTitle>Upload Toggl Files</BottomSheetTitle>
+                <BottomSheetDescription>
                   Select all your Toggl export files at once
-                </DialogDescription>
-              </DialogHeader>
+                </BottomSheetDescription>
+              </BottomSheetHeader>
 
               <div className="space-y-4 py-4">
                 <div className="rounded-lg border border-dashed p-4 space-y-3">
@@ -981,12 +981,12 @@ export function ImportWizard({ orgId }: ImportWizardProps) {
           {/* Step: Client Mapping */}
           {wizardStep === "mapping" && session && (
             <>
-              <DialogHeader>
-                <DialogTitle>Map Clients</DialogTitle>
-                <DialogDescription>
+              <BottomSheetHeader>
+                <BottomSheetTitle>Map Clients</BottomSheetTitle>
+                <BottomSheetDescription>
                   {confirmedCount} of {clientMappings.length} clients mapped
-                </DialogDescription>
-              </DialogHeader>
+                </BottomSheetDescription>
+              </BottomSheetHeader>
 
               <div className="space-y-4 py-4">
                 <Progress
@@ -1180,12 +1180,12 @@ export function ImportWizard({ orgId }: ImportWizardProps) {
           {/* Step: Complete */}
           {wizardStep === "complete" && session?.result && (
             <>
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
+              <BottomSheetHeader>
+                <BottomSheetTitle className="flex items-center gap-2">
                   <CheckCircle2 className="size-5 text-emerald-500" />
                   Import Complete
-                </DialogTitle>
-              </DialogHeader>
+                </BottomSheetTitle>
+              </BottomSheetHeader>
 
               <div className="space-y-4 py-4">
                 <div className="rounded-lg border p-4 space-y-2">
@@ -1223,8 +1223,8 @@ export function ImportWizard({ orgId }: ImportWizardProps) {
               </div>
             </>
           )}
-        </DialogContent>
-      </Dialog>
+        </BottomSheetContent>
+      </BottomSheet>
     </>
   );
 }

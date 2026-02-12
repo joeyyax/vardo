@@ -2,12 +2,11 @@
 
 import * as React from "react";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  BottomSheet,
+  BottomSheetContent,
+  BottomSheetTitle,
+  BottomSheetDescription,
+} from "@/components/ui/bottom-sheet";
 import { IconButton } from "@/components/ui/icon-button";
 import { X } from "lucide-react";
 
@@ -34,21 +33,21 @@ function DetailModal({
   sidebar,
 }: DetailModalProps) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
+    <BottomSheet open={open} onOpenChange={onOpenChange}>
+      <BottomSheetContent
         size="full"
-        className="squircle p-0 gap-0 overflow-hidden flex flex-col"
+        className="p-0 gap-0 overflow-hidden flex flex-col"
         showCloseButton={false}
       >
         {/* Sticky header */}
         <div className="sticky top-0 z-10 bg-muted/30 border-b px-6 py-4">
           <div className="flex items-center justify-between gap-4">
-            <DialogHeader>
-              <DialogTitle className="text-lg">{title}</DialogTitle>
+            <div className="flex flex-col gap-1.5">
+              <BottomSheetTitle className="text-lg">{title}</BottomSheetTitle>
               {description && (
-                <DialogDescription>{description}</DialogDescription>
+                <BottomSheetDescription>{description}</BottomSheetDescription>
               )}
-            </DialogHeader>
+            </div>
 
             <div className="flex items-center gap-1 shrink-0">
               {actions}
@@ -61,7 +60,7 @@ function DetailModal({
           </div>
         </div>
 
-        <div className="flex h-full min-h-0 flex-1">
+        <div className="flex flex-col lg:flex-row h-full min-h-0 flex-1">
           {/* Left panel */}
           <div className={sidebar ? "flex-[2] overflow-y-auto p-6" : "flex-1 overflow-y-auto p-6"}>
             {children}
@@ -69,13 +68,13 @@ function DetailModal({
 
           {/* Right panel (sidebar) */}
           {sidebar && (
-            <div className="flex-1 overflow-y-auto p-6 border-l bg-muted/40">
+            <div className="flex-1 overflow-y-auto p-6 border-t lg:border-t-0 lg:border-l bg-muted/40">
               {sidebar}
             </div>
           )}
         </div>
-      </DialogContent>
-    </Dialog>
+      </BottomSheetContent>
+    </BottomSheet>
   );
 }
 

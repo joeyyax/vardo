@@ -4,7 +4,7 @@ import { Sidebar, MobileSidebar, EntryBar } from "@/components/layout";
 import { CommandPalette } from "@/components/command-palette";
 import { getCurrentOrg, getUserOrganizations } from "@/lib/auth/session";
 import { DEFAULT_ORG_FEATURES, type OrgFeatures } from "@/lib/db/schema";
-import { cn } from "@/lib/utils";
+
 
 export default async function AppLayout({
   children,
@@ -28,7 +28,7 @@ export default async function AppLayout({
 
   return (
     <TooltipProvider>
-      <div className="flex h-dvh bg-background">
+      <div data-main-content className="flex h-dvh bg-sidebar transition-transform duration-300 ease-out origin-bottom">
         {/* Desktop Sidebar */}
         <div className="hidden lg:block">
           <Sidebar
@@ -39,28 +39,27 @@ export default async function AppLayout({
         </div>
 
         {/* Main Content */}
-        <div className="flex flex-1 flex-col overflow-hidden">
-          {/* Top Bar with Entry Bar - only shown when time tracking enabled or on mobile */}
-          <header
-            className={cn(
-              "relative flex h-auto min-h-14 items-center gap-3 border-b bg-background px-4 py-3",
-              !features.time_tracking && "lg:hidden"
-            )}
-          >
+        <div className="flex flex-1 flex-col overflow-hidden bg-background squircle lg:rounded-l-2xl">
+          {/* Mobile nav trigger */}
+          <div className="lg:hidden flex items-center gap-3 px-4 pt-3">
             <MobileSidebar
               currentOrgId={organization.id}
               features={features}
               organizations={organizations}
             />
-            {features.time_tracking && (
-              <div className="flex-1">
+          </div>
+
+          {/* Floating Entry Bar */}
+          {features.time_tracking && (
+            <div className="px-3 lg:px-4 pt-3 lg:pt-4 pb-0 shrink-0">
+              <div className="squircle rounded-xl border bg-card shadow-sm px-4 py-3">
                 <EntryBar
                   orgId={organization.id}
                   roundingIncrement={organization.roundingIncrement ?? 15}
                 />
               </div>
-            )}
-          </header>
+            </div>
+          )}
 
           {/* Page Content */}
           <main className="flex-1 overflow-y-auto p-4 lg:p-6">{children}</main>

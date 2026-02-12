@@ -3,20 +3,20 @@
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  BottomSheet,
+  BottomSheetContent,
+  BottomSheetDescription,
+  BottomSheetFooter,
+  BottomSheetHeader,
+  BottomSheetTitle,
+} from "@/components/ui/bottom-sheet";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -40,13 +40,24 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import {
+  Avatar,
+  AvatarFallback,
+  AvatarGroup,
+  AvatarGroupCount,
+} from "@/components/ui/avatar";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   Copy,
   Loader2,
   Mail,
   MoreVertical,
   Trash2,
   UserPlus,
-  Users,
   Check,
   Clock,
   Eye,
@@ -81,10 +92,23 @@ type ProjectInvitationsProps = {
   projectId: string;
 };
 
+const MAX_VISIBLE_AVATARS = 3;
+
+function getInitials(email: string): string {
+  const local = email.split("@")[0];
+  // Try splitting on common separators
+  const parts = local.split(/[._-]/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return local.slice(0, 2).toUpperCase();
+}
+
 export function ProjectInvitations({ orgId, projectId }: ProjectInvitationsProps) {
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   const fetchInvitations = useCallback(async () => {
     try {
@@ -129,66 +153,111 @@ export function ProjectInvitations({ orgId, projectId }: ProjectInvitationsProps
     toast.success("Invite link copied to clipboard");
   }
 
-  return (
-    <Card className="squircle">
-      <CardHeader className="flex flex-row items-center justify-between">
-        <div>
-          <CardTitle className="flex items-center gap-2">
-            <Users className="size-5" />
-            Client Access
-          </CardTitle>
-          <CardDescription>
-            Invite clients to view project progress
-          </CardDescription>
-        </div>
-        <Button
-          onClick={() => setDialogOpen(true)}
-          size="sm"
-          className="squircle"
-        >
-          <UserPlus className="size-4" />
-          Invite
-        </Button>
-      </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="size-5 animate-spin text-muted-foreground" />
-          </div>
-        ) : invitations.length === 0 ? (
-          <div className="text-center py-8">
-            <div className="mx-auto flex size-10 items-center justify-center rounded-full bg-muted">
-              <UserPlus className="size-5 text-muted-foreground" />
-            </div>
-            <p className="mt-3 text-sm text-muted-foreground">
-              No clients invited yet
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Invite clients to let them track project progress
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {invitations.map((invitation) => (
-              <InvitationRow
-                key={invitation.id}
-                invitation={invitation}
-                onCopyLink={() => copyInviteLink(invitation.token)}
-                onDelete={() => handleDelete(invitation.id)}
-              />
-            ))}
-          </div>
-        )}
-      </CardContent>
+  const visibleInvitations = invitations.slice(0, MAX_VISIBLE_AVATARS);
+  const overflowCount = Math.max(0, invitations.length - MAX_VISIBLE_AVATARS);
 
+  return (
+    <>
+      {/* Avatar stack trigger */}
+      <TooltipProvider delayDuration={300}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={() => setManageOpen(true)}
+              className="flex items-center gap-1 rounded-full transition-opacity hover:opacity-80"
+            >
+              {isLoading ? (
+                <div className="flex size-8 items-center justify-center rounded-full bg-muted">
+                  <Loader2 className="size-3 animate-spin text-muted-foreground" />
+                </div>
+              ) : invitations.length === 0 ? (
+                <div className="flex size-8 items-center justify-center rounded-full border border-dashed border-muted-foreground/40 text-muted-foreground hover:border-muted-foreground/60 hover:text-foreground transition-colors">
+                  <UserPlus className="size-3.5" />
+                </div>
+              ) : (
+                <AvatarGroup>
+                  {visibleInvitations.map((inv) => (
+                    <Avatar key={inv.id} size="sm">
+                      <AvatarFallback className="text-[10px] font-medium">
+                        {getInitials(inv.email)}
+                      </AvatarFallback>
+                    </Avatar>
+                  ))}
+                  {overflowCount > 0 && (
+                    <AvatarGroupCount className="text-[10px]">
+                      +{overflowCount}
+                    </AvatarGroupCount>
+                  )}
+                </AvatarGroup>
+              )}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>
+            {invitations.length === 0
+              ? "Invite clients"
+              : `${invitations.length} client${invitations.length !== 1 ? "s" : ""} invited`}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+
+      {/* Management dialog */}
+      <Dialog open={manageOpen} onOpenChange={setManageOpen}>
+        <DialogContent className="squircle sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Client Access</DialogTitle>
+            <DialogDescription>
+              Manage who can view this project
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            {invitations.length === 0 ? (
+              <div className="text-center py-8">
+                <div className="mx-auto flex size-10 items-center justify-center rounded-full bg-muted">
+                  <UserPlus className="size-5 text-muted-foreground" />
+                </div>
+                <p className="mt-3 text-sm text-muted-foreground">
+                  No clients invited yet
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Invite clients to let them track project progress
+                </p>
+              </div>
+            ) : (
+              invitations.map((invitation) => (
+                <InvitationRow
+                  key={invitation.id}
+                  invitation={invitation}
+                  onCopyLink={() => copyInviteLink(invitation.token)}
+                  onDelete={() => handleDelete(invitation.id)}
+                />
+              ))
+            )}
+          </div>
+
+          <div className="pt-2">
+            <Button
+              onClick={() => setInviteOpen(true)}
+              className="squircle w-full"
+              variant="outline"
+            >
+              <UserPlus className="size-4" />
+              Invite Client
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Invite form bottom sheet */}
       <InviteDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
+        open={inviteOpen}
+        onOpenChange={setInviteOpen}
         orgId={orgId}
         projectId={projectId}
         onSuccess={fetchInvitations}
       />
-    </Card>
+    </>
   );
 }
 
@@ -237,11 +306,13 @@ function InvitationRow({
   return (
     <div className="flex items-center justify-between gap-4 p-3 rounded-lg border">
       <div className="flex items-center gap-3 min-w-0">
-        <div className="flex size-8 items-center justify-center rounded-full bg-muted shrink-0">
-          <Mail className="size-4 text-muted-foreground" />
-        </div>
+        <Avatar size="sm">
+          <AvatarFallback className="text-[10px] font-medium">
+            {getInitials(invitation.email)}
+          </AvatarFallback>
+        </Avatar>
         <div className="min-w-0">
-          <p className="font-medium truncate">{invitation.email}</p>
+          <p className="text-sm font-medium truncate">{invitation.email}</p>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Badge variant="outline" className="squircle capitalize text-xs py-0">
               {invitation.role}
@@ -374,16 +445,17 @@ function InviteDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="squircle sm:max-w-md">
+    <BottomSheet open={open} onOpenChange={onOpenChange}>
+      <BottomSheetContent className="squircle">
         <form onSubmit={handleSubmit}>
-          <DialogHeader>
-            <DialogTitle>Invite Client</DialogTitle>
-            <DialogDescription>
+          <BottomSheetHeader>
+            <BottomSheetTitle>Invite Client</BottomSheetTitle>
+            <BottomSheetDescription>
               Invite a client to view this project&apos;s progress
-            </DialogDescription>
-          </DialogHeader>
+            </BottomSheetDescription>
+          </BottomSheetHeader>
 
+          <div className="flex-1 overflow-y-auto px-6 pb-6">
           <div className="grid gap-5 py-6">
             {/* Email */}
             <div className="grid gap-2">
@@ -479,8 +551,9 @@ function InviteDialog({
               <p className="text-sm text-destructive">{error}</p>
             )}
           </div>
+          </div>
 
-          <DialogFooter>
+          <BottomSheetFooter>
             <Button
               type="button"
               variant="outline"
@@ -498,9 +571,9 @@ function InviteDialog({
               {isLoading && <Loader2 className="size-4 animate-spin" />}
               Create Invitation
             </Button>
-          </DialogFooter>
+          </BottomSheetFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </BottomSheetContent>
+    </BottomSheet>
   );
 }

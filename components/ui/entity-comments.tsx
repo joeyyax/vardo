@@ -22,6 +22,8 @@ import {
   MessageSquare,
   Eye,
   EyeOff,
+  Pin,
+  PinOff,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
@@ -49,10 +51,18 @@ type Comment = {
   isShared: boolean;
   sharedAt: string | null;
   sharedBy: string | null;
+  isPinned: boolean;
+  pinnedAt: string | null;
+  pinnedBy: string | null;
   createdAt: string;
   updatedAt: string;
   author: CommentAuthor;
   sharedByUser?: {
+    id: string;
+    name: string | null;
+    email: string;
+  } | null;
+  pinnedByUser?: {
     id: string;
     name: string | null;
     email: string;
@@ -284,6 +294,28 @@ function EntityComments({
     }
   };
 
+  const handleTogglePin = async (comment: Comment) => {
+    try {
+      const response = await fetch(`${apiBasePath}/comments/${comment.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isPinned: !comment.isPinned }),
+      });
+
+      if (response.ok) {
+        fetchData();
+        toast.success(
+          comment.isPinned ? "Comment unpinned" : "Comment pinned"
+        );
+      } else {
+        toast.error("Failed to update pin");
+      }
+    } catch (err) {
+      console.error("Error toggling pin:", err);
+      toast.error("Failed to update pin");
+    }
+  };
+
   const handleDelete = async () => {
     if (!deleteId) return;
 
@@ -320,6 +352,18 @@ function EntityComments({
 
   const formatActivity = customFormatFieldChange ?? ((a: ActivityEntry) => defaultFormatFieldChange(a, "item"));
 
+  const commentCount = comments.length;
+  const pinnedComments = useMemo(
+    () => comments.filter((c) => c.isPinned),
+    [comments]
+  );
+
+  const scrollToComment = (commentId: string) => {
+    document
+      .querySelector(`[data-comment-id="${commentId}"]`)
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -327,8 +371,6 @@ function EntityComments({
       </div>
     );
   }
-
-  const commentCount = comments.length;
 
   const composer = (
     <form onSubmit={handleSubmit} className="space-y-3">
@@ -389,6 +431,49 @@ function EntityComments({
   return (
     <>
       <DiscussionPanel count={commentCount} composer={composer}>
+        {pinnedComments.length > 0 && (
+          <div className="mb-3 pb-3 border-b">
+            <div className="flex items-center gap-1.5 mb-2">
+              <Pin className="size-3 text-muted-foreground" />
+              <span className="text-xs font-medium text-muted-foreground">
+                Pinned
+              </span>
+            </div>
+            <div className="space-y-1">
+              {pinnedComments.map((comment) => {
+                const authorName =
+                  comment.author.name ||
+                  comment.author.email.split("@")[0];
+                return (
+                  <button
+                    key={`pinned-${comment.id}`}
+                    onClick={() => scrollToComment(comment.id)}
+                    className="w-full text-left flex items-start gap-2 px-2 py-1.5 rounded-md hover:bg-muted/50 transition-colors group/pin"
+                  >
+                    <Pin className="size-3 mt-0.5 shrink-0 text-muted-foreground" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs line-clamp-2">
+                        {comment.content}
+                      </p>
+                      <span className="text-[10px] text-muted-foreground">
+                        {authorName}
+                      </span>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleTogglePin(comment);
+                      }}
+                      className="opacity-0 group-hover/pin:opacity-100 transition-opacity shrink-0 p-0.5 hover:bg-muted rounded"
+                    >
+                      <PinOff className="size-3 text-muted-foreground" />
+                    </button>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
         {timeline.length === 0 ? (
           <DiscussionEmptyState />
         ) : (
@@ -396,7 +481,11 @@ function EntityComments({
             {timeline.map((item) => {
               if (item.type === "comment") {
                 return (
-                  <div key={`comment-${item.data.id}`} className="py-1.5">
+                  <div
+                    key={`comment-${item.data.id}`}
+                    data-comment-id={item.data.id}
+                    className="py-1.5"
+                  >
                     <CommentItem
                       comment={item.data}
                       currentUserId={currentUserId}
@@ -407,6 +496,7 @@ function EntityComments({
                       onCancelEdit={cancelEdit}
                       onSaveEdit={() => handleEdit(item.data.id)}
                       onToggleShare={() => handleToggleShare(item.data)}
+                      onTogglePin={() => handleTogglePin(item.data)}
                       onDelete={() => setDeleteId(item.data.id)}
                     />
                   </div>
@@ -456,6 +546,7 @@ function CommentItem({
   onCancelEdit,
   onSaveEdit,
   onToggleShare,
+  onTogglePin,
   onDelete,
 }: {
   comment: Comment;
@@ -467,6 +558,7 @@ function CommentItem({
   onCancelEdit: () => void;
   onSaveEdit: () => void;
   onToggleShare: () => void;
+  onTogglePin: () => void;
   onDelete: () => void;
 }) {
   const isAuthor = comment.authorId === currentUserId;
@@ -488,6 +580,11 @@ function CommentItem({
             {timeAgo}
             {wasEdited && " (edited)"}
           </span>
+          {comment.isPinned && (
+            <span className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1 shrink-0">
+              <Pin className="size-3" />
+            </span>
+          )}
           {comment.isShared && (
             <span className="text-xs text-blue-600 dark:text-blue-400 flex items-center gap-1 shrink-0">
               <Eye className="size-3" /> Shared
@@ -521,6 +618,19 @@ function CommentItem({
                   <>
                     <Eye className="size-4 mr-2" />
                     Share with client
+                  </>
+                )}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onTogglePin}>
+                {comment.isPinned ? (
+                  <>
+                    <PinOff className="size-4 mr-2" />
+                    Unpin
+                  </>
+                ) : (
+                  <>
+                    <Pin className="size-4 mr-2" />
+                    Pin
                   </>
                 )}
               </DropdownMenuItem>

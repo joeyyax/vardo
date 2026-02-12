@@ -46,7 +46,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     const body = await request.json();
-    const { content, isShared } = body;
+    const { content, isShared, isPinned } = body;
 
     // Build updates
     const updates: Partial<{
@@ -54,6 +54,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       isShared: boolean;
       sharedAt: Date | null;
       sharedBy: string | null;
+      isPinned: boolean;
+      pinnedAt: Date | null;
+      pinnedBy: string | null;
       updatedAt: Date;
     }> = {
       updatedAt: new Date(),
@@ -87,6 +90,18 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       }
     }
 
+    // Pinning update - any team member can pin/unpin
+    if (isPinned !== undefined) {
+      updates.isPinned = isPinned;
+      if (isPinned) {
+        updates.pinnedAt = new Date();
+        updates.pinnedBy = session.user.id;
+      } else {
+        updates.pinnedAt = null;
+        updates.pinnedBy = null;
+      }
+    }
+
     const [updatedComment] = await db
       .update(projectComments)
       .set(updates)
@@ -101,6 +116,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
           columns: { id: true, name: true, email: true, image: true },
         },
         sharedByUser: {
+          columns: { id: true, name: true, email: true },
+        },
+        pinnedByUser: {
           columns: { id: true, name: true, email: true },
         },
       },

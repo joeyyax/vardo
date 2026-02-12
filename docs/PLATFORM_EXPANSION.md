@@ -102,7 +102,7 @@ Build abstraction layer that supports both. Start with Stripe for invoice paymen
 - [x] Feature flags infrastructure (`features` JSONB on organizations)
 - [x] Update onboarding to ask what features needed
 - [x] Conditional navigation based on features
-- [x] Project stages field (`lead`, `proposal_sent`, `active`, `completed`)
+- [x] Project stages field (`inquiry`, `getting_started`, `proposal`, `agreement`, `onboarding`, `active`, `ongoing`, `offboarding`)
 - [x] Project budget fields (`budgetType`, `budgetHours`, `budgetAmountCents`)
 - [x] Stage badges and filters in projects list
 - [x] Stage selector in project dialog
@@ -481,7 +481,7 @@ Email parser ──────┘
 - [ ] Attachment extraction to R2
 - [ ] Unique email address per project
 
-### Phase 11: Polish
+### Phase 12: Polish
 
 - [ ] Markdown editor with WYSIWYG option (Tiptap)
 - [ ] Mobile-responsive portal
@@ -489,7 +489,7 @@ Email parser ──────┘
 - [ ] Email templates for all flows
 - [ ] Disable public signups (admin-controlled)
 
-### Phase 11: External Integrations (Basecamp, ClickUp, Asana)
+### Phase 13: External Integrations (Basecamp, ClickUp, Asana)
 
 **Goal:** Single source of truth. Changes in external systems appear here; changes here sync back.
 

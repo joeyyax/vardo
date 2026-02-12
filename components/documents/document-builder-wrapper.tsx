@@ -51,6 +51,13 @@ type LockInfo = {
   lastActiveAt: string;
 };
 
+type ResolvedContact = {
+  id: string;
+  name: string;
+  email: string | null;
+  type: "primary" | "billing" | "other";
+};
+
 type DocumentBuilderWrapperProps = {
   document: SerializedDocument;
   orgId: string;
@@ -58,6 +65,7 @@ type DocumentBuilderWrapperProps = {
   projectName: string;
   clientName: string;
   clientContactEmail?: string;
+  resolvedContacts?: ResolvedContact[];
   organizationName: string;
   currentUserId: string;
 };
@@ -75,6 +83,7 @@ export function DocumentBuilderWrapper({
   projectName,
   clientName,
   clientContactEmail,
+  resolvedContacts,
   organizationName,
   currentUserId,
 }: DocumentBuilderWrapperProps) {
@@ -455,6 +464,7 @@ export function DocumentBuilderWrapper({
             context={context}
             initialVariableValues={document.variableValues || {}}
             initialSendEmail={clientContactEmail}
+            resolvedContacts={resolvedContacts}
             orgId={orgId}
             projectId={projectId}
             documentId={document.id}

@@ -31,8 +31,8 @@ import { KanbanBoard } from "@/components/projects/kanban-board";
 import { ProjectInvitations } from "@/components/projects/project-invitations";
 import { ProjectFiles } from "@/components/projects/project-files";
 import { ProjectActivity } from "@/components/projects/project-activity";
-import { ProjectDocuments } from "@/components/projects/project-documents";
 import { ProjectExpenses } from "@/components/projects/project-expenses";
+import { ProjectContacts } from "@/components/projects/project-contacts";
 import { ProjectOnboardingChecklist } from "@/components/projects/project-onboarding-checklist";
 import { ProjectOffboardingPanel } from "@/components/projects/project-offboarding-panel";
 import { StageGuidance } from "@/components/projects/stage-guidance";
@@ -258,7 +258,7 @@ export function ProjectDashboard({ project: initialProject, orgId, orgName, pmEn
   const handleDocumentAction = useCallback(
     (type: "proposal" | "contract" | "change_order", suggestedTemplateId?: string) => {
       setGuidanceSuggestedTemplateId(suggestedTemplateId);
-      // Dispatch a custom event that ProjectDocuments can listen to
+      // Dispatch a custom event that ProjectFiles can listen to
       window.dispatchEvent(
         new CustomEvent("open-document-wizard", { detail: { type, suggestedTemplateId } })
       );
@@ -307,7 +307,10 @@ export function ProjectDashboard({ project: initialProject, orgId, orgName, pmEn
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          {capabilities.invitations && (
+            <ProjectInvitations orgId={orgId} projectId={project.id} />
+          )}
           {capabilities.editProject && (
             <Button
               variant="outline"
@@ -370,6 +373,14 @@ export function ProjectDashboard({ project: initialProject, orgId, orgName, pmEn
           onComplete={handleProjectUpdated}
         />
       )}
+
+      {/* Project contacts */}
+      <ProjectContacts
+        orgId={orgId}
+        projectId={project.id}
+        clientId={project.clientId}
+        clientName={project.client.name}
+      />
 
       {isLoading ? (
         <div className="flex items-center justify-center py-12">
@@ -670,30 +681,23 @@ export function ProjectDashboard({ project: initialProject, orgId, orgName, pmEn
             </div>
           ))}
 
-          {/* Documents and Files */}
-          <div className="grid gap-6 lg:grid-cols-2">
-            <ProjectDocuments
+          {/* Files (uploads + generated documents) */}
+          {(capabilities.files || capabilities.editDocuments) && (
+            <ProjectFiles
               orgId={orgId}
               projectId={project.id}
               projectName={project.name}
               clientName={project.client.name}
               organizationName={orgName}
-              initialDocuments={projectDocuments}
               suggestedTemplateId={guidanceSuggestedTemplateId}
+              canUpload={capabilities.files}
+              canCreateDocuments={capabilities.editDocuments}
             />
-            <ProjectFiles orgId={orgId} projectId={project.id} />
-          </div>
+          )}
 
-          {/* Expenses and Client Access */}
-          {(capabilities.expenses || capabilities.invitations) && (
-            <div className="grid gap-6 lg:grid-cols-2">
-              {capabilities.expenses && (
-                <ProjectExpenses orgId={orgId} projectId={project.id} />
-              )}
-              {capabilities.invitations && (
-                <ProjectInvitations orgId={orgId} projectId={project.id} />
-              )}
-            </div>
+          {/* Expenses */}
+          {capabilities.expenses && (
+            <ProjectExpenses orgId={orgId} projectId={project.id} />
           )}
 
           {/* Activity Log */}

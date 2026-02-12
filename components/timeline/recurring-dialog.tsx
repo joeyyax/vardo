@@ -8,13 +8,13 @@ import { Loader2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatHoursHuman as formatDuration } from "@/lib/formatting";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  BottomSheet,
+  BottomSheetContent,
+  BottomSheetDescription,
+  BottomSheetFooter,
+  BottomSheetHeader,
+  BottomSheetTitle,
+} from "@/components/ui/bottom-sheet";
 import {
   Select,
   SelectContent,
@@ -305,145 +305,147 @@ export function RecurringDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>
+    <BottomSheet open={open} onOpenChange={onOpenChange}>
+      <BottomSheetContent>
+        <BottomSheetHeader>
+          <BottomSheetTitle>
             {isEditMode ? "Edit Recurring Entry" : "Make Entry Recurring"}
-          </DialogTitle>
-          <DialogDescription>
+          </BottomSheetTitle>
+          <BottomSheetDescription>
             {isEditMode
               ? "Modify the recurring schedule or remove it."
               : "This entry will repeat based on the frequency you choose."}
-          </DialogDescription>
-        </DialogHeader>
+          </BottomSheetDescription>
+        </BottomSheetHeader>
 
-        {isFetching ? (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="size-6 animate-spin text-muted-foreground" />
-          </div>
-        ) : (
-          <Form {...form}>
-            <form className="space-y-4 py-4">
-              {/* Entry preview */}
-              <div className="rounded-md border p-3 space-y-1">
-                <div className="flex items-center gap-2">
-                  <div
-                    className="size-2 rounded-full"
-                    style={{ backgroundColor: entry.client.color || "#94a3b8" }}
-                  />
-                  <span className="font-medium text-sm">
-                    {entry.project?.name || entry.client.name}
-                  </span>
-                  {entry.task && (
-                    <span className="text-xs text-muted-foreground">
-                      / {entry.task.name}
+        <div className="flex-1 overflow-y-auto px-6 pb-6">
+          {isFetching ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="size-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <Form {...form}>
+              <form className="space-y-4 py-4">
+                {/* Entry preview */}
+                <div className="rounded-md border p-3 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="size-2 rounded-full"
+                      style={{ backgroundColor: entry.client.color || "#94a3b8" }}
+                    />
+                    <span className="font-medium text-sm">
+                      {entry.project?.name || entry.client.name}
                     </span>
+                    {entry.task && (
+                      <span className="text-xs text-muted-foreground">
+                        / {entry.task.name}
+                      </span>
+                    )}
+                    <span className="ml-auto text-sm font-medium">
+                      {formatDuration(entry.durationMinutes)}
+                    </span>
+                  </div>
+                  {entry.description && (
+                    <p className="text-xs text-muted-foreground truncate">
+                      {entry.description}
+                    </p>
                   )}
-                  <span className="ml-auto text-sm font-medium">
-                    {formatDuration(entry.durationMinutes)}
-                  </span>
                 </div>
-                {entry.description && (
-                  <p className="text-xs text-muted-foreground truncate">
-                    {entry.description}
-                  </p>
+
+                {/* Paused indicator */}
+                {isEditMode && templateData?.isPaused && (
+                  <div className="rounded-md bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 p-2 text-sm text-amber-700 dark:text-amber-300">
+                    This recurring entry is paused.
+                  </div>
                 )}
-              </div>
 
-              {/* Paused indicator */}
-              {isEditMode && templateData?.isPaused && (
-                <div className="rounded-md bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 p-2 text-sm text-amber-700 dark:text-amber-300">
-                  This recurring entry is paused.
-                </div>
-              )}
+                <FormField
+                  control={form.control}
+                  name="frequency"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Repeat</FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value}
+                      >
+                        <FormControl>
+                          <SelectTrigger className="squircle">
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent className="squircle">
+                          <SelectItem value="daily">Daily</SelectItem>
+                          <SelectItem value="weekly">
+                            Weekly (every {DAYS_OF_WEEK[dayOfWeek]})
+                          </SelectItem>
+                          <SelectItem value="biweekly">
+                            Biweekly (every other {DAYS_OF_WEEK[dayOfWeek]})
+                          </SelectItem>
+                          <SelectItem value="monthly">
+                            Monthly (on the {dayOfMonth}
+                            {getOrdinalSuffix(dayOfMonth)})
+                          </SelectItem>
+                          <SelectItem value="quarterly">
+                            Quarterly (on the {dayOfMonth}
+                            {getOrdinalSuffix(dayOfMonth)})
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+                  )}
+                />
 
-              <FormField
-                control={form.control}
-                name="frequency"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Repeat</FormLabel>
-                    <Select
-                      onValueChange={field.onChange}
-                      value={field.value}
-                    >
-                      <FormControl>
-                        <SelectTrigger className="squircle">
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent className="squircle">
-                        <SelectItem value="daily">Daily</SelectItem>
-                        <SelectItem value="weekly">
-                          Weekly (every {DAYS_OF_WEEK[dayOfWeek]})
-                        </SelectItem>
-                        <SelectItem value="biweekly">
-                          Biweekly (every other {DAYS_OF_WEEK[dayOfWeek]})
-                        </SelectItem>
-                        <SelectItem value="monthly">
-                          Monthly (on the {dayOfMonth}
-                          {getOrdinalSuffix(dayOfMonth)})
-                        </SelectItem>
-                        <SelectItem value="quarterly">
-                          Quarterly (on the {dayOfMonth}
-                          {getOrdinalSuffix(dayOfMonth)})
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </FormItem>
-                )}
-              />
+                <p className="text-xs text-muted-foreground">
+                  {getFrequencyDescription(frequency, dayOfWeek, dayOfMonth)}
+                </p>
+              </form>
+            </Form>
+          )}
+        </div>
 
-              <p className="text-xs text-muted-foreground">
-                {getFrequencyDescription(frequency, dayOfWeek, dayOfMonth)}
-              </p>
-            </form>
-
-            <DialogFooter className="flex-col sm:flex-row gap-2">
-              {isEditMode && (
-                <div className="flex gap-2 mr-auto">
-                  <Button
-                    variant="outline"
-                    onClick={handleTogglePause}
-                    disabled={isLoading}
-                    className="squircle"
-                  >
-                    {templateData?.isPaused ? "Resume" : "Pause"}
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    onClick={handleDelete}
-                    disabled={isLoading}
-                    className="squircle"
-                  >
-                    <Trash2 className="size-4" />
-                    Delete
-                  </Button>
-                </div>
-              )}
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => onOpenChange(false)}
-                  disabled={isLoading}
-                  className="squircle"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={isEditMode ? handleUpdate : handleCreate}
-                  disabled={isLoading}
-                  className="squircle"
-                >
-                  {isLoading && <Loader2 className="size-4 animate-spin" />}
-                  {isEditMode ? "Save Changes" : "Create Recurring"}
-                </Button>
-              </div>
-            </DialogFooter>
-          </Form>
-        )}
-      </DialogContent>
-    </Dialog>
+        <BottomSheetFooter>
+          {isEditMode && (
+            <div className="flex gap-2 mr-auto">
+              <Button
+                variant="outline"
+                onClick={handleTogglePause}
+                disabled={isLoading}
+                className="squircle"
+              >
+                {templateData?.isPaused ? "Resume" : "Pause"}
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleDelete}
+                disabled={isLoading}
+                className="squircle"
+              >
+                <Trash2 className="size-4" />
+                Delete
+              </Button>
+            </div>
+          )}
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={isLoading}
+              className="squircle"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={isEditMode ? handleUpdate : handleCreate}
+              disabled={isLoading}
+              className="squircle"
+            >
+              {isLoading && <Loader2 className="size-4 animate-spin" />}
+              {isEditMode ? "Save Changes" : "Create Recurring"}
+            </Button>
+          </div>
+        </BottomSheetFooter>
+      </BottomSheetContent>
+    </BottomSheet>
   );
 }

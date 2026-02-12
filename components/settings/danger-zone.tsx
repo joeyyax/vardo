@@ -6,14 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+  BottomSheet,
+  BottomSheetContent,
+  BottomSheetDescription,
+  BottomSheetFooter,
+  BottomSheetHeader,
+  BottomSheetTitle,
+} from "@/components/ui/bottom-sheet";
 
 type DangerZoneProps = {
   orgId: string;
@@ -93,86 +92,94 @@ export function DangerZone({ orgId, orgName }: DangerZoneProps) {
             Settings and team members are preserved.
           </p>
         </div>
-        <Dialog open={isOpen} onOpenChange={setIsOpen}>
-          <DialogTrigger asChild>
-            <Button variant="destructive" size="sm" className="squircle">
-              <Trash2 className="size-4" />
-              Clear Content
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="squircle">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
+        <Button
+          variant="destructive"
+          size="sm"
+          className="squircle"
+          onClick={() => setIsOpen(true)}
+        >
+          <Trash2 className="size-4" />
+          Clear Content
+        </Button>
+        <BottomSheet open={isOpen} onOpenChange={setIsOpen}>
+          <BottomSheetContent className="squircle">
+            <BottomSheetHeader>
+              <BottomSheetTitle className="flex items-center gap-2">
                 <AlertTriangle className="size-5 text-destructive" />
                 Clear Organization Content
-              </DialogTitle>
-              <DialogDescription>
+              </BottomSheetTitle>
+              <BottomSheetDescription>
                 This will permanently delete all content in this organization.
                 This action cannot be undone.
-              </DialogDescription>
-            </DialogHeader>
+              </BottomSheetDescription>
+            </BottomSheetHeader>
 
-            {result ? (
-              <div className="space-y-4">
-                <div className="rounded-lg border p-4 space-y-2">
-                  <p className="font-medium text-sm">Content cleared:</p>
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <span className="text-muted-foreground">Time entries</span>
-                    <span className="font-medium">{result.timeEntries}</span>
-                    <span className="text-muted-foreground">Invoices</span>
-                    <span className="font-medium">{result.invoices}</span>
-                    <span className="text-muted-foreground">Report configs</span>
-                    <span className="font-medium">{result.reportConfigs}</span>
-                    <span className="text-muted-foreground">Clients (+ projects, tasks)</span>
-                    <span className="font-medium">{result.clients}</span>
+            <div className="flex-1 overflow-y-auto px-6 pb-6">
+              {result ? (
+                <div className="space-y-4">
+                  <div className="rounded-lg border p-4 space-y-2">
+                    <p className="font-medium text-sm">Content cleared:</p>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <span className="text-muted-foreground">Time entries</span>
+                      <span className="font-medium">{result.timeEntries}</span>
+                      <span className="text-muted-foreground">Invoices</span>
+                      <span className="font-medium">{result.invoices}</span>
+                      <span className="text-muted-foreground">Report configs</span>
+                      <span className="font-medium">{result.reportConfigs}</span>
+                      <span className="text-muted-foreground">Clients (+ projects, tasks)</span>
+                      <span className="font-medium">{result.clients}</span>
+                    </div>
                   </div>
                 </div>
-                <DialogFooter>
-                  <Button onClick={handleClose} className="squircle">
-                    Done
-                  </Button>
-                </DialogFooter>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="rounded-lg border p-4 space-y-2 text-sm">
-                  <p className="font-medium">The following will be deleted:</p>
-                  <ul className="list-disc list-inside text-muted-foreground space-y-1">
-                    <li>All time entries</li>
-                    <li>All invoices and line items</li>
-                    <li>All report configurations</li>
-                    <li>All clients, projects, and tasks</li>
-                  </ul>
-                  <p className="pt-2 font-medium">The following will be kept:</p>
-                  <ul className="list-disc list-inside text-muted-foreground space-y-1">
-                    <li>Organization settings</li>
-                    <li>Team members and roles</li>
-                    <li>Integration settings (Toggl token, etc.)</li>
-                  </ul>
-                </div>
-
-                {error && (
-                  <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-                    {error}
+              ) : (
+                <div className="space-y-4">
+                  <div className="rounded-lg border p-4 space-y-2 text-sm">
+                    <p className="font-medium">The following will be deleted:</p>
+                    <ul className="list-disc list-inside text-muted-foreground space-y-1">
+                      <li>All time entries</li>
+                      <li>All invoices and line items</li>
+                      <li>All report configurations</li>
+                      <li>All clients, projects, and tasks</li>
+                    </ul>
+                    <p className="pt-2 font-medium">The following will be kept:</p>
+                    <ul className="list-disc list-inside text-muted-foreground space-y-1">
+                      <li>Organization settings</li>
+                      <li>Team members and roles</li>
+                      <li>Integration settings (Toggl token, etc.)</li>
+                    </ul>
                   </div>
-                )}
 
-                <div className="space-y-2">
-                  <Label htmlFor="confirm">
-                    Type <span className="font-mono font-bold">{orgName}</span> to
-                    confirm
-                  </Label>
-                  <Input
-                    id="confirm"
-                    value={confirmText}
-                    onChange={(e) => setConfirmText(e.target.value)}
-                    placeholder={orgName}
-                    className="squircle"
-                    autoComplete="off"
-                  />
+                  {error && (
+                    <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+                      {error}
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <Label htmlFor="confirm">
+                      Type <span className="font-mono font-bold">{orgName}</span> to
+                      confirm
+                    </Label>
+                    <Input
+                      id="confirm"
+                      value={confirmText}
+                      onChange={(e) => setConfirmText(e.target.value)}
+                      placeholder={orgName}
+                      className="squircle"
+                      autoComplete="off"
+                    />
+                  </div>
                 </div>
+              )}
+            </div>
 
-                <DialogFooter>
+            <BottomSheetFooter>
+              {result ? (
+                <Button onClick={handleClose} className="squircle">
+                  Done
+                </Button>
+              ) : (
+                <>
                   <Button
                     variant="outline"
                     onClick={handleClose}
@@ -193,11 +200,11 @@ export function DangerZone({ orgId, orgName }: DangerZoneProps) {
                     )}
                     Clear All Content
                   </Button>
-                </DialogFooter>
-              </div>
-            )}
-          </DialogContent>
-        </Dialog>
+                </>
+              )}
+            </BottomSheetFooter>
+          </BottomSheetContent>
+        </BottomSheet>
       </div>
     </div>
   );

@@ -9,6 +9,7 @@ import {
   jsonb,
   index,
   primaryKey,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
@@ -230,6 +231,9 @@ export const clientComments = pgTable("client_comments", {
   isShared: boolean("is_shared").default(false), // false = internal, true = client-visible
   sharedAt: timestamp("shared_at"),
   sharedBy: text("shared_by").references(() => users.id, { onDelete: "set null" }),
+  isPinned: boolean("is_pinned").default(false),
+  pinnedAt: timestamp("pinned_at"),
+  pinnedBy: text("pinned_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -252,6 +256,50 @@ export const clientWatchers = pgTable(
   })
 );
 
+// Invitation roles for client portal
+export const INVITATION_ROLES = ["viewer", "contributor"] as const;
+export type InvitationRole = (typeof INVITATION_ROLES)[number];
+
+// Visibility settings type for invitations
+export type InvitationVisibility = {
+  show_rates: boolean;
+  show_time: boolean;
+  show_costs: boolean;
+};
+
+export const DEFAULT_INVITATION_VISIBILITY: InvitationVisibility = {
+  show_rates: false,
+  show_time: true,
+  show_costs: false,
+};
+
+// Client invitations for client portal access (trickles down to all projects)
+export const clientInvitations = pgTable(
+  "client_invitations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    contactId: uuid("contact_id").references(() => clientContacts.id, { onDelete: "set null" }),
+    email: text("email").notNull(),
+    role: text("role").$type<InvitationRole>().notNull().default("viewer"),
+    visibility: jsonb("visibility").$type<InvitationVisibility>().default(DEFAULT_INVITATION_VISIBILITY),
+    invitedBy: text("invited_by").references(() => users.id, { onDelete: "set null" }),
+    token: text("token").notNull().unique(),
+    sentAt: timestamp("sent_at"),
+    viewedAt: timestamp("viewed_at"),
+    acceptedAt: timestamp("accepted_at"),
+    userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("client_invitations_client_id_idx").on(table.clientId),
+    index("client_invitations_email_idx").on(table.email),
+    index("client_invitations_token_idx").on(table.token),
+  ]
+);
+
 // Client contacts
 export const CONTACT_TYPES = ["primary", "billing", "other"] as const;
 export type ContactType = (typeof CONTACT_TYPES)[number];
@@ -272,6 +320,64 @@ export const clientContacts = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => [index("client_contacts_client_id_idx").on(table.clientId)]
+);
+
+// Contact comments (discussion on contacts)
+export const contactComments = pgTable("contact_comments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  contactId: uuid("contact_id")
+    .notNull()
+    .references(() => clientContacts.id, { onDelete: "cascade" }),
+  authorId: text("author_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  content: text("content").notNull(),
+  isShared: boolean("is_shared").default(false),
+  sharedAt: timestamp("shared_at"),
+  sharedBy: text("shared_by").references(() => users.id, { onDelete: "set null" }),
+  isPinned: boolean("is_pinned").default(false),
+  pinnedAt: timestamp("pinned_at"),
+  pinnedBy: text("pinned_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Contact watchers
+export const contactWatchers = pgTable(
+  "contact_watchers",
+  {
+    contactId: uuid("contact_id")
+      .notNull()
+      .references(() => clientContacts.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    reason: text("reason"), // 'creator', 'commenter', 'manual'
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.contactId, t.userId] }),
+  })
+);
+
+// Project-level contact overrides (junction: project ↔ client contact)
+export const projectContacts = pgTable(
+  "project_contacts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    contactId: uuid("contact_id")
+      .notNull()
+      .references(() => clientContacts.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("project_contacts_project_contact_idx").on(table.projectId, table.contactId),
+    index("project_contacts_project_id_idx").on(table.projectId),
+    index("project_contacts_contact_id_idx").on(table.contactId),
+  ]
 );
 
 // Retainer periods — tracks monthly retainer consumption and rollover
@@ -515,6 +621,9 @@ export const taskComments = pgTable("task_comments", {
   isShared: boolean("is_shared").default(false), // false = internal, true = client-visible
   sharedAt: timestamp("shared_at"),
   sharedBy: text("shared_by").references(() => users.id, { onDelete: "set null" }),
+  isPinned: boolean("is_pinned").default(false),
+  pinnedAt: timestamp("pinned_at"),
+  pinnedBy: text("pinned_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -544,6 +653,9 @@ export const projectComments = pgTable("project_comments", {
   isShared: boolean("is_shared").default(false), // false = internal, true = client-visible
   sharedAt: timestamp("shared_at"),
   sharedBy: text("shared_by").references(() => users.id, { onDelete: "set null" }),
+  isPinned: boolean("is_pinned").default(false),
+  pinnedAt: timestamp("pinned_at"),
+  pinnedBy: text("pinned_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -649,7 +761,7 @@ export const invoices = pgTable(
       .notNull()
       .references(() => clients.id, { onDelete: "cascade" }),
     invoiceNumber: text("invoice_number").notNull(), // "INV-2024-001"
-    status: text("status").default("draft"), // draft, sent, viewed, paid
+    status: text("status").default("draft"), // draft, sent, viewed, paid, voided
     isAutoGenerated: boolean("is_auto_generated").default(false), // true for rolling drafts
     dueDate: date("due_date"), // when payment is due
     periodStart: date("period_start").notNull(),
@@ -662,6 +774,7 @@ export const invoices = pgTable(
     sentAt: timestamp("sent_at"),
     viewedAt: timestamp("viewed_at"),
     paidAt: timestamp("paid_at"),
+    voidedAt: timestamp("voided_at"),
     // Stripe payment fields
     stripePaymentIntentId: text("stripe_payment_intent_id"),
     stripeCheckoutSessionId: text("stripe_checkout_session_id"),
@@ -710,6 +823,9 @@ export const invoiceComments = pgTable("invoice_comments", {
   isShared: boolean("is_shared").default(false),
   sharedAt: timestamp("shared_at"),
   sharedBy: text("shared_by").references(() => users.id, { onDelete: "set null" }),
+  isPinned: boolean("is_pinned").default(false),
+  pinnedAt: timestamp("pinned_at"),
+  pinnedBy: text("pinned_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -816,23 +932,6 @@ export const recurringTemplates = pgTable("recurring_templates", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-// Invitation roles for client portal
-export const INVITATION_ROLES = ["viewer", "contributor"] as const;
-export type InvitationRole = (typeof INVITATION_ROLES)[number];
-
-// Visibility settings type for invitations
-export type InvitationVisibility = {
-  show_rates: boolean;
-  show_time: boolean;
-  show_costs: boolean;
-};
-
-export const DEFAULT_INVITATION_VISIBILITY: InvitationVisibility = {
-  show_rates: false,
-  show_time: true,
-  show_costs: false,
-};
-
 // Project invitations for client portal access
 export const projectInvitations = pgTable(
   "project_invitations",
@@ -841,6 +940,7 @@ export const projectInvitations = pgTable(
     projectId: uuid("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
+    contactId: uuid("contact_id").references(() => clientContacts.id, { onDelete: "set null" }),
     email: text("email").notNull(),
     role: text("role").$type<InvitationRole>().notNull().default("viewer"),
     visibility: jsonb("visibility").$type<InvitationVisibility>().default(DEFAULT_INVITATION_VISIBILITY),
@@ -880,11 +980,14 @@ export const projectFiles = pgTable(
     tags: jsonb("tags").$type<string[]>().default([]),
     // Portal visibility - if true, clients can see this file
     isPublic: boolean("is_public").default(false),
+    // File superseding — points to the file this one replaces
+    replacesId: uuid("replaces_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
     index("project_files_project_id_idx").on(table.projectId),
     index("project_files_uploaded_by_idx").on(table.uploadedBy),
+    index("project_files_replaces_id_idx").on(table.replacesId),
   ]
 );
 
@@ -1109,6 +1212,9 @@ export const documentComments = pgTable("document_comments", {
   isShared: boolean("is_shared").default(false),
   sharedAt: timestamp("shared_at"),
   sharedBy: text("shared_by").references(() => users.id, { onDelete: "set null" }),
+  isPinned: boolean("is_pinned").default(false),
+  pinnedAt: timestamp("pinned_at"),
+  pinnedBy: text("pinned_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -1195,6 +1301,9 @@ export const expenseComments = pgTable("expense_comments", {
   isShared: boolean("is_shared").default(false), // false = internal, true = client-visible
   sharedAt: timestamp("shared_at"),
   sharedBy: text("shared_by").references(() => users.id, { onDelete: "set null" }),
+  isPinned: boolean("is_pinned").default(false),
+  pinnedAt: timestamp("pinned_at"),
+  pinnedBy: text("pinned_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -1274,6 +1383,7 @@ export const ACTIVITY_ENTITY_TYPES = [
   "invoice",
   "document",
   "time_entry",
+  "contact",
 ] as const;
 export type ActivityEntityType = (typeof ACTIVITY_ENTITY_TYPES)[number];
 
@@ -1483,6 +1593,7 @@ export const clientsRelations = relations(clients, ({ one, many }) => ({
   invoices: many(invoices),
   comments: many(clientComments),
   contacts: many(clientContacts),
+  invitations: many(clientInvitations),
   retainerPeriods: many(retainerPeriods),
   scopeClients: many(scopeClients),
 }));
@@ -1516,6 +1627,7 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   comments: many(projectComments),
   onboardingItems: many(onboardingItems),
   dataExportRequests: many(dataExportRequests),
+  projectContacts: many(projectContacts),
 }));
 
 export const onboardingItemsRelations = relations(onboardingItems, ({ one }) => ({
@@ -1549,6 +1661,10 @@ export const projectInvitationsRelations = relations(projectInvitations, ({ one 
     fields: [projectInvitations.projectId],
     references: [projects.id],
   }),
+  contact: one(clientContacts, {
+    fields: [projectInvitations.contactId],
+    references: [clientContacts.id],
+  }),
   invitedByUser: one(users, {
     fields: [projectInvitations.invitedBy],
     references: [users.id],
@@ -1569,6 +1685,11 @@ export const projectFilesRelations = relations(projectFiles, ({ one }) => ({
   uploadedByUser: one(users, {
     fields: [projectFiles.uploadedBy],
     references: [users.id],
+  }),
+  replaces: one(projectFiles, {
+    fields: [projectFiles.replacesId],
+    references: [projectFiles.id],
+    relationName: "fileSuperseding",
   }),
 }));
 
@@ -1658,6 +1779,10 @@ export const expenseCommentsRelations = relations(expenseComments, ({ one }) => 
     fields: [expenseComments.sharedBy],
     references: [users.id],
   }),
+  pinnedByUser: one(users, {
+    fields: [expenseComments.pinnedBy],
+    references: [users.id],
+  }),
 }));
 
 export const projectCommentsRelations = relations(projectComments, ({ one }) => ({
@@ -1671,6 +1796,10 @@ export const projectCommentsRelations = relations(projectComments, ({ one }) => 
   }),
   sharedByUser: one(users, {
     fields: [projectComments.sharedBy],
+    references: [users.id],
+  }),
+  pinnedByUser: one(users, {
+    fields: [projectComments.pinnedBy],
     references: [users.id],
   }),
 }));
@@ -1688,12 +1817,83 @@ export const clientCommentsRelations = relations(clientComments, ({ one }) => ({
     fields: [clientComments.sharedBy],
     references: [users.id],
   }),
+  pinnedByUser: one(users, {
+    fields: [clientComments.pinnedBy],
+    references: [users.id],
+  }),
 }));
 
-export const clientContactsRelations = relations(clientContacts, ({ one }) => ({
+export const clientContactsRelations = relations(clientContacts, ({ one, many }) => ({
   client: one(clients, {
     fields: [clientContacts.clientId],
     references: [clients.id],
+  }),
+  comments: many(contactComments),
+  watchers: many(contactWatchers),
+  projectContacts: many(projectContacts),
+  clientInvitations: many(clientInvitations),
+  projectInvitations: many(projectInvitations),
+}));
+
+export const contactCommentsRelations = relations(contactComments, ({ one }) => ({
+  contact: one(clientContacts, {
+    fields: [contactComments.contactId],
+    references: [clientContacts.id],
+  }),
+  author: one(users, {
+    fields: [contactComments.authorId],
+    references: [users.id],
+  }),
+  sharedByUser: one(users, {
+    fields: [contactComments.sharedBy],
+    references: [users.id],
+  }),
+  pinnedByUser: one(users, {
+    fields: [contactComments.pinnedBy],
+    references: [users.id],
+  }),
+}));
+
+export const contactWatchersRelations = relations(contactWatchers, ({ one }) => ({
+  contact: one(clientContacts, {
+    fields: [contactWatchers.contactId],
+    references: [clientContacts.id],
+  }),
+  user: one(users, {
+    fields: [contactWatchers.userId],
+    references: [users.id],
+  }),
+}));
+
+export const projectContactsRelations = relations(projectContacts, ({ one }) => ({
+  project: one(projects, {
+    fields: [projectContacts.projectId],
+    references: [projects.id],
+  }),
+  contact: one(clientContacts, {
+    fields: [projectContacts.contactId],
+    references: [clientContacts.id],
+  }),
+}));
+
+export const clientInvitationsRelations = relations(clientInvitations, ({ one }) => ({
+  client: one(clients, {
+    fields: [clientInvitations.clientId],
+    references: [clients.id],
+  }),
+  contact: one(clientContacts, {
+    fields: [clientInvitations.contactId],
+    references: [clientContacts.id],
+  }),
+  invitedByUser: one(users, {
+    fields: [clientInvitations.invitedBy],
+    references: [users.id],
+    relationName: "clientInvitedBy",
+  }),
+  user: one(users, {
+    fields: [clientInvitations.userId],
+    references: [users.id],
+    relationName: "clientAcceptedUser",
   }),
 }));
 
@@ -1710,6 +1910,10 @@ export const invoiceCommentsRelations = relations(invoiceComments, ({ one }) => 
     fields: [invoiceComments.sharedBy],
     references: [users.id],
   }),
+  pinnedByUser: one(users, {
+    fields: [invoiceComments.pinnedBy],
+    references: [users.id],
+  }),
 }));
 
 export const documentCommentsRelations = relations(documentComments, ({ one }) => ({
@@ -1723,6 +1927,10 @@ export const documentCommentsRelations = relations(documentComments, ({ one }) =
   }),
   sharedByUser: one(users, {
     fields: [documentComments.sharedBy],
+    references: [users.id],
+  }),
+  pinnedByUser: one(users, {
+    fields: [documentComments.pinnedBy],
     references: [users.id],
   }),
 }));
@@ -1927,6 +2135,10 @@ export const taskCommentsRelations = relations(taskComments, ({ one }) => ({
   }),
   sharedByUser: one(users, {
     fields: [taskComments.sharedBy],
+    references: [users.id],
+  }),
+  pinnedByUser: one(users, {
+    fields: [taskComments.pinnedBy],
     references: [users.id],
   }),
 }));

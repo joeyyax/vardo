@@ -23,7 +23,11 @@ function getInitials(name: string): string {
     .slice(0, 2);
 }
 
-export function UserMenu() {
+type UserMenuProps = {
+  collapsed?: boolean;
+};
+
+export function UserMenu({ collapsed }: UserMenuProps) {
   const router = useRouter();
   const { data: session, isPending } = useSession();
 
@@ -41,11 +45,11 @@ export function UserMenu() {
     return (
       <Button
         variant="ghost"
-        className="w-full justify-start gap-2 px-2 py-1.5 h-auto"
+        className={`w-full px-2 py-1.5 h-auto ${collapsed ? "justify-center" : "justify-start gap-2"}`}
         disabled
       >
         <Loader2 className="size-6 animate-spin" />
-        <span className="text-sm text-muted-foreground">Loading...</span>
+        {!collapsed && <span className="text-sm text-muted-foreground">Loading...</span>}
       </Button>
     );
   }
@@ -59,7 +63,7 @@ export function UserMenu() {
       <DropdownMenuTrigger asChild>
         <Button
           variant="ghost"
-          className="w-full justify-start gap-2 px-2 py-1.5 h-auto"
+          className={`w-full px-2 py-1.5 h-auto ${collapsed ? "justify-center" : "justify-start gap-2"}`}
         >
           <Avatar className="size-6">
             <AvatarImage src={user?.image ?? undefined} alt={displayName} />
@@ -67,13 +71,17 @@ export function UserMenu() {
               {getInitials(displayName)}
             </AvatarFallback>
           </Avatar>
-          <div className="flex flex-1 flex-col items-start gap-0 overflow-hidden">
-            <span className="truncate text-sm font-medium">{displayName}</span>
-            <span className="truncate text-xs text-muted-foreground">
-              {email}
-            </span>
-          </div>
-          <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
+          {!collapsed && (
+            <>
+              <div className="flex flex-1 flex-col items-start gap-0 overflow-hidden">
+                <span className="truncate text-sm font-medium">{displayName}</span>
+                <span className="truncate text-xs text-muted-foreground">
+                  {email}
+                </span>
+              </div>
+              <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
+            </>
+          )}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent

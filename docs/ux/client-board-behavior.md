@@ -62,6 +62,18 @@ This model:
 
 ---
 
+## Client-Facing Copy Reference
+
+Use this language in the portal and help text:
+
+> The task board shows progress at a glance. You'll see what's planned, what's in progress, what's waiting, and what's complete.
+>
+> You can comment on tasks, answer questions, upload files, and request new work. If something needs attention, commenting is the fastest way to flag it.
+>
+> Task status is managed by the team so priorities stay clear and consistent. You never need to move tasks yourself.
+
+---
+
 ## Summary
 
 The board is a shared window into work — not a shared control panel.

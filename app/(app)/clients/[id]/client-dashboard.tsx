@@ -16,6 +16,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ClientDialog } from "@/components/clients/client-dialog";
+import { ClientFiles } from "@/components/clients/client-files";
+import { ClientContacts } from "@/components/clients/client-contacts";
+import { ClientInvitations } from "@/components/clients/client-invitations";
 import { ProjectDialog } from "@/components/projects/project-dialog";
 import { RetainerWidget } from "@/components/clients/retainer-widget";
 import { ScopeClientPanel } from "@/components/clients/scope-client-panel";
@@ -238,7 +241,8 @@ export function ClientDashboard({ client: initialClient, orgId }: ClientDashboar
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          <ClientInvitations orgId={orgId} clientId={client.id} />
           <Button
             variant="outline"
             onClick={() => setEditDialogOpen(true)}
@@ -351,6 +355,9 @@ export function ClientDashboard({ client: initialClient, orgId }: ClientDashboar
               billingType={client.billingType}
             />
           )}
+
+          {/* Contacts */}
+          <ClientContacts orgId={orgId} clientId={client.id} />
 
           <div className="grid gap-6 lg:grid-cols-2">
             {/* Active Projects */}
@@ -496,6 +503,9 @@ export function ClientDashboard({ client: initialClient, orgId }: ClientDashboar
               </CardContent>
             </Card>
           )}
+
+          {/* Files across all projects */}
+          <ClientFiles orgId={orgId} clientId={client.id} />
 
           {/* Connected Sites (Scope Clients) */}
           <ScopeClientPanel

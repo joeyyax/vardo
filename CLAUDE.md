@@ -39,9 +39,17 @@ pnpm test             # Run tests
 
 ```
 /app
-  /api/v1/[...routes]   # REST API (all data access)
-  /(app)                # Authenticated routes (track, reports, clients, projects, settings)
-  /(public)             # Public routes (/r/[slug] for reports, /login)
+  /api
+    /v1/organizations/[orgId]/...  # Versioned REST API (authenticated, org-scoped)
+    /auth/[...all]                 # Better Auth handler
+    /cron/                         # Scheduled jobs (send-reports, generate-invoices, recurring-expenses)
+    /webhooks/stripe               # Stripe webhook receiver
+    /portal/                       # Client portal API (external client auth context)
+    /reports/[slug]                # Public report viewing (unauthenticated, token-based)
+    /invitations/[token]           # Public invitation acceptance (unauthenticated)
+    /documents/[token]             # Public document access (unauthenticated, share token)
+  /(app)                           # Authenticated routes (track, reports, clients, projects, settings)
+  /(public)                        # Public routes (/r/[slug] for reports, /login)
 /components
   /ui                   # shadcn components
   /entry                # Entry bar, entry row
@@ -52,6 +60,21 @@ pnpm test             # Run tests
   /auth                 # Better Auth config
   /email                # React Email templates
 ```
+
+### API Route Structure
+
+The `/api/v1/` prefix is for the versioned, authenticated REST API — all org-scoped data access goes here. Routes outside `/api/v1/` serve different purposes with different auth and access patterns:
+
+| Path | Auth | Purpose |
+|------|------|---------|
+| `/api/v1/organizations/...` | Authenticated, org-scoped | Core data API |
+| `/api/auth/` | Framework-managed | Better Auth catch-all |
+| `/api/cron/` | Internal/scheduler | Scheduled background jobs |
+| `/api/webhooks/` | Service-verified | External service callbacks |
+| `/api/portal/` | Client token/session | Client-facing portal |
+| `/api/reports/[slug]` | Unauthenticated | Public shared reports |
+| `/api/invitations/[token]` | Unauthenticated | Invitation acceptance |
+| `/api/documents/[token]` | Unauthenticated | Shared document access |
 
 ## Data Model
 

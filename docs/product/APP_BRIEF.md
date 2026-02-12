@@ -69,10 +69,12 @@ Clients represent work contexts.
 - Every organization includes an **Internal** client
 - Internal work is fully tracked but never invoiced
 
-### Projects  
+### Projects
 Projects represent bounded scopes of work.
 
-- Projects are either Active or Archived
+- Each project moves through a defined lifecycle:
+  Inquiry → Getting Started → Proposal → Agreement → Onboarding → Active → Ongoing → Offboarding
+- Projects never skip phases — they only move through them faster
 - Archiving closes work without deleting history
 - Default views show Active projects only
 
@@ -105,6 +107,18 @@ Search uses **progressive disclosure**:
 - Nothing disappears silently
 
 This keeps search fast, predictable, and trustworthy.
+
+---
+
+## Personal Work
+
+The system must remain useful for solo, personal projects.
+
+- No feature should require a client to exist
+- No workflow should depend on external approval to function
+- Client-facing features layer on top of the core, not replace it
+
+Client collaboration is one mode of operation — not a prerequisite.
 
 ---
 

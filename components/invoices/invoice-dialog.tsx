@@ -4,13 +4,13 @@ import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  BottomSheet,
+  BottomSheetContent,
+  BottomSheetDescription,
+  BottomSheetFooter,
+  BottomSheetHeader,
+  BottomSheetTitle,
+} from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -37,6 +37,16 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   CalendarIcon,
   Check,
   ChevronsUpDown,
@@ -45,6 +55,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format, startOfMonth, endOfMonth, subMonths } from "date-fns";
+import { formatCurrency } from "@/lib/formatting";
 import { z } from "zod";
 
 type Client = {
@@ -95,6 +106,19 @@ export function InvoiceDialog({
   const [clientOpen, setClientOpen] = useState(false);
   const [dateOpen, setDateOpen] = useState(false);
 
+  // Overlap warning state
+  type OverlappingDraft = {
+    id: string;
+    invoiceNumber: string;
+    periodStart: string;
+    periodEnd: string;
+    subtotal: number;
+    client: { id: string; name: string; color: string | null };
+  };
+  const [overlappingDrafts, setOverlappingDrafts] = useState<OverlappingDraft[]>([]);
+  const [showOverlapWarning, setShowOverlapWarning] = useState(false);
+  const [pendingFormData, setPendingFormData] = useState<InvoiceFormData | null>(null);
+
   // Fetch clients when dialog opens
   useEffect(() => {
     async function loadClients() {
@@ -124,7 +148,7 @@ export function InvoiceDialog({
   const clientId = form.watch("clientId");
   const selectedClient = clients.find((c) => c.id === clientId);
 
-  async function onSubmit(data: InvoiceFormData) {
+  async function submitInvoice(data: InvoiceFormData, option?: { force?: boolean; deleteOverlapping?: boolean }) {
     setError(null);
     setIsLoading(true);
 
@@ -137,8 +161,18 @@ export function InvoiceDialog({
           from: format(data.dateFrom, "yyyy-MM-dd"),
           to: format(data.dateTo, "yyyy-MM-dd"),
           includeSummaries: data.includeSummaries,
+          ...(option?.force && { force: true }),
+          ...(option?.deleteOverlapping && { deleteOverlapping: true }),
         }),
       });
+
+      if (response.status === 409) {
+        const responseData = await response.json();
+        setOverlappingDrafts(responseData.overlapping || []);
+        setPendingFormData(data);
+        setShowOverlapWarning(true);
+        return;
+      }
 
       if (!response.ok) {
         const responseData = await response.json();
@@ -154,6 +188,21 @@ export function InvoiceDialog({
     }
   }
 
+  async function onSubmit(data: InvoiceFormData) {
+    await submitInvoice(data);
+  }
+
+  async function handleOverlapOption(option: "replace" | "force") {
+    if (!pendingFormData) return;
+    setShowOverlapWarning(false);
+    await submitInvoice(
+      pendingFormData,
+      option === "replace" ? { deleteOverlapping: true } : { force: true }
+    );
+    setPendingFormData(null);
+    setOverlappingDrafts([]);
+  }
+
   const setQuickRange = (months: number) => {
     const target = subMonths(new Date(), months);
     form.setValue("dateFrom", startOfMonth(target));
@@ -164,17 +213,19 @@ export function InvoiceDialog({
   const dateTo = form.watch("dateTo");
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="squircle sm:max-w-md">
+    <>
+    <BottomSheet open={open} onOpenChange={onOpenChange}>
+      <BottomSheetContent size="lg">
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)}>
-            <DialogHeader>
-              <DialogTitle>Generate Invoice</DialogTitle>
-              <DialogDescription>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col min-h-0 flex-1">
+            <BottomSheetHeader>
+              <BottomSheetTitle>Generate Invoice</BottomSheetTitle>
+              <BottomSheetDescription>
                 Create an invoice from billable time entries.
-              </DialogDescription>
-            </DialogHeader>
+              </BottomSheetDescription>
+            </BottomSheetHeader>
 
+            <div className="flex-1 overflow-y-auto px-6 pb-6">
             <div className="grid gap-5 py-6">
               <FormField
                 control={form.control}
@@ -355,8 +406,9 @@ export function InvoiceDialog({
 
               {error && <p className="text-sm text-destructive">{error}</p>}
             </div>
+            </div>
 
-            <DialogFooter>
+            <BottomSheetFooter>
               <Button
                 type="button"
                 variant="outline"
@@ -374,10 +426,67 @@ export function InvoiceDialog({
                 {isLoading && <Loader2 className="size-4 animate-spin" />}
                 Generate Invoice
               </Button>
-            </DialogFooter>
+            </BottomSheetFooter>
           </form>
         </Form>
-      </DialogContent>
-    </Dialog>
+      </BottomSheetContent>
+    </BottomSheet>
+
+      {/* Overlap warning dialog */}
+      <AlertDialog open={showOverlapWarning} onOpenChange={(open) => {
+        setShowOverlapWarning(open);
+        if (!open) {
+          setPendingFormData(null);
+          setOverlappingDrafts([]);
+        }
+      }}>
+        <AlertDialogContent className="squircle">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Overlapping draft invoices found</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div>
+                <p className="mb-3">
+                  The following draft invoices overlap with the selected period:
+                </p>
+                <ul className="space-y-2">
+                  {overlappingDrafts.map((draft) => (
+                    <li key={draft.id} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
+                      <div>
+                        <span className="font-medium">{draft.invoiceNumber}</span>
+                        <span className="text-muted-foreground ml-2">
+                          {draft.periodStart} – {draft.periodEnd}
+                        </span>
+                      </div>
+                      <span className="font-medium tabular-nums">
+                        {formatCurrency(draft.subtotal)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+            <AlertDialogCancel className="squircle" disabled={isLoading}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="squircle"
+              disabled={isLoading}
+              onClick={() => handleOverlapOption("force")}
+            >
+              Generate anyway
+            </AlertDialogAction>
+            <AlertDialogAction
+              className="squircle bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={isLoading}
+              onClick={() => handleOverlapOption("replace")}
+            >
+              Replace drafts
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

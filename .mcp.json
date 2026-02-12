@@ -7,11 +7,12 @@
         "mcp"
       ]
     },
-    "playwright-brave": {
-      "type": "sse",
-      "url": "http://127.0.0.1:55556/sse",
-      "headers": {
-        "x-playwright-token": "4ykHbtt6QsiZwIpP2mTlMCyHSEWGzdUFw8mhntw1FcQ"
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest", "--extension"],
+      "env": {
+        "PLAYWRIGHT_MCP_EXTENSION_TOKEN":
+          "4ykHbtt6QsiZwIpP2mTlMCyHSEWGzdUFw8mhntw1FcQ"
       }
     }
   }

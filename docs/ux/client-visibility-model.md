@@ -64,6 +64,20 @@ Any change that affects scope, timing, or cost must be explicit.
 
 ---
 
+## Provider Capabilities
+
+Providers can:
+- Create and edit tasks
+- Change task status
+- Reprioritize work
+- Split or merge tasks
+- Manage workflow and sequencing
+- Advance project lifecycle state
+
+Influence from clients happens through communication, not control.
+
+---
+
 ## Why This Exists
 
 Giving clients workflow control:

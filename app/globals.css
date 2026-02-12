@@ -111,13 +111,13 @@
   --chart-3: oklch(0.55 0.12 145);
   --chart-4: oklch(0.7 0.14 35);
   --chart-5: oklch(0.65 0.1 280);
-  --sidebar: oklch(0.98 0.005 75);
+  --sidebar: oklch(0.94 0.015 75);
   --sidebar-foreground: oklch(0.145 0.02 60);
   --sidebar-primary: oklch(0.64 0.17 55);
   --sidebar-primary-foreground: oklch(0.98 0.01 75);
-  --sidebar-accent: oklch(0.94 0.03 75);
+  --sidebar-accent: oklch(0.90 0.03 75);
   --sidebar-accent-foreground: oklch(0.25 0.03 60);
-  --sidebar-border: oklch(0.91 0.02 75);
+  --sidebar-border: oklch(0.88 0.02 75);
   --sidebar-ring: oklch(0.64 0.17 55);
 }
 
@@ -145,7 +145,7 @@
   --chart-3: oklch(0.65 0.12 200);
   --chart-4: oklch(0.7 0.14 35);
   --chart-5: oklch(0.65 0.15 280);
-  --sidebar: oklch(0.18 0.01 60);
+  --sidebar: oklch(0.10 0.01 60);
   --sidebar-foreground: oklch(0.95 0.01 75);
   --sidebar-primary: oklch(0.75 0.15 65);
   --sidebar-primary-foreground: oklch(0.15 0.03 55);
@@ -187,6 +187,19 @@
 }
 }
 
+/* Bottom sheet depth effect — scale down main content when sheet is open */
+html[data-bottom-sheet-open] body {
+  background-color: oklch(0.45 0.02 60);
+}
+
+html[data-bottom-sheet-open] [data-main-content] {
+  transform: scale(0.97);
+  border-top-left-radius: var(--radius-2xl);
+  border-top-right-radius: var(--radius-2xl);
+  overflow: hidden;
+  box-shadow: 0 25px 60px -12px rgba(0, 0, 0, 0.4);
+}
+
 /* Tiptap editor styles */
 .tiptap p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
@@ -211,6 +224,20 @@
     &.rounded-3xl { corner-radius: calc(var(--radius-3xl) * 2); }
     &.rounded-4xl { corner-radius: calc(var(--radius-4xl) * 2); }
     &.rounded-full { corner-radius: 9999px; }
+
+    /* Directional rounding */
+    &.rounded-l-2xl {
+      border-top-left-radius: calc(var(--radius-2xl) * 2);
+      border-bottom-left-radius: calc(var(--radius-2xl) * 2);
+      border-top-right-radius: 0;
+      border-bottom-right-radius: 0;
+    }
+    &.rounded-t-3xl {
+      border-top-left-radius: calc(var(--radius-3xl) * 2);
+      border-top-right-radius: calc(var(--radius-3xl) * 2);
+      border-bottom-left-radius: 0;
+      border-bottom-right-radius: 0;
+    }
   }
 }
 

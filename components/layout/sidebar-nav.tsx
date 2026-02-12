@@ -110,9 +110,10 @@ const navItems: NavItem[] = [
 
 type SidebarNavProps = {
   features?: OrgFeatures;
+  collapsed?: boolean;
 };
 
-export function SidebarNav({ features }: SidebarNavProps) {
+export function SidebarNav({ features, collapsed }: SidebarNavProps) {
   const pathname = usePathname();
 
   // Filter nav items based on enabled features
@@ -139,20 +140,21 @@ export function SidebarNav({ features }: SidebarNavProps) {
               <Link
                 href={item.href}
                 className={cn(
-                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                  "flex items-center rounded-md py-2 text-sm font-medium transition-colors",
                   "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring",
+                  collapsed ? "justify-center px-2" : "gap-3 px-3",
                   isActive
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "text-sidebar-foreground/70"
                 )}
               >
                 <Icon className="size-4 shrink-0" />
-                <span className="truncate">{item.label}</span>
+                {!collapsed && <span className="truncate">{item.label}</span>}
               </Link>
             </TooltipTrigger>
-            <TooltipContent side="right" className="hidden lg:block">
-              {item.description}
+            <TooltipContent side="right" className={collapsed ? "" : "hidden lg:block"}>
+              {collapsed ? item.label : item.description}
             </TooltipContent>
           </Tooltip>
         );

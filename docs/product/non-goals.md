@@ -124,7 +124,47 @@ Designing primarily for abuse degrades the experience for everyone else.
 
 ---
 
+## Behavioral Boundaries
+
+These are behaviors the system intentionally does not support. They are not future roadmap items.
+
+### No Skipping Lifecycle Steps
+
+Projects cannot skip Proposal, Agreement, or Onboarding — even for repeat clients. Projects may move through these steps quickly, but never bypass them.
+
+### No Client-Initiated Work
+
+Clients cannot mark onboarding complete, start active work, or trigger billing. Preparation is collaborative. Starting work is provider-controlled.
+
+### No Inline Contract Editing
+
+Contracts are not collaboratively edited in-place. If changes are needed, a revised agreement is generated.
+
+### No Global Contact Reuse
+
+Contacts do not exist globally across clients. Each client maintains its own contacts and roles.
+
+### No Email-Driven Project Management
+
+Email is a notification layer, not a control surface. Clients cannot approve proposals, change scope, or complete onboarding via email. Decisions happen in the workspace.
+
+### No Implicit Scope Changes
+
+Scope cannot change silently. All changes flow through new proposals, change orders, or explicit agreements. Tasks alone do not redefine scope.
+
+### No Per-Client Workflow Customization
+
+The system favors consistency over bespoke behavior. While projects differ, the workflow does not.
+
+### No "Just This Once" Exceptions
+
+One-off exceptions are avoided. If something truly needs to change, the system is updated — not worked around.
+
+---
+
 ## Principle
 
-> Scope solves the problems it can solve cleanly.  
+> Scope solves the problems it can solve cleanly.
 > Everything else is intentionally left out.
+>
+> Constraints are a feature.

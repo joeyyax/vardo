@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { DetailModal } from "@/components/ui/detail-modal";
 import { IconButton } from "@/components/ui/icon-button";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
@@ -65,33 +65,14 @@ export function ClientDialog({
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [clientData, setClientData] = useState<Client | null>(client || null);
-  const [contacts, setContacts] = useState<ClientContact[]>([]);
-
-  const fetchContacts = useCallback(async (clientId: string) => {
-    try {
-      const res = await fetch(
-        `/api/v1/organizations/${orgId}/clients/${clientId}/contacts`
-      );
-      if (res.ok) {
-        setContacts(await res.json());
-      }
-    } catch (err) {
-      console.error("Error fetching contacts:", err);
-    }
-  }, [orgId]);
 
   // Reset state when dialog opens/closes or client changes
   useEffect(() => {
     if (open) {
       setClientData(client || null);
       setIsEditing(!client); // New clients start in edit mode, existing in view mode
-      if (client) {
-        fetchContacts(client.id);
-      } else {
-        setContacts([]);
-      }
     }
-  }, [open, client, fetchContacts]);
+  }, [open, client]);
 
   const handleSave = () => {
     setIsEditing(false);
@@ -175,15 +156,12 @@ export function ClientDialog({
             client={clientData}
             orgId={orgId}
             allClients={allClients}
-            contacts={contacts}
-            onContactsChange={() => clientData && fetchContacts(clientData.id)}
             onSave={handleSave}
             onCancel={handleCancel}
           />
         ) : clientData ? (
           <ClientDetailView
             client={clientData}
-            contacts={contacts}
             parentClient={
               clientData.parentClientId
                 ? allClients.find((c) => c.id === clientData.parentClientId)

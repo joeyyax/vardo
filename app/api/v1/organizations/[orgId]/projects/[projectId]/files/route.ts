@@ -111,7 +111,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     const body = await request.json();
-    const { name, sizeBytes, mimeType, tags, isPublic } = body;
+    const { name, sizeBytes, mimeType, tags, isPublic, replacesId } = body;
 
     // Validate required fields
     if (!name || typeof name !== "string") {
@@ -133,6 +133,19 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    // Validate replacesId if provided
+    if (replacesId) {
+      const existing = await db.query.projectFiles.findFirst({
+        where: eq(projectFiles.id, replacesId),
+      });
+      if (!existing || existing.projectId !== projectId) {
+        return NextResponse.json(
+          { error: "Invalid replacesId — file not found in this project" },
+          { status: 400 }
+        );
+      }
+    }
+
     // Generate file ID and R2 key
     const fileId = uuidv4();
     const r2Key = generateFileKey(orgId, projectId, fileId, name);
@@ -150,6 +163,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         r2Key,
         tags: Array.isArray(tags) ? tags : [],
         isPublic: isPublic === true,
+        replacesId: replacesId || null,
       })
       .returning();
 

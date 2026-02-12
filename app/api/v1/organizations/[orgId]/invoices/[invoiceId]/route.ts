@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { invoices, invoiceLineItems } from "@/lib/db/schema";
+import { invoices, invoiceLineItems, retainerPeriods } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 
@@ -109,6 +109,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
     }
 
+    if (invoice.status === "voided") {
+      return NextResponse.json(
+        { error: "Cannot modify a voided invoice" },
+        { status: 400 }
+      );
+    }
+
     const body = await request.json();
     const {
       invoiceNumber,
@@ -209,10 +216,34 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
     }
 
-    // Delete invoice (line items will cascade)
-    await db.delete(invoices).where(eq(invoices.id, invoiceId));
+    if (invoice.status === "voided") {
+      return NextResponse.json(
+        { error: "Invoice is already voided" },
+        { status: 400 }
+      );
+    }
 
-    return NextResponse.json({ success: true });
+    if (invoice.status === "draft") {
+      // Hard delete drafts
+      await db.delete(invoices).where(eq(invoices.id, invoiceId));
+      return NextResponse.json({ success: true, action: "deleted" });
+    }
+
+    // Void non-draft invoices (sent, viewed, paid)
+    await db.transaction(async (tx) => {
+      await tx
+        .update(invoices)
+        .set({ status: "voided", voidedAt: new Date() })
+        .where(eq(invoices.id, invoiceId));
+
+      // Un-link any retainer periods tied to this invoice
+      await tx
+        .update(retainerPeriods)
+        .set({ invoiceId: null, status: "active" })
+        .where(eq(retainerPeriods.invoiceId, invoiceId));
+    });
+
+    return NextResponse.json({ success: true, action: "voided" });
   } catch (error) {
     if (error instanceof Error && error.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
