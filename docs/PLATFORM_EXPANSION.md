@@ -403,24 +403,24 @@ Add org-wide views for documents, expenses, etc. Same data, different entry poin
 **Deferred:**
 - `/estimates` page - Would add estimate type to documents if needed
 
-### Phase 9: Housekeeping & Route Separation
+### Phase 9: Housekeeping & Route Separation ✅ COMPLETE
 
 Structural cleanup before building new features.
 
 **Route group split:**
-- [ ] Create `(marketing)` route group with its own layout (header/footer)
-- [ ] Move marketing pages: homepage, pricing, for-you, how-it-works, why, choosing-the-right-tool, faq, privacy, terms
-- [ ] Keep `(public)` for functional unauthenticated routes only (login, `/d/[token]`, `/r/[slug]`, `/invite/[token]`, `/invoices/[id]`)
+- [x] Create `(marketing)` route group with its own layout (header/footer)
+- [x] Move marketing pages: homepage, pricing, for-you, how-it-works, why, choosing-the-right-tool, faq, privacy, terms
+- [x] Keep `(public)` for functional unauthenticated routes only (login, `/d/[token]`, `/r/[slug]`, `/invite/[token]`, `/invoices/[id]`)
 
-### Phase 10: Settings & Management UI
+### Phase 10: Settings & Management UI ✅ COMPLETE
 
 Completing UI for features that already have backend support. Schema and API endpoints exist for all of these — they just need settings pages.
 
 **Settings Pages:**
-- [ ] Task type management (CRUD — define org-level task types)
-- [ ] Task tag management (CRUD — create, color, assign)
-- [ ] Notification preferences (per-entity, per-channel controls)
-- [ ] Organization feature flags UI (toggle modules)
+- [x] Task type management (CRUD — define org-level task types)
+- [x] Task tag management (CRUD — create, color, assign)
+- [x] Notification preferences (per-entity, per-channel controls)
+- [x] Organization feature flags UI (toggle modules)
 
 ### Phase 11: Notifications
 
