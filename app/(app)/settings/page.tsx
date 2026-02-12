@@ -10,6 +10,8 @@ import { ImportWizard } from "@/components/settings/import-wizard";
 import { DangerZone } from "@/components/settings/danger-zone";
 import { NotificationPreferences } from "./notification-preferences";
 import { getStripeStatus } from "@/lib/payments/stripe";
+import { TaskTypesSettings } from "./task-types-settings";
+import { TaskTagsSettings } from "./task-tags-settings";
 
 export default async function SettingsPage() {
   const orgData = await getCurrentOrg();
@@ -49,6 +51,20 @@ export default async function SettingsPage() {
         features={features}
         canEdit={canEdit}
       />
+
+      {/* Task Configuration - only show if PM is enabled */}
+      {features.pm && (
+        <div className="space-y-4">
+          <div>
+            <h2 className="text-lg font-medium">Tasks</h2>
+            <p className="text-sm text-muted-foreground">
+              Configure task types and tags for your organization.
+            </p>
+          </div>
+          <TaskTypesSettings orgId={organization.id} />
+          <TaskTagsSettings orgId={organization.id} />
+        </div>
+      )}
 
       {/* Document Templates - only show if proposals feature is enabled */}
       {features.proposals && (
