@@ -38,7 +38,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     const updates: Record<string, unknown> = {};
     if (name !== undefined) updates.name = name.trim();
-    if (color !== undefined) updates.color = color;
+    if (color !== undefined) updates.color = color || null;
     if (position !== undefined) updates.position = position;
     if (isArchived !== undefined) updates.isArchived = isArchived;
 

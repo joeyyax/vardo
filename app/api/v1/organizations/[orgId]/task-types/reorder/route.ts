@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { taskTypes } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -33,7 +33,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         await tx
           .update(taskTypes)
           .set({ position: item.position })
-          .where(eq(taskTypes.id, item.id));
+          .where(
+            and(eq(taskTypes.id, item.id), eq(taskTypes.organizationId, orgId))
+          );
       }
     });
 
