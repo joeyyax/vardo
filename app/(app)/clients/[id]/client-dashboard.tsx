@@ -574,7 +574,6 @@ export function ClientDashboard({ client: initialClient, orgId, currentUserId }:
         onOpenChange={setDiscussionOpen}
         entityType="client"
         entityId={client.id}
-        entityName={client.name}
         orgId={orgId}
         currentUserId={currentUserId}
       />
