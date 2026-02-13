@@ -1764,6 +1764,18 @@ export const projectExpensesRelations = relations(projectExpenses, ({ one, many 
     references: [users.id],
   }),
   comments: many(expenseComments),
+  watchers: many(expenseWatchers),
+}));
+
+export const expenseWatchersRelations = relations(expenseWatchers, ({ one }) => ({
+  expense: one(projectExpenses, {
+    fields: [expenseWatchers.expenseId],
+    references: [projectExpenses.id],
+  }),
+  user: one(users, {
+    fields: [expenseWatchers.userId],
+    references: [users.id],
+  }),
 }));
 
 export const expenseCommentsRelations = relations(expenseComments, ({ one }) => ({
@@ -2151,6 +2163,18 @@ export const taskWatchersRelations = relations(taskWatchers, ({ one }) => ({
   }),
   user: one(users, {
     fields: [taskWatchers.userId],
+    references: [users.id],
+  }),
+}));
+
+// Project watchers relations
+export const projectWatchersRelations = relations(projectWatchers, ({ one }) => ({
+  project: one(projects, {
+    fields: [projectWatchers.projectId],
+    references: [projects.id],
+  }),
+  user: one(users, {
+    fields: [projectWatchers.userId],
     references: [users.id],
   }),
 }));
