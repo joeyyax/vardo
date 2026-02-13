@@ -16,6 +16,8 @@ import {
   LayoutList,
   Kanban,
   MessageSquare,
+  UserPlus,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,7 +42,10 @@ import { ProjectOffboardingPanel } from "@/components/projects/project-offboardi
 import { StageGuidance } from "@/components/projects/stage-guidance";
 import { ScopeTaskPrompt } from "@/components/projects/scope-task-prompt";
 import { DiscussionSheet } from "@/components/ui/discussion-sheet";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { toast } from "sonner";
 import { formatHoursHuman } from "@/lib/formatting";
 import { getStageCapabilities } from "@/lib/project-stages";
 import type { ProjectStage } from "@/lib/db/schema";
@@ -122,6 +127,7 @@ type ProjectDashboardProps = {
   orgName: string;
   pmEnabled?: boolean;
   currentUserId?: string;
+  isAdmin?: boolean;
 };
 
 type ProjectDocument = {
@@ -173,13 +179,18 @@ function toProjectType(serverProject: ServerProject & { createdAt: Date | string
   };
 }
 
-export function ProjectDashboard({ project: initialProject, orgId, orgName, pmEnabled = false, currentUserId }: ProjectDashboardProps) {
+export function ProjectDashboard({ project: initialProject, orgId, orgName, pmEnabled = false, currentUserId, isAdmin = false }: ProjectDashboardProps) {
   const [project, setProject] = useState(initialProject);
   const [allClients, setAllClients] = useState<{ id: string; name: string; color: string | null }[]>([]);
   const [stats, setStats] = useState<ProjectStats | null>(null);
   const [recentEntries, setRecentEntries] = useState<RecentEntry[]>([]);
   const [projectDocuments, setProjectDocuments] = useState<ProjectDocument[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Team members state
+  const [projectMembers, setProjectMembers] = useState<{ id: string; name: string; email: string; assignedAt: string }[]>([]);
+  const [orgMembers, setOrgMembers] = useState<{ id: string; name: string; email: string; role: string }[]>([]);
+  const [memberPopoverOpen, setMemberPopoverOpen] = useState(false);
 
   // View state (board view only available when PM is enabled)
   const [taskView, setTaskView] = useState<TaskView>(pmEnabled ? "board" : "list");
@@ -193,6 +204,18 @@ export function ProjectDashboard({ project: initialProject, orgId, orgName, pmEn
 
   // Stage guidance → template wizard bridge
   const [guidanceSuggestedTemplateId, setGuidanceSuggestedTemplateId] = useState<string | undefined>();
+
+  const fetchProjectMembers = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/v1/organizations/${orgId}/projects/${project.id}/members`);
+      if (res.ok) {
+        const data = await res.json();
+        setProjectMembers(data.members);
+      }
+    } catch (err) {
+      console.error("Error fetching project members:", err);
+    }
+  }, [orgId, project.id]);
 
   const fetchData = useCallback(async () => {
     setIsLoading(true);
@@ -223,16 +246,64 @@ export function ProjectDashboard({ project: initialProject, orgId, orgName, pmEn
         const docsData = await docsRes.json();
         setProjectDocuments(docsData || []);
       }
+
+      // Also fetch project members
+      await fetchProjectMembers();
     } catch (err) {
       console.error("Error fetching project data:", err);
     } finally {
       setIsLoading(false);
     }
-  }, [orgId, project.id]);
+  }, [orgId, project.id, fetchProjectMembers]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Fetch org members for the add-member selector (admin only)
+  useEffect(() => {
+    if (!isAdmin) return;
+    async function fetchOrgMembers() {
+      try {
+        const res = await fetch(`/api/v1/organizations/${orgId}/members`);
+        if (res.ok) {
+          const data = await res.json();
+          setOrgMembers(data.members);
+        }
+      } catch (err) {
+        console.error("Error fetching org members:", err);
+      }
+    }
+    fetchOrgMembers();
+  }, [isAdmin, orgId]);
+
+  async function handleAddProjectMember(userId: string) {
+    const res = await fetch(`/api/v1/organizations/${orgId}/projects/${project.id}/members`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId }),
+    });
+    if (res.ok) {
+      toast.success("Member added to project");
+      fetchProjectMembers();
+      setMemberPopoverOpen(false);
+    } else {
+      const data = await res.json();
+      toast.error(data.error || "Failed to add member");
+    }
+  }
+
+  async function handleRemoveProjectMember(userId: string) {
+    const res = await fetch(`/api/v1/organizations/${orgId}/projects/${project.id}/members?userId=${userId}`, {
+      method: "DELETE",
+    });
+    if (res.ok) {
+      toast.success("Member removed from project");
+      fetchProjectMembers();
+    } else {
+      toast.error("Failed to remove member");
+    }
+  }
 
   const handleProjectUpdated = useCallback(async () => {
     // Refresh project data
@@ -716,6 +787,77 @@ export function ProjectDashboard({ project: initialProject, orgId, orgName, pmEn
             <ProjectExpenses orgId={orgId} projectId={project.id} />
           )}
 
+          {/* Team Members */}
+          <Card className="squircle">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="text-base">Team</CardTitle>
+              {isAdmin && (
+                <Popover open={memberPopoverOpen} onOpenChange={setMemberPopoverOpen}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className="squircle">
+                      <UserPlus className="mr-1.5 size-3.5" />
+                      Add
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-64 p-0 squircle" align="end">
+                    <Command shouldFilter={false}>
+                      <CommandInput placeholder="Search members..." />
+                      <CommandList>
+                        <CommandEmpty>No available members</CommandEmpty>
+                        <CommandGroup>
+                          {orgMembers
+                            .filter(m => !projectMembers.some(pm => pm.id === m.id))
+                            .filter(m => m.role === "member")
+                            .map(m => (
+                              <CommandItem
+                                key={m.id}
+                                onSelect={() => handleAddProjectMember(m.id)}
+                              >
+                                <span>{m.name || m.email}</span>
+                                <span className="ml-auto text-xs text-muted-foreground">{m.email}</span>
+                              </CommandItem>
+                            ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              )}
+            </CardHeader>
+            <CardContent>
+              {projectMembers.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No members assigned.{isAdmin ? " Add members to give them access to this project." : ""}
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {projectMembers.map(m => (
+                    <div key={m.id} className="flex items-center justify-between text-sm">
+                      <div>
+                        <span className="font-medium">{m.name || "Unnamed"}</span>
+                        <span className="ml-2 text-muted-foreground">{m.email}</span>
+                      </div>
+                      {isAdmin && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleRemoveProjectMember(m.id)}
+                        >
+                          <X className="size-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {isAdmin && (
+                <p className="mt-3 text-xs text-muted-foreground">
+                  Admins and owners have access to all projects automatically.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
           {/* Email Intake */}
           <IntakeEmailSettings
             organizationId={orgId}
@@ -756,7 +898,6 @@ export function ProjectDashboard({ project: initialProject, orgId, orgName, pmEn
         onOpenChange={setDiscussionOpen}
         entityType="project"
         entityId={project.id}
-        entityName={project.name}
         orgId={orgId}
         currentUserId={currentUserId || ""}
       />
