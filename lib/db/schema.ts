@@ -1351,6 +1351,7 @@ export const inboxItems = pgTable(
     receivedAt: timestamp("received_at").notNull(),
     status: text("status").$type<InboxItemStatus>().notNull().default("needs_review"),
     convertedExpenseId: uuid("converted_expense_id").references(() => projectExpenses.id, { onDelete: "set null" }),
+    convertedTo: text("converted_to").$type<"expense" | "file" | "discussion" | "task" | "transfer">(),
     // Entity association (set when email is sent to a client/project intake address)
     clientId: uuid("client_id").references(() => clients.id, { onDelete: "set null" }),
     projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),

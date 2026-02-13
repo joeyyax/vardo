@@ -125,6 +125,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       .set({
         status: "converted",
         convertedExpenseId: expense.id,
+        convertedTo: "expense",
         updatedAt: new Date(),
       })
       .where(eq(inboxItems.id, itemId));

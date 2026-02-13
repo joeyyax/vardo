@@ -19,6 +19,7 @@ export type InboxItem = {
   receivedAt: string;
   status: "needs_review" | "converted" | "informational" | "discarded";
   convertedExpenseId: string | null;
+  convertedTo: "expense" | "file" | "discussion" | "task" | "transfer" | null;
   convertedExpense: {
     id: string;
     description: string;
