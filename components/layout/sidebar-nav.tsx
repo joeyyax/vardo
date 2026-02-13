@@ -15,7 +15,6 @@ import {
   Users,
   Folder,
   ListTodo,
-  Settings,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -114,13 +113,6 @@ const navItems: NavItem[] = [
     href: "/notifications",
     icon: Bell,
     description: "View all notifications",
-  },
-  {
-    label: "Settings",
-    href: "/settings",
-    icon: Settings,
-    description: "Organization settings",
-    // Always visible
   },
 ];
 
