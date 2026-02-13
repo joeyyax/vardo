@@ -29,7 +29,6 @@ export default async function TeamPage() {
         orgName={organization.name}
         isAdmin={isAdmin}
         currentUserId={session.user.id}
-        currentRole={membership.role}
       />
     </div>
   );

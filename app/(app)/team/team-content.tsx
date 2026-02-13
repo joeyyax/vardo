@@ -75,7 +75,6 @@ interface TeamContentProps {
   orgName: string;
   isAdmin: boolean;
   currentUserId: string;
-  currentRole: string;
 }
 
 // --- Helpers ---
@@ -102,7 +101,6 @@ export function TeamContent({
   orgName,
   isAdmin,
   currentUserId,
-  currentRole,
 }: TeamContentProps) {
   // Members
   const [members, setMembers] = useState<Member[]>([]);
