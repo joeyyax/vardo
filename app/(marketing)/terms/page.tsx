@@ -2,6 +2,8 @@ import { Section } from "@/components/marketing/section";
 
 export const metadata = {
   title: "Terms of Service",
+  description:
+    "Terms governing your use of Scope. Written to be clear, not intimidating.",
 };
 
 export default function TermsPage() {
