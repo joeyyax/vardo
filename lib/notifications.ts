@@ -7,12 +7,11 @@ import {
   expenseWatchers,
   users,
   tasks,
-  projects,
   type NotificationType,
 } from "@/lib/db/schema";
 import { eq, and, ne } from "drizzle-orm";
 import { sendEmail, isEmailConfigured } from "@/lib/email/send";
-import { TaskAssignmentEmail } from "@/lib/email/templates/task-assignment";
+import { NotificationEmail } from "@/lib/email/templates/notification";
 
 type CreateNotificationParams = {
   userId: string;
@@ -63,6 +62,17 @@ export async function createNotification(params: CreateNotificationParams) {
         content,
       })
       .returning();
+
+    // Send email notification (fire-and-forget)
+    if (notification) {
+      sendNotificationEmail({
+        notificationId: notification.id,
+        userId,
+        type,
+        content,
+        taskId,
+      }).catch((err) => console.error("Error sending notification email:", err));
+    }
 
     return notification;
   } catch (error) {
@@ -136,66 +146,88 @@ export async function notifyAssignment(params: {
     content: `${actorName} assigned you to "${taskName}"`,
   });
 
-  // Send email notification (fire-and-forget)
-  sendAssignmentEmail({ assigneeId, taskId, taskName, actorName }).catch(
-    (err) => console.error("Error sending assignment email:", err)
-  );
-
   return notification;
 }
 
 /**
- * Send assignment email to the assignee if email is configured and enabled.
+ * Send notification email to a user. Fire-and-forget.
  */
-async function sendAssignmentEmail(params: {
-  assigneeId: string;
-  taskId: string;
-  taskName: string;
-  actorName: string;
+async function sendNotificationEmail(params: {
+  notificationId: string;
+  userId: string;
+  type: NotificationType;
+  content: string;
+  taskId?: string;
 }) {
   if (!isEmailConfigured()) return;
 
-  const { assigneeId, taskId, taskName, actorName } = params;
+  const { notificationId, userId, type, content, taskId } = params;
 
   // Check if user has email notifications enabled
   const prefs = await db.query.notificationPreferences.findFirst({
-    where: eq(notificationPreferences.userId, assigneeId),
+    where: eq(notificationPreferences.userId, userId),
   });
   if (prefs?.emailEnabled === false) return;
 
-  // Get assignee email
-  const assignee = await db.query.users.findFirst({
-    where: eq(users.id, assigneeId),
+  // Get user email
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, userId),
     columns: { email: true },
   });
-  if (!assignee?.email) return;
+  if (!user?.email) return;
 
-  // Get task → project info for the email
-  const task = await db.query.tasks.findFirst({
-    where: eq(tasks.id, taskId),
-    columns: { projectId: true },
-  });
-  if (!task) return;
-
-  const project = await db.query.projects.findFirst({
-    where: eq(projects.id, task.projectId),
-    columns: { id: true, name: true },
-  });
-  const projectName = project?.name || "Unknown project";
-
+  // Build action URL
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-  const taskUrl = `${baseUrl}/projects/${task.projectId}`;
+  let actionUrl = baseUrl;
+  if (taskId) {
+    const task = await db.query.tasks.findFirst({
+      where: eq(tasks.id, taskId),
+      columns: { projectId: true },
+    });
+    if (task) {
+      actionUrl = `${baseUrl}/projects/${task.projectId}?task=${taskId}`;
+    }
+  }
+
+  // Subject line by type
+  const subjectMap: Record<string, string> = {
+    assigned: "You were assigned to a task",
+    comment: "New comment on a task",
+    status_changed: "Task status changed",
+    blocker_resolved: "Blocker resolved",
+    client_comment: "Client commented on a task",
+    mentioned: "You were mentioned",
+    edit_requested: "Edit requested",
+  };
+  const subject = subjectMap[type] || "New notification";
+
+  // Heading by type
+  const headingMap: Record<string, string> = {
+    assigned: "Task assigned to you",
+    comment: "New comment",
+    status_changed: "Status changed",
+    blocker_resolved: "Blocker resolved",
+    client_comment: "Client comment",
+    mentioned: "You were mentioned",
+    edit_requested: "Edit requested",
+  };
+  const emailHeading = headingMap[type] || "Notification";
 
   await sendEmail({
-    to: assignee.email,
-    subject: `${actorName} assigned you to "${taskName}"`,
-    react: TaskAssignmentEmail({
-      actorName,
-      taskName,
-      projectName,
-      taskUrl,
+    to: user.email,
+    subject,
+    react: NotificationEmail({
+      heading: emailHeading,
+      content,
+      actionUrl,
     }),
   });
+
+  // Mark notification as email sent
+  await db
+    .update(notifications)
+    .set({ emailSent: true })
+    .where(eq(notifications.id, notificationId));
 }
 
 /**
