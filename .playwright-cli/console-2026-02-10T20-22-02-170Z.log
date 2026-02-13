@@ -1,2 +1,0 @@
-[     443ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3000/api/v1/bug-reports?organizationId=d1ecadf0-f4df-4162-8091-7500683fbd4c&projectId=21b44aab-584d-47b8-9f0f-594aab0794c9:0
-[     533ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3000/api/v1/bug-reports?organizationId=d1ecadf0-f4df-4162-8091-7500683fbd4c&projectId=21b44aab-584d-47b8-9f0f-594aab0794c9:0

@@ -22,15 +22,15 @@ type SendEmailResult = {
 };
 
 /**
- * Check if email sending is configured (Resend API key present).
+ * Check if email sending is configured (MailPace API token present).
  */
 export function isEmailConfigured(): boolean {
-  return !!process.env.RESEND_API_KEY;
+  return !!process.env.MAILPACE_API_TOKEN;
 }
 
 /**
- * Send an email via Resend.
- * Returns { success, emailId } — emailId is the Resend message ID on success.
+ * Send an email via MailPace.
+ * Returns { success, emailId } — emailId is the MailPace message ID on success.
  * When context is provided, the send is logged to email_sends for delivery tracking.
  * Errors are logged but not thrown — email should never block business logic.
  */
@@ -44,23 +44,37 @@ export async function sendEmail(
   }
 
   try {
-    const { Resend } = await import("resend");
-    const resend = new Resend(process.env.RESEND_API_KEY);
-
     const html = await render(params.react);
 
     const fromAddress =
-      params.from || process.env.EMAIL_FROM || "notifications@joeyyax.com";
+      params.from || process.env.EMAIL_FROM || "Scope <noreply@usescope.net>";
 
-    const response = await resend.emails.send({
-      from: fromAddress,
-      to: Array.isArray(params.to) ? params.to : [params.to],
-      subject: params.subject,
-      html,
-      replyTo: params.replyTo,
+    const recipients = Array.isArray(params.to) ? params.to : [params.to];
+
+    const response = await fetch("https://app.mailpace.com/api/v1/send", {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "MailPace-Server-Token": process.env.MAILPACE_API_TOKEN!,
+      },
+      body: JSON.stringify({
+        from: fromAddress,
+        to: recipients.join(", "),
+        subject: params.subject,
+        htmlbody: html,
+        ...(params.replyTo ? { replyto: params.replyTo } : {}),
+      }),
     });
 
-    const emailId = response.data?.id;
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error("MailPace send error:", response.status, errorBody);
+      return { success: false };
+    }
+
+    const result = await response.json();
+    const emailId = result.id ? String(result.id) : undefined;
 
     // Log to email_sends when context is provided
     if (context && emailId) {
@@ -68,11 +82,10 @@ export async function sendEmail(
         const { db } = await import("@/lib/db");
         const { emailSends } = await import("@/lib/db/schema");
 
-        const recipients = Array.isArray(params.to) ? params.to : [params.to];
         for (const recipient of recipients) {
           await db.insert(emailSends).values({
             organizationId: context.organizationId,
-            resendEmailId: recipients.length === 1
+            externalEmailId: recipients.length === 1
               ? emailId
               : `${emailId}:${recipient}`,
             entityType: context.entityType,
@@ -88,7 +101,7 @@ export async function sendEmail(
       }
     }
 
-    return { success: true, emailId: emailId ?? undefined };
+    return { success: true, emailId };
   } catch (error) {
     console.error("Error sending email:", error);
     return { success: false };

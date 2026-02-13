@@ -82,6 +82,23 @@ It removes ambiguity instead of adding features.
 
 ---
 
+## How This Is Built
+
+Scope is independently built and self-funded.
+
+There is no venture capital, no growth mandate, no pressure to expand into markets that don't fit.
+
+This matters because:
+- Pricing stays predictable — no per-seat charges, no feature gating, no surprise paywalls
+- The product stays focused — features serve the existing audience, not investor milestones
+- The incentives are aligned — Scope succeeds when users succeed, not when usage metrics grow
+
+This isn't a pitch. It's a structural decision that shapes every other decision.
+
+Users who've been burned by tools that got acquired, repriced, or pivoted upmarket will recognize this immediately. It doesn't need to be loud — it just needs to be visible.
+
+---
+
 ## Lifecycle Framing
 
 Client work follows a natural sequence:
@@ -93,7 +110,7 @@ Client work follows a natural sequence:
 
 This system respects that reality.
 
-Work does not start until it’s agreed.
+Work does not start until it's agreed.
 Scope does not change without intention.
 Everyone always knows where things stand.
 
@@ -158,7 +175,7 @@ Avoid urgency or pressure.
 
 ## What to Avoid on the Homepage
 
-- Buzzwords (“all-in-one”, “AI-powered”, “scale your business”)
+- Buzzwords ("all-in-one", "AI-powered", "scale your business")
 - Competitive comparisons
 - Overly detailed feature explanations
 - Sales-driven language
@@ -172,6 +189,6 @@ The homepage should invite the right people and gently filter out the rest.
 
 The homepage should answer one question:
 
-**“Does this feel like it was built by someone who understands my work?”**
+**"Does this feel like it was built by someone who understands my work?"**
 
 If the answer is yes, the right users will keep reading.

@@ -121,7 +121,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       })
       .returning();
 
-    // Mark as sent immediately (TODO: actual email sending via Resend)
+    // Mark as sent immediately (TODO: actual email sending via MailPace)
     await db
       .update(clientInvitations)
       .set({ sentAt: new Date() })

@@ -17,6 +17,9 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { authClient } from "@/lib/auth/client";
 import { PersonalPreferences } from "@/app/(app)/settings/personal-preferences";
 import { NotificationPreferences } from "@/app/(app)/settings/notification-preferences";
+import { PasswordSection } from "./password-section";
+import { TwoFactorSection } from "./two-factor-section";
+import { PasskeySection } from "./passkey-section";
 
 type ProfileContentProps = {
   user: {
@@ -24,6 +27,8 @@ type ProfileContentProps = {
     name: string;
     email: string;
     image: string | null;
+    twoFactorEnabled: boolean;
+    hasPassword: boolean;
   };
 };
 
@@ -137,50 +142,21 @@ export function ProfileContent({ user }: ProfileContentProps) {
         </CardContent>
       </Card>
 
-      {/* Account Section */}
+      {/* Security Section */}
       <Card>
         <CardHeader>
-          <CardTitle>Account</CardTitle>
+          <CardTitle>Security</CardTitle>
           <CardDescription>
             Manage your account security and authentication.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">Password</p>
-              <p className="text-sm text-muted-foreground">
-                Change your password or set one if using OAuth.
-              </p>
-            </div>
-            <Button variant="outline" disabled>
-              Change password
-            </Button>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">Two-factor authentication</p>
-              <p className="text-sm text-muted-foreground">
-                Add an extra layer of security to your account.
-              </p>
-            </div>
-            <Button variant="outline" disabled>
-              Configure 2FA
-            </Button>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">Passkeys</p>
-              <p className="text-sm text-muted-foreground">
-                Manage passkeys for passwordless sign-in.
-              </p>
-            </div>
-            <Button variant="outline" disabled>
-              Manage passkeys
-            </Button>
-          </div>
+          <PasswordSection hasPassword={user.hasPassword} />
+          <TwoFactorSection
+            enabled={user.twoFactorEnabled}
+            hasPassword={user.hasPassword}
+          />
+          <PasskeySection />
         </CardContent>
       </Card>
 

@@ -73,7 +73,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             to: recipient,
             subject: emailData.subject,
             react: emailData.react,
-            from: `${organization.name} <${process.env.EMAIL_FROM || "notifications@joeyyax.com"}>`,
+            from: `${organization.name} <${process.env.EMAIL_FROM || "noreply@usescope.net"}>`,
           },
           {
             organizationId: orgId,

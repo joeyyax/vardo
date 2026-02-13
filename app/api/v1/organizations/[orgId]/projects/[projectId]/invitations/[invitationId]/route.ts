@@ -166,7 +166,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       .where(eq(projectInvitations.id, invitationId))
       .returning();
 
-    // TODO: If resend is true, send invitation email via Resend
+    // TODO: If resend is true, send invitation email via MailPace
 
     return NextResponse.json(updated);
   } catch (error) {

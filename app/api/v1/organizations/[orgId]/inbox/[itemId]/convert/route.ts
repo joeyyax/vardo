@@ -113,7 +113,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         vendor: vendor?.trim() || null,
         status: status || "paid",
         source: "email",
-        externalId: item.resendEmailId,
+        externalId: item.externalEmailId,
         receiptFileId,
         createdBy: session.user.id,
       })

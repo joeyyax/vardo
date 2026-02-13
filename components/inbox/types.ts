@@ -12,7 +12,7 @@ export type InboxItemFile = {
 export type InboxItem = {
   id: string;
   organizationId: string;
-  resendEmailId: string | null;
+  externalEmailId: string | null;
   fromAddress: string | null;
   fromName: string | null;
   subject: string | null;

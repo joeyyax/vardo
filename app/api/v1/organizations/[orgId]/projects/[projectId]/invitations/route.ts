@@ -119,7 +119,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         .where(eq(projectInvitations.id, existingInvitation.id))
         .returning();
 
-      // TODO: Send invitation email via Resend
+      // TODO: Send invitation email via MailPace
 
       return NextResponse.json(updated);
     }
@@ -148,7 +148,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       inviteeRole: invitationRole,
     });
 
-    // TODO: Send invitation email via Resend
+    // TODO: Send invitation email via MailPace
     // For now, just mark as sent
     await db
       .update(projectInvitations)

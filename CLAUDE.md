@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Time tracking app for freelancers and small teams. Manual entry (no timer), keyboard-first UX, API-driven. Replacing Toggl with something focused.
 
-See `docs/APP_BRIEF.md` for full design spec.
+See `docs/product/APP_BRIEF.md` for full design spec.
 
 ## Tech Stack
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Resend } from "resend";
+import crypto from "crypto";
 import { db } from "@/lib/db";
 import { inboxItems, inboxItemFiles } from "@/lib/db/schema";
 import {
@@ -9,8 +9,6 @@ import {
   type IntakeEntity,
 } from "@/lib/intake-email";
 import { uploadBuffer } from "@/lib/r2";
-
-const resend = new Resend(process.env.RESEND_API_KEY);
 
 // MIME types we accept (PDFs and images per design spec)
 const ACCEPTED_MIME_TYPES = new Set([
@@ -22,61 +20,66 @@ const ACCEPTED_MIME_TYPES = new Set([
 ]);
 
 /**
- * POST /api/webhooks/resend-inbound
- * Receives inbound email events from Resend.
+ * POST /api/webhooks/mailpace-inbound
+ * Receives inbound email events from MailPace.
  */
 export async function POST(request: NextRequest) {
-  // Verify webhook signature if secret is configured
-  const webhookSecret = process.env.RESEND_WEBHOOK_SECRET;
-  if (webhookSecret) {
-    const svixId = request.headers.get("svix-id");
-    const svixTimestamp = request.headers.get("svix-timestamp");
-    const svixSignature = request.headers.get("svix-signature");
+  const payload = await request.text();
 
-    if (!svixId || !svixTimestamp || !svixSignature) {
+  // Verify Ed25519 signature if public key is configured
+  const publicKey = process.env.MAILPACE_WEBHOOK_PUBLIC_KEY;
+  if (publicKey) {
+    const signature = request.headers.get("X-MailPace-Signature");
+    if (!signature) {
       return NextResponse.json(
-        { error: "Missing webhook signature headers" },
+        { error: "Missing webhook signature" },
         { status: 400 }
       );
     }
 
     try {
-      const payload = await request.text();
-      resend.webhooks.verify({
-        payload,
-        headers: {
-          id: svixId,
-          timestamp: svixTimestamp,
-          signature: svixSignature,
+      const isValid = crypto.verify(
+        null,
+        Buffer.from(payload),
+        {
+          key: Buffer.from(publicKey, "base64"),
+          format: "der",
+          type: "spki",
         },
-        webhookSecret,
-      });
-      // Parse the verified payload
-      const event = JSON.parse(payload);
-      return await handleEvent(event);
+        Buffer.from(signature, "base64")
+      );
+
+      if (!isValid) {
+        return NextResponse.json(
+          { error: "Invalid webhook signature" },
+          { status: 400 }
+        );
+      }
     } catch {
       return NextResponse.json(
-        { error: "Invalid webhook signature" },
+        { error: "Signature verification failed" },
         { status: 400 }
       );
     }
   }
 
-  // No secret configured — parse body directly (dev mode)
-  const event = await request.json();
-  return await handleEvent(event);
-}
-
-async function handleEvent(event: ResendInboundEvent) {
-  if (event.type !== "email.received") {
-    return NextResponse.json({ received: true });
+  let data: MailPaceInboundPayload;
+  try {
+    data = JSON.parse(payload);
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
+  return await handleInbound(data);
+}
+
+async function handleInbound(data: MailPaceInboundPayload) {
   try {
-    const { data } = event;
+    // `to` is a string, may contain multiple comma-separated addresses
+    const recipients = data.to.split(",").map((addr) => addr.trim());
 
     // Resolve entity (org, client, or project) from recipient addresses
-    const entity = await resolveEntityFromRecipients(data.to);
+    const entity = await resolveEntityFromRecipients(recipients);
     if (!entity) {
       // No matching entity — silently ignore
       return NextResponse.json({ received: true });
@@ -85,17 +88,9 @@ async function handleEvent(event: ResendInboundEvent) {
     // Parse sender info
     const { name: fromName, address: fromAddress } = parseEmailAddress(data.from);
 
-    // Fetch attachment metadata from Resend
-    const attachmentResponse = await resend.emails.receiving.attachments.list({
-      emailId: data.email_id,
-    });
-
-    // SDK returns { data: { object: 'list', data: Attachment[] } | null }
-    const attachmentList = attachmentResponse.data?.data ?? [];
-
-    // Filter to accepted MIME types only
-    const validAttachments = attachmentList.filter(
-      (att) => ACCEPTED_MIME_TYPES.has(att.content_type)
+    // Filter attachments to accepted MIME types (arrive inline as base64)
+    const validAttachments = (data.attachments ?? []).filter(
+      (att) => ACCEPTED_MIME_TYPES.has(att.contentType)
     );
 
     if (validAttachments.length === 0) {
@@ -106,11 +101,11 @@ async function handleEvent(event: ResendInboundEvent) {
     // Build inbox item values with entity association
     const inboxValues: typeof inboxItems.$inferInsert = {
       organizationId: entity.orgId,
-      resendEmailId: data.email_id,
+      externalEmailId: data.messageId || null,
       fromAddress,
       fromName,
       subject: data.subject || null,
-      receivedAt: new Date(data.created_at),
+      receivedAt: new Date(),
       status: "needs_review",
     };
 
@@ -128,26 +123,23 @@ async function handleEvent(event: ResendInboundEvent) {
       .values(inboxValues)
       .returning();
 
-    // Download each attachment, upload to R2, and create file records
+    // Process each attachment (already inline as base64)
     for (const attachment of validAttachments) {
       try {
-        const response = await fetch(attachment.download_url);
-        if (!response.ok) continue;
-
-        const buffer = Buffer.from(await response.arrayBuffer());
+        const buffer = Buffer.from(attachment.content, "base64");
         const safeFilename = (attachment.filename || "attachment").replace(
           /[^a-zA-Z0-9._-]/g,
           "_"
         );
         const r2Key = `${entity.orgId}/inbox/${inboxItem.id}/${safeFilename}`;
 
-        await uploadBuffer(r2Key, buffer, attachment.content_type);
+        await uploadBuffer(r2Key, buffer, attachment.contentType);
 
         await db.insert(inboxItemFiles).values({
           inboxItemId: inboxItem.id,
           name: attachment.filename || "attachment",
-          sizeBytes: attachment.size ?? buffer.length,
-          mimeType: attachment.content_type,
+          sizeBytes: buffer.length,
+          mimeType: attachment.contentType,
           r2Key,
           source: "attachment",
         });
@@ -248,21 +240,18 @@ function parseEmailAddress(from: string): { name: string | null; address: string
   return { name: null, address: from.trim() };
 }
 
-// Types for Resend inbound webhook payload
-type ResendInboundEvent = {
-  type: string;
-  created_at: string;
-  data: {
-    email_id: string;
-    created_at: string;
-    from: string;
-    to: string[];
-    subject: string;
-    html?: string;
-    attachments: {
-      id: string;
-      filename: string;
-      content_type: string;
-    }[];
-  };
+// Types for MailPace inbound webhook payload
+type MailPaceInboundPayload = {
+  from: string;
+  to: string;
+  subject: string;
+  html?: string;
+  text?: string;
+  messageId?: string;
+  attachments?: {
+    filename: string;
+    content: string; // base64-encoded
+    contentType: string;
+  }[];
+  headers?: unknown[];
 };

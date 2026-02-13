@@ -208,7 +208,7 @@ const EMAIL_ENTITY_TO_ACTIVITY_ENTITY: Record<EmailSendEntityType, ActivityEntit
 
 /**
  * Log an email delivery event as an activity.
- * Called by the Resend delivery webhook when email status changes.
+ * Called by the delivery webhook when email status changes.
  */
 export async function logEmailEvent(params: {
   emailSendId: string;

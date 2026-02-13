@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { reportConfigs, timeEntries, organizations } from "@/lib/db/schema";
 import { eq, and, gte, lte, desc } from "drizzle-orm";
-import { Resend } from "resend";
+import { render } from "@react-email/components";
 import { WeeklyReportEmail } from "@/lib/email/templates/weekly-report";
 import {
   startOfWeek,
@@ -11,8 +11,6 @@ import {
   getDay,
   getHours,
 } from "date-fns";
-
-const resend = new Resend(process.env.RESEND_API_KEY);
 
 type SendResult = {
   configId: string;
@@ -179,23 +177,37 @@ async function sendReport(
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
     const reportUrl = `${baseUrl}/r/${config.slug}?from=${reportData.periodStart}&to=${reportData.periodEnd}`;
 
+    const html = await render(
+      WeeklyReportEmail({
+        organizationName: organization.name,
+        reportTitle,
+        periodStart: reportData.periodStart,
+        periodEnd: reportData.periodEnd,
+        totalMinutes: reportData.totalMinutes,
+        totalBillable: config.showRates ? reportData.totalBillable : undefined,
+        entryCount: reportData.entryCount,
+        projectBreakdown: reportData.projectBreakdown,
+        reportUrl,
+        showRates: config.showRates ?? false,
+      })
+    );
+
+    const fromAddress = `${organization.name} <${process.env.EMAIL_FROM || "reports@usescope.net"}>`;
+
     // Send to each recipient
     for (const recipient of recipients) {
-      await resend.emails.send({
-        from: `${organization.name} <reports@${process.env.RESEND_DOMAIN || "resend.dev"}>`,
-        to: recipient,
-        subject: `Weekly Time Report: ${reportTitle}`,
-        react: WeeklyReportEmail({
-          organizationName: organization.name,
-          reportTitle,
-          periodStart: reportData.periodStart,
-          periodEnd: reportData.periodEnd,
-          totalMinutes: reportData.totalMinutes,
-          totalBillable: config.showRates ? reportData.totalBillable : undefined,
-          entryCount: reportData.entryCount,
-          projectBreakdown: reportData.projectBreakdown,
-          reportUrl,
-          showRates: config.showRates ?? false,
+      await fetch("https://app.mailpace.com/api/v1/send", {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          "MailPace-Server-Token": process.env.MAILPACE_API_TOKEN!,
+        },
+        body: JSON.stringify({
+          from: fromAddress,
+          to: recipient,
+          subject: `Weekly Time Report: ${reportTitle}`,
+          htmlbody: html,
         }),
       });
     }

@@ -211,7 +211,7 @@ async function sendLifecycleEmail(
           to: recipient,
           subject: emailData.subject,
           react: emailData.react,
-          from: `${org.name} <${process.env.EMAIL_FROM || "notifications@joeyyax.com"}>`,
+          from: `${org.name} <${process.env.EMAIL_FROM || "noreply@usescope.net"}>`,
         },
         {
           organizationId,
