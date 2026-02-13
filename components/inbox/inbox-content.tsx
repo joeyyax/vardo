@@ -212,7 +212,7 @@ export function InboxContent({ orgId }: InboxContentProps) {
                   </span>
                 </TableCell>
                 <TableCell>
-                  <StatusBadge status={item.status} />
+                  <StatusBadge status={item.status} convertedTo={item.convertedTo} />
                 </TableCell>
               </TableRow>
             ))}
@@ -235,7 +235,7 @@ export function InboxContent({ orgId }: InboxContentProps) {
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status, convertedTo }: { status: string; convertedTo?: string | null }) {
   switch (status) {
     case "needs_review":
       return (
@@ -246,9 +246,10 @@ function StatusBadge({ status }: { status: string }) {
       );
     case "converted":
       return (
-        <Badge variant="default" className="gap-1 bg-green-600 hover:bg-green-700">
-          <CheckCircle2 className="size-3" />
-          Converted
+        <Badge variant="secondary" className="bg-green-100 text-green-700">
+          {convertedTo
+            ? `\u2192 ${convertedTo.charAt(0).toUpperCase() + convertedTo.slice(1)}`
+            : "Converted"}
         </Badge>
       );
     case "informational":

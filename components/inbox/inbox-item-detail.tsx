@@ -11,17 +11,31 @@ import {
   Info,
   Trash2,
   ExternalLink,
-  Receipt,
   Cloud,
   Building2,
   FolderKanban,
+  MessageSquare,
+  ListTodo,
+  ArrowRightLeft,
+  FolderOpen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DetailModal } from "@/components/ui/detail-modal";
 import { IconButton } from "@/components/ui/icon-button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
 import { InboxConvertForm } from "./inbox-convert-form";
+import { InboxConvertFileForm } from "./inbox-convert-file-form";
+import { InboxConvertDiscussionForm } from "./inbox-convert-discussion-form";
+import { InboxConvertTaskForm } from "./inbox-convert-task-form";
+import { InboxTransferForm } from "./inbox-transfer-form";
 import type { InboxItem } from "./types";
 
 type InboxItemDetailProps = {
@@ -39,7 +53,7 @@ export function InboxItemDetail({
   onOpenChange,
   onItemUpdated,
 }: InboxItemDetailProps) {
-  const [showConvertForm, setShowConvertForm] = useState(false);
+  const [convertType, setConvertType] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
 
   async function updateStatus(status: string) {
@@ -71,10 +85,10 @@ export function InboxItemDetail({
   }
 
   function handleConverted() {
-    setShowConvertForm(false);
+    setConvertType(null);
     onItemUpdated();
     onOpenChange(false);
-    toast.success("Expense created from inbox item");
+    toast.success("Inbox item converted");
   }
 
   async function handleViewFile(fileId: string) {
@@ -97,11 +111,6 @@ export function InboxItemDetail({
 
   const actions = isActionable ? (
     <>
-      <IconButton
-        icon={Receipt}
-        tooltip="Create Expense"
-        onClick={() => setShowConvertForm(!showConvertForm)}
-      />
       <IconButton
         icon={Info}
         tooltip="Mark Informational"
@@ -198,12 +207,20 @@ export function InboxItemDetail({
         </div>
 
         {/* Status info for non-actionable items */}
-        {item.status === "converted" && item.convertedExpense && (
+        {item.status === "converted" && (
           <div className="rounded-md border border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/50 p-3">
             <div className="flex items-center gap-2 text-sm text-green-700 dark:text-green-400">
               <CheckCircle2 className="size-4" />
               <span>
-                Converted to expense: {item.convertedExpense.description}
+                {item.convertedTo === "expense" && item.convertedExpense
+                  ? `Converted to expense: ${item.convertedExpense.description}`
+                  : item.convertedTo === "file"
+                    ? "Files saved to project"
+                    : item.convertedTo === "discussion"
+                      ? "Posted as discussion"
+                      : item.convertedTo === "task"
+                        ? "Converted to task"
+                        : "Converted"}
               </span>
             </div>
           </div>
@@ -227,14 +244,66 @@ export function InboxItemDetail({
           </div>
         )}
 
-        {/* Convert form */}
-        {showConvertForm && (
-          <InboxConvertForm
-            orgId={orgId}
-            item={item}
-            onConverted={handleConverted}
-            onCancel={() => setShowConvertForm(false)}
-          />
+        {/* Conversion actions */}
+        {isActionable && (
+          <div className="space-y-3">
+            <Select
+              value={convertType || ""}
+              onValueChange={(v) => setConvertType(v || null)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Convert to..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="expense">Expense</SelectItem>
+                <SelectItem value="file">Project File</SelectItem>
+                <SelectItem value="discussion">Discussion</SelectItem>
+                <SelectItem value="task">Task</SelectItem>
+                <SelectItem value="transfer">Transfer</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {convertType === "expense" && (
+              <InboxConvertForm
+                orgId={orgId}
+                item={item}
+                onConverted={handleConverted}
+                onCancel={() => setConvertType(null)}
+              />
+            )}
+            {convertType === "file" && (
+              <InboxConvertFileForm
+                orgId={orgId}
+                item={item}
+                onConverted={handleConverted}
+                onCancel={() => setConvertType(null)}
+              />
+            )}
+            {convertType === "discussion" && (
+              <InboxConvertDiscussionForm
+                orgId={orgId}
+                item={item}
+                onConverted={handleConverted}
+                onCancel={() => setConvertType(null)}
+              />
+            )}
+            {convertType === "task" && (
+              <InboxConvertTaskForm
+                orgId={orgId}
+                item={item}
+                onConverted={handleConverted}
+                onCancel={() => setConvertType(null)}
+              />
+            )}
+            {convertType === "transfer" && (
+              <InboxTransferForm
+                orgId={orgId}
+                item={item}
+                onConverted={handleConverted}
+                onCancel={() => setConvertType(null)}
+              />
+            )}
+          </div>
         )}
       </div>
     </DetailModal>
