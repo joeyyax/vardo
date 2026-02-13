@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from "@/components/ui/sheet";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { ProjectComments } from "@/components/projects/project-comments";
 import { ClientComments } from "@/components/clients/client-comments";
 
@@ -15,7 +9,6 @@ type DiscussionSheetProps = {
   onOpenChange: (open: boolean) => void;
   entityType: "project" | "client";
   entityId: string;
-  entityName: string;
   orgId: string;
   currentUserId: string;
   onUpdate?: () => void;
@@ -26,7 +19,6 @@ export function DiscussionSheet({
   onOpenChange,
   entityType,
   entityId,
-  entityName,
   orgId,
   currentUserId,
   onUpdate,
@@ -35,14 +27,10 @@ export function DiscussionSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="sm:max-w-md w-full flex flex-col"
+        className="sm:max-w-md w-full flex flex-col gap-0 p-0"
         showCloseButton
       >
-        <SheetHeader>
-          <SheetTitle>Discussion</SheetTitle>
-          <SheetDescription>{entityName}</SheetDescription>
-        </SheetHeader>
-        <div className="flex-1 min-h-0 overflow-hidden">
+        <div className="flex-1 min-h-0 overflow-hidden px-4 pt-4 pb-4">
           {entityType === "project" ? (
             <ProjectComments
               orgId={orgId}
