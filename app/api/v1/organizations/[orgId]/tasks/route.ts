@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { tasks, projects, clients, TASK_STATUSES, type TaskStatus } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
+import { getAccessibleProjectIds } from "@/lib/auth/permissions";
 import { eq, and, inArray, isNull, isNotNull } from "drizzle-orm";
 
 type RouteParams = {
@@ -13,11 +14,13 @@ type RouteParams = {
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { organization } = await requireOrg();
+    const { organization, session, membership } = await requireOrg();
 
     if (organization.id !== orgId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+
+    const accessibleProjectIds = await getAccessibleProjectIds(session.user.id, membership.role);
 
     // Get optional filters
     const { searchParams } = new URL(request.url);
@@ -52,6 +55,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     });
 
     let projectIds = orgProjects.map((p) => p.id);
+
+    // Members can only see tasks in their assigned projects
+    if (accessibleProjectIds !== null) {
+      projectIds = projectIds.filter((id) => accessibleProjectIds.includes(id));
+    }
 
     // If filtering by specific project, narrow down
     if (projectId) {

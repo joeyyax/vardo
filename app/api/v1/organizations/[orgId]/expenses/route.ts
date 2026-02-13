@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { projectExpenses, projects, EXPENSE_STATUSES, type ExpenseStatus } from "@/lib/db/schema";
 import { requireOrg, getSession } from "@/lib/auth/session";
-import { eq, and, desc, gte, lte, isNull } from "drizzle-orm";
+import { getAccessibleProjectIds } from "@/lib/auth/permissions";
+import { eq, and, desc, gte, lte, isNull, inArray } from "drizzle-orm";
 import { addWeeks, addMonths, addQuarters, addYears, isBefore, startOfDay } from "date-fns";
 
 type RouteParams = {
@@ -14,11 +15,13 @@ type RouteParams = {
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { organization } = await requireOrg();
+    const { organization, session, membership } = await requireOrg();
 
     if (organization.id !== orgId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+
+    const accessibleProjectIds = await getAccessibleProjectIds(session.user.id, membership.role);
 
     // Get optional filters
     const { searchParams } = new URL(request.url);
@@ -63,6 +66,20 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
     if (status && EXPENSE_STATUSES.includes(status as ExpenseStatus)) {
       whereConditions.push(eq(projectExpenses.status, status as ExpenseStatus));
+    }
+
+    // Members can only see their own expenses for assigned projects (no overhead)
+    if (accessibleProjectIds !== null) {
+      whereConditions.push(eq(projectExpenses.createdBy, session.user.id));
+      if (accessibleProjectIds.length === 0) {
+        return NextResponse.json({
+          expenses: [],
+          summary: { totalCents: 0, billableCents: 0, nonBillableCents: 0, overheadCents: 0, count: 0 },
+          categories: [],
+          vendors: [],
+        });
+      }
+      whereConditions.push(inArray(projectExpenses.projectId, accessibleProjectIds));
     }
 
     const expenses = await db.query.projectExpenses.findMany({
@@ -111,8 +128,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     // Get all expenses for summary (unfiltered by date/category but filtered by org)
     // Summary is intentionally unfiltered - shows total org expenses regardless of current filter
+    // For members: scoped to own expenses in assigned projects only
+    const summaryConditions = [eq(projectExpenses.organizationId, orgId)];
+    if (accessibleProjectIds !== null) {
+      summaryConditions.push(eq(projectExpenses.createdBy, session.user.id));
+      summaryConditions.push(inArray(projectExpenses.projectId, accessibleProjectIds));
+    }
     const allExpenses = await db.query.projectExpenses.findMany({
-      where: eq(projectExpenses.organizationId, orgId),
+      where: and(...summaryConditions),
       columns: {
         amountCents: true,
         isBillable: true,
@@ -165,7 +188,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { organization } = await requireOrg();
+    const { organization, session: orgSession, membership } = await requireOrg();
 
     if (organization.id !== orgId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -175,6 +198,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    const accessibleProjectIds = await getAccessibleProjectIds(session.user.id, membership.role);
 
     const body = await request.json();
     const {
@@ -225,6 +250,22 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
       if (!project || project.client.organizationId !== orgId) {
         return NextResponse.json({ error: "Project not found" }, { status: 404 });
+      }
+    }
+
+    // Members must specify a project and it must be one they're assigned to
+    if (accessibleProjectIds !== null) {
+      if (!projectId) {
+        return NextResponse.json(
+          { error: "Project is required" },
+          { status: 400 }
+        );
+      }
+      if (!accessibleProjectIds.includes(projectId)) {
+        return NextResponse.json(
+          { error: "You do not have access to this project" },
+          { status: 403 }
+        );
       }
     }
 
