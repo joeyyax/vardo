@@ -12,7 +12,6 @@ import { DangerZone } from "@/components/settings/danger-zone";
 import { getStripeStatus } from "@/lib/payments/stripe";
 import { TaskTypesSettings } from "./task-types-settings";
 import { TaskTagsSettings } from "./task-tags-settings";
-import { IntakeEmailSettings } from "./intake-email-settings";
 import { SettingsTabs } from "./settings-tabs";
 import { Button } from "@/components/ui/button";
 import {
@@ -133,43 +132,23 @@ export default async function SettingsPage() {
   );
 
   // Integrations tab
-  const integrationsContent =
-    features.expenses || features.time_tracking ? (
-      <>
-        {features.expenses && (
-          <div className="space-y-4">
-            <div>
-              <h2 className="text-lg font-medium">Expense Intake</h2>
-              <p className="text-sm text-muted-foreground">
-                Forward emails to capture invoices and receipts.
-              </p>
-            </div>
-            <IntakeEmailSettings
-              organizationId={organization.id}
-              intakeEmailToken={organization.intakeEmailToken ?? null}
-              canEdit={canEdit}
-            />
-          </div>
-        )}
-        {features.time_tracking && (
-          <div className="space-y-4">
-            <div>
-              <h2 className="text-lg font-medium">Import</h2>
-              <p className="text-sm text-muted-foreground">
-                Import time entries from other services.
-              </p>
-            </div>
-            <ImportWizard orgId={organization.id} />
-          </div>
-        )}
-      </>
-    ) : (
-      <Card className="max-w-2xl squircle">
-        <CardContent className="py-8 text-center text-sm text-muted-foreground">
-          No integrations are available for your current feature set.
-        </CardContent>
-      </Card>
-    );
+  const integrationsContent = features.time_tracking ? (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-medium">Import</h2>
+        <p className="text-sm text-muted-foreground">
+          Import time entries from other services.
+        </p>
+      </div>
+      <ImportWizard orgId={organization.id} />
+    </div>
+  ) : (
+    <Card className="max-w-2xl squircle">
+      <CardContent className="py-8 text-center text-sm text-muted-foreground">
+        No integrations are available for your current feature set.
+      </CardContent>
+    </Card>
+  );
 
   return (
     <div className="space-y-6">
