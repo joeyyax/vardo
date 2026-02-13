@@ -172,7 +172,7 @@ export function SidebarNav({ features, collapsed, orgId }: SidebarNavProps) {
         return (
           <Fragment key={item.href}>
             {item.separator && index > 0 && (
-              <div className="mx-3 my-1 border-t border-sidebar-border" />
+              <div className="my-1.5" />
             )}
           <Tooltip delayDuration={0}>
             <TooltipTrigger asChild>
