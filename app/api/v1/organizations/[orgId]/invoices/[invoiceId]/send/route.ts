@@ -116,11 +116,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       })
     );
 
-    // Send email via Resend
+    // Send email via Resend (uses direct API for attachments — not sendEmail wrapper)
     const { Resend } = await import("resend");
     const resend = new Resend(process.env.RESEND_API_KEY);
 
-    await resend.emails.send({
+    const sendResponse = await resend.emails.send({
       from: `${data.organization.name} <joey@joeyyax.com>`,
       to: email,
       subject: emailSubject,
@@ -132,6 +132,25 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         },
       ],
     });
+
+    // Log to email_sends for delivery tracking
+    const resendEmailId = sendResponse.data?.id;
+    if (resendEmailId) {
+      try {
+        const { emailSends } = await import("@/lib/db/schema");
+        await db.insert(emailSends).values({
+          organizationId: orgId,
+          resendEmailId,
+          entityType: "invoice",
+          entityId: invoiceId,
+          recipientEmail: email,
+          subject: emailSubject,
+          status: "sent",
+        });
+      } catch (logError) {
+        console.error("Error logging invoice email send:", logError);
+      }
+    }
 
     // Mark invoice as sent
     await markInvoiceSent(invoiceId);

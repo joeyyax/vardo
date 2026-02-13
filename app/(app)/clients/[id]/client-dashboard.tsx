@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ClientDialog } from "@/components/clients/client-dialog";
 import { ClientFiles } from "@/components/clients/client-files";
+import { IntakeEmailSettings } from "@/app/(app)/settings/intake-email-settings";
 import { ClientContacts } from "@/components/clients/client-contacts";
 import { ClientInvitations } from "@/components/clients/client-invitations";
 import { ProjectDialog } from "@/components/projects/project-dialog";
@@ -45,6 +46,7 @@ type ServerClient = {
   billingDayOfMonth: number | null;
   paymentTermsDays: number | null;
   lastInvoicedDate: string | null;
+  intakeEmailToken: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -506,6 +508,15 @@ export function ClientDashboard({ client: initialClient, orgId }: ClientDashboar
 
           {/* Files across all projects */}
           <ClientFiles orgId={orgId} clientId={client.id} />
+
+          {/* Email Intake */}
+          <IntakeEmailSettings
+            organizationId={orgId}
+            intakeEmailToken={client.intakeEmailToken}
+            canEdit={true}
+            entityType="client"
+            entityId={client.id}
+          />
 
           {/* Connected Sites (Scope Clients) */}
           <ScopeClientPanel

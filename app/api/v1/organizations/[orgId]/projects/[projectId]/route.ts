@@ -220,12 +220,19 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         });
 
         for (const recipient of recipients) {
-          sendEmail({
-            to: recipient,
-            subject: emailData.subject,
-            react: emailData.react,
-            from: `${organization.name} <${process.env.EMAIL_FROM || "notifications@joeyyax.com"}>`,
-          }).catch((err) =>
+          sendEmail(
+            {
+              to: recipient,
+              subject: emailData.subject,
+              react: emailData.react,
+              from: `${organization.name} <${process.env.EMAIL_FROM || "notifications@joeyyax.com"}>`,
+            },
+            {
+              organizationId: orgId,
+              entityType: "lifecycle",
+              entityId: projectId,
+            }
+          ).catch((err) =>
             console.error("Failed to send offboarding email:", err)
           );
         }

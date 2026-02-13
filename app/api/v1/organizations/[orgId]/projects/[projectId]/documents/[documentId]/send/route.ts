@@ -139,12 +139,19 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
       // Send to each recipient (fire and forget — don't block response)
       for (const email of recipients) {
-        sendEmail({
-          to: email,
-          subject: emailData.subject,
-          react: emailData.react,
-          from: `${organization.name} <${process.env.EMAIL_FROM || "notifications@joeyyax.com"}>`,
-        }).catch((err) =>
+        sendEmail(
+          {
+            to: email,
+            subject: emailData.subject,
+            react: emailData.react,
+            from: `${organization.name} <${process.env.EMAIL_FROM || "notifications@joeyyax.com"}>`,
+          },
+          {
+            organizationId: orgId,
+            entityType: "document",
+            entityId: documentId,
+          }
+        ).catch((err) =>
           console.error("Failed to send document email:", err)
         );
       }

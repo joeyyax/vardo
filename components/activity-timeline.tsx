@@ -19,6 +19,10 @@ import {
   UserMinus,
   Eye,
   Link as LinkIcon,
+  Mail,
+  MailCheck,
+  MailX,
+  MousePointer,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ActivityAction } from "@/lib/db/schema";
@@ -72,6 +76,11 @@ const ACTION_ICONS: Partial<Record<ActivityAction, React.ComponentType<{ classNa
   file_attached: Upload,
   file_removed: FileText,
   visibility_changed: Eye,
+  email_sent: Mail,
+  email_delivered: MailCheck,
+  email_bounced: MailX,
+  email_opened: Eye,
+  email_clicked: MousePointer,
 };
 
 const ACTION_LABELS: Partial<Record<ActivityAction, string>> = {
@@ -94,6 +103,11 @@ const ACTION_LABELS: Partial<Record<ActivityAction, string>> = {
   file_attached: "attached a file",
   file_removed: "removed a file",
   visibility_changed: "changed visibility",
+  email_sent: "sent an email",
+  email_delivered: "email delivered",
+  email_bounced: "email bounced",
+  email_opened: "email opened",
+  email_clicked: "email link clicked",
 };
 
 export function ActivityTimeline({
@@ -342,6 +356,31 @@ function getActivityDescription(activity: Activity, currentTaskId?: string): str
 
     case "deleted":
       return `deleted "${taskName || "an item"}"`;
+
+    case "email_sent": {
+      const recipient = metadata?.recipientEmail as string;
+      return recipient ? `sent email to ${recipient}` : "sent an email";
+    }
+
+    case "email_delivered": {
+      const recipient = metadata?.recipientEmail as string;
+      return recipient ? `email delivered to ${recipient}` : "email delivered";
+    }
+
+    case "email_bounced": {
+      const recipient = metadata?.recipientEmail as string;
+      return recipient ? `email to ${recipient} bounced` : "email bounced";
+    }
+
+    case "email_opened": {
+      const recipient = metadata?.recipientEmail as string;
+      return recipient ? `email opened by ${recipient}` : "email opened";
+    }
+
+    case "email_clicked": {
+      const recipient = metadata?.recipientEmail as string;
+      return recipient ? `email link clicked by ${recipient}` : "email link clicked";
+    }
 
     default:
       return ACTION_LABELS[action] || "performed an action";

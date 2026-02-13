@@ -42,6 +42,7 @@ export type Project = {
   budgetType: BudgetType | null;
   budgetHours: number | null;
   budgetAmountCents: number | null;
+  intakeEmailToken: string | null;
   createdAt: string;
   updatedAt: string;
   client: Client;

@@ -28,6 +28,7 @@ export type Client = {
   billingDayOfMonth: number | null;
   paymentTermsDays: number | null;
   lastInvoicedDate: string | null;
+  intakeEmailToken: string | null;
   createdAt: string;
   updatedAt: string;
 };

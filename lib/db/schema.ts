@@ -53,6 +53,8 @@ export const organizations = pgTable("organizations", {
   togglApiToken: text("toggl_api_token"),
   togglWorkspaceId: text("toggl_workspace_id"),
   togglLastImportAt: timestamp("toggl_last_import_at"),
+  // Email intake
+  intakeEmailToken: text("intake_email_token").unique(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -214,6 +216,8 @@ export const clients = pgTable("clients", {
   billingDayOfMonth: integer("billing_day_of_month"), // 1-31 for monthly/quarterly
   paymentTermsDays: integer("payment_terms_days"), // Net X days, null = inherit from org
   lastInvoicedDate: date("last_invoiced_date"),
+  // Email intake
+  intakeEmailToken: text("intake_email_token").unique(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -461,6 +465,8 @@ export const projects = pgTable("projects", {
   budgetType: text("budget_type").$type<BudgetType>(), // 'hours' | 'fixed' | null
   budgetHours: integer("budget_hours"), // total hours budget
   budgetAmountCents: integer("budget_amount_cents"), // fixed price budget in cents
+  // Email intake
+  intakeEmailToken: text("intake_email_token").unique(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -1326,6 +1332,108 @@ export const expenseWatchers = pgTable(
   })
 );
 
+// Inbox item statuses
+export const INBOX_ITEM_STATUSES = ["needs_review", "converted", "informational", "discarded"] as const;
+export type InboxItemStatus = (typeof INBOX_ITEM_STATUSES)[number];
+
+// Inbox items (email-forwarded records awaiting review)
+export const inboxItems = pgTable(
+  "inbox_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    resendEmailId: text("resend_email_id"),
+    fromAddress: text("from_address"),
+    fromName: text("from_name"),
+    subject: text("subject"),
+    receivedAt: timestamp("received_at").notNull(),
+    status: text("status").$type<InboxItemStatus>().notNull().default("needs_review"),
+    convertedExpenseId: uuid("converted_expense_id").references(() => projectExpenses.id, { onDelete: "set null" }),
+    // Entity association (set when email is sent to a client/project intake address)
+    clientId: uuid("client_id").references(() => clients.id, { onDelete: "set null" }),
+    projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("inbox_items_org_id_idx").on(table.organizationId),
+    index("inbox_items_status_idx").on(table.organizationId, table.status),
+    index("inbox_items_received_at_idx").on(table.receivedAt),
+    index("inbox_items_client_id_idx").on(table.clientId),
+    index("inbox_items_project_id_idx").on(table.projectId),
+  ]
+);
+
+// Inbox item files (attachments extracted from forwarded emails)
+export const inboxItemFiles = pgTable(
+  "inbox_item_files",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    inboxItemId: uuid("inbox_item_id")
+      .notNull()
+      .references(() => inboxItems.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    mimeType: text("mime_type").notNull(),
+    r2Key: text("r2_key").notNull(),
+    source: text("source").default("attachment"), // 'attachment' | 'cloud_url'
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("inbox_item_files_item_id_idx").on(table.inboxItemId),
+  ]
+);
+
+// Email send entity types (what kind of email was sent)
+export const EMAIL_SEND_ENTITY_TYPES = [
+  "invitation",
+  "invoice",
+  "document",
+  "notification",
+  "lifecycle",
+] as const;
+export type EmailSendEntityType = (typeof EMAIL_SEND_ENTITY_TYPES)[number];
+
+// Email send statuses
+export const EMAIL_SEND_STATUSES = [
+  "sent",
+  "delivered",
+  "bounced",
+  "complained",
+  "opened",
+  "clicked",
+] as const;
+export type EmailSendStatus = (typeof EMAIL_SEND_STATUSES)[number];
+
+// Outbound email tracking
+export const emailSends = pgTable(
+  "email_sends",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    resendEmailId: text("resend_email_id").notNull().unique(),
+    entityType: text("entity_type").$type<EmailSendEntityType>().notNull(),
+    entityId: uuid("entity_id").notNull(),
+    recipientEmail: text("recipient_email").notNull(),
+    subject: text("subject"),
+    status: text("status").$type<EmailSendStatus>().notNull().default("sent"),
+    sentAt: timestamp("sent_at").defaultNow().notNull(),
+    deliveredAt: timestamp("delivered_at"),
+    openedAt: timestamp("opened_at"),
+    bouncedAt: timestamp("bounced_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("email_sends_org_idx").on(table.organizationId),
+    index("email_sends_resend_id_idx").on(table.resendEmailId),
+    index("email_sends_entity_idx").on(table.entityType, table.entityId),
+  ]
+);
+
 // Notification types
 export const NOTIFICATION_TYPES = [
   "assigned",
@@ -1409,6 +1517,12 @@ export const ACTIVITY_ACTIONS = [
   "file_attached",
   "file_removed",
   "visibility_changed",
+  // Email delivery tracking
+  "email_sent",
+  "email_delivered",
+  "email_bounced",
+  "email_opened",
+  "email_clicked",
 ] as const;
 export type ActivityAction = (typeof ACTIVITY_ACTIONS)[number];
 
@@ -1516,6 +1630,8 @@ export const organizationsRelations = relations(organizations, ({ many }) => ({
   activities: many(activities),
   savedReportPresets: many(savedReportPresets),
   scopeClients: many(scopeClients),
+  inboxItems: many(inboxItems),
+  emailSends: many(emailSends),
 }));
 
 export const importSessionsRelations = relations(importSessions, ({ one }) => ({
@@ -1776,6 +1892,43 @@ export const expenseWatchersRelations = relations(expenseWatchers, ({ one }) => 
   user: one(users, {
     fields: [expenseWatchers.userId],
     references: [users.id],
+  }),
+}));
+
+// Inbox items relations
+export const inboxItemsRelations = relations(inboxItems, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [inboxItems.organizationId],
+    references: [organizations.id],
+  }),
+  convertedExpense: one(projectExpenses, {
+    fields: [inboxItems.convertedExpenseId],
+    references: [projectExpenses.id],
+  }),
+  client: one(clients, {
+    fields: [inboxItems.clientId],
+    references: [clients.id],
+  }),
+  project: one(projects, {
+    fields: [inboxItems.projectId],
+    references: [projects.id],
+  }),
+  files: many(inboxItemFiles),
+}));
+
+// Inbox item files relations
+export const inboxItemFilesRelations = relations(inboxItemFiles, ({ one }) => ({
+  inboxItem: one(inboxItems, {
+    fields: [inboxItemFiles.inboxItemId],
+    references: [inboxItems.id],
+  }),
+}));
+
+// Email sends relations
+export const emailSendsRelations = relations(emailSends, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [emailSends.organizationId],
+    references: [organizations.id],
   }),
 }));
 

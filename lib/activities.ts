@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
-import { activities, type ActivityAction, type ActivityEntityType, ACTIVITY_ACTIONS } from "@/lib/db/schema";
+import { activities, emailSends, type ActivityAction, type ActivityEntityType, type EmailSendEntityType, ACTIVITY_ACTIONS } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 
 type LogActivityParams = {
   organizationId: string;
@@ -193,5 +194,43 @@ export async function logFileUploaded(params: {
       fileId: params.fileId,
     },
     isClientVisible: params.isClientVisible,
+  });
+}
+
+// Map email send entity types to activity entity types
+const EMAIL_ENTITY_TO_ACTIVITY_ENTITY: Record<EmailSendEntityType, ActivityEntityType> = {
+  invitation: "contact",
+  invoice: "invoice",
+  document: "document",
+  notification: "task",
+  lifecycle: "project",
+};
+
+/**
+ * Log an email delivery event as an activity.
+ * Called by the Resend delivery webhook when email status changes.
+ */
+export async function logEmailEvent(params: {
+  emailSendId: string;
+  action: "email_sent" | "email_delivered" | "email_bounced" | "email_opened" | "email_clicked";
+  recipientEmail: string;
+  organizationId: string;
+  entityType: EmailSendEntityType;
+  entityId: string;
+}) {
+  const activityEntityType = EMAIL_ENTITY_TO_ACTIVITY_ENTITY[params.entityType] || "project";
+
+  return logActivity({
+    organizationId: params.organizationId,
+    actorId: "system",
+    action: params.action,
+    entityType: activityEntityType,
+    entityId: params.entityId,
+    metadata: {
+      emailSendId: params.emailSendId,
+      recipientEmail: params.recipientEmail,
+      emailEntityType: params.entityType,
+    },
+    isClientVisible: false,
   });
 }

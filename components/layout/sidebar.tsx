@@ -95,7 +95,7 @@ export function Sidebar({ currentOrgId, features, organizations }: SidebarProps)
 
       {/* Navigation */}
       <div className="flex-1 overflow-y-auto py-4">
-        <SidebarNav features={features} collapsed={collapsed} />
+        <SidebarNav features={features} collapsed={collapsed} orgId={currentOrgId} />
       </div>
 
       {/* Footer - Org Switcher & User Menu */}

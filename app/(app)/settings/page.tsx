@@ -12,6 +12,7 @@ import { NotificationPreferences } from "./notification-preferences";
 import { getStripeStatus } from "@/lib/payments/stripe";
 import { TaskTypesSettings } from "./task-types-settings";
 import { TaskTagsSettings } from "./task-tags-settings";
+import { IntakeEmailSettings } from "./intake-email-settings";
 
 export default async function SettingsPage() {
   const orgData = await getCurrentOrg();
@@ -88,6 +89,23 @@ export default async function SettingsPage() {
 
       {/* Notification Preferences */}
       <NotificationPreferences />
+
+      {/* Email Intake - only show if expenses are enabled */}
+      {features.expenses && (
+        <div className="space-y-4">
+          <div>
+            <h2 className="text-lg font-medium">Expense Intake</h2>
+            <p className="text-sm text-muted-foreground">
+              Forward emails to capture invoices and receipts.
+            </p>
+          </div>
+          <IntakeEmailSettings
+            organizationId={organization.id}
+            intakeEmailToken={organization.intakeEmailToken ?? null}
+            canEdit={canEdit}
+          />
+        </div>
+      )}
 
       {/* Payment Providers - only show if invoicing is enabled */}
       {features.invoicing && (

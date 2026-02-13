@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -10,6 +11,7 @@ import {
   FileSignature,
   FileCheck,
   Receipt,
+  Inbox,
   Users,
   Folder,
   ListTodo,
@@ -79,6 +81,13 @@ const navItems: NavItem[] = [
     feature: "expenses",
   },
   {
+    label: "Inbox",
+    href: "/inbox",
+    icon: Inbox,
+    description: "Review forwarded emails",
+    feature: "expenses",
+  },
+  {
     label: "Clients",
     href: "/clients",
     icon: Users,
@@ -118,10 +127,36 @@ const navItems: NavItem[] = [
 type SidebarNavProps = {
   features?: OrgFeatures;
   collapsed?: boolean;
+  orgId?: string;
 };
 
-export function SidebarNav({ features, collapsed }: SidebarNavProps) {
+export function SidebarNav({ features, collapsed, orgId }: SidebarNavProps) {
   const pathname = usePathname();
+  const [inboxCount, setInboxCount] = useState(0);
+
+  // Fetch inbox badge count
+  useEffect(() => {
+    if (!orgId || !features?.expenses) return;
+
+    async function fetchCount() {
+      try {
+        const res = await fetch(
+          `/api/v1/organizations/${orgId}/inbox/count`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          setInboxCount(data.count);
+        }
+      } catch {
+        // Silently ignore — badge is non-critical
+      }
+    }
+
+    fetchCount();
+    // Refresh every 60 seconds
+    const interval = setInterval(fetchCount, 60_000);
+    return () => clearInterval(interval);
+  }, [orgId, features?.expenses]);
 
   // Filter nav items based on enabled features
   const visibleItems = navItems.filter((item) => {
@@ -140,6 +175,7 @@ export function SidebarNav({ features, collapsed }: SidebarNavProps) {
         const isActive =
           pathname === item.href || pathname.startsWith(`${item.href}/`);
         const Icon = item.icon;
+        const badgeCount = item.href === "/inbox" ? inboxCount : 0;
 
         return (
           <Tooltip key={item.href} delayDuration={0}>
@@ -156,8 +192,24 @@ export function SidebarNav({ features, collapsed }: SidebarNavProps) {
                     : "text-sidebar-foreground/70"
                 )}
               >
-                <Icon className="size-4 shrink-0" />
-                {!collapsed && <span className="truncate">{item.label}</span>}
+                <div className="relative shrink-0">
+                  <Icon className="size-4" />
+                  {collapsed && badgeCount > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 flex size-3.5 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
+                      {badgeCount > 9 ? "9+" : badgeCount}
+                    </span>
+                  )}
+                </div>
+                {!collapsed && (
+                  <>
+                    <span className="truncate flex-1">{item.label}</span>
+                    {badgeCount > 0 && (
+                      <span className="flex size-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground shrink-0">
+                        {badgeCount > 99 ? "99+" : badgeCount}
+                      </span>
+                    )}
+                  </>
+                )}
               </Link>
             </TooltipTrigger>
             <TooltipContent side="right" className={collapsed ? "" : "hidden lg:block"}>

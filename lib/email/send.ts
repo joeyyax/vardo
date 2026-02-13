@@ -1,5 +1,6 @@
 import { render } from "@react-email/components";
 import type { ReactElement } from "react";
+import type { EmailSendEntityType } from "@/lib/db/schema";
 
 type SendEmailParams = {
   to: string | string[];
@@ -7,6 +8,17 @@ type SendEmailParams = {
   react: ReactElement;
   from?: string;
   replyTo?: string;
+};
+
+type EmailContext = {
+  organizationId: string;
+  entityType: EmailSendEntityType;
+  entityId: string;
+};
+
+type SendEmailResult = {
+  success: boolean;
+  emailId?: string;
 };
 
 /**
@@ -18,13 +30,17 @@ export function isEmailConfigured(): boolean {
 
 /**
  * Send an email via Resend.
- * Returns true on success, false if email is not configured or sending fails.
+ * Returns { success, emailId } — emailId is the Resend message ID on success.
+ * When context is provided, the send is logged to email_sends for delivery tracking.
  * Errors are logged but not thrown — email should never block business logic.
  */
-export async function sendEmail(params: SendEmailParams): Promise<boolean> {
+export async function sendEmail(
+  params: SendEmailParams,
+  context?: EmailContext
+): Promise<SendEmailResult> {
   if (!isEmailConfigured()) {
     console.warn("Email not configured — skipping send");
-    return false;
+    return { success: false };
   }
 
   try {
@@ -36,7 +52,7 @@ export async function sendEmail(params: SendEmailParams): Promise<boolean> {
     const fromAddress =
       params.from || process.env.EMAIL_FROM || "notifications@joeyyax.com";
 
-    await resend.emails.send({
+    const response = await resend.emails.send({
       from: fromAddress,
       to: Array.isArray(params.to) ? params.to : [params.to],
       subject: params.subject,
@@ -44,10 +60,38 @@ export async function sendEmail(params: SendEmailParams): Promise<boolean> {
       replyTo: params.replyTo,
     });
 
-    return true;
+    const emailId = response.data?.id;
+
+    // Log to email_sends when context is provided
+    if (context && emailId) {
+      try {
+        const { db } = await import("@/lib/db");
+        const { emailSends } = await import("@/lib/db/schema");
+
+        const recipients = Array.isArray(params.to) ? params.to : [params.to];
+        for (const recipient of recipients) {
+          await db.insert(emailSends).values({
+            organizationId: context.organizationId,
+            resendEmailId: recipients.length === 1
+              ? emailId
+              : `${emailId}:${recipient}`,
+            entityType: context.entityType,
+            entityId: context.entityId,
+            recipientEmail: recipient,
+            subject: params.subject,
+            status: "sent",
+          });
+        }
+      } catch (logError) {
+        // Don't let logging failures affect send result
+        console.error("Error logging email send:", logError);
+      }
+    }
+
+    return { success: true, emailId: emailId ?? undefined };
   } catch (error) {
     console.error("Error sending email:", error);
-    return false;
+    return { success: false };
   }
 }
 

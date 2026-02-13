@@ -55,7 +55,7 @@ export function MobileSidebar({ currentOrgId, features, organizations }: MobileS
         <div className="flex h-[calc(100%-3.5rem)] flex-col">
           {/* Navigation */}
           <div className="flex-1 overflow-y-auto py-4">
-            <SidebarNav features={features} />
+            <SidebarNav features={features} orgId={currentOrgId} />
           </div>
 
           {/* Footer - Org Switcher & User Menu */}

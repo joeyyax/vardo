@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { invoices, retainerPeriods } from "@/lib/db/schema";
+import { invoices, retainerPeriods, emailSends } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
-import { eq, and, ne, desc, lte, gte, inArray } from "drizzle-orm";
+import { eq, and, ne, desc, lte, gte, inArray, sql } from "drizzle-orm";
 import {
   generateInvoice,
   groupEntriesByProjectTask,
@@ -43,6 +43,30 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       orderBy: [desc(invoices.createdAt)],
     });
 
+    // Fetch email delivery status for sent invoices
+    const sentInvoiceIds = invoiceList
+      .filter((inv) => inv.status === "sent" || inv.status === "viewed")
+      .map((inv) => inv.id);
+
+    const deliveryStatusMap = new Map<string, string>();
+    if (sentInvoiceIds.length > 0) {
+      const sends = await db
+        .select({
+          entityId: emailSends.entityId,
+          status: emailSends.status,
+        })
+        .from(emailSends)
+        .where(
+          and(
+            eq(emailSends.entityType, "invoice"),
+            inArray(emailSends.entityId, sentInvoiceIds)
+          )
+        );
+      for (const send of sends) {
+        deliveryStatusMap.set(send.entityId, send.status);
+      }
+    }
+
     return NextResponse.json({
       invoices: invoiceList.map((inv) => ({
         id: inv.id,
@@ -60,6 +84,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         publicToken: inv.publicToken,
         client: inv.client,
         lineItemCount: inv.lineItems.length,
+        emailDeliveryStatus: deliveryStatusMap.get(inv.id) || null,
       })),
       aiSummaryAvailable: isAISummaryAvailable(),
     });

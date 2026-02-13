@@ -61,7 +61,7 @@ export async function GET(request: NextRequest) {
       const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
       // Send digest email
-      const emailSent = await sendEmail({
+      const result = await sendEmail({
         to: user.email,
         subject: `You have ${unsent.length} new notification${unsent.length === 1 ? "" : "s"}`,
         react: DigestEmail({
@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
         }),
       });
 
-      if (emailSent) {
+      if (result.success) {
         // Mark all included notifications as email sent
         const ids = unsent.map((n) => n.id);
         for (const id of ids) {

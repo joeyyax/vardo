@@ -33,6 +33,7 @@ import { ProjectFiles } from "@/components/projects/project-files";
 import { ProjectActivity } from "@/components/projects/project-activity";
 import { ProjectExpenses } from "@/components/projects/project-expenses";
 import { ProjectContacts } from "@/components/projects/project-contacts";
+import { IntakeEmailSettings } from "@/app/(app)/settings/intake-email-settings";
 import { ProjectOnboardingChecklist } from "@/components/projects/project-onboarding-checklist";
 import { ProjectOffboardingPanel } from "@/components/projects/project-offboarding-panel";
 import { StageGuidance } from "@/components/projects/stage-guidance";
@@ -82,6 +83,7 @@ type ServerProject = {
   budgetType: "hours" | "fixed" | null;
   budgetHours: number | null;
   budgetAmountCents: number | null;
+  intakeEmailToken: string | null;
   createdAt: Date;
   updatedAt: Date;
   client: ServerClient;
@@ -158,6 +160,7 @@ function toProjectType(serverProject: ServerProject & { createdAt: Date | string
     budgetType: serverProject.budgetType,
     budgetHours: serverProject.budgetHours,
     budgetAmountCents: serverProject.budgetAmountCents,
+    intakeEmailToken: serverProject.intakeEmailToken,
     createdAt,
     updatedAt,
     client: {
@@ -699,6 +702,15 @@ export function ProjectDashboard({ project: initialProject, orgId, orgName, pmEn
           {capabilities.expenses && (
             <ProjectExpenses orgId={orgId} projectId={project.id} />
           )}
+
+          {/* Email Intake */}
+          <IntakeEmailSettings
+            organizationId={orgId}
+            intakeEmailToken={project.intakeEmailToken}
+            canEdit={true}
+            entityType="project"
+            entityId={project.id}
+          />
 
           {/* Activity Log */}
           <ProjectActivity orgId={orgId} projectId={project.id} />

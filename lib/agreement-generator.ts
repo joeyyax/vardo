@@ -206,12 +206,19 @@ async function sendLifecycleEmail(
     });
 
     for (const recipient of recipients) {
-      sendEmail({
-        to: recipient,
-        subject: emailData.subject,
-        react: emailData.react,
-        from: `${org.name} <${process.env.EMAIL_FROM || "notifications@joeyyax.com"}>`,
-      }).catch((err) =>
+      sendEmail(
+        {
+          to: recipient,
+          subject: emailData.subject,
+          react: emailData.react,
+          from: `${org.name} <${process.env.EMAIL_FROM || "notifications@joeyyax.com"}>`,
+        },
+        {
+          organizationId,
+          entityType: "lifecycle",
+          entityId: projectId,
+        }
+      ).catch((err) =>
         console.error("Failed to send lifecycle email:", err)
       );
     }

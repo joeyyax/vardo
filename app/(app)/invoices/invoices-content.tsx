@@ -41,6 +41,7 @@ type Invoice = {
     color: string | null;
   };
   lineItemCount: number;
+  emailDeliveryStatus: string | null;
 };
 
 type Client = {
