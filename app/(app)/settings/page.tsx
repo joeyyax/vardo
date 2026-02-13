@@ -69,7 +69,7 @@ export default async function SettingsPage() {
           </>
         )}
         {features.proposals && (
-          <Card className="squircle">
+          <Card className="max-w-2xl squircle">
             <CardHeader>
               <CardTitle>Document Templates</CardTitle>
               <CardDescription>
@@ -87,7 +87,7 @@ export default async function SettingsPage() {
         )}
       </>
     ) : (
-      <Card className="squircle">
+      <Card className="max-w-2xl squircle">
         <CardContent className="py-8 text-center text-sm text-muted-foreground">
           Enable Project Management or Proposals in the General tab to configure
           workflow settings.
@@ -103,7 +103,7 @@ export default async function SettingsPage() {
       canEdit={canEdit}
     />
   ) : (
-    <Card className="squircle">
+    <Card className="max-w-2xl squircle">
       <CardContent className="py-8 text-center text-sm text-muted-foreground">
         Enable Invoicing in the General tab to configure billing settings.
       </CardContent>
@@ -112,7 +112,7 @@ export default async function SettingsPage() {
 
   // Team tab
   const teamContent = (
-    <Card className="squircle">
+    <Card className="max-w-2xl squircle">
       <CardHeader>
         <CardTitle>Team Members</CardTitle>
         <CardDescription>
@@ -164,7 +164,7 @@ export default async function SettingsPage() {
         )}
       </>
     ) : (
-      <Card className="squircle">
+      <Card className="max-w-2xl squircle">
         <CardContent className="py-8 text-center text-sm text-muted-foreground">
           No integrations are available for your current feature set.
         </CardContent>
