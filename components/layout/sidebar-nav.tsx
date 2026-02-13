@@ -46,13 +46,6 @@ const navItems: NavItem[] = [
     description: "Timeline view",
     feature: "time_tracking",
   },
-  {
-    label: "Reports",
-    href: "/reports",
-    icon: BarChart3,
-    description: "Analytics & summaries",
-    feature: "time_tracking",
-  },
   // Core entities
   {
     label: "Clients",
@@ -105,7 +98,7 @@ const navItems: NavItem[] = [
     description: "Manage contracts",
     feature: "proposals",
   },
-  // Processing
+  // Processing & insights
   {
     label: "Inbox",
     href: "/inbox",
@@ -113,6 +106,13 @@ const navItems: NavItem[] = [
     description: "Review forwarded emails",
     feature: "expenses",
     separator: true,
+  },
+  {
+    label: "Reports",
+    href: "/reports",
+    icon: BarChart3,
+    description: "Analytics & summaries",
+    feature: "time_tracking",
   },
 ];
 
