@@ -47,6 +47,7 @@ export async function PATCH(request: NextRequest) {
       blockerResolved,
       clientComment,
       emailEnabled,
+      emailDelivery,
     } = body;
 
     // Build update object
@@ -57,6 +58,7 @@ export async function PATCH(request: NextRequest) {
       blockerResolved: boolean;
       clientComment: boolean;
       emailEnabled: boolean;
+      emailDelivery: string;
       updatedAt: Date;
     }> = {
       updatedAt: new Date(),
@@ -68,6 +70,7 @@ export async function PATCH(request: NextRequest) {
     if (blockerResolved !== undefined) updates.blockerResolved = blockerResolved;
     if (clientComment !== undefined) updates.clientComment = clientComment;
     if (emailEnabled !== undefined) updates.emailEnabled = emailEnabled;
+    if (emailDelivery !== undefined) updates.emailDelivery = emailDelivery;
 
     // Check if preferences exist
     const existing = await db.query.notificationPreferences.findFirst({

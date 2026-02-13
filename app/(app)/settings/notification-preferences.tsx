@@ -10,6 +10,13 @@ import {
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -20,6 +27,7 @@ type Preferences = {
   blockerResolved: boolean;
   clientComment: boolean;
   emailEnabled: boolean;
+  emailDelivery: "immediate" | "daily";
 };
 
 const PREFERENCE_ITEMS: {
@@ -77,9 +85,10 @@ export function NotificationPreferences() {
     fetchPrefs();
   }, [fetchPrefs]);
 
-  const updatePref = async (key: keyof Preferences, value: boolean) => {
+  const updatePref = async (key: keyof Preferences, value: boolean | string) => {
     if (!prefs) return;
     setUpdating(key);
+    const prevValue = prefs[key];
 
     // Optimistic update
     setPrefs((prev) => (prev ? { ...prev, [key]: value } : prev));
@@ -92,12 +101,11 @@ export function NotificationPreferences() {
       });
 
       if (!res.ok) {
-        // Revert on failure
-        setPrefs((prev) => (prev ? { ...prev, [key]: !value } : prev));
+        setPrefs((prev) => (prev ? { ...prev, [key]: prevValue } : prev));
         toast.error("Failed to update preference");
       }
     } catch {
-      setPrefs((prev) => (prev ? { ...prev, [key]: !value } : prev));
+      setPrefs((prev) => (prev ? { ...prev, [key]: prevValue } : prev));
       toast.error("Failed to update preference");
     } finally {
       setUpdating(null);
@@ -151,7 +159,7 @@ export function NotificationPreferences() {
               </div>
               <Switch
                 id={`pref-${item.key}`}
-                checked={prefs[item.key]}
+                checked={prefs[item.key] as boolean}
                 disabled={updating === item.key}
                 onCheckedChange={(checked) => updatePref(item.key, checked)}
               />
@@ -182,6 +190,29 @@ export function NotificationPreferences() {
               }
             />
           </div>
+          {prefs.emailEnabled && (
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="pref-emailDelivery">Delivery</Label>
+                <p className="text-sm text-muted-foreground">
+                  Choose when to receive email notifications.
+                </p>
+              </div>
+              <Select
+                value={prefs.emailDelivery || "immediate"}
+                onValueChange={(value) => updatePref("emailDelivery", value)}
+                disabled={updating === "emailDelivery"}
+              >
+                <SelectTrigger className="w-[160px] squircle">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="squircle">
+                  <SelectItem value="immediate">Immediate</SelectItem>
+                  <SelectItem value="daily">Daily digest</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>
