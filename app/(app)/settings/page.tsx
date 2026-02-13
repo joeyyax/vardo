@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Users } from "lucide-react";
@@ -179,13 +180,15 @@ export default async function SettingsPage() {
         </p>
       </div>
 
-      <SettingsTabs
-        generalContent={generalContent}
-        workflowContent={workflowContent}
-        billingContent={billingContent}
-        teamContent={teamContent}
-        integrationsContent={integrationsContent}
-      />
+      <Suspense fallback={null}>
+        <SettingsTabs
+          generalContent={generalContent}
+          workflowContent={workflowContent}
+          billingContent={billingContent}
+          teamContent={teamContent}
+          integrationsContent={integrationsContent}
+        />
+      </Suspense>
     </div>
   );
 }
