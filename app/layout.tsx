@@ -14,8 +14,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Scope",
-  description: "Time tracking for freelancers and small teams",
+  title: {
+    default: "Scope — Run client work without chaos",
+    template: "%s — Scope",
+  },
+  description:
+    "A calm, opinionated system for running client work. Proposals, tasks, time, and billing — connected by default.",
 };
 
 export default function RootLayout({

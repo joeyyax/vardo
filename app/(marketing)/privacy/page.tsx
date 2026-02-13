@@ -2,6 +2,8 @@ import { Section } from "@/components/marketing/section";
 
 export const metadata = {
   title: "Privacy Policy",
+  description:
+    "Your privacy matters. What Scope collects, why we collect it, and how it's handled.",
 };
 
 export default function PrivacyPage() {
