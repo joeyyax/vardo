@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Bell,
   Clock,
   BarChart3,
   FileText,
@@ -107,12 +106,6 @@ const navItems: NavItem[] = [
     icon: ListTodo,
     description: "All tasks across projects",
     feature: "pm",
-  },
-  {
-    label: "Notifications",
-    href: "/notifications",
-    icon: Bell,
-    description: "View all notifications",
   },
 ];
 
