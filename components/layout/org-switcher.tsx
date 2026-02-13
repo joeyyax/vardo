@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronsUpDown, Plus, Building2, Check, Loader2, Settings } from "lucide-react";
+import { ChevronsUpDown, Plus, Building2, Check, Loader2, Settings, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -183,6 +183,15 @@ export function OrgSwitcher({ currentOrgId, organizations: initialOrganizations,
               <Settings className="size-3" />
             </div>
             <span>Settings</span>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            className="gap-2 cursor-pointer"
+            onClick={() => router.push("/team")}
+          >
+            <div className="flex size-5 items-center justify-center rounded-sm bg-muted">
+              <Users className="size-3" />
+            </div>
+            <span>Team</span>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem

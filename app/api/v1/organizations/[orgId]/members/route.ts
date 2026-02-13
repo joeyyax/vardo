@@ -33,6 +33,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       name: m.user.name,
       email: m.user.email,
       role: m.role,
+      joinedAt: m.createdAt.toISOString(),
     }));
 
     return NextResponse.json({ members });

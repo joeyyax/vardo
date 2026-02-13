@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { invoices, clients } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
+import { requireAdmin } from "@/lib/auth/permissions";
 import { eq, and } from "drizzle-orm";
 
 type RouteParams = {
@@ -25,9 +26,11 @@ export async function GET(
   const { orgId } = await params;
 
   let organization;
+  let membership;
   try {
     const result = await requireOrg();
     organization = result.organization;
+    membership = result.membership;
   } catch (error) {
     if (error instanceof Error && error.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -42,6 +45,12 @@ export async function GET(
   }
 
   if (organization.id !== orgId) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  try {
+    requireAdmin(membership.role);
+  } catch {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

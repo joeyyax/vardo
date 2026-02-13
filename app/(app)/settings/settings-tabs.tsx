@@ -13,7 +13,6 @@ type SettingsTabsProps = {
   generalContent: ReactNode;
   workflowContent: ReactNode;
   billingContent: ReactNode;
-  teamContent: ReactNode;
   integrationsContent: ReactNode;
 };
 
@@ -21,7 +20,6 @@ export function SettingsTabs({
   generalContent,
   workflowContent,
   billingContent,
-  teamContent,
   integrationsContent,
 }: SettingsTabsProps) {
   const searchParams = useSearchParams();
@@ -45,7 +43,6 @@ export function SettingsTabs({
         <TabsTrigger value="general">General</TabsTrigger>
         <TabsTrigger value="workflow">Workflow</TabsTrigger>
         <TabsTrigger value="billing">Billing</TabsTrigger>
-        <TabsTrigger value="team">Team</TabsTrigger>
         <TabsTrigger value="integrations">Integrations</TabsTrigger>
       </TabsList>
 
@@ -59,10 +56,6 @@ export function SettingsTabs({
 
       <TabsContent value="billing" className="mt-6 space-y-8">
         {billingContent}
-      </TabsContent>
-
-      <TabsContent value="team" className="mt-6 space-y-8">
-        {teamContent}
       </TabsContent>
 
       <TabsContent value="integrations" className="mt-6 space-y-8">

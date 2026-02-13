@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { timeEntries } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
+import { getAccessibleProjectIds } from "@/lib/auth/permissions";
 import { eq, and, gte, lte, desc } from "drizzle-orm";
 import {
   resolveEntryBillable,
@@ -87,19 +88,24 @@ function shapeEntryResponse(entry: {
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { organization, session } = await requireOrg();
+    const { organization, session, membership } = await requireOrg();
 
     // Verify orgId matches user's org
     if (organization.id !== orgId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
+    const accessibleProjectIds = await getAccessibleProjectIds(session.user.id, membership.role);
+
     const searchParams = request.nextUrl.searchParams;
     const from = searchParams.get("from");
     const to = searchParams.get("to");
     const clientId = searchParams.get("clientId");
     const projectId = searchParams.get("projectId");
-    const userId = searchParams.get("userId") || session.user.id;
+    // Members can only see their own entries
+    const userId = accessibleProjectIds !== null
+      ? session.user.id
+      : searchParams.get("userId") || session.user.id;
 
     // Validate required date range
     if (!from || !to) {
@@ -146,6 +152,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     if (projectId) {
       filteredEntries = filteredEntries.filter(
         (entry) => entry.projectId === projectId
+      );
+    }
+
+    // Members can only see entries for their assigned projects
+    if (accessibleProjectIds !== null) {
+      filteredEntries = filteredEntries.filter(
+        (entry) => entry.projectId && accessibleProjectIds.includes(entry.projectId)
       );
     }
 
@@ -207,12 +220,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { organization, session } = await requireOrg();
+    const { organization, session, membership } = await requireOrg();
 
     // Verify orgId matches user's org
     if (organization.id !== orgId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+
+    const accessibleProjectIds = await getAccessibleProjectIds(session.user.id, membership.role);
 
     const body = await request.json();
 
@@ -300,6 +315,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           { error: `${errorPrefix}${validation.error}` },
           { status: 400 }
         );
+      }
+
+      // Members can only create entries for their assigned projects
+      if (accessibleProjectIds !== null) {
+        if (!entry.projectId || !accessibleProjectIds.includes(entry.projectId)) {
+          return NextResponse.json(
+            { error: `${errorPrefix}You do not have access to this project` },
+            { status: 403 }
+          );
+        }
       }
 
       const description = entry.description?.trim() || null;

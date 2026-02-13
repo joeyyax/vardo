@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { clients } from "@/lib/db/schema";
+import { clients, projects } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
-import { eq, and } from "drizzle-orm";
+import { getAccessibleProjectIds, requireAdmin } from "@/lib/auth/permissions";
+import { eq, and, inArray } from "drizzle-orm";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -12,22 +13,41 @@ type RouteParams = {
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { organization } = await requireOrg();
+    const { organization, session, membership } = await requireOrg();
 
     // Verify orgId matches user's org
     if (organization.id !== orgId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
+    const accessibleProjectIds = await getAccessibleProjectIds(session.user.id, membership.role);
+
     const orgClients = await db.query.clients.findMany({
       where: eq(clients.organizationId, orgId),
       orderBy: (clients, { asc }) => [asc(clients.name)],
     });
 
+    // Members can only see clients that have at least one assigned project
+    if (accessibleProjectIds !== null) {
+      if (accessibleProjectIds.length === 0) {
+        return NextResponse.json([]);
+      }
+      const assignedProjects = await db.query.projects.findMany({
+        where: inArray(projects.id, accessibleProjectIds),
+        columns: { clientId: true },
+      });
+      const allowedClientIds = [...new Set(assignedProjects.map((p) => p.clientId))];
+      const filteredClients = orgClients.filter((c) => allowedClientIds.includes(c.id));
+      return NextResponse.json(filteredClients);
+    }
+
     return NextResponse.json(orgClients);
   } catch (error) {
     if (error instanceof Error && error.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (error instanceof Error && error.message === "Forbidden") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     if (error instanceof Error && error.message === "No organization found") {
       return NextResponse.json(
@@ -47,12 +67,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { organization } = await requireOrg();
+    const { organization, membership } = await requireOrg();
 
     // Verify orgId matches user's org
     if (organization.id !== orgId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+
+    // Only admins/owners can create clients
+    requireAdmin(membership.role);
 
     const body = await request.json();
     const {
@@ -144,6 +167,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   } catch (error) {
     if (error instanceof Error && error.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (error instanceof Error && error.message === "Forbidden") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     if (error instanceof Error && error.message === "No organization found") {
       return NextResponse.json(

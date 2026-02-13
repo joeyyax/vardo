@@ -55,6 +55,9 @@ export const organizations = pgTable("organizations", {
   togglLastImportAt: timestamp("toggl_last_import_at"),
   // Email intake
   intakeEmailToken: text("intake_email_token").unique(),
+  // Team join link
+  joinToken: text("join_token").unique(),
+  joinEnabled: boolean("join_enabled").default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -145,7 +148,7 @@ export const passkeys = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    credentialId: text("credential_id").notNull(),
+    credentialID: text("credential_id").notNull(),
     counter: integer("counter").notNull(),
     deviceType: text("device_type").notNull(),
     backedUp: boolean("backed_up").notNull(),
@@ -155,7 +158,7 @@ export const passkeys = pgTable(
   },
   (table) => [
     index("passkey_user_id_idx").on(table.userId),
-    index("passkey_credential_id_idx").on(table.credentialId),
+    index("passkey_credential_id_idx").on(table.credentialID),
   ]
 );
 
@@ -192,6 +195,45 @@ export const memberships = pgTable("memberships", {
   role: text("role").notNull().default("member"), // owner, admin, member
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+// Team invitations (for inviting users to join an organization)
+export const teamInvitations = pgTable("team_invitations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  email: text("email").notNull(),
+  role: text("role").notNull().default("member"), // admin, member
+  invitedBy: text("invited_by")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  token: text("token").notNull().unique(),
+  status: text("status").notNull().default("pending"), // pending, accepted, expired
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+});
+
+// Project members (controls which projects a member can access)
+// Admins and owners bypass this — they have implicit access to all projects
+export const projectMembers = pgTable(
+  "project_members",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("project_members_project_user_idx").on(
+      table.projectId,
+      table.userId
+    ),
+  ]
+);
 
 // Clients
 export const clients = pgTable("clients", {
@@ -1344,7 +1386,7 @@ export const inboxItems = pgTable(
     organizationId: uuid("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    resendEmailId: text("resend_email_id"),
+    externalEmailId: text("external_email_id"),
     fromAddress: text("from_address"),
     fromName: text("from_name"),
     subject: text("subject"),
@@ -1416,7 +1458,7 @@ export const emailSends = pgTable(
     organizationId: uuid("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    resendEmailId: text("resend_email_id").notNull().unique(),
+    externalEmailId: text("external_email_id").notNull().unique(),
     entityType: text("entity_type").$type<EmailSendEntityType>().notNull(),
     entityId: uuid("entity_id").notNull(),
     recipientEmail: text("recipient_email").notNull(),
@@ -1430,7 +1472,7 @@ export const emailSends = pgTable(
   },
   (table) => [
     index("email_sends_org_idx").on(table.organizationId),
-    index("email_sends_resend_id_idx").on(table.resendEmailId),
+    index("email_sends_external_id_idx").on(table.externalEmailId),
     index("email_sends_entity_idx").on(table.entityType, table.entityId),
   ]
 );
@@ -1617,6 +1659,7 @@ export const siteHeartbeats = pgTable(
 // Relations
 export const organizationsRelations = relations(organizations, ({ many }) => ({
   memberships: many(memberships),
+  teamInvitations: many(teamInvitations),
   clients: many(clients),
   timeEntries: many(timeEntries),
   reportConfigs: many(reportConfigs),
@@ -1694,6 +1737,34 @@ export const membershipsRelations = relations(memberships, ({ one }) => ({
   }),
 }));
 
+export const teamInvitationsRelations = relations(
+  teamInvitations,
+  ({ one }) => ({
+    organization: one(organizations, {
+      fields: [teamInvitations.organizationId],
+      references: [organizations.id],
+    }),
+    inviter: one(users, {
+      fields: [teamInvitations.invitedBy],
+      references: [users.id],
+    }),
+  })
+);
+
+export const projectMembersRelations = relations(
+  projectMembers,
+  ({ one }) => ({
+    project: one(projects, {
+      fields: [projectMembers.projectId],
+      references: [projects.id],
+    }),
+    user: one(users, {
+      fields: [projectMembers.userId],
+      references: [users.id],
+    }),
+  })
+);
+
 export const clientsRelations = relations(clients, ({ one, many }) => ({
   organization: one(organizations, {
     fields: [clients.organizationId],
@@ -1746,6 +1817,7 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   onboardingItems: many(onboardingItems),
   dataExportRequests: many(dataExportRequests),
   projectContacts: many(projectContacts),
+  members: many(projectMembers),
 }));
 
 export const onboardingItemsRelations = relations(onboardingItems, ({ one }) => ({

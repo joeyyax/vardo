@@ -9,6 +9,7 @@ import {
   projectExpenses,
 } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
+import { requireAdmin } from "@/lib/auth/permissions";
 import { eq, and, gte, lte, sql, inArray } from "drizzle-orm";
 import {
   format,
@@ -81,11 +82,13 @@ function formatCurrency(cents: number): string {
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { organization } = await requireOrg();
+    const { organization, membership } = await requireOrg();
 
     if (organization.id !== orgId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+
+    requireAdmin(membership.role);
 
     const { searchParams } = new URL(request.url);
     const formatParam = searchParams.get("format") || "csv";
@@ -195,6 +198,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   } catch (error) {
     if (error instanceof Error && error.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (error instanceof Error && error.message === "Forbidden") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     if (error instanceof Error && error.message === "No organization found") {
       return NextResponse.json(

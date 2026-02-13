@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { reportConfigs } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
+import { requireAdmin } from "@/lib/auth/permissions";
 import { eq, and } from "drizzle-orm";
 
 type RouteParams = {
@@ -12,11 +13,13 @@ type RouteParams = {
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, configId } = await params;
-    const { organization } = await requireOrg();
+    const { organization, membership } = await requireOrg();
 
     if (organization.id !== orgId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+
+    requireAdmin(membership.role);
 
     const config = await db.query.reportConfigs.findFirst({
       where: and(
@@ -56,6 +59,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     if (error instanceof Error && error.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    if (error instanceof Error && error.message === "Forbidden") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
     console.error("Error fetching report config:", error);
     return NextResponse.json(
       { error: "Internal server error" },
@@ -68,11 +74,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, configId } = await params;
-    const { organization } = await requireOrg();
+    const { organization, membership } = await requireOrg();
 
     if (organization.id !== orgId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+
+    requireAdmin(membership.role);
 
     // Verify config exists
     const existing = await db.query.reportConfigs.findFirst({
@@ -120,6 +128,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     if (error instanceof Error && error.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    if (error instanceof Error && error.message === "Forbidden") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
     console.error("Error updating report config:", error);
     return NextResponse.json(
       { error: "Internal server error" },
@@ -132,11 +143,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, configId } = await params;
-    const { organization } = await requireOrg();
+    const { organization, membership } = await requireOrg();
 
     if (organization.id !== orgId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+
+    requireAdmin(membership.role);
 
     // Verify config exists
     const existing = await db.query.reportConfigs.findFirst({
@@ -156,6 +169,9 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
   } catch (error) {
     if (error instanceof Error && error.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (error instanceof Error && error.message === "Forbidden") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     console.error("Error deleting report config:", error);
     return NextResponse.json(
