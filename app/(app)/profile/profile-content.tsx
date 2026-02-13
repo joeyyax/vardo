@@ -15,6 +15,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { authClient } from "@/lib/auth/client";
+import { PersonalPreferences } from "@/app/(app)/settings/personal-preferences";
+import { NotificationPreferences } from "@/app/(app)/settings/notification-preferences";
 
 type ProfileContentProps = {
   user: {
@@ -181,6 +183,12 @@ export function ProfileContent({ user }: ProfileContentProps) {
           </div>
         </CardContent>
       </Card>
+
+      {/* Preferences */}
+      <PersonalPreferences />
+
+      {/* Notifications */}
+      <NotificationPreferences />
 
       {/* Danger Zone */}
       <Card className="border-destructive/50">
