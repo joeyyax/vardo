@@ -12,9 +12,11 @@ import {
   FileText,
   FolderKanban,
   Loader2,
+  MessageSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DiscussionSheet } from "@/components/ui/discussion-sheet";
 import { ClientDialog } from "@/components/clients/client-dialog";
 import { ClientFiles } from "@/components/clients/client-files";
 import { IntakeEmailSettings } from "@/app/(app)/settings/intake-email-settings";
@@ -98,6 +100,7 @@ type OutstandingInvoice = {
 type ClientDashboardProps = {
   client: ClientWithProjects;
   orgId: string;
+  currentUserId: string;
 };
 
 // Convert server types to client-side types with string dates
@@ -117,7 +120,7 @@ function toClientType(serverClient: ServerClient | ClientWithProjects) {
   };
 }
 
-export function ClientDashboard({ client: initialClient, orgId }: ClientDashboardProps) {
+export function ClientDashboard({ client: initialClient, orgId, currentUserId }: ClientDashboardProps) {
   const [client, setClient] = useState(initialClient);
   const [allClients, setAllClients] = useState<ClientWithProjects[]>([]);
   const [stats, setStats] = useState<ClientStats | null>(null);
@@ -129,6 +132,7 @@ export function ClientDashboard({ client: initialClient, orgId }: ClientDashboar
   // Dialog state
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [projectDialogOpen, setProjectDialogOpen] = useState(false);
+  const [discussionOpen, setDiscussionOpen] = useState(false);
 
   const fetchData = useCallback(async () => {
     setIsLoading(true);
@@ -244,6 +248,14 @@ export function ClientDashboard({ client: initialClient, orgId }: ClientDashboar
           </div>
         </div>
         <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            onClick={() => setDiscussionOpen(true)}
+            className="squircle"
+          >
+            <MessageSquare className="size-4" />
+            Discussion
+          </Button>
           <ClientInvitations orgId={orgId} clientId={client.id} />
           <Button
             variant="outline"
@@ -555,6 +567,16 @@ export function ClientDashboard({ client: initialClient, orgId }: ClientDashboar
         clients={[{ id: client.id, name: client.name, color: client.color }]}
         defaultClientId={client.id}
         onSuccess={fetchData}
+      />
+
+      <DiscussionSheet
+        open={discussionOpen}
+        onOpenChange={setDiscussionOpen}
+        entityType="client"
+        entityId={client.id}
+        entityName={client.name}
+        orgId={orgId}
+        currentUserId={currentUserId}
       />
     </div>
   );

@@ -15,6 +15,7 @@ import {
   Loader2,
   LayoutList,
   Kanban,
+  MessageSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,6 +39,7 @@ import { ProjectOnboardingChecklist } from "@/components/projects/project-onboar
 import { ProjectOffboardingPanel } from "@/components/projects/project-offboarding-panel";
 import { StageGuidance } from "@/components/projects/stage-guidance";
 import { ScopeTaskPrompt } from "@/components/projects/scope-task-prompt";
+import { DiscussionSheet } from "@/components/ui/discussion-sheet";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { formatHoursHuman } from "@/lib/formatting";
 import { getStageCapabilities } from "@/lib/project-stages";
@@ -186,6 +188,9 @@ export function ProjectDashboard({ project: initialProject, orgId, orgName, pmEn
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
 
+  // Discussion sheet state
+  const [discussionOpen, setDiscussionOpen] = useState(false);
+
   // Stage guidance → template wizard bridge
   const [guidanceSuggestedTemplateId, setGuidanceSuggestedTemplateId] = useState<string | undefined>();
 
@@ -311,6 +316,14 @@ export function ProjectDashboard({ project: initialProject, orgId, orgName, pmEn
           </div>
         </div>
         <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            onClick={() => setDiscussionOpen(true)}
+            className="squircle"
+          >
+            <MessageSquare className="size-4" />
+            Discussion
+          </Button>
           {capabilities.invitations && (
             <ProjectInvitations orgId={orgId} projectId={project.id} />
           )}
@@ -736,6 +749,16 @@ export function ProjectDashboard({ project: initialProject, orgId, orgName, pmEn
         onSuccess={fetchData}
         pmEnabled={pmEnabled}
         currentUserId={currentUserId}
+      />
+
+      <DiscussionSheet
+        open={discussionOpen}
+        onOpenChange={setDiscussionOpen}
+        entityType="project"
+        entityId={project.id}
+        entityName={project.name}
+        orgId={orgId}
+        currentUserId={currentUserId || ""}
       />
     </div>
   );
