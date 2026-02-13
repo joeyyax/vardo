@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { reportConfigs } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
+import { requireAdmin } from "@/lib/auth/permissions";
 import { eq, and, desc } from "drizzle-orm";
 import { randomBytes } from "crypto";
 
@@ -17,11 +18,13 @@ type RouteParams = {
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { organization } = await requireOrg();
+    const { organization, membership } = await requireOrg();
 
     if (organization.id !== orgId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+
+    requireAdmin(membership.role);
 
     const configs = await db.query.reportConfigs.findMany({
       where: eq(reportConfigs.organizationId, orgId),
@@ -57,6 +60,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     if (error instanceof Error && error.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    if (error instanceof Error && error.message === "Forbidden") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
     if (error instanceof Error && error.message === "No organization found") {
       return NextResponse.json(
         { error: "No organization found" },
@@ -75,11 +81,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { organization } = await requireOrg();
+    const { organization, membership } = await requireOrg();
 
     if (organization.id !== orgId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+
+    requireAdmin(membership.role);
 
     const body = await request.json();
     const {
@@ -155,6 +163,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   } catch (error) {
     if (error instanceof Error && error.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (error instanceof Error && error.message === "Forbidden") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     if (error instanceof Error && error.message === "No organization found") {
       return NextResponse.json(

@@ -2,8 +2,6 @@ import { db } from "@/lib/db";
 import { projectMembers } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
-type MembershipRole = "owner" | "admin" | "member";
-
 /**
  * Check if a role has admin-level access (owner or admin).
  */

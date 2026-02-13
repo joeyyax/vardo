@@ -800,7 +800,7 @@ export function ProjectDashboard({ project: initialProject, orgId, orgName, pmEn
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-64 p-0 squircle" align="end">
-                    <Command shouldFilter={false}>
+                    <Command>
                       <CommandInput placeholder="Search members..." />
                       <CommandList>
                         <CommandEmpty>No available members</CommandEmpty>

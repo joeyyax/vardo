@@ -1,6 +1,6 @@
 import { redirect, notFound } from "next/navigation";
 import { getCurrentOrg, getSession } from "@/lib/auth/session";
-import { isAdminRole } from "@/lib/auth/permissions";
+import { isAdminRole, getAccessibleProjectIds } from "@/lib/auth/permissions";
 import { db } from "@/lib/db";
 import { projects, tasks, DEFAULT_ORG_FEATURES, type OrgFeatures } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -57,6 +57,17 @@ export default async function ProjectPage({ params }: PageProps) {
   // Verify project belongs to user's org
   if (project.client.organizationId !== orgData.organization.id) {
     notFound();
+  }
+
+  // Members can only access projects they are assigned to
+  if (!isAdminRole(orgData.membership.role)) {
+    const accessibleIds = await getAccessibleProjectIds(
+      session.user.id,
+      orgData.membership.role
+    );
+    if (accessibleIds !== null && !accessibleIds.includes(id)) {
+      notFound();
+    }
   }
 
   return (
