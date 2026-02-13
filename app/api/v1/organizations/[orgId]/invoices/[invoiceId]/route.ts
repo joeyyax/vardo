@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { invoices, invoiceLineItems, retainerPeriods } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
+import { requireAdmin } from "@/lib/auth/permissions";
 import { eq, and } from "drizzle-orm";
 
 type RouteParams = {
@@ -12,11 +13,13 @@ type RouteParams = {
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, invoiceId } = await params;
-    const { organization } = await requireOrg();
+    const { organization, membership } = await requireOrg();
 
     if (organization.id !== orgId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+
+    requireAdmin(membership.role);
 
     const invoice = await db.query.invoices.findFirst({
       where: and(
@@ -73,6 +76,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     if (error instanceof Error && error.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    if (error instanceof Error && error.message === "Forbidden") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
     if (error instanceof Error && error.message === "No organization found") {
       return NextResponse.json(
         { error: "No organization found" },
@@ -91,11 +97,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, invoiceId } = await params;
-    const { organization } = await requireOrg();
+    const { organization, membership } = await requireOrg();
 
     if (organization.id !== orgId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+
+    requireAdmin(membership.role);
 
     // Check if invoice exists and belongs to org
     const invoice = await db.query.invoices.findFirst({
@@ -180,6 +188,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     if (error instanceof Error && error.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    if (error instanceof Error && error.message === "Forbidden") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
     if (error instanceof Error && error.message === "No organization found") {
       return NextResponse.json(
         { error: "No organization found" },
@@ -198,11 +209,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, invoiceId } = await params;
-    const { organization } = await requireOrg();
+    const { organization, membership } = await requireOrg();
 
     if (organization.id !== orgId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+
+    requireAdmin(membership.role);
 
     // Check if invoice exists and belongs to org
     const invoice = await db.query.invoices.findFirst({
@@ -247,6 +260,9 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
   } catch (error) {
     if (error instanceof Error && error.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (error instanceof Error && error.message === "Forbidden") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     if (error instanceof Error && error.message === "No organization found") {
       return NextResponse.json(

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { render } from "@react-email/components";
 import { requireOrg } from "@/lib/auth/session";
+import { requireAdmin } from "@/lib/auth/permissions";
 import {
   getInvoiceWithLineItems,
   generateInvoicePdf,
@@ -21,11 +22,13 @@ type RouteParams = {
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, invoiceId } = await params;
-    const { organization } = await requireOrg();
+    const { organization, membership } = await requireOrg();
 
     if (organization.id !== orgId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+
+    requireAdmin(membership.role);
 
     const body = await request.json();
     const { email, subject, message } = body;
@@ -47,8 +50,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Check if Resend is configured
-    if (!process.env.RESEND_API_KEY) {
+    // Check if MailPace is configured
+    if (!process.env.MAILPACE_API_TOKEN) {
       return NextResponse.json(
         { error: "Email sending is not configured" },
         { status: 503 }
@@ -116,31 +119,51 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       })
     );
 
-    // Send email via Resend (uses direct API for attachments — not sendEmail wrapper)
-    const { Resend } = await import("resend");
-    const resend = new Resend(process.env.RESEND_API_KEY);
+    // Send email via MailPace (uses direct API for attachments — not sendEmail wrapper)
+    // MailPace filenames can't have more than one period — sanitize
+    const safeFilename = filename.replace(/\.(?=.*\.)/g, "_");
 
-    const sendResponse = await resend.emails.send({
-      from: `${data.organization.name} <joey@joeyyax.com>`,
-      to: email,
-      subject: emailSubject,
-      html: emailHtml,
-      attachments: [
-        {
-          filename,
-          content: Buffer.from(pdfBuffer).toString("base64"),
-        },
-      ],
+    const sendResponse = await fetch("https://app.mailpace.com/api/v1/send", {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "MailPace-Server-Token": process.env.MAILPACE_API_TOKEN!,
+      },
+      body: JSON.stringify({
+        from: process.env.EMAIL_FROM || `${data.organization.name} <noreply@usescope.net>`,
+        to: email,
+        subject: emailSubject,
+        htmlbody: emailHtml,
+        attachments: [
+          {
+            name: safeFilename,
+            content: Buffer.from(pdfBuffer).toString("base64"),
+            content_type: "application/pdf",
+          },
+        ],
+      }),
     });
 
+    if (!sendResponse.ok) {
+      const errorBody = await sendResponse.text();
+      console.error("MailPace send error:", sendResponse.status, errorBody);
+      return NextResponse.json(
+        { error: "Failed to send email" },
+        { status: 502 }
+      );
+    }
+
+    const sendResult = await sendResponse.json();
+
     // Log to email_sends for delivery tracking
-    const resendEmailId = sendResponse.data?.id;
-    if (resendEmailId) {
+    const externalEmailId = sendResult.id ? String(sendResult.id) : null;
+    if (externalEmailId) {
       try {
         const { emailSends } = await import("@/lib/db/schema");
         await db.insert(emailSends).values({
           organizationId: orgId,
-          resendEmailId,
+          externalEmailId,
           entityType: "invoice",
           entityId: invoiceId,
           recipientEmail: email,
@@ -164,6 +187,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   } catch (error) {
     if (error instanceof Error && error.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (error instanceof Error && error.message === "Forbidden") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     if (error instanceof Error && error.message === "No organization found") {
       return NextResponse.json(
