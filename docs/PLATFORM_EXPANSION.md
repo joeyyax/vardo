@@ -2,6 +2,8 @@
 
 Expanding the time tracking app into a complete freelancer business platform.
 
+> **Status:** Phases 1-15 (core platform) complete. Phases 16-18 are external integrations awaiting prioritization.
+
 ## Philosophy
 
 **Built for me first.** This is a tool that supports my opinionated way of working. If it resonates with others, great - but that's secondary. The goal is to replace multiple tools (Toggl, Basecamp, invoicing apps, contract tools) with one integrated system that works exactly how I want.
