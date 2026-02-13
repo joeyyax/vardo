@@ -447,24 +447,25 @@ Tabbed reports layout with full data views.
 - [x] Client Reports tab (per-client summary, hours, revenue)
 - [x] Tax year selector (default to previous year before April 15)
 
-### Phase 13: Client Portal Completion
+### Phase 13: Client Portal Completion ✅ COMPLETE
 
-Reopening Phase 3. Invitation system and API are built. The actual portal experience needs to be built.
+Portal experience fully built on top of Phase 3 foundation.
 
-- [ ] Portal layout (`app/(portal)/layout.tsx`)
-- [ ] Portal dashboard (list of invited projects with status)
-- [ ] Portal project view (progress, tasks, files — filtered by visibility settings)
-- [ ] Client-scoped authentication context
-- [ ] Mobile-responsive portal design
+- [x] Portal layout (`app/(portal)/layout.tsx`) with header, theme toggle, sign out
+- [x] Portal dashboard (list of invited projects with role badges, visibility indicators)
+- [x] Portal project view (lifecycle timeline, tasks, stats, onboarding/offboarding)
+- [x] Client-scoped authentication (shared session with invitation-based access scoping)
+- [x] Mobile-responsive portal design (responsive grid, breakpoint layouts)
 
-### Phase 14: Cron Jobs & Automation
+### Phase 14: Cron Jobs & Automation ✅ COMPLETE
 
-Background jobs for recurring operations. Cron route directory exists at `/app/api/cron/` but nothing is implemented.
+Background jobs for recurring operations.
 
-- [ ] Recurring expense generation
-- [ ] Rolling invoice draft generation
-- [ ] Auto-close completed retainer periods
-- [ ] Scheduled report delivery (email)
+- [x] Recurring expense generation (`/api/cron/recurring-expenses`)
+- [x] Rolling invoice draft generation (`/api/cron/generate-invoices`)
+- [x] Unified cron endpoint with hourly scheduling (`/api/cron`)
+- [x] Scheduled report delivery (`/api/cron/send-reports`)
+- [x] Notification digest delivery (`/api/cron/send-notification-digest`)
 
 ### Phase 15: Project Lifecycle & Onboarding
 
