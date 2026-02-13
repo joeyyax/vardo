@@ -1349,6 +1349,7 @@ export const notificationPreferences = pgTable("notification_preferences", {
   blockerResolved: boolean("blocker_resolved").default(true),
   clientComment: boolean("client_comment").default(true),
   emailEnabled: boolean("email_enabled").default(true),
+  emailDelivery: text("email_delivery").default("immediate"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
