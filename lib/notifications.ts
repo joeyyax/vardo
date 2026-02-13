@@ -3,6 +3,7 @@ import {
   notifications,
   notificationPreferences,
   taskWatchers,
+  projectWatchers,
   expenseWatchers,
   users,
   tasks,
@@ -310,5 +311,72 @@ export async function notifyExpenseWatchers(params: {
   } catch (error) {
     console.error("Error notifying expense watchers:", error);
     return [];
+  }
+}
+
+/**
+ * Ensure a user is watching an entity. Inserts a watcher row if one doesn't
+ * already exist. Silently succeeds if the user is already watching.
+ * Never throws — logs errors and returns void.
+ */
+export async function ensureWatcher(
+  entityType: "task" | "project" | "expense",
+  entityId: string,
+  userId: string,
+  reason: string
+) {
+  try {
+    switch (entityType) {
+      case "task": {
+        const existing = await db.query.taskWatchers.findFirst({
+          where: and(
+            eq(taskWatchers.taskId, entityId),
+            eq(taskWatchers.userId, userId)
+          ),
+        });
+        if (!existing) {
+          await db.insert(taskWatchers).values({
+            taskId: entityId,
+            userId,
+            reason,
+          });
+        }
+        break;
+      }
+      case "project": {
+        const existing = await db.query.projectWatchers.findFirst({
+          where: and(
+            eq(projectWatchers.projectId, entityId),
+            eq(projectWatchers.userId, userId)
+          ),
+        });
+        if (!existing) {
+          await db.insert(projectWatchers).values({
+            projectId: entityId,
+            userId,
+            reason,
+          });
+        }
+        break;
+      }
+      case "expense": {
+        const existing = await db.query.expenseWatchers.findFirst({
+          where: and(
+            eq(expenseWatchers.expenseId, entityId),
+            eq(expenseWatchers.userId, userId)
+          ),
+        });
+        if (!existing) {
+          await db.insert(expenseWatchers).values({
+            expenseId: entityId,
+            userId,
+            reason,
+          });
+        }
+        break;
+      }
+    }
+  } catch (error) {
+    console.error(`Error ensuring ${entityType} watcher:`, error);
   }
 }
