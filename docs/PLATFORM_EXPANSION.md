@@ -438,14 +438,14 @@ Schema and tables exist. UI and email delivery implemented.
 - [x] Email templates for notification types (task assigned, comment added, document accepted, etc.)
 - [x] Daily digest cron endpoint (`/api/cron/send-notification-digest`)
 
-### Phase 12: Reports Expansion
+### Phase 12: Reports Expansion ✅ COMPLETE
 
-Chart components exist. Needs tabbed layout and additional views.
+Tabbed reports layout with full data views.
 
-- [ ] Tabbed layout (Overview, Accounting, Client Reports)
-- [ ] Accounting tab (P&L, expense categories, tax prep)
-- [ ] Client Reports tab (per-client summary, hours, revenue)
-- [ ] Tax year selector (default to previous year before April 15)
+- [x] Tabbed layout (Overview, Accounting, Client Reports)
+- [x] Accounting tab (P&L, expense categories, tax prep)
+- [x] Client Reports tab (per-client summary, hours, revenue)
+- [x] Tax year selector (default to previous year before April 15)
 
 ### Phase 13: Client Portal Completion
 
