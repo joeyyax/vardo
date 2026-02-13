@@ -4,7 +4,7 @@ import { tasks, projects, taskRelationships, users, TASK_STATUSES, TASK_PRIORITI
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { logTaskStatusChanged, logTaskAssigned } from "@/lib/activities";
-import { notifyAssignment, notifyStatusChange } from "@/lib/notifications";
+import { notifyAssignment, notifyStatusChange, ensureWatcher } from "@/lib/notifications";
 
 // Check if a task has unresolved blockers
 async function hasUnresolvedBlockers(taskId: string): Promise<{ blocked: boolean; blockers: { id: string; name: string; status: TaskStatus | null }[] }> {
@@ -387,8 +387,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         isClientVisible: updatedTask.isClientVisible ?? undefined,
       });
 
-      // Notify assignee
+      // Auto-subscribe assignee as watcher and notify
       if (assignedTo) {
+        await ensureWatcher("task", taskId, assignedTo, "assignee");
         await notifyAssignment({
           assigneeId: assignedTo,
           actorId: session.user.id,
