@@ -1,18 +1,26 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { Users } from "lucide-react";
 import { getCurrentOrg } from "@/lib/auth/session";
 import { DEFAULT_ORG_FEATURES, type OrgFeatures } from "@/lib/db/schema";
 import { SettingsForm } from "./settings-form";
 import { FeaturesForm } from "./features-form";
-import { PersonalPreferences } from "./personal-preferences";
 import { PaymentSettings } from "./payment-settings";
 import { ImportWizard } from "@/components/settings/import-wizard";
 import { DangerZone } from "@/components/settings/danger-zone";
-import { NotificationPreferences } from "./notification-preferences";
 import { getStripeStatus } from "@/lib/payments/stripe";
 import { TaskTypesSettings } from "./task-types-settings";
 import { TaskTagsSettings } from "./task-tags-settings";
 import { IntakeEmailSettings } from "./intake-email-settings";
+import { SettingsTabs } from "./settings-tabs";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
 export default async function SettingsPage() {
   const orgData = await getCurrentOrg();
@@ -30,111 +38,154 @@ export default async function SettingsPage() {
     ...(organization.features as OrgFeatures | null),
   };
 
-  return (
-    <div className="space-y-8">
-      <div className="mb-8">
-        <h1 className="text-xl font-semibold tracking-tight">Settings</h1>
-      </div>
-
-      {/* Personal Preferences - only show if time tracking is enabled */}
-      {features.time_tracking && <PersonalPreferences />}
-
-      {/* Organization Settings */}
+  // General tab
+  const generalContent = (
+    <>
       <SettingsForm
         organization={organization}
         canEdit={canEdit}
         features={features}
       />
-
-      {/* Features */}
       <FeaturesForm
         organizationId={organization.id}
         features={features}
         canEdit={canEdit}
       />
-
-      {/* Task Configuration - only show if PM is enabled */}
-      {features.pm && (
-        <div className="space-y-4">
-          <div>
-            <h2 className="text-lg font-medium">Tasks</h2>
-            <p className="text-sm text-muted-foreground">
-              Configure task types and tags for your organization.
-            </p>
-          </div>
-          <TaskTypesSettings orgId={organization.id} />
-          <TaskTagsSettings orgId={organization.id} />
-        </div>
+      {membership.role === "owner" && (
+        <DangerZone orgId={organization.id} orgName={organization.name} />
       )}
+    </>
+  );
 
-      {/* Document Templates - only show if proposals feature is enabled */}
-      {features.proposals && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-medium">Document Templates</h2>
-              <p className="text-sm text-muted-foreground">
+  // Workflow tab
+  const workflowContent =
+    features.pm || features.proposals ? (
+      <>
+        {features.pm && (
+          <>
+            <TaskTypesSettings orgId={organization.id} />
+            <TaskTagsSettings orgId={organization.id} />
+          </>
+        )}
+        {features.proposals && (
+          <Card className="squircle">
+            <CardHeader>
+              <CardTitle>Document Templates</CardTitle>
+              <CardDescription>
                 Manage templates for proposals, contracts, and change orders.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Link href="/settings/templates">
+                <Button variant="outline" className="squircle">
+                  Manage Templates
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+        )}
+      </>
+    ) : (
+      <Card className="squircle">
+        <CardContent className="py-8 text-center text-sm text-muted-foreground">
+          Enable Project Management or Proposals in the General tab to configure
+          workflow settings.
+        </CardContent>
+      </Card>
+    );
+
+  // Billing tab
+  const billingContent = features.invoicing ? (
+    <PaymentSettings
+      organizationId={organization.id}
+      stripeStatus={getStripeStatus()}
+      canEdit={canEdit}
+    />
+  ) : (
+    <Card className="squircle">
+      <CardContent className="py-8 text-center text-sm text-muted-foreground">
+        Enable Invoicing in the General tab to configure billing settings.
+      </CardContent>
+    </Card>
+  );
+
+  // Team tab
+  const teamContent = (
+    <Card className="squircle">
+      <CardHeader>
+        <CardTitle>Team Members</CardTitle>
+        <CardDescription>
+          Manage your team members, roles, and invitations.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="flex flex-col items-center gap-3 py-4">
+          <div className="flex size-10 items-center justify-center rounded-full bg-muted">
+            <Users className="size-5 text-muted-foreground" />
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Team management is coming soon.
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  // Integrations tab
+  const integrationsContent =
+    features.expenses || features.time_tracking ? (
+      <>
+        {features.expenses && (
+          <div className="space-y-4">
+            <div>
+              <h2 className="text-lg font-medium">Expense Intake</h2>
+              <p className="text-sm text-muted-foreground">
+                Forward emails to capture invoices and receipts.
               </p>
             </div>
-            <Link
-              href="/settings/templates"
-              className="text-sm text-primary hover:underline"
-            >
-              Manage Templates
-            </Link>
+            <IntakeEmailSettings
+              organizationId={organization.id}
+              intakeEmailToken={organization.intakeEmailToken ?? null}
+              canEdit={canEdit}
+            />
           </div>
-        </div>
-      )}
-
-      {/* Notification Preferences */}
-      <NotificationPreferences />
-
-      {/* Email Intake - only show if expenses are enabled */}
-      {features.expenses && (
-        <div className="space-y-4">
-          <div>
-            <h2 className="text-lg font-medium">Expense Intake</h2>
-            <p className="text-sm text-muted-foreground">
-              Forward emails to capture invoices and receipts.
-            </p>
+        )}
+        {features.time_tracking && (
+          <div className="space-y-4">
+            <div>
+              <h2 className="text-lg font-medium">Import</h2>
+              <p className="text-sm text-muted-foreground">
+                Import time entries from other services.
+              </p>
+            </div>
+            <ImportWizard orgId={organization.id} />
           </div>
-          <IntakeEmailSettings
-            organizationId={organization.id}
-            intakeEmailToken={organization.intakeEmailToken ?? null}
-            canEdit={canEdit}
-          />
-        </div>
-      )}
+        )}
+      </>
+    ) : (
+      <Card className="squircle">
+        <CardContent className="py-8 text-center text-sm text-muted-foreground">
+          No integrations are available for your current feature set.
+        </CardContent>
+      </Card>
+    );
 
-      {/* Payment Providers - only show if invoicing is enabled */}
-      {features.invoicing && (
-        <PaymentSettings
-          organizationId={organization.id}
-          stripeStatus={getStripeStatus()}
-          canEdit={canEdit}
-        />
-      )}
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-xl font-semibold tracking-tight">Settings</h1>
+        <p className="text-sm text-muted-foreground">
+          Manage your organization settings.
+        </p>
+      </div>
 
-      {/* Import - only show if time tracking is enabled */}
-      {features.time_tracking && (
-        <div className="space-y-4">
-          <div>
-            <h2 className="text-lg font-medium">Import</h2>
-            <p className="text-sm text-muted-foreground">
-              Import time entries from other services.
-            </p>
-          </div>
-          <ImportWizard orgId={organization.id} />
-        </div>
-      )}
-
-      {/* Danger Zone - only show to owners */}
-      {membership.role === "owner" && (
-        <div className="space-y-4">
-          <DangerZone orgId={organization.id} orgName={organization.name} />
-        </div>
-      )}
+      <SettingsTabs
+        generalContent={generalContent}
+        workflowContent={workflowContent}
+        billingContent={billingContent}
+        teamContent={teamContent}
+        integrationsContent={integrationsContent}
+      />
     </div>
   );
 }
