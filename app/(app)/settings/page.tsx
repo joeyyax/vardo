@@ -1,7 +1,6 @@
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { Users } from "lucide-react";
 import { getCurrentOrg } from "@/lib/auth/session";
 import { DEFAULT_ORG_FEATURES, type OrgFeatures } from "@/lib/db/schema";
 import { SettingsForm } from "./settings-form";
@@ -109,28 +108,6 @@ export default async function SettingsPage() {
     </Card>
   );
 
-  // Team tab
-  const teamContent = (
-    <Card className="max-w-2xl squircle">
-      <CardHeader>
-        <CardTitle>Team Members</CardTitle>
-        <CardDescription>
-          Manage your team members, roles, and invitations.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="flex flex-col items-center gap-3 py-4">
-          <div className="flex size-10 items-center justify-center rounded-full bg-muted">
-            <Users className="size-5 text-muted-foreground" />
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Team management is coming soon.
-          </p>
-        </div>
-      </CardContent>
-    </Card>
-  );
-
   // Integrations tab
   const integrationsContent = features.time_tracking ? (
     <div className="space-y-4">
@@ -164,7 +141,6 @@ export default async function SettingsPage() {
           generalContent={generalContent}
           workflowContent={workflowContent}
           billingContent={billingContent}
-          teamContent={teamContent}
           integrationsContent={integrationsContent}
         />
       </Suspense>
