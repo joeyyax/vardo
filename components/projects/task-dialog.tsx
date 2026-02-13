@@ -12,6 +12,7 @@ import { TaskTags } from "./task-tags";
 import { TaskDetailView } from "./task-detail-view";
 import { TaskDetailEdit } from "./task-detail-edit";
 import { TaskSplitDialog } from "./task-split-dialog";
+import { WatchButton } from "@/components/watch-button";
 
 export type TaskStatus = "todo" | "in_progress" | "review" | "done";
 export type TaskPriority = "low" | "medium" | "high" | "urgent";
@@ -264,6 +265,7 @@ export function TaskDialog({
     <>
       {task && (
         <>
+          <WatchButton entityType="task" entityId={task.id} orgId={orgId} projectId={projectId} />
           {(task.metadata?.source === "widget" || task.metadata?.bugReportId) && !task.metadata?.split && (
             <IconButton
               icon={GitBranch}

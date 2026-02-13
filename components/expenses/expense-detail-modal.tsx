@@ -8,6 +8,7 @@ import { Pencil, Save, X } from "lucide-react";
 import { ExpenseDetailView } from "./expense-detail-view";
 import { ExpenseDetailEdit } from "./expense-detail-edit";
 import { ExpenseComments } from "./expense-comments";
+import { WatchButton } from "@/components/watch-button";
 import { eventBus } from "@/lib/events";
 import type { Expense } from "./types";
 
@@ -90,11 +91,14 @@ export function ExpenseDetailModal({
       </Button>
     </>
   ) : (
-    <IconButton
-      icon={Pencil}
-      tooltip="Edit"
-      onClick={() => setIsEditing(true)}
-    />
+    <>
+      <WatchButton entityType="expense" entityId={expense.id} orgId={orgId} />
+      <IconButton
+        icon={Pencil}
+        tooltip="Edit"
+        onClick={() => setIsEditing(true)}
+      />
+    </>
   );
 
   return (

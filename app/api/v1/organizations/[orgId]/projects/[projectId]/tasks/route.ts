@@ -4,6 +4,7 @@ import { tasks, projects, TASK_STATUSES, TASK_PRIORITIES, type TaskStatus } from
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and, isNull, sql } from "drizzle-orm";
 import { logTaskCreated } from "@/lib/activities";
+import { ensureWatcher } from "@/lib/notifications";
 
 type RouteParams = {
   params: Promise<{ orgId: string; projectId: string }>;
@@ -212,6 +213,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       taskName: newTask.name,
       isClientVisible: newTask.isClientVisible ?? undefined,
     });
+
+    // Auto-subscribe creator as watcher
+    await ensureWatcher("task", newTask.id, session.user.id, "creator");
+
+    // Auto-subscribe assignee as watcher if assigned
+    if (newTask.assignedTo) {
+      await ensureWatcher("task", newTask.id, newTask.assignedTo, "assignee");
+    }
 
     return NextResponse.json(newTask, { status: 201 });
   } catch (error) {

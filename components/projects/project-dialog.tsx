@@ -10,6 +10,7 @@ import { Archive, ArchiveRestore, Pencil, Trash2 } from "lucide-react";
 import { ProjectDetailView } from "./project-detail-view";
 import { ProjectDetailEdit } from "./project-detail-edit";
 import { ProjectComments } from "./project-comments";
+import { WatchButton } from "@/components/watch-button";
 
 // Type definitions
 export type Client = {
@@ -219,6 +220,7 @@ export function ProjectDialog({
     <>
       {project && (
         <>
+          <WatchButton entityType="project" entityId={project.id} orgId={orgId} projectId={project.id} />
           <IconButton
             icon={project.isArchived ? ArchiveRestore : Archive}
             tooltip={project.isArchived ? "Unarchive" : "Archive"}

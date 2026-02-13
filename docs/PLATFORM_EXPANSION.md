@@ -422,20 +422,21 @@ Completing UI for features that already have backend support. Schema and API end
 - [x] Notification preferences (per-entity, per-channel controls)
 - [x] Organization feature flags UI (toggle modules)
 
-### Phase 11: Notifications
+### Phase 11: Notifications ✅ COMPLETE
 
-Schema and tables exist. Needs UI and email delivery.
+Schema and tables exist. UI and email delivery implemented.
 
 **UI:**
-- [ ] Notification bell + dropdown in app header
-- [ ] Mark as read / mark all read
-- [ ] Notification list page (full history)
-- [ ] Watch/unwatch buttons visible in entity detail modals
+- [x] Notification bell + dropdown in app header
+- [x] Mark as read / mark all read
+- [x] Notification list page (full history)
+- [x] Watch/unwatch buttons visible in entity detail modals
 
 **Email Delivery:**
-- [ ] Email notification delivery via Resend
-- [ ] Digest option (immediate vs daily summary)
-- [ ] Email templates for notification types (task assigned, comment added, document accepted, etc.)
+- [x] Email notification delivery via Resend
+- [x] Digest option (immediate vs daily summary)
+- [x] Email templates for notification types (task assigned, comment added, document accepted, etc.)
+- [x] Daily digest cron endpoint (`/api/cron/send-notification-digest`)
 
 ### Phase 12: Reports Expansion
 

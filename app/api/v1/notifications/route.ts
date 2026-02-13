@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { notifications } from "@/lib/db/schema";
+import { notifications, type NotificationType } from "@/lib/db/schema";
 import { requireSession } from "@/lib/auth/session";
 import { eq, and, desc, sql } from "drizzle-orm";
 
@@ -14,11 +14,15 @@ export async function GET(request: NextRequest) {
     const unreadOnly = searchParams.get("unreadOnly") === "true";
     const limit = Math.min(parseInt(searchParams.get("limit") || "20"), 50);
     const offset = parseInt(searchParams.get("offset") || "0");
+    const type = searchParams.get("type");
 
     // Build conditions
     const conditions = [eq(notifications.userId, userId)];
     if (unreadOnly) {
       conditions.push(eq(notifications.isRead, false));
+    }
+    if (type) {
+      conditions.push(eq(notifications.type, type as NotificationType));
     }
 
     const notificationList = await db.query.notifications.findMany({
