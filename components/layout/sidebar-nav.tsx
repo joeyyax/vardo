@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Fragment } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -33,9 +33,12 @@ type NavItem = {
   feature?: keyof OrgFeatures;
   // Custom visibility check for items that depend on multiple features
   visibleWhen?: (features: OrgFeatures) => boolean;
+  // Show a separator line before this item
+  separator?: boolean;
 };
 
 const navItems: NavItem[] = [
+  // Daily workflow
   {
     label: "Track",
     href: "/track",
@@ -50,12 +53,43 @@ const navItems: NavItem[] = [
     description: "Analytics & summaries",
     feature: "time_tracking",
   },
+  // Core entities
+  {
+    label: "Clients",
+    href: "/clients",
+    icon: Users,
+    description: "Manage clients",
+    separator: true,
+  },
+  {
+    label: "Projects",
+    href: "/projects",
+    icon: Folder,
+    description: "Manage projects",
+    visibleWhen: (features) => features.time_tracking || features.pm,
+  },
+  {
+    label: "Tasks",
+    href: "/tasks",
+    icon: ListTodo,
+    description: "All tasks across projects",
+    feature: "pm",
+  },
+  // Finance & documents
   {
     label: "Invoices",
     href: "/invoices",
     icon: FileText,
     description: "Manage invoices",
     feature: "invoicing",
+    separator: true,
+  },
+  {
+    label: "Expenses",
+    href: "/expenses",
+    icon: Receipt,
+    description: "Track expenses",
+    feature: "expenses",
   },
   {
     label: "Proposals",
@@ -71,41 +105,14 @@ const navItems: NavItem[] = [
     description: "Manage contracts",
     feature: "proposals",
   },
-  {
-    label: "Expenses",
-    href: "/expenses",
-    icon: Receipt,
-    description: "Track expenses",
-    feature: "expenses",
-  },
+  // Processing
   {
     label: "Inbox",
     href: "/inbox",
     icon: Inbox,
     description: "Review forwarded emails",
     feature: "expenses",
-  },
-  {
-    label: "Clients",
-    href: "/clients",
-    icon: Users,
-    description: "Manage clients",
-    // Always visible - core feature
-  },
-  {
-    label: "Projects",
-    href: "/projects",
-    icon: Folder,
-    description: "Manage projects",
-    // Show if time_tracking OR pm is enabled
-    visibleWhen: (features) => features.time_tracking || features.pm,
-  },
-  {
-    label: "Tasks",
-    href: "/tasks",
-    icon: ListTodo,
-    description: "All tasks across projects",
-    feature: "pm",
+    separator: true,
   },
 ];
 
@@ -156,14 +163,18 @@ export function SidebarNav({ features, collapsed, orgId }: SidebarNavProps) {
 
   return (
     <nav className="flex flex-col gap-1 px-2">
-      {visibleItems.map((item) => {
+      {visibleItems.map((item, index) => {
         const isActive =
           pathname === item.href || pathname.startsWith(`${item.href}/`);
         const Icon = item.icon;
         const badgeCount = item.href === "/inbox" ? inboxCount : 0;
 
         return (
-          <Tooltip key={item.href} delayDuration={0}>
+          <Fragment key={item.href}>
+            {item.separator && index > 0 && (
+              <div className="mx-3 my-1 border-t border-sidebar-border" />
+            )}
+          <Tooltip delayDuration={0}>
             <TooltipTrigger asChild>
               <Link
                 href={item.href}
@@ -201,6 +212,7 @@ export function SidebarNav({ features, collapsed, orgId }: SidebarNavProps) {
               {collapsed ? item.label : item.description}
             </TooltipContent>
           </Tooltip>
+          </Fragment>
         );
       })}
     </nav>
