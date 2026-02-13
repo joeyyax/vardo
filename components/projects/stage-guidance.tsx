@@ -78,6 +78,7 @@ function computeEffectiveStage(
   const proposals = docs.filter((d) => d.type === "proposal");
   const contracts = docs.filter((d) => d.type === "contract");
   const hasAcceptedProposal = proposals.some((d) => d.status === "accepted");
+  const hasAcceptedContract = contracts.some((d) => d.status === "accepted");
   const hasAnyProposal = proposals.length > 0;
   const hasAnyContract = contracts.length > 0;
 
@@ -94,6 +95,14 @@ function computeEffectiveStage(
     effectiveIndex < STAGE_ORDER.indexOf("agreement")
   ) {
     effective = "agreement";
+    effectiveIndex = STAGE_ORDER.indexOf("agreement");
+  }
+  if (
+    hasAcceptedContract &&
+    effectiveIndex < STAGE_ORDER.indexOf("onboarding")
+  ) {
+    effective = "onboarding";
+    effectiveIndex = STAGE_ORDER.indexOf("onboarding");
   }
 
   return effective;

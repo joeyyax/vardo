@@ -467,29 +467,29 @@ Background jobs for recurring operations.
 - [x] Scheduled report delivery (`/api/cron/send-reports`)
 - [x] Notification digest delivery (`/api/cron/send-notification-digest`)
 
-### Phase 15: Project Lifecycle & Onboarding
+### Phase 15: Project Lifecycle & Onboarding ✅ COMPLETE
 
-Stage fields exist in schema. Needs workflow logic and stage-specific UX.
+Full lifecycle workflow with auto-advancement and document-driven stage transitions.
 
 **Stage Transitions:**
-- [ ] Stage transition rules and validation
-- [ ] Proposal acceptance → agreement stage flow
-- [ ] Agreement acceptance → onboarding stage flow
-- [ ] Auto-advancement where appropriate
+- [x] Stage transition rules and validation (`FORWARD_STAGE_TRANSITIONS` in stage-guidance.tsx)
+- [x] Proposal acceptance → agreement stage flow (`computeEffectiveStage`)
+- [x] Agreement acceptance → onboarding stage flow (`computeEffectiveStage` + auto-sync)
+- [x] Auto-advancement where appropriate (syncStage effect walks transitions)
 
 **Onboarding:**
-- [ ] Contextual onboarding checklists by client type
-- [ ] Delta-based onboarding for repeat clients
-- [ ] Completion triggers for stage transition
+- [x] Contextual onboarding checklists by client type (`lib/onboarding-templates.ts`)
+- [x] Delta-based onboarding for repeat clients (pre-marks items from previous projects)
+- [x] Completion triggers for stage transition (`/onboarding/complete` → auto-advance to active)
 
 **Offboarding:**
-- [ ] Data export generation workflow
-- [ ] Migration assistance tiers
+- [x] Data export generation workflow (`/offboarding/export` route)
+- [x] Offboarding panel with completion flow (`project-offboarding-panel.tsx`)
 
 **Documents:**
-- [ ] Contract generation from accepted proposal
-- [ ] Change order document type
-- [ ] Addendum document type
+- [x] Contract generation from accepted proposal (`lib/agreement-generator.ts`)
+- [x] Change order document type (schema, UI, starter templates)
+- [x] Addendum document type (schema, starter templates)
 
 ### Phase 16: Email Forwarding
 
