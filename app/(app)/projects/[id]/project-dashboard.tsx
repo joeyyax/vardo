@@ -32,7 +32,7 @@ import {
   TASK_PRIORITY_COLORS,
 } from "@/components/projects/task-dialog";
 import { KanbanBoard } from "@/components/projects/kanban-board";
-import { ProjectInvitations } from "@/components/projects/project-invitations";
+import { ProjectPeople } from "@/components/projects/project-people";
 import { ProjectFiles } from "@/components/projects/project-files";
 import { ProjectActivity } from "@/components/projects/project-activity";
 import { ProjectExpenses } from "@/components/projects/project-expenses";
@@ -398,9 +398,7 @@ export function ProjectDashboard({ project: initialProject, orgId, orgName, pmEn
             <MessageSquare className="size-4" />
             Discussion
           </Button>
-          {capabilities.invitations && (
-            <ProjectInvitations orgId={orgId} projectId={project.id} />
-          )}
+          <ProjectPeople orgId={orgId} projectId={project.id} isAdmin={isAdmin ?? false} />
           {capabilities.editProject && (
             <Button
               variant="outline"
