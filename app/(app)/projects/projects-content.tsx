@@ -40,16 +40,19 @@ import {
   PROJECT_STAGE_COLORS,
 } from "@/components/projects/project-dialog";
 import { ListRow, ListContainer } from "@/components/ui/list-row";
+import { BudgetBar } from "@/components/ui/budget-bar";
 
 type ProjectsContentProps = {
   orgId: string;
 };
 
+type ProjectWithUsage = Project & { totalMinutes?: number };
+
 const PROJECT_VIEWS = ["list", "table"] as const;
 
 export function ProjectsContent({ orgId }: ProjectsContentProps) {
   const [view, setView] = useViewPreference("projects", PROJECT_VIEWS, "list");
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<ProjectWithUsage[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -85,6 +88,7 @@ export function ProjectsContent({ orgId }: ProjectsContentProps) {
       if (showArchived) {
         params.set("includeArchived", "true");
       }
+      params.set("includeBudgetUsage", "true");
 
       const url = `/api/v1/organizations/${orgId}/projects${
         params.toString() ? `?${params.toString()}` : ""
@@ -276,6 +280,7 @@ export function ProjectsContent({ orgId }: ProjectsContentProps) {
                       <TableHead>Stage</TableHead>
                       <TableHead>Rate</TableHead>
                       <TableHead>Billable</TableHead>
+                      <TableHead>Budget</TableHead>
                       <TableHead className="w-[50px]" />
                     </TableRow>
                   </TableHeader>
@@ -342,6 +347,21 @@ export function ProjectsContent({ orgId }: ProjectsContentProps) {
                               >
                                 <DollarSign className="size-3" />
                                 {project.isBillable ? "Billable" : "Non-billable"}
+                              </div>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {project.budgetType && (project.budgetHours || project.budgetAmountCents) && (
+                              <div className="w-28">
+                                <BudgetBar
+                                  budgetType={project.budgetType}
+                                  budgetValue={project.budgetType === "hours"
+                                    ? (project.budgetHours ?? 0)
+                                    : (project.budgetAmountCents ?? 0)}
+                                  usedValue={project.budgetType === "hours"
+                                    ? ((project.totalMinutes ?? 0) / 60)
+                                    : ((project.totalMinutes ?? 0) / 60 * (project.rateOverride ?? 0) / 100)}
+                                />
                               </div>
                             )}
                           </TableCell>
@@ -464,7 +484,7 @@ function ProjectRow({
   onEdit,
   isLast,
 }: {
-  project: Project;
+  project: ProjectWithUsage;
   onEdit: () => void;
   isLast: boolean;
 }) {
@@ -540,6 +560,21 @@ function ProjectRow({
             </div>
           )}
         </div>
+
+        {/* Budget indicator */}
+        {project.budgetType && (project.budgetHours || project.budgetAmountCents) && (
+          <div className="w-32 shrink-0">
+            <BudgetBar
+              budgetType={project.budgetType}
+              budgetValue={project.budgetType === "hours"
+                ? (project.budgetHours ?? 0)
+                : (project.budgetAmountCents ?? 0)}
+              usedValue={project.budgetType === "hours"
+                ? ((project.totalMinutes ?? 0) / 60)
+                : ((project.totalMinutes ?? 0) / 60 * (project.rateOverride ?? 0) / 100)}
+            />
+          </div>
+        )}
       </Link>
 
       {/* Edit button */}
