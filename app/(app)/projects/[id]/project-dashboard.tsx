@@ -19,6 +19,7 @@ import {
   UserPlus,
   X,
 } from "lucide-react";
+import { BudgetBar } from "@/components/ui/budget-bar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ProjectDialog } from "@/components/projects/project-dialog";
@@ -524,13 +525,6 @@ export function ProjectDashboard({ project: initialProject, orgId, orgName, pmEn
 
             {stats?.budgetMinutes ? (() => {
               const used = stats.budgetMinutes - (stats.budgetRemaining ?? 0);
-              const pct = Math.min(100, (used / stats.budgetMinutes) * 100);
-              const barColor =
-                pct >= 100
-                  ? "bg-red-500"
-                  : pct >= 80
-                    ? "bg-amber-500"
-                    : "bg-primary";
               const isFixed = stats.budgetType === "fixed";
 
               return (
@@ -565,12 +559,40 @@ export function ProjectDashboard({ project: initialProject, orgId, orgName, pmEn
                         </p>
                       </>
                     )}
-                    <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all ${barColor}`}
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
+                    <BudgetBar
+                      budgetType={isFixed ? "fixed" : "hours"}
+                      budgetValue={isFixed ? (stats.budgetAmount ?? 0) : (stats.budgetMinutes ?? 0) / 60}
+                      usedValue={isFixed ? (stats.budgetUsedAmount ?? 0) : used / 60}
+                    />
+                    {/* Burn rate context */}
+                    {(() => {
+                      const projectCreatedAt = project.createdAt instanceof Date
+                        ? project.createdAt.getTime()
+                        : new Date(project.createdAt).getTime();
+                      const weeksActive = Math.max(1,
+                        Math.floor((Date.now() - projectCreatedAt) / (7 * 24 * 60 * 60 * 1000))
+                      );
+                      const avgMinutesPerWeek = stats.totalMinutesAllTime / weeksActive;
+                      const remainingMinutes = stats.budgetRemaining ?? 0;
+                      const weeksRemaining = avgMinutesPerWeek > 0
+                        ? Math.round(remainingMinutes / avgMinutesPerWeek)
+                        : null;
+
+                      return (
+                        <p className="text-xs text-muted-foreground mt-2">
+                          Avg {formatHours(Math.round(avgMinutesPerWeek))}/week
+                          {weeksRemaining !== null && remainingMinutes > 0 && (
+                            <> — ~{weeksRemaining} {weeksRemaining === 1 ? "week" : "weeks"} remaining</>
+                          )}
+                        </p>
+                      );
+                    })()}
+                    <Link
+                      href={`/reports?tab=projects&projectId=${project.id}`}
+                      className="text-xs text-primary hover:underline mt-1 inline-block"
+                    >
+                      View detailed breakdown
+                    </Link>
                   </CardContent>
                 </Card>
               );
