@@ -67,6 +67,11 @@ Organizations support multiple members with intentional access control.
 - Three roles: **owner**, **admin**, **member**
 - Admins have full access; members see only their assigned projects
 - Join via invitation or shareable team link
+- **Default assignee** setting routes new entities to the right person automatically
+- Bulk reassignment when team composition changes
+
+### Assignment Inheritance
+New entities inherit their assignee through a chain: explicit assignment → project owner → client owner → organization default. Single-user organizations auto-set the default assignee on creation. When a second member joins, the owner is nudged to review assignment defaults.
 
 ### Clients
 Clients represent work contexts.
@@ -76,6 +81,7 @@ Clients represent work contexts.
 - Internal work is fully tracked but never invoiced
 - Clients can be nested one level (e.g., Agency → End Client)
 - Each client can have contacts (primary, billing, other)
+- Optional **owner** (assigned team member responsible for the client)
 
 ### Projects
 Projects represent bounded scopes of work.
@@ -86,13 +92,14 @@ Projects represent bounded scopes of work.
 - Archiving closes work without deleting history
 - Default views show Active projects only
 - Projects carry budgets, rates, and billing configuration
+- Optional **owner** (assigned team member responsible for the project)
 
 ### Tasks
 Tasks execute inside projects.
 
 - Tasks serve dual purpose: time tracking categories and structured work items
 - Statuses: todo, in progress, review, done
-- Optional: priority, assignee, estimate, tags, types, relationships
+- Optional: priority, assignee, estimate, tags, types, relationships, **due date**
 - Client visibility is intentional
 - Task movement reflects work, not status theater
 
@@ -205,6 +212,7 @@ Inbound email as a lightweight intake system.
 - Items land in a review queue
 - Convert to: expense, file, discussion item, task, or transfer to another entity
 - Attachments are extracted and stored automatically
+- Inbox items are auto-assigned via inheritance (project → client → org default)
 
 ---
 
