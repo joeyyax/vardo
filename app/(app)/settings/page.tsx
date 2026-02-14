@@ -12,6 +12,7 @@ import { getStripeStatus } from "@/lib/payments/stripe";
 import { TaskTypesSettings } from "./task-types-settings";
 import { TaskTagsSettings } from "./task-tags-settings";
 import { SettingsTabs } from "./settings-tabs";
+import { SecondMemberNudge } from "./second-member-nudge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -45,6 +46,9 @@ export default async function SettingsPage() {
         canEdit={canEdit}
         features={features}
       />
+      {features.secondMemberNudge && (
+        <SecondMemberNudge organizationId={organization.id} />
+      )}
       <FeaturesForm
         organizationId={organization.id}
         features={features}

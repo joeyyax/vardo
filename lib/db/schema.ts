@@ -21,6 +21,7 @@ export type OrgFeatures = {
   pm: boolean;
   proposals: boolean;
   defaultAssignee?: string | null;
+  secondMemberNudge?: boolean;
 };
 
 // Default features for new organizations (backward compatible)

@@ -197,6 +197,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         features.defaultAssignee = body.features.defaultAssignee || null;
       }
 
+      if ("secondMemberNudge" in body.features) {
+        features.secondMemberNudge = Boolean(body.features.secondMemberNudge);
+      }
+
       // Get current org to merge features
       const currentOrg = await db.query.organizations.findFirst({
         where: eq(organizations.id, orgId),
