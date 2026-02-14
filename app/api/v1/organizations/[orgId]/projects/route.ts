@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { projects, clients, PROJECT_STAGES, BUDGET_TYPES, type ProjectStage, type BudgetType } from "@/lib/db/schema";
+import { projects, clients, timeEntries, PROJECT_STAGES, BUDGET_TYPES, type ProjectStage, type BudgetType } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { getAccessibleProjectIds, requireAdmin } from "@/lib/auth/permissions";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql, inArray } from "drizzle-orm";
 import { createOrientationDocument } from "@/lib/orientation-template";
 
 type RouteParams = {
@@ -84,6 +84,36 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     let result = orgProjects;
     if (accessibleProjectIds !== null) {
       result = orgProjects.filter((p) => accessibleProjectIds.includes(p.id));
+    }
+
+    // Optionally include budget usage data
+    const includeBudgetUsage = searchParams.get("includeBudgetUsage") === "true";
+
+    if (includeBudgetUsage && result.length > 0) {
+      const projectIds = result.map((p) => p.id);
+
+      const timeTotals = await db
+        .select({
+          projectId: timeEntries.projectId,
+          totalMinutes: sql<number>`COALESCE(SUM(${timeEntries.durationMinutes}), 0)`,
+        })
+        .from(timeEntries)
+        .where(inArray(timeEntries.projectId, projectIds))
+        .groupBy(timeEntries.projectId);
+
+      const minutesByProject = new Map<string, number>();
+      for (const row of timeTotals) {
+        if (row.projectId) {
+          minutesByProject.set(row.projectId, Number(row.totalMinutes));
+        }
+      }
+
+      const enrichedResult = result.map((p) => ({
+        ...p,
+        totalMinutes: minutesByProject.get(p.id) ?? 0,
+      }));
+
+      return NextResponse.json(enrichedResult);
     }
 
     return NextResponse.json(result);
