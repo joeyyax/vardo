@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionCookie } from "better-auth/cookies";
 
 // Routes that require authentication AND organization membership
-const protectedRoutes = ["/track", "/reports", "/clients", "/projects", "/settings"];
+const protectedRoutes = ["/work", "/track", "/reports", "/clients", "/projects", "/settings"];
 
 // Routes that require authentication but NOT organization membership
 const authOnlyRoutes = ["/onboarding"];
@@ -29,7 +29,7 @@ export async function proxy(request: NextRequest) {
 
   // Redirect authenticated users away from auth pages
   if (sessionCookie && isAuthRoute) {
-    return NextResponse.redirect(new URL("/track", request.url));
+    return NextResponse.redirect(new URL("/work", request.url));
   }
 
   // Redirect unauthenticated users to login
@@ -50,6 +50,7 @@ export async function proxy(request: NextRequest) {
 export const config = {
   // Apply middleware to protected and auth routes
   matcher: [
+    "/work/:path*",
     "/track/:path*",
     "/reports/:path*",
     "/clients/:path*",
