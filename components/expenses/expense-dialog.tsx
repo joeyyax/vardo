@@ -1,18 +1,18 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { format, addMonths, addWeeks, addYears } from "date-fns";
 import {
   BottomSheet,
   BottomSheetContent,
+  BottomSheetDescription,
   BottomSheetFooter,
   BottomSheetHeader,
   BottomSheetTitle,
 } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -34,19 +34,9 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Switch } from "@/components/ui/switch";
-import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
 import { Loader2, RefreshCw, Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { expenseSchema, type ExpenseFormData } from "@/lib/schemas/expense";
 
 type Project = {
   id: string;
@@ -106,54 +96,43 @@ export function ExpenseDialog({
   onOpenChange,
   onCreated,
 }: ExpenseDialogProps) {
-  const [isLoading, setIsLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(false);
   const [vendors, setVendors] = useState<string[]>([]);
   const [vendorOpen, setVendorOpen] = useState(false);
   const [vendorSearch, setVendorSearch] = useState("");
 
-  const form = useForm<ExpenseFormData>({
-    resolver: zodResolver(expenseSchema),
-    defaultValues: {
-      description: "",
-      amount: "",
-      date: format(new Date(), "yyyy-MM-dd"),
-      category: "",
-      projectId: "none",
-      isBillable: false,
-      isRecurring: false,
-      recurringFrequency: "monthly",
-      vendor: "",
-      status: "paid",
-    },
-  });
+  // Form state
+  const [description, setDescription] = useState("");
+  const [amount, setAmount] = useState("");
+  const [date, setDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [category, setCategory] = useState("");
+  const [projectId, setProjectId] = useState("none");
+  const [vendor, setVendor] = useState("");
+  const [status, setStatus] = useState("paid");
+  const [isBillable, setIsBillable] = useState(false);
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [recurringFrequency, setRecurringFrequency] = useState("monthly");
 
-  const isRecurring = form.watch("isRecurring");
-  const projectId = form.watch("projectId");
+  function resetForm() {
+    setDescription("");
+    setAmount("");
+    setDate(format(new Date(), "yyyy-MM-dd"));
+    setCategory("");
+    setProjectId("none");
+    setVendor("");
+    setStatus("paid");
+    setIsBillable(false);
+    setIsRecurring(false);
+    setRecurringFrequency("monthly");
+    setVendorSearch("");
+  }
 
   // Reset form when dialog opens
   useEffect(() => {
     if (open) {
-      form.reset({
-        description: "",
-        amount: "",
-        date: format(new Date(), "yyyy-MM-dd"),
-        category: "",
-        projectId: "none",
-        isBillable: false,
-        isRecurring: false,
-        recurringFrequency: "monthly",
-        vendor: "",
-        status: "paid",
-      });
-      setVendorSearch("");
-    }
-  }, [open, form]);
-
-  // Fetch projects and vendors when dialog opens
-  useEffect(() => {
-    if (open) {
+      resetForm();
       fetchProjects();
       fetchVendors();
     }
@@ -186,29 +165,34 @@ export function ExpenseDialog({
     }
   }
 
-  async function onSubmit(data: ExpenseFormData) {
-    const amountCents = Math.round(parseFloat(data.amount) * 100);
-    if (isNaN(amountCents) || amountCents <= 0) {
+  async function handleSubmit() {
+    if (!description.trim()) {
+      toast.error("Description is required");
+      return;
+    }
+
+    const amountValue = parseFloat(amount);
+    if (isNaN(amountValue) || amountValue <= 0) {
       toast.error("Valid amount is required");
       return;
     }
 
-    setIsLoading(true);
+    setIsSubmitting(true);
     try {
       const payload = {
-        description: data.description.trim(),
-        amountCents,
-        date: data.date,
-        category: data.category || null,
-        projectId: data.projectId === "none" ? null : data.projectId,
-        isBillable: data.isBillable,
-        isRecurring: data.isRecurring,
-        recurringFrequency: data.isRecurring ? data.recurringFrequency : null,
-        nextOccurrence: data.isRecurring
-          ? calculateNextOccurrence(data.date, data.recurringFrequency)
+        description: description.trim(),
+        amountCents: Math.round(amountValue * 100),
+        date,
+        category: category || null,
+        projectId: projectId === "none" ? null : projectId,
+        isBillable,
+        isRecurring,
+        recurringFrequency: isRecurring ? recurringFrequency : null,
+        nextOccurrence: isRecurring
+          ? calculateNextOccurrence(date, recurringFrequency)
           : null,
-        vendor: data.vendor || null,
-        status: data.status || "paid",
+        vendor: vendor || null,
+        status: status || "paid",
       };
 
       const response = await fetch(
@@ -228,11 +212,10 @@ export function ExpenseDialog({
         const responseData = await response.json();
         toast.error(responseData.error || "Failed to add expense");
       }
-    } catch (err) {
-      console.error("Error creating expense:", err);
+    } catch {
       toast.error("Failed to add expense");
     } finally {
-      setIsLoading(false);
+      setIsSubmitting(false);
     }
   }
 
@@ -249,375 +232,298 @@ export function ExpenseDialog({
     {} as Record<string, Project[]>
   );
 
+  const filteredVendors = vendors.filter(
+    (v) =>
+      !vendorSearch ||
+      v.toLowerCase().includes(vendorSearch.toLowerCase())
+  );
+
   return (
-    <BottomSheet open={open} onOpenChange={onOpenChange}>
-      <BottomSheetContent size="lg">
+    <BottomSheet open={open} onOpenChange={(o) => {
+      onOpenChange(o);
+      if (!o) resetForm();
+    }}>
+      <BottomSheetContent className="squircle">
         <BottomSheetHeader>
           <BottomSheetTitle>Add Expense</BottomSheetTitle>
+          <BottomSheetDescription>
+            Record a new expense.
+          </BottomSheetDescription>
         </BottomSheetHeader>
         <div className="flex-1 overflow-y-auto px-6 pb-6">
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="description"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Description</FormLabel>
-                  <FormControl>
-                    <Input
-                      {...field}
-                      placeholder="e.g., Figma subscription"
-                      className="squircle"
-                      autoFocus
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="amount"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Amount</FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
-                          $
-                        </span>
-                        <Input
-                          {...field}
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          placeholder="0.00"
-                          className="pl-7 squircle"
-                        />
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="date"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{isRecurring ? "Start Date" : "Date"}</FormLabel>
-                    <FormControl>
-                      <Input {...field} type="date" className="squircle" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="description">Description</Label>
+              <Input
+                id="description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="e.g., Figma subscription"
+                className="squircle"
+                autoFocus
               />
             </div>
 
-            <FormField
-              control={form.control}
-              name="category"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Category</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl>
-                      <SelectTrigger className="squircle">
-                        <SelectValue placeholder="Select category" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent className="squircle">
-                      {DEFAULT_CATEGORIES.map((cat) => (
-                        <SelectItem key={cat} value={cat}>
-                          {cat}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="amount">Amount</Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                    $
+                  </span>
+                  <Input
+                    id="amount"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    placeholder="0.00"
+                    className="squircle pl-7"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="date">
+                  {isRecurring ? "Start Date" : "Date"}
+                </Label>
+                <Input
+                  id="date"
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  className="squircle"
+                />
+              </div>
+            </div>
 
-            <FormField
-              control={form.control}
-              name="vendor"
-              render={({ field }) => {
-                const filteredVendors = vendors.filter(
-                  (v) =>
-                    !vendorSearch ||
-                    v.toLowerCase().includes(vendorSearch.toLowerCase())
-                );
-
-                return (
-                  <FormItem className="flex flex-col">
-                    <FormLabel>Vendor</FormLabel>
-                    <Popover open={vendorOpen} onOpenChange={setVendorOpen}>
-                      <PopoverTrigger asChild>
-                        <FormControl>
-                          <Button
-                            variant="outline"
-                            role="combobox"
-                            aria-expanded={vendorOpen}
-                            className={cn(
-                              "squircle justify-between font-normal",
-                              !field.value && "text-muted-foreground"
-                            )}
-                          >
-                            {field.value || "Select or type a vendor..."}
-                            <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
-                          </Button>
-                        </FormControl>
-                      </PopoverTrigger>
-                      <PopoverContent
-                        className="w-[--radix-popover-trigger-width] p-0"
-                        align="start"
-                      >
-                        <Command shouldFilter={false}>
-                          <CommandInput
-                            placeholder="Search vendors..."
-                            value={vendorSearch}
-                            onValueChange={setVendorSearch}
-                          />
-                          <CommandList>
-                            {vendorSearch &&
-                              !vendors.some(
-                                (v) =>
-                                  v.toLowerCase() ===
-                                  vendorSearch.toLowerCase()
-                              ) && (
-                                <CommandGroup heading="New">
-                                  <CommandItem
-                                    value={vendorSearch}
-                                    onSelect={() => {
-                                      field.onChange(vendorSearch);
-                                      setVendorSearch("");
-                                      setVendorOpen(false);
-                                    }}
-                                  >
-                                    Add &ldquo;{vendorSearch}&rdquo;
-                                  </CommandItem>
-                                </CommandGroup>
-                              )}
-
-                            {filteredVendors.length === 0 && !vendorSearch && (
-                              <CommandEmpty>No vendors found.</CommandEmpty>
-                            )}
-
-                            {filteredVendors.length > 0 && (
-                              <CommandGroup heading="Recent vendors">
-                                {filteredVendors.map((v) => (
-                                  <CommandItem
-                                    key={v}
-                                    value={v}
-                                    onSelect={() => {
-                                      field.onChange(v);
-                                      setVendorSearch("");
-                                      setVendorOpen(false);
-                                    }}
-                                    className="flex items-center justify-between"
-                                  >
-                                    {v}
-                                    {field.value === v && (
-                                      <Check className="size-4 text-primary shrink-0" />
-                                    )}
-                                  </CommandItem>
-                                ))}
-                              </CommandGroup>
-                            )}
-
-                            {field.value && (
-                              <CommandGroup>
-                                <CommandItem
-                                  value="__clear__"
-                                  onSelect={() => {
-                                    field.onChange("");
-                                    setVendorSearch("");
-                                    setVendorOpen(false);
-                                  }}
-                                  className="text-muted-foreground"
-                                >
-                                  Clear vendor
-                                </CommandItem>
-                              </CommandGroup>
-                            )}
-                          </CommandList>
-                        </Command>
-                      </PopoverContent>
-                    </Popover>
-                    <FormMessage />
-                  </FormItem>
-                );
-              }}
-            />
-
-            <FormField
-              control={form.control}
-              name="status"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Payment Status</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl>
-                      <SelectTrigger className="squircle">
-                        <SelectValue placeholder="Select status" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent className="squircle">
-                      <SelectItem value="paid">Paid</SelectItem>
-                      <SelectItem value="unpaid">Unpaid</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="projectId"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Project (optional)</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl>
-                      <SelectTrigger className="squircle">
-                        <SelectValue placeholder="Select project" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent className="squircle">
-                      <SelectItem value="none">
-                        <span className="text-muted-foreground">
-                          General Business (Overhead)
-                        </span>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="category">Category</Label>
+                <Select value={category} onValueChange={setCategory}>
+                  <SelectTrigger id="category" className="squircle">
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent className="squircle">
+                    {DEFAULT_CATEGORIES.map((cat) => (
+                      <SelectItem key={cat} value={cat}>
+                        {cat}
                       </SelectItem>
-                      {projectsLoading ? (
-                        <div className="flex items-center justify-center py-2">
-                          <Loader2 className="size-4 animate-spin" />
-                        </div>
-                      ) : (
-                        Object.entries(projectsByClient).map(
-                          ([clientName, clientProjects]) => (
-                            <div key={clientName}>
-                              <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
-                                {clientName}
-                              </div>
-                              {clientProjects.map((project) => (
-                                <SelectItem
-                                  key={project.id}
-                                  value={project.id}
-                                >
-                                  {project.name}
-                                </SelectItem>
-                              ))}
-                            </div>
-                          )
-                        )
-                      )}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="status">Payment Status</Label>
+                <Select value={status} onValueChange={setStatus}>
+                  <SelectTrigger id="status" className="squircle">
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent className="squircle">
+                    <SelectItem value="paid">Paid</SelectItem>
+                    <SelectItem value="unpaid">Unpaid</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
 
-            {/* Recurring toggle */}
-            <FormField
-              control={form.control}
-              name="isRecurring"
-              render={({ field }) => (
-                <FormItem className="flex items-center justify-between rounded-lg border p-3">
-                  <div className="flex items-center gap-2">
-                    <RefreshCw className="size-4 text-muted-foreground" />
-                    <div className="space-y-0.5">
-                      <FormLabel>Recurring expense</FormLabel>
-                      <FormDescription>
-                        Auto-generate on schedule
-                      </FormDescription>
-                    </div>
-                  </div>
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
+            <div className="space-y-2">
+              <Label>Vendor</Label>
+              <Popover open={vendorOpen} onOpenChange={setVendorOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={vendorOpen}
+                    className={cn(
+                      "w-full squircle justify-between font-normal",
+                      !vendor && "text-muted-foreground"
+                    )}
+                  >
+                    {vendor || "Select or type a vendor..."}
+                    <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                  className="w-[--radix-popover-trigger-width] p-0"
+                  align="start"
+                >
+                  <Command shouldFilter={false}>
+                    <CommandInput
+                      placeholder="Search vendors..."
+                      value={vendorSearch}
+                      onValueChange={setVendorSearch}
                     />
-                  </FormControl>
-                </FormItem>
-              )}
-            />
+                    <CommandList>
+                      {vendorSearch &&
+                        !vendors.some(
+                          (v) =>
+                            v.toLowerCase() ===
+                            vendorSearch.toLowerCase()
+                        ) && (
+                          <CommandGroup heading="New">
+                            <CommandItem
+                              value={vendorSearch}
+                              onSelect={() => {
+                                setVendor(vendorSearch);
+                                setVendorSearch("");
+                                setVendorOpen(false);
+                              }}
+                            >
+                              Add &ldquo;{vendorSearch}&rdquo;
+                            </CommandItem>
+                          </CommandGroup>
+                        )}
+
+                      {filteredVendors.length === 0 && !vendorSearch && (
+                        <CommandEmpty>No vendors found.</CommandEmpty>
+                      )}
+
+                      {filteredVendors.length > 0 && (
+                        <CommandGroup heading="Recent vendors">
+                          {filteredVendors.map((v) => (
+                            <CommandItem
+                              key={v}
+                              value={v}
+                              onSelect={() => {
+                                setVendor(v);
+                                setVendorSearch("");
+                                setVendorOpen(false);
+                              }}
+                              className="flex items-center justify-between"
+                            >
+                              {v}
+                              {vendor === v && (
+                                <Check className="size-4 text-primary shrink-0" />
+                              )}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      )}
+
+                      {vendor && (
+                        <CommandGroup>
+                          <CommandItem
+                            value="__clear__"
+                            onSelect={() => {
+                              setVendor("");
+                              setVendorSearch("");
+                              setVendorOpen(false);
+                            }}
+                            className="text-muted-foreground"
+                          >
+                            Clear vendor
+                          </CommandItem>
+                        </CommandGroup>
+                      )}
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="project">Project (optional)</Label>
+              <Select value={projectId} onValueChange={setProjectId}>
+                <SelectTrigger id="project" className="squircle">
+                  <SelectValue placeholder="Select project" />
+                </SelectTrigger>
+                <SelectContent className="squircle">
+                  <SelectItem value="none">
+                    <span className="text-muted-foreground">
+                      General Business (Overhead)
+                    </span>
+                  </SelectItem>
+                  {projectsLoading ? (
+                    <div className="flex items-center justify-center py-2">
+                      <Loader2 className="size-4 animate-spin" />
+                    </div>
+                  ) : (
+                    Object.entries(projectsByClient).map(
+                      ([clientName, clientProjects]) => (
+                        <div key={clientName}>
+                          <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+                            {clientName}
+                          </div>
+                          {clientProjects.map((project) => (
+                            <SelectItem
+                              key={project.id}
+                              value={project.id}
+                            >
+                              {project.name}
+                            </SelectItem>
+                          ))}
+                        </div>
+                      )
+                    )
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div className="flex items-center gap-2">
+                <RefreshCw className="size-4 text-muted-foreground" />
+                <Label htmlFor="recurring" className="cursor-pointer">
+                  Recurring expense
+                </Label>
+              </div>
+              <Switch
+                id="recurring"
+                checked={isRecurring}
+                onCheckedChange={setIsRecurring}
+              />
+            </div>
 
             {isRecurring && (
-              <FormField
-                control={form.control}
-                name="recurringFrequency"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Frequency</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl>
-                        <SelectTrigger className="squircle">
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent className="squircle">
-                        {RECURRING_FREQUENCIES.map((freq) => (
-                          <SelectItem key={freq.value} value={freq.value}>
-                            {freq.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <div className="space-y-2">
+                <Label htmlFor="frequency">Frequency</Label>
+                <Select value={recurringFrequency} onValueChange={setRecurringFrequency}>
+                  <SelectTrigger id="frequency" className="squircle">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="squircle">
+                    {RECURRING_FREQUENCIES.map((freq) => (
+                      <SelectItem key={freq.value} value={freq.value}>
+                        {freq.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             )}
 
-            {/* Billable toggle */}
-            <FormField
-              control={form.control}
-              name="isBillable"
-              render={({ field }) => (
-                <FormItem className="flex items-center justify-between rounded-lg border p-3">
-                  <div className="space-y-0.5">
-                    <FormLabel>Billable to client</FormLabel>
-                    <FormDescription>
-                      Include on client invoices
-                    </FormDescription>
-                  </div>
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                      disabled={projectId === "none"}
-                    />
-                  </FormControl>
-                </FormItem>
-              )}
-            />
-
-              <BottomSheetFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => onOpenChange(false)}
-                  className="squircle"
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={isLoading} className="squircle">
-                  {isLoading && <Loader2 className="size-4 animate-spin" />}
-                  Add Expense
-                </Button>
-              </BottomSheetFooter>
-            </form>
-          </Form>
+            <div className="flex items-center gap-2">
+              <Switch
+                id="billable"
+                checked={isBillable}
+                onCheckedChange={setIsBillable}
+                disabled={projectId === "none"}
+              />
+              <Label htmlFor="billable" className="cursor-pointer">
+                Billable to client
+              </Label>
+            </div>
+          </div>
         </div>
+        <BottomSheetFooter>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={isSubmitting}
+            className="squircle"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSubmit}
+            disabled={isSubmitting || !description.trim() || !amount}
+            className="squircle"
+          >
+            {isSubmitting && <Loader2 className="size-4 animate-spin" />}
+            Add Expense
+          </Button>
+        </BottomSheetFooter>
       </BottomSheetContent>
     </BottomSheet>
   );
