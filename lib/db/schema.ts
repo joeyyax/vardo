@@ -20,6 +20,7 @@ export type OrgFeatures = {
   expenses: boolean;
   pm: boolean;
   proposals: boolean;
+  defaultAssignee?: string | null;
 };
 
 // Default features for new organizations (backward compatible)
@@ -29,6 +30,7 @@ export const DEFAULT_ORG_FEATURES: OrgFeatures = {
   expenses: true,
   pm: false,
   proposals: false,
+  defaultAssignee: null,
 };
 
 // Organizations (tenants)

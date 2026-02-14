@@ -71,8 +71,9 @@ export async function POST(request: NextRequest) {
       ...(features && typeof features === "object" ? features : {}),
     };
 
-    // Ensure all feature values are booleans
-    for (const key of Object.keys(orgFeatures) as (keyof OrgFeatures)[]) {
+    // Ensure boolean feature values are booleans
+    const booleanFeatureKeys = ["time_tracking", "invoicing", "expenses", "pm", "proposals"] as const;
+    for (const key of booleanFeatureKeys) {
       orgFeatures[key] = Boolean(orgFeatures[key]);
     }
 
