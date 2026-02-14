@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { toast } from "sonner";
 import { authClient } from "@/lib/auth/client";
 import { PersonalPreferences } from "@/app/(app)/settings/personal-preferences";
 import { NotificationPreferences } from "@/app/(app)/settings/notification-preferences";
@@ -46,6 +47,46 @@ export function ProfileContent({ user }: ProfileContentProps) {
   const [name, setName] = useState(user.name);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [calendarIcsUrl, setCalendarIcsUrl] = useState("");
+  const [savedCalendarIcsUrl, setSavedCalendarIcsUrl] = useState("");
+  const [savingCalendar, setSavingCalendar] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/v1/user-settings")
+      .then((res) => res.json())
+      .then((data) => {
+        const url = data.calendarIcsUrl ?? "";
+        setCalendarIcsUrl(url);
+        setSavedCalendarIcsUrl(url);
+      })
+      .catch(() => {
+        // Settings will use empty defaults
+      });
+  }, []);
+
+  async function handleSaveCalendar() {
+    setSavingCalendar(true);
+    try {
+      const res = await fetch("/api/v1/user-settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ calendarIcsUrl: calendarIcsUrl.trim() || null }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to save");
+      }
+      const saved = calendarIcsUrl.trim() || "";
+      setSavedCalendarIcsUrl(saved);
+      setCalendarIcsUrl(saved);
+      toast.success("Calendar feed saved");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to save calendar feed";
+      toast.error(message);
+    } finally {
+      setSavingCalendar(false);
+    }
+  }
 
   const displayName = name || user.email.split("@")[0];
 
@@ -162,6 +203,44 @@ export function ProfileContent({ user }: ProfileContentProps) {
 
       {/* Preferences */}
       <PersonalPreferences />
+
+      {/* Calendar Integration */}
+      <Card className="squircle">
+        <CardHeader>
+          <CardTitle>Calendar Integration</CardTitle>
+          <CardDescription>
+            Connect your calendar to see events alongside your work items.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-2">
+            <Label htmlFor="calendar-ics-url">ICS Feed URL</Label>
+            <Input
+              id="calendar-ics-url"
+              type="url"
+              value={calendarIcsUrl}
+              onChange={(e) => setCalendarIcsUrl(e.target.value)}
+              placeholder="https://calendar.google.com/calendar/ical/..."
+            />
+            <p className="text-xs text-muted-foreground">
+              Paste your Google Calendar, Outlook, or Apple Calendar ICS feed URL.
+            </p>
+          </div>
+          <Button
+            onClick={handleSaveCalendar}
+            disabled={savingCalendar || calendarIcsUrl.trim() === savedCalendarIcsUrl}
+          >
+            {savingCalendar ? (
+              <>
+                <Loader2 className="mr-2 size-4 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              "Save"
+            )}
+          </Button>
+        </CardContent>
+      </Card>
 
       {/* Notifications */}
       <NotificationPreferences />
