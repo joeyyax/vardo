@@ -5,6 +5,7 @@ import { requireOrg } from "@/lib/auth/session";
 import { eq, and, isNull, sql } from "drizzle-orm";
 import { logTaskCreated } from "@/lib/activities";
 import { ensureWatcher } from "@/lib/notifications";
+import { resolveAssignee } from "@/lib/assignment";
 
 type RouteParams = {
   params: Promise<{ orgId: string; projectId: string }>;
@@ -192,7 +193,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         status: status || null,
         priority: priority && TASK_PRIORITIES.includes(priority) ? priority : null,
         isRecurring: isRecurring ?? false,
-        assignedTo: assignedTo || null,
+        assignedTo: assignedTo || await resolveAssignee({
+          projectId,
+          orgId,
+        }),
         createdBy: session.user.id,
         position: nextPosition,
         // New fields

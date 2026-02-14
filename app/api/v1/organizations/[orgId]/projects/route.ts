@@ -5,6 +5,7 @@ import { requireOrg } from "@/lib/auth/session";
 import { getAccessibleProjectIds, requireAdmin } from "@/lib/auth/permissions";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import { createOrientationDocument } from "@/lib/orientation-template";
+import { resolveAssignee } from "@/lib/assignment";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -199,6 +200,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // Validate budget type if provided
     const projectBudgetType: BudgetType | null = budgetType && BUDGET_TYPES.includes(budgetType) ? budgetType : null;
 
+    const assignedTo = await resolveAssignee({
+      explicit: body.assignedTo,
+      clientId,
+      orgId,
+    });
+
     const [newProject] = await db
       .insert(projects)
       .values({
@@ -211,6 +218,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         budgetType: projectBudgetType,
         budgetHours: budgetHours ? Number(budgetHours) : null,
         budgetAmountCents: budgetAmountCents ? Number(budgetAmountCents) : null,
+        assignedTo,
       })
       .returning();
 

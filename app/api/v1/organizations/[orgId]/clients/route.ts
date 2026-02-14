@@ -4,6 +4,7 @@ import { clients, projects } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { getAccessibleProjectIds, requireAdmin } from "@/lib/auth/permissions";
 import { eq, and, inArray } from "drizzle-orm";
+import { resolveAssignee } from "@/lib/assignment";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -138,6 +139,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       }
     }
 
+    const assignedTo = await resolveAssignee({
+      explicit: body.assignedTo,
+      orgId,
+    });
+
     const [newClient] = await db
       .insert(clients)
       .values({
@@ -160,6 +166,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         billingDayOfMonth: billingDayOfMonth ?? null,
         paymentTermsDays: paymentTermsDays ?? null,
         parentClientId: parentClientId || null,
+        assignedTo,
       })
       .returning();
 
