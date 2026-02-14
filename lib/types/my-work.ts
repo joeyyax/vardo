@@ -1,4 +1,11 @@
-export type WorkItemType = "task" | "invoice" | "inbox_item";
+export type WorkItemType =
+  | "task"
+  | "invoice"
+  | "inbox_item"
+  | "proposal"
+  | "contract"
+  | "expense"
+  | "calendar_event";
 
 export type WorkItem = {
   type: WorkItemType;
@@ -8,11 +15,17 @@ export type WorkItem = {
   status: string;
   priority?: string | null;
   estimateMinutes?: number | null;
+  amountCents?: number | null;
   project?: {
     id: string;
     name: string;
     client?: { id: string; name: string; color: string | null };
   } | null;
+  // Calendar event fields
+  startTime?: string | null;
+  endTime?: string | null;
+  allDay?: boolean;
+  location?: string;
 };
 
 export type ActivityItem = {
@@ -36,15 +49,19 @@ export type WorkloadSummary = {
     tasksRemaining: number;
   };
   upcoming: { itemsDueThisWeek: number; estimatedMinutes: number };
+  money: {
+    unbilledMinutes: number;
+    outstandingInvoiceCents: number;
+    pendingExpenseCents: number;
+  };
 };
 
 export type MyWorkData = {
   summary: WorkloadSummary;
-  pastDue: WorkItem[];
-  dueSoon: WorkItem[];
-  needsTriage: WorkItem[];
-  blocked: WorkItem[];
-  myItems: WorkItem[];
-  unassigned: WorkItem[];
+  overdue: WorkItem[];
+  today: WorkItem[];
+  thisWeek: WorkItem[];
+  upcoming: WorkItem[];
+  needsAttention: WorkItem[];
   recentActivity: ActivityItem[];
 };
