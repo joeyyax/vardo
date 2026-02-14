@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, ReactNode } from "react";
 import { Check, Building2, FolderOpen, ListTodo } from "lucide-react";
+import { BudgetBar } from "@/components/ui/budget-bar";
 import {
   Popover,
   PopoverContent,
@@ -27,6 +28,10 @@ interface Project {
   name: string;
   code: string | null;
   tasks: Task[];
+  budgetType?: "hours" | "fixed" | null;
+  budgetHours?: number | null;
+  budgetAmountCents?: number | null;
+  totalMinutes?: number;
 }
 
 interface Client {
@@ -78,7 +83,7 @@ export function HierarchySelector({
       // Fetch clients and projects with tasks in parallel
       const [clientsRes, projectsRes] = await Promise.all([
         fetch(`/api/v1/organizations/${orgId}/clients`),
-        fetch(`/api/v1/organizations/${orgId}/projects?includeTasks=true`),
+        fetch(`/api/v1/organizations/${orgId}/projects?includeTasks=true&includeBudgetUsage=true`),
       ]);
 
       if (!clientsRes.ok) throw new Error("Failed to fetch clients");
@@ -101,6 +106,10 @@ export function HierarchySelector({
                 name: string;
                 code: string | null;
                 tasks?: { id: string; name: string; isArchived?: boolean }[];
+                budgetType?: "hours" | "fixed" | null;
+                budgetHours?: number | null;
+                budgetAmountCents?: number | null;
+                totalMinutes?: number;
               }) => ({
                 id: project.id,
                 name: project.name,
@@ -111,6 +120,10 @@ export function HierarchySelector({
                     id: t.id,
                     name: t.name,
                   })),
+                budgetType: project.budgetType,
+                budgetHours: project.budgetHours,
+                budgetAmountCents: project.budgetAmountCents,
+                totalMinutes: project.totalMinutes,
               })
             );
 
@@ -278,8 +291,16 @@ export function HierarchySelector({
                               <span className="text-sm truncate">
                                 {item.type === "task" && item.task.name}
                               </span>
-                              <span className="text-xs text-muted-foreground truncate">
+                              <span className="text-xs text-muted-foreground truncate flex items-center gap-1">
                                 {item.client.name} / {item.type === "task" && item.project.name}
+                                {item.type === "task" && item.project.budgetType === "hours" && item.project.budgetHours && (
+                                  <BudgetBar
+                                    mode="dot"
+                                    budgetType="hours"
+                                    budgetValue={item.project.budgetHours}
+                                    usedValue={(item.project.totalMinutes ?? 0) / 60}
+                                  />
+                                )}
                               </span>
                             </div>
                           </div>
@@ -312,8 +333,16 @@ export function HierarchySelector({
                                 }}
                               />
                               <div className="flex flex-col min-w-0">
-                                <span className="text-sm truncate">
+                                <span className="text-sm truncate flex items-center gap-1">
                                   {item.type === "project" && item.project.name}
+                                  {item.type === "project" && item.project.budgetType === "hours" && item.project.budgetHours && (
+                                    <BudgetBar
+                                      mode="dot"
+                                      budgetType="hours"
+                                      budgetValue={item.project.budgetHours}
+                                      usedValue={(item.project.totalMinutes ?? 0) / 60}
+                                    />
+                                  )}
                                 </span>
                                 <span className="text-xs text-muted-foreground truncate">
                                   {item.client.name}
