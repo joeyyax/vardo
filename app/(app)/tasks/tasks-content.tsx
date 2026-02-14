@@ -15,11 +15,8 @@ import { ViewSwitcher } from "@/components/view-switcher";
 import { useViewPreference } from "@/hooks/use-view-preference";
 import { PageToolbar } from "@/components/page-toolbar";
 import {
-  Archive,
-  Bug,
   Edit,
   Loader2,
-  Paperclip,
   Plus,
   ListTodo,
   User,
@@ -34,12 +31,6 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import {
   TaskDialog,
   type Task,
   type TaskStatus,
@@ -48,6 +39,11 @@ import {
   TASK_PRIORITY_LABELS,
   TASK_PRIORITY_COLORS,
 } from "@/components/projects/task-dialog";
+import {
+  KanbanBoard,
+  KANBAN_COLUMNS,
+  type KanbanTask,
+} from "@/components/projects/kanban-board";
 
 type TaskWithProject = Task & {
   project: {
@@ -80,8 +76,6 @@ type Project = {
 
 const TASK_VIEWS = ["list", "board", "table"] as const;
 
-const KANBAN_COLUMNS: TaskStatus[] = ["todo", "in_progress", "review", "done"];
-
 type TasksContentProps = {
   orgId: string;
   currentUserId?: string;
@@ -107,10 +101,6 @@ export function TasksContent({ orgId, currentUserId }: TasksContentProps) {
   const [selectedTask, setSelectedTask] = useState<TaskWithProject | null>(null);
   const [defaultStatus, setDefaultStatus] = useState<TaskStatus>("todo");
   const [defaultProjectId, setDefaultProjectId] = useState<string | null>(null);
-
-  // Drag state (for board view)
-  const [draggedTask, setDraggedTask] = useState<TaskWithProject | null>(null);
-  const [dragOverColumn, setDragOverColumn] = useState<TaskStatus | null>(null);
 
   const fetchClients = useCallback(async () => {
     try {
@@ -212,76 +202,6 @@ export function TasksContent({ orgId, currentUserId }: TasksContentProps) {
   function handleSuccess() {
     fetchTasks();
   }
-
-  // Drag handlers for board view
-  function handleDragStart(e: React.DragEvent, task: TaskWithProject) {
-    setDraggedTask(task);
-    e.dataTransfer.effectAllowed = "move";
-    if (e.currentTarget instanceof HTMLElement) {
-      e.currentTarget.classList.add("opacity-50");
-    }
-  }
-
-  function handleDragEnd(e: React.DragEvent) {
-    if (e.currentTarget instanceof HTMLElement) {
-      e.currentTarget.classList.remove("opacity-50");
-    }
-    setDraggedTask(null);
-    setDragOverColumn(null);
-  }
-
-  function handleDragOver(e: React.DragEvent, status: TaskStatus) {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    setDragOverColumn(status);
-  }
-
-  function handleDragLeave() {
-    setDragOverColumn(null);
-  }
-
-  async function handleDrop(e: React.DragEvent, newStatus: TaskStatus) {
-    e.preventDefault();
-    setDragOverColumn(null);
-
-    if (!draggedTask || draggedTask.status === newStatus) {
-      return;
-    }
-
-    // Optimistically update UI
-    setTasks((prev) =>
-      prev.map((t) =>
-        t.id === draggedTask.id ? { ...t, status: newStatus } : t
-      )
-    );
-
-    // Update on server
-    try {
-      const response = await fetch(
-        `/api/v1/organizations/${orgId}/projects/${draggedTask.project.id}/tasks/${draggedTask.id}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: newStatus }),
-        }
-      );
-
-      if (!response.ok) {
-        fetchTasks();
-      }
-    } catch {
-      fetchTasks();
-    }
-  }
-
-  // Group tasks by status for board view
-  const tasksByStatus = KANBAN_COLUMNS.reduce(
-    (acc, status) => {
-      acc[status] = tasks.filter((t) => t.status === status);
-      return acc;
-    },
-    {} as Record<TaskStatus, TaskWithProject[]>
-  );
 
   // Group tasks by client/project for list view
   const tasksByProject = tasks.reduce(
@@ -385,67 +305,15 @@ export function TasksContent({ orgId, currentUserId }: TasksContentProps) {
           </CardContent>
         </Card>
       ) : view === "board" ? (
-        /* Kanban board view */
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 min-h-[500px]">
-          {KANBAN_COLUMNS.map((status) => (
-            <div
-              key={status}
-              className={cn(
-                "flex flex-col rounded-lg border bg-muted/30 transition-colors",
-                dragOverColumn === status && "border-primary bg-primary/5"
-              )}
-              onDragOver={(e) => handleDragOver(e, status)}
-              onDragLeave={handleDragLeave}
-              onDrop={(e) => handleDrop(e, status)}
-            >
-              {/* Column header */}
-              <div className="flex items-center justify-between px-3 py-2 border-b">
-                <div className="flex items-center gap-2">
-                  <div
-                    className={`size-2.5 rounded-full ${
-                      TASK_STATUS_COLORS[status].split(" ")[0]
-                    }`}
-                  />
-                  <span className="text-sm font-medium">
-                    {TASK_STATUS_LABELS[status]}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {tasksByStatus[status].length}
-                  </span>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => handleNewTask(status)}
-                  className="size-6"
-                >
-                  <Plus className="size-3" />
-                </Button>
-              </div>
-
-              {/* Column content */}
-              <div className="flex-1 p-2 space-y-2 overflow-y-auto">
-                {tasksByStatus[status].length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-24 rounded-lg border-2 border-dashed border-muted-foreground/20 text-sm text-muted-foreground/60">
-                    <span>No tasks</span>
-                    <span className="text-xs">Drop here or click +</span>
-                  </div>
-                ) : (
-                  tasksByStatus[status].map((task) => (
-                    <GlobalKanbanCard
-                      key={task.id}
-                      task={task}
-                      onEdit={() => handleEditTask(task)}
-                      onDragStart={(e) => handleDragStart(e, task)}
-                      onDragEnd={handleDragEnd}
-                      onProjectClick={() => router.push(`/projects/${task.project.id}`)}
-                    />
-                  ))
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
+        <KanbanBoard
+          orgId={orgId}
+          currentUserId={currentUserId}
+          tasks={tasks as KanbanTask[]}
+          onRefresh={fetchTasks}
+          onNewTask={handleNewTask}
+          onEditTask={(task) => handleEditTask(task as TaskWithProject)}
+          onProjectClick={(id) => router.push(`/projects/${id}`)}
+        />
       ) : view === "table" ? (
         /* Table view */
         <div className="rounded-lg border squircle overflow-hidden">
@@ -667,145 +535,6 @@ export function TasksContent({ orgId, currentUserId }: TasksContentProps) {
         />
       ) : null}
     </div>
-  );
-}
-
-function GlobalKanbanCard({
-  task,
-  onEdit,
-  onDragStart,
-  onDragEnd,
-  onProjectClick,
-}: {
-  task: TaskWithProject;
-  onEdit: () => void;
-  onDragStart: (e: React.DragEvent) => void;
-  onDragEnd: (e: React.DragEvent) => void;
-  onProjectClick: () => void;
-}) {
-  const isBugReport = task.metadata?.source === "widget" || !!task.metadata?.bugReportId;
-  const hasFiles = (task.files?.length ?? 0) > 0;
-  const assignee = task.assignedToUser;
-  const typeBadge = task.type;
-  const priority = task.priority;
-  const hasBadges = typeBadge || isBugReport || priority;
-
-  return (
-    <TooltipProvider delayDuration={300}>
-      <div
-        draggable
-        onDragStart={onDragStart}
-        onDragEnd={onDragEnd}
-        onClick={onEdit}
-        className="squircle group flex flex-col gap-2 rounded-lg border bg-card p-3 cursor-pointer active:cursor-grabbing transition-all hover:shadow-sm hover:border-foreground/20"
-      >
-        {/* Badge row: priority, type, bug */}
-        {hasBadges && (
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {priority && (
-              <span
-                className={cn(
-                  "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium leading-none",
-                  TASK_PRIORITY_COLORS[priority]
-                )}
-              >
-                {TASK_PRIORITY_LABELS[priority]}
-              </span>
-            )}
-            {typeBadge && (
-              <span
-                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium leading-none"
-                style={{
-                  backgroundColor: typeBadge.color ? `${typeBadge.color}20` : undefined,
-                  color: typeBadge.color || undefined,
-                }}
-              >
-                {typeBadge.icon && <span className="text-[10px]">{typeBadge.icon}</span>}
-                {typeBadge.name}
-              </span>
-            )}
-            {isBugReport && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-medium leading-none text-red-600 dark:text-red-400">
-                    <Bug className="size-2.5" />
-                    Bug
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="top">From bug report</TooltipContent>
-              </Tooltip>
-            )}
-          </div>
-        )}
-
-        {/* Task name */}
-        <span className="font-medium text-sm leading-tight">{task.name}</span>
-
-        {/* Description */}
-        {task.description && (
-          <p className="text-xs text-muted-foreground line-clamp-2">
-            {task.description}
-          </p>
-        )}
-
-        {/* Project link */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onProjectClick();
-          }}
-          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors self-start"
-        >
-          <div
-            className="size-2 rounded-full"
-            style={{ backgroundColor: task.project.client.color || "#94a3b8" }}
-          />
-          <span className="truncate">
-            {task.project.client.name} / {task.project.name}
-          </span>
-        </button>
-
-        {/* Footer: indicators + assignee */}
-        <div className="flex items-center gap-2 mt-auto pt-1">
-          {task.isArchived && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Archive className="size-3 text-amber-600 dark:text-amber-400" />
-              </TooltipTrigger>
-              <TooltipContent side="top">Archived</TooltipContent>
-            </Tooltip>
-          )}
-          {hasFiles && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="inline-flex items-center gap-0.5 text-muted-foreground">
-                  <Paperclip className="size-3" />
-                  <span className="text-[10px]">{task.files!.length}</span>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="top">
-                {task.files!.length} attachment{task.files!.length !== 1 ? "s" : ""}
-              </TooltipContent>
-            </Tooltip>
-          )}
-
-          <div className="flex-1" />
-
-          {assignee && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="inline-flex items-center justify-center size-5 rounded-full bg-primary/10 text-[10px] font-medium text-primary shrink-0">
-                  {(assignee.name || assignee.email)[0].toUpperCase()}
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="top">
-                {assignee.name || assignee.email}
-              </TooltipContent>
-            </Tooltip>
-          )}
-        </div>
-      </div>
-    </TooltipProvider>
   );
 }
 
