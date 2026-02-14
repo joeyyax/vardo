@@ -1,8 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
-  /* allow unsplash */
+  serverExternalPackages: ["node-ical"],
   images: {
     remotePatterns: [
       {
