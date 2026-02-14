@@ -204,6 +204,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       estimateMinutes,
       prLink,
       isClientVisible,
+      dueDate,
       metadata,
     } = body;
 
@@ -222,6 +223,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       typeId: string | null;
       estimateMinutes: number | null;
       prLink: string | null;
+      dueDate: string | null;
       isClientVisible: boolean;
       metadata: Record<string, unknown>;
       updatedAt: Date;
@@ -317,6 +319,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     if (prLink !== undefined) {
       updates.prLink = prLink?.trim() || null;
+    }
+
+    if (dueDate !== undefined) {
+      updates.dueDate = dueDate || null;
     }
 
     if (isClientVisible !== undefined) {

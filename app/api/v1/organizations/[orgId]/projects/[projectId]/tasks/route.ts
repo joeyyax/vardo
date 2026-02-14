@@ -146,6 +146,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       estimateMinutes,
       prLink,
       isClientVisible,
+      dueDate,
       metadata,
     } = body;
 
@@ -204,6 +205,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         estimateMinutes: estimateMinutes ? parseInt(estimateMinutes, 10) : null,
         prLink: prLink?.trim() || null,
         isClientVisible: isClientVisible ?? true,
+        dueDate: dueDate || null,
         metadata: metadata || {},
       })
       .returning();

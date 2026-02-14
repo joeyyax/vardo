@@ -56,6 +56,7 @@ export type Task = {
   typeId: string | null;
   estimateMinutes: number | null;
   prLink: string | null;
+  dueDate: string | null;
   isClientVisible: boolean;
   metadata: Record<string, unknown> | null;
   type?: TaskType | null;
