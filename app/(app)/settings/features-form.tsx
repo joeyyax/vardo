@@ -98,7 +98,7 @@ export function FeaturesForm({ organizationId, features, canEdit }: Props) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const [pendingToggle, setPendingToggle] = useState<keyof OrgFeatures | null>(
+  const [pendingToggle, setPendingToggle] = useState<keyof FeaturesFormData | null>(
     null
   );
 
@@ -114,9 +114,11 @@ export function FeaturesForm({ organizationId, features, canEdit }: Props) {
   });
 
   const currentValues = form.watch();
-  const hasChanges = JSON.stringify(currentValues) !== JSON.stringify(features);
+  const hasChanges = FEATURE_CONFIG.some(
+    (f) => currentValues[f.key] !== features[f.key]
+  );
 
-  function handleToggleClick(key: keyof OrgFeatures, currentValue: boolean) {
+  function handleToggleClick(key: keyof FeaturesFormData, currentValue: boolean) {
     // If enabling, just enable
     if (!currentValue) {
       form.setValue(key, true);

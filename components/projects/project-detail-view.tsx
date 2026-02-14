@@ -3,6 +3,7 @@
 import { Badge } from "@/components/ui/badge";
 import { BudgetBar } from "@/components/ui/budget-bar";
 import { DetailField } from "@/components/ui/detail-field";
+import type { OrgMember } from "@/hooks/use-org-members";
 import type { Project } from "./project-dialog";
 import { PROJECT_STAGE_LABELS, PROJECT_STAGE_COLORS } from "./project-dialog";
 
@@ -13,9 +14,12 @@ type ProjectDetailViewProps = {
     usedHours: number;
     usedCents: number;
   } | null;
+  members?: OrgMember[];
 };
 
-export function ProjectDetailView({ project, onEdit, budgetUsage }: ProjectDetailViewProps) {
+export function ProjectDetailView({ project, onEdit, budgetUsage, members }: ProjectDetailViewProps) {
+  const owner = members?.find(m => m.id === project.assignedTo);
+
   const formatRate = (cents: number | null) => {
     if (cents === null) return null;
     return `$${(cents / 100).toFixed(2)}`;
@@ -35,6 +39,14 @@ export function ProjectDetailView({ project, onEdit, budgetUsage }: ProjectDetai
             />
             <span className="text-sm font-medium">{project.client.name}</span>
           </div>
+        </DetailField>
+
+        <DetailField label="Owner">
+          {owner ? (
+            owner.name || owner.email
+          ) : (
+            <span className="italic text-muted-foreground">Unassigned</span>
+          )}
         </DetailField>
 
         <DetailField label="Project name">

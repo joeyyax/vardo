@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
+import { useOrgMembers } from "@/hooks/use-org-members";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
@@ -91,6 +92,7 @@ const DAYS_OF_WEEK = [
 const clientSchema = z.object({
   name: z.string().min(1, "Name is required"),
   color: z.string().nullable(),
+  assignedTo: z.string().nullable(),
   rateOverride: z.string(),
   isBillable: z.boolean().nullable(),
   parentClientId: z.string().nullable(),
@@ -124,12 +126,14 @@ export function ClientDetailEdit({
 }: ClientDetailEditProps) {
   const isEditing = !!client;
   const [showBillingSection, setShowBillingSection] = useState(false);
+  const members = useOrgMembers(orgId);
 
   const form = useForm<ClientFormData>({
     resolver: zodResolver(clientSchema),
     defaultValues: {
       name: "",
       color: null,
+      assignedTo: null,
       rateOverride: "",
       isBillable: null,
       parentClientId: null,
@@ -151,6 +155,7 @@ export function ClientDetailEdit({
       form.reset({
         name: client.name,
         color: client.color,
+        assignedTo: client.assignedTo || null,
         rateOverride:
           client.rateOverride !== null
             ? (client.rateOverride / 100).toString()
@@ -189,6 +194,7 @@ export function ClientDetailEdit({
       form.reset({
         name: "",
         color: null,
+        assignedTo: null,
         rateOverride: "",
         isBillable: null,
         parentClientId: null,
@@ -220,6 +226,7 @@ export function ClientDetailEdit({
       const payload = {
         name: data.name,
         color: data.color,
+        assignedTo: data.assignedTo,
         rateOverride: data.rateOverride ? parseFloat(data.rateOverride) : null,
         isBillable: data.isBillable,
         parentClientId: data.parentClientId,
@@ -367,6 +374,42 @@ export function ClientDetailEdit({
                   />
                 ))}
               </div>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="assignedTo"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Owner</FormLabel>
+              <Select
+                value={field.value || "none"}
+                onValueChange={(value) =>
+                  field.onChange(value === "none" ? null : value)
+                }
+              >
+                <FormControl>
+                  <SelectTrigger className="squircle">
+                    <SelectValue placeholder="Select owner" />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent className="squircle">
+                  <SelectItem value="none">
+                    <span className="text-muted-foreground">Unassigned</span>
+                  </SelectItem>
+                  {members.map((member) => (
+                    <SelectItem key={member.id} value={member.id}>
+                      {member.name || member.email}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FormDescription>
+                Person responsible for this client.
+              </FormDescription>
               <FormMessage />
             </FormItem>
           )}

@@ -33,6 +33,15 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
   Copy,
   RefreshCw,
   Loader2,
@@ -40,6 +49,7 @@ import {
   Trash2,
   UserPlus,
   Mail,
+  ArrowRightLeft,
 } from "lucide-react";
 
 // --- Types ---
@@ -125,6 +135,12 @@ export function TeamContent({
   const [resendingInvite, setResendingInvite] = useState<string | null>(null);
   const [revokingInvite, setRevokingInvite] = useState<string | null>(null);
   const [joinLinkUpdating, setJoinLinkUpdating] = useState(false);
+
+  // Reassign dialog
+  const [reassignMember, setReassignMember] = useState<Member | null>(null);
+  const [reassignTypes, setReassignTypes] = useState<string[]>(["tasks", "projects", "clients"]);
+  const [reassignTo, setReassignTo] = useState<string>("__unassign__");
+  const [reassigning, setReassigning] = useState(false);
 
   // --- Data fetching ---
 
@@ -361,6 +377,50 @@ export function TeamContent({
     toast.success("Link copied");
   }
 
+  async function handleReassign() {
+    if (!reassignMember || reassignTypes.length === 0) return;
+    setReassigning(true);
+    try {
+      const res = await fetch(
+        `/api/v1/organizations/${orgId}/members/${reassignMember.id}/reassign`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            newAssignee: reassignTo === "__unassign__" ? null : reassignTo,
+            entityTypes: reassignTypes,
+          }),
+        }
+      );
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to reassign");
+      }
+      const data = await res.json();
+      const parts = Object.entries(data.counts as Record<string, number>)
+        .filter(([, count]) => count > 0)
+        .map(([type, count]) => `${count} ${type}`);
+      toast.success(
+        parts.length > 0
+          ? `Reassigned ${parts.join(", ")}`
+          : "No items needed reassignment"
+      );
+      setReassignMember(null);
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to reassign"
+      );
+    } finally {
+      setReassigning(false);
+    }
+  }
+
+  function toggleReassignType(type: string) {
+    setReassignTypes((prev) =>
+      prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]
+    );
+  }
+
   // --- Loading skeleton ---
 
   if (membersLoading) {
@@ -431,6 +491,20 @@ export function TeamContent({
                           <SelectItem value="member">Member</SelectItem>
                         </SelectContent>
                       </Select>
+
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 text-muted-foreground"
+                        title="Reassign items"
+                        onClick={() => {
+                          setReassignMember(member);
+                          setReassignTypes(["tasks", "projects", "clients"]);
+                          setReassignTo("__unassign__");
+                        }}
+                      >
+                        <ArrowRightLeft className="size-4" />
+                      </Button>
 
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
@@ -641,6 +715,83 @@ export function TeamContent({
           </CardContent>
         </Card>
       )}
+
+      {/* Reassign dialog */}
+      <Dialog open={!!reassignMember} onOpenChange={(open) => !open && setReassignMember(null)}>
+        <DialogContent className="squircle">
+          <DialogHeader>
+            <DialogTitle>Reassign items</DialogTitle>
+            <DialogDescription>
+              Reassign all items from{" "}
+              <strong>{reassignMember?.name || reassignMember?.email}</strong> to
+              another team member.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-3">
+              <Label className="text-sm font-medium">Entity types</Label>
+              {[
+                { value: "tasks", label: "Tasks" },
+                { value: "projects", label: "Projects" },
+                { value: "clients", label: "Clients" },
+              ].map((type) => (
+                <div key={type.value} className="flex items-center gap-2">
+                  <Checkbox
+                    id={`reassign-${type.value}`}
+                    checked={reassignTypes.includes(type.value)}
+                    onCheckedChange={() => toggleReassignType(type.value)}
+                  />
+                  <Label htmlFor={`reassign-${type.value}`} className="text-sm cursor-pointer">
+                    {type.label}
+                  </Label>
+                </div>
+              ))}
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">Reassign to</Label>
+              <Select value={reassignTo} onValueChange={setReassignTo}>
+                <SelectTrigger className="squircle">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__unassign__">Unassign</SelectItem>
+                  {members
+                    .filter((m) => m.id !== reassignMember?.id)
+                    .map((m) => (
+                      <SelectItem key={m.id} value={m.id}>
+                        {m.name || m.email}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              className="squircle"
+              onClick={() => setReassignMember(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="squircle"
+              onClick={handleReassign}
+              disabled={reassigning || reassignTypes.length === 0}
+            >
+              {reassigning ? (
+                <Loader2 className="size-4 animate-spin mr-2" />
+              ) : (
+                <ArrowRightLeft className="size-4 mr-2" />
+              )}
+              Reassign
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Join link (admin only) */}
       {isAdmin && (

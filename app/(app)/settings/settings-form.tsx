@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useOrgMembers } from "@/hooks/use-org-members";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -75,6 +76,7 @@ const organizationSettingsSchema = z.object({
   defaultBillingType: z.string(),
   defaultBillingFrequency: z.string(),
   defaultPaymentTermsDays: z.string(),
+  defaultAssignee: z.string(),
 });
 
 type OrganizationSettingsFormData = z.infer<typeof organizationSettingsSchema>;
@@ -101,6 +103,7 @@ export function SettingsForm({ organization, canEdit, features }: Props) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const members = useOrgMembers(organization.id);
 
   const form = useForm<OrganizationSettingsFormData>({
     resolver: zodResolver(organizationSettingsSchema),
@@ -115,6 +118,7 @@ export function SettingsForm({ organization, canEdit, features }: Props) {
       defaultPaymentTermsDays: (
         organization.defaultPaymentTermsDays ?? 30
       ).toString(),
+      defaultAssignee: features.defaultAssignee || "none",
     },
   });
 
@@ -148,6 +152,12 @@ export function SettingsForm({ organization, canEdit, features }: Props) {
           defaultPaymentTermsDays: data.defaultPaymentTermsDays
             ? parseInt(data.defaultPaymentTermsDays, 10)
             : null,
+          features: {
+            defaultAssignee:
+              data.defaultAssignee === "none"
+                ? null
+                : data.defaultAssignee,
+          },
         }),
       });
 
@@ -191,6 +201,42 @@ export function SettingsForm({ organization, canEdit, features }: Props) {
                       className="max-w-sm squircle"
                     />
                   </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="defaultAssignee"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Default assignee</FormLabel>
+                  <Select
+                    onValueChange={field.onChange}
+                    defaultValue={field.value}
+                    disabled={!canEdit || isLoading}
+                  >
+                    <FormControl>
+                      <SelectTrigger className="max-w-sm squircle">
+                        <SelectValue placeholder="Select default assignee" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent className="squircle">
+                      <SelectItem value="none">
+                        <span className="text-muted-foreground">Unassigned</span>
+                      </SelectItem>
+                      {members.map((member) => (
+                        <SelectItem key={member.id} value={member.id}>
+                          {member.name || member.email}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>
+                    New clients, projects, and tasks will be assigned to this
+                    person by default.
+                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}

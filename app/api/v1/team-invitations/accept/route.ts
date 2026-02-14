@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { organizations, teamInvitations, memberships } from "@/lib/db/schema";
+import { organizations, teamInvitations, memberships, type OrgFeatures } from "@/lib/db/schema";
 import { requireSession } from "@/lib/auth/session";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 
 // POST /api/v1/team-invitations/accept
 export async function POST(request: NextRequest) {
@@ -26,6 +26,26 @@ export async function POST(request: NextRequest) {
     }
     console.error("Error accepting invitation:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+async function checkSecondMemberNudge(orgId: string) {
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(memberships)
+    .where(eq(memberships.organizationId, orgId));
+  if (Number(count) === 2) {
+    const org = await db.query.organizations.findFirst({
+      where: eq(organizations.id, orgId),
+      columns: { features: true },
+    });
+    const features = (org?.features as OrgFeatures) || {};
+    if (features.defaultAssignee) {
+      await db
+        .update(organizations)
+        .set({ features: { ...features, secondMemberNudge: true } })
+        .where(eq(organizations.id, orgId));
+    }
   }
 }
 
@@ -66,6 +86,8 @@ async function handleJoinLink(userId: string, token: string) {
     organizationId: org.id,
     role: "member",
   });
+
+  await checkSecondMemberNudge(org.id);
 
   return NextResponse.json({
     success: true,
@@ -139,6 +161,8 @@ async function handleInvitation(userId: string, token: string) {
     .update(teamInvitations)
     .set({ status: "accepted" })
     .where(eq(teamInvitations.id, invitation.id));
+
+  await checkSecondMemberNudge(invitation.organizationId);
 
   return NextResponse.json({
     success: true,

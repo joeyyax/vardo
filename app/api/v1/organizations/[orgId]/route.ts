@@ -184,13 +184,21 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         );
       }
 
-      const validFeatureKeys: (keyof OrgFeatures)[] = ["time_tracking", "invoicing", "pm", "proposals"];
+      const validBooleanKeys = ["time_tracking", "invoicing", "pm", "proposals"] as const;
       const features: Partial<OrgFeatures> = {};
 
-      for (const key of validFeatureKeys) {
+      for (const key of validBooleanKeys) {
         if (key in body.features) {
           features[key] = Boolean(body.features[key]);
         }
+      }
+
+      if ("defaultAssignee" in body.features) {
+        features.defaultAssignee = body.features.defaultAssignee || null;
+      }
+
+      if ("secondMemberNudge" in body.features) {
+        features.secondMemberNudge = Boolean(body.features.secondMemberNudge);
       }
 
       // Get current org to merge features

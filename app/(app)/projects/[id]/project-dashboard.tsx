@@ -91,6 +91,7 @@ type ServerProject = {
   budgetType: "hours" | "fixed" | null;
   budgetHours: number | null;
   budgetAmountCents: number | null;
+  assignedTo: string | null;
   intakeEmailToken: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -169,6 +170,7 @@ function toProjectType(serverProject: ServerProject & { createdAt: Date | string
     budgetType: serverProject.budgetType,
     budgetHours: serverProject.budgetHours,
     budgetAmountCents: serverProject.budgetAmountCents,
+    assignedTo: serverProject.assignedTo ?? null,
     intakeEmailToken: serverProject.intakeEmailToken,
     createdAt,
     updatedAt,

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
+import { useState, useEffect } from "react";
+import { useOrgMembers } from "@/hooks/use-org-members";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
@@ -42,6 +43,7 @@ const projectSchema = z.object({
     "offboarding",
     "completed",
   ]),
+  assignedTo: z.string().nullable(),
   budgetType: z.string().nullable(),
   budgetHours: z.string(),
   budgetAmount: z.string(),
@@ -67,6 +69,7 @@ export function ProjectDetailEdit({
   onCancel,
 }: ProjectDetailEditProps) {
   const isEditing = !!project;
+  const members = useOrgMembers(orgId);
 
   const form = useForm<ProjectFormData>({
     resolver: zodResolver(projectSchema),
@@ -77,6 +80,7 @@ export function ProjectDetailEdit({
       rateOverride: "",
       isBillable: null,
       stage: "getting_started",
+      assignedTo: null,
       budgetType: null,
       budgetHours: "",
       budgetAmount: "",
@@ -96,6 +100,7 @@ export function ProjectDetailEdit({
             : "",
         isBillable: project.isBillable,
         stage: project.stage || "getting_started",
+        assignedTo: project.assignedTo || null,
         budgetType: project.budgetType || null,
         budgetHours:
           project.budgetHours !== null
@@ -114,6 +119,7 @@ export function ProjectDetailEdit({
         rateOverride: "",
         isBillable: null,
         stage: "getting_started",
+        assignedTo: null,
         budgetType: null,
         budgetHours: "",
         budgetAmount: "",
@@ -130,6 +136,7 @@ export function ProjectDetailEdit({
         rateOverride: data.rateOverride ? parseFloat(data.rateOverride) : null,
         isBillable: data.isBillable,
         stage: data.stage,
+        assignedTo: data.assignedTo,
         budgetType: data.budgetType || null,
         budgetHours: data.budgetHours ? parseFloat(data.budgetHours) : null,
         budgetAmountCents: data.budgetAmount
@@ -203,6 +210,42 @@ export function ProjectDetailEdit({
                   You need to create a client first.
                 </p>
               )}
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="assignedTo"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Owner</FormLabel>
+              <Select
+                value={field.value || "none"}
+                onValueChange={(value) =>
+                  field.onChange(value === "none" ? null : value)
+                }
+              >
+                <FormControl>
+                  <SelectTrigger className="squircle">
+                    <SelectValue placeholder="Select owner" />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent className="squircle">
+                  <SelectItem value="none">
+                    <span className="text-muted-foreground">Unassigned</span>
+                  </SelectItem>
+                  {members.map((member) => (
+                    <SelectItem key={member.id} value={member.id}>
+                      {member.name || member.email}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FormDescription>
+                Person responsible for this project.
+              </FormDescription>
               <FormMessage />
             </FormItem>
           )}

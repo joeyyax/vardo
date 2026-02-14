@@ -20,6 +20,8 @@ export type OrgFeatures = {
   expenses: boolean;
   pm: boolean;
   proposals: boolean;
+  defaultAssignee?: string | null;
+  secondMemberNudge?: boolean;
 };
 
 // Default features for new organizations (backward compatible)
@@ -29,6 +31,8 @@ export const DEFAULT_ORG_FEATURES: OrgFeatures = {
   expenses: true,
   pm: false,
   proposals: false,
+  defaultAssignee: null,
+  secondMemberNudge: false,
 };
 
 // Organizations (tenants)
@@ -260,6 +264,7 @@ export const clients = pgTable("clients", {
   lastInvoicedDate: date("last_invoiced_date"),
   // Email intake
   intakeEmailToken: text("intake_email_token").unique(),
+  assignedTo: text("assigned_to").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -509,6 +514,7 @@ export const projects = pgTable("projects", {
   budgetAmountCents: integer("budget_amount_cents"), // fixed price budget in cents
   // Email intake
   intakeEmailToken: text("intake_email_token").unique(),
+  assignedTo: text("assigned_to").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -615,6 +621,7 @@ export const tasks = pgTable("tasks", {
   estimateMinutes: integer("estimate_minutes"),
   prLink: text("pr_link"),
   isClientVisible: boolean("is_client_visible").default(true),
+  dueDate: date("due_date"),
   metadata: jsonb("metadata").default({}), // Type-specific fields (severity, steps_to_reproduce, etc.)
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -1397,6 +1404,7 @@ export const inboxItems = pgTable(
     // Entity association (set when email is sent to a client/project intake address)
     clientId: uuid("client_id").references(() => clients.id, { onDelete: "set null" }),
     projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
+    assignedTo: text("assigned_to").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

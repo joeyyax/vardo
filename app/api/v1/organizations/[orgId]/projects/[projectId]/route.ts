@@ -95,7 +95,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     const body = await request.json();
-    const { clientId, name, code, rateOverride, isBillable, isArchived, stage, budgetType, budgetHours, budgetAmountCents } = body;
+    const { clientId, name, code, rateOverride, isBillable, isArchived, stage, budgetType, budgetHours, budgetAmountCents, assignedTo } = body;
 
     // Build update object with only provided fields
     const updates: Partial<{
@@ -109,6 +109,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       budgetType: BudgetType | null;
       budgetHours: number | null;
       budgetAmountCents: number | null;
+      assignedTo: string | null;
       updatedAt: Date;
     }> = {
       updatedAt: new Date(),
@@ -200,6 +201,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     if (budgetAmountCents !== undefined) {
       updates.budgetAmountCents = budgetAmountCents !== null && budgetAmountCents !== "" ? Number(budgetAmountCents) : null;
+    }
+
+    if ("assignedTo" in body) {
+      updates.assignedTo = body.assignedTo || null;
     }
 
     await db

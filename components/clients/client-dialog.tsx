@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useOrgMembers } from "@/hooks/use-org-members";
 import { DetailModal } from "@/components/ui/detail-modal";
 import { IconButton } from "@/components/ui/icon-button";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
@@ -29,6 +30,7 @@ export type Client = {
   paymentTermsDays: number | null;
   lastInvoicedDate: string | null;
   intakeEmailToken: string | null;
+  assignedTo: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -66,6 +68,7 @@ export function ClientDialog({
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [clientData, setClientData] = useState<Client | null>(client || null);
+  const members = useOrgMembers(orgId);
 
   // Reset state when dialog opens/closes or client changes
   useEffect(() => {
@@ -168,6 +171,7 @@ export function ClientDialog({
                 ? allClients.find((c) => c.id === clientData.parentClientId)
                 : null
             }
+            members={members}
             onEdit={() => setIsEditing(true)}
           />
         ) : null}

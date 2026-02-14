@@ -22,7 +22,9 @@ import {
   HardDrive,
   Cookie,
   GitBranch,
+  CalendarIcon,
 } from "lucide-react";
+import { format, isPast, isToday } from "date-fns";
 import { cn } from "@/lib/utils";
 import type { Task, TaskStatus } from "./task-dialog";
 import { TASK_STATUS_LABELS, TASK_STATUS_COLORS } from "./task-dialog";
@@ -498,6 +500,24 @@ export function TaskDetailView({ task, orgId, projectId, onEdit }: TaskDetailVie
             <div className="text-muted-foreground">Hourly rate</div>
             <div className="font-medium">
               ${(task.rateOverride / 100).toFixed(2)}
+            </div>
+          </div>
+        )}
+
+        {task.dueDate && (
+          <div>
+            <div className="text-muted-foreground">Due date</div>
+            <div className={cn(
+              "font-medium flex items-center gap-1.5",
+              task.status !== "done" && isPast(new Date(task.dueDate + "T00:00:00")) && !isToday(new Date(task.dueDate + "T00:00:00"))
+                ? "text-red-600 dark:text-red-400"
+                : ""
+            )}>
+              <CalendarIcon className="size-3.5 text-muted-foreground" />
+              {format(new Date(task.dueDate + "T00:00:00"), "PPP")}
+              {task.status !== "done" && isPast(new Date(task.dueDate + "T00:00:00")) && !isToday(new Date(task.dueDate + "T00:00:00")) && (
+                <span className="text-xs">(overdue)</span>
+              )}
             </div>
           </div>
         )}

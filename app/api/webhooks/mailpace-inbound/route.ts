@@ -9,6 +9,7 @@ import {
   type IntakeEntity,
 } from "@/lib/intake-email";
 import { uploadBuffer } from "@/lib/r2";
+import { resolveAssignee } from "@/lib/assignment";
 
 // MIME types we accept (PDFs and images per design spec)
 const ACCEPTED_MIME_TYPES = new Set([
@@ -116,6 +117,12 @@ async function handleInbound(data: MailPaceInboundPayload) {
       inboxValues.clientId = entity.clientId;
       inboxValues.projectId = entity.id;
     }
+
+    inboxValues.assignedTo = await resolveAssignee({
+      projectId: entity.type === "project" ? entity.id : undefined,
+      clientId: entity.type === "client" ? entity.id : entity.type === "project" ? entity.clientId : undefined,
+      orgId: entity.orgId,
+    });
 
     // Create the inbox item
     const [inboxItem] = await db

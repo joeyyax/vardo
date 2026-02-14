@@ -49,6 +49,7 @@ type ServerClient = {
   paymentTermsDays: number | null;
   lastInvoicedDate: string | null;
   intakeEmailToken: string | null;
+  assignedTo: string | null;
   createdAt: Date;
   updatedAt: Date;
 };

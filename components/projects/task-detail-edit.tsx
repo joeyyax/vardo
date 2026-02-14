@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useOrgMembers } from "@/hooks/use-org-members";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
@@ -33,7 +34,16 @@ import {
   X,
   FileText,
   ImageIcon,
+  CalendarIcon,
 } from "lucide-react";
+import { format } from "date-fns";
+import { cn } from "@/lib/utils";
+import { Calendar } from "@/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import type { Task, TaskStatus, TaskPriority, TaskType, TaskFile } from "./task-dialog";
 import { TASK_STATUS_LABELS, TASK_STATUS_COLORS, TASK_PRIORITY_LABELS, TASK_PRIORITY_COLORS } from "./task-dialog";
 import { toast } from "sonner";
@@ -53,17 +63,12 @@ const taskSchema = z.object({
   typeId: z.string().nullable(),
   estimateHours: z.string(),
   prLink: z.string(),
+  dueDate: z.string().nullable(),
   isClientVisible: z.boolean(),
   assignedTo: z.string().nullable(),
 });
 
 type TaskFormData = z.infer<typeof taskSchema>;
-
-type OrgMember = {
-  id: string;
-  name: string | null;
-  email: string;
-};
 
 type TaskDetailEditProps = {
   task: Task | null;
@@ -92,7 +97,7 @@ export function TaskDetailEdit({
   onCancel,
 }: TaskDetailEditProps) {
   const [taskTypes, setTaskTypes] = useState<TaskType[]>([]);
-  const [members, setMembers] = useState<OrgMember[]>([]);
+  const members = useOrgMembers(orgId);
   const [taskFilesList, setTaskFilesList] = useState<TaskFile[]>(task?.files || []);
   const [isUploading, setIsUploading] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -119,6 +124,7 @@ export function TaskDetailEdit({
           ? (task.estimateMinutes / 60).toString()
           : "",
       prLink: task?.prLink || "",
+      dueDate: task?.dueDate || null,
       isClientVisible: task?.isClientVisible ?? true,
       assignedTo: task?.assignedTo || null,
     },
@@ -139,27 +145,11 @@ export function TaskDetailEdit({
     }
   }, [orgId]);
 
-  // Fetch org members for assignment
-  const fetchMembers = useCallback(async () => {
-    try {
-      const response = await fetch(
-        `/api/v1/organizations/${orgId}/members`
-      );
-      if (response.ok) {
-        const data = await response.json();
-        setMembers(data.members || []);
-      }
-    } catch (err) {
-      console.error("Error fetching members:", err);
-    }
-  }, [orgId]);
-
   useEffect(() => {
     if (pmEnabled) {
       fetchTaskTypes();
-      fetchMembers();
     }
-  }, [pmEnabled, fetchTaskTypes, fetchMembers]);
+  }, [pmEnabled, fetchTaskTypes]);
 
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const files = e.target.files;
@@ -267,6 +257,7 @@ export function TaskDetailEdit({
           ? Math.round(parseFloat(data.estimateHours) * 60)
           : null,
         prLink: data.prLink || null,
+        dueDate: data.dueDate,
         isClientVisible: data.isClientVisible,
       };
 
@@ -539,6 +530,62 @@ export function TaskDetailEdit({
                 <FormMessage />
               </FormItem>
             )}
+          />
+        )}
+
+        {pmEnabled && (
+          <FormField
+            control={form.control}
+            name="dueDate"
+            render={({ field }) => {
+              const dateValue = field.value ? new Date(field.value + "T00:00:00") : undefined;
+              return (
+                <FormItem>
+                  <FormLabel>Due date</FormLabel>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <FormControl>
+                        <Button
+                          variant="outline"
+                          className={cn(
+                            "w-full max-w-sm squircle justify-start text-left font-normal",
+                            !field.value && "text-muted-foreground"
+                          )}
+                        >
+                          <CalendarIcon className="size-4 mr-2" />
+                          {field.value
+                            ? format(dateValue!, "PPP")
+                            : "No due date"}
+                        </Button>
+                      </FormControl>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={dateValue}
+                        onSelect={(date) => {
+                          field.onChange(
+                            date
+                              ? format(date, "yyyy-MM-dd")
+                              : null
+                          );
+                        }}
+                      />
+                    </PopoverContent>
+                  </Popover>
+                  {field.value && (
+                    <button
+                      type="button"
+                      onClick={() => field.onChange(null)}
+                      className="text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      Clear
+                    </button>
+                  )}
+                  <FormMessage />
+                </FormItem>
+              );
+            }}
           />
         )}
 
