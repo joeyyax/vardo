@@ -9,6 +9,7 @@ import {
   FileText,
   FileSignature,
   FileCheck,
+  LayoutDashboard,
   Receipt,
   Inbox,
   Users,
@@ -38,6 +39,13 @@ type NavItem = {
 };
 
 const navItems: NavItem[] = [
+  // Command center
+  {
+    label: "My Work",
+    href: "/work",
+    icon: LayoutDashboard,
+    description: "Your command center",
+  },
   // Daily workflow
   {
     label: "Track",
@@ -45,6 +53,7 @@ const navItems: NavItem[] = [
     icon: Clock,
     description: "Timeline view",
     feature: "time_tracking",
+    separator: true,
   },
   // Core entities
   {
@@ -52,7 +61,6 @@ const navItems: NavItem[] = [
     href: "/clients",
     icon: Users,
     description: "Manage clients",
-    separator: true,
   },
   {
     label: "Projects",
