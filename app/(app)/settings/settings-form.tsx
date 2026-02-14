@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useOrgMembers } from "@/hooks/use-org-members";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -91,12 +92,6 @@ type Organization = {
   defaultPaymentTermsDays: number | null;
 };
 
-type OrgMember = {
-  id: string;
-  name: string | null;
-  email: string;
-};
-
 type Props = {
   organization: Organization;
   canEdit: boolean;
@@ -108,24 +103,7 @@ export function SettingsForm({ organization, canEdit, features }: Props) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const [members, setMembers] = useState<OrgMember[]>([]);
-
-  useEffect(() => {
-    async function fetchMembers() {
-      try {
-        const response = await fetch(
-          `/api/v1/organizations/${organization.id}/members`
-        );
-        if (response.ok) {
-          const data = await response.json();
-          setMembers(data.members || []);
-        }
-      } catch (err) {
-        console.error("Error fetching members:", err);
-      }
-    }
-    fetchMembers();
-  }, [organization.id]);
+  const members = useOrgMembers(organization.id);
 
   const form = useForm<OrganizationSettingsFormData>({
     resolver: zodResolver(organizationSettingsSchema),

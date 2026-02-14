@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useOrgMembers } from "@/hooks/use-org-members";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
@@ -69,12 +70,6 @@ const taskSchema = z.object({
 
 type TaskFormData = z.infer<typeof taskSchema>;
 
-type OrgMember = {
-  id: string;
-  name: string | null;
-  email: string;
-};
-
 type TaskDetailEditProps = {
   task: Task | null;
   orgId: string;
@@ -102,7 +97,7 @@ export function TaskDetailEdit({
   onCancel,
 }: TaskDetailEditProps) {
   const [taskTypes, setTaskTypes] = useState<TaskType[]>([]);
-  const [members, setMembers] = useState<OrgMember[]>([]);
+  const members = useOrgMembers(orgId);
   const [taskFilesList, setTaskFilesList] = useState<TaskFile[]>(task?.files || []);
   const [isUploading, setIsUploading] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -150,27 +145,11 @@ export function TaskDetailEdit({
     }
   }, [orgId]);
 
-  // Fetch org members for assignment
-  const fetchMembers = useCallback(async () => {
-    try {
-      const response = await fetch(
-        `/api/v1/organizations/${orgId}/members`
-      );
-      if (response.ok) {
-        const data = await response.json();
-        setMembers(data.members || []);
-      }
-    } catch (err) {
-      console.error("Error fetching members:", err);
-    }
-  }, [orgId]);
-
   useEffect(() => {
     if (pmEnabled) {
       fetchTaskTypes();
-      fetchMembers();
     }
-  }, [pmEnabled, fetchTaskTypes, fetchMembers]);
+  }, [pmEnabled, fetchTaskTypes]);
 
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const files = e.target.files;

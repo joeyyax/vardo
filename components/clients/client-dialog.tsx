@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useOrgMembers } from "@/hooks/use-org-members";
 import { DetailModal } from "@/components/ui/detail-modal";
 import { IconButton } from "@/components/ui/icon-button";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
@@ -54,12 +55,6 @@ type ClientDialogProps = {
   currentUserId?: string;
 };
 
-type OrgMember = {
-  id: string;
-  name: string | null;
-  email: string;
-};
-
 export function ClientDialog({
   open,
   onOpenChange,
@@ -73,25 +68,7 @@ export function ClientDialog({
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [clientData, setClientData] = useState<Client | null>(client || null);
-  const [members, setMembers] = useState<OrgMember[]>([]);
-
-  // Fetch org members for owner assignment
-  useEffect(() => {
-    async function fetchMembers() {
-      try {
-        const response = await fetch(`/api/v1/organizations/${orgId}/members`);
-        if (response.ok) {
-          const data = await response.json();
-          setMembers(data.members || []);
-        }
-      } catch (err) {
-        console.error("Error fetching members:", err);
-      }
-    }
-    if (open) {
-      fetchMembers();
-    }
-  }, [open, orgId]);
+  const members = useOrgMembers(orgId);
 
   // Reset state when dialog opens/closes or client changes
   useEffect(() => {

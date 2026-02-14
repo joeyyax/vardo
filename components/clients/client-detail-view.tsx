@@ -2,6 +2,7 @@
 
 import { Badge } from "@/components/ui/badge";
 import { DetailField } from "@/components/ui/detail-field";
+import type { OrgMember } from "@/hooks/use-org-members";
 import type { Client } from "./client-dialog";
 
 const BILLING_TYPE_LABELS: Record<string, string> = {
@@ -28,12 +29,6 @@ const DAYS_OF_WEEK_LABELS: Record<number, string> = {
   4: "Thursday",
   5: "Friday",
   6: "Saturday",
-};
-
-type OrgMember = {
-  id: string;
-  name: string | null;
-  email: string;
 };
 
 type ClientDetailViewProps = {

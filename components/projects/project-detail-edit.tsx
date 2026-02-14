@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useOrgMembers } from "@/hooks/use-org-members";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
@@ -50,12 +51,6 @@ const projectSchema = z.object({
 
 type ProjectFormData = z.infer<typeof projectSchema>;
 
-type OrgMember = {
-  id: string;
-  name: string | null;
-  email: string;
-};
-
 type ProjectDetailEditProps = {
   project: Project | null;
   orgId: string;
@@ -74,22 +69,7 @@ export function ProjectDetailEdit({
   onCancel,
 }: ProjectDetailEditProps) {
   const isEditing = !!project;
-  const [members, setMembers] = useState<OrgMember[]>([]);
-
-  useEffect(() => {
-    async function fetchMembers() {
-      try {
-        const response = await fetch(`/api/v1/organizations/${orgId}/members`);
-        if (response.ok) {
-          const data = await response.json();
-          setMembers(data.members || []);
-        }
-      } catch (err) {
-        console.error("Error fetching members:", err);
-      }
-    }
-    fetchMembers();
-  }, [orgId]);
+  const members = useOrgMembers(orgId);
 
   const form = useForm<ProjectFormData>({
     resolver: zodResolver(projectSchema),

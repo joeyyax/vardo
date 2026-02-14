@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useOrgMembers } from "@/hooks/use-org-members";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { DetailModal } from "@/components/ui/detail-modal";
@@ -107,24 +108,7 @@ export function ProjectDialog({
   const [error, setError] = useState<string | null>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [budgetUsage, setBudgetUsage] = useState<{ usedHours: number; usedCents: number } | null>(null);
-  const [members, setMembers] = useState<{ id: string; name: string | null; email: string }[]>([]);
-
-  // Fetch org members for owner selector
-  useEffect(() => {
-    if (!open) return;
-    async function fetchMembers() {
-      try {
-        const response = await fetch(`/api/v1/organizations/${orgId}/members`);
-        if (response.ok) {
-          const data = await response.json();
-          setMembers(data.members || []);
-        }
-      } catch (err) {
-        console.error("Error fetching members:", err);
-      }
-    }
-    fetchMembers();
-  }, [open, orgId]);
+  const members = useOrgMembers(orgId);
 
   // Reset edit mode when dialog opens
   useEffect(() => {

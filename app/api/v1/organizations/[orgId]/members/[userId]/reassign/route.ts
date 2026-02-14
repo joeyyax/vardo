@@ -86,15 +86,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       counts.clients = result.length;
     }
 
+    // Fetch org client IDs once (needed for projects and tasks)
+    const needsClientIds = types.includes("projects") || types.includes("tasks");
+    const clientIds = needsClientIds
+      ? (await db.select({ id: clients.id }).from(clients).where(eq(clients.organizationId, orgId))).map((c) => c.id)
+      : [];
+
     // Reassign projects (scoped through clients)
     if (types.includes("projects")) {
-      // Get org client IDs first
-      const orgClients = await db
-        .select({ id: clients.id })
-        .from(clients)
-        .where(eq(clients.organizationId, orgId));
-      const clientIds = orgClients.map((c) => c.id);
-
       if (clientIds.length > 0) {
         const result = await db
           .update(projects)
@@ -112,25 +111,17 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // Reassign tasks (scoped through projects → clients)
+    // Reassign tasks (scoped through projects -> clients)
     if (types.includes("tasks")) {
-      const orgClients = await db
-        .select({ id: clients.id })
-        .from(clients)
-        .where(eq(clients.organizationId, orgId));
-      const clientIds = orgClients.map((c) => c.id);
-
       if (clientIds.length > 0) {
-        const orgProjects = await db
-          .select({ id: projects.id })
-          .from(projects)
-          .where(inArray(projects.clientId, clientIds));
-        const projectIds = orgProjects.map((p) => p.id);
+        const projectIds = (
+          await db.select({ id: projects.id }).from(projects).where(inArray(projects.clientId, clientIds))
+        ).map((p) => p.id);
 
         if (projectIds.length > 0) {
           const result = await db
             .update(tasks)
-            .set({ assignedTo: newAssignee })
+            .set({ assignedTo: newAssignee, updatedAt: new Date() })
             .where(
               and(
                 eq(tasks.assignedTo, userId),

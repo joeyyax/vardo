@@ -3,6 +3,7 @@
 import { Badge } from "@/components/ui/badge";
 import { BudgetBar } from "@/components/ui/budget-bar";
 import { DetailField } from "@/components/ui/detail-field";
+import type { OrgMember } from "@/hooks/use-org-members";
 import type { Project } from "./project-dialog";
 import { PROJECT_STAGE_LABELS, PROJECT_STAGE_COLORS } from "./project-dialog";
 
@@ -13,7 +14,7 @@ type ProjectDetailViewProps = {
     usedHours: number;
     usedCents: number;
   } | null;
-  members?: { id: string; name: string | null; email: string }[];
+  members?: OrgMember[];
 };
 
 export function ProjectDetailView({ project, onEdit, budgetUsage, members }: ProjectDetailViewProps) {

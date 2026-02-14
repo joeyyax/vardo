@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
+import { useOrgMembers } from "@/hooks/use-org-members";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
@@ -116,12 +117,6 @@ type ClientDetailEditProps = {
   onCancel: () => void;
 };
 
-type OrgMember = {
-  id: string;
-  name: string | null;
-  email: string;
-};
-
 export function ClientDetailEdit({
   client,
   orgId,
@@ -131,22 +126,7 @@ export function ClientDetailEdit({
 }: ClientDetailEditProps) {
   const isEditing = !!client;
   const [showBillingSection, setShowBillingSection] = useState(false);
-  const [members, setMembers] = useState<OrgMember[]>([]);
-
-  useEffect(() => {
-    async function fetchMembers() {
-      try {
-        const response = await fetch(`/api/v1/organizations/${orgId}/members`);
-        if (response.ok) {
-          const data = await response.json();
-          setMembers(data.members || []);
-        }
-      } catch (err) {
-        console.error("Error fetching members:", err);
-      }
-    }
-    fetchMembers();
-  }, [orgId]);
+  const members = useOrgMembers(orgId);
 
   const form = useForm<ClientFormData>({
     resolver: zodResolver(clientSchema),

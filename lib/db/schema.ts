@@ -32,6 +32,7 @@ export const DEFAULT_ORG_FEATURES: OrgFeatures = {
   pm: false,
   proposals: false,
   defaultAssignee: null,
+  secondMemberNudge: false,
 };
 
 // Organizations (tenants)
