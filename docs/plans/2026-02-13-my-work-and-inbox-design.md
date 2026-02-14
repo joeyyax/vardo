@@ -1,8 +1,35 @@
 # My Work Dashboard & Inbox Hierarchy Design
 
+> **Status:** Phase 1 (Foundation) and Phase 2 (Dashboard) complete. Phase 3 (Inbox Hierarchy) pending.
+> See `docs/plans/2026-02-14-my-work-command-center.md` for the command center redesign plan.
+
 ## Summary
 
 Replace `/track` as the default landing page with a personal command center ("My Work") that surfaces everything needing attention across all entities. Formalize the inbox hierarchy so items trickle up from project → client → org. Add entity ownership (clients, projects) to drive automatic routing. Connect it all so your dashboard answers "what needs my attention?" without manual setup.
+
+### What's built (as of 2026-02-14)
+
+**Phase 1 — Foundation:**
+- Entity ownership (`assignedTo`) on clients, projects, tasks, inbox items
+- Assignment inheritance resolver (`lib/assignment.ts`)
+- Default assignee org setting with UI in settings form
+- Ownership selectors on client/project edit forms
+- Due date picker on task edit form
+- Single-user auto-assign on org creation
+- Second-member nudge trigger and banner
+- Bulk reassignment API and UI on team page
+
+**Phase 2 — Command Center Dashboard:**
+- Time-grouped feed: Overdue → Today → This Week → Upcoming → Needs Attention
+- All entity types: tasks, invoices, proposals, contracts, expenses, inbox items, calendar events
+- Expanded summary with money stats (unbilled hours, outstanding invoices, pending expenses)
+- Calendar integration via ICS feed (per-user setting on profile page)
+- Auto-refresh polling, deep-linking, empty states
+
+**Phase 3 — Inbox Hierarchy (pending):**
+- Client/project scoped inbox views
+- Inbox reassignment between scopes
+- Inbox count badges on entity dashboards
 
 ## Core Concepts
 
