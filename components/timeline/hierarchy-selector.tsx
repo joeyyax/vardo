@@ -293,6 +293,7 @@ export function HierarchySelector({
                               </span>
                               <span className="text-xs text-muted-foreground truncate flex items-center gap-1">
                                 {item.client.name} / {item.type === "task" && item.project.name}
+                                {/* Budget dot — hours budgets only; fixed budgets need rate resolution not available here */}
                                 {item.type === "task" && item.project.budgetType === "hours" && item.project.budgetHours && (
                                   <BudgetBar
                                     mode="dot"
@@ -335,6 +336,7 @@ export function HierarchySelector({
                               <div className="flex flex-col min-w-0">
                                 <span className="text-sm truncate flex items-center gap-1">
                                   {item.type === "project" && item.project.name}
+                                  {/* Budget dot — hours budgets only; fixed budgets need rate resolution not available here */}
                                   {item.type === "project" && item.project.budgetType === "hours" && item.project.budgetHours && (
                                     <BudgetBar
                                       mode="dot"

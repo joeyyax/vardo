@@ -46,7 +46,7 @@ type ProjectsContentProps = {
   orgId: string;
 };
 
-type ProjectWithUsage = Project & { totalMinutes?: number };
+type ProjectWithUsage = Project & { totalMinutes?: number; effectiveRate?: number };
 
 const PROJECT_VIEWS = ["list", "table"] as const;
 
@@ -360,7 +360,7 @@ export function ProjectsContent({ orgId }: ProjectsContentProps) {
                                     : (project.budgetAmountCents ?? 0)}
                                   usedValue={project.budgetType === "hours"
                                     ? ((project.totalMinutes ?? 0) / 60)
-                                    : ((project.totalMinutes ?? 0) / 60 * (project.rateOverride ?? 0) / 100)}
+                                    : ((project.totalMinutes ?? 0) / 60 * (project.effectiveRate ?? 0) / 100)}
                                 />
                               </div>
                             )}
@@ -572,7 +572,7 @@ function ProjectRow({
               : (project.budgetAmountCents ?? 0)}
             usedValue={project.budgetType === "hours"
               ? ((project.totalMinutes ?? 0) / 60)
-              : ((project.totalMinutes ?? 0) / 60 * (project.rateOverride ?? 0) / 100)}
+              : ((project.totalMinutes ?? 0) / 60 * (project.effectiveRate ?? 0) / 100)}
           />
         )}
       </Link>

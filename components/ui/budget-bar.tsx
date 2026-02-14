@@ -69,41 +69,12 @@ function BudgetBar({
   if (mode === "auto") {
     return (
       <div className={cn("@container", className)}>
-        {/* Bar mode — visible when container >= 200px */}
+        {/* Self-referencing @container — parent must constrain this element's width */}
         <div className="hidden @min-[200px]:block">
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>{label}</span>
-              <span>{Math.round(pct)}%</span>
-            </div>
-            <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-              <div
-                className={cn(
-                  "h-full rounded-full transition-all",
-                  STATUS_COLORS[status]
-                )}
-                style={{ width: `${Math.min(pct, 100)}%` }}
-              />
-            </div>
-          </div>
+          <BudgetBar budgetType={budgetType} budgetValue={budgetValue} usedValue={usedValue} mode="bar" />
         </div>
-        {/* Dot mode — visible when container < 200px */}
         <div className="block @min-[200px]:hidden">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div
-                className={cn(
-                  "size-2 shrink-0 rounded-full",
-                  DOT_COLORS[status]
-                )}
-              />
-            </TooltipTrigger>
-            <TooltipContent>
-              <p className="text-xs">
-                {label} ({Math.round(pct)}%)
-              </p>
-            </TooltipContent>
-          </Tooltip>
+          <BudgetBar budgetType={budgetType} budgetValue={budgetValue} usedValue={usedValue} mode="dot" />
         </div>
       </div>
     );

@@ -43,6 +43,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             id: true,
             name: true,
             color: true,
+            rateOverride: true,
           },
         },
         ...(includeTasks
@@ -111,6 +112,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       const enrichedResult = result.map((p) => ({
         ...p,
         totalMinutes: minutesByProject.get(p.id) ?? 0,
+        effectiveRate: p.rateOverride ?? p.client?.rateOverride ?? organization.defaultRate ?? 0,
       }));
 
       return NextResponse.json(enrichedResult);
