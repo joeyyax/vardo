@@ -19,6 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DiscussionSheet } from "@/components/ui/discussion-sheet";
 import { ClientDialog } from "@/components/clients/client-dialog";
 import { ClientFiles } from "@/components/clients/client-files";
+import { EntityInboxSection } from "@/components/inbox/entity-inbox-section";
 import { IntakeEmailSettings } from "@/app/(app)/settings/intake-email-settings";
 import { ClientContacts } from "@/components/clients/client-contacts";
 import { ClientInvitations } from "@/components/clients/client-invitations";
@@ -521,6 +522,14 @@ export function ClientDashboard({ client: initialClient, orgId, currentUserId }:
 
           {/* Files across all projects */}
           <ClientFiles orgId={orgId} clientId={client.id} />
+
+          {/* Inbox */}
+          <EntityInboxSection
+            orgId={orgId}
+            entityType="client"
+            entityId={client.id}
+            entityName={client.name}
+          />
 
           {/* Email Intake */}
           <IntakeEmailSettings
