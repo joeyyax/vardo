@@ -36,6 +36,7 @@ import { ProjectPeople } from "@/components/projects/project-people";
 import { ProjectFiles } from "@/components/projects/project-files";
 import { ProjectActivity } from "@/components/projects/project-activity";
 import { ProjectExpenses } from "@/components/projects/project-expenses";
+import { EntityInboxSection } from "@/components/inbox/entity-inbox-section";
 import { ProjectContacts } from "@/components/projects/project-contacts";
 import { IntakeEmailSettings } from "@/app/(app)/settings/intake-email-settings";
 import { ProjectOnboardingChecklist } from "@/components/projects/project-onboarding-checklist";
@@ -807,6 +808,16 @@ export function ProjectDashboard({ project: initialProject, orgId, orgName, pmEn
           {/* Expenses */}
           {capabilities.expenses && (
             <ProjectExpenses orgId={orgId} projectId={project.id} />
+          )}
+
+          {/* Inbox */}
+          {capabilities.expenses && (
+            <EntityInboxSection
+              orgId={orgId}
+              entityType="project"
+              entityId={project.id}
+              entityName={project.name}
+            />
           )}
 
           {/* Team Members */}
