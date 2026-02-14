@@ -563,17 +563,17 @@ function ProjectRow({
 
         {/* Budget indicator */}
         {project.budgetType && (project.budgetHours || project.budgetAmountCents) && (
-          <div className="w-32 shrink-0">
-            <BudgetBar
-              budgetType={project.budgetType}
-              budgetValue={project.budgetType === "hours"
-                ? (project.budgetHours ?? 0)
-                : (project.budgetAmountCents ?? 0)}
-              usedValue={project.budgetType === "hours"
-                ? ((project.totalMinutes ?? 0) / 60)
-                : ((project.totalMinutes ?? 0) / 60 * (project.rateOverride ?? 0) / 100)}
-            />
-          </div>
+          <BudgetBar
+            mode="auto"
+            className="w-32 shrink-0"
+            budgetType={project.budgetType}
+            budgetValue={project.budgetType === "hours"
+              ? (project.budgetHours ?? 0)
+              : (project.budgetAmountCents ?? 0)}
+            usedValue={project.budgetType === "hours"
+              ? ((project.totalMinutes ?? 0) / 60)
+              : ((project.totalMinutes ?? 0) / 60 * (project.rateOverride ?? 0) / 100)}
+          />
         )}
       </Link>
 

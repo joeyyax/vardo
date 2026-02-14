@@ -14,8 +14,8 @@ type BudgetBarProps = {
   budgetValue: number;
   /** Used amount (hours for hours type, cents for fixed type) */
   usedValue: number;
-  /** "bar" = progress bar + text, "dot" = colored circle + tooltip */
-  mode?: "bar" | "dot";
+  /** "bar" = progress bar + text, "dot" = colored circle + tooltip, "auto" = container query switches between bar and dot */
+  mode?: "bar" | "dot" | "auto";
   className?: string;
 };
 
@@ -65,6 +65,49 @@ function BudgetBar({
   const pct = budgetValue > 0 ? (usedValue / budgetValue) * 100 : 0;
   const status = getBudgetStatus(pct);
   const label = formatBudgetLabel(budgetType, usedValue, budgetValue);
+
+  if (mode === "auto") {
+    return (
+      <div className={cn("@container", className)}>
+        {/* Bar mode — visible when container >= 200px */}
+        <div className="hidden @min-[200px]:block">
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>{label}</span>
+              <span>{Math.round(pct)}%</span>
+            </div>
+            <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+              <div
+                className={cn(
+                  "h-full rounded-full transition-all",
+                  STATUS_COLORS[status]
+                )}
+                style={{ width: `${Math.min(pct, 100)}%` }}
+              />
+            </div>
+          </div>
+        </div>
+        {/* Dot mode — visible when container < 200px */}
+        <div className="block @min-[200px]:hidden">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div
+                className={cn(
+                  "size-2 shrink-0 rounded-full",
+                  DOT_COLORS[status]
+                )}
+              />
+            </TooltipTrigger>
+            <TooltipContent>
+              <p className="text-xs">
+                {label} ({Math.round(pct)}%)
+              </p>
+            </TooltipContent>
+          </Tooltip>
+        </div>
+      </div>
+    );
+  }
 
   if (mode === "dot") {
     return (
