@@ -184,7 +184,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         );
       }
 
-      const validBooleanKeys = ["time_tracking", "invoicing", "pm", "proposals"] as const;
+      const validBooleanKeys = ["time_tracking", "invoicing", "expenses", "pm", "proposals"] as const;
       const features: Partial<OrgFeatures> = {};
 
       for (const key of validBooleanKeys) {
