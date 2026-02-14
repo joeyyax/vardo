@@ -67,27 +67,15 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
-    // Upsert: check if settings exist, then update or create
-    const existing = await db.query.userSettings.findFirst({
-      where: eq(userSettings.userId, userId),
-    });
-
-    let settings;
-    if (existing) {
-      [settings] = await db
-        .update(userSettings)
-        .set(updates)
-        .where(eq(userSettings.userId, userId))
-        .returning();
-    } else {
-      [settings] = await db
-        .insert(userSettings)
-        .values({
-          userId,
-          ...updates,
-        })
-        .returning();
-    }
+    // Upsert using ON CONFLICT to avoid race conditions
+    const [settings] = await db
+      .insert(userSettings)
+      .values({ userId, ...updates })
+      .onConflictDoUpdate({
+        target: userSettings.userId,
+        set: updates,
+      })
+      .returning();
 
     return NextResponse.json(settings);
   } catch (error) {
