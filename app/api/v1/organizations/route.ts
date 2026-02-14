@@ -77,6 +77,9 @@ export async function POST(request: NextRequest) {
       orgFeatures[key] = Boolean(orgFeatures[key]);
     }
 
+    // Auto-set defaultAssignee to the creating user (single-user org)
+    orgFeatures.defaultAssignee = session.user.id;
+
     // Check if this is the first organization in the system
     const [{ count: orgCount }] = await db
       .select({ count: sql<number>`count(*)` })
