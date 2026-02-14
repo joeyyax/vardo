@@ -25,6 +25,24 @@ export function InboxTransferForm({
   const [projectSelectorOpen, setProjectSelectorOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  // Item already at most specific scope — can't transfer further down
+  if (item.projectId) {
+    return (
+      <div className="space-y-4 rounded-md border p-4">
+        <h3 className="text-sm font-medium">Transfer Item</h3>
+        <p className="text-sm text-muted-foreground">
+          This item is already scoped to a project and cannot be transferred
+          further.
+        </p>
+        <div className="flex items-center justify-end pt-2">
+          <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
+            Close
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
@@ -60,14 +78,18 @@ export function InboxTransferForm({
     }
   }
 
+  // Has client but no project — show project selector filtered to this client
+  // No scope at all — show project selector (picking a project auto-sets client)
+  const description = item.clientId
+    ? "Assign this item to a specific project under this client."
+    : "Assign this item to a project. The client will be set automatically.";
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4 rounded-md border p-4">
       <h3 className="text-sm font-medium">Transfer Item</h3>
 
       <div className="grid gap-3">
-        <p className="text-sm text-muted-foreground">
-          Move this inbox item to a different project.
-        </p>
+        <p className="text-sm text-muted-foreground">{description}</p>
 
         <div className="space-y-1.5">
           <Label>Project</Label>
