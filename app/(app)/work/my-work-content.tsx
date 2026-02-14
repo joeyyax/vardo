@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -98,6 +99,7 @@ const ITEM_TYPE_ICONS: Record<string, typeof CheckSquare> = {
 };
 
 export function MyWorkContent({ orgId }: MyWorkContentProps) {
+  const router = useRouter();
   const [data, setData] = useState<MyWorkData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -140,6 +142,23 @@ export function MyWorkContent({ orgId }: MyWorkContentProps) {
     );
   }
 
+  const handleItemClick = useCallback(
+    (item: WorkItem) => {
+      switch (item.type) {
+        case "task":
+          router.push("/tasks");
+          break;
+        case "invoice":
+          router.push(`/invoices/${item.id}/edit`);
+          break;
+        case "inbox_item":
+          router.push("/inbox");
+          break;
+      }
+    },
+    [router]
+  );
+
   const hasItems = SECTION_CONFIG.some(
     (section) => data[section.key].length > 0
   );
@@ -163,6 +182,7 @@ export function MyWorkContent({ orgId }: MyWorkContentProps) {
             icon={section.icon}
             iconClassName={section.iconClassName}
             items={items}
+            onItemClick={handleItemClick}
           />
         );
       })}
@@ -210,12 +230,14 @@ function WorkSection({
   icon: Icon,
   iconClassName,
   items,
+  onItemClick,
 }: {
   sectionKey: string;
   label: string;
   icon: typeof AlertCircle;
   iconClassName: string;
   items: WorkItem[];
+  onItemClick: (item: WorkItem) => void;
 }) {
   const [open, setOpen] = useState(PRIORITY_SECTIONS.has(sectionKey));
 
@@ -238,7 +260,7 @@ function WorkSection({
         <CollapsibleContent>
           <div className="divide-y border-t">
             {items.map((item) => (
-              <WorkItemRow key={`${item.type}-${item.id}`} item={item} />
+              <WorkItemRow key={`${item.type}-${item.id}`} item={item} onClick={onItemClick} />
             ))}
           </div>
         </CollapsibleContent>
@@ -249,17 +271,14 @@ function WorkSection({
 
 // -- Work Item Row --
 
-function WorkItemRow({ item }: { item: WorkItem }) {
+function WorkItemRow({ item, onClick }: { item: WorkItem; onClick: (item: WorkItem) => void }) {
   const TypeIcon = ITEM_TYPE_ICONS[item.type] ?? CheckSquare;
   const urgency = getDueDateUrgency(item.dueDate);
 
   return (
     <div
       className="flex items-center gap-3 px-4 py-2.5 hover:bg-accent/50 transition-colors cursor-pointer"
-      onClick={() => {
-        // Navigation will be wired in Task 6
-        console.log("Navigate to", item.type, item.id);
-      }}
+      onClick={() => onClick(item)}
     >
       <TypeIcon className="size-4 shrink-0 text-muted-foreground" />
 
