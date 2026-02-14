@@ -55,23 +55,23 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       membership.role
     );
 
-    // Date calculations
+    // Date calculations — use local dates consistently for date column comparisons
     const now = new Date();
-    const todayStr = now.toISOString().split("T")[0];
     const startOfToday = new Date(
       now.getFullYear(),
       now.getMonth(),
       now.getDate()
     );
+    const todayStr = formatLocalDate(startOfToday);
     const startOfWeek = new Date(startOfToday);
     startOfWeek.setDate(startOfToday.getDate() - startOfToday.getDay()); // Sunday
-    const startOfWeekStr = startOfWeek.toISOString().split("T")[0];
+    const startOfWeekStr = formatLocalDate(startOfWeek);
     const endOfWeek = new Date(startOfWeek);
     endOfWeek.setDate(startOfWeek.getDate() + 6);
-    const endOfWeekStr = endOfWeek.toISOString().split("T")[0];
+    const endOfWeekStr = formatLocalDate(endOfWeek);
     const sevenDaysFromNow = new Date(startOfToday);
     sevenDaysFromNow.setDate(startOfToday.getDate() + 7);
-    const sevenDaysFromNowStr = sevenDaysFromNow.toISOString().split("T")[0];
+    const sevenDaysFromNowStr = formatLocalDate(sevenDaysFromNow);
     const sevenDaysAgo = new Date(now);
     sevenDaysAgo.setDate(now.getDate() - 7);
 
@@ -659,6 +659,13 @@ function mapActivity(activity: ActivityWithRelations): ActivityItem {
 }
 
 // ---------- Helpers ----------
+
+function formatLocalDate(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
 
 function emptyResponse(): MyWorkData {
   return {

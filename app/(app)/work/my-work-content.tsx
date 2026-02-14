@@ -286,14 +286,17 @@ function WorkItemRow({ item, onClick }: { item: WorkItem; onClick: (item: WorkIt
         <span className="text-sm font-medium">{item.title}</span>
         {item.project && (
           <span className="text-xs text-muted-foreground ml-2">
-            {item.project.name}
-            {item.project.client && (
+            {item.project.name && item.project.client ? (
               <>
-                {" "}
+                {item.project.name}{" "}
                 <span className="opacity-50">&middot;</span>{" "}
                 {item.project.client.name}
               </>
-            )}
+            ) : item.project.name ? (
+              item.project.name
+            ) : item.project.client ? (
+              item.project.client.name
+            ) : null}
           </span>
         )}
       </div>
