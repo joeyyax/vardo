@@ -29,23 +29,29 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function checkSecondMemberNudge(orgId: string) {
-  const [{ count }] = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(memberships)
-    .where(eq(memberships.organizationId, orgId));
-  if (Number(count) === 2) {
+async function checkSecondMemberNudge(orgId: string): Promise<void> {
+  try {
+    const [{ total }] = await db
+      .select({ total: sql<number>`count(*)` })
+      .from(memberships)
+      .where(eq(memberships.organizationId, orgId));
+
+    if (Number(total) !== 2) return;
+
     const org = await db.query.organizations.findFirst({
       where: eq(organizations.id, orgId),
       columns: { features: true },
     });
-    const features = (org?.features as OrgFeatures) || {};
-    if (features.defaultAssignee) {
-      await db
-        .update(organizations)
-        .set({ features: { ...features, secondMemberNudge: true } })
-        .where(eq(organizations.id, orgId));
-    }
+    if (!org) return;
+
+    const features = (org.features as OrgFeatures) ?? {};
+    await db
+      .update(organizations)
+      .set({ features: { ...features, secondMemberNudge: true } })
+      .where(eq(organizations.id, orgId));
+  } catch (error) {
+    // Non-blocking — nudge failure should never break invitation flow
+    console.error("Error checking second member nudge:", error);
   }
 }
 
