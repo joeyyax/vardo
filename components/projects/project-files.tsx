@@ -65,6 +65,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { IntakeEmailPopover } from "@/components/projects/intake-email-popover";
 import { TemplateWizard } from "@/components/documents/template-wizard";
 import type { UnifiedFile, FileKind } from "@/lib/types/project-files";
 
@@ -77,6 +78,7 @@ type ProjectFilesProps = {
   clientName: string;
   organizationName: string;
   suggestedTemplateId?: string;
+  intakeEmailToken?: string | null;
   /** Stage capabilities — controls which actions are available */
   canUpload?: boolean;
   canCreateDocuments?: boolean;
@@ -155,6 +157,7 @@ export function ProjectFiles({
   clientName,
   organizationName,
   suggestedTemplateId,
+  intakeEmailToken,
   canUpload = true,
   canCreateDocuments = true,
 }: ProjectFilesProps) {
@@ -325,6 +328,8 @@ export function ProjectFiles({
             </CardDescription>
           </div>
           {showActions && (
+            <div className="flex items-center gap-2">
+            <IntakeEmailPopover orgId={orgId} projectId={projectId} intakeEmailToken={intakeEmailToken} />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button size="sm" className="squircle">
@@ -376,6 +381,7 @@ export function ProjectFiles({
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
+            </div>
           )}
         </div>
       </CardHeader>

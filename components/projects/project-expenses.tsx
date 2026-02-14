@@ -44,6 +44,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { IntakeEmailPopover } from "@/components/projects/intake-email-popover";
 import {
   DollarSign,
   Edit,
@@ -86,6 +87,7 @@ type ExpenseSummary = {
 type ProjectExpensesProps = {
   orgId: string;
   projectId: string;
+  intakeEmailToken?: string | null;
 };
 
 const DEFAULT_CATEGORIES = [
@@ -98,7 +100,7 @@ const DEFAULT_CATEGORIES = [
   "Other",
 ];
 
-export function ProjectExpenses({ orgId, projectId }: ProjectExpensesProps) {
+export function ProjectExpenses({ orgId, projectId, intakeEmailToken }: ProjectExpensesProps) {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [summary, setSummary] = useState<ExpenseSummary | null>(null);
   const [categories, setCategories] = useState<string[]>([]);
@@ -261,10 +263,13 @@ export function ProjectExpenses({ orgId, projectId }: ProjectExpensesProps) {
               )}
             </CardDescription>
           </div>
-          <Button size="sm" onClick={openCreateDialog} className="squircle">
-            <Plus className="size-4" />
-            Add
-          </Button>
+          <div className="flex items-center gap-2">
+            <IntakeEmailPopover orgId={orgId} projectId={projectId} intakeEmailToken={intakeEmailToken} />
+            <Button size="sm" onClick={openCreateDialog} className="squircle">
+              <Plus className="size-4" />
+              Add
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent>
