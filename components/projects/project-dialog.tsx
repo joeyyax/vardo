@@ -105,6 +105,7 @@ export function ProjectDialog({
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [budgetUsage, setBudgetUsage] = useState<{ usedHours: number; usedCents: number } | null>(null);
 
   // Reset edit mode when dialog opens
   useEffect(() => {
@@ -113,6 +114,30 @@ export function ProjectDialog({
       setError(null);
     }
   }, [open, project]);
+
+  // Fetch budget usage when dialog opens with a budgeted project
+  useEffect(() => {
+    if (!open || !project || !project.budgetType) {
+      setBudgetUsage(null);
+      return;
+    }
+
+    async function fetchBudgetUsage() {
+      try {
+        const res = await fetch(`/api/v1/organizations/${orgId}/projects/${project!.id}/stats`);
+        if (res.ok) {
+          const data = await res.json();
+          setBudgetUsage({
+            usedHours: (data.totalMinutesAllTime ?? 0) / 60,
+            usedCents: data.budgetUsedAmount ?? 0,
+          });
+        }
+      } catch (err) {
+        console.error("Error fetching budget usage:", err);
+      }
+    }
+    fetchBudgetUsage();
+  }, [open, project, orgId]);
 
   const handleSave = useCallback((projectId?: string) => {
     if (projectId) {
@@ -264,7 +289,7 @@ export function ProjectDialog({
         }
       >
         {project && !isEditing ? (
-          <ProjectDetailView project={project} onEdit={() => setIsEditing(true)} />
+          <ProjectDetailView project={project} onEdit={() => setIsEditing(true)} budgetUsage={budgetUsage} />
         ) : (
           <ProjectDetailEdit
             project={project || null}
