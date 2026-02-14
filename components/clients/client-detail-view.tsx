@@ -30,13 +30,21 @@ const DAYS_OF_WEEK_LABELS: Record<number, string> = {
   6: "Saturday",
 };
 
+type OrgMember = {
+  id: string;
+  name: string | null;
+  email: string;
+};
+
 type ClientDetailViewProps = {
   client: Client;
   parentClient?: Client | null;
+  members?: OrgMember[];
   onEdit: () => void;
 };
 
-export function ClientDetailView({ client, parentClient }: ClientDetailViewProps) {
+export function ClientDetailView({ client, parentClient, members }: ClientDetailViewProps) {
+  const owner = members?.find((m) => m.id === client.assignedTo);
   const formatRate = (cents: number | null) => {
     if (cents === null) return null;
     return `$${(cents / 100).toFixed(2)}`;
@@ -83,6 +91,14 @@ export function ClientDetailView({ client, parentClient }: ClientDetailViewProps
             </div>
           </DetailField>
         )}
+
+        <DetailField label="Owner">
+          {owner ? (
+            owner.name || owner.email
+          ) : (
+            <span className="italic text-muted-foreground">Unassigned</span>
+          )}
+        </DetailField>
 
         <DetailField label="Hourly rate">
           {formatRate(client.rateOverride) || (

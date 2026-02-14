@@ -89,6 +89,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       billingDayOfMonth,
       paymentTermsDays,
       parentClientId,
+      assignedTo,
     } = body;
 
     // Build update object with only provided fields
@@ -108,6 +109,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       billingDayOfMonth: number | null;
       paymentTermsDays: number | null;
       parentClientId: string | null;
+      assignedTo: string | null;
       updatedAt: Date;
     }> = {
       updatedAt: new Date(),
@@ -237,6 +239,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         }
         updates.parentClientId = parentClientId;
       }
+    }
+
+    if ("assignedTo" in body) {
+      updates.assignedTo = body.assignedTo || null;
     }
 
     const [updatedClient] = await db
