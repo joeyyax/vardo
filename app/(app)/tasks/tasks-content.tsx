@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -173,6 +173,20 @@ export function TasksContent({ orgId, currentUserId }: TasksContentProps) {
   useEffect(() => {
     fetchTasks();
   }, [fetchTasks]);
+
+  // Deep-link: auto-open task from URL param (?task=<id>)
+  const searchParams = useSearchParams();
+  const deepLinkHandled = useRef(false);
+  useEffect(() => {
+    if (deepLinkHandled.current || isLoading || tasks.length === 0) return;
+    const taskId = searchParams.get("task");
+    if (!taskId) return;
+    const task = tasks.find((t) => t.id === taskId);
+    if (task) {
+      deepLinkHandled.current = true;
+      handleEditTask(task);
+    }
+  }, [searchParams, isLoading, tasks]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reset project filter when client changes
   useEffect(() => {

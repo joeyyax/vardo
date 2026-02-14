@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Inbox,
   Loader2,
@@ -75,6 +76,20 @@ export function InboxContent({ orgId }: InboxContentProps) {
   useEffect(() => {
     fetchItems();
   }, [fetchItems]);
+
+  // Deep-link: auto-open item from URL param (?item=<id>)
+  const searchParams = useSearchParams();
+  const deepLinkHandled = useRef(false);
+  useEffect(() => {
+    if (deepLinkHandled.current || loading || items.length === 0) return;
+    const itemId = searchParams.get("item");
+    if (!itemId) return;
+    const item = items.find((i) => i.id === itemId);
+    if (item) {
+      deepLinkHandled.current = true;
+      handleRowClick(item);
+    }
+  }, [searchParams, loading, items]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Filter by search term (client-side)
   const filteredItems = items.filter((item) => {

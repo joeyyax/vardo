@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -120,6 +121,8 @@ export function MyWorkContent({ orgId }: MyWorkContentProps) {
 
   useEffect(() => {
     fetchData();
+    const interval = setInterval(fetchData, 60_000);
+    return () => clearInterval(interval);
   }, [fetchData]);
 
   if (isLoading) {
@@ -135,8 +138,19 @@ export function MyWorkContent({ orgId }: MyWorkContentProps) {
       <Card className="squircle">
         <CardContent className="py-12 text-center">
           <p className="text-sm text-muted-foreground">
-            Unable to load your work. Please try again.
+            Unable to load your work.
           </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-3"
+            onClick={() => {
+              setIsLoading(true);
+              fetchData();
+            }}
+          >
+            Try again
+          </Button>
         </CardContent>
       </Card>
     );
@@ -146,13 +160,13 @@ export function MyWorkContent({ orgId }: MyWorkContentProps) {
     (item: WorkItem) => {
       switch (item.type) {
         case "task":
-          router.push("/tasks");
+          router.push(`/tasks?task=${item.id}`);
           break;
         case "invoice":
           router.push(`/invoices/${item.id}/edit`);
           break;
         case "inbox_item":
-          router.push("/inbox");
+          router.push(`/inbox?item=${item.id}`);
           break;
       }
     },
@@ -407,21 +421,34 @@ function formatDueDate(dueDate: string): string {
 }
 
 function formatActivityDescription(activity: ActivityItem): string {
-  const entityName = activity.task?.name || activity.entityType;
+  const entityLabel = activity.task?.name
+    ? `"${activity.task.name}"`
+    : activity.entityType;
+  const projectContext = activity.project?.name
+    ? ` in ${activity.project.name}`
+    : "";
+
+  if (activity.action === "status_changed" && activity.newValue) {
+    return `Moved ${entityLabel} to ${activity.newValue}${projectContext}`;
+  }
 
   if (activity.field && activity.newValue) {
-    return `Changed ${activity.field} to ${activity.newValue} on ${entityName}`;
+    return `Updated ${activity.field} on ${entityLabel}${projectContext}`;
   }
 
   if (activity.action === "created") {
-    return `Created ${entityName}`;
+    return `Created ${entityLabel}${projectContext}`;
+  }
+
+  if (activity.action === "commented") {
+    return `Commented on ${entityLabel}${projectContext}`;
   }
 
   if (activity.action === "updated") {
-    return `Updated ${entityName}`;
+    return `Updated ${entityLabel}${projectContext}`;
   }
 
-  return `${activity.action} ${entityName}`;
+  return `${activity.action} ${entityLabel}${projectContext}`;
 }
 
 function formatRelativeTime(dateString: string): string {
