@@ -12,7 +12,6 @@ type EntityInboxSectionProps = {
   orgId: string;
   entityType: "project" | "client";
   entityId: string;
-  entityName: string;
 };
 
 export function EntityInboxSection({

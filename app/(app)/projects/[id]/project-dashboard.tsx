@@ -816,7 +816,6 @@ export function ProjectDashboard({ project: initialProject, orgId, orgName, pmEn
               orgId={orgId}
               entityType="project"
               entityId={project.id}
-              entityName={project.name}
             />
           )}
 

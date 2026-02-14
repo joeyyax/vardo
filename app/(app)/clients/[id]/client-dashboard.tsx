@@ -528,7 +528,6 @@ export function ClientDashboard({ client: initialClient, orgId, currentUserId }:
             orgId={orgId}
             entityType="client"
             entityId={client.id}
-            entityName={client.name}
           />
 
           {/* Email Intake */}
