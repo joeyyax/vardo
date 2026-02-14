@@ -16,7 +16,7 @@ export default async function ExpensesPage({ searchParams }: ExpensesPageProps) 
     redirect("/onboarding");
   }
 
-  const { organization, membership } = orgData;
+  const { organization } = orgData;
 
   // Check if expenses feature is enabled
   const features: OrgFeatures = {

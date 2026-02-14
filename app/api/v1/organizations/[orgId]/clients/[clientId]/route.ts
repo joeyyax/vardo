@@ -89,7 +89,6 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       billingDayOfMonth,
       paymentTermsDays,
       parentClientId,
-      assignedTo,
     } = body;
 
     // Build update object with only provided fields
