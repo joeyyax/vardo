@@ -42,6 +42,7 @@ export type Project = {
   budgetType: BudgetType | null;
   budgetHours: number | null;
   budgetAmountCents: number | null;
+  assignedTo: string | null;
   intakeEmailToken: string | null;
   createdAt: string;
   updatedAt: string;
@@ -106,6 +107,24 @@ export function ProjectDialog({
   const [error, setError] = useState<string | null>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [budgetUsage, setBudgetUsage] = useState<{ usedHours: number; usedCents: number } | null>(null);
+  const [members, setMembers] = useState<{ id: string; name: string | null; email: string }[]>([]);
+
+  // Fetch org members for owner selector
+  useEffect(() => {
+    if (!open) return;
+    async function fetchMembers() {
+      try {
+        const response = await fetch(`/api/v1/organizations/${orgId}/members`);
+        if (response.ok) {
+          const data = await response.json();
+          setMembers(data.members || []);
+        }
+      } catch (err) {
+        console.error("Error fetching members:", err);
+      }
+    }
+    fetchMembers();
+  }, [open, orgId]);
 
   // Reset edit mode when dialog opens
   useEffect(() => {
@@ -289,7 +308,7 @@ export function ProjectDialog({
         }
       >
         {project && !isEditing ? (
-          <ProjectDetailView project={project} onEdit={() => setIsEditing(true)} budgetUsage={budgetUsage} />
+          <ProjectDetailView project={project} onEdit={() => setIsEditing(true)} budgetUsage={budgetUsage} members={members} />
         ) : (
           <ProjectDetailEdit
             project={project || null}

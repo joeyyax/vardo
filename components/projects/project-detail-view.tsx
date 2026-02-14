@@ -13,9 +13,12 @@ type ProjectDetailViewProps = {
     usedHours: number;
     usedCents: number;
   } | null;
+  members?: { id: string; name: string | null; email: string }[];
 };
 
-export function ProjectDetailView({ project, onEdit, budgetUsage }: ProjectDetailViewProps) {
+export function ProjectDetailView({ project, onEdit, budgetUsage, members }: ProjectDetailViewProps) {
+  const owner = members?.find(m => m.id === project.assignedTo);
+
   const formatRate = (cents: number | null) => {
     if (cents === null) return null;
     return `$${(cents / 100).toFixed(2)}`;
@@ -35,6 +38,14 @@ export function ProjectDetailView({ project, onEdit, budgetUsage }: ProjectDetai
             />
             <span className="text-sm font-medium">{project.client.name}</span>
           </div>
+        </DetailField>
+
+        <DetailField label="Owner">
+          {owner ? (
+            owner.name || owner.email
+          ) : (
+            <span className="italic text-muted-foreground">Unassigned</span>
+          )}
         </DetailField>
 
         <DetailField label="Project name">
