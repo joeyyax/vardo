@@ -13,19 +13,23 @@ import {
 import {
   Activity,
   AlertCircle,
-  Ban,
+  Calendar,
   CalendarClock,
+  CalendarDays,
   CheckSquare,
   ChevronRight,
   CircleCheck,
+  Clock,
+  FileSignature,
   FileText,
   Inbox,
   Loader2,
   Mail,
-  UserX,
+  Receipt,
+  Send,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatHoursHuman } from "@/lib/formatting";
+import { formatCurrency, formatHoursHuman } from "@/lib/formatting";
 import type {
   MyWorkData,
   WorkItem,
@@ -38,65 +42,54 @@ type MyWorkContentProps = {
   currentUserId: string;
 };
 
-// Which sections auto-expand (priority items)
-const PRIORITY_SECTIONS = new Set(["pastDue", "dueSoon", "needsTriage"]);
-
-type SectionKey =
-  | "pastDue"
-  | "dueSoon"
-  | "needsTriage"
-  | "blocked"
-  | "myItems"
-  | "unassigned";
-
-const SECTION_CONFIG: {
-  key: SectionKey;
-  label: string;
-  icon: typeof AlertCircle;
-  iconClassName: string;
-}[] = [
+const SECTION_CONFIG = [
   {
-    key: "pastDue",
-    label: "Past Due",
+    key: "overdue",
+    label: "Overdue",
     icon: AlertCircle,
     iconClassName: "text-red-500",
+    defaultOpen: true,
   },
   {
-    key: "dueSoon",
-    label: "Due Soon",
+    key: "today",
+    label: "Today",
     icon: CalendarClock,
-    iconClassName: "text-amber-500",
-  },
-  {
-    key: "needsTriage",
-    label: "Needs Triage",
-    icon: Inbox,
-    iconClassName: "text-blue-500",
-  },
-  {
-    key: "blocked",
-    label: "Blocked",
-    icon: Ban,
-    iconClassName: "text-red-500",
-  },
-  {
-    key: "myItems",
-    label: "My Items",
-    icon: CheckSquare,
     iconClassName: "text-foreground",
+    defaultOpen: true,
   },
   {
-    key: "unassigned",
-    label: "Unassigned",
-    icon: UserX,
-    iconClassName: "text-muted-foreground",
+    key: "thisWeek",
+    label: "This Week",
+    icon: CalendarDays,
+    iconClassName: "text-blue-500",
+    defaultOpen: true,
   },
-];
+  {
+    key: "upcoming",
+    label: "Upcoming",
+    icon: Clock,
+    iconClassName: "text-muted-foreground",
+    defaultOpen: false,
+  },
+  {
+    key: "needsAttention",
+    label: "Needs Attention",
+    icon: Inbox,
+    iconClassName: "text-amber-500",
+    defaultOpen: true,
+  },
+] as const;
+
+type SectionKey = (typeof SECTION_CONFIG)[number]["key"];
 
 const ITEM_TYPE_ICONS: Record<string, typeof CheckSquare> = {
   task: CheckSquare,
   invoice: FileText,
   inbox_item: Mail,
+  proposal: Send,
+  contract: FileSignature,
+  expense: Receipt,
+  calendar_event: Calendar,
 };
 
 export function MyWorkContent({ orgId }: MyWorkContentProps) {
@@ -124,6 +117,33 @@ export function MyWorkContent({ orgId }: MyWorkContentProps) {
     const interval = setInterval(fetchData, 60_000);
     return () => clearInterval(interval);
   }, [fetchData]);
+
+  const handleItemClick = useCallback(
+    (item: WorkItem) => {
+      switch (item.type) {
+        case "task":
+          router.push(`/tasks?task=${item.id}`);
+          break;
+        case "invoice":
+          router.push(`/invoices/${item.id}/edit`);
+          break;
+        case "inbox_item":
+          router.push(`/inbox?item=${item.id}`);
+          break;
+        case "proposal":
+        case "contract":
+          router.push(`/documents/${item.id}`);
+          break;
+        case "expense":
+          router.push(`/expenses?expense=${item.id}`);
+          break;
+        case "calendar_event":
+          // No navigation for calendar events
+          break;
+      }
+    },
+    [router]
+  );
 
   if (isLoading) {
     return (
@@ -156,26 +176,14 @@ export function MyWorkContent({ orgId }: MyWorkContentProps) {
     );
   }
 
-  const handleItemClick = useCallback(
-    (item: WorkItem) => {
-      switch (item.type) {
-        case "task":
-          router.push(`/tasks?task=${item.id}`);
-          break;
-        case "invoice":
-          router.push(`/invoices/${item.id}/edit`);
-          break;
-        case "inbox_item":
-          router.push(`/inbox?item=${item.id}`);
-          break;
-      }
-    },
-    [router]
-  );
-
-  const hasItems = SECTION_CONFIG.some(
-    (section) => data[section.key].length > 0
-  );
+  const sectionKeys: SectionKey[] = [
+    "overdue",
+    "today",
+    "thisWeek",
+    "upcoming",
+    "needsAttention",
+  ];
+  const hasItems = sectionKeys.some((key) => data[key].length > 0);
 
   if (!hasItems && data.recentActivity.length === 0) {
     return <EmptyState />;
@@ -191,11 +199,11 @@ export function MyWorkContent({ orgId }: MyWorkContentProps) {
         return (
           <WorkSection
             key={section.key}
-            sectionKey={section.key}
             label={section.label}
             icon={section.icon}
             iconClassName={section.iconClassName}
             items={items}
+            defaultOpen={section.defaultOpen}
             onItemClick={handleItemClick}
           />
         );
@@ -211,6 +219,11 @@ export function MyWorkContent({ orgId }: MyWorkContentProps) {
 // -- Workload Summary --
 
 function WorkloadSummaryBlock({ summary }: { summary: WorkloadSummary }) {
+  const hasMoney =
+    summary.money.unbilledMinutes > 0 ||
+    summary.money.outstandingInvoiceCents > 0 ||
+    summary.money.pendingExpenseCents > 0;
+
   return (
     <div className="space-y-1 text-sm text-muted-foreground">
       <p>
@@ -232,6 +245,21 @@ function WorkloadSummaryBlock({ summary }: { summary: WorkloadSummary }) {
         {summary.upcoming.estimatedMinutes > 0 &&
           ` (~${formatHoursHuman(summary.upcoming.estimatedMinutes)} estimated)`}
       </p>
+      {hasMoney && (
+        <p>
+          <span className="font-medium text-foreground">Money:</span>{" "}
+          {[
+            summary.money.unbilledMinutes > 0 &&
+              `${formatHoursHuman(summary.money.unbilledMinutes)} unbilled`,
+            summary.money.outstandingInvoiceCents > 0 &&
+              `${formatCurrency(summary.money.outstandingInvoiceCents)} outstanding`,
+            summary.money.pendingExpenseCents > 0 &&
+              `${formatCurrency(summary.money.pendingExpenseCents)} in pending expenses`,
+          ]
+            .filter(Boolean)
+            .join(", ")}
+        </p>
+      )}
     </div>
   );
 }
@@ -239,21 +267,21 @@ function WorkloadSummaryBlock({ summary }: { summary: WorkloadSummary }) {
 // -- Work Section (Collapsible Card) --
 
 function WorkSection({
-  sectionKey,
   label,
   icon: Icon,
   iconClassName,
   items,
+  defaultOpen,
   onItemClick,
 }: {
-  sectionKey: string;
   label: string;
   icon: typeof AlertCircle;
   iconClassName: string;
   items: WorkItem[];
+  defaultOpen: boolean;
   onItemClick: (item: WorkItem) => void;
 }) {
-  const [open, setOpen] = useState(PRIORITY_SECTIONS.has(sectionKey));
+  const [open, setOpen] = useState(defaultOpen);
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
@@ -274,7 +302,11 @@ function WorkSection({
         <CollapsibleContent>
           <div className="divide-y border-t">
             {items.map((item) => (
-              <WorkItemRow key={`${item.type}-${item.id}`} item={item} onClick={onItemClick} />
+              <WorkItemRow
+                key={`${item.type}-${item.id}`}
+                item={item}
+                onClick={onItemClick}
+              />
             ))}
           </div>
         </CollapsibleContent>
@@ -285,19 +317,40 @@ function WorkSection({
 
 // -- Work Item Row --
 
-function WorkItemRow({ item, onClick }: { item: WorkItem; onClick: (item: WorkItem) => void }) {
+function WorkItemRow({
+  item,
+  onClick,
+}: {
+  item: WorkItem;
+  onClick: (item: WorkItem) => void;
+}) {
   const TypeIcon = ITEM_TYPE_ICONS[item.type] ?? CheckSquare;
   const urgency = getDueDateUrgency(item.dueDate);
+  const isCalendarEvent = item.type === "calendar_event";
 
   return (
     <div
-      className="flex items-center gap-3 px-4 py-2.5 hover:bg-accent/50 transition-colors cursor-pointer"
-      onClick={() => onClick(item)}
+      className={cn(
+        "flex items-center gap-3 px-4 py-2.5 transition-colors",
+        isCalendarEvent
+          ? "opacity-80"
+          : "hover:bg-accent/50 cursor-pointer"
+      )}
+      onClick={() => {
+        if (!isCalendarEvent) onClick(item);
+      }}
     >
       <TypeIcon className="size-4 shrink-0 text-muted-foreground" />
 
       <div className="flex-1 min-w-0">
-        <span className="text-sm font-medium">{item.title}</span>
+        <span
+          className={cn(
+            "text-sm font-medium",
+            isCalendarEvent && "text-muted-foreground"
+          )}
+        >
+          {item.title}
+        </span>
         {item.project && (
           <span className="text-xs text-muted-foreground ml-2">
             {item.project.name && item.project.client ? (
@@ -315,7 +368,22 @@ function WorkItemRow({ item, onClick }: { item: WorkItem; onClick: (item: WorkIt
         )}
       </div>
 
-      {item.dueDate && (
+      {item.type === "expense" && item.amountCents != null && (
+        <span className="text-xs font-medium shrink-0">
+          {formatCurrency(item.amountCents)}
+        </span>
+      )}
+
+      {isCalendarEvent && item.startTime ? (
+        <span className="text-xs text-muted-foreground shrink-0">
+          {item.allDay
+            ? "All day"
+            : new Date(item.startTime).toLocaleTimeString("en-US", {
+                hour: "numeric",
+                minute: "2-digit",
+              })}
+        </span>
+      ) : item.dueDate ? (
         <span
           className={cn(
             "text-xs shrink-0",
@@ -326,7 +394,7 @@ function WorkItemRow({ item, onClick }: { item: WorkItem; onClick: (item: WorkIt
         >
           {formatDueDate(item.dueDate)}
         </span>
-      )}
+      ) : null}
 
       <Badge variant="outline" className="shrink-0 text-xs">
         {item.status}
