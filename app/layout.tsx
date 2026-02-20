@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
+import { PlausibleTracker } from "@/components/plausible";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -34,6 +35,7 @@ export default function RootLayout({
       >
         {children}
         <Toaster position="bottom-right" />
+        <PlausibleTracker />
         <script
           src="/widget/scope.js"
           data-key="sc_ecZV91FK0a1gV9VD6j9R_Gm2"
