@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { PanelLeftClose, PanelLeft } from "lucide-react";
 import { SidebarNav } from "./sidebar-nav";
 import { OrgSwitcher } from "./org-switcher";
@@ -13,12 +13,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import type { OrgFeatures } from "@/lib/db/schema";
 import { Brand } from "../brand";
-import {
-  getUserPreference,
-  setUserPreference,
-} from "@/lib/user-preferences";
 
 type Organization = {
   id: string;
@@ -29,21 +24,14 @@ type Organization = {
 
 type SidebarProps = {
   currentOrgId?: string;
-  features?: OrgFeatures;
   organizations?: Organization[];
 };
 
-export function Sidebar({ currentOrgId, features, organizations }: SidebarProps) {
+export function Sidebar({ currentOrgId, organizations }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
 
-  useEffect(() => {
-    setCollapsed(getUserPreference("sidebarCollapsed"));
-  }, []);
-
   const toggleCollapsed = () => {
-    const next = !collapsed;
-    setCollapsed(next);
-    setUserPreference("sidebarCollapsed", next);
+    setCollapsed(!collapsed);
   };
 
   return (
@@ -95,7 +83,7 @@ export function Sidebar({ currentOrgId, features, organizations }: SidebarProps)
 
       {/* Navigation */}
       <div className="flex-1 overflow-y-auto py-4">
-        <SidebarNav features={features} collapsed={collapsed} orgId={currentOrgId} />
+        <SidebarNav collapsed={collapsed} orgId={currentOrgId} />
       </div>
 
       {/* Footer - Org Switcher & User Menu */}
