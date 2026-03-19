@@ -3,11 +3,11 @@ services:
     image: postgres:17
     restart: unless-stopped
     environment:
-      POSTGRES_USER: time
-      POSTGRES_PASSWORD: time
-      POSTGRES_DB: time
+      POSTGRES_USER: host
+      POSTGRES_PASSWORD: host
+      POSTGRES_DB: host
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 

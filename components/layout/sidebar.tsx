@@ -5,7 +5,6 @@ import { PanelLeftClose, PanelLeft } from "lucide-react";
 import { SidebarNav } from "./sidebar-nav";
 import { OrgSwitcher } from "./org-switcher";
 import { UserMenu } from "./user-menu";
-import { NotificationBell } from "@/components/notification-bell";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import {
@@ -60,7 +59,6 @@ export function Sidebar({ currentOrgId, organizations }: SidebarProps) {
           <>
             <Brand />
             <div className="flex items-center gap-1">
-              <NotificationBell />
               <Tooltip delayDuration={0}>
                 <TooltipTrigger asChild>
                   <Button

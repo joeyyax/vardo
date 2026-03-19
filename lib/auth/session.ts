@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { memberships } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 
-const CURRENT_ORG_COOKIE = "time_current_org";
+const CURRENT_ORG_COOKIE = "host_current_org";
 
 /**
  * Get the current session on the server.

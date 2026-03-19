@@ -9,15 +9,18 @@ export const auth = betterAuth({
   database: drizzleAdapter(db, {
     provider: "pg",
     schema: {
-      // Map schema tables to Better Auth's expected table names
-      user: schema.users,
-      session: schema.sessions,
-      account: schema.accounts,
-      verification: schema.verifications,
-      passkey: schema.passkeys,
-      twoFactor: schema.twoFactors,
+      user: schema.user,
+      session: schema.session,
+      account: schema.account,
+      verification: schema.verification,
+      passkey: schema.passkey,
+      twoFactor: schema.twoFactor,
     },
+    usePlural: false,
   }),
+  logger: {
+    level: "debug",
+  },
 
   // Email + password authentication
   emailAndPassword: {
@@ -30,7 +33,7 @@ export const auth = betterAuth({
 
     // Two-factor authentication (TOTP only, no SMS)
     twoFactor({
-      issuer: "Scope",
+      issuer: "Host",
       // TOTP is enabled by default
       // Backup codes are enabled by default
     }),
@@ -54,12 +57,12 @@ export const auth = betterAuth({
                 "MailPace-Server-Token": process.env.MAILPACE_API_TOKEN,
               },
               body: JSON.stringify({
-                from: process.env.EMAIL_FROM || "Scope <noreply@usescope.net>",
+                from: process.env.EMAIL_FROM || "Host <noreply@usescope.net>",
                 to: email,
-                subject: "Sign in to Scope",
+                subject: "Sign in to Host",
                 htmlbody: `
                   <div style="font-family: sans-serif; max-width: 400px; margin: 0 auto; padding: 40px 20px;">
-                    <h2 style="margin-bottom: 24px;">Sign in to Scope</h2>
+                    <h2 style="margin-bottom: 24px;">Sign in to Host</h2>
                     <p style="color: #666; margin-bottom: 24px;">Click the button below to sign in. This link expires in 10 minutes.</p>
                     <a href="${url}" style="display: inline-block; background: #000; color: #fff; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 500;">Sign in</a>
                     <p style="color: #999; font-size: 14px; margin-top: 32px;">If you didn't request this, you can safely ignore this email.</p>

@@ -13,7 +13,6 @@ import {
 import { SidebarNav } from "./sidebar-nav";
 import { OrgSwitcher } from "./org-switcher";
 import { UserMenu } from "./user-menu";
-import { NotificationBell } from "@/components/notification-bell";
 
 type Organization = {
   id: string;
@@ -44,7 +43,6 @@ export function MobileSidebar({ currentOrgId, organizations }: MobileSidebarProp
             </div>
             <SheetTitle className="text-lg font-semibold">Host</SheetTitle>
           </Link>
-          <NotificationBell />
         </SheetHeader>
 
         <div className="flex h-[calc(100%-3.5rem)] flex-col">

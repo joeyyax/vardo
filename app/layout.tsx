@@ -16,11 +16,10 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Scope — Run client work without chaos",
-    template: "%s — Scope",
+    default: "Host",
+    template: "%s — Host",
   },
-  description:
-    "A calm, opinionated system for running client work. Proposals, tasks, time, and billing — connected by default.",
+  description: "Self-hosted PaaS for managing Docker Compose deployments.",
 };
 
 export default function RootLayout({
@@ -36,11 +35,6 @@ export default function RootLayout({
         {children}
         <Toaster position="bottom-right" />
         <PlausibleTracker />
-        <script
-          src="/widget/scope.js"
-          data-key="sc_ecZV91FK0a1gV9VD6j9R_Gm2"
-          defer
-        />
       </body>
     </html>
   );
