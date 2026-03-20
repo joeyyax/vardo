@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { deployments, projects, envVars } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { exec } from "child_process";
+import { exec, spawn as nodeSpawn } from "child_process";
 import { promisify } from "util";
 import { mkdir, writeFile, readFile } from "fs/promises";
 import { join, resolve } from "path";
@@ -308,10 +308,13 @@ export async function runDeployment(
     }
 
     // Step 7: Pull and start new slot (no traffic yet)
+    // Use --pull missing for locally-built images, --pull always for remote
+    const isLocalImage = project.deployType === "nixpacks" || project.deployType === "dockerfile";
+    const pullPolicy = isLocalImage ? "missing" : "always";
     log(`[deploy] Starting ${newSlot} slot...`);
     try {
       const { stdout, stderr } = await execAsync(
-        `docker compose -f "${composePath}" -p "${newProjectName}" up -d --pull always`,
+        `docker compose -f "${composePath}" -p "${newProjectName}" up -d --pull ${pullPolicy}`,
         { cwd: slotDir, timeout: 120000 }
       );
       if (stdout.trim()) logs.push(`[docker] ${stdout.trim()}`);
@@ -456,45 +459,74 @@ async function buildFromRepo(
   if (deployType === "nixpacks") {
     logs.push(`[build] Building with Nixpacks...`);
 
-    // Pass env vars to nixpacks
-    const envFlags = envVars
-      ? Object.entries(envVars).map(([k, v]) => `--env ${k}=${v}`).join(" ")
-      : "";
-
-    try {
-      const { stdout, stderr } = await execAsync(
-        `nixpacks build "${repoPath}" --name "${imageName}" ${envFlags}`,
-        { cwd: repoPath, timeout: 300000, env: buildEnv }
-      );
-      if (stdout.trim()) logs.push(`[nixpacks] ${stdout.trim()}`);
-      if (stderr.trim()) logs.push(`[nixpacks] ${stderr.trim()}`);
-      logs.push(`[build] Nixpacks build complete: ${imageName}`);
-      return;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      throw new Error(`Nixpacks build failed: ${message}`);
+    const args = ["build", repoPath, "--name", imageName];
+    if (envVars) {
+      for (const [k, v] of Object.entries(envVars)) {
+        args.push("--env", `${k}=${v}`);
+      }
     }
+
+    await spawnStream("nixpacks", args, { cwd: repoPath, env: buildEnv }, logs, "[nixpacks]");
+    logs.push(`[build] Nixpacks build complete: ${imageName}`);
+    return;
   }
 
   logs.push(`[build] Building with Dockerfile...`);
 
-  // Pass env vars as build args
-  const buildArgs = envVars
-    ? Object.entries(envVars).map(([k, v]) => `--build-arg ${k}="${v}"`).join(" ")
-    : "";
-
-  try {
-    const { stdout, stderr } = await execAsync(
-      `docker build ${buildArgs} -t "${imageName}" "${repoPath}"`,
-      { cwd: repoPath, timeout: 300000 }
-    );
-    if (stdout.trim()) logs.push(`[docker] ${stdout.trim()}`);
-    if (stderr.trim()) logs.push(`[docker] ${stderr.trim()}`);
-    logs.push(`[build] Docker build complete: ${imageName}`);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    throw new Error(`Docker build failed: ${message}`);
+  const args = ["build", "-t", imageName];
+  if (envVars) {
+    for (const [k, v] of Object.entries(envVars)) {
+      args.push("--build-arg", `${k}=${v}`);
+    }
   }
+  args.push(repoPath);
+
+  await spawnStream("docker", args, { cwd: repoPath }, logs, "[docker]");
+  logs.push(`[build] Docker build complete: ${imageName}`);
+}
+
+function spawnStream(
+  cmd: string,
+  args: string[],
+  opts: { cwd?: string; env?: NodeJS.ProcessEnv },
+  logs: { push: (line: string) => void },
+  prefix: string
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const proc = nodeSpawn(cmd, args, {
+      cwd: opts.cwd,
+      env: opts.env || process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    let stderrBuf = "";
+
+    proc.stdout.on("data", (chunk: Buffer) => {
+      for (const line of chunk.toString().split("\n")) {
+        if (line.trim()) logs.push(`${prefix} ${line}`);
+      }
+    });
+
+    proc.stderr.on("data", (chunk: Buffer) => {
+      stderrBuf += chunk.toString();
+      for (const line of chunk.toString().split("\n")) {
+        if (line.trim()) logs.push(`${prefix} ${line}`);
+      }
+    });
+
+    proc.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`${cmd} failed (exit ${code}): ${stderrBuf.slice(-500)}`));
+    });
+
+    proc.on("error", (err) => reject(err));
+
+    // 5 minute timeout
+    setTimeout(() => {
+      proc.kill();
+      reject(new Error(`${cmd} timed out after 300s`));
+    }, 300000);
+  });
 }
 
 async function waitForHealthy(
