@@ -8,9 +8,10 @@ type SendEmailOpts = {
   subject: string;
   template: ReactElement;
   from?: string;
+  replyTo?: string;
 };
 
-export async function sendEmail({ to, subject, template, from }: SendEmailOpts) {
+export async function sendEmail({ to, subject, template, from, replyTo }: SendEmailOpts) {
   const token = process.env.MAILPACE_API_TOKEN;
   if (!token) {
     console.log(`[email] No MAILPACE_API_TOKEN — would send to ${to}: ${subject}`);
@@ -36,6 +37,9 @@ export async function sendEmail({ to, subject, template, from }: SendEmailOpts) 
       subject,
       htmlbody: html,
       textbody: text,
+      ...(replyTo || process.env.EMAIL_REPLY_TO
+        ? { replyto: replyTo || process.env.EMAIL_REPLY_TO }
+        : {}),
     }),
   });
 
