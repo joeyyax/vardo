@@ -936,12 +936,7 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
             )}
           </TabsTrigger>
           <TabsTrigger value="domains">
-            Domains
-            {project.domains.length > 0 && (
-              <Badge variant="secondary" className="ml-1.5 text-xs">
-                {project.domains.length}
-              </Badge>
-            )}
+            Domains & Ports
           </TabsTrigger>
           <TabsTrigger value="logs">
             Logs

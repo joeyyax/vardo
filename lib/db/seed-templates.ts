@@ -45,6 +45,9 @@ const builtInTemplates = [
       { key: "MYSQL_PASSWORD", description: "Additional user password", required: false },
       { key: "DATABASE_URL", description: "Connection string (auto-generated)", required: false, defaultValue: "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@${project.name}:3306/${MYSQL_DATABASE}" },
     ],
+    defaultVolumes: [
+      { name: "data", mountPath: "/var/lib/mysql", description: "MySQL data files" },
+    ],
   },
   {
     name: "mariadb",
@@ -61,6 +64,9 @@ const builtInTemplates = [
       { key: "MARIADB_DATABASE", description: "Default database name", required: false },
       { key: "MARIADB_USER", description: "Additional user", required: false },
       { key: "MARIADB_PASSWORD", description: "Additional user password", required: false },
+    ],
+    defaultVolumes: [
+      { name: "data", mountPath: "/var/lib/mysql", description: "MariaDB data files" },
     ],
   },
   {
@@ -82,6 +88,9 @@ const builtInTemplates = [
       { label: "Password", value: "${REDIS_PASSWORD}", copyRef: "REDIS_PASSWORD" },
       { label: "Connection URL", value: "redis://:${REDIS_PASSWORD}@${project.name}:6379", copyRef: "REDIS_URL" },
     ],
+    defaultVolumes: [
+      { name: "data", mountPath: "/data", description: "Redis data" },
+    ],
   },
   {
     name: "mongo",
@@ -96,6 +105,9 @@ const builtInTemplates = [
     defaultEnvVars: [
       { key: "MONGO_INITDB_ROOT_USERNAME", description: "Root username", required: true },
       { key: "MONGO_INITDB_ROOT_PASSWORD", description: "Root password", required: true },
+    ],
+    defaultVolumes: [
+      { name: "data", mountPath: "/data/db", description: "MongoDB data files" },
     ],
   },
   {
