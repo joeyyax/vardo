@@ -3,7 +3,7 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { projects, tags, groups } from "@/lib/db/schema";
 import { getCurrentOrg } from "@/lib/auth/session";
-import { eq, desc, asc } from "drizzle-orm";
+import { eq, desc, asc, sql } from "drizzle-orm";
 import { Plus } from "lucide-react";
 import { PageToolbar } from "@/components/page-toolbar";
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,7 @@ export default async function ProjectsPage() {
   const [projectList, tagList, groupList] = await Promise.all([
     db.query.projects.findMany({
       where: eq(projects.organizationId, orgId),
-      orderBy: [desc(projects.createdAt)],
+      orderBy: [asc(projects.sortOrder), desc(projects.createdAt)],
       with: {
         domains: {
           columns: { domain: true, isPrimary: true },

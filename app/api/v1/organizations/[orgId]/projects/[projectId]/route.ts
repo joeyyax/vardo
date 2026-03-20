@@ -12,17 +12,17 @@ type RouteParams = {
 
 const updateProjectSchema = z.object({
   displayName: z.string().min(1).optional(),
-  description: z.string().optional(),
+  description: z.string().nullable().optional(),
   containerPort: z.number().int().positive().nullable().optional(),
   autoTraefikLabels: z.boolean().optional(),
   autoDeploy: z.boolean().optional(),
-  gitBranch: z.string().optional(),
+  gitBranch: z.string().nullable().optional(),
   rootDirectory: z.string().nullable().optional(),
   source: z.enum(["git", "direct"]).optional(),
   deployType: z.enum(["compose", "dockerfile", "image", "static", "nixpacks"]).optional(),
-  gitUrl: z.string().optional(),
-  imageName: z.string().optional(),
-  restartPolicy: z.string().optional(),
+  gitUrl: z.string().nullable().optional(),
+  imageName: z.string().nullable().optional(),
+  restartPolicy: z.string().nullable().optional(),
 });
 
 // GET /api/v1/organizations/[orgId]/projects/[projectId]

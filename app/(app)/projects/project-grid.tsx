@@ -75,6 +75,7 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
   const [activeTagIds, setActiveTagIds] = useState<Set<string>>(new Set());
   const [activeGroupId, setActiveGroupId] = useState<string>("all");
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [dragPosition, setDragPosition] = useState<"before" | "on" | "after" | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [openGroupId, setOpenGroupId] = useState<string | null>(null);
   const [creatingGroup, setCreatingGroup] = useState<{ projectIds: string[] } | null>(null);
@@ -142,25 +143,37 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
   function handleDragOver(e: React.DragEvent, targetId: string) {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
-    if (targetId !== draggingId) {
-      setDragOverId(targetId);
-    }
+    if (targetId === draggingId) return;
+
+    setDragOverId(targetId);
+
+    // Detect drop position: top 25% = before, bottom 25% = after, middle = on (group)
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    const pct = y / rect.height;
+    if (pct < 0.25) setDragPosition("before");
+    else if (pct > 0.75) setDragPosition("after");
+    else setDragPosition("on");
   }
 
   function handleDragLeave() {
     setDragOverId(null);
+    setDragPosition(null);
   }
 
   function handleDragEnd() {
     setDraggingId(null);
     setDragOverId(null);
+    setDragPosition(null);
   }
 
   async function handleDrop(e: React.DragEvent, targetId: string) {
     e.preventDefault();
     const sourceId = e.dataTransfer.getData("text/plain");
+    const position = dragPosition;
     setDragOverId(null);
     setDraggingId(null);
+    setDragPosition(null);
 
     if (sourceId === targetId) return;
 
@@ -171,10 +184,37 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
       return;
     }
 
-    // Dropping on another project — create a new group
-    setCreatingGroup({ projectIds: [sourceId, targetId] });
-    setNewGroupName("");
-    setTimeout(() => groupNameRef.current?.focus(), 100);
+    // Drop position determines action
+    if (position === "on") {
+      // Dropping on center — create a new group
+      setCreatingGroup({ projectIds: [sourceId, targetId] });
+      setNewGroupName("");
+      setTimeout(() => groupNameRef.current?.focus(), 100);
+    } else {
+      // Dropping before/after — reorder
+      const currentOrder = ungrouped.map((p) => p.id);
+      const sourceIdx = currentOrder.indexOf(sourceId);
+      const targetIdx = currentOrder.indexOf(targetId);
+      if (sourceIdx === -1 || targetIdx === -1) return;
+
+      // Remove source from its position
+      currentOrder.splice(sourceIdx, 1);
+      // Insert at new position
+      const insertIdx = position === "before" ? currentOrder.indexOf(targetId) : currentOrder.indexOf(targetId) + 1;
+      currentOrder.splice(insertIdx, 0, sourceId);
+
+      // Save new order
+      try {
+        await fetch(`/api/v1/organizations/${orgId}/projects/sort`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ order: currentOrder }),
+        });
+        router.refresh();
+      } catch {
+        toast.error("Failed to reorder");
+      }
+    }
   }
 
   async function addToGroup(projectId: string, groupId: string) {
@@ -318,6 +358,7 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
                     project={project}
                     draggingId={draggingId}
                     dragOverId={dragOverId}
+                    dragPosition={dragPosition}
                     onDragStart={handleDragStart}
                     onDragOver={handleDragOver}
                     onDragLeave={handleDragLeave}
@@ -384,6 +425,7 @@ type ProjectCardProps = {
   project: ProjectWithRelations;
   draggingId: string | null;
   dragOverId: string | null;
+  dragPosition: "before" | "on" | "after" | null;
   onDragStart: (e: React.DragEvent, id: string) => void;
   onDragOver: (e: React.DragEvent, id: string) => void;
   onDragLeave: () => void;
@@ -396,6 +438,7 @@ function ProjectCard({
   project,
   draggingId,
   dragOverId,
+  dragPosition,
   onDragStart,
   onDragOver,
   onDragLeave,
@@ -407,7 +450,10 @@ function ProjectCard({
   const lastDeploy = project.deployments[0];
   const primaryDomain = project.domains.find((d) => d.isPrimary) || project.domains[0];
   const isDragging = draggingId === project.id;
-  const isDragTarget = dragOverId === project.id && draggingId !== project.id;
+  const isTarget = dragOverId === project.id && draggingId !== project.id;
+  const isGroupTarget = isTarget && dragPosition === "on";
+  const isBeforeTarget = isTarget && dragPosition === "before";
+  const isAfterTarget = isTarget && dragPosition === "after";
   const icon = detectProjectIcon({ imageName: project.imageName, gitUrl: project.gitUrl, deployType: project.deployType });
 
   return (
@@ -419,9 +465,11 @@ function ProjectCard({
       onDragLeave={onDragLeave}
       onDrop={(e) => { e.preventDefault(); onDrop(e, project.id); }}
       onDragEnd={onDragEnd}
-      className={`squircle flex gap-3 rounded-lg border p-3 transition-all cursor-grab active:cursor-grabbing ${
+      className={`squircle relative flex gap-3 rounded-lg border p-3 transition-all cursor-grab active:cursor-grabbing ${
         isDragging ? "opacity-40 scale-95" : ""
-      } ${isDragTarget ? "border-status-info bg-status-info-muted scale-[1.02]" : "bg-card hover:bg-accent/50"
+      } ${isGroupTarget ? "border-status-info bg-status-info-muted scale-[1.02] ring-2 ring-status-info/30" : "bg-card hover:bg-accent/50"
+      } ${isBeforeTarget ? "border-t-2 border-t-status-info" : ""
+      } ${isAfterTarget ? "border-b-2 border-b-status-info" : ""
       } ${compact ? "p-2" : "p-3"}`}
     >
       {/* Icon */}
