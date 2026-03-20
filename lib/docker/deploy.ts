@@ -216,8 +216,36 @@ export async function runDeployment(
           .where(eq(deployments.id, deploymentId));
       } catch { /* not critical */ }
 
+      // Read host.toml config if present
+      const { readHostConfig, applyHostConfig } = await import("@/lib/config/host-config");
+      const hostConfig = await readHostConfig(repoDir);
+      if (hostConfig) {
+        const applied = applyHostConfig(hostConfig);
+        log(`[deploy] Found host.toml`);
+        // Apply config-as-code settings
+        if (applied.containerPort) {
+          envMap.PORT = String(applied.containerPort);
+          log(`[deploy] host.toml: port ${applied.containerPort}`);
+        }
+        if (applied.envVars) {
+          for (const { key, value } of applied.envVars) {
+            if (!(key in envMap)) {
+              envMap[key] = value;
+            }
+          }
+          log(`[deploy] host.toml: ${applied.envVars.length} env var(s)`);
+        }
+        if (applied.persistentVolumes) {
+          log(`[deploy] host.toml: ${applied.persistentVolumes.length} volume(s)`);
+        }
+      }
+
       // Find compose file
-      const root = project.rootDirectory ? join(repoDir, project.rootDirectory) : repoDir;
+      const root = project.rootDirectory
+        ? join(repoDir, project.rootDirectory)
+        : hostConfig?.project?.rootDirectory
+        ? join(repoDir, hostConfig.project.rootDirectory)
+        : repoDir;
       const composeFilePath = project.composeFilePath || "docker-compose.yml";
       const composeCandidates = [
         composeFilePath,
