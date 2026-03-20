@@ -130,8 +130,73 @@ export function ProjectMetrics({ orgId, projectId }: ProjectMetricsProps) {
   const [containers, setContainers] = useState<ContainerStatsSnapshot[]>([]);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const prevNetworkRef = useRef<{ rx: number; tx: number } | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
+  const [timeRange, setTimeRange] = useState<"1h" | "6h" | "24h" | "7d">("1h");
+
+  const rangeMs: Record<string, number> = {
+    "1h": 3600000,
+    "6h": 21600000,
+    "24h": 86400000,
+    "7d": 604800000,
+  };
+
+  const bucketMs: Record<string, number> = {
+    "1h": 30000,
+    "6h": 120000,
+    "24h": 300000,
+    "7d": 1800000,
+  };
+
+  // Load historical data
+  useEffect(() => {
+    const now = Date.now();
+    const from = now - rangeMs[timeRange];
+    const bucket = bucketMs[timeRange];
+
+    async function loadHistory() {
+      try {
+        const res = await fetch(
+          `/api/v1/organizations/${orgId}/projects/${projectId}/stats/history?from=${from}&to=${now}&bucket=${bucket}`
+        );
+        if (!res.ok) { setHistoryLoaded(true); return; }
+        const { series } = await res.json();
+
+        if (!series.cpu?.length) { setHistoryLoaded(true); return; }
+
+        // Convert time-series points to chart format
+        const historyPoints: TimeSeriesPoint[] = series.cpu.map(([ts, cpu]: [number, number], i: number) => {
+          const mem = series.memory[i] || [ts, 0];
+          const memLimit = series.memoryLimit[i] || [ts, 0];
+          const rx = series.networkRx[i] || [ts, 0];
+          const tx = series.networkTx[i] || [ts, 0];
+          const memUsage = mem[1];
+          const memLim = memLimit[1];
+          return {
+            time: formatTime(ts),
+            timestamp: ts,
+            cpuPercent: Math.round(cpu * 100) / 100,
+            memoryUsage: memUsage,
+            memoryLimit: memLim,
+            memoryPercent: memLim > 0 ? Math.round((memUsage / memLim) * 100 * 100) / 100 : 0,
+            networkRx: rx[1],
+            networkTx: tx[1],
+            networkRxRate: 0,
+            networkTxRate: 0,
+          };
+        });
+
+        setData(historyPoints);
+      } catch {
+        // History not available — that's fine, live data will populate
+      }
+      setHistoryLoaded(true);
+    }
+
+    loadHistory();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgId, projectId, timeRange]);
 
   const handleStatsEvent = useCallback((event: MessageEvent) => {
     try {
@@ -224,24 +289,24 @@ export function ProjectMetrics({ orgId, projectId }: ProjectMetricsProps) {
     };
   }, [orgId, projectId, handleStatsEvent]);
 
-  // Loading state
-  if (!connected && !error) {
+  // Loading state — show if no history and not connected
+  if (!historyLoaded && !connected && !error) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
         <Loader2 className="size-6 text-muted-foreground animate-spin" />
-        <p className="text-sm text-muted-foreground">Connecting to container metrics...</p>
+        <p className="text-sm text-muted-foreground">Loading metrics...</p>
       </div>
     );
   }
 
-  // No containers running
-  if (connected && containers.length === 0) {
+  // No containers running and no history
+  if (connected && containers.length === 0 && data.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
         <Activity className="size-8 text-muted-foreground" />
         <p className="text-sm text-muted-foreground">No running containers.</p>
         <p className="text-xs text-muted-foreground">
-          Deploy the project to see real-time resource metrics.
+          Deploy the project to see resource metrics.
         </p>
       </div>
     );
@@ -258,8 +323,40 @@ export function ProjectMetrics({ orgId, projectId }: ProjectMetricsProps) {
 
   const latestMemoryLimit = data.length > 0 ? data[data.length - 1].memoryLimit : 0;
 
+  const timeRanges = [
+    { label: "1h", value: "1h" as const },
+    { label: "6h", value: "6h" as const },
+    { label: "24h", value: "24h" as const },
+    { label: "7d", value: "7d" as const },
+  ];
+
   return (
     <div className="space-y-6">
+      {/* Time range + connection status */}
+      <div className="flex items-center justify-between">
+        <div className="inline-flex items-center gap-1 rounded-lg bg-muted p-1">
+          {timeRanges.map((r) => (
+            <button
+              key={r.value}
+              onClick={() => setTimeRange(r.value)}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                timeRange === r.value
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={`size-2 rounded-full ${connected ? "bg-status-success" : "bg-status-neutral"}`} />
+          <span className="text-xs text-muted-foreground">
+            {connected ? "Live" : "Historical"}
+          </span>
+        </div>
+      </div>
+
       {/* Summary cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="squircle rounded-lg border bg-card px-4 py-3">
