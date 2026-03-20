@@ -4,7 +4,7 @@ import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { exec } from "child_process";
 import { promisify } from "util";
-import { mkdir, writeFile, readFile, rm } from "fs/promises";
+import { mkdir, writeFile, readFile } from "fs/promises";
 import { join } from "path";
 import {
   generateComposeForImage,
@@ -92,10 +92,13 @@ export async function runDeployment(
 
     logs.push(`[deploy] ${projectEnvVars.length} env var(s), ${project.domains.length} domain(s)`);
 
-    // Step 1: Generate compose file
+    // Step 1: Generate or fetch compose file
     let compose: ComposeFile;
+    const projectDir = join(PROJECTS_DIR, project.name);
+    await mkdir(projectDir, { recursive: true });
 
     if (project.deployType === "image" && project.imageName) {
+      // Image deploy — generate a compose file
       compose = generateComposeForImage({
         projectName: project.name,
         imageName: project.imageName,
@@ -103,11 +106,52 @@ export async function runDeployment(
         envVars: envMap,
       });
       logs.push(`[deploy] Generated compose for image: ${project.imageName}`);
+    } else if (project.source === "git" && project.gitUrl) {
+      // Git source — clone/pull repo and read compose file
+      const repoDir = join(projectDir, "repo");
+      const branch = project.gitBranch || "main";
+
+      try {
+        // Try pull first (faster if already cloned)
+        await execAsync(`git -C "${repoDir}" fetch origin ${branch} && git -C "${repoDir}" reset --hard origin/${branch}`, { timeout: 60000 });
+        logs.push(`[deploy] Pulled latest from ${branch}`);
+      } catch {
+        // Fresh clone
+        await execAsync(`git clone --depth 1 --branch ${branch} "${project.gitUrl}" "${repoDir}"`, { timeout: 60000 });
+        logs.push(`[deploy] Cloned ${project.gitUrl} (${branch})`);
+      }
+
+      // Find compose file
+      const root = project.rootDirectory ? join(repoDir, project.rootDirectory) : repoDir;
+      const composeFilePath = project.composeFilePath || "docker-compose.yml";
+      const composeCandidates = [
+        composeFilePath,
+        "docker-compose.yml",
+        "docker-compose.yaml",
+        "compose.yml",
+        "compose.yaml",
+      ];
+
+      let composeContent: string | null = null;
+      for (const candidate of composeCandidates) {
+        try {
+          composeContent = await readFile(join(root, candidate), "utf-8");
+          logs.push(`[deploy] Found ${candidate}`);
+          break;
+        } catch { /* try next */ }
+      }
+
+      if (!composeContent) {
+        throw new Error(`No compose file found in repo (tried: ${composeCandidates.join(", ")})`);
+      }
+
+      compose = parseCompose(composeContent);
     } else if (project.composeContent) {
+      // Direct compose content
       compose = parseCompose(project.composeContent);
       logs.push(`[deploy] Parsed compose content`);
     } else {
-      throw new Error("No image or compose content configured");
+      throw new Error("No image, git repo, or compose content configured");
     }
 
     // Step 2: Inject shared network (no Traefik labels yet — blue-green)
@@ -128,10 +172,6 @@ export async function runDeployment(
     }
 
     // Step 4: Blue-green slot management
-    // Determine which slot to deploy to (blue or green)
-    const projectDir = join(PROJECTS_DIR, project.name);
-    await mkdir(projectDir, { recursive: true });
-
     let activeSlot: "blue" | "green" | null = null;
     try {
       const slotFile = await readFile(join(projectDir, ".active-slot"), "utf-8");
