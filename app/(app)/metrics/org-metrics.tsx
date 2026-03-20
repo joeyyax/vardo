@@ -127,7 +127,8 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
     async function loadHistory() {
       try {
         const res = await fetch(
-          `/api/v1/organizations/${orgId}/stats?from=${from}&to=${now}&bucket=${bucketMs[timeRange]}`
+          `/api/v1/organizations/${orgId}/stats?from=${from}&to=${now}&bucket=${bucketMs[timeRange]}`,
+          { signal: AbortSignal.timeout(5000) }
         );
         if (!res.ok) return;
         const { series } = await res.json();
@@ -343,7 +344,7 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
             <div className="p-4">
               <ResponsiveContainer width="100%" height={180}>
                 <AreaChart data={timeSeries}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.005 260)" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.005 260 / 40%)" />
                   <XAxis dataKey="time" tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} />
                   <YAxis tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} />
                   <Tooltip {...chartTooltipStyle} formatter={(v: number) => [`${v.toFixed(1)}%`, "CPU"]} />
@@ -360,7 +361,7 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
             <div className="p-4">
               <ResponsiveContainer width="100%" height={180}>
                 <AreaChart data={timeSeries}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.005 260)" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.005 260 / 40%)" />
                   <XAxis dataKey="time" tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} />
                   <YAxis tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} tickFormatter={(v) => formatBytes(v)} />
                   <Tooltip {...chartTooltipStyle} formatter={(v: number) => [formatBytes(v), "Memory"]} />
@@ -377,7 +378,7 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
             <div className="p-4">
               <ResponsiveContainer width="100%" height={180}>
                 <AreaChart data={timeSeries}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.005 260)" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.005 260 / 40%)" />
                   <XAxis dataKey="time" tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} />
                   <YAxis tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} tickFormatter={(v) => formatBytes(v)} />
                   <Tooltip {...chartTooltipStyle} formatter={(v: number, name: string) => [formatBytes(v), name === "networkRx" ? "↓ Received" : "↑ Sent"]} />
@@ -387,26 +388,22 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
               </ResponsiveContainer>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Disk usage chart */}
-      {timeSeries.length > 1 && timeSeries.some((t) => t.diskTotal > 0) && (
-        <div className="squircle rounded-lg border bg-card overflow-hidden">
-          <div className="flex items-center gap-2 px-4 py-3 border-b">
-            <HardDrive className="size-4 text-muted-foreground" />
-            <h3 className="text-sm font-medium">Disk Usage</h3>
-          </div>
-          <div className="p-4">
-            <ResponsiveContainer width="100%" height={180}>
-              <AreaChart data={timeSeries}>
-                <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.005 260)" />
-                <XAxis dataKey="time" tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} />
-                <YAxis tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} tickFormatter={(v) => formatBytes(v)} />
-                <Tooltip {...chartTooltipStyle} formatter={(v: number) => [formatBytes(v), "Total"]} />
-                <Area type="monotone" dataKey="diskTotal" stroke="oklch(0.65 0.1 30)" fill="oklch(0.65 0.1 30 / 15%)" strokeWidth={1.5} dot={false} />
-              </AreaChart>
-            </ResponsiveContainer>
+          <div className="squircle rounded-lg border bg-card overflow-hidden">
+            <div className="flex items-center gap-2 px-4 py-3 border-b">
+              <HardDrive className="size-4 text-muted-foreground" />
+              <h3 className="text-sm font-medium">Disk Usage</h3>
+            </div>
+            <div className="p-4">
+              <ResponsiveContainer width="100%" height={180}>
+                <AreaChart data={timeSeries}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.005 260 / 40%)" />
+                  <XAxis dataKey="time" tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} tickFormatter={(v) => formatBytes(v)} />
+                  <Tooltip {...chartTooltipStyle} formatter={(v: number) => [formatBytes(v), "Total"]} />
+                  <Area type="monotone" dataKey="diskTotal" stroke="oklch(0.65 0.1 30)" fill="oklch(0.65 0.1 30 / 15%)" strokeWidth={1.5} dot={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         </div>
       )}

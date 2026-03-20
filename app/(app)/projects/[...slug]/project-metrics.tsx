@@ -415,7 +415,7 @@ export function ProjectMetrics({ orgId, projectId }: ProjectMetricsProps) {
                 <stop offset="95%" stopColor="oklch(0.65 0.19 255)" stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.30 0.006 285.75)" />
+            <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.30 0.006 285.75 / 40%)" />
             <XAxis
               dataKey="time"
               tick={{ fontSize: 10, fill: "oklch(0.55 0.006 285.75)" }}
@@ -459,7 +459,7 @@ export function ProjectMetrics({ orgId, projectId }: ProjectMetricsProps) {
                 <stop offset="95%" stopColor="oklch(0.72 0.17 150)" stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.30 0.006 285.75)" />
+            <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.30 0.006 285.75 / 40%)" />
             <XAxis
               dataKey="time"
               tick={{ fontSize: 10, fill: "oklch(0.55 0.006 285.75)" }}
@@ -521,7 +521,7 @@ export function ProjectMetrics({ orgId, projectId }: ProjectMetricsProps) {
                 <stop offset="95%" stopColor="oklch(0.75 0.15 75)" stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.30 0.006 285.75)" />
+            <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.30 0.006 285.75 / 40%)" />
             <XAxis
               dataKey="time"
               tick={{ fontSize: 10, fill: "oklch(0.55 0.006 285.75)" }}
