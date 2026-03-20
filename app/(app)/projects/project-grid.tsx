@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -68,6 +69,29 @@ function StatusBadge({ status }: { status: string }) {
   }
 }
 
+function formatUptime(date: Date): string {
+  const ms = Date.now() - new Date(date).getTime();
+  const s = Math.floor(ms / 1000) % 60;
+  const m = Math.floor(ms / 60000) % 60;
+  const h = Math.floor(ms / 3600000) % 24;
+  const d = Math.floor(ms / 86400000);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
+function Uptime({ since }: { since: Date }) {
+  const [text, setText] = useState<string | null>(null);
+  useEffect(() => {
+    setText(formatUptime(since));
+    const interval = setInterval(() => setText(formatUptime(since)), 1000);
+    return () => clearInterval(interval);
+  }, [since]);
+  if (!text) return null;
+  return <span className="tabular-nums">{text}</span>;
+}
+
 function deployTypeLabel(deployType: string) {
   switch (deployType) {
     case "compose":
@@ -84,8 +108,15 @@ function deployTypeLabel(deployType: string) {
 }
 
 export function ProjectGrid({ projects, allTags, allGroups }: ProjectGridProps) {
+  const router = useRouter();
   const [activeTagIds, setActiveTagIds] = useState<Set<string>>(new Set());
   const [activeGroupId, setActiveGroupId] = useState<string>("all");
+
+  // Poll for updates every 10 seconds
+  useEffect(() => {
+    const interval = setInterval(() => router.refresh(), 10000);
+    return () => clearInterval(interval);
+  }, [router]);
 
   const filteredProjects = useMemo(() => {
     return projects.filter((project) => {
@@ -225,7 +256,11 @@ export function ProjectGrid({ projects, allTags, allGroups }: ProjectGridProps) 
                 {isRunning ? (
                   <span className="flex items-center gap-1.5 text-xs text-status-success shrink-0">
                     <span className="size-1.5 rounded-full bg-status-success animate-pulse" />
-                    Running
+                    {lastDeploy?.finishedAt ? (
+                      <Uptime since={lastDeploy.finishedAt} />
+                    ) : (
+                      "Running"
+                    )}
                   </span>
                 ) : project.status === "error" ? (
                   <span className="text-xs text-status-error shrink-0">Error</span>

@@ -298,6 +298,12 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
     searchParams.get("tab") || "deployments"
   );
 
+  // Poll for project status updates every 15 seconds
+  useEffect(() => {
+    const interval = setInterval(() => router.refresh(), 15000);
+    return () => clearInterval(interval);
+  }, [router]);
+
   const setActiveTab = useCallback((tab: string) => {
     setActiveTabState(tab);
     const url = new URL(window.location.href);
