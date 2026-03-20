@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { Activity, Cpu, MemoryStick, Loader2 } from "lucide-react";
+import { Activity, Cpu, HardDrive, MemoryStick, Network, Loader2 } from "lucide-react";
 import {
   AreaChart,
   Area,
@@ -58,6 +58,10 @@ type TimePoint = {
   timestamp: number;
   cpu: number;
   memory: number;
+  networkRx: number;
+  networkTx: number;
+  diskRead: number;
+  diskWrite: number;
 };
 
 const MAX_POINTS = 60; // 5 minutes at 5s intervals
@@ -133,6 +137,10 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
         .flatMap((r) => r.value.containers);
       const totalCpuNow = allContainers.reduce((s, c) => s + c.cpuPercent, 0);
       const totalMemNow = allContainers.reduce((s, c) => s + c.memoryUsage, 0);
+      const totalRxNow = allContainers.reduce((s, c) => s + c.networkRx, 0);
+      const totalTxNow = allContainers.reduce((s, c) => s + c.networkTx, 0);
+      const totalDiskRNow = allContainers.reduce((s, c) => s + c.blockRead, 0);
+      const totalDiskWNow = allContainers.reduce((s, c) => s + c.blockWrite, 0);
 
       setTimeSeries((prev) => {
         const next = [...prev, {
@@ -140,6 +148,10 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
           timestamp: now,
           cpu: Math.round(totalCpuNow * 100) / 100,
           memory: totalMemNow,
+          networkRx: totalRxNow,
+          networkTx: totalTxNow,
+          diskRead: totalDiskRNow,
+          diskWrite: totalDiskWNow,
         }];
         return next.length > MAX_POINTS ? next.slice(-MAX_POINTS) : next;
       });
@@ -149,6 +161,8 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
     const interval = setInterval(fetchAll, 5000);
     return () => clearInterval(interval);
   }, [orgId, projects]);
+
+  const [timeRange, setTimeRange] = useState<"live" | "1h" | "6h" | "24h" | "7d">("live");
 
   const allStats = Object.values(projectStats);
   const anyLoading = allStats.some((s) => s.loading);
@@ -186,6 +200,31 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
 
   return (
     <div className="space-y-6">
+      {/* Period switcher */}
+      <div className="flex items-center justify-between">
+        <div className="inline-flex items-center gap-1 rounded-lg bg-muted p-1">
+          {(["live", "1h", "6h", "24h", "7d"] as const).map((r) => (
+            <button
+              key={r}
+              onClick={() => setTimeRange(r)}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                timeRange === r
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {r === "live" ? "Live" : r}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={`size-2 rounded-full ${anyLoading ? "bg-status-neutral animate-pulse" : "bg-status-success"}`} />
+          <span className="text-xs text-muted-foreground">
+            {timeRange === "live" ? "Polling every 5s" : "Historical"}
+          </span>
+        </div>
+      </div>
+
       {/* Summary cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <div className="squircle rounded-lg border bg-card px-4 py-3">
@@ -234,10 +273,10 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
           <div className="squircle rounded-lg border bg-card overflow-hidden">
             <div className="flex items-center gap-2 px-4 py-3 border-b">
               <Cpu className="size-4 text-muted-foreground" />
-              <h3 className="text-sm font-medium">Total CPU Usage</h3>
+              <h3 className="text-sm font-medium">CPU</h3>
             </div>
             <div className="p-4">
-              <ResponsiveContainer width="100%" height={200}>
+              <ResponsiveContainer width="100%" height={180}>
                 <AreaChart data={timeSeries}>
                   <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.005 260)" />
                   <XAxis dataKey="time" tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} />
@@ -251,16 +290,52 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
           <div className="squircle rounded-lg border bg-card overflow-hidden">
             <div className="flex items-center gap-2 px-4 py-3 border-b">
               <MemoryStick className="size-4 text-muted-foreground" />
-              <h3 className="text-sm font-medium">Total Memory Usage</h3>
+              <h3 className="text-sm font-medium">Memory</h3>
             </div>
             <div className="p-4">
-              <ResponsiveContainer width="100%" height={200}>
+              <ResponsiveContainer width="100%" height={180}>
                 <AreaChart data={timeSeries}>
                   <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.005 260)" />
                   <XAxis dataKey="time" tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} />
                   <YAxis tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} tickFormatter={(v) => formatBytes(v)} />
                   <Tooltip {...chartTooltipStyle} formatter={(v: number) => [formatBytes(v), "Memory"]} />
                   <Area type="monotone" dataKey="memory" stroke="oklch(0.7 0.12 155)" fill="oklch(0.7 0.12 155 / 15%)" strokeWidth={1.5} dot={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+          <div className="squircle rounded-lg border bg-card overflow-hidden">
+            <div className="flex items-center gap-2 px-4 py-3 border-b">
+              <Network className="size-4 text-muted-foreground" />
+              <h3 className="text-sm font-medium">Network</h3>
+            </div>
+            <div className="p-4">
+              <ResponsiveContainer width="100%" height={180}>
+                <AreaChart data={timeSeries}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.005 260)" />
+                  <XAxis dataKey="time" tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} tickFormatter={(v) => formatBytes(v)} />
+                  <Tooltip {...chartTooltipStyle} formatter={(v: number, name: string) => [formatBytes(v), name === "networkRx" ? "↓ Received" : "↑ Sent"]} />
+                  <Area type="monotone" dataKey="networkRx" stroke="oklch(0.7 0.12 240)" fill="oklch(0.7 0.12 240 / 10%)" strokeWidth={1.5} dot={false} />
+                  <Area type="monotone" dataKey="networkTx" stroke="oklch(0.65 0.1 30)" fill="oklch(0.65 0.1 30 / 10%)" strokeWidth={1.5} dot={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+          <div className="squircle rounded-lg border bg-card overflow-hidden">
+            <div className="flex items-center gap-2 px-4 py-3 border-b">
+              <HardDrive className="size-4 text-muted-foreground" />
+              <h3 className="text-sm font-medium">Disk I/O</h3>
+            </div>
+            <div className="p-4">
+              <ResponsiveContainer width="100%" height={180}>
+                <AreaChart data={timeSeries}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.005 260)" />
+                  <XAxis dataKey="time" tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} tickFormatter={(v) => formatBytes(v)} />
+                  <Tooltip {...chartTooltipStyle} formatter={(v: number, name: string) => [formatBytes(v), name === "diskRead" ? "Read" : "Write"]} />
+                  <Area type="monotone" dataKey="diskRead" stroke="oklch(0.7 0.12 240)" fill="oklch(0.7 0.12 240 / 10%)" strokeWidth={1.5} dot={false} />
+                  <Area type="monotone" dataKey="diskWrite" stroke="oklch(0.65 0.1 30)" fill="oklch(0.65 0.1 30 / 10%)" strokeWidth={1.5} dot={false} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -275,9 +350,9 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
           <p className="text-sm text-muted-foreground">No projects yet.</p>
         </div>
       ) : (
-        <div className="squircle rounded-lg border bg-card overflow-hidden">
+        <div className="squircle rounded-lg border bg-card overflow-x-auto">
           {/* Header */}
-          <div className="grid grid-cols-[1fr_70px_90px_90px_90px_90px_70px] gap-3 px-4 py-2 border-b text-xs text-muted-foreground">
+          <div className="grid grid-cols-[1fr_70px_90px_100px_100px_80px_50px] gap-3 px-4 py-2 border-b text-xs text-muted-foreground whitespace-nowrap min-w-[700px]">
             <span>Project</span>
             <span className="text-right">CPU</span>
             <span className="text-right">Memory</span>
@@ -304,7 +379,7 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
                 <Link
                   key={project.id}
                   href={`/projects/${project.name}/metrics`}
-                  className="grid grid-cols-[1fr_70px_90px_90px_90px_90px_70px] gap-3 px-4 py-3 hover:bg-accent/50 transition-colors items-center"
+                  className="grid grid-cols-[1fr_70px_90px_100px_100px_80px_50px] gap-3 px-4 py-3 hover:bg-accent/50 transition-colors items-center whitespace-nowrap min-w-[700px]"
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <span
