@@ -254,6 +254,26 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ groupId }),
       });
+
+      // If only one project remains in the group, dissolve the group
+      const groupEntry = groupedMap.get(groupId);
+      if (groupEntry && groupEntry.projects.length <= 2) {
+        // After removing one, only 1 remains — dissolve
+        const remaining = groupEntry.projects.find((p) => p.id !== projectId);
+        if (remaining) {
+          await fetch(`/api/v1/organizations/${orgId}/projects/${remaining.id}/groups`, {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ groupId }),
+          });
+        }
+        await fetch(`/api/v1/organizations/${orgId}/groups`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: groupId }),
+        });
+      }
+
       router.refresh();
     } catch {
       toast.error("Failed to remove from group");
