@@ -289,7 +289,18 @@ export async function runDeployment(
       throw new Error("No image, git repo, or compose content configured");
     }
 
-    // Step 2: Inject shared network (no Traefik labels yet — blue-green)
+    // Step 2: Inject Traefik labels + shared network
+    for (const domain of project.domains) {
+      const port = domain.port || project.containerPort || 80;
+      compose = injectTraefikLabels(compose, {
+        projectName: `${project.name}-${domain.id.slice(0, 6)}`,
+        domain: domain.domain,
+        containerPort: port,
+        certResolver: domain.certResolver || "le",
+        ssl: domain.sslEnabled ?? true,
+      });
+      log(`[deploy] Traefik: ${domain.domain} → :${port}${(domain.sslEnabled ?? true) ? " (TLS)" : ""}`);
+    }
     compose = injectNetwork(compose, NETWORK_NAME);
 
     // Step 3: Add project labels
@@ -388,48 +399,9 @@ export async function runDeployment(
     stage("routing", "running");
     log(`[deploy] ${newSlot} healthy`);
 
-    // Step 9: Swap traffic — inject Traefik labels into the new slot's compose and redeploy
-    let composeWithTraefik = compose;
-    for (const domain of project.domains) {
-      const port = domain.port || project.containerPort || 80;
-      composeWithTraefik = injectTraefikLabels(composeWithTraefik, {
-        projectName: `${project.name}-${domain.id.slice(0, 6)}`,
-        domain: domain.domain,
-        containerPort: port,
-        certResolver: domain.certResolver || "le",
-        ssl: domain.sslEnabled ?? true,
-      });
-    }
-    // Re-inject network since injectTraefikLabels returns a new object
-    composeWithTraefik = injectNetwork(composeWithTraefik, NETWORK_NAME);
-
-    // Reapply labels
-    for (const [svcName, svc] of Object.entries(composeWithTraefik.services)) {
-      composeWithTraefik.services[svcName] = {
-        ...svc,
-        labels: {
-          ...svc.labels,
-          "host.project": project.name,
-          "host.project.id": project.id,
-          "host.deployment.id": deploymentId,
-          "host.managed": "true",
-        },
-      };
-    }
-
-    await writeFile(composePath, composeToYaml(composeWithTraefik), "utf-8");
-
-    // Redeploy with Traefik labels — Traefik picks up the new labels, traffic starts flowing
-    try {
-      await execAsync(
-        `docker compose -f "${composePath}" -p "${newProjectName}" up -d --no-recreate`,
-        { cwd: slotDir, timeout: 30000 }
-      );
-      log(`[deploy] Traffic routed to ${newSlot}`);
-    } catch (err) {
-      log(`[deploy] Warning: label update — ${err instanceof Error ? err.message : err}`);
-    }
-
+    // Step 9: Traffic is already routed — labels were included from the start
+    // Traefik discovers the container via labels on the Docker network
+    log(`[deploy] Traffic routed to ${newSlot}`);
     stage("routing", "success");
     stage("cleanup", "running");
     // Step 10: Tear down old slot

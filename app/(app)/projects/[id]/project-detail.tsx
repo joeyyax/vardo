@@ -153,7 +153,11 @@ function StatusBadge({ status }: { status: string }) {
         </Badge>
       );
     default:
-      return <Badge variant="secondary">Stopped</Badge>;
+      return (
+        <Badge className="border-transparent bg-status-neutral-muted text-status-neutral">
+          Stopped
+        </Badge>
+      );
   }
 }
 
