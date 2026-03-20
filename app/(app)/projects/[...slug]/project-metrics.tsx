@@ -153,9 +153,10 @@ export function ProjectMetrics({ orgId, projectId }: ProjectMetricsProps) {
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const prevNetworkRef = useRef<{ rx: number; tx: number } | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
-  const [timeRange, setTimeRange] = useState<"1h" | "6h" | "24h" | "7d">("1h");
+  const [timeRange, setTimeRange] = useState<"5m" | "1h" | "6h" | "24h" | "7d">("1h");
 
   const rangeMs: Record<string, number> = {
+    "5m": 300000,
     "1h": 3600000,
     "6h": 21600000,
     "24h": 86400000,
@@ -163,6 +164,7 @@ export function ProjectMetrics({ orgId, projectId }: ProjectMetricsProps) {
   };
 
   const bucketMs: Record<string, number> = {
+    "5m": 5000,
     "1h": 30000,
     "6h": 120000,
     "24h": 300000,
@@ -344,6 +346,7 @@ export function ProjectMetrics({ orgId, projectId }: ProjectMetricsProps) {
   const latestMemoryLimit = data.length > 0 ? data[data.length - 1].memoryLimit : 0;
 
   const timeRanges = [
+    { label: "5m", value: "5m" as const },
     { label: "1h", value: "1h" as const },
     { label: "6h", value: "6h" as const },
     { label: "24h", value: "24h" as const },
