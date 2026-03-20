@@ -4,7 +4,7 @@ const url = process.env.REDIS_URL || "redis://localhost:6379";
 
 // Dedicated connection for time-series operations
 const globalForTS = globalThis as unknown as { tsRedis: Redis | undefined };
-const tsRedis = globalForTS.tsRedis ?? new Redis(url, { maxRetriesPerRequest: 3, lazyConnect: true });
+const tsRedis = globalForTS.tsRedis ?? new Redis(url, { maxRetriesPerRequest: 3 });
 if (process.env.NODE_ENV !== "production") globalForTS.tsRedis = tsRedis;
 
 // Retention: 7 days in ms
