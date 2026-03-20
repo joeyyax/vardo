@@ -216,7 +216,7 @@ function formatUptime(date: Date): string {
 }
 
 function Timer({ since, className }: { since: number; className?: string }) {
-  const [elapsed, setElapsed] = useState("0s");
+  const [elapsed, setElapsed] = useState<string | null>(null);
   useEffect(() => {
     const tick = () => {
       const ms = Date.now() - since;
@@ -228,15 +228,18 @@ function Timer({ since, className }: { since: number; className?: string }) {
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
   }, [since]);
+  if (!elapsed) return null;
   return <span className={`tabular-nums ${className || ""}`}>{elapsed}</span>;
 }
 
 function Uptime({ since }: { since: Date }) {
-  const [text, setText] = useState(formatUptime(since));
+  const [text, setText] = useState<string | null>(null);
   useEffect(() => {
+    setText(formatUptime(since));
     const interval = setInterval(() => setText(formatUptime(since)), 1000);
     return () => clearInterval(interval);
   }, [since]);
+  if (!text) return null;
   return (
     <span className="ml-1.5 text-status-success/70 text-xs font-normal tabular-nums">
       {text}
