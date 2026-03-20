@@ -79,6 +79,7 @@ const chartTooltipStyle = {
 };
 
 export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
+  const [timeRange, setTimeRange] = useState<"live" | "1h" | "6h" | "24h" | "7d">("live");
   const [projectStats, setProjectStats] = useState<Record<string, ProjectStats>>(() => {
     const initial: Record<string, ProjectStats> = {};
     for (const p of projects) {
@@ -192,8 +193,6 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
 
     return () => es.close();
   }, [orgId, timeRange]);
-
-  const [timeRange, setTimeRange] = useState<"live" | "1h" | "6h" | "24h" | "7d">("live");
 
   const allStats = Object.values(projectStats);
   const anyLoading = allStats.some((s) => s.loading);
