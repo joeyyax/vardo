@@ -95,6 +95,58 @@ export async function storeMetrics(
   ]);
 }
 
+/**
+ * Store system-level disk usage (not per-project).
+ */
+export async function storeDiskUsage(
+  timestamp: number,
+  values: { images: number; volumes: number; buildCache: number; total: number }
+) {
+  const labels = { scope: "system", metric: "disk" };
+
+  const keys = {
+    total: "metrics:system:diskTotal",
+    images: "metrics:system:diskImages",
+    volumes: "metrics:system:diskVolumes",
+    buildCache: "metrics:system:diskBuildCache",
+  };
+
+  await Promise.all([
+    ensureTimeSeries(keys.total, { ...labels, type: "total" }),
+    ensureTimeSeries(keys.images, { ...labels, type: "images" }),
+    ensureTimeSeries(keys.volumes, { ...labels, type: "volumes" }),
+    ensureTimeSeries(keys.buildCache, { ...labels, type: "buildCache" }),
+  ]);
+
+  const ts = timestamp.toString();
+  await Promise.all([
+    tsRedis.call("TS.ADD", keys.total, ts, values.total.toString()),
+    tsRedis.call("TS.ADD", keys.images, ts, values.images.toString()),
+    tsRedis.call("TS.ADD", keys.volumes, ts, values.volumes.toString()),
+    tsRedis.call("TS.ADD", keys.buildCache, ts, values.buildCache.toString()),
+  ]);
+}
+
+/**
+ * Query system-level disk usage history.
+ */
+export async function queryDiskHistory(
+  fromMs: number,
+  toMs: number,
+  bucketMs = 30000
+): Promise<TimeSeriesPoint[]> {
+  const key = "metrics:system:diskTotal";
+  try {
+    const result = (await tsRedis.call(
+      "TS.RANGE", key, fromMs.toString(), toMs.toString(),
+      "AGGREGATION", "avg", bucketMs.toString()
+    )) as [string, string][];
+    return result.map(([ts, val]) => [parseInt(ts), parseFloat(val)]);
+  } catch {
+    return [];
+  }
+}
+
 export type TimeSeriesPoint = [number, number]; // [timestamp, value]
 
 /**

@@ -1,5 +1,6 @@
 import { fetchAllContainerMetrics } from "./cadvisor";
-import { storeMetrics } from "./store";
+import { storeMetrics, storeDiskUsage } from "./store";
+import { getSystemDiskUsage } from "@/lib/docker/client";
 
 let interval: ReturnType<typeof setInterval> | null = null;
 
@@ -31,6 +32,19 @@ export function startCollector(intervalMs = 30000) {
       }
     } catch (err) {
       console.error("[collector] Error:", (err as Error).message);
+    }
+
+    // Also collect disk usage
+    try {
+      const diskUsage = await getSystemDiskUsage();
+      await storeDiskUsage(Date.now(), {
+        images: diskUsage.images.totalSize,
+        volumes: diskUsage.volumes.totalSize,
+        buildCache: diskUsage.buildCache.totalSize,
+        total: diskUsage.total,
+      });
+    } catch (err) {
+      console.error("[collector] Disk error:", (err as Error).message);
     }
   }
 

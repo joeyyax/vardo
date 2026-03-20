@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { Activity, Cpu, MemoryStick, Network, Loader2 } from "lucide-react";
+import { Activity, Cpu, HardDrive, MemoryStick, Network, Loader2 } from "lucide-react";
 import {
   AreaChart,
   Area,
@@ -85,6 +85,16 @@ const chartTooltipStyle = {
   labelStyle: { color: "oklch(0.55 0.005 260)" },
 };
 
+type SystemInfo = {
+  cpus: number;
+  memoryTotal: number;
+  os: string;
+  dockerVersion: string;
+  images: number;
+  containers: number;
+  containersRunning: number;
+};
+
 type DiskUsage = {
   images: { count: number; totalSize: number };
   containers: { count: number; totalSize: number };
@@ -94,8 +104,9 @@ type DiskUsage = {
 };
 
 export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
-  const [timeRange, setTimeRange] = useState<"live" | "1h" | "6h" | "24h" | "7d">("live");
+  const [timeRange, setTimeRange] = useState<"5m" | "1h" | "6h" | "24h" | "7d">("1h");
   const [disk, setDisk] = useState<DiskUsage | null>(null);
+  const [system, setSystem] = useState<SystemInfo | null>(null);
   const [projectStats, setProjectStats] = useState<Record<string, ProjectStats>>(() => {
     const initial: Record<string, ProjectStats> = {};
     for (const p of projects) {
@@ -108,8 +119,8 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
 
   // Load history when switching periods
   useEffect(() => {
-    const rangeMs: Record<string, number> = { live: 300000, "1h": 3600000, "6h": 21600000, "24h": 86400000, "7d": 604800000 };
-    const bucketMs: Record<string, number> = { live: 5000, "1h": 30000, "6h": 120000, "24h": 300000, "7d": 1800000 };
+    const rangeMs: Record<string, number> = { "5m": 300000, "1h": 3600000, "6h": 21600000, "24h": 86400000, "7d": 604800000 };
+    const bucketMs: Record<string, number> = { "5m": 5000, "1h": 30000, "6h": 120000, "24h": 300000, "7d": 1800000 };
     const now = Date.now();
     const from = now - rangeMs[timeRange];
 
@@ -154,10 +165,12 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
         const payload = JSON.parse(event.data) as {
           projects: { id: string; name: string; displayName: string; status: string; containers: ContainerStatsSnapshot[] }[];
           disk: DiskUsage | null;
+          system: SystemInfo | null;
           timestamp: string;
         };
 
         if (payload.disk) setDisk(payload.disk);
+        if (payload.system) setSystem(payload.system);
 
         // Update per-project stats
         setProjectStats((prev) => {
@@ -245,7 +258,7 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
       {/* Period switcher */}
       <div className="flex items-center justify-between">
         <div className="inline-flex items-center gap-1 rounded-lg bg-muted p-1">
-          {(["live", "1h", "6h", "24h", "7d"] as const).map((r) => (
+          {(["5m", "1h", "6h", "24h", "7d"] as const).map((r) => (
             <button
               key={r}
               onClick={() => setTimeRange(r)}
@@ -255,7 +268,7 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              {r === "live" ? "Live" : r}
+              {r}
             </button>
           ))}
         </div>
@@ -264,6 +277,17 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
           <span className="text-xs text-muted-foreground">Live</span>
         </div>
       </div>
+
+      {/* System info */}
+      {system && (
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-muted-foreground">
+          <span>{system.cpus} CPUs</span>
+          <span>{formatBytes(system.memoryTotal)} RAM</span>
+          <span>{system.os}</span>
+          <span>Docker {system.dockerVersion}</span>
+          <span>{system.images} images</span>
+        </div>
+      )}
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
@@ -362,6 +386,27 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
                 </AreaChart>
               </ResponsiveContainer>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Disk usage chart */}
+      {timeSeries.length > 1 && timeSeries.some((t) => t.diskTotal > 0) && (
+        <div className="squircle rounded-lg border bg-card overflow-hidden">
+          <div className="flex items-center gap-2 px-4 py-3 border-b">
+            <HardDrive className="size-4 text-muted-foreground" />
+            <h3 className="text-sm font-medium">Disk Usage</h3>
+          </div>
+          <div className="p-4">
+            <ResponsiveContainer width="100%" height={180}>
+              <AreaChart data={timeSeries}>
+                <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.005 260)" />
+                <XAxis dataKey="time" tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} />
+                <YAxis tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} tickFormatter={(v) => formatBytes(v)} />
+                <Tooltip {...chartTooltipStyle} formatter={(v: number) => [formatBytes(v), "Total"]} />
+                <Area type="monotone" dataKey="diskTotal" stroke="oklch(0.65 0.1 30)" fill="oklch(0.65 0.1 30 / 15%)" strokeWidth={1.5} dot={false} />
+              </AreaChart>
+            </ResponsiveContainer>
           </div>
         </div>
       )}

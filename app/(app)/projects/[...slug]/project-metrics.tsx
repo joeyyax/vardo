@@ -570,15 +570,9 @@ export function ProjectMetrics({ orgId, projectId }: ProjectMetricsProps) {
       </ChartCard>
 
       {/* Container list */}
-      <ChartCard title="Containers" icon={HardDrive}>
-        {containers.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-4 text-center">
-            No running containers.
-          </p>
-        ) : (
-          <ContainerTable containers={containers} />
-        )}
-      </ChartCard>
+      {containers.length > 0 && (
+        <ContainerTable containers={containers} />
+      )}
     </div>
   );
 }

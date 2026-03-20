@@ -503,3 +503,45 @@ export async function getSystemDiskUsage(): Promise<DiskUsage> {
     total: images.totalSize + containers.totalSize + volumes.totalSize + buildCache.totalSize,
   };
 }
+
+// ---------------------------------------------------------------------------
+// System Info
+// ---------------------------------------------------------------------------
+
+export type SystemInfo = {
+  cpus: number;
+  memoryTotal: number;
+  os: string;
+  kernel: string;
+  dockerVersion: string;
+  storageDriver: string;
+  images: number;
+  containers: number;
+  containersRunning: number;
+};
+
+export async function getSystemInfo(): Promise<SystemInfo> {
+  const raw = await dockerRequest<{
+    NCPU: number;
+    MemTotal: number;
+    OperatingSystem: string;
+    KernelVersion: string;
+    ServerVersion: string;
+    Driver: string;
+    Images: number;
+    Containers: number;
+    ContainersRunning: number;
+  }>("GET", "/info");
+
+  return {
+    cpus: raw.NCPU,
+    memoryTotal: raw.MemTotal,
+    os: raw.OperatingSystem,
+    kernel: raw.KernelVersion,
+    dockerVersion: raw.ServerVersion,
+    storageDriver: raw.Driver,
+    images: raw.Images,
+    containers: raw.Containers,
+    containersRunning: raw.ContainersRunning,
+  };
+}
