@@ -1198,11 +1198,18 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
                       });
 
                     // Build full reference: ${projectName.VAR_KEY}
-                    const fullRef = info.copyRef
-                      ? info.copyRef === "HOST"
-                        ? `\${${project.name}}`
-                        : `\${${project.name}.${info.copyRef}}`
-                      : null;
+                    // Handle both old format (${project.name}.VAR) and new format (just VAR)
+                    let fullRef: string | null = null;
+                    if (info.copyRef) {
+                      const cleanRef = info.copyRef
+                        .replace(/\$\{project\.name\}\./g, "")
+                        .replace(/\$\{project\.name\}/g, "");
+                      if (!cleanRef || cleanRef === "HOST") {
+                        fullRef = `\${${project.name}}`;
+                      } else {
+                        fullRef = `\${${project.name}.${cleanRef}}`;
+                      }
+                    }
                     const displayValue = showVarNames ? (fullRef || resolved) : resolved;
                     const copyValue = fullRef || resolved;
 
