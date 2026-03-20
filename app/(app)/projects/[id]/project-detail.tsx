@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -46,6 +46,7 @@ import {
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { LogViewer } from "@/components/log-viewer";
 import { EnvEditor } from "@/components/env-editor";
+import { VolumesPanel } from "@/components/volumes-panel";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -238,7 +239,17 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
 
   const [deploying, setDeploying] = useState(false);
   const [viewingLogId, setViewingLogId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState("deployments");
+  const searchParams = useSearchParams();
+  const [activeTab, setActiveTabState] = useState(
+    searchParams.get("tab") || "deployments"
+  );
+
+  const setActiveTab = useCallback((tab: string) => {
+    setActiveTabState(tab);
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", tab);
+    window.history.replaceState({}, "", url.toString());
+  }, []);
 
   // Tag management state
   const [tagPopoverOpen, setTagPopoverOpen] = useState(false);
@@ -719,6 +730,9 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
           <TabsTrigger value="logs">
             Logs
           </TabsTrigger>
+          <TabsTrigger value="volumes">
+            Volumes
+          </TabsTrigger>
           <TabsTrigger value="terminal">
             Terminal
           </TabsTrigger>
@@ -874,6 +888,10 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
           <LogViewer
             streamUrl={`/api/v1/organizations/${orgId}/projects/${project.id}/logs/stream`}
           />
+        </TabsContent>
+
+        <TabsContent value="volumes" className="pt-4">
+          <VolumesPanel projectId={project.id} orgId={orgId} />
         </TabsContent>
 
         <TabsContent value="terminal" className="pt-4">
