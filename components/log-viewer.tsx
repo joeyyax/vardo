@@ -47,6 +47,10 @@ const PATTERNS: [RegExp, string][] = [
   [/\[error\]/g, "text-red-400 font-medium"],
 ];
 
+export function highlightLogLine(text: string): string {
+  return highlightLine(text);
+}
+
 function highlightLine(text: string): string {
   // Escape HTML first
   let html = text

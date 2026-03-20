@@ -44,7 +44,7 @@ import {
   BottomSheetDescription,
 } from "@/components/ui/bottom-sheet";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
-import { LogViewer } from "@/components/log-viewer";
+import { LogViewer, highlightLogLine } from "@/components/log-viewer";
 import { EnvEditor } from "@/components/env-editor";
 import { VolumesPanel } from "@/components/volumes-panel";
 import {
@@ -363,6 +363,7 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
     Record<string, "running" | "success" | "failed" | "skipped">
   >({});
   const [expandedDeployLog, setExpandedDeployLog] = useState(false);
+  const [deployAbort, setDeployAbort] = useState<AbortController | null>(null);
 
   async function handleDeploy() {
     setDeploying(true);
@@ -371,10 +372,13 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
     setDeployStages({});
     setExpandedDeployLog(false);
 
+    const abort = new AbortController();
+    setDeployAbort(abort);
+
     try {
       const res = await fetch(
         `/api/v1/organizations/${orgId}/projects/${project.id}/deploy`,
-        { method: "POST" }
+        { method: "POST", signal: abort.signal }
       );
 
       if (!res.body) {
@@ -424,10 +428,15 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
       }
 
       router.refresh();
-    } catch {
-      toast.error("Deployment failed");
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        toast.info("Deployment aborted");
+      } else {
+        toast.error("Deployment failed");
+      }
     } finally {
       setDeploying(false);
+      setDeployAbort(null);
     }
   }
 
@@ -759,60 +768,6 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
         </TabsList>
 
         <TabsContent value="deployments" className="pt-4 space-y-4">
-          {/* Live deploy pipeline */}
-          {deploying && (
-            <div className="rounded-lg border bg-card overflow-hidden">
-              {/* Stage indicators */}
-              <div className="flex items-center gap-1 p-3 border-b overflow-x-auto">
-                {(["clone", "build", "deploy", "healthcheck", "routing", "cleanup"] as const).map((s, i) => {
-                  const status = deployStages[s];
-                  const labels: Record<string, string> = {
-                    clone: "Clone", build: "Build", deploy: "Deploy",
-                    healthcheck: "Health Check", routing: "Routing", cleanup: "Cleanup",
-                  };
-                  return (
-                    <div key={s} className="flex items-center gap-1 shrink-0">
-                      {i > 0 && <div className="w-4 h-px bg-border" />}
-                      <div className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium">
-                        {status === "running" && <Loader2 className="size-3 animate-spin text-blue-400" />}
-                        {status === "success" && <Check className="size-3 text-green-400" />}
-                        {status === "failed" && <X className="size-3 text-red-400" />}
-                        {status === "skipped" && <span className="size-3 text-center text-muted-foreground">-</span>}
-                        {!status && <span className="size-3 rounded-full border border-muted-foreground/30" />}
-                        <span className={
-                          status === "running" ? "text-blue-400" :
-                          status === "success" ? "text-green-400" :
-                          status === "failed" ? "text-red-400" :
-                          status === "skipped" ? "text-muted-foreground" :
-                          "text-muted-foreground/50"
-                        }>
-                          {labels[s]}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Expandable log */}
-              <button
-                type="button"
-                onClick={() => setExpandedDeployLog(!expandedDeployLog)}
-                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:bg-accent/50 transition-colors"
-              >
-                <ChevronDown className={`size-3.5 transition-transform ${expandedDeployLog ? "rotate-180" : ""}`} />
-                {deployLog.length} log lines
-              </button>
-              {expandedDeployLog && deployLog.length > 0 && (
-                <div className="bg-black/80 p-4 max-h-60 overflow-auto border-t">
-                  <pre className="text-xs font-mono text-green-400 whitespace-pre-wrap">
-                    {deployLog.join("\n")}
-                  </pre>
-                </div>
-              )}
-            </div>
-          )}
-
           {project.deployments.length === 0 && !deploying ? (
             <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
               <p className="text-sm text-muted-foreground">
@@ -821,6 +776,62 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
             </div>
           ) : (
             <div className="space-y-2">
+              {/* In-progress deployment */}
+              {deploying && (
+                <div className="squircle rounded-lg border border-blue-500/30 bg-card overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setExpandedDeployLog(!expandedDeployLog)}
+                    className="flex items-center justify-between gap-4 p-4 w-full text-left hover:bg-accent/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Badge variant="outline" className="animate-pulse shrink-0">
+                        <Loader2 className="mr-1 size-3 animate-spin" />
+                        Deploying
+                      </Badge>
+                      {/* Stage indicators inline */}
+                      <div className="flex items-center gap-0.5">
+                        {(["clone", "build", "deploy", "healthcheck", "routing", "cleanup"] as const).map((s) => {
+                          const status = deployStages[s];
+                          return (
+                            <div key={s} className="flex items-center gap-0.5" title={s}>
+                              {status === "running" && <Loader2 className="size-3 animate-spin text-blue-400" />}
+                              {status === "success" && <Check className="size-3 text-green-400" />}
+                              {status === "failed" && <X className="size-3 text-red-400" />}
+                              {status === "skipped" && <span className="size-3 text-center text-muted-foreground">-</span>}
+                              {!status && <span className="size-3 rounded-full border border-muted-foreground/20" />}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive hover:text-destructive"
+                        onClick={(e) => { e.stopPropagation(); deployAbort?.abort(); }}
+                      >
+                        <Square className="mr-1 size-3" />
+                        Abort
+                      </Button>
+                      <ChevronDown className={`size-4 text-muted-foreground transition-transform ${expandedDeployLog ? "rotate-180" : ""}`} />
+                    </div>
+                  </button>
+                  {expandedDeployLog && deployLog.length > 0 && (
+                    <div className="border-t bg-black/50 p-4 max-h-80 overflow-auto font-mono text-xs leading-5">
+                      {deployLog.map((line, i) => (
+                        <div
+                          key={i}
+                          className="text-zinc-300"
+                          dangerouslySetInnerHTML={{ __html: highlightLogLine(line) }}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {project.deployments.map((deployment) => (
                 <div key={deployment.id} className="squircle rounded-lg border bg-card overflow-hidden">
                   <button
@@ -852,10 +863,14 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
                     </div>
                   </button>
                   {viewingLogId === deployment.id && deployment.log && (
-                    <div className="border-t bg-black/50 p-4 max-h-80 overflow-auto">
-                      <pre className="text-xs font-mono text-green-400 whitespace-pre-wrap">
-                        {deployment.log}
-                      </pre>
+                    <div className="border-t bg-black/50 p-4 max-h-80 overflow-auto font-mono text-xs leading-5">
+                      {deployment.log.split("\n").map((line, i) => (
+                        <div
+                          key={i}
+                          className="text-zinc-300"
+                          dangerouslySetInnerHTML={{ __html: highlightLogLine(line) }}
+                        />
+                      ))}
                     </div>
                   )}
                   {viewingLogId === deployment.id && !deployment.log && (

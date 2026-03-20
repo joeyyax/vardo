@@ -36,6 +36,7 @@ type DeployOpts = {
   environmentId?: string;
   onLog?: (line: string) => void;
   onStage?: (stage: DeployStage, status: "running" | "success" | "failed" | "skipped") => void;
+  signal?: AbortSignal;
 };
 
 export type { DeployStage };
@@ -79,6 +80,10 @@ export async function runDeployment(
     opts.onStage?.(s, status);
   }
 
+  function checkAbort() {
+    if (opts.signal?.aborted) throw new Error("Deployment aborted");
+  }
+
   // Proxy for helper functions that expect { push }
   const logs = { push: log };
 
@@ -116,6 +121,7 @@ export async function runDeployment(
 
     // Step 1: Generate or fetch compose file
     let compose: ComposeFile;
+    let builtLocally = false;
     const projectDir = join(PROJECTS_DIR, project.name);
     await mkdir(projectDir, { recursive: true });
 
@@ -258,6 +264,7 @@ export async function runDeployment(
           }
         }
 
+        builtLocally = true;
         compose = generateComposeForImage({
           projectName: project.name,
           imageName,
@@ -303,6 +310,7 @@ export async function runDeployment(
     const slotDir = join(projectDir, newSlot);
     await mkdir(slotDir, { recursive: true });
 
+    checkAbort();
     stage("build", "success");
     stage("deploy", "running");
     log(`[deploy] Active slot: ${activeSlot || "none"}, deploying to: ${newSlot}`);
@@ -326,8 +334,7 @@ export async function runDeployment(
 
     // Step 7: Pull and start new slot (no traffic yet)
     // Use --pull missing for locally-built images, --pull always for remote
-    const isLocalImage = project.deployType === "nixpacks" || project.deployType === "dockerfile";
-    const pullPolicy = isLocalImage ? "missing" : "always";
+    const pullPolicy = builtLocally ? "missing" : "always";
     log(`[deploy] Starting ${newSlot} slot...`);
     try {
       const { stdout, stderr } = await execAsync(
@@ -342,6 +349,7 @@ export async function runDeployment(
     }
 
     // Step 8: Health check — wait for new slot to be ready
+    checkAbort();
     stage("deploy", "success");
     stage("healthcheck", "running");
     log(`[deploy] Waiting for ${newSlot} to be healthy...`);
