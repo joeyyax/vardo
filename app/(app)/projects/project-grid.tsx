@@ -97,7 +97,9 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
   const [editGroupName, setEditGroupName] = useState("");
   const [savingGroup, setSavingGroup] = useState(false);
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const holdTargetRef = useRef<string | null>(null);
   const [holdTarget, setHoldTarget] = useState<string | null>(null);
+  const [localOrder, setLocalOrder] = useState<string[] | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
@@ -133,9 +135,15 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
     return { ungrouped: ung, groupedMap: gMap };
   }, [filteredProjects]);
 
-  // All project IDs need to be sortable (both grouped and ungrouped)
+  // Apply local sort order if we have one (optimistic reorder)
+  const sortedUngrouped = useMemo(() => {
+    if (!localOrder) return ungrouped;
+    const orderMap = new Map(localOrder.map((id, i) => [id, i]));
+    return [...ungrouped].sort((a, b) => (orderMap.get(a.id) ?? 999) - (orderMap.get(b.id) ?? 999));
+  }, [ungrouped, localOrder]);
+
   const allProjectIds = filteredProjects.map((p) => p.id);
-  const sortableIds = ungrouped.map((p) => p.id);
+  const sortableIds = sortedUngrouped.map((p) => p.id);
 
   function handleDragStart(event: DragStartEvent) {
     setActiveId(event.active.id as string);
@@ -145,12 +153,19 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
     const over = event.over?.id as string | undefined;
     setOverId(over || null);
 
-    // Start hold timer for grouping
+    // Hold timer for grouping — only restart if target changed
     if (over && over !== activeId && !over.startsWith("group-")) {
-      if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
-      holdTimerRef.current = setTimeout(() => setHoldTarget(over), 800);
-    } else {
-      if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
+      if (holdTargetRef.current !== over) {
+        holdTargetRef.current = over;
+        if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
+        setHoldTarget(null);
+        holdTimerRef.current = setTimeout(() => {
+          setHoldTarget(over);
+        }, 800);
+      }
+    } else if (!over || over === activeId) {
+      holdTargetRef.current = null;
+      if (holdTimerRef.current) { clearTimeout(holdTimerRef.current); holdTimerRef.current = null; }
       setHoldTarget(null);
     }
   }
@@ -209,29 +224,36 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
       return;
     }
 
-    // Reorder
+    // Reorder — optimistic update
     const sp = projects.find((p) => p.id === sourceId);
     if (sp?.projectGroups.length) {
       for (const pg of sp.projectGroups) await rmGroup(sourceId, pg.group.id);
     }
 
-    const visible = ungrouped.filter((p) => p.id !== sourceId);
-    const newOrder = visible.map((p) => p.id);
-    const targetIdx = newOrder.indexOf(targetId);
+    const currentIds = (localOrder || ungrouped.map((p) => p.id)).filter((id) => id !== sourceId);
+    const targetIdx = currentIds.indexOf(targetId);
     if (targetIdx !== -1) {
-      newOrder.splice(targetIdx + 1, 0, sourceId);
+      currentIds.splice(targetIdx + 1, 0, sourceId);
     } else {
-      newOrder.push(sourceId);
+      currentIds.push(sourceId);
     }
 
-    try {
-      await fetch(`/api/v1/organizations/${orgId}/projects/sort`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ order: newOrder }),
-      });
+    // Optimistic: update local order immediately
+    setLocalOrder([...currentIds]);
+
+    // Persist to server in background
+    fetch(`/api/v1/organizations/${orgId}/projects/sort`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ order: currentIds }),
+    }).then(() => {
+      // Sync with server after save
+      setTimeout(() => { setLocalOrder(null); router.refresh(); }, 500);
+    }).catch(() => {
+      setLocalOrder(null);
+      toast.error("Failed to reorder");
       router.refresh();
-    } catch { toast.error("Failed to reorder"); }
+    });
   }
 
   async function addGroup(projectId: string, groupId: string) {
@@ -329,7 +351,7 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
           {/* Sortable ungrouped */}
           <SortableContext items={allProjectIds} strategy={rectSortingStrategy}>
             {sortableIds.map((id) => {
-              const p = ungrouped.find((pr) => pr.id === id);
+              const p = sortedUngrouped.find((pr) => pr.id === id);
               if (!p) return null;
               return <SortableProjectCard key={id} project={p} isHoldTarget={holdTarget === id} />;
             })}
