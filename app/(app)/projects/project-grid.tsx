@@ -74,9 +74,11 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
   const router = useRouter();
   const [activeTagIds, setActiveTagIds] = useState<Set<string>>(new Set());
   const [activeGroupId, setActiveGroupId] = useState<string>("all");
-  const [dragOverId, setDragOverId] = useState<string | null>(null);
-  const [dragPosition, setDragPosition] = useState<"before" | "on" | "after" | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dropIndex, setDropIndex] = useState<number | null>(null);
+  const [groupTargetId, setGroupTargetId] = useState<string | null>(null);
+  const groupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
   const [creatingGroup, setCreatingGroup] = useState<{ projectIds: string[] } | null>(null);
   const [confirmDeleteGroupId, setConfirmDeleteGroupId] = useState<string | null>(null);
   const [newGroupName, setNewGroupName] = useState("");
@@ -133,99 +135,119 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
     });
   }
 
-  // Drag handlers
+  // Drag handlers — iOS-style: cards shift to make a gap
   function handleDragStart(e: React.DragEvent, projectId: string) {
     setDraggingId(projectId);
     e.dataTransfer.setData("text/plain", projectId);
     e.dataTransfer.effectAllowed = "move";
   }
 
-  function handleDragOver(e: React.DragEvent, targetId: string) {
+  function handleCardDragOver(e: React.DragEvent, targetId: string, index: number) {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     if (targetId === draggingId) return;
 
-    setDragOverId(targetId);
-
-    // Detect drop position: left 25% = before, right 25% = after, center = on (group)
+    // Determine if cursor is in left or right half of the card
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const x = e.clientX - rect.left;
-    const pct = x / rect.width;
-    if (pct < 0.25) setDragPosition("before");
-    else if (pct > 0.75) setDragPosition("after");
-    else setDragPosition("on");
+    const insertAt = x < rect.width / 2 ? index : index + 1;
+    setDropIndex(insertAt);
+
+    // Start group timer — if hovering center for 600ms, switch to group mode
+    if (groupTimerRef.current) clearTimeout(groupTimerRef.current);
+    const centerPct = x / rect.width;
+    if (centerPct > 0.3 && centerPct < 0.7) {
+      groupTimerRef.current = setTimeout(() => {
+        setGroupTargetId(targetId);
+        setDropIndex(null);
+      }, 600);
+    } else {
+      setGroupTargetId(null);
+    }
+  }
+
+  function handleGridDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    // If dragging over empty space after all cards, set drop index to end
+    if (!e.defaultPrevented && draggingId) {
+      const visibleUngrouped = ungrouped.filter((p) => p.id !== draggingId && !creatingGroup?.projectIds.includes(p.id));
+      setDropIndex(visibleUngrouped.length);
+    }
   }
 
   function handleDragLeave() {
-    setDragOverId(null);
-    setDragPosition(null);
+    if (groupTimerRef.current) clearTimeout(groupTimerRef.current);
+    setDropIndex(null);
+    setGroupTargetId(null);
   }
 
   function handleDragEnd() {
+    if (groupTimerRef.current) clearTimeout(groupTimerRef.current);
     setDraggingId(null);
-    setDragOverId(null);
-    setDragPosition(null);
+    setDropIndex(null);
+    setGroupTargetId(null);
   }
 
-  async function handleDrop(e: React.DragEvent, targetId: string) {
+  async function handleDrop(e: React.DragEvent, targetId?: string) {
     e.preventDefault();
+    e.stopPropagation();
     const sourceId = e.dataTransfer.getData("text/plain");
-    const position = dragPosition;
-    setDragOverId(null);
+    const currentDropIndex = dropIndex;
+    const currentGroupTarget = groupTargetId;
+
+    if (groupTimerRef.current) clearTimeout(groupTimerRef.current);
     setDraggingId(null);
-    setDragPosition(null);
+    setDropIndex(null);
+    setGroupTargetId(null);
 
-    if (sourceId === targetId) return;
+    if (!sourceId) return;
 
-    // Check if target is a group
-    if (targetId.startsWith("group-")) {
+    // Drop onto existing group folder
+    if (targetId?.startsWith("group-")) {
       const groupId = targetId.replace("group-", "");
+      // Remove from old group first
+      const sourceProject = projects.find((p) => p.id === sourceId);
+      if (sourceProject?.projectGroups.length) {
+        for (const pg of sourceProject.projectGroups) {
+          await removeFromGroup(sourceId, pg.group.id);
+        }
+      }
       await addToGroup(sourceId, groupId);
       return;
     }
 
-    // First, remove source from any existing group
-    const sourceProject = projects.find((p) => p.id === sourceId);
-    if (sourceProject?.projectGroups.length) {
-      for (const pg of sourceProject.projectGroups) {
-        await removeFromGroup(sourceId, pg.group.id);
+    // Group mode — held over a card long enough
+    if (currentGroupTarget && currentGroupTarget !== sourceId) {
+      const sourceProject = projects.find((p) => p.id === sourceId);
+      if (sourceProject?.projectGroups.length) {
+        for (const pg of sourceProject.projectGroups) await removeFromGroup(sourceId, pg.group.id);
       }
-    }
-
-    // Drop position determines action
-    if (position === "on") {
-      // Dropping on center — create a new group
-      // Also remove target from its groups
-      const targetProject = projects.find((p) => p.id === targetId);
+      const targetProject = projects.find((p) => p.id === currentGroupTarget);
       if (targetProject?.projectGroups.length) {
-        for (const pg of targetProject.projectGroups) {
-          await removeFromGroup(targetId, pg.group.id);
-        }
+        for (const pg of targetProject.projectGroups) await removeFromGroup(currentGroupTarget, pg.group.id);
       }
-      setCreatingGroup({ projectIds: [sourceId, targetId] });
+      setCreatingGroup({ projectIds: [sourceId, currentGroupTarget] });
       setNewGroupName("");
       setTimeout(() => groupNameRef.current?.focus(), 100);
-    } else {
-      // Dropping before/after — reorder in ungrouped
-      const currentOrder = [...ungrouped.map((p) => p.id)];
-      // Add source if not already in ungrouped (was in a group)
-      if (!currentOrder.includes(sourceId)) {
-        const targetIdx = currentOrder.indexOf(targetId);
-        const insertIdx = position === "before" ? targetIdx : targetIdx + 1;
-        currentOrder.splice(insertIdx, 0, sourceId);
-      } else {
-        const sourceIdx = currentOrder.indexOf(sourceId);
-        currentOrder.splice(sourceIdx, 1);
-        const targetIdx = currentOrder.indexOf(targetId);
-        const insertIdx = position === "before" ? targetIdx : targetIdx + 1;
-        currentOrder.splice(insertIdx, 0, sourceId);
+      return;
+    }
+
+    // Reorder mode
+    if (currentDropIndex !== null) {
+      const sourceProject = projects.find((p) => p.id === sourceId);
+      if (sourceProject?.projectGroups.length) {
+        for (const pg of sourceProject.projectGroups) await removeFromGroup(sourceId, pg.group.id);
       }
+
+      const visibleUngrouped = ungrouped.filter((p) => p.id !== sourceId && !creatingGroup?.projectIds.includes(p.id));
+      const newOrder = [...visibleUngrouped.map((p) => p.id)];
+      newOrder.splice(currentDropIndex, 0, sourceId);
 
       try {
         await fetch(`/api/v1/organizations/${orgId}/projects/sort`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ order: currentOrder }),
+          body: JSON.stringify({ order: newOrder }),
         });
         router.refresh();
       } catch {
@@ -296,7 +318,8 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
         body: JSON.stringify({ name: groupName }),
       });
       if (!res.ok) {
-        toast.error("Failed to create group");
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || "Failed to create group");
         return;
       }
       const { group } = await res.json();
@@ -375,7 +398,7 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
         </div>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div ref={gridRef} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" onDragOver={handleGridDragOver}>
         {/* Pending group creation */}
         {creatingGroup && (
           <div
@@ -401,7 +424,7 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
                 const p = projects.find((pr) => pr.id === pid);
                 if (!p) return null;
                 return (
-                  <ProjectCard key={p.id} project={p} draggingId={null} dragOverId={null} dragPosition={null}
+                  <ProjectCard key={p.id} project={p} index={0} draggingId={null} dropIndex={null} groupTargetId={null}
                     onDragStart={() => {}} onDragOver={() => {}} onDragLeave={() => {}} onDrop={() => {}} onDragEnd={() => {}} compact />
                 );
               })}
@@ -416,10 +439,10 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
             <div
               key={groupId}
               className={`rounded-lg border bg-card/30 p-2 space-y-2 transition-colors ${
-                dragOverId === `group-${groupId}` ? "border-status-info bg-status-info-muted/50" : "border-border/50"
+                groupTargetId === `group-${groupId}` ? "border-status-info bg-status-info-muted/50" : "border-border/50"
               }`}
               style={{ gridColumn: `span ${span}` }}
-              onDragOver={(e) => handleDragOver(e, `group-${groupId}`)}
+              onDragOver={(e) => { e.preventDefault(); setGroupTargetId(`group-${groupId}`); setDropIndex(null); }}
               onDragLeave={handleDragLeave}
               onDrop={(e) => handleDrop(e, `group-${groupId}`)}
             >
@@ -443,8 +466,8 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
               </div>
               <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${span}, 1fr)` }}>
                 {groupProjects.map((project) => (
-                  <ProjectCard key={project.id} project={project} draggingId={draggingId} dragOverId={dragOverId} dragPosition={dragPosition}
-                    onDragStart={handleDragStart} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} onDragEnd={handleDragEnd} compact />
+                  <ProjectCard key={project.id} project={project} index={0} draggingId={draggingId} dropIndex={null} groupTargetId={groupTargetId}
+                    onDragStart={handleDragStart} onDragOver={handleCardDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} onDragEnd={handleDragEnd} compact />
                 ))}
               </div>
             </div>
@@ -454,10 +477,15 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
         {/* Ungrouped projects */}
         {ungrouped
           .filter((p) => !creatingGroup?.projectIds.includes(p.id))
-          .map((project) => (
-          <ProjectCard key={project.id} project={project} draggingId={draggingId} dragOverId={dragOverId} dragPosition={dragPosition}
-            onDragStart={handleDragStart} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} onDragEnd={handleDragEnd} />
+          .map((project, i) => (
+          <ProjectCard key={project.id} project={project} index={i} draggingId={draggingId} dropIndex={dropIndex} groupTargetId={groupTargetId}
+            onDragStart={handleDragStart} onDragOver={handleCardDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} onDragEnd={handleDragEnd} />
         ))}
+
+        {/* Trailing drop gap */}
+        {dropIndex !== null && draggingId && dropIndex >= ungrouped.filter((p) => p.id !== draggingId && !creatingGroup?.projectIds.includes(p.id)).length && (
+          <div className="rounded-lg border-2 border-dashed border-status-info/30 bg-status-info-muted/20 min-h-[60px]" />
+        )}
       </div>
 
       {filteredProjects.length === 0 && projects.length > 0 && (
@@ -479,22 +507,24 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
 
 type ProjectCardProps = {
   project: ProjectWithRelations;
+  index: number;
   draggingId: string | null;
-  dragOverId: string | null;
-  dragPosition: "before" | "on" | "after" | null;
+  dropIndex: number | null;
+  groupTargetId: string | null;
   onDragStart: (e: React.DragEvent, id: string) => void;
-  onDragOver: (e: React.DragEvent, id: string) => void;
+  onDragOver: (e: React.DragEvent, id: string, index: number) => void;
   onDragLeave: () => void;
-  onDrop: (e: React.DragEvent, id: string) => void;
+  onDrop: (e: React.DragEvent, id?: string) => void;
   onDragEnd: () => void;
   compact?: boolean;
 };
 
 function ProjectCard({
   project,
+  index,
   draggingId,
-  dragOverId,
-  dragPosition,
+  dropIndex,
+  groupTargetId,
   onDragStart,
   onDragOver,
   onDragLeave,
@@ -506,27 +536,29 @@ function ProjectCard({
   const lastDeploy = project.deployments[0];
   const primaryDomain = project.domains.find((d) => d.isPrimary) || project.domains[0];
   const isDragging = draggingId === project.id;
-  const isTarget = dragOverId === project.id && draggingId !== project.id;
-  const isGroupTarget = isTarget && dragPosition === "on";
-  const isBeforeTarget = isTarget && dragPosition === "before";
-  const isAfterTarget = isTarget && dragPosition === "after";
+  const isGroupTarget = groupTargetId === project.id;
   const icon = detectProjectIcon({ imageName: project.imageName, gitUrl: project.gitUrl, deployType: project.deployType });
 
+  // Show gap before this card if drop index matches
+  const showGapBefore = dropIndex === index && draggingId && draggingId !== project.id;
+
   return (
-    <Link
-      href={`/projects/${project.id}`}
-      draggable
-      onDragStart={(e) => { e.stopPropagation(); onDragStart(e, project.id); }}
-      onDragOver={(e) => onDragOver(e, project.id)}
-      onDragLeave={onDragLeave}
-      onDrop={(e) => { e.preventDefault(); onDrop(e, project.id); }}
-      onDragEnd={onDragEnd}
-      className={`squircle relative flex gap-3 rounded-lg border p-3 transition-all cursor-grab active:cursor-grabbing ${
-        isDragging ? "opacity-40 scale-95" : ""
-      } ${isGroupTarget ? "border-status-info bg-status-info-muted scale-[1.02] ring-2 ring-status-info/30" : "bg-card hover:bg-accent/50"
-      } ${isBeforeTarget ? "border-l-2 border-l-status-info" : ""
-      } ${isAfterTarget ? "border-r-2 border-r-status-info" : ""
-      } ${compact ? "p-2" : "p-3"}`}
+    <>
+      {showGapBefore && (
+        <div className="rounded-lg border-2 border-dashed border-status-info/30 bg-status-info-muted/20 min-h-[60px] transition-all" />
+      )}
+      <Link
+        href={`/projects/${project.id}`}
+        draggable
+        onDragStart={(e) => { e.stopPropagation(); onDragStart(e, project.id); }}
+        onDragOver={(e) => { e.stopPropagation(); onDragOver(e, project.id, index); }}
+        onDragLeave={onDragLeave}
+        onDrop={(e) => { e.stopPropagation(); onDrop(e, project.id); }}
+        onDragEnd={onDragEnd}
+        className={`squircle flex gap-3 rounded-lg border p-3 transition-all cursor-grab active:cursor-grabbing ${
+          isDragging ? "opacity-30 scale-95" : ""
+        } ${isGroupTarget ? "border-status-info bg-status-info-muted scale-[1.02] ring-2 ring-status-info/30" : "bg-card hover:bg-accent/50"
+        } ${compact ? "p-2" : "p-3"}`}
     >
       {/* Icon */}
       {icon ? (
@@ -560,5 +592,6 @@ function ProjectCard({
         )}
       </div>
     </Link>
+    </>
   );
 }
