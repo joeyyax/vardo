@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { deployments, projects, envVars } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { exec, spawn as nodeSpawn } from "child_process";
+import { exec, spawn as nodeSpawn} from "child_process";
 import { promisify } from "util";
 import { mkdir, writeFile, readFile } from "fs/promises";
 import { join, resolve } from "path";

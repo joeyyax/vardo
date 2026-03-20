@@ -32,6 +32,7 @@ import {
 import {
   SortableContext,
   useSortable,
+  arrayMove,
   rectSortingStrategy,
 } from "@dnd-kit/sortable";
 import { useDroppable } from "@dnd-kit/core";
@@ -103,7 +104,7 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
   const [localOrder, setLocalOrder] = useState<string[] | null>(null);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+    useSensor(PointerSensor, { activationConstraint: { distance: 12, tolerance: 5 } })
   );
 
   useEffect(() => {
@@ -154,20 +155,32 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
     const over = event.over?.id as string | undefined;
     setOverId(over || null);
 
-    // Hold timer for grouping — only restart if target changed
-    if (over && over !== activeId && !over.startsWith("group-")) {
-      if (holdTargetRef.current !== over) {
-        holdTargetRef.current = over;
-        if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
+    if (!over || !activeId || over === activeId) {
+      if (!over || over === activeId) {
+        holdTargetRef.current = null;
+        if (holdTimerRef.current) { clearTimeout(holdTimerRef.current); holdTimerRef.current = null; }
         setHoldTarget(null);
-        holdTimerRef.current = setTimeout(() => {
-          setHoldTarget(over);
-        }, 800);
       }
-    } else if (!over || over === activeId) {
-      holdTargetRef.current = null;
-      if (holdTimerRef.current) { clearTimeout(holdTimerRef.current); holdTimerRef.current = null; }
+      return;
+    }
+
+    // Skip if over a group droppable
+    if (over.startsWith("group-")) return;
+
+    // Hold timer for grouping — only restart if target changed
+    if (holdTargetRef.current !== over) {
+      holdTargetRef.current = over;
+      if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
       setHoldTarget(null);
+      holdTimerRef.current = setTimeout(() => setHoldTarget(over), 800);
+    }
+
+    // Optimistic reorder: swap items in local order
+    const currentOrder = localOrder || sortableIds;
+    const activeIdx = currentOrder.indexOf(activeId);
+    const overIdx = currentOrder.indexOf(over);
+    if (activeIdx !== -1 && overIdx !== -1 && activeIdx !== overIdx) {
+      setLocalOrder(arrayMove(currentOrder, activeIdx, overIdx));
     }
   }
 
@@ -225,31 +238,21 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
       return;
     }
 
-    // Reorder — optimistic update
+    // Reorder — already done optimistically in handleDragOver, just persist
     const sp = projects.find((p) => p.id === sourceId);
     if (sp?.projectGroups.length) {
       for (const pg of sp.projectGroups) await rmGroup(sourceId, pg.group.id);
     }
 
-    const currentIds = (localOrder || ungrouped.map((p) => p.id)).filter((id) => id !== sourceId);
-    const targetIdx = currentIds.indexOf(targetId);
-    if (targetIdx !== -1) {
-      currentIds.splice(targetIdx + 1, 0, sourceId);
-    } else {
-      currentIds.push(sourceId);
-    }
-
-    // Optimistic: update local order immediately
-    setLocalOrder([...currentIds]);
+    const finalOrder = localOrder || sortableIds;
 
     // Persist to server in background
     fetch(`/api/v1/organizations/${orgId}/projects/sort`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ order: currentIds }),
+      body: JSON.stringify({ order: finalOrder }),
     }).then(() => {
-      // Sync with server after save
-      setTimeout(() => { setLocalOrder(null); router.refresh(); }, 500);
+      setTimeout(() => { setLocalOrder(null); router.refresh(); }, 300);
     }).catch(() => {
       setLocalOrder(null);
       toast.error("Failed to reorder");
@@ -337,7 +340,7 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
       )}
 
 
-      <DndContext sensors={sensors} collisionDetection={pointerWithin}
+      <DndContext sensors={sensors} collisionDetection={closestCenter}
         onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
