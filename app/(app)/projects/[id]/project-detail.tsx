@@ -1197,9 +1197,14 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
                         return envVar?.value || `\${${key}}`;
                       });
 
-                    const varRef = info.copyRef ? `\${${info.copyRef}}` : info.value;
-                    const displayValue = showVarNames ? varRef : resolved;
-                    const copyValue = info.copyRef ? `\${${info.copyRef}}` : resolved;
+                    // Build full reference: ${projectName.VAR_KEY}
+                    const fullRef = info.copyRef
+                      ? info.copyRef === "HOST"
+                        ? `\${${project.name}}`
+                        : `\${${project.name}.${info.copyRef}}`
+                      : null;
+                    const displayValue = showVarNames ? (fullRef || resolved) : resolved;
+                    const copyValue = fullRef || resolved;
 
                     return (
                       <div key={info.label} className="flex items-center justify-between px-4 py-3 gap-4">

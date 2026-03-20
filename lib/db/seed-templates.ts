@@ -20,12 +20,12 @@ const builtInTemplates = [
       { key: "DATABASE_URL", description: "Connection string (auto-generated)", required: false, defaultValue: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${project.name}:5432/${POSTGRES_DB}" },
     ],
     defaultConnectionInfo: [
-      { label: "Host", value: "${project.name}", copyRef: "${project.name}" },
+      { label: "Host", value: "${project.name}", copyRef: "HOST" },
       { label: "Port", value: "5432" },
-      { label: "Username", value: "${POSTGRES_USER}", copyRef: "${project.name}.POSTGRES_USER" },
-      { label: "Password", value: "${POSTGRES_PASSWORD}", copyRef: "${project.name}.POSTGRES_PASSWORD" },
-      { label: "Database", value: "${POSTGRES_DB}", copyRef: "${project.name}.POSTGRES_DB" },
-      { label: "Connection URL", value: "${DATABASE_URL}", copyRef: "${project.name}.DATABASE_URL" },
+      { label: "Username", value: "${POSTGRES_USER}", copyRef: "POSTGRES_USER" },
+      { label: "Password", value: "${POSTGRES_PASSWORD}", copyRef: "POSTGRES_PASSWORD" },
+      { label: "Database", value: "${POSTGRES_DB}", copyRef: "POSTGRES_DB" },
+      { label: "Connection URL", value: "${DATABASE_URL}", copyRef: "DATABASE_URL" },
     ],
   },
   {
@@ -77,10 +77,10 @@ const builtInTemplates = [
       { key: "REDIS_PASSWORD", description: "Optional password", required: false },
     ],
     defaultConnectionInfo: [
-      { label: "Host", value: "${project.name}", copyRef: "${project.name}" },
+      { label: "Host", value: "${project.name}", copyRef: "HOST" },
       { label: "Port", value: "6379" },
-      { label: "Password", value: "${REDIS_PASSWORD}", copyRef: "${project.name}.REDIS_PASSWORD" },
-      { label: "Connection URL", value: "redis://:${REDIS_PASSWORD}@${project.name}:6379", copyRef: "${project.name}.REDIS_URL" },
+      { label: "Password", value: "${REDIS_PASSWORD}", copyRef: "REDIS_PASSWORD" },
+      { label: "Connection URL", value: "redis://:${REDIS_PASSWORD}@${project.name}:6379", copyRef: "REDIS_URL" },
     ],
   },
   {
