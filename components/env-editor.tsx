@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Loader2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Loader2, Rocket, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
@@ -28,11 +29,22 @@ const BUILTIN_VARS: Suggestion[] = [
   { label: "${org.id}", detail: "Organization ID", insert: "${org.id}" },
 ];
 
+const PASSWORD_KEYS = ["password", "secret", "_key", "jwt"];
+function isPasswordKey(key: string): boolean {
+  const lower = key.toLowerCase();
+  return PASSWORD_KEYS.some((p) => lower.includes(p));
+}
+
 export function EnvEditor({ projectId, orgId, initialVars, allProjectNames = [], orgVarKeys = [] }: EnvEditorProps) {
+  const router = useRouter();
   const [content, setContent] = useState("");
   const [saving, setSaving] = useState(false);
+  const [deploying, setDeploying] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [modified, setModified] = useState(false);
+  const [needsRedeploy, setNeedsRedeploy] = useState(false);
+  const [passwordWarning, setPasswordWarning] = useState<string | null>(null);
+  const [initialContent, setInitialContent] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
@@ -49,11 +61,11 @@ export function EnvEditor({ projectId, orgId, initialVars, allProjectNames = [],
           const data = await res.json();
           const vars = data.envVars || [];
           if (vars.length > 0) {
-            setContent(
-              vars
-                .map((v: { key: string; value: string }) => `${v.key}=${v.value}`)
-                .join("\n")
-            );
+            const c = vars
+              .map((v: { key: string; value: string }) => `${v.key}=${v.value}`)
+              .join("\n");
+            setContent(c);
+            setInitialContent(c);
           }
         }
       } catch {
@@ -166,6 +178,21 @@ export function EnvEditor({ projectId, orgId, initialVars, allProjectNames = [],
     setModified(true);
     setCursorPosition(e.target.selectionStart);
     buildSuggestions(value, e.target.selectionStart);
+
+    // Check for password changes on persistent services
+    const changedLines = value.split("\n").filter((line) => {
+      if (!line.includes("=") || line.startsWith("#")) return false;
+      const key = line.split("=")[0].trim();
+      if (!isPasswordKey(key)) return false;
+      // Check if this key's value changed from initial
+      const initialLine = initialContent.split("\n").find((l) => l.startsWith(`${key}=`));
+      return initialLine !== line;
+    });
+    setPasswordWarning(
+      changedLines.length > 0
+        ? `Changing ${changedLines.map((l) => l.split("=")[0]).join(", ")} won't update existing data in persistent volumes. You may need to manually update the service.`
+        : null
+    );
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -226,7 +253,7 @@ export function EnvEditor({ projectId, orgId, initialVars, allProjectNames = [],
     });
   }
 
-  async function handleSave() {
+  async function doSave(): Promise<boolean> {
     setSaving(true);
     try {
       const res = await fetch(
@@ -241,16 +268,48 @@ export function EnvEditor({ projectId, orgId, initialVars, allProjectNames = [],
       if (!res.ok) {
         const data = await res.json();
         toast.error(data.error || "Failed to save");
-        return;
+        return false;
       }
 
       const data = await res.json();
       toast.success(`${data.created} added, ${data.updated} updated`);
       setModified(false);
+      setNeedsRedeploy(true);
+      setInitialContent(content);
+      setPasswordWarning(null);
+      return true;
     } catch {
       toast.error("Failed to save");
+      return false;
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleSave() {
+    await doSave();
+  }
+
+  async function handleSaveAndDeploy() {
+    const saved = await doSave();
+    if (!saved) return;
+
+    setDeploying(true);
+    toast.info("Deploying with updated variables...");
+    try {
+      const res = await fetch(
+        `/api/v1/organizations/${orgId}/projects/${projectId}/deploy`,
+        { method: "POST" }
+      );
+      // Don't wait for full deploy — it streams
+      if (res.ok) {
+        setNeedsRedeploy(false);
+        router.refresh();
+      }
+    } catch {
+      toast.error("Deploy failed");
+    } finally {
+      setDeploying(false);
     }
   }
 
@@ -292,21 +351,66 @@ export function EnvEditor({ projectId, orgId, initialVars, allProjectNames = [],
 
   return (
     <div className="space-y-3">
+      {/* Redeploy needed banner */}
+      {needsRedeploy && !modified && (
+        <div className="flex items-center justify-between rounded-lg border border-status-warning/30 bg-status-warning-muted px-4 py-3">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="size-4 text-status-warning shrink-0" />
+            <p className="text-sm text-status-warning">
+              Variables saved. Redeploy to apply changes.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            disabled={deploying}
+            onClick={handleSaveAndDeploy}
+          >
+            {deploying ? (
+              <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
+            ) : (
+              <><Rocket className="mr-1.5 size-4" />Redeploy</>
+            )}
+          </Button>
+        </div>
+      )}
+
+      {/* Password change warning */}
+      {passwordWarning && (
+        <div className="flex items-start gap-2 rounded-lg border border-status-warning/30 bg-status-warning-muted px-4 py-3">
+          <AlertTriangle className="size-4 text-status-warning shrink-0 mt-0.5" />
+          <p className="text-xs text-status-warning">{passwordWarning}</p>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">
           KEY=value format. Use <code className="bg-muted px-1 py-0.5 rounded">{"${ref}"}</code> for variable references. Press Tab for autocomplete.
         </p>
-        <Button
-          size="sm"
-          onClick={handleSave}
-          disabled={saving || !modified}
-        >
-          {saving ? (
-            <><Loader2 className="mr-1.5 size-4 animate-spin" />Saving...</>
-          ) : (
-            modified ? "Save Changes" : "Saved"
-          )}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleSave}
+            disabled={saving || deploying || !modified}
+          >
+            {saving ? (
+              <><Loader2 className="mr-1.5 size-4 animate-spin" />Saving...</>
+            ) : (
+              "Save"
+            )}
+          </Button>
+          <Button
+            size="sm"
+            onClick={handleSaveAndDeploy}
+            disabled={saving || deploying || !modified}
+          >
+            {deploying ? (
+              <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
+            ) : (
+              <><Rocket className="mr-1.5 size-4" />Save & Deploy</>
+            )}
+          </Button>
+        </div>
       </div>
 
       <div className="relative rounded-lg border bg-zinc-950 min-h-[400px]">
