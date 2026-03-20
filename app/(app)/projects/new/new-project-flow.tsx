@@ -264,11 +264,22 @@ export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
     setTemplateConnectionInfo(template.defaultConnectionInfo || []);
     if (template.defaultEnvVars?.length) {
       const masked = new Set<string>();
+      const slug = slugify(template.name);
       setTemplateEnvVars(template.defaultEnvVars.map((ev) => {
         // Auto-generate passwords and secrets
         if (isPasswordField(ev.key) && !ev.defaultValue) {
           masked.add(ev.key);
           return { key: ev.key, value: generatePassword(), description: ev.description, required: ev.required };
+        }
+        // Default database name and username to the project slug
+        const lower = ev.key.toLowerCase();
+        if (!ev.defaultValue && (lower.includes("_database") || lower.includes("_db") || lower.includes("_user") || lower === "database__client")) {
+          if (lower.includes("_user")) {
+            return { key: ev.key, value: slug, description: ev.description, required: ev.required };
+          }
+          if (lower.includes("_database") || lower.includes("_db")) {
+            return { key: ev.key, value: slug, description: ev.description, required: ev.required };
+          }
         }
         return { key: ev.key, value: ev.defaultValue || "", description: ev.description, required: ev.required };
       }));
