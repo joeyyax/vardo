@@ -81,6 +81,7 @@ export default async function ProjectsPage() {
           projects={projectList}
           allTags={tagList}
           allGroups={groupList}
+          orgId={orgId}
         />
       )}
     </div>
