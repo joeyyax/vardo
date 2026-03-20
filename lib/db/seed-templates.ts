@@ -17,6 +17,7 @@ const builtInTemplates = [
       { key: "POSTGRES_PASSWORD", description: "Superuser password", required: true },
       { key: "POSTGRES_USER", description: "Superuser name", required: false, defaultValue: "postgres" },
       { key: "POSTGRES_DB", description: "Default database name", required: false, defaultValue: "postgres" },
+      { key: "DATABASE_URL", description: "Connection string (auto-generated)", required: false, defaultValue: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${project.name}:5432/${POSTGRES_DB}" },
     ],
   },
   {
@@ -34,6 +35,7 @@ const builtInTemplates = [
       { key: "MYSQL_DATABASE", description: "Default database name", required: false },
       { key: "MYSQL_USER", description: "Additional user", required: false },
       { key: "MYSQL_PASSWORD", description: "Additional user password", required: false },
+      { key: "DATABASE_URL", description: "Connection string (auto-generated)", required: false, defaultValue: "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@${project.name}:3306/${MYSQL_DATABASE}" },
     ],
   },
   {

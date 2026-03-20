@@ -15,6 +15,9 @@ import {
   FileText,
   Globe2,
   RefreshCw,
+  Eye,
+  EyeOff,
+  Shuffle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageToolbar } from "@/components/page-toolbar";
@@ -96,6 +99,16 @@ const SOURCE_OPTIONS = [
 
 type SourceOption = (typeof SOURCE_OPTIONS)[number]["id"];
 
+function generatePassword(length = 24): string {
+  const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  return Array.from({ length }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+}
+
+function isPasswordField(key: string): boolean {
+  const lower = key.toLowerCase();
+  return lower.includes("password") || lower.includes("secret") || lower.includes("_key") || lower === "app_keys" || lower.includes("jwt");
+}
+
 function slugify(value: string) {
   return value
     .toLowerCase()
@@ -137,6 +150,7 @@ export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
   const [templateEnvVars, setTemplateEnvVars] = useState<
     { key: string; value: string; description: string; required: boolean }[]
   >([]);
+  const [maskedFields, setMaskedFields] = useState<Set<string>>(new Set());
 
   // GitHub state
   const [installations, setInstallations] = useState<Installation[]>([]);
@@ -231,11 +245,19 @@ export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
     const noUrlCategories = ["database", "cache"];
     setGenerateDomain(!noUrlCategories.includes(template.category));
     if (template.defaultEnvVars?.length) {
-      setTemplateEnvVars(template.defaultEnvVars.map((ev) => ({
-        key: ev.key, value: ev.defaultValue || "", description: ev.description, required: ev.required,
-      })));
+      const masked = new Set<string>();
+      setTemplateEnvVars(template.defaultEnvVars.map((ev) => {
+        // Auto-generate passwords and secrets
+        if (isPasswordField(ev.key) && !ev.defaultValue) {
+          masked.add(ev.key);
+          return { key: ev.key, value: generatePassword(), description: ev.description, required: ev.required };
+        }
+        return { key: ev.key, value: ev.defaultValue || "", description: ev.description, required: ev.required };
+      }));
+      setMaskedFields(masked);
     } else {
       setTemplateEnvVars([]);
+      setMaskedFields(new Set());
     }
   }
 
@@ -645,24 +667,67 @@ export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
               <div className="grid gap-3">
                 <Label>Environment Variables</Label>
                 <div className="grid gap-3">
-                  {templateEnvVars.map((ev, i) => (
-                    <div key={ev.key} className="grid gap-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs text-muted-foreground">{ev.key}</span>
-                        {ev.required && <Badge variant="secondary" className="text-[10px] px-1 py-0">required</Badge>}
+                  {templateEnvVars.map((ev, i) => {
+                    const isPassword = isPasswordField(ev.key);
+                    const isMasked = maskedFields.has(ev.key);
+                    return (
+                      <div key={ev.key} className="grid gap-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs text-muted-foreground">{ev.key}</span>
+                          {ev.required && <Badge variant="secondary" className="text-[10px] px-1 py-0">required</Badge>}
+                          {isPassword && ev.value && (
+                            <span className="text-[10px] text-status-success">auto-generated</span>
+                          )}
+                        </div>
+                        <div className="flex gap-1">
+                          <Input
+                            placeholder={ev.description}
+                            type={isPassword && isMasked ? "password" : "text"}
+                            value={ev.value}
+                            onChange={(e) => {
+                              const updated = [...templateEnvVars];
+                              updated[i] = { ...updated[i], value: e.target.value };
+                              setTemplateEnvVars(updated);
+                            }}
+                            className="font-mono text-sm"
+                          />
+                          {isPassword && (
+                            <>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="shrink-0 px-2"
+                                onClick={() => setMaskedFields((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(ev.key)) next.delete(ev.key);
+                                  else next.add(ev.key);
+                                  return next;
+                                })}
+                                title={isMasked ? "Show" : "Hide"}
+                              >
+                                {isMasked ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="shrink-0 px-2"
+                                onClick={() => {
+                                  const updated = [...templateEnvVars];
+                                  updated[i] = { ...updated[i], value: generatePassword() };
+                                  setTemplateEnvVars(updated);
+                                }}
+                                title="Regenerate"
+                              >
+                                <Shuffle className="size-3.5" />
+                              </Button>
+                            </>
+                          )}
+                        </div>
                       </div>
-                      <Input
-                        placeholder={ev.description}
-                        value={ev.value}
-                        onChange={(e) => {
-                          const updated = [...templateEnvVars];
-                          updated[i] = { ...updated[i], value: e.target.value };
-                          setTemplateEnvVars(updated);
-                        }}
-                        className="font-mono text-sm"
-                      />
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 <p className="text-xs text-muted-foreground">
                   You can add more variables after creation.
