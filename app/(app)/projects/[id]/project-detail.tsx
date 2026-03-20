@@ -45,6 +45,7 @@ import {
 } from "@/components/ui/bottom-sheet";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { LogViewer } from "@/components/log-viewer";
+import { EnvEditor } from "@/components/env-editor";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -123,6 +124,7 @@ type ProjectDetailProps = {
   orgId: string;
   userRole: string;
   allTags?: Tag[];
+  allProjectNames?: string[];
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -205,7 +207,7 @@ function formatDuration(ms: number) {
   return `${minutes}m ${remaining}s`;
 }
 
-export function ProjectDetail({ project, orgId, userRole, allTags = [] }: ProjectDetailProps) {
+export function ProjectDetail({ project, orgId, userRole, allTags = [], allProjectNames = [] }: ProjectDetailProps) {
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -225,19 +227,6 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [] }: Projec
   const [gitBranch, setGitBranch] = useState(project.gitBranch || "");
   const [rootDirectory, setRootDirectory] = useState(project.rootDirectory || "");
 
-  // Env var state
-  const [envVarOpen, setEnvVarOpen] = useState(false);
-  const [envVarSaving, setEnvVarSaving] = useState(false);
-  const [envVarKey, setEnvVarKey] = useState("");
-  const [envVarValue, setEnvVarValue] = useState("");
-  const [envVarIsSecret, setEnvVarIsSecret] = useState(true);
-  const [editingEnvVarId, setEditingEnvVarId] = useState<string | null>(null);
-  const [deletingEnvVarId, setDeletingEnvVarId] = useState<string | null>(null);
-
-  // Bulk edit state
-  const [bulkEditOpen, setBulkEditOpen] = useState(false);
-  const [bulkContent, setBulkContent] = useState("");
-  const [bulkSaving, setBulkSaving] = useState(false);
 
   // Domain state
   const [domainOpen, setDomainOpen] = useState(false);
@@ -353,115 +342,6 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [] }: Projec
       toast.error("Failed to delete");
     } finally {
       setDeleting(false);
-    }
-  }
-
-  function resetEnvVarForm() {
-    setEnvVarKey("");
-    setEnvVarValue("");
-    setEnvVarIsSecret(true);
-    setEditingEnvVarId(null);
-  }
-
-  async function handleEnvVarSave() {
-    setEnvVarSaving(true);
-    try {
-      const url = `/api/v1/organizations/${orgId}/projects/${project.id}/env-vars`;
-
-      if (editingEnvVarId) {
-        const res = await fetch(url, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: editingEnvVarId, value: envVarValue }),
-        });
-        if (!res.ok) {
-          const data = await res.json();
-          toast.error(data.error || "Failed to update variable");
-          return;
-        }
-        toast.success("Variable updated");
-      } else {
-        const res = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            key: envVarKey.trim(),
-            value: envVarValue,
-            isSecret: envVarIsSecret,
-          }),
-        });
-        if (!res.ok) {
-          const data = await res.json();
-          toast.error(data.error || "Failed to add variable");
-          return;
-        }
-        toast.success("Variable added");
-      }
-
-      setEnvVarOpen(false);
-      resetEnvVarForm();
-      router.refresh();
-    } catch {
-      toast.error("Failed to save variable");
-    } finally {
-      setEnvVarSaving(false);
-    }
-  }
-
-  async function handleEnvVarDelete(id: string) {
-    setDeletingEnvVarId(id);
-    try {
-      const res = await fetch(
-        `/api/v1/organizations/${orgId}/projects/${project.id}/env-vars`,
-        {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id }),
-        }
-      );
-      if (!res.ok) {
-        const data = await res.json();
-        toast.error(data.error || "Failed to delete variable");
-        return;
-      }
-      toast.success("Variable deleted");
-      router.refresh();
-    } catch {
-      toast.error("Failed to delete variable");
-    } finally {
-      setDeletingEnvVarId(null);
-    }
-  }
-
-  async function handleBulkSave() {
-    setBulkSaving(true);
-    try {
-      const res = await fetch(
-        `/api/v1/organizations/${orgId}/projects/${project.id}/env-vars`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content: bulkContent }),
-        }
-      );
-
-      if (!res.ok) {
-        const data = await res.json();
-        toast.error(data.error || "Failed to save variables");
-        return;
-      }
-
-      const data = await res.json();
-      toast.success(
-        `${data.created} added, ${data.updated} updated`
-      );
-      setBulkEditOpen(false);
-      setBulkContent("");
-      router.refresh();
-    } catch {
-      toast.error("Failed to save variables");
-    } finally {
-      setBulkSaving(false);
     }
   }
 
@@ -871,84 +751,13 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [] }: Projec
           )}
         </TabsContent>
 
-        <TabsContent value="variables" className="space-y-4 pt-4">
-          <div className="flex justify-end gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                setBulkContent("");
-                setBulkEditOpen(true);
-              }}
-            >
-              <FileText className="mr-1.5 size-4" />
-              Bulk Edit
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => {
-                resetEnvVarForm();
-                setEnvVarOpen(true);
-              }}
-            >
-              <Plus className="mr-1.5 size-4" />
-              Add Variable
-            </Button>
-          </div>
-
-          {project.envVars.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
-              <p className="text-sm text-muted-foreground">
-                No environment variables configured.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {project.envVars.map((envVar) => (
-                <div
-                  key={envVar.id}
-                  className="squircle flex items-center justify-between gap-4 rounded-lg border bg-card p-4"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <p className="text-sm font-medium font-mono">
-                      {envVar.key}
-                    </p>
-                    {envVar.isSecret && (
-                      <EyeOff className="size-3.5 text-muted-foreground" />
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => {
-                        setEditingEnvVarId(envVar.id);
-                        setEnvVarKey(envVar.key);
-                        setEnvVarValue("");
-                        setEnvVarIsSecret(envVar.isSecret ?? true);
-                        setEnvVarOpen(true);
-                      }}
-                    >
-                      <Pencil className="size-3.5" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="text-destructive hover:text-destructive"
-                      disabled={deletingEnvVarId === envVar.id}
-                      onClick={() => handleEnvVarDelete(envVar.id)}
-                    >
-                      {deletingEnvVarId === envVar.id ? (
-                        <Loader2 className="size-3.5 animate-spin" />
-                      ) : (
-                        <X className="size-3.5" />
-                      )}
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+        <TabsContent value="variables" className="pt-4">
+          <EnvEditor
+            projectId={project.id}
+            orgId={orgId}
+            initialVars={project.envVars}
+            allProjectNames={allProjectNames}
+          />
         </TabsContent>
 
         <TabsContent value="domains" className="space-y-4 pt-4">
@@ -1181,110 +990,6 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [] }: Projec
         </BottomSheetContent>
       </BottomSheet>
 
-      {/* Add/Edit Variable Bottom Sheet */}
-      <BottomSheet
-        open={envVarOpen}
-        onOpenChange={(v) => {
-          setEnvVarOpen(v);
-          if (!v) resetEnvVarForm();
-        }}
-      >
-        <BottomSheetContent>
-          <BottomSheetHeader>
-            <BottomSheetTitle>
-              {editingEnvVarId ? "Update variable" : "Add variable"}
-            </BottomSheetTitle>
-            <BottomSheetDescription>
-              {editingEnvVarId
-                ? `Set a new value for ${envVarKey}.`
-                : "Add an environment variable to this project."}
-            </BottomSheetDescription>
-          </BottomSheetHeader>
-
-          <div className="flex-1 overflow-y-auto px-6 pb-6">
-            <div className="grid gap-4 py-4">
-              {!editingEnvVarId && (
-                <div className="grid gap-2">
-                  <Label htmlFor="env-key">Key</Label>
-                  <Input
-                    id="env-key"
-                    placeholder="DATABASE_URL"
-                    className="font-mono"
-                    value={envVarKey}
-                    onChange={(e) =>
-                      setEnvVarKey(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ""))
-                    }
-                  />
-                </div>
-              )}
-
-              <div className="grid gap-2">
-                <Label htmlFor="env-value">Value</Label>
-                <Textarea
-                  id="env-value"
-                  placeholder={editingEnvVarId ? "Enter new value" : "Enter value"}
-                  className="font-mono text-sm"
-                  value={envVarValue}
-                  onChange={(e) => setEnvVarValue(e.target.value)}
-                  rows={3}
-                />
-                {envVarValue.includes("${") && (
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Variable className="size-3" />
-                    Contains variable references — resolved at deploy time
-                  </div>
-                )}
-                <p className="text-xs text-muted-foreground">
-                  Use <code className="bg-muted px-1 py-0.5 rounded">{"${VAR}"}</code> for self-refs,{" "}
-                  <code className="bg-muted px-1 py-0.5 rounded">{"${project.name}"}</code> for built-ins,{" "}
-                  <code className="bg-muted px-1 py-0.5 rounded">{"${postgres.DB_URL}"}</code> for cross-project
-                </p>
-              </div>
-
-              {!editingEnvVarId && (
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="env-secret">Secret</Label>
-                  <Switch
-                    id="env-secret"
-                    checked={envVarIsSecret}
-                    onCheckedChange={setEnvVarIsSecret}
-                  />
-                </div>
-              )}
-            </div>
-          </div>
-
-          <BottomSheetFooter>
-            <Button
-              variant="outline"
-              onClick={() => setEnvVarOpen(false)}
-              disabled={envVarSaving}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleEnvVarSave}
-              disabled={
-                envVarSaving ||
-                (!editingEnvVarId && !envVarKey.trim()) ||
-                !envVarValue
-              }
-            >
-              {envVarSaving ? (
-                <>
-                  <Loader2 className="mr-2 size-4 animate-spin" />
-                  Saving...
-                </>
-              ) : editingEnvVarId ? (
-                "Update"
-              ) : (
-                "Add Variable"
-              )}
-            </Button>
-          </BottomSheetFooter>
-        </BottomSheetContent>
-      </BottomSheet>
-
       {/* Add Domain Bottom Sheet */}
       <BottomSheet
         open={domainOpen}
@@ -1342,61 +1047,6 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [] }: Projec
                 <><Loader2 className="mr-2 size-4 animate-spin" />Adding...</>
               ) : (
                 "Add Domain"
-              )}
-            </Button>
-          </BottomSheetFooter>
-        </BottomSheetContent>
-      </BottomSheet>
-
-      {/* Bulk Edit Bottom Sheet */}
-      <BottomSheet
-        open={bulkEditOpen}
-        onOpenChange={(v) => {
-          setBulkEditOpen(v);
-          if (!v) setBulkContent("");
-        }}
-      >
-        <BottomSheetContent>
-          <BottomSheetHeader>
-            <BottomSheetTitle>Bulk edit variables</BottomSheetTitle>
-            <BottomSheetDescription>
-              Paste environment variables in KEY=value format, one per line.
-              Existing variables with matching keys will be updated.
-              Supports variable references like{" "}
-              <code className="text-xs bg-muted px-1 py-0.5 rounded">
-                {"${postgres.POSTGRES_PASSWORD}"}
-              </code>
-            </BottomSheetDescription>
-          </BottomSheetHeader>
-
-          <div className="flex-1 overflow-y-auto px-6 pb-6">
-            <Textarea
-              placeholder={"DATABASE_URL=postgres://localhost:5432/mydb\nREDIS_URL=redis://localhost:6379\nSECRET_KEY=changeme\n\n# References to other projects\nDB_PASSWORD=${postgres.POSTGRES_PASSWORD}"}
-              className="font-mono text-sm min-h-[300px]"
-              value={bulkContent}
-              onChange={(e) => setBulkContent(e.target.value)}
-            />
-          </div>
-
-          <BottomSheetFooter>
-            <Button
-              variant="outline"
-              onClick={() => setBulkEditOpen(false)}
-              disabled={bulkSaving}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleBulkSave}
-              disabled={bulkSaving || !bulkContent.trim()}
-            >
-              {bulkSaving ? (
-                <>
-                  <Loader2 className="mr-2 size-4 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                "Save All"
               )}
             </Button>
           </BottomSheetFooter>

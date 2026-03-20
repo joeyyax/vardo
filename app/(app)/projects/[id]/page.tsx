@@ -19,7 +19,7 @@ export default async function ProjectDetailPage({ params }: PageProps) {
 
   const orgId = orgData.organization.id;
 
-  const [project, allTags] = await Promise.all([
+  const [project, allTags, allProjects] = await Promise.all([
     db.query.projects.findFirst({
       where: and(
         eq(projects.id, id),
@@ -44,6 +44,10 @@ export default async function ProjectDetailPage({ params }: PageProps) {
       where: eq(tags.organizationId, orgId),
       orderBy: [asc(tags.name)],
     }),
+    db.query.projects.findMany({
+      where: eq(projects.organizationId, orgId),
+      columns: { name: true },
+    }),
   ]);
 
   if (!project) {
@@ -56,6 +60,7 @@ export default async function ProjectDetailPage({ params }: PageProps) {
       orgId={orgId}
       userRole={orgData.membership.role}
       allTags={allTags}
+      allProjectNames={allProjects.map((p) => p.name)}
     />
   );
 }
