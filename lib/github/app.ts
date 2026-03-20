@@ -29,6 +29,14 @@ export function getInstallationOctokit(installationId: number) {
   });
 }
 
+export async function getInstallationToken(installationId: number): Promise<string> {
+  const octokit = getAppOctokit();
+  const { data } = await octokit.rest.apps.createInstallationAccessToken({
+    installation_id: installationId,
+  });
+  return data.token;
+}
+
 export async function listInstallationRepos(installationId: number) {
   const octokit = getInstallationOctokit(installationId);
   const repos: Array<{

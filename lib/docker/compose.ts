@@ -218,13 +218,14 @@ function parsePortString(
 // YAML serialization (minimal, sufficient for Docker Compose)
 // ---------------------------------------------------------------------------
 
+import YAML from "yaml";
+
 /**
  * Serialize a ComposeFile to a YAML string.
  */
 export function composeToYaml(compose: ComposeFile): string {
   const doc: Record<string, unknown> = {};
 
-  // Convert services: strip `name` field (it is the key, not a compose property)
   const services: Record<string, Record<string, unknown>> = {};
   for (const [key, svc] of Object.entries(compose.services)) {
     const { name: _name, ...rest } = svc;
@@ -235,128 +236,18 @@ export function composeToYaml(compose: ComposeFile): string {
   if (compose.networks && Object.keys(compose.networks).length > 0) {
     doc.networks = compose.networks;
   }
-
   if (compose.volumes && Object.keys(compose.volumes).length > 0) {
     doc.volumes = compose.volumes;
   }
 
-  return serializeYaml(doc, 0);
+  return YAML.stringify(doc);
 }
-
-function serializeYaml(value: unknown, indent: number): string {
-  if (value === null || value === undefined) {
-    return "null";
-  }
-
-  if (typeof value === "string") {
-    // Quote strings that contain special chars or could be misread
-    if (
-      value === "" ||
-      value.includes(":") ||
-      value.includes("#") ||
-      value.includes("{") ||
-      value.includes("}") ||
-      value.includes("[") ||
-      value.includes("]") ||
-      value.includes("&") ||
-      value.includes("*") ||
-      value.includes("!") ||
-      value.includes("|") ||
-      value.includes(">") ||
-      value.includes("'") ||
-      value.includes('"') ||
-      value.includes("`") ||
-      value.includes(",") ||
-      value.includes("@") ||
-      value.includes("%") ||
-      value.startsWith(" ") ||
-      value.endsWith(" ") ||
-      value === "true" ||
-      value === "false" ||
-      value === "null" ||
-      value === "yes" ||
-      value === "no" ||
-      /^\d+$/.test(value)
-    ) {
-      return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
-    }
-    return value;
-  }
-
-  if (typeof value === "number" || typeof value === "boolean") {
-    return String(value);
-  }
-
-  const pad = "  ".repeat(indent);
-  const childPad = "  ".repeat(indent + 1);
-
-  if (Array.isArray(value)) {
-    if (value.length === 0) return "[]";
-    const lines = value.map((item) => {
-      if (typeof item === "object" && item !== null && !Array.isArray(item)) {
-        const obj = serializeYamlObject(item as Record<string, unknown>, indent + 2);
-        // First key goes on the same line as the dash
-        const firstNewline = obj.indexOf("\n");
-        if (firstNewline === -1) {
-          return `${pad}- ${obj.trimStart()}`;
-        }
-        return `${pad}- ${obj.trimStart()}`;
-      }
-      return `${pad}- ${serializeYaml(item, indent + 1)}`;
-    });
-    return "\n" + lines.join("\n");
-  }
-
-  if (typeof value === "object") {
-    const obj = value as Record<string, unknown>;
-    const keys = Object.keys(obj);
-    if (keys.length === 0) return "{}";
-
-    const lines = keys.map((key) => {
-      const val = obj[key];
-      if (
-        typeof val === "object" &&
-        val !== null &&
-        !Array.isArray(val) &&
-        Object.keys(val).length > 0
-      ) {
-        return `${childPad}${key}:${serializeYaml(val, indent + 1)}`;
-      }
-      if (Array.isArray(val)) {
-        return `${childPad}${key}:${serializeYaml(val, indent + 1)}`;
-      }
-      return `${childPad}${key}: ${serializeYaml(val, indent + 1)}`;
-    });
-    return "\n" + lines.join("\n");
-  }
-
-  return String(value);
-}
-
-function serializeYamlObject(
-  obj: Record<string, unknown>,
-  indent: number,
-): string {
-  const pad = "  ".repeat(indent);
-  return Object.entries(obj)
-    .map(([k, v]) => `${pad}${k}: ${serializeYaml(v, indent)}`)
-    .join("\n");
-}
-
-// ---------------------------------------------------------------------------
-// YAML parsing (minimal -- handles standard Docker Compose structure)
-// ---------------------------------------------------------------------------
 
 /**
  * Parse a YAML string into a ComposeFile.
- * Validates that the result contains a `services` key.
- *
- * This is a minimal parser sufficient for well-formatted Docker Compose YAML.
- * For complex YAML features (anchors, merge keys, multi-line scalars), install
- * `yaml` or `js-yaml`.
  */
 export function parseCompose(yamlString: string): ComposeFile {
-  const parsed = parseYaml(yamlString);
+  const parsed = YAML.parse(yamlString);
 
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
     throw new Error("Invalid compose file: root must be a YAML mapping");
@@ -364,45 +255,52 @@ export function parseCompose(yamlString: string): ComposeFile {
 
   const root = parsed as Record<string, unknown>;
   if (!root.services || typeof root.services !== "object") {
-    throw new Error(
-      'Invalid compose file: missing or invalid "services" key',
-    );
+    throw new Error('Invalid compose file: missing or invalid "services" key');
   }
 
-  // Reconstruct typed ComposeFile
   const services: Record<string, ComposeService> = {};
   const rawServices = root.services as Record<string, Record<string, unknown>>;
 
   for (const [name, raw] of Object.entries(rawServices)) {
     const svc: ComposeService = { name };
 
-    if (raw.image && typeof raw.image === "string") {
-      svc.image = raw.image;
-    }
-    if (raw.build !== undefined) {
-      svc.build = raw.build as ComposeService["build"];
-    }
-    if (Array.isArray(raw.ports)) {
-      svc.ports = raw.ports.map(String);
-    }
+    if (raw.image && typeof raw.image === "string") svc.image = raw.image;
+    if (raw.build !== undefined) svc.build = raw.build as ComposeService["build"];
+    if (Array.isArray(raw.ports)) svc.ports = raw.ports.map(String);
     if (raw.environment && typeof raw.environment === "object") {
-      svc.environment = raw.environment as Record<string, string>;
+      if (Array.isArray(raw.environment)) {
+        const envMap: Record<string, string> = {};
+        for (const item of raw.environment) {
+          const s = String(item);
+          const eq = s.indexOf("=");
+          if (eq > 0) envMap[s.slice(0, eq)] = s.slice(eq + 1);
+        }
+        svc.environment = envMap;
+      } else {
+        svc.environment = raw.environment as Record<string, string>;
+      }
     }
-    if (Array.isArray(raw.volumes)) {
-      svc.volumes = raw.volumes.map(String);
+    if (Array.isArray(raw.volumes)) svc.volumes = raw.volumes.map(String);
+    if (raw.labels) {
+      if (Array.isArray(raw.labels)) {
+        const labelMap: Record<string, string> = {};
+        for (const item of raw.labels) {
+          const s = String(item);
+          const eq = s.indexOf("=");
+          if (eq > 0) labelMap[s.slice(0, eq)] = s.slice(eq + 1);
+          else labelMap[s] = "";
+        }
+        svc.labels = labelMap;
+      } else if (typeof raw.labels === "object") {
+        svc.labels = raw.labels as Record<string, string>;
+      }
     }
-    if (raw.labels && typeof raw.labels === "object") {
-      svc.labels = raw.labels as Record<string, string>;
-    }
-    if (Array.isArray(raw.networks)) {
-      svc.networks = raw.networks.map(String);
-    }
+    if (Array.isArray(raw.networks)) svc.networks = raw.networks.map(String);
 
     services[name] = svc;
   }
 
   const result: ComposeFile = { services };
-
   if (root.networks && typeof root.networks === "object") {
     result.networks = root.networks as Record<string, unknown>;
   }
@@ -411,222 +309,6 @@ export function parseCompose(yamlString: string): ComposeFile {
   }
 
   return result;
-}
-
-// Minimal YAML parser -- handles mappings, sequences, scalars, quoted strings
-function parseYaml(input: string): unknown {
-  const lines = input.split("\n");
-  const { value } = parseYamlLines(lines, 0, 0);
-  return value;
-}
-
-function parseYamlLines(
-  lines: string[],
-  startIndex: number,
-  baseIndent: number,
-): { value: unknown; nextIndex: number } {
-  // Skip empty lines and comments to find the first meaningful line
-  let i = startIndex;
-  while (i < lines.length) {
-    const trimmed = lines[i].trim();
-    if (trimmed === "" || trimmed.startsWith("#")) {
-      i++;
-      continue;
-    }
-    break;
-  }
-
-  if (i >= lines.length) {
-    return { value: null, nextIndex: i };
-  }
-
-  const firstLine = lines[i];
-  const trimmedFirst = firstLine.trim();
-
-  // Detect if this is a sequence
-  if (trimmedFirst.startsWith("- ")) {
-    return parseYamlSequence(lines, i, getIndent(firstLine));
-  }
-
-  // Otherwise treat as mapping
-  return parseYamlMapping(lines, i, getIndent(firstLine));
-}
-
-function parseYamlMapping(
-  lines: string[],
-  startIndex: number,
-  baseIndent: number,
-): { value: Record<string, unknown>; nextIndex: number } {
-  const result: Record<string, unknown> = {};
-  let i = startIndex;
-
-  while (i < lines.length) {
-    const line = lines[i];
-    const trimmed = line.trim();
-
-    if (trimmed === "" || trimmed.startsWith("#")) {
-      i++;
-      continue;
-    }
-
-    const indent = getIndent(line);
-    if (indent < baseIndent) break;
-    if (indent > baseIndent) break; // belongs to a child
-
-    const colonIdx = trimmed.indexOf(":");
-    if (colonIdx === -1) {
-      i++;
-      continue;
-    }
-
-    const key = trimmed.substring(0, colonIdx).trim();
-    const afterColon = trimmed.substring(colonIdx + 1).trim();
-
-    if (afterColon === "" || afterColon === "|" || afterColon === ">") {
-      // Value is on subsequent indented lines
-      i++;
-      if (i < lines.length) {
-        const nextNonEmpty = findNextNonEmpty(lines, i);
-        if (nextNonEmpty < lines.length) {
-          const childIndent = getIndent(lines[nextNonEmpty]);
-          if (childIndent > baseIndent) {
-            const child = parseYamlLines(lines, nextNonEmpty, childIndent);
-            result[key] = child.value;
-            i = child.nextIndex;
-            continue;
-          }
-        }
-      }
-      result[key] = null;
-    } else {
-      result[key] = parseYamlScalar(afterColon);
-      i++;
-    }
-  }
-
-  return { value: result, nextIndex: i };
-}
-
-function parseYamlSequence(
-  lines: string[],
-  startIndex: number,
-  baseIndent: number,
-): { value: unknown[]; nextIndex: number } {
-  const result: unknown[] = [];
-  let i = startIndex;
-
-  while (i < lines.length) {
-    const line = lines[i];
-    const trimmed = line.trim();
-
-    if (trimmed === "" || trimmed.startsWith("#")) {
-      i++;
-      continue;
-    }
-
-    const indent = getIndent(line);
-    if (indent < baseIndent) break;
-    if (indent > baseIndent) break;
-
-    if (!trimmed.startsWith("- ")) break;
-
-    const itemContent = trimmed.substring(2).trim();
-
-    // Check if item content contains a colon (inline mapping start)
-    const colonIdx = itemContent.indexOf(":");
-    if (colonIdx > 0 && !itemContent.startsWith('"') && !itemContent.startsWith("'")) {
-      // This could be a mapping item -- check for child lines
-      const itemKey = itemContent.substring(0, colonIdx).trim();
-      const itemVal = itemContent.substring(colonIdx + 1).trim();
-      const mapping: Record<string, unknown> = {};
-      mapping[itemKey] = itemVal === "" ? null : parseYamlScalar(itemVal);
-
-      // Look for additional mapping keys at deeper indent
-      i++;
-      while (i < lines.length) {
-        const childLine = lines[i];
-        const childTrimmed = childLine.trim();
-        if (childTrimmed === "" || childTrimmed.startsWith("#")) {
-          i++;
-          continue;
-        }
-        const childIndent = getIndent(childLine);
-        if (childIndent <= indent) break;
-        const childColon = childTrimmed.indexOf(":");
-        if (childColon > 0) {
-          const ck = childTrimmed.substring(0, childColon).trim();
-          const cv = childTrimmed.substring(childColon + 1).trim();
-          mapping[ck] = cv === "" ? null : parseYamlScalar(cv);
-        }
-        i++;
-      }
-      result.push(mapping);
-    } else {
-      result.push(parseYamlScalar(itemContent));
-      i++;
-    }
-  }
-
-  return { value: result, nextIndex: i };
-}
-
-function parseYamlScalar(value: string): unknown {
-  if (value === "null" || value === "~") return null;
-  if (value === "true" || value === "yes") return true;
-  if (value === "false" || value === "no") return false;
-
-  // Quoted strings
-  if (
-    (value.startsWith('"') && value.endsWith('"')) ||
-    (value.startsWith("'") && value.endsWith("'"))
-  ) {
-    return value.slice(1, -1);
-  }
-
-  // Numbers
-  if (/^-?\d+$/.test(value)) return parseInt(value, 10);
-  if (/^-?\d+\.\d+$/.test(value)) return parseFloat(value);
-
-  // Inline object: {external: true}
-  if (value.startsWith("{") && value.endsWith("}")) {
-    const inner = value.slice(1, -1).trim();
-    if (inner === "") return {};
-    const obj: Record<string, unknown> = {};
-    // Simple single-level inline parsing
-    const pairs = inner.split(",");
-    for (const pair of pairs) {
-      const ci = pair.indexOf(":");
-      if (ci > 0) {
-        const k = pair.substring(0, ci).trim();
-        const v = pair.substring(ci + 1).trim();
-        obj[k] = parseYamlScalar(v);
-      }
-    }
-    return obj;
-  }
-
-  // Strip inline comments
-  const commentIdx = value.indexOf(" #");
-  if (commentIdx > 0) {
-    return parseYamlScalar(value.substring(0, commentIdx).trim());
-  }
-
-  return value;
-}
-
-function getIndent(line: string): number {
-  const match = line.match(/^(\s*)/);
-  return match ? match[1].length : 0;
-}
-
-function findNextNonEmpty(lines: string[], start: number): number {
-  let i = start;
-  while (i < lines.length) {
-    const trimmed = lines[i].trim();
-    if (trimmed !== "" && !trimmed.startsWith("#")) return i;
-    i++;
-  }
-  return i;
 }
 
 // ---------------------------------------------------------------------------

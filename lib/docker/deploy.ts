@@ -5,7 +5,7 @@ import { nanoid } from "nanoid";
 import { exec } from "child_process";
 import { promisify } from "util";
 import { mkdir, writeFile, readFile } from "fs/promises";
-import { join } from "path";
+import { join, resolve } from "path";
 import {
   generateComposeForImage,
   injectTraefikLabels,
@@ -15,10 +15,12 @@ import {
   type ComposeFile,
 } from "./compose";
 import { ensureNetwork } from "./client";
+import { getInstallationToken } from "@/lib/github/app";
+import { githubAppInstallations, memberships } from "@/lib/db/schema";
 
 const execAsync = promisify(exec);
 
-const PROJECTS_DIR = process.env.HOST_PROJECTS_DIR || "/var/lib/host/projects";
+const PROJECTS_DIR = resolve(process.env.HOST_PROJECTS_DIR || "./.host/projects");
 const NETWORK_NAME = "host-network";
 const HEALTH_CHECK_TIMEOUT_MS = 60000;
 const HEALTH_CHECK_INTERVAL_MS = 2000;
@@ -107,18 +109,59 @@ export async function runDeployment(
       });
       logs.push(`[deploy] Generated compose for image: ${project.imageName}`);
     } else if (project.source === "git" && project.gitUrl) {
-      // Git source — clone/pull repo and read compose file
+      // Git source — clone/pull repo with GitHub App auth if needed
       const repoDir = join(projectDir, "repo");
       const branch = project.gitBranch || "main";
 
+      // Build authenticated clone URL for private repos
+      let cloneUrl = project.gitUrl;
+      if (cloneUrl.includes("github.com")) {
+        try {
+          // Find a GitHub installation for this org
+          const orgMembers = await db.query.memberships.findMany({
+            where: eq(memberships.organizationId, opts.organizationId),
+            columns: { userId: true },
+          });
+          const userIds = orgMembers.map((m) => m.userId);
+
+          let installToken: string | null = null;
+          for (const userId of userIds) {
+            const installations = await db.query.githubAppInstallations.findMany({
+              where: eq(githubAppInstallations.userId, userId),
+            });
+            for (const inst of installations) {
+              try {
+                installToken = await getInstallationToken(inst.installationId);
+                logs.push(`[deploy] Got GitHub token via ${inst.accountLogin}`);
+                break;
+              } catch { /* try next */ }
+            }
+            if (installToken) break;
+          }
+
+          if (installToken) {
+            // Inject token into URL: https://x-access-token:{token}@github.com/owner/repo.git
+            cloneUrl = cloneUrl.replace(
+              "https://github.com/",
+              `https://x-access-token:${installToken}@github.com/`
+            );
+          }
+        } catch (err) {
+          logs.push(`[deploy] Warning: GitHub auth — ${err instanceof Error ? err.message : err}`);
+        }
+      }
+
       try {
         // Try pull first (faster if already cloned)
-        await execAsync(`git -C "${repoDir}" fetch origin ${branch} && git -C "${repoDir}" reset --hard origin/${branch}`, { timeout: 60000 });
+        await execAsync(
+          `git -C "${repoDir}" remote set-url origin "${cloneUrl}" && git -C "${repoDir}" fetch origin ${branch} && git -C "${repoDir}" reset --hard origin/${branch}`,
+          { timeout: 60000 }
+        );
         logs.push(`[deploy] Pulled latest from ${branch}`);
       } catch {
         // Fresh clone
-        await execAsync(`git clone --depth 1 --branch ${branch} "${project.gitUrl}" "${repoDir}"`, { timeout: 60000 });
-        logs.push(`[deploy] Cloned ${project.gitUrl} (${branch})`);
+        await execAsync(`git clone --depth 1 --branch ${branch} "${cloneUrl}" "${repoDir}"`, { timeout: 60000 });
+        logs.push(`[deploy] Cloned repo (${branch})`);
       }
 
       // Find compose file
