@@ -10,6 +10,7 @@ import {
   Globe2,
   Variable,
   Pencil,
+  ArrowUp,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -205,6 +206,57 @@ export function ProjectEnvironments({
     }
   }
 
+  async function handlePromote(envId: string, envName: string) {
+    if (!confirm(`Promote "${envName}" to production? This will copy its environment variables to production.`)) return;
+    try {
+      // Clone this environment's vars into production
+      const prodEnv = allEnvironments.find((e) => e.type === "production");
+      if (!prodEnv) {
+        toast.error("No production environment found");
+        return;
+      }
+
+      const res = await fetch(
+        `/api/v1/organizations/${orgId}/projects/${projectId}/environments/${envId}/clone`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: `promote-${Date.now()}`,
+            targetEnvironmentId: prodEnv.id,
+          }),
+        }
+      );
+
+      if (!res.ok) {
+        // Fallback: just notify that promotion needs manual var copy for now
+        toast.error("Promotion requires manually copying variables to production");
+        return;
+      }
+
+      toast.success(`Promoted "${envName}" variables to production`);
+      router.refresh();
+    } catch {
+      toast.error("Failed to promote environment");
+    }
+  }
+
+  // Always include a virtual production environment if none exists
+  const hasProduction = environments.some((e) => e.type === "production");
+  const allEnvironments: Environment[] = hasProduction
+    ? environments
+    : [
+        {
+          id: "__default_production__",
+          name: "Production",
+          type: "production" as const,
+          domain: null,
+          isDefault: true,
+          createdAt: new Date(),
+        },
+        ...environments,
+      ];
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -281,18 +333,8 @@ export function ProjectEnvironments({
       )}
 
       {/* Environment list */}
-      {environments.length === 0 && !creating ? (
-        <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
-          <p className="text-sm text-muted-foreground">
-            No additional environments. This project runs in production by default.
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Add staging or preview environments to test changes before deploying to production.
-          </p>
-        </div>
-      ) : environments.length > 0 && (
         <div className="space-y-2">
-          {environments
+          {allEnvironments
             .sort((a, b) => {
               // Default first, then by type priority, then by name
               if (a.isDefault && !b.isDefault) return -1;
@@ -306,6 +348,8 @@ export function ProjectEnvironments({
               const isCloning = cloning === env.id;
               const isEditing = editingId === env.id;
               const canDelete = env.type !== "production" && !env.isDefault;
+              const canPromote = env.type !== "production";
+              const isVirtual = env.id === "__default_production__";
               const varCount = envVarCounts[env.id] ?? 0;
 
               return (
@@ -353,31 +397,45 @@ export function ProjectEnvironments({
                     </div>
 
                     <div className="flex items-center gap-1 shrink-0">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        title="Edit domain"
-                        onClick={() => {
-                          setEditingId(isEditing ? null : env.id);
-                          setEditDomain(env.domain || "");
-                          setCloning(null);
-                        }}
-                      >
-                        <Pencil className="size-3.5" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        title="Clone environment"
-                        onClick={() => {
-                          setCloning(isCloning ? null : env.id);
-                          setCloneName(`${env.name}-copy`);
-                          setEditingId(null);
-                          setCreating(false);
-                        }}
-                      >
-                        <Copy className="size-3.5" />
-                      </Button>
+                      {!isVirtual && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          title="Edit domain"
+                          onClick={() => {
+                            setEditingId(isEditing ? null : env.id);
+                            setEditDomain(env.domain || "");
+                            setCloning(null);
+                          }}
+                        >
+                          <Pencil className="size-3.5" />
+                        </Button>
+                      )}
+                      {!isVirtual && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          title="Clone environment"
+                          onClick={() => {
+                            setCloning(isCloning ? null : env.id);
+                            setCloneName(`${env.name}-copy`);
+                            setEditingId(null);
+                            setCreating(false);
+                          }}
+                        >
+                          <Copy className="size-3.5" />
+                        </Button>
+                      )}
+                      {canPromote && !isVirtual && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          title="Promote to production"
+                          onClick={() => handlePromote(env.id, env.name)}
+                        >
+                          <ArrowUp className="size-3.5" />
+                        </Button>
+                      )}
                       {canDelete && (
                         <Button
                           size="sm"
@@ -456,7 +514,6 @@ export function ProjectEnvironments({
               );
             })}
         </div>
-      )}
 
       <ConfirmDeleteDialog
         open={!!deleteTarget}
