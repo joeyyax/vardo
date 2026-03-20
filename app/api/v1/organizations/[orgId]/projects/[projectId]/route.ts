@@ -23,6 +23,12 @@ const updateProjectSchema = z.object({
   gitUrl: z.string().nullable().optional(),
   imageName: z.string().nullable().optional(),
   restartPolicy: z.string().nullable().optional(),
+  exposedPorts: z.array(z.object({
+    internal: z.number().int().positive(),
+    external: z.number().int().positive().optional(),
+    protocol: z.string().optional(),
+    description: z.string().optional(),
+  })).nullable().optional(),
 });
 
 // GET /api/v1/organizations/[orgId]/projects/[projectId]

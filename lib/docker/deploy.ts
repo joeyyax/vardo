@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { deployments, projects, envVars } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { publishEvent, projectChannel } from "@/lib/events";
 import { exec, spawn as nodeSpawn} from "child_process";
 import { promisify } from "util";
 import { mkdir, writeFile, readFile } from "fs/promises";
@@ -527,6 +528,15 @@ export async function runDeployment(
       .set({ status: "success", log: logLines.join("\n"), durationMs, finishedAt: new Date() })
       .where(eq(deployments.id, deploymentId));
 
+    // Publish event for real-time UI updates
+    publishEvent(projectChannel(opts.projectId), {
+      event: "deploy:complete",
+      status: "active",
+      deploymentId,
+      success: true,
+      durationMs,
+    }).catch(() => {});
+
     // Send success notification (non-blocking)
     sendDeployNotification(project, deploymentId, true, durationMs).catch(() => {});
 
@@ -545,6 +555,15 @@ export async function runDeployment(
       .update(projects)
       .set({ status: "error", updatedAt: new Date() })
       .where(eq(projects.id, opts.projectId));
+
+    // Publish event for real-time UI updates
+    publishEvent(projectChannel(opts.projectId), {
+      event: "deploy:complete",
+      status: "error",
+      deploymentId,
+      success: false,
+      durationMs,
+    }).catch(() => {});
 
     // Send failure notification (non-blocking) — project may not be fetched yet
     sendDeployNotification(

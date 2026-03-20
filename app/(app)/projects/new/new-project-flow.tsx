@@ -368,15 +368,13 @@ export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
         });
       }
 
-      // Auto-deploy on create if enabled
+      // Navigate to project page — if autoDeploy, pass flag so it triggers deploy with full SSE streaming
       if (autoDeploy) {
-        toast.success("Project created — deploying...");
-        // Fire deploy in background, don't wait
-        fetch(`/api/v1/organizations/${orgId}/projects/${project.id}/deploy`, { method: "POST" }).catch(() => {});
-        router.push(`/projects/${project.id}?tab=deployments`);
+        toast.success("Project created — starting deploy...");
+        router.push(`/projects/${project.name}?deploy=1`);
       } else {
         toast.success("Project created");
-        router.push(`/projects/${project.id}`);
+        router.push(`/projects/${project.name}`);
       }
     } catch { toast.error("Failed to create project"); }
     finally { setCreating(false); }
@@ -393,7 +391,7 @@ export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
   return (
     <div className="space-y-6">
       <PageToolbar>
-        <h1 className="text-xl font-semibold tracking-tight">New Project</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">New Project</h1>
       </PageToolbar>
 
       {!isConfiguring ? (

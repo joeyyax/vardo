@@ -1,19 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Loader2, Pause, Play, ArrowDown } from "lucide-react";
+import { useEffect, useRef, useState, useMemo, useCallback } from "react";
+import { Loader2, Pause, Play, ArrowDown, X, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 type LogLine = {
   id: number;
   text: string;
   html: string;
+  level?: LogLevel;
 };
 
-type LogViewerProps = {
-  streamUrl: string;
-  maxLines?: number;
-};
+type LogLevel = "error" | "warn" | "info" | "debug" | "other";
 
 // Log syntax highlighting patterns
 const PATTERNS: [RegExp, string][] = [
@@ -52,12 +51,18 @@ const PATTERNS: [RegExp, string][] = [
   [/\[error\]/g, "text-status-error font-medium"],
 ];
 
+export { detectLevel as detectLogLevel };
+
+function detectLevel(text: string): LogLevel {
+  if (/\b(ERROR|FATAL|PANIC|CRIT(ICAL)?)\b/i.test(text) || /\[error\]/i.test(text) || /\b[5]\d{2}\b/.test(text)) return "error";
+  if (/\b(WARN(ING)?)\b/i.test(text) || /\[compat\]/i.test(text) || /\b[4]\d{2}\b/.test(text)) return "warn";
+  if (/\b(INFO)\b/i.test(text) || /\[(deploy|health|docker)\]/i.test(text)) return "info";
+  if (/\b(DEBUG|TRACE)\b/i.test(text)) return "debug";
+  return "other";
+}
+
 export function highlightLogLine(text: string): string {
-  // Count bracket nesting for indentation
-  const brackets = text.match(/^\[[\w]+\](\[[\w]+\])?/);
-  const depth = brackets ? (brackets[0].match(/\[/g)?.length || 1) - 1 : 0;
-  const indent = depth > 0 ? `<span style="padding-left:${depth * 12}px" class="inline-block"></span>` : "";
-  return indent + highlightLine(text);
+  return highlightLine(text);
 }
 
 function highlightLine(text: string): string {
@@ -68,14 +73,12 @@ function highlightLine(text: string): string {
     .replace(/>/g, "&gt;");
 
   // Apply patterns — wrap matches in spans
-  // We use a placeholder approach to avoid double-matching
   const replacements: { start: number; end: number; replacement: string }[] = [];
 
   for (const [pattern, className] of PATTERNS) {
     const re = new RegExp(pattern.source, pattern.flags);
     let match;
     while ((match = re.exec(html)) !== null) {
-      // Skip if this range overlaps with an existing replacement
       const overlaps = replacements.some(
         (r) => match!.index < r.end && match!.index + match![0].length > r.start
       );
@@ -89,7 +92,6 @@ function highlightLine(text: string): string {
     }
   }
 
-  // Apply replacements in reverse order to preserve indices
   replacements.sort((a, b) => b.start - a.start);
   for (const { start, end, replacement } of replacements) {
     html = html.slice(0, start) + replacement + html.slice(end);
@@ -98,18 +100,262 @@ function highlightLine(text: string): string {
   return html;
 }
 
+// --- Shared terminal output component ---
+
+const LEVEL_LABELS: Record<LogLevel, string> = {
+  error: "Errors",
+  warn: "Warnings",
+  info: "Info",
+  debug: "Debug",
+  other: "Other",
+};
+
+const LEVEL_COLORS: Record<LogLevel, string> = {
+  error: "text-red-400",
+  warn: "text-yellow-400",
+  info: "text-blue-400",
+  debug: "text-zinc-500",
+  other: "text-zinc-400",
+};
+
+type TerminalOutputProps = {
+  lines: { text: string; html: string; level?: LogLevel }[];
+  height?: string;
+  showFilters?: boolean;
+  className?: string;
+};
+
+export function TerminalOutput({ lines, height = "h-[500px]", showFilters = true, className }: TerminalOutputProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [autoScroll, setAutoScroll] = useState(true);
+  const userScrolledRef = useRef(false);
+  const [activeFilters, setActiveFilters] = useState<Set<LogLevel>>(new Set());
+
+  // Count lines by level
+  const levelCounts = useMemo(() => {
+    const counts: Record<LogLevel, number> = { error: 0, warn: 0, info: 0, debug: 0, other: 0 };
+    for (const line of lines) {
+      const level = line.level || detectLevel(line.text);
+      counts[level]++;
+    }
+    return counts;
+  }, [lines]);
+
+  // Filter lines
+  const filteredLines = useMemo(() => {
+    if (activeFilters.size === 0) return lines;
+    return lines.filter((line) => {
+      const level = line.level || detectLevel(line.text);
+      return activeFilters.has(level);
+    });
+  }, [lines, activeFilters]);
+
+  // Auto-scroll to bottom when new lines arrive
+  useEffect(() => {
+    if (autoScroll && containerRef.current) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+    }
+  }, [filteredLines, autoScroll]);
+
+  // Detect manual scroll — disable auto-scroll when user scrolls up
+  const handleScroll = useCallback(() => {
+    if (!containerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
+    const atBottom = scrollHeight - scrollTop - clientHeight < 50;
+
+    if (!atBottom && !userScrolledRef.current) {
+      userScrolledRef.current = true;
+      setAutoScroll(false);
+    } else if (atBottom && userScrolledRef.current) {
+      userScrolledRef.current = false;
+      setAutoScroll(true);
+    }
+  }, []);
+
+  function scrollToBottom() {
+    setAutoScroll(true);
+    userScrolledRef.current = false;
+    if (containerRef.current) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+    }
+  }
+
+  function toggleFilter(level: LogLevel) {
+    setActiveFilters((prev) => {
+      const next = new Set(prev);
+      if (next.has(level)) {
+        next.delete(level);
+      } else {
+        next.add(level);
+      }
+      return next;
+    });
+  }
+
+  const [copied, setCopied] = useState(false);
+
+  function copyToClipboard() {
+    const text = filteredLines.map((l) => l.text).join("\n");
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  return (
+    <div className={cn("rounded-lg border border-zinc-800 bg-zinc-950 overflow-hidden", className)}>
+      {/* Control bar */}
+      {showFilters && (
+        <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-zinc-800 bg-zinc-900/50">
+          <div className="flex items-center gap-1">
+            {(["error", "warn", "info", "debug"] as const).map((level) => {
+              const count = levelCounts[level];
+              if (count === 0 && level !== "error") return null;
+              const isActive = activeFilters.has(level);
+              return (
+                <button
+                  key={level}
+                  onClick={() => toggleFilter(level)}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-xs font-medium transition-colors",
+                    isActive
+                      ? "bg-zinc-700 text-zinc-100"
+                      : count > 0
+                        ? `${LEVEL_COLORS[level]} hover:bg-zinc-800`
+                        : "text-zinc-600 hover:bg-zinc-800"
+                  )}
+                >
+                  {LEVEL_LABELS[level]}
+                  {count > 0 && (
+                    <span className={cn(
+                      "tabular-nums",
+                      level === "error" && !isActive && "text-red-400",
+                      level === "warn" && !isActive && "text-yellow-400",
+                    )}>
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+            {activeFilters.size > 0 && (
+              <button
+                onClick={() => setActiveFilters(new Set())}
+                className="text-zinc-500 hover:text-zinc-300 ml-1 p-0.5"
+                title="Clear filters"
+              >
+                <X className="size-3" />
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-zinc-500 tabular-nums">
+              {activeFilters.size > 0 ? `${filteredLines.length} / ${lines.length}` : lines.length} lines
+            </span>
+            <button
+              onClick={copyToClipboard}
+              className="text-zinc-500 hover:text-zinc-300 p-0.5 transition-colors"
+              title="Copy to clipboard"
+            >
+              {copied ? <Check className="size-3.5 text-status-success" /> : <Copy className="size-3.5" />}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Log output */}
+      <div className="relative">
+        <div
+          ref={containerRef}
+          onScroll={handleScroll}
+          onCopy={(e) => {
+            // Intercept copy to provide clean plain text instead of HTML spans
+            const selection = window.getSelection();
+            if (!selection || selection.isCollapsed) return;
+
+            // Walk selected nodes and extract the raw text from data attributes
+            const range = selection.getRangeAt(0);
+            const fragment = range.cloneContents();
+            const lines: string[] = [];
+            fragment.querySelectorAll("[data-raw]").forEach((el) => {
+              lines.push((el as HTMLElement).dataset.raw || "");
+            });
+
+            if (lines.length > 0) {
+              e.preventDefault();
+              e.clipboardData.setData("text/plain", lines.join("\n"));
+            }
+          }}
+          className={cn("p-4 overflow-auto font-mono text-xs leading-5 select-text", height)}
+        >
+          {filteredLines.length === 0 ? (
+            <div className="text-zinc-500">
+              {lines.length === 0 ? "No output." : "No lines match the current filter."}
+            </div>
+          ) : (
+            filteredLines.map((line, i) => (
+              <div
+                key={i}
+                data-raw={line.text}
+                className="text-zinc-300 hover:bg-white/5 px-1 -mx-1 rounded"
+                dangerouslySetInnerHTML={{ __html: line.html }}
+              />
+            ))
+          )}
+        </div>
+
+        {/* Scroll to bottom indicator */}
+        {!autoScroll && (
+          <button
+            onClick={scrollToBottom}
+            className="absolute bottom-3 right-3 flex items-center gap-1.5 rounded-md bg-zinc-800 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-300 hover:bg-zinc-700 transition-colors shadow-lg"
+          >
+            <ArrowDown className="size-3" />
+            Bottom
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// --- Static log display (deployment logs) ---
+
+type StaticLogProps = {
+  log: string;
+  maxHeight?: string;
+};
+
+export function DeploymentLog({ log, maxHeight = "max-h-96" }: StaticLogProps) {
+  const lines = useMemo(() => {
+    return log.split("\n").filter(Boolean).map((text) => ({
+      text,
+      html: highlightLogLine(text),
+      level: detectLevel(text),
+    }));
+  }, [log]);
+
+  return (
+    <div className="border-t">
+      <TerminalOutput lines={lines} height={maxHeight} showFilters={lines.length > 10} />
+    </div>
+  );
+}
+
+// --- Streaming log viewer ---
+
+type LogViewerProps = {
+  streamUrl: string;
+  maxLines?: number;
+};
+
 export function LogViewer({ streamUrl, maxLines = 1000 }: LogViewerProps) {
-  const [lines, setLines] = useState<LogLine[]>([]);
+  const [lines, setLines] = useState<{ text: string; html: string; level: LogLevel }[]>([]);
   const [connected, setConnected] = useState(false);
   const [paused, setPaused] = useState(false);
-  const [autoScroll, setAutoScroll] = useState(true);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const idRef = useRef(0);
-  const eventSourceRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
     const es = new EventSource(streamUrl);
-    eventSourceRef.current = es;
 
     es.onopen = () => setConnected(true);
 
@@ -117,10 +363,10 @@ export function LogViewer({ streamUrl, maxLines = 1000 }: LogViewerProps) {
       if (paused) return;
       try {
         const text = JSON.parse(event.data) as string;
-        const id = ++idRef.current;
         const html = highlightLine(text);
+        const level = detectLevel(text);
         setLines((prev) => {
-          const next = [...prev, { id, text, html }];
+          const next = [...prev, { text, html, level }];
           if (next.length > maxLines) return next.slice(-maxLines);
           return next;
         });
@@ -135,100 +381,53 @@ export function LogViewer({ streamUrl, maxLines = 1000 }: LogViewerProps) {
 
     return () => {
       es.close();
-      eventSourceRef.current = null;
     };
   }, [streamUrl, paused, maxLines]);
 
-  // Auto-scroll to bottom
-  useEffect(() => {
-    if (autoScroll && containerRef.current) {
-      containerRef.current.scrollTop = containerRef.current.scrollHeight;
-    }
-  }, [lines, autoScroll]);
-
-  // Detect manual scroll
-  function handleScroll() {
-    if (!containerRef.current) return;
-    const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
-    const atBottom = scrollHeight - scrollTop - clientHeight < 50;
-    setAutoScroll(atBottom);
-  }
-
   return (
     <div className="space-y-2">
-      {/* Toolbar */}
+      {/* Stream toolbar */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className={`size-2 rounded-full ${connected ? "bg-green-500" : "bg-red-500"}`} />
+          <span className={`size-2 rounded-full ${connected ? "bg-status-success" : "bg-status-error"}`} />
           <span className="text-xs text-muted-foreground">
             {connected ? "Streaming" : "Disconnected"}
-          </span>
-          <span className="text-xs text-muted-foreground">
-            {lines.length} lines
           </span>
         </div>
         <div className="flex items-center gap-1">
           <Button
-            size="sm"
+            size="xs"
             variant="ghost"
             onClick={() => setPaused(!paused)}
             title={paused ? "Resume" : "Pause"}
           >
             {paused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
           </Button>
-          {!autoScroll && (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                setAutoScroll(true);
-                if (containerRef.current) {
-                  containerRef.current.scrollTop = containerRef.current.scrollHeight;
-                }
-              }}
-              title="Scroll to bottom"
-            >
-              <ArrowDown className="size-3.5" />
-            </Button>
-          )}
           <Button
-            size="sm"
+            size="xs"
             variant="ghost"
             onClick={() => setLines([])}
-            title="Clear"
           >
             Clear
           </Button>
         </div>
       </div>
 
-      {/* Log output */}
-      <div
-        ref={containerRef}
-        onScroll={handleScroll}
-        className="rounded-lg border bg-black/80 p-4 h-[500px] overflow-auto font-mono text-xs leading-5"
-      >
-        {lines.length === 0 ? (
-          <div className="flex items-center gap-2 text-zinc-500">
-            {connected ? (
-              <>
-                <Loader2 className="size-3.5 animate-spin" />
-                Waiting for output...
-              </>
-            ) : (
-              "No logs available. Is the project running?"
-            )}
+      {/* Terminal output */}
+      {lines.length === 0 && !connected ? (
+        <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-4">
+          <p className="text-xs text-zinc-500 font-mono">No logs available. Is the project running?</p>
+        </div>
+      ) : lines.length === 0 && connected ? (
+        <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-4">
+          <div className="flex items-center gap-2 text-zinc-500 text-xs font-mono">
+            <Loader2 className="size-3.5 animate-spin" />
+            Waiting for output...
           </div>
-        ) : (
-          lines.map((line) => (
-            <div
-              key={line.id}
-              className="text-zinc-300 hover:bg-white/5 px-1 -mx-1 rounded"
-              dangerouslySetInnerHTML={{ __html: line.html }}
-            />
-          ))
-        )}
-      </div>
+        </div>
+      ) : (
+        <TerminalOutput lines={lines} height="h-[500px]" />
+      )}
     </div>
   );
 }

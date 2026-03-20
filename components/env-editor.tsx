@@ -337,7 +337,7 @@ export function EnvEditor({ projectId, projectName, orgId, initialVars, allProje
           '<span class="text-cyan-400">${$1}</span>'
         );
 
-        return `<span class="text-amber-400">${escapeHtml(key)}</span><span class="text-zinc-500">=</span>${highlightedValue}`;
+        return `<span class="text-amber-400">${escapeHtml(key)}</span><span class="text-zinc-500">=</span><span class="text-zinc-200">${highlightedValue}</span>`;
       })
       .join("\n");
   }

@@ -77,14 +77,14 @@ export function ProjectGrid({ projects, allTags }: ProjectGridProps) {
   return (
     <div className="space-y-4">
       {allTags.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-2">
           {allTags.map((tag) => {
             const on = activeTagIds.has(tag.id);
             return (
               <button key={tag.id} onClick={() => setActiveTagIds((prev) => {
                 const n = new Set(prev); if (n.has(tag.id)) n.delete(tag.id); else n.add(tag.id); return n;
               })}
-                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${on ? "text-white" : "border bg-background text-foreground hover:bg-accent"}`}
+                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${on ? "text-white" : "border bg-background text-foreground hover:bg-accent"}`}
                 style={on ? { backgroundColor: tag.color } : { borderColor: `${tag.color}40` }}
               >
                 <span className="size-2 rounded-full" style={{ backgroundColor: tag.color }} />
@@ -98,7 +98,7 @@ export function ProjectGrid({ projects, allTags }: ProjectGridProps) {
         </div>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {filtered.map((project) => {
           const isRunning = project.status === "active";
           const lastDeploy = project.deployments[0];
@@ -108,40 +108,40 @@ export function ProjectGrid({ projects, allTags }: ProjectGridProps) {
           return (
             <Link
               key={project.id}
-              href={`/projects/${project.id}`}
-              className="squircle flex gap-3 rounded-lg border bg-card p-3 transition-colors hover:bg-accent/50"
+              href={`/projects/${project.name}`}
+              className="squircle flex gap-4 rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50"
             >
               {icon ? (
-                <img src={icon} alt="" className="size-10 shrink-0 opacity-60" />
+                <img src={icon} alt="" className="size-12 shrink-0 opacity-70" />
               ) : (
-                <div className="size-10 shrink-0 rounded-md bg-muted/50" />
+                <div className="size-12 shrink-0 rounded-md bg-muted/50" />
               )}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-2">
-                  <h3 className="font-medium truncate">{project.displayName}</h3>
+                  <h3 className="text-base font-semibold truncate">{project.displayName}</h3>
                   {isRunning ? (
-                    <span className="flex items-center gap-1.5 text-xs text-status-success shrink-0">
-                      <span className="size-1.5 rounded-full bg-status-success animate-pulse" />
+                    <span className="flex items-center gap-1.5 text-sm text-status-success shrink-0">
+                      <span className="size-2 rounded-full bg-status-success animate-pulse" />
                       {lastDeploy?.finishedAt ? <Uptime since={lastDeploy.finishedAt} /> : "Running"}
                     </span>
                   ) : project.status === "error" ? (
-                    <span className="text-xs text-status-error shrink-0">Error</span>
+                    <span className="text-sm text-status-error shrink-0">Error</span>
                   ) : project.status === "deploying" ? (
-                    <span className="text-xs text-status-info animate-pulse shrink-0">Deploying</span>
+                    <span className="text-sm text-status-info animate-pulse shrink-0">Deploying</span>
                   ) : (
-                    <span className="text-xs text-status-neutral shrink-0">Stopped</span>
+                    <span className="text-sm text-status-neutral shrink-0">Stopped</span>
                   )}
                 </div>
                 {primaryDomain && (
-                  <p className="text-xs text-muted-foreground font-mono truncate mt-0.5">{primaryDomain.domain}</p>
+                  <p className="text-sm text-muted-foreground font-mono truncate mt-1">{primaryDomain.domain}</p>
                 )}
-                <p className="text-xs text-muted-foreground/50 mt-1 truncate">
+                <p className="text-sm text-muted-foreground/50 mt-1 truncate">
                   {project.imageName || project.gitUrl?.replace("https://github.com/", "").replace(".git", "") || project.deployType}
                 </p>
                 {project.projectTags.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-1.5">
+                  <div className="flex flex-wrap gap-1.5 mt-2">
                     {project.projectTags.map(({ tag }) => (
-                      <span key={tag.id} className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                      <span key={tag.id} className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
                         style={{ backgroundColor: `${tag.color}15`, color: tag.color }}>
                         <span className="size-1.5 rounded-full" style={{ backgroundColor: tag.color }} />
                         {tag.name}

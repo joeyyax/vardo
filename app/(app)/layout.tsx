@@ -29,7 +29,7 @@ export default async function AppLayout({
 
         {/* Main Content */}
         <div className="flex-1 overflow-y-auto bg-background rounded-t-2xl min-h-0">
-          <main className="mx-auto max-w-screen-xl px-4 py-6 lg:px-8 min-h-full">
+          <main className="mx-auto max-w-screen-xl px-5 py-8 lg:px-10 min-h-full">
             {children}
           </main>
         </div>

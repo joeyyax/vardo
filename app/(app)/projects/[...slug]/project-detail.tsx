@@ -23,6 +23,7 @@ import {
   Star,
   Copy,
   Container,
+  Info,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageToolbar } from "@/components/page-toolbar";
@@ -55,7 +56,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { LogViewer, highlightLogLine } from "@/components/log-viewer";
+import { LogViewer, DeploymentLog, TerminalOutput, highlightLogLine, detectLogLevel } from "@/components/log-viewer";
 import { detectProjectIcon } from "@/lib/ui/project-icon";
 import { EnvEditor } from "@/components/env-editor";
 import { VolumesPanel } from "@/components/volumes-panel";
@@ -150,6 +151,8 @@ type ProjectDetailProps = {
   allTags?: Tag[];
   allProjectNames?: string[];
   orgVarKeys?: string[];
+  initialTab?: string;
+  initialSubView?: string;
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -206,6 +209,263 @@ function DeploymentStatusBadge({ status }: { status: Deployment["status"] }) {
     default:
       return <Badge variant="secondary">Queued</Badge>;
   }
+}
+
+function PortsManager({
+  ports: initialPorts,
+  projectId,
+  orgId,
+}: {
+  ports: { internal: number; external?: number; protocol?: string; description?: string }[];
+  projectId: string;
+  orgId: string;
+}) {
+  const router = useRouter();
+  const [ports, setPorts] = useState(initialPorts);
+  const [adding, setAdding] = useState(false);
+  const [newInternal, setNewInternal] = useState("");
+  const [newExternal, setNewExternal] = useState("");
+  const [newDescription, setNewDescription] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function savePorts(updated: typeof ports) {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/v1/organizations/${orgId}/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ exposedPorts: updated }),
+      });
+      if (!res.ok) {
+        toast.error("Failed to update ports");
+        return;
+      }
+      setPorts(updated);
+      toast.success("Ports updated — redeploy to apply");
+      router.refresh();
+    } catch {
+      toast.error("Failed to update ports");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleAdd() {
+    const internal = parseInt(newInternal);
+    if (!internal || internal < 1 || internal > 65535) {
+      toast.error("Enter a valid port number (1-65535)");
+      return;
+    }
+    const external = newExternal ? parseInt(newExternal) : undefined;
+    if (external && (external < 1 || external > 65535)) {
+      toast.error("External port must be 1-65535");
+      return;
+    }
+    const updated = [...ports, { internal, external, description: newDescription || undefined }];
+    savePorts(updated);
+    setAdding(false);
+    setNewInternal("");
+    setNewExternal("");
+    setNewDescription("");
+  }
+
+  function handleRemove(index: number) {
+    const updated = ports.filter((_, i) => i !== index);
+    savePorts(updated);
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-medium">Exposed Ports</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">Map container ports to host ports for external access.</p>
+        </div>
+        <Button size="sm" onClick={() => setAdding(!adding)} disabled={saving}>
+          <Plus className="mr-1.5 size-4" />
+          Add Port
+        </Button>
+      </div>
+
+      {adding && (
+        <div className="flex items-end gap-3 rounded-lg border bg-card p-4">
+          <div className="grid gap-1.5">
+            <label className="text-xs text-muted-foreground">Container Port</label>
+            <input
+              type="number"
+              placeholder="8080"
+              value={newInternal}
+              onChange={(e) => setNewInternal(e.target.value)}
+              className="h-9 w-24 rounded-md border bg-background px-3 text-sm font-mono"
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <label className="text-xs text-muted-foreground">Host Port <span className="text-muted-foreground/60">(optional)</span></label>
+            <input
+              type="number"
+              placeholder="auto"
+              value={newExternal}
+              onChange={(e) => setNewExternal(e.target.value)}
+              className="h-9 w-24 rounded-md border bg-background px-3 text-sm font-mono"
+            />
+          </div>
+          <div className="grid gap-1.5 flex-1">
+            <label className="text-xs text-muted-foreground">Label <span className="text-muted-foreground/60">(optional)</span></label>
+            <input
+              placeholder="e.g. HTTP, Database"
+              value={newDescription}
+              onChange={(e) => setNewDescription(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
+              className="h-9 rounded-md border bg-background px-3 text-sm"
+            />
+          </div>
+          <Button size="sm" onClick={handleAdd} disabled={saving || !newInternal}>
+            Add
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setAdding(false)}>
+            Cancel
+          </Button>
+        </div>
+      )}
+
+      {ports.length === 0 && !adding ? (
+        <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-8">
+          <p className="text-sm text-muted-foreground">
+            No ports exposed. Container ports are only accessible within the Docker network.
+          </p>
+        </div>
+      ) : ports.length > 0 && (
+        <div className="divide-y rounded-lg border">
+          {ports.map((port, i) => (
+            <div key={i} className="flex items-center justify-between gap-4 px-4 py-3">
+              <div className="flex items-center gap-4">
+                <span className="text-sm font-mono">{port.internal}</span>
+                <span className="text-xs text-muted-foreground">→</span>
+                <span className="text-sm font-mono">
+                  {port.external ? `localhost:${port.external}` : <span className="text-muted-foreground">not mapped</span>}
+                </span>
+              </div>
+              <div className="flex items-center gap-3">
+                {port.description && (
+                  <span className="text-xs text-muted-foreground">{port.description}</span>
+                )}
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => handleRemove(i)}
+                  disabled={saving}
+                >
+                  <X className="size-3.5" />
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InProgressDeployCard({
+  stages,
+  log,
+  startTime,
+  expanded,
+  onToggleExpand,
+  onAbort,
+  canAbort,
+  trigger,
+}: {
+  stages: Record<string, "running" | "success" | "failed" | "skipped">;
+  log: string[];
+  startTime: number | null;
+  expanded: boolean;
+  onToggleExpand: () => void;
+  onAbort?: () => void;
+  canAbort?: boolean;
+  trigger?: string;
+}) {
+  const stageLabels: Record<string, string> = {
+    clone: "Clone", build: "Build", deploy: "Deploy",
+    healthcheck: "Health", routing: "Route", cleanup: "Cleanup",
+  };
+  const stageKeys = ["clone", "build", "deploy", "healthcheck", "routing", "cleanup"] as const;
+  const hasStages = Object.keys(stages).length > 0;
+
+  return (
+    <div className="squircle rounded-lg border bg-status-info-muted overflow-hidden">
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={onToggleExpand}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onToggleExpand(); }}
+        className="flex items-center justify-between gap-4 p-4 w-full text-left hover:bg-accent/50 transition-colors cursor-pointer"
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          <Badge variant="outline" className="animate-pulse shrink-0">
+            <Loader2 className="mr-1 size-3 animate-spin" />
+            Deploying
+          </Badge>
+          {hasStages ? (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {stageKeys.map((s, i) => {
+                const status = stages[s];
+                if (!status) return null;
+                return (
+                  <div key={s} className="flex items-center gap-1">
+                    {i > 0 && status && <span className="text-muted-foreground/30 text-xs">›</span>}
+                    {status === "running" && <Loader2 className="size-3 animate-spin text-status-info" />}
+                    {status === "success" && <Check className="size-3 text-status-success" />}
+                    {status === "failed" && <X className="size-3 text-status-error" />}
+                    {status === "skipped" && <span className="text-muted-foreground text-xs">-</span>}
+                    <span className={`text-xs ${
+                      status === "running" ? "text-status-info" :
+                      status === "success" ? "text-status-success" :
+                      status === "failed" ? "text-status-error" :
+                      "text-muted-foreground"
+                    }`}>
+                      {stageLabels[s]}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : trigger && (
+            <span className="text-xs text-foreground/60 capitalize">{trigger} deploy in progress...</span>
+          )}
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
+          {startTime && (
+            <Timer since={startTime} className="text-xs text-foreground/50" />
+          )}
+          {canAbort && onAbort && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-destructive hover:text-destructive"
+              onClick={(e) => { e.stopPropagation(); onAbort(); }}
+            >
+              <Square className="mr-1 size-3" />
+              Abort
+            </Button>
+          )}
+          {log.length > 0 && (
+            <ChevronDown className={`size-4 text-muted-foreground transition-transform ${expanded ? "rotate-180" : ""}`} />
+          )}
+        </div>
+      </div>
+      {expanded && log.length > 0 && (
+        <div className="border-t">
+          <TerminalOutput
+            lines={log.map((text) => ({ text, html: highlightLogLine(text), level: detectLogLevel(text) }))}
+            height="max-h-80"
+            showFilters={false}
+          />
+        </div>
+      )}
+    </div>
+  );
 }
 
 function deployTypeLabel(deployType: string) {
@@ -276,7 +536,7 @@ function formatDuration(ms: number) {
   return `${minutes}m ${remaining}s`;
 }
 
-export function ProjectDetail({ project, orgId, userRole, allTags = [], allProjectNames = [], orgVarKeys = [] }: ProjectDetailProps) {
+export function ProjectDetail({ project, orgId, userRole, allTags = [], allProjectNames = [], orgVarKeys = [], initialTab = "deployments", initialSubView }: ProjectDetailProps) {
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -306,53 +566,125 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
   const [newDomain, setNewDomain] = useState("");
   const [newDomainPort, setNewDomainPort] = useState("");
   const [deletingDomainId, setDeletingDomainId] = useState<string | null>(null);
+  const [editingDomainId, setEditingDomainId] = useState<string | null>(null);
+  const [editDomainValue, setEditDomainValue] = useState("");
+  const [editDomainPort, setEditDomainPort] = useState("");
+  const [dnsDomainId, setDnsDomainId] = useState<string | null>(null);
+  const [domainStatuses, setDomainStatuses] = useState<Record<string, "checking" | "resolving" | "not-configured">>({});
+  const [domainCheckTick, setDomainCheckTick] = useState(0);
+  const [serverIP, setServerIP] = useState<string | null>(null);
+
+  function openDomainSheet(domainId: string) {
+    setDnsDomainId(domainId);
+    const domain = project.domains.find((d) => d.id === domainId);
+    if (domain) {
+      window.history.replaceState({}, "", `/projects/${project.name}/networking/${domain.domain}`);
+    }
+  }
+
+  // Open sub-view from URL (e.g. /projects/emmayax/networking/emmayax.com)
+  useEffect(() => {
+    if (!initialSubView) return;
+    if (initialTab === "networking") {
+      const domain = project.domains.find((d) => d.domain === initialSubView);
+      if (domain) {
+        setDnsDomainId(domain.id);
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [deploying, setDeploying] = useState(false);
   const [showVarNames, setShowVarNames] = useState(false);
   const [viewingLogId, setViewingLogId] = useState<string | null>(null);
   const searchParams = useSearchParams();
-  const [activeTab, setActiveTabState] = useState(
-    searchParams.get("tab") || "deployments"
-  );
+  const [activeTab, setActiveTabState] = useState(initialTab);
 
-  // Poll for project status updates — faster when deploying or just navigated from create
-  const [recentlyCreated, setRecentlyCreated] = useState(
-    searchParams.get("tab") === "deployments" && project.deployments.length === 0
-  );
-  const isActive = project.status === "deploying" ||
-    project.deployments.some((d) => d.status === "running" || d.status === "queued") ||
-    recentlyCreated;
-  const pollInterval = isActive ? 2000 : 15000;
+  // Check domain resolution status via server-side API
+  const checkAllDomains = useCallback(async () => {
+    if (project.domains.length === 0) return;
+    const autoDomain = project.domains.find((d) => d.domain.endsWith(".localhost"))?.domain;
 
-  useEffect(() => {
-    // Immediate refresh on mount if we think a deploy is about to happen
-    if (recentlyCreated) {
-      const timeout = setTimeout(() => router.refresh(), 500);
-      // Stop fast-polling after 60s
-      const stop = setTimeout(() => setRecentlyCreated(false), 60000);
-      return () => { clearTimeout(timeout); clearTimeout(stop); };
+    for (const domain of project.domains) {
+      setDomainStatuses((prev) => ({ ...prev, [domain.id]: "checking" }));
+      try {
+        const params = new URLSearchParams({ domain: domain.domain });
+        if (autoDomain && autoDomain !== domain.domain) {
+          params.set("expected", autoDomain);
+        }
+        const res = await fetch(`/api/v1/dns-check?${params}`);
+        const data = await res.json();
+        setDomainStatuses((prev) => ({
+          ...prev,
+          [domain.id]: data.configured ? "resolving" : "not-configured",
+        }));
+        if (data.serverIPs?.length) {
+          setServerIP(data.serverIPs[0]);
+        }
+      } catch {
+        setDomainStatuses((prev) => ({ ...prev, [domain.id]: "not-configured" }));
+      }
     }
+  }, [project.domains]);
+
+  // Initial check + re-check on tick
+  useEffect(() => {
+    checkAllDomains();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [project.domains.length, domainCheckTick]);
 
+  // Background re-check every 30s while on the networking tab
   useEffect(() => {
-    if (recentlyCreated && project.deployments.length > 0) {
-      setRecentlyCreated(false);
-    }
-  }, [recentlyCreated, project.deployments.length]);
-
-  useEffect(() => {
-    const interval = setInterval(() => router.refresh(), pollInterval);
+    if (activeTab !== "networking") return;
+    const interval = setInterval(() => checkAllDomains(), 30000);
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pollInterval]);
+  }, [activeTab, checkAllDomains]);
+
+  // Detect in-progress deployment from server data (arrived mid-deploy)
+  const serverRunningDeploy = !deploying
+    ? project.deployments.find((d) => d.status === "running" || d.status === "queued")
+    : null;
+
+  // Real-time updates via SSE (Redis pub/sub), with polling fallback
+  useEffect(() => {
+    const eventsUrl = `/api/v1/organizations/${orgId}/projects/${project.id}/events`;
+    let es: EventSource | null = null;
+    let fallbackInterval: ReturnType<typeof setInterval> | null = null;
+
+    try {
+      es = new EventSource(eventsUrl);
+
+      es.addEventListener("deploy:complete", () => {
+        // Deploy finished — refresh server data
+        router.refresh();
+      });
+
+      es.onerror = () => {
+        // SSE failed — fall back to polling
+        es?.close();
+        es = null;
+        if (!fallbackInterval) {
+          fallbackInterval = setInterval(() => router.refresh(), 10000);
+        }
+      };
+    } catch {
+      // EventSource not supported or failed — fall back to polling
+      fallbackInterval = setInterval(() => router.refresh(), 10000);
+    }
+
+    return () => {
+      es?.close();
+      if (fallbackInterval) clearInterval(fallbackInterval);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.id, orgId]);
 
   const setActiveTab = useCallback((tab: string) => {
     setActiveTabState(tab);
-    const url = new URL(window.location.href);
-    url.searchParams.set("tab", tab);
-    window.history.replaceState({}, "", url.toString());
-  }, []);
+    const basePath = `/projects/${project.name}`;
+    const path = tab === "deployments" ? basePath : `${basePath}/${tab}`;
+    window.history.replaceState({}, "", path);
+  }, [project.name]);
 
   // Tag management state
   const [tagPopoverOpen, setTagPopoverOpen] = useState(false);
@@ -566,6 +898,18 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
     }
   }
 
+  // Auto-deploy when arriving from project creation with ?deploy=1
+  useEffect(() => {
+    if (searchParams.get("deploy") === "1" && !deploying) {
+      // Clean up the URL
+      const url = new URL(window.location.href);
+      url.searchParams.delete("deploy");
+      window.history.replaceState({}, "", url.toString());
+      handleDeploy();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function handleSetPrimaryDomain(domainId: string) {
     try {
       // Clear all primary flags, then set the selected one
@@ -641,6 +985,37 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
       toast.error("Failed to delete domain");
     } finally {
       setDeletingDomainId(null);
+    }
+  }
+
+  async function handleDomainUpdate(id: string) {
+    if (!editDomainValue.trim()) return;
+    setDomainSaving(true);
+    try {
+      const res = await fetch(
+        `/api/v1/organizations/${orgId}/projects/${project.id}/domains`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id,
+            domain: editDomainValue.trim(),
+            port: editDomainPort ? parseInt(editDomainPort, 10) : null,
+          }),
+        }
+      );
+      if (!res.ok) {
+        const data = await res.json();
+        toast.error(data.error || "Failed to update domain");
+        return;
+      }
+      toast.success("Domain updated — redeploy to apply");
+      setEditingDomainId(null);
+      router.refresh();
+    } catch {
+      toast.error("Failed to update domain");
+    } finally {
+      setDomainSaving(false);
     }
   }
 
@@ -721,7 +1096,7 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
           </div>
         }
       >
-        <h1 className="text-xl font-semibold tracking-tight">
+        <h1 className="text-2xl font-semibold tracking-tight">
           {project.displayName}
         </h1>
         <DropdownMenu>
@@ -798,7 +1173,7 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
                     {rest > 0 && (
                       <button
                         type="button"
-                        onClick={() => setActiveTab("domains")}
+                        onClick={() => setActiveTab("networking")}
                         className="text-xs text-muted-foreground/60 hover:text-muted-foreground transition-colors"
                       >
                         +{rest}
@@ -901,7 +1276,7 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
               </Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="domains">
+          <TabsTrigger value="networking">
             Networking
           </TabsTrigger>
           <TabsTrigger value="logs">
@@ -927,7 +1302,7 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
         </TabsList>
 
         <TabsContent value="deployments" className="pt-4 space-y-4">
-          {project.deployments.length === 0 && !deploying ? (
+          {project.deployments.length === 0 && !deploying && !serverRunningDeploy ? (
             <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
               <p className="text-sm text-muted-foreground">
                 No deployments yet.
@@ -935,78 +1310,28 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
             </div>
           ) : (
             <div className="space-y-2">
-              {/* In-progress deployment */}
+              {/* In-progress deployment (client-side SSE stream) */}
               {deploying && (
-                <div className="squircle rounded-lg border bg-status-info-muted overflow-hidden">
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => setExpandedDeployLog(!expandedDeployLog)}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setExpandedDeployLog(!expandedDeployLog); }}
-                    className="flex items-center justify-between gap-4 p-4 w-full text-left hover:bg-accent/50 transition-colors cursor-pointer"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <Badge variant="outline" className="animate-pulse shrink-0">
-                        <Loader2 className="mr-1 size-3 animate-spin" />
-                        Deploying
-                      </Badge>
-                      {/* Stage indicators inline */}
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {(["clone", "build", "deploy", "healthcheck", "routing", "cleanup"] as const).map((s, i) => {
-                          const status = deployStages[s];
-                          if (!status) return null;
-                          const labels: Record<string, string> = {
-                            clone: "Clone", build: "Build", deploy: "Deploy",
-                            healthcheck: "Health", routing: "Route", cleanup: "Cleanup",
-                          };
-                          return (
-                            <div key={s} className="flex items-center gap-1">
-                              {i > 0 && status && <span className="text-muted-foreground/30 text-xs">›</span>}
-                              {status === "running" && <Loader2 className="size-3 animate-spin text-status-info" />}
-                              {status === "success" && <Check className="size-3 text-status-success" />}
-                              {status === "failed" && <X className="size-3 text-status-error" />}
-                              {status === "skipped" && <span className="text-muted-foreground text-xs">-</span>}
-                              <span className={`text-xs ${
-                                status === "running" ? "text-status-info" :
-                                status === "success" ? "text-status-success" :
-                                status === "failed" ? "text-status-error" :
-                                "text-muted-foreground"
-                              }`}>
-                                {labels[s]}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 shrink-0">
-                      {deployStartTime && (
-                        <Timer since={deployStartTime} className="text-xs text-muted-foreground" />
-                      )}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="text-destructive hover:text-destructive"
-                        onClick={(e) => { e.stopPropagation(); deployAbort?.abort(); }}
-                      >
-                        <Square className="mr-1 size-3" />
-                        Abort
-                      </Button>
-                      <ChevronDown className={`size-4 text-muted-foreground transition-transform ${expandedDeployLog ? "rotate-180" : ""}`} />
-                    </div>
-                  </div>
-                  {expandedDeployLog && deployLog.length > 0 && (
-                    <div className="border-t bg-black/50 p-4 max-h-80 overflow-auto font-mono text-xs leading-5">
-                      {deployLog.map((line, i) => (
-                        <div
-                          key={i}
-                          className="text-zinc-300"
-                          dangerouslySetInnerHTML={{ __html: highlightLogLine(line) }}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <InProgressDeployCard
+                  stages={deployStages}
+                  log={deployLog}
+                  startTime={deployStartTime}
+                  expanded={expandedDeployLog}
+                  onToggleExpand={() => setExpandedDeployLog(!expandedDeployLog)}
+                  onAbort={() => deployAbort?.abort()}
+                  canAbort
+                />
+              )}
+              {/* In-progress deployment detected from server data (e.g. arrived mid-deploy) */}
+              {!deploying && serverRunningDeploy && (
+                <InProgressDeployCard
+                  stages={{}}
+                  log={[]}
+                  startTime={new Date(serverRunningDeploy.startedAt).getTime()}
+                  expanded={false}
+                  onToggleExpand={() => {}}
+                  trigger={serverRunningDeploy.trigger}
+                />
               )}
 
               {project.deployments.map((deployment, idx) => {
@@ -1069,13 +1394,27 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
                               )
                             )}
                           </p>
-                          {deployment.gitSha && (
-                            <code className="text-xs text-muted-foreground font-mono bg-muted px-1.5 py-0.5 rounded shrink-0">
-                              {deployment.gitSha.slice(0, 7)}
-                            </code>
-                          )}
+                          {deployment.gitSha && (() => {
+                            const commitUrl = project.gitUrl?.replace(/\.git$/, "");
+                            const sha7 = deployment.gitSha.slice(0, 7);
+                            return commitUrl ? (
+                              <a
+                                href={`${commitUrl}/commit/${deployment.gitSha}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded shrink-0 hover:bg-accent transition-colors"
+                              >
+                                {sha7}
+                              </a>
+                            ) : (
+                              <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded shrink-0">
+                                {sha7}
+                              </code>
+                            );
+                          })()}
                         </div>
-                        <p className="text-xs text-muted-foreground mt-0.5">
+                        <p className="text-xs text-foreground/60 mt-0.5">
                           {(() => {
                             const triggerLabel = {
                               manual: "Manual deploy",
@@ -1089,7 +1428,7 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-4 text-xs text-muted-foreground shrink-0">
+                    <div className="flex items-center gap-4 text-xs text-foreground/50 shrink-0">
                       {isActive && deployment.finishedAt && (
                         <span className="text-status-success">
                           <Uptime since={deployment.finishedAt} />
@@ -1105,15 +1444,7 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
                     </div>
                   </button>
                   {viewingLogId === deployment.id && deployment.log && (
-                    <div className="border-t bg-black/50 p-4 max-h-80 overflow-auto font-mono text-xs leading-5">
-                      {deployment.log.split("\n").map((line, i) => (
-                        <div
-                          key={i}
-                          className="text-zinc-300"
-                          dangerouslySetInnerHTML={{ __html: highlightLogLine(line) }}
-                        />
-                      ))}
-                    </div>
+                    <DeploymentLog log={deployment.log} />
                   )}
                   {viewingLogId === deployment.id && !deployment.log && (
                     <div className="border-t p-4">
@@ -1238,78 +1569,222 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
           />
         </TabsContent>
 
-        <TabsContent value="domains" className="space-y-4 pt-4">
-          <div className="flex justify-end">
-            <Button
-              size="sm"
-              onClick={() => {
-                setNewDomain("");
-                setNewDomainPort("");
-                setDomainOpen(true);
-              }}
-            >
-              <Plus className="mr-1.5 size-4" />
-              Add Domain
-            </Button>
+        <TabsContent value="networking" className="space-y-8 pt-4">
+          {/* Domains */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-medium">Domains</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">Route traffic to your project via custom domains.</p>
+              </div>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setNewDomain("");
+                  setNewDomainPort("");
+                  setDomainOpen(!domainOpen);
+                }}
+              >
+                <Plus className="mr-1.5 size-4" />
+                Add Domain
+              </Button>
+            </div>
+
+            {domainOpen && (
+              <div className="flex items-end gap-3 rounded-lg border bg-card p-4">
+                <div className="grid gap-1.5 flex-1">
+                  <label className="text-xs text-muted-foreground">Domain</label>
+                  <input
+                    placeholder="app.example.com"
+                    value={newDomain}
+                    onChange={(e) => setNewDomain(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") handleDomainAdd(); }}
+                    className="h-9 rounded-md border bg-background px-3 text-sm font-mono"
+                    autoFocus
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <label className="text-xs text-muted-foreground">Port</label>
+                  <input
+                    type="number"
+                    placeholder={String(project.containerPort || 3000)}
+                    value={newDomainPort}
+                    onChange={(e) => setNewDomainPort(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") handleDomainAdd(); }}
+                    className="h-9 w-24 rounded-md border bg-background px-3 text-sm font-mono"
+                  />
+                </div>
+                <Button size="sm" onClick={handleDomainAdd} disabled={domainSaving || !newDomain.trim()}>
+                  {domainSaving ? <Loader2 className="size-3.5 animate-spin" /> : "Add"}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setDomainOpen(false)}>
+                  Cancel
+                </Button>
+              </div>
+            )}
+
+            {project.domains.length === 0 && !domainOpen ? (
+              <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-8">
+                <p className="text-sm text-muted-foreground">
+                  No domains configured.
+                </p>
+              </div>
+            ) : project.domains.length > 0 && (
+              <div className="space-y-2">
+                {project.domains
+                  .sort((a, b) => (b.isPrimary ? 1 : 0) - (a.isPrimary ? 1 : 0))
+                  .map((domain) => {
+                    const isAutoGenerated = domain.domain.endsWith(".localhost");
+                    const autoDomain = project.domains.find((d) => d.domain.endsWith(".localhost"))?.domain;
+                    const isEditing = editingDomainId === domain.id;
+
+                    if (isEditing) {
+                      return (
+                        <div key={domain.id} className="flex items-end gap-3 rounded-lg border bg-card p-4">
+                          <div className="grid gap-1.5 flex-1">
+                            <label className="text-xs text-muted-foreground">Domain</label>
+                            <input
+                              value={editDomainValue}
+                              onChange={(e) => setEditDomainValue(e.target.value)}
+                              onKeyDown={(e) => { if (e.key === "Enter") handleDomainUpdate(domain.id); if (e.key === "Escape") setEditingDomainId(null); }}
+                              className="h-9 rounded-md border bg-background px-3 text-sm font-mono"
+                              autoFocus
+                            />
+                          </div>
+                          <div className="grid gap-1.5">
+                            <label className="text-xs text-muted-foreground">Port</label>
+                            <input
+                              type="number"
+                              placeholder={String(project.containerPort || 3000)}
+                              value={editDomainPort}
+                              onChange={(e) => setEditDomainPort(e.target.value)}
+                              onKeyDown={(e) => { if (e.key === "Enter") handleDomainUpdate(domain.id); if (e.key === "Escape") setEditingDomainId(null); }}
+                              className="h-9 w-24 rounded-md border bg-background px-3 text-sm font-mono"
+                            />
+                          </div>
+                          <Button size="sm" onClick={() => handleDomainUpdate(domain.id)} disabled={domainSaving || !editDomainValue.trim()}>
+                            {domainSaving ? <Loader2 className="size-3.5 animate-spin" /> : "Save"}
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => setEditingDomainId(null)}>
+                            Cancel
+                          </Button>
+                        </div>
+                      );
+                    }
+
+                    return (
+                  <div
+                    key={domain.id}
+                    className={`squircle rounded-lg border bg-card overflow-hidden ${domain.isPrimary ? "border-primary/30" : ""}`}
+                  >
+                    <div className="flex items-center justify-between gap-4 p-4">
+                      <div className="flex items-center gap-3 min-w-0">
+                        {(() => {
+                          const status = domainStatuses[domain.id];
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => openDomainSheet(domain.id)}
+                              className="flex items-center gap-1.5 shrink-0 hover:opacity-70 transition-opacity"
+                            >
+                              <span
+                                className={`size-2 rounded-full ${
+                                  status === "resolving" ? "bg-status-success" :
+                                  status === "not-configured" ? "bg-status-warning" :
+                                  status === "checking" ? "bg-status-neutral animate-pulse" :
+                                  "bg-status-neutral"
+                                }`}
+                              />
+                              <span className={`text-xs ${
+                                status === "resolving" ? "text-status-success" :
+                                status === "not-configured" ? "text-status-warning" :
+                                "text-muted-foreground"
+                              }`}>
+                                {status === "resolving" ? "Connected" :
+                                 status === "not-configured" ? "Not connected" :
+                                 "Checking"}
+                              </span>
+                            </button>
+                          );
+                        })()}
+                        <a
+                          href={`${domain.domain.includes("localhost") ? "http" : "https"}://${domain.domain}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm font-medium font-mono truncate hover:underline"
+                        >
+                          {domain.domain}
+                        </a>
+                        {domain.isPrimary && (
+                          <Badge className="text-xs border-transparent bg-status-info-muted text-status-info shrink-0">
+                            Primary
+                          </Badge>
+                        )}
+                        {domain.port && (
+                          <span className="text-xs text-muted-foreground">:{domain.port}</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          title="Edit domain"
+                          onClick={() => {
+                            setEditingDomainId(domain.id);
+                            setEditDomainValue(domain.domain);
+                            setEditDomainPort(domain.port?.toString() || "");
+                          }}
+                        >
+                          <Pencil className="size-3.5" />
+                        </Button>
+                        {!isAutoGenerated && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            title="DNS settings"
+                            onClick={() => openDomainSheet(domain.id)}
+                          >
+                            <Info className="size-3.5" />
+                          </Button>
+                        )}
+                        {!domain.isPrimary && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            title="Set as primary"
+                            onClick={() => handleSetPrimaryDomain(domain.id)}
+                          >
+                            <Star className="size-3.5" />
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-destructive hover:text-destructive"
+                          disabled={deletingDomainId === domain.id}
+                          onClick={() => handleDomainDelete(domain.id)}
+                        >
+                          {deletingDomainId === domain.id ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : (
+                            <X className="size-3.5" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                    );
+                  })}
+              </div>
+            )}
           </div>
 
-          {project.domains.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
-              <p className="text-sm text-muted-foreground">
-                No domains configured.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {project.domains
-                .sort((a, b) => (b.isPrimary ? 1 : 0) - (a.isPrimary ? 1 : 0))
-                .map((domain) => (
-                <div
-                  key={domain.id}
-                  className={`squircle flex items-center justify-between gap-4 rounded-lg border bg-card p-4 ${domain.isPrimary ? "border-primary/30" : ""}`}
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <p className="text-sm font-medium font-mono truncate">
-                      {domain.domain}
-                    </p>
-                    {domain.isPrimary && (
-                      <Badge className="text-xs border-transparent bg-status-info-muted text-status-info shrink-0">
-                        Primary
-                      </Badge>
-                    )}
-                    {domain.port && (
-                      <span className="text-xs text-muted-foreground">:{domain.port}</span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    {!domain.isPrimary && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        title="Set as primary"
-                        onClick={() => handleSetPrimaryDomain(domain.id)}
-                      >
-                        <Star className="size-3.5" />
-                      </Button>
-                    )}
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="text-destructive hover:text-destructive"
-                      disabled={deletingDomainId === domain.id}
-                      onClick={() => handleDomainDelete(domain.id)}
-                    >
-                      {deletingDomainId === domain.id ? (
-                        <Loader2 className="size-3.5 animate-spin" />
-                      ) : (
-                        <X className="size-3.5" />
-                      )}
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          {/* Exposed Ports */}
+          <PortsManager
+            ports={project.exposedPorts || []}
+            projectId={project.id}
+            orgId={orgId}
+          />
         </TabsContent>
 
         <TabsContent value="logs" className="pt-4">
@@ -1533,68 +2008,138 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
         </BottomSheetContent>
       </BottomSheet>
 
-      {/* Add Domain Bottom Sheet */}
-      <BottomSheet
-        open={domainOpen}
-        onOpenChange={(v) => {
-          setDomainOpen(v);
-          if (!v) { setNewDomain(""); setNewDomainPort(""); }
-        }}
-      >
-        <BottomSheetContent>
-          <BottomSheetHeader>
-            <BottomSheetTitle>Add domain</BottomSheetTitle>
-            <BottomSheetDescription>
-              Point a custom domain to this project. Make sure your DNS is configured first.
-            </BottomSheetDescription>
-          </BottomSheetHeader>
+      {/* Domain Status Sheet */}
+      {(() => {
+        const dnsDomain = project.domains.find((d) => d.id === dnsDomainId);
+        const autoDomain = project.domains.find((d) => d.domain.endsWith(".localhost"))?.domain;
+        if (!dnsDomain) return null;
+        const status = domainStatuses[dnsDomain.id];
+        const isLocal = dnsDomain.domain.endsWith(".localhost");
+        return (
+          <BottomSheet open={!!dnsDomainId} onOpenChange={(v) => {
+            if (!v) {
+              setDnsDomainId(null);
+              window.history.replaceState({}, "", `/projects/${project.name}/networking`);
+            }
+          }}>
+            <BottomSheetContent>
+              <BottomSheetHeader>
+                <BottomSheetTitle>{isLocal ? "Domain Status" : "DNS Configuration"}</BottomSheetTitle>
+                <BottomSheetDescription>
+                  <span className="font-mono">{dnsDomain.domain}</span>
+                </BottomSheetDescription>
+              </BottomSheetHeader>
+              <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-6">
+                {/* Status */}
+                <div className="flex items-center gap-3">
+                    <span className={`size-2.5 rounded-full ${
+                      status === "resolving" ? "bg-status-success" :
+                      status === "not-configured" ? "bg-status-warning" :
+                      "bg-status-neutral animate-pulse"
+                    }`} />
+                    <span className="text-sm">
+                      {isLocal
+                        ? (status === "resolving" ? "Service is reachable" : status === "not-configured" ? "Service is not reachable" : "Checking...")
+                        : (status === "resolving" ? "Domain is correctly pointed to this server" : status === "not-configured" ? "Domain is not pointed to this server" : "Checking domain status...")}
+                    </span>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    onClick={() => setDomainCheckTick((t) => t + 1)}
+                    disabled={status === "checking"}
+                  >
+                    {status === "checking" ? (
+                      <><Loader2 className="mr-1 size-3 animate-spin" />Checking</>
+                    ) : (
+                      "Check again"
+                    )}
+                  </Button>
+                </div>
 
-          <div className="flex-1 overflow-y-auto px-6 pb-6">
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label htmlFor="new-domain">Domain</Label>
-                <Input
-                  id="new-domain"
-                  placeholder="app.example.com"
-                  className="font-mono"
-                  value={newDomain}
-                  onChange={(e) => setNewDomain(e.target.value)}
-                />
-              </div>
-              <div className="grid gap-2 sm:w-1/3">
-                <Label htmlFor="new-domain-port">Port</Label>
-                <Input
-                  id="new-domain-port"
-                  type="number"
-                  placeholder={project.containerPort?.toString() || "3000"}
-                  value={newDomainPort}
-                  onChange={(e) => setNewDomainPort(e.target.value)}
-                />
-              </div>
-            </div>
-          </div>
+                {isLocal ? (
+                  /* Local domain info */
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground">
+                      This is an auto-generated local domain routed by Traefik. It resolves automatically on this machine — no DNS configuration needed.
+                    </p>
+                    {status === "not-configured" && (
+                      <p className="text-sm text-status-warning">
+                        The service isn't responding. Make sure the project is running and the container is healthy.
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  /* External domain DNS config */
+                  <>
+                    <div className="space-y-3">
+                      <h3 className="text-sm font-medium">Required DNS Record</h3>
+                      <p className="text-xs text-muted-foreground">Use one of the following options:</p>
+                      <div className="rounded-lg border bg-muted/30 divide-y">
+                        <div className="grid grid-cols-3 gap-4 px-4 py-2 text-xs text-muted-foreground">
+                          <span>Type</span>
+                          <span>Name</span>
+                          <span>Value</span>
+                        </div>
+                        {/* Option 1: A Record */}
+                        <div className="grid grid-cols-3 gap-4 px-4 py-3 text-sm font-mono">
+                          <span>A</span>
+                          <span>{dnsDomain.domain}</span>
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="truncate text-muted-foreground">{serverIP || "your server IP"}</span>
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(serverIP || "");
+                                toast.success("Copied");
+                              }}
+                              className="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground"
+                            >
+                              <Copy className="size-3" />
+                            </button>
+                          </div>
+                        </div>
+                        {/* Option 2: CNAME (if there's a non-localhost base domain to point to) */}
+                        {autoDomain && !autoDomain.endsWith(".localhost") && (
+                          <div className="grid grid-cols-3 gap-4 px-4 py-3 text-sm font-mono">
+                            <span>CNAME</span>
+                            <span>{dnsDomain.domain}</span>
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="truncate">{autoDomain}</span>
+                              <button
+                                onClick={() => {
+                                  navigator.clipboard.writeText(autoDomain);
+                                  toast.success("Copied");
+                                }}
+                                className="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground"
+                              >
+                                <Copy className="size-3" />
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
 
-          <BottomSheetFooter>
-            <Button
-              variant="outline"
-              onClick={() => setDomainOpen(false)}
-              disabled={domainSaving}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleDomainAdd}
-              disabled={domainSaving || !newDomain.trim()}
-            >
-              {domainSaving ? (
-                <><Loader2 className="mr-2 size-4 animate-spin" />Adding...</>
-              ) : (
-                "Add Domain"
-              )}
-            </Button>
-          </BottomSheetFooter>
-        </BottomSheetContent>
-      </BottomSheet>
+                    <div className="space-y-2">
+                      <h3 className="text-sm font-medium">Setup Instructions</h3>
+                      <ol className="text-sm text-muted-foreground space-y-1.5 list-decimal list-inside">
+                        <li>Go to your domain registrar or DNS provider</li>
+                        <li>Add an <span className="font-mono text-foreground">A</span> record pointing to {serverIP || "your server IP"}{autoDomain && !autoDomain.endsWith(".localhost") && <>, or a <span className="font-mono text-foreground">CNAME</span> pointing to <span className="font-mono text-foreground">{autoDomain}</span></>}</li>
+                        <li>Wait for DNS propagation (can take up to 48 hours)</li>
+                        <li>SSL will be automatically provisioned once the domain resolves</li>
+                      </ol>
+                    </div>
+                  </>
+                )}
+              </div>
+              <BottomSheetFooter>
+                <Button variant="outline" onClick={() => setDnsDomainId(null)}>
+                  Close
+                </Button>
+              </BottomSheetFooter>
+            </BottomSheetContent>
+          </BottomSheet>
+        );
+      })()}
 
       {/* Delete Confirmation */}
       <ConfirmDeleteDialog

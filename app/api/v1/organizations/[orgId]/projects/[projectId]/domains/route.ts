@@ -94,6 +94,54 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   }
 }
 
+const updateDomainSchema = z.object({
+  id: z.string().min(1),
+  domain: z.string().min(1).optional(),
+  port: z.number().int().positive().nullable().optional(),
+});
+
+// PATCH /api/v1/organizations/[orgId]/projects/[projectId]/domains
+export async function PATCH(request: NextRequest, { params }: RouteParams) {
+  try {
+    const { orgId, projectId } = await params;
+    const project = await verifyProjectAccess(orgId, projectId);
+
+    if (!project) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    const body = await request.json();
+    const parsed = updateDomainSchema.safeParse(body);
+
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: parsed.error.issues[0].message },
+        { status: 400 }
+      );
+    }
+
+    const { id, ...updates } = parsed.data;
+
+    const [updated] = await db
+      .update(domains)
+      .set(updates)
+      .where(and(eq(domains.id, id), eq(domains.projectId, projectId)))
+      .returning();
+
+    if (!updated) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    return NextResponse.json({ domain: updated });
+  } catch (error) {
+    if (error instanceof Error && error.message === "Unauthorized") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    console.error("Error updating domain:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
 // DELETE /api/v1/organizations/[orgId]/projects/[projectId]/domains
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
