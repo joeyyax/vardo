@@ -10,6 +10,7 @@ type EnvEditorProps = {
   orgId: string;
   initialVars: { key: string; isSecret: boolean | null }[];
   allProjectNames?: string[];
+  orgVarKeys?: string[];
 };
 
 type Suggestion = {
@@ -27,7 +28,7 @@ const BUILTIN_VARS: Suggestion[] = [
   { label: "${org.id}", detail: "Organization ID", insert: "${org.id}" },
 ];
 
-export function EnvEditor({ projectId, orgId, initialVars, allProjectNames = [] }: EnvEditorProps) {
+export function EnvEditor({ projectId, orgId, initialVars, allProjectNames = [], orgVarKeys = [] }: EnvEditorProps) {
   const [content, setContent] = useState("");
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -92,6 +93,12 @@ export function EnvEditor({ projectId, orgId, initialVars, allProjectNames = [] 
                 insert: `\${${key}}`,
               };
             }),
+          // Org-level shared vars
+          ...orgVarKeys.map((key) => ({
+            label: `\${org.${key}}`,
+            detail: "Org variable",
+            insert: `\${org.${key}}`,
+          })),
           // Cross-project references
           ...allProjectNames.map((name) => ({
             label: `\${${name}.`,

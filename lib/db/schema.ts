@@ -160,6 +160,27 @@ export const memberships = pgTable("membership", {
 });
 
 // ---------------------------------------------------------------------------
+// Host: Organization Environment Variables (shared across projects)
+// ---------------------------------------------------------------------------
+
+export const orgEnvVars = pgTable(
+  "org_env_var",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    value: text("value").notNull(),
+    description: text("description"),
+    isSecret: boolean("is_secret").default(false),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [unique("org_env_var_org_key_uniq").on(t.organizationId, t.key)]
+);
+
+// ---------------------------------------------------------------------------
 // Host: Deploy Keys
 // ---------------------------------------------------------------------------
 
@@ -598,6 +619,7 @@ export const organizationsRelations = relations(organizations, ({ many }) => ({
   tags: many(tags),
   backupTargets: many(backupTargets),
   backupJobs: many(backupJobs),
+  orgEnvVars: many(orgEnvVars),
 }));
 
 export const membershipsRelations = relations(memberships, ({ one }) => ({
@@ -820,5 +842,12 @@ export const volumeLimitsRelations = relations(volumeLimits, ({ one }) => ({
   project: one(projects, {
     fields: [volumeLimits.projectId],
     references: [projects.id],
+  }),
+}));
+
+export const orgEnvVarsRelations = relations(orgEnvVars, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [orgEnvVars.organizationId],
+    references: [organizations.id],
   }),
 }));

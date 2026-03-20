@@ -125,6 +125,7 @@ type ProjectDetailProps = {
   userRole: string;
   allTags?: Tag[];
   allProjectNames?: string[];
+  orgVarKeys?: string[];
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -207,7 +208,7 @@ function formatDuration(ms: number) {
   return `${minutes}m ${remaining}s`;
 }
 
-export function ProjectDetail({ project, orgId, userRole, allTags = [], allProjectNames = [] }: ProjectDetailProps) {
+export function ProjectDetail({ project, orgId, userRole, allTags = [], allProjectNames = [], orgVarKeys = [] }: ProjectDetailProps) {
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -757,6 +758,7 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
             orgId={orgId}
             initialVars={project.envVars}
             allProjectNames={allProjectNames}
+            orgVarKeys={orgVarKeys}
           />
         </TabsContent>
 

@@ -1,6 +1,6 @@
 import { redirect, notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { projects, tags } from "@/lib/db/schema";
+import { projects, tags, orgEnvVars } from "@/lib/db/schema";
 import { getCurrentOrg } from "@/lib/auth/session";
 import { eq, and, asc } from "drizzle-orm";
 import { ProjectDetail } from "./project-detail";
@@ -19,7 +19,7 @@ export default async function ProjectDetailPage({ params }: PageProps) {
 
   const orgId = orgData.organization.id;
 
-  const [project, allTags, allProjects] = await Promise.all([
+  const [project, allTags, allProjects, orgVars] = await Promise.all([
     db.query.projects.findFirst({
       where: and(
         eq(projects.id, id),
@@ -48,6 +48,10 @@ export default async function ProjectDetailPage({ params }: PageProps) {
       where: eq(projects.organizationId, orgId),
       columns: { name: true },
     }),
+    db.query.orgEnvVars.findMany({
+      where: eq(orgEnvVars.organizationId, orgId),
+      columns: { key: true },
+    }),
   ]);
 
   if (!project) {
@@ -61,6 +65,7 @@ export default async function ProjectDetailPage({ params }: PageProps) {
       userRole={orgData.membership.role}
       allTags={allTags}
       allProjectNames={allProjects.map((p) => p.name)}
+      orgVarKeys={orgVars.map((v) => v.key)}
     />
   );
 }

@@ -27,6 +27,8 @@ export type ResolveContext = {
   };
   /** Current project's env vars (key -> raw value, pre-resolution) */
   envVars: Record<string, string>;
+  /** Org-level shared env vars (key -> value) */
+  orgEnvVars?: Record<string, string>;
   /** Callback to resolve a var from another project in the same org */
   resolveExternalVar: (
     projectName: string,
@@ -68,7 +70,7 @@ export function extractExpressions(value: string): string[] {
  */
 export function validateExpression(
   expression: string,
-): { type: "self" | "cross-project" | "builtin"; target: string } {
+): { type: "self" | "cross-project" | "builtin" | "org-var"; target: string } {
   const dotIndex = expression.indexOf(".");
   if (dotIndex === -1) {
     return { type: "self", target: expression };
@@ -82,6 +84,9 @@ export function validateExpression(
   }
   if (prefix === "org" && BUILTIN_ORG_FIELDS.has(field)) {
     return { type: "builtin", target: expression };
+  }
+  if (prefix === "org") {
+    return { type: "org-var", target: field };
   }
 
   // Any other dotted expression is a cross-project reference
@@ -157,7 +162,7 @@ async function resolveOneExpression(
     }
   }
 
-  // Built-in org fields
+  // Org fields — built-ins first, then org-level env vars
   if (prefix === "org") {
     switch (field) {
       case "name":
@@ -165,6 +170,10 @@ async function resolveOneExpression(
       case "id":
         return context.org.id;
       default:
+        // Check org-level shared env vars
+        if (context.orgEnvVars && field in context.orgEnvVars) {
+          return context.orgEnvVars[field];
+        }
         return null;
     }
   }
