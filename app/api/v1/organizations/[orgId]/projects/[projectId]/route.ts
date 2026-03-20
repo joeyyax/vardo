@@ -4,6 +4,7 @@ import { projects } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
+import { stopProject } from "@/lib/docker/deploy";
 
 type RouteParams = {
   params: Promise<{ orgId: string; projectId: string }>;
@@ -129,16 +130,24 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const [deleted] = await db
-      .delete(projects)
-      .where(
-        and(eq(projects.id, projectId), eq(projects.organizationId, orgId))
-      )
-      .returning({ id: projects.id });
+    // Fetch project name before deleting
+    const project = await db.query.projects.findFirst({
+      where: and(eq(projects.id, projectId), eq(projects.organizationId, orgId)),
+      columns: { id: true, name: true },
+    });
 
-    if (!deleted) {
+    if (!project) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+
+    // Stop containers before deleting
+    try {
+      await stopProject(projectId, project.name);
+    } catch { /* containers may not be running */ }
+
+    await db
+      .delete(projects)
+      .where(and(eq(projects.id, projectId), eq(projects.organizationId, orgId)));
 
     return NextResponse.json({ success: true });
   } catch (error) {

@@ -107,15 +107,24 @@ export function injectTraefikLabels(
   }
 
   const existing = compose.services[serviceName];
+
+  // Use HTTP entrypoint for localhost domains (no TLS needed locally)
+  const isLocal = domain.endsWith(".localhost") || domain === "localhost";
+  const entrypoint = isLocal ? "web" : "websecure";
+
   const labels: Record<string, string> = {
     ...existing.labels,
     "traefik.enable": "true",
     [`traefik.http.routers.${projectName}.rule`]: `Host(\`${domain}\`)`,
-    [`traefik.http.routers.${projectName}.entrypoints`]: "websecure",
-    [`traefik.http.routers.${projectName}.tls.certresolver`]: certResolver,
+    [`traefik.http.routers.${projectName}.entrypoints`]: entrypoint,
     [`traefik.http.services.${projectName}.loadbalancer.server.port`]:
       String(containerPort),
   };
+
+  // Only add TLS config for non-local domains
+  if (!isLocal) {
+    labels[`traefik.http.routers.${projectName}.tls.certresolver`] = certResolver;
+  }
 
   const updatedService: ComposeService = { ...existing, labels };
 
