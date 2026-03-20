@@ -2,7 +2,7 @@
  * Auto-detect a project icon URL based on image name, deploy type, or git URL.
  */
 
-const IMAGE_ICONS: [RegExp, string][] = [
+const IMAGE_ICONS: [RegExp, string | null][] = [
   [/postgres/i, "https://cdn.simpleicons.org/postgresql/4169E1"],
   [/mysql/i, "https://cdn.simpleicons.org/mysql/4479A1"],
   [/mariadb/i, "https://cdn.simpleicons.org/mariadb/BA7257"],
