@@ -10,6 +10,8 @@ export type ContainerMetrics = {
   memoryPercent: number;
   networkRxBytes: number;
   networkTxBytes: number;
+  diskUsage: number;
+  diskLimit: number;
   timestamp: number;
 };
 
@@ -26,6 +28,7 @@ type CAdvisorStats = {
   network?: {
     interfaces?: { name: string; rx_bytes: number; tx_bytes: number }[];
   };
+  filesystem?: { device: string; usage: number; capacity: number }[];
 };
 
 type CAdvisorContainer = {
@@ -94,6 +97,16 @@ export async function fetchAllContainerMetrics(): Promise<ContainerMetrics[]> {
       }
     }
 
+    // Filesystem
+    let diskUsage = 0;
+    let diskLimit = 0;
+    if (curr.filesystem) {
+      for (const fs of curr.filesystem) {
+        diskUsage += fs.usage || 0;
+        diskLimit += fs.capacity || 0;
+      }
+    }
+
     // Clean container name (remove leading /)
     const containerName = container.aliases?.[0] || container.name || container.id;
 
@@ -107,6 +120,8 @@ export async function fetchAllContainerMetrics(): Promise<ContainerMetrics[]> {
       memoryPercent: Math.round(memoryPercent * 100) / 100,
       networkRxBytes,
       networkTxBytes,
+      diskUsage,
+      diskLimit,
       timestamp: new Date(curr.timestamp).getTime(),
     });
   }

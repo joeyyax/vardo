@@ -89,78 +89,109 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
   const [timeSeries, setTimeSeries] = useState<TimePoint[]>([]);
   const statsRef = useRef(projectStats);
 
+  // Load history when switching to non-live ranges
   useEffect(() => {
-    const activeProjects = projects.filter((p) => p.status === "active");
+    if (timeRange === "live") return;
 
-    if (activeProjects.length === 0) return;
+    const rangeMs: Record<string, number> = { "1h": 3600000, "6h": 21600000, "24h": 86400000, "7d": 604800000 };
+    const bucketMs: Record<string, number> = { "1h": 30000, "6h": 120000, "24h": 300000, "7d": 1800000 };
+    const now = Date.now();
+    const from = now - rangeMs[timeRange];
 
-    // Fetch stats for each active project
-    async function fetchAll() {
-      const results = await Promise.allSettled(
-        activeProjects.map(async (p) => {
-          const res = await fetch(`/api/v1/organizations/${orgId}/projects/${p.id}/stats`);
-          if (!res.ok) throw new Error("Failed to fetch");
-          const data = await res.json();
-          return { projectId: p.id, containers: data.containers as ContainerStatsSnapshot[] };
-        })
-      );
+    async function loadHistory() {
+      try {
+        const res = await fetch(
+          `/api/v1/organizations/${orgId}/stats?from=${from}&to=${now}&bucket=${bucketMs[timeRange]}`
+        );
+        if (!res.ok) return;
+        const { series } = await res.json();
+        if (!series?.cpu?.length) return;
 
-      setProjectStats((prev) => {
-        const next = { ...prev };
-        for (let i = 0; i < results.length; i++) {
-          const result = results[i];
-          const projectId = activeProjects[i].id;
-          if (result.status === "fulfilled") {
-            next[projectId] = {
-              ...next[projectId],
-              containers: result.value.containers,
+        const points: TimePoint[] = series.cpu.map(([ts, cpu]: [number, number], i: number) => {
+          const mem = series.memory?.[i] || [ts, 0];
+          const rx = series.networkRx?.[i] || [ts, 0];
+          const tx = series.networkTx?.[i] || [ts, 0];
+          return {
+            time: new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+            timestamp: ts,
+            cpu: Math.round(cpu * 100) / 100,
+            memory: mem[1],
+            networkRx: rx[1],
+            networkTx: tx[1],
+            diskRead: 0,
+            diskWrite: 0,
+          };
+        });
+        setTimeSeries(points);
+      } catch {
+        // History not available
+      }
+    }
+
+    loadHistory();
+  }, [orgId, timeRange]);
+
+  // SSE stream for live data
+  useEffect(() => {
+    if (timeRange !== "live") return;
+
+    const es = new EventSource(`/api/v1/organizations/${orgId}/stats/stream`);
+
+    es.addEventListener("stats", (event) => {
+      try {
+        const payload = JSON.parse(event.data) as {
+          projects: { id: string; name: string; displayName: string; status: string; containers: ContainerStatsSnapshot[] }[];
+          timestamp: string;
+        };
+
+        // Update per-project stats
+        setProjectStats((prev) => {
+          const next = { ...prev };
+          for (const p of payload.projects) {
+            next[p.id] = {
+              project: { id: p.id, name: p.name, displayName: p.displayName, status: p.status },
+              containers: p.containers,
               loading: false,
               error: null,
             };
-          } else {
-            next[projectId] = {
-              ...next[projectId],
-              containers: [],
-              loading: false,
-              error: "Failed to fetch stats",
-            };
           }
-        }
-        statsRef.current = next;
-        return next;
-      });
+          return next;
+        });
 
-      // Add time-series point from aggregated stats
-      const now = Date.now();
-      const allContainers = results
-        .filter((r): r is PromiseFulfilledResult<{ projectId: string; containers: ContainerStatsSnapshot[] }> => r.status === "fulfilled")
-        .flatMap((r) => r.value.containers);
-      const totalCpuNow = allContainers.reduce((s, c) => s + c.cpuPercent, 0);
-      const totalMemNow = allContainers.reduce((s, c) => s + c.memoryUsage, 0);
-      const totalRxNow = allContainers.reduce((s, c) => s + c.networkRx, 0);
-      const totalTxNow = allContainers.reduce((s, c) => s + c.networkTx, 0);
-      const totalDiskRNow = allContainers.reduce((s, c) => s + c.blockRead, 0);
-      const totalDiskWNow = allContainers.reduce((s, c) => s + c.blockWrite, 0);
+        // Add time-series point
+        const now = new Date(payload.timestamp).getTime();
+        const allContainers = payload.projects.flatMap((p) => p.containers);
+        const totalCpuNow = allContainers.reduce((s, c) => s + c.cpuPercent, 0);
+        const totalMemNow = allContainers.reduce((s, c) => s + c.memoryUsage, 0);
+        const totalRxNow = allContainers.reduce((s, c) => s + c.networkRx, 0);
+        const totalTxNow = allContainers.reduce((s, c) => s + c.networkTx, 0);
+        const totalDiskRNow = allContainers.reduce((s, c) => s + c.blockRead, 0);
+        const totalDiskWNow = allContainers.reduce((s, c) => s + c.blockWrite, 0);
 
-      setTimeSeries((prev) => {
-        const next = [...prev, {
-          time: new Date(now).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
-          timestamp: now,
-          cpu: Math.round(totalCpuNow * 100) / 100,
-          memory: totalMemNow,
-          networkRx: totalRxNow,
-          networkTx: totalTxNow,
-          diskRead: totalDiskRNow,
-          diskWrite: totalDiskWNow,
-        }];
-        return next.length > MAX_POINTS ? next.slice(-MAX_POINTS) : next;
-      });
-    }
+        setTimeSeries((prev) => {
+          const next = [...prev, {
+            time: new Date(now).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+            timestamp: now,
+            cpu: Math.round(totalCpuNow * 100) / 100,
+            memory: totalMemNow,
+            networkRx: totalRxNow,
+            networkTx: totalTxNow,
+            diskRead: totalDiskRNow,
+            diskWrite: totalDiskWNow,
+          }];
+          return next.length > MAX_POINTS ? next.slice(-MAX_POINTS) : next;
+        });
+      } catch {
+        // Ignore parse errors
+      }
+    });
 
-    fetchAll();
-    const interval = setInterval(fetchAll, 5000);
-    return () => clearInterval(interval);
-  }, [orgId, projects]);
+    es.onerror = () => {
+      // Will auto-reconnect
+    };
+
+    return () => es.close();
+  }, [orgId, timeRange]);
 
   const [timeRange, setTimeRange] = useState<"live" | "1h" | "6h" | "24h" | "7d">("live");
 
@@ -220,7 +251,7 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
         <div className="flex items-center gap-2">
           <span className={`size-2 rounded-full ${anyLoading ? "bg-status-neutral animate-pulse" : "bg-status-success"}`} />
           <span className="text-xs text-muted-foreground">
-            {timeRange === "live" ? "Polling every 5s" : "Historical"}
+            {timeRange === "live" ? "Live" : "Historical"}
           </span>
         </div>
       </div>
@@ -240,34 +271,16 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
           </p>
         </div>
         <div className="squircle rounded-lg border bg-card px-4 py-3">
-          <p className="text-xs text-muted-foreground">Network</p>
-          {anyLoading ? <Loader2 className="size-5 animate-spin text-muted-foreground mt-1" /> : (
-            <div className="flex gap-4 mt-1">
-              <div>
-                <p className="text-lg font-semibold tabular-nums">{formatBytes(totalNetworkRx)}</p>
-                <p className="text-[10px] text-muted-foreground">received</p>
-              </div>
-              <div>
-                <p className="text-lg font-semibold tabular-nums">{formatBytes(totalNetworkTx)}</p>
-                <p className="text-[10px] text-muted-foreground">sent</p>
-              </div>
-            </div>
-          )}
+          <p className="text-xs text-muted-foreground">Disk</p>
+          <p className="text-2xl font-semibold tabular-nums mt-1">
+            {anyLoading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : formatBytes(totalDiskRead)}
+          </p>
         </div>
         <div className="squircle rounded-lg border bg-card px-4 py-3">
-          <p className="text-xs text-muted-foreground">Disk I/O</p>
-          {anyLoading ? <Loader2 className="size-5 animate-spin text-muted-foreground mt-1" /> : (
-            <div className="flex gap-4 mt-1">
-              <div>
-                <p className="text-lg font-semibold tabular-nums">{formatBytes(totalDiskRead)}</p>
-                <p className="text-[10px] text-muted-foreground">read</p>
-              </div>
-              <div>
-                <p className="text-lg font-semibold tabular-nums">{formatBytes(totalDiskWrite)}</p>
-                <p className="text-[10px] text-muted-foreground">write</p>
-              </div>
-            </div>
-          )}
+          <p className="text-xs text-muted-foreground">Bandwidth</p>
+          <p className="text-2xl font-semibold tabular-nums mt-1">
+            {anyLoading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : formatBytes(totalNetworkRx + totalNetworkTx)}
+          </p>
         </div>
         <div className="squircle rounded-lg border bg-card px-4 py-3">
           <p className="text-xs text-muted-foreground">Projects</p>
