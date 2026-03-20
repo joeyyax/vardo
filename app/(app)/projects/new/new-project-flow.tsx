@@ -32,6 +32,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { generateWordPair, getBaseDomain } from "@/lib/domains/auto-domain";
+import { EnvEditor } from "@/components/env-editor";
 
 type Source = "git" | "direct";
 type DeployType = "compose" | "dockerfile" | "image" | "static";
@@ -309,7 +310,7 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
   function selectSource(opt: SourceOption) {
     setSelectedSource(opt);
     setSelectedTemplate(null);
-    setTemplateEnvVars([]);
+    setEnvContent("");
     setGenerateDomain(true);
     switch (opt) {
       case "github":
@@ -327,7 +328,7 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
   function goBack() {
     setSelectedSource(null);
     setSelectedTemplate(null);
-    setTemplateEnvVars([]);
+    setEnvContent("");
     setGenerateDomain(true);
     setDisplayName(""); setName(""); setDescription("");
     setSlugEdited(false);
@@ -717,15 +718,11 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
             {/* Environment Variables */}
             <div className="grid gap-2">
               <Label>Environment Variables</Label>
-              <Textarea
-                placeholder="KEY=value&#10;DATABASE_URL=${postgres.DATABASE_URL}&#10;API_KEY=sk-..."
-                className="font-mono text-sm min-h-[120px]"
-                value={envContent}
-                onChange={(e) => setEnvContent(e.target.value)}
+              <EnvEditor
+                standalone
+                initialContent={envContent}
+                onChange={setEnvContent}
               />
-              <p className="text-xs text-muted-foreground">
-                One per line in KEY=value format. Use {"${project.url}"}, {"${project.port}"}, etc. for dynamic values.
-              </p>
             </div>
 
             {/* Port */}

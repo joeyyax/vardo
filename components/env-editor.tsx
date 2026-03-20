@@ -14,6 +14,13 @@ type EnvEditorProps = {
   allProjectNames?: string[];
   orgVarKeys?: string[];
   environmentId?: string;
+} | {
+  /** Standalone mode — no project, just editing content with onChange callback */
+  standalone: true;
+  initialContent?: string;
+  onChange: (content: string) => void;
+  allProjectNames?: string[];
+  orgVarKeys?: string[];
 };
 
 type Suggestion = {
@@ -37,16 +44,24 @@ function isPasswordKey(key: string): boolean {
   return PASSWORD_KEYS.some((p) => lower.includes(p));
 }
 
-export function EnvEditor({ projectId, projectName, orgId, initialVars, allProjectNames = [], orgVarKeys = [], environmentId }: EnvEditorProps) {
+export function EnvEditor(props: EnvEditorProps) {
+  const isStandalone = "standalone" in props && props.standalone;
+  const projectId = isStandalone ? "" : (props as Exclude<EnvEditorProps, { standalone: true }>).projectId;
+  const projectName = isStandalone ? "" : (props as Exclude<EnvEditorProps, { standalone: true }>).projectName;
+  const orgId = isStandalone ? "" : (props as Exclude<EnvEditorProps, { standalone: true }>).orgId;
+  const environmentId = isStandalone ? undefined : (props as Exclude<EnvEditorProps, { standalone: true }>).environmentId;
+  const allProjectNames = props.allProjectNames ?? [];
+  const orgVarKeys = props.orgVarKeys ?? [];
+
   const router = useRouter();
-  const [content, setContent] = useState("");
+  const [content, setContentState] = useState(isStandalone ? (props.initialContent || "") : "");
   const [saving, setSaving] = useState(false);
   const [deploying, setDeploying] = useState(false);
-  const [loaded, setLoaded] = useState(false);
+  const [loaded, setLoaded] = useState(isStandalone);
   const [modified, setModified] = useState(false);
   const [needsRedeploy, setNeedsRedeploy] = useState(false);
   const [passwordWarning, setPasswordWarning] = useState<string | null>(null);
-  const [initialContent, setInitialContent] = useState("");
+  const [initialContent, setInitialContent] = useState(isStandalone ? (props.initialContent || "") : "");
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
@@ -54,8 +69,29 @@ export function EnvEditor({ projectId, projectName, orgId, initialVars, allProje
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
 
-  // Load current env vars as editable content
+  // Wrapper to also call onChange in standalone mode
+  function setContent(value: string) {
+    setContentState(value);
+    if (isStandalone) {
+      props.onChange(value);
+    }
+  }
+
+  // Update content when initialContent prop changes (standalone mode — template switch)
+  const prevInitialRef = useRef(isStandalone ? (props.initialContent || "") : "");
   useEffect(() => {
+    if (!isStandalone) return;
+    const newInitial = props.initialContent || "";
+    if (newInitial !== prevInitialRef.current) {
+      prevInitialRef.current = newInitial;
+      setContentState(newInitial);
+      setInitialContent(newInitial);
+    }
+  }, [isStandalone, isStandalone ? props.initialContent : null]);
+
+  // Load current env vars as editable content (skip in standalone mode)
+  useEffect(() => {
+    if (isStandalone) return;
     async function load() {
       try {
         const params = new URLSearchParams();
@@ -69,10 +105,10 @@ export function EnvEditor({ projectId, projectName, orgId, initialVars, allProje
             const c = vars
               .map((v: { key: string; value: string }) => `${v.key}=${v.value}`)
               .join("\n");
-            setContent(c);
+            setContentState(c);
             setInitialContent(c);
           } else {
-            setContent("");
+            setContentState("");
             setInitialContent("");
           }
         }
@@ -82,7 +118,7 @@ export function EnvEditor({ projectId, projectName, orgId, initialVars, allProje
       setLoaded(true);
     }
     load();
-  }, [orgId, projectId, environmentId]);
+  }, [orgId, projectId, environmentId, isStandalone]);
 
   // Build suggestions based on current context
   const buildSuggestions = useCallback(
@@ -360,7 +396,7 @@ export function EnvEditor({ projectId, projectName, orgId, initialVars, allProje
   return (
     <div className="space-y-3">
       {/* Redeploy needed banner */}
-      {needsRedeploy && !modified && (
+      {!isStandalone && needsRedeploy && !modified && (
         <div className="flex items-center justify-between rounded-lg border border-status-warning/30 bg-status-warning-muted px-4 py-3">
           <div className="flex items-center gap-2">
             <AlertTriangle className="size-4 text-status-warning shrink-0" />
@@ -383,7 +419,7 @@ export function EnvEditor({ projectId, projectName, orgId, initialVars, allProje
       )}
 
       {/* Password change warning */}
-      {passwordWarning && (
+      {!isStandalone && passwordWarning && (
         <div className="flex items-start gap-2 rounded-lg border border-status-warning/30 bg-status-warning-muted px-4 py-3">
           <AlertTriangle className="size-4 text-status-warning shrink-0 mt-0.5" />
           <p className="text-xs text-status-warning">{passwordWarning}</p>
@@ -394,31 +430,33 @@ export function EnvEditor({ projectId, projectName, orgId, initialVars, allProje
         <p className="text-xs text-muted-foreground">
           KEY=value format. Use <code className="bg-muted px-1 py-0.5 rounded">{"${ref}"}</code> for variable references. Press Tab for autocomplete.
         </p>
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleSave}
-            disabled={saving || deploying || !modified}
-          >
-            {saving ? (
-              <><Loader2 className="mr-1.5 size-4 animate-spin" />Saving...</>
-            ) : (
-              "Save"
-            )}
-          </Button>
-          <Button
-            size="sm"
-            onClick={handleSaveAndDeploy}
-            disabled={saving || deploying || !modified}
-          >
-            {deploying ? (
-              <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
-            ) : (
-              <><Rocket className="mr-1.5 size-4" />Save & Deploy</>
-            )}
-          </Button>
-        </div>
+        {!isStandalone && (
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleSave}
+              disabled={saving || deploying || !modified}
+            >
+              {saving ? (
+                <><Loader2 className="mr-1.5 size-4 animate-spin" />Saving...</>
+              ) : (
+                "Save"
+              )}
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleSaveAndDeploy}
+              disabled={saving || deploying || !modified}
+            >
+              {deploying ? (
+                <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
+              ) : (
+                <><Rocket className="mr-1.5 size-4" />Save & Deploy</>
+              )}
+            </Button>
+          </div>
+        )}
       </div>
 
       <div className="relative rounded-lg border bg-zinc-950 min-h-[400px]">
