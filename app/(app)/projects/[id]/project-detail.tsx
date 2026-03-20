@@ -936,7 +936,7 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
             )}
           </TabsTrigger>
           <TabsTrigger value="domains">
-            Domains & Ports
+            Networking
           </TabsTrigger>
           <TabsTrigger value="logs">
             Logs
