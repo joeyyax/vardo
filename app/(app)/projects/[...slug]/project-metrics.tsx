@@ -11,7 +11,7 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from "recharts";
-import { Activity, Cpu, HardDrive, MemoryStick, Network, Loader2 } from "lucide-react";
+import { Activity, Container, Cpu, HardDrive, MemoryStick, Network, Loader2 } from "lucide-react";
 
 type ContainerStatsSnapshot = {
   containerId: string;
@@ -51,9 +51,14 @@ const MAX_DATA_POINTS = 150; // ~5 minutes at 2s intervals
 function formatBytes(bytes: number, decimals = 1): string {
   if (bytes === 0) return "0 B";
   const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const sizes = ["B", "KB", "MB", "GB", "TB", "PB"];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(decimals))} ${sizes[i]}`;
+}
+
+function formatMemLimit(bytes: number): string {
+  if (bytes === 0 || bytes > 1099511627776) return "No limit";
+  return formatBytes(bytes);
 }
 
 function formatBytesRate(bytes: number): string {
@@ -88,27 +93,42 @@ function ChartCard({
   );
 }
 
-function ContainerRow({ stats }: { stats: ContainerStatsSnapshot }) {
+function ContainerTable({ containers }: { containers: ContainerStatsSnapshot[] }) {
   return (
-    <div className="flex items-center justify-between gap-4 px-4 py-3">
-      <div className="flex items-center gap-3 min-w-0">
-        <span className="size-2 rounded-full bg-status-success shrink-0" />
-        <span className="text-sm font-mono truncate">{stats.containerName}</span>
+    <div className="squircle rounded-lg border bg-card overflow-x-auto">
+      <div className="flex items-center gap-2 px-4 py-3 border-b">
+        <Container className="size-4 text-muted-foreground" />
+        <h3 className="text-sm font-medium">Containers</h3>
       </div>
-      <div className="flex items-center gap-6 text-xs text-muted-foreground shrink-0">
-        <span className="tabular-nums w-16 text-right" title="CPU">
-          {stats.cpuPercent.toFixed(1)}% CPU
-        </span>
-        <span className="tabular-nums w-24 text-right" title="Memory">
-          {formatBytes(stats.memoryUsage)} / {formatBytes(stats.memoryLimit)}
-        </span>
-        <span className="tabular-nums w-20 text-right" title="Network">
-          ↓{formatBytes(stats.networkRx)} ↑{formatBytes(stats.networkTx)}
-        </span>
-        <span className="tabular-nums w-20 text-right" title="Disk I/O">
-          R{formatBytes(stats.blockRead)} W{formatBytes(stats.blockWrite)}
-        </span>
-      </div>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b text-xs text-muted-foreground">
+            <th className="text-left font-normal px-4 py-2">Name</th>
+            <th className="text-right font-normal px-4 py-2">CPU</th>
+            <th className="text-right font-normal px-4 py-2">Memory</th>
+            <th className="text-right font-normal px-4 py-2">Limit</th>
+            <th className="text-right font-normal px-4 py-2">Net In</th>
+            <th className="text-right font-normal px-4 py-2">Net Out</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y">
+          {containers.map((c) => (
+            <tr key={c.containerId}>
+              <td className="px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <span className="size-2 rounded-full bg-status-success shrink-0" />
+                  <span className="font-mono truncate">{c.containerName}</span>
+                </div>
+              </td>
+              <td className="text-right px-4 py-3 tabular-nums text-muted-foreground">{c.cpuPercent.toFixed(1)}%</td>
+              <td className="text-right px-4 py-3 tabular-nums text-muted-foreground">{formatBytes(c.memoryUsage)}</td>
+              <td className="text-right px-4 py-3 tabular-nums text-muted-foreground">{formatMemLimit(c.memoryLimit)}</td>
+              <td className="text-right px-4 py-3 tabular-nums text-muted-foreground">{formatBytes(c.networkRx)}</td>
+              <td className="text-right px-4 py-3 tabular-nums text-muted-foreground">{formatBytes(c.networkTx)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -556,11 +576,7 @@ export function ProjectMetrics({ orgId, projectId }: ProjectMetricsProps) {
             No running containers.
           </p>
         ) : (
-          <div className="divide-y -mx-4 -mb-4">
-            {containers.map((c) => (
-              <ContainerRow key={c.containerId} stats={c} />
-            ))}
-          </div>
+          <ContainerTable containers={containers} />
         )}
       </ChartCard>
     </div>

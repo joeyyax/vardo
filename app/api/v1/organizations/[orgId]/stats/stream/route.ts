@@ -4,6 +4,7 @@ import { projects } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq } from "drizzle-orm";
 import { fetchAllContainerMetrics } from "@/lib/metrics/cadvisor";
+import { getSystemDiskUsage } from "@/lib/docker/client";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -47,6 +48,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
               byProject[matched.id].push(m);
             }
 
+            // Get disk usage (less frequent — it's an expensive call)
+            let diskUsage;
+            try { diskUsage = await getSystemDiskUsage(); } catch { /* skip */ }
+
             const payload = {
               projects: orgProjects.map((p) => ({
                 ...p,
@@ -61,10 +66,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
                   networkTx: m.networkTxBytes,
                   blockRead: 0,
                   blockWrite: 0,
-                  diskUsage: m.diskUsage,
-                  diskLimit: m.diskLimit,
                 })),
               })),
+              disk: diskUsage || null,
               timestamp: new Date().toISOString(),
             };
 
