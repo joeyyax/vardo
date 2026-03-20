@@ -359,11 +359,17 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
   }
 
   const [deployLog, setDeployLog] = useState<string[]>([]);
+  const [deployStages, setDeployStages] = useState<
+    Record<string, "running" | "success" | "failed" | "skipped">
+  >({});
+  const [expandedDeployLog, setExpandedDeployLog] = useState(false);
 
   async function handleDeploy() {
     setDeploying(true);
     setActiveTab("deployments");
     setDeployLog([]);
+    setDeployStages({});
+    setExpandedDeployLog(false);
 
     try {
       const res = await fetch(
@@ -397,6 +403,9 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
             const data = JSON.parse(line.slice(6));
             if (eventType === "log") {
               setDeployLog((prev) => [...prev, data as string]);
+            } else if (eventType === "stage") {
+              const { stage, status } = data as { stage: string; status: string };
+              setDeployStages((prev) => ({ ...prev, [stage]: status as "running" | "success" | "failed" | "skipped" }));
             } else if (eventType === "done") {
               const result = data as { deploymentId: string; success: boolean; durationMs: number };
               if (result.success) {
@@ -750,16 +759,57 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
         </TabsList>
 
         <TabsContent value="deployments" className="pt-4 space-y-4">
-          {/* Live deploy output */}
-          {deploying && deployLog.length > 0 && (
-            <div className="rounded-lg border bg-black/80 p-4 max-h-80 overflow-auto">
-              <div className="flex items-center gap-2 mb-2">
-                <Loader2 className="size-3.5 animate-spin text-blue-400" />
-                <span className="text-xs text-blue-400 font-medium">Deploying...</span>
+          {/* Live deploy pipeline */}
+          {deploying && (
+            <div className="rounded-lg border bg-card overflow-hidden">
+              {/* Stage indicators */}
+              <div className="flex items-center gap-1 p-3 border-b overflow-x-auto">
+                {(["clone", "build", "deploy", "healthcheck", "routing", "cleanup"] as const).map((s, i) => {
+                  const status = deployStages[s];
+                  const labels: Record<string, string> = {
+                    clone: "Clone", build: "Build", deploy: "Deploy",
+                    healthcheck: "Health Check", routing: "Routing", cleanup: "Cleanup",
+                  };
+                  return (
+                    <div key={s} className="flex items-center gap-1 shrink-0">
+                      {i > 0 && <div className="w-4 h-px bg-border" />}
+                      <div className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium">
+                        {status === "running" && <Loader2 className="size-3 animate-spin text-blue-400" />}
+                        {status === "success" && <Check className="size-3 text-green-400" />}
+                        {status === "failed" && <X className="size-3 text-red-400" />}
+                        {status === "skipped" && <span className="size-3 text-center text-muted-foreground">-</span>}
+                        {!status && <span className="size-3 rounded-full border border-muted-foreground/30" />}
+                        <span className={
+                          status === "running" ? "text-blue-400" :
+                          status === "success" ? "text-green-400" :
+                          status === "failed" ? "text-red-400" :
+                          status === "skipped" ? "text-muted-foreground" :
+                          "text-muted-foreground/50"
+                        }>
+                          {labels[s]}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-              <pre className="text-xs font-mono text-green-400 whitespace-pre-wrap">
-                {deployLog.join("\n")}
-              </pre>
+
+              {/* Expandable log */}
+              <button
+                type="button"
+                onClick={() => setExpandedDeployLog(!expandedDeployLog)}
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:bg-accent/50 transition-colors"
+              >
+                <ChevronDown className={`size-3.5 transition-transform ${expandedDeployLog ? "rotate-180" : ""}`} />
+                {deployLog.length} log lines
+              </button>
+              {expandedDeployLog && deployLog.length > 0 && (
+                <div className="bg-black/80 p-4 max-h-60 overflow-auto border-t">
+                  <pre className="text-xs font-mono text-green-400 whitespace-pre-wrap">
+                    {deployLog.join("\n")}
+                  </pre>
+                </div>
+              )}
             </div>
           )}
 

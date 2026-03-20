@@ -26,6 +26,8 @@ const NETWORK_NAME = "host-network";
 const HEALTH_CHECK_TIMEOUT_MS = 60000;
 const HEALTH_CHECK_INTERVAL_MS = 2000;
 
+type DeployStage = "clone" | "build" | "deploy" | "healthcheck" | "routing" | "cleanup" | "done";
+
 type DeployOpts = {
   projectId: string;
   organizationId: string;
@@ -33,7 +35,10 @@ type DeployOpts = {
   triggeredBy?: string;
   environmentId?: string;
   onLog?: (line: string) => void;
+  onStage?: (stage: DeployStage, status: "running" | "success" | "failed" | "skipped") => void;
 };
+
+export type { DeployStage };
 
 type DeployResult = {
   deploymentId: string;
@@ -70,6 +75,10 @@ export async function runDeployment(
     opts.onLog?.(line);
   }
 
+  function stage(s: DeployStage, status: "running" | "success" | "failed" | "skipped") {
+    opts.onStage?.(s, status);
+  }
+
   // Proxy for helper functions that expect { push }
   const logs = { push: log };
 
@@ -92,6 +101,7 @@ export async function runDeployment(
 
     if (!project) throw new Error("Project not found");
 
+    stage("clone", "running");
     log(`[deploy] Project: ${project.displayName} (${project.name})`);
     log(`[deploy] Source: ${project.source}, Type: ${project.deployType}`);
 
@@ -110,7 +120,9 @@ export async function runDeployment(
     await mkdir(projectDir, { recursive: true });
 
     if (project.deployType === "image" && project.imageName) {
-      // Image deploy — generate a compose file
+      // Image deploy — no clone needed
+      stage("clone", "skipped");
+      stage("build", "running");
       const volumes = (project.persistentVolumes as { name: string; mountPath: string }[] | null) ?? undefined;
       compose = generateComposeForImage({
         projectName: project.name,
@@ -196,6 +208,9 @@ export async function runDeployment(
           break;
         } catch { /* try next */ }
       }
+
+      stage("clone", "success");
+      stage("build", "running");
 
       if (composeContent && project.deployType !== "nixpacks" && project.deployType !== "dockerfile") {
         compose = parseCompose(composeContent);
@@ -288,6 +303,8 @@ export async function runDeployment(
     const slotDir = join(projectDir, newSlot);
     await mkdir(slotDir, { recursive: true });
 
+    stage("build", "success");
+    stage("deploy", "running");
     log(`[deploy] Active slot: ${activeSlot || "none"}, deploying to: ${newSlot}`);
 
     // Step 5: Write compose file (without Traefik labels — new container starts but doesn't receive traffic)
@@ -325,6 +342,8 @@ export async function runDeployment(
     }
 
     // Step 8: Health check — wait for new slot to be ready
+    stage("deploy", "success");
+    stage("healthcheck", "running");
     log(`[deploy] Waiting for ${newSlot} to be healthy...`);
     const healthy = await waitForHealthy(newProjectName, composePath, slotDir, logs);
     if (!healthy) {
@@ -336,6 +355,8 @@ export async function runDeployment(
       ).catch(() => {});
       throw new Error(`${newSlot} slot did not become healthy within timeout`);
     }
+    stage("healthcheck", "success");
+    stage("routing", "running");
     log(`[deploy] ${newSlot} healthy`);
 
     // Step 9: Swap traffic — inject Traefik labels into the new slot's compose and redeploy
@@ -379,6 +400,8 @@ export async function runDeployment(
       log(`[deploy] Warning: label update — ${err instanceof Error ? err.message : err}`);
     }
 
+    stage("routing", "success");
+    stage("cleanup", "running");
     // Step 10: Tear down old slot
     if (activeSlot) {
       const oldSlotDir = join(projectDir, activeSlot);
@@ -398,6 +421,7 @@ export async function runDeployment(
     // Step 11: Record active slot
     await writeFile(join(projectDir, ".active-slot"), newSlot, "utf-8");
 
+    stage("cleanup", "success");
     // Step 12: HTTP health check on domains
     for (const domain of project.domains) {
       const ok = await checkEndpoint(domain.domain, logs);
@@ -405,6 +429,7 @@ export async function runDeployment(
       else logs.push(`[health] ${domain.domain} not yet reachable (DNS/TLS propagation)`);
     }
 
+    stage("done", "success");
     // Mark project as active
     await db
       .update(projects)

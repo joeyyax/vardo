@@ -49,6 +49,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           trigger: "manual",
           triggeredBy: session.user.id,
           onLog: (line) => sendEvent("log", line),
+          onStage: (stage, status) => sendEvent("stage", { stage, status }),
         }).then((result) => {
           sendEvent("done", {
             deploymentId: result.deploymentId,
