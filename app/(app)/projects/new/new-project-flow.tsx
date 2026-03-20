@@ -15,9 +15,6 @@ import {
   FileText,
   Globe2,
   RefreshCw,
-  Eye,
-  EyeOff,
-  Shuffle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageToolbar } from "@/components/page-toolbar";
@@ -169,11 +166,8 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
   const [wordPair, setWordPair] = useState(() => generateWordPair());
   const baseDomain = getBaseDomain();
 
-  // Template env vars
-  const [templateEnvVars, setTemplateEnvVars] = useState<
-    { key: string; value: string; description: string; required: boolean }[]
-  >([]);
-  const [maskedFields, setMaskedFields] = useState<Set<string>>(new Set());
+  // Environment variables as raw .env content
+  const [envContent, setEnvContent] = useState("");
 
   // GitHub state
   const [installations, setInstallations] = useState<Installation[]>([]);
@@ -272,61 +266,43 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
     setTemplateVolumes(template.defaultVolumes || []);
     setTemplateConnectionInfo(template.defaultConnectionInfo || []);
     if (template.defaultEnvVars?.length) {
-      const masked = new Set<string>();
       const slug = slugify(template.name);
+      const lines: string[] = [];
 
-      setTemplateEnvVars(template.defaultEnvVars.map((ev) => {
-        // Use explicit default if provided (may contain ${project.*} expressions — that's fine, they resolve at deploy time)
-        if (ev.defaultValue) {
-          if (isPasswordField(ev.key)) masked.add(ev.key);
-          return { key: ev.key, value: ev.defaultValue, description: ev.description, required: ev.required };
+      for (const ev of template.defaultEnvVars) {
+        let value = ev.defaultValue || "";
+
+        if (!value) {
+          // Smart auto-fill
+          if (isPasswordField(ev.key)) {
+            value = generatePassword();
+          } else {
+            const lower = ev.key.toLowerCase();
+            if (lower === "url" || lower === "base_url" || lower === "app_url" ||
+                lower === "site_url" || lower === "public_url" || lower === "nextauth_url" ||
+                lower.endsWith("_base_url") || lower.endsWith("_site_url")) {
+              value = "${project.url}";
+            } else if (lower === "hostname" || lower === "host" || lower === "domain" ||
+                       lower === "virtual_host" || lower === "server_name") {
+              value = "${project.domain}";
+            } else if (lower === "port" || lower === "app_port" || lower === "server_port") {
+              value = "${project.port}";
+            } else if (lower === "node_env") {
+              value = "production";
+            } else if (lower.includes("_database") || lower.includes("_db")) {
+              value = slug;
+            } else if (lower.includes("_user") && !lower.includes("password")) {
+              value = slug;
+            }
+          }
         }
 
-        // Auto-generate passwords and secrets
-        if (isPasswordField(ev.key)) {
-          masked.add(ev.key);
-          return { key: ev.key, value: generatePassword(), description: ev.description, required: ev.required };
-        }
+        lines.push(`${ev.key}=${value}`);
+      }
 
-        // Smart auto-fill based on env var name patterns — use expressions where possible
-        const lower = ev.key.toLowerCase();
-
-        // URL/hostname patterns → use dynamic expressions
-        if (lower === "url" || lower === "base_url" || lower === "app_url" ||
-            lower === "site_url" || lower === "public_url" || lower === "nextauth_url" ||
-            lower === "next_public_url" || lower === "next_public_app_url" ||
-            lower.endsWith("_base_url") || lower.endsWith("_site_url")) {
-          return { key: ev.key, value: "${project.url}", description: ev.description, required: ev.required };
-        }
-        if (lower === "hostname" || lower === "host" || lower === "domain" ||
-            lower === "virtual_host" || lower === "server_name") {
-          return { key: ev.key, value: "${project.domain}", description: ev.description, required: ev.required };
-        }
-
-        // Port patterns
-        if (lower === "port" || lower === "app_port" || lower === "server_port") {
-          return { key: ev.key, value: "${project.port}", description: ev.description, required: ev.required };
-        }
-
-        // Node environment
-        if (lower === "node_env") {
-          return { key: ev.key, value: "production", description: ev.description, required: ev.required };
-        }
-
-        // Database name / username defaults to slug
-        if (lower.includes("_database") || lower.includes("_db")) {
-          return { key: ev.key, value: slug, description: ev.description, required: ev.required };
-        }
-        if (lower.includes("_user") && !lower.includes("password")) {
-          return { key: ev.key, value: slug, description: ev.description, required: ev.required };
-        }
-
-        return { key: ev.key, value: "", description: ev.description, required: ev.required };
-      }));
-      setMaskedFields(masked);
+      setEnvContent(lines.join("\n"));
     } else {
-      setTemplateEnvVars([]);
-      setMaskedFields(new Set());
+      setEnvContent("");
     }
   }
 
@@ -401,12 +377,11 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
 
       const { project } = await res.json();
 
-      // Bulk-create env vars from template
-      const filledVars = templateEnvVars.filter((v) => v.value.trim());
-      if (filledVars.length > 0) {
+      // Bulk-create env vars from .env content
+      if (envContent.trim()) {
         await fetch(`/api/v1/organizations/${orgId}/projects/${project.id}/env-vars`, {
           method: "PUT", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ vars: filledVars.map((v) => ({ key: v.key, value: v.value, isSecret: isPasswordField(v.key) })) }),
+          body: JSON.stringify({ content: envContent }),
         });
       }
 
@@ -739,78 +714,19 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
               </div>
             )}
 
-            {/* Template env vars */}
-            {templateEnvVars.length > 0 && (
-              <div className="grid gap-3">
-                <Label>Environment Variables</Label>
-                <div className="grid gap-3">
-                  {templateEnvVars.map((ev, i) => {
-                    const isPassword = isPasswordField(ev.key);
-                    const isMasked = maskedFields.has(ev.key);
-                    return (
-                      <div key={ev.key} className="grid gap-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-xs text-muted-foreground">{ev.key}</span>
-                          {ev.required && <Badge variant="secondary" className="text-[10px] px-1 py-0">required</Badge>}
-                          {isPassword && ev.value && (
-                            <span className="text-[10px] text-status-success">auto-generated</span>
-                          )}
-                        </div>
-                        <div className="flex gap-1">
-                          <Input
-                            placeholder={ev.description}
-                            type={isPassword && isMasked ? "password" : "text"}
-                            value={ev.value}
-                            onChange={(e) => {
-                              const updated = [...templateEnvVars];
-                              updated[i] = { ...updated[i], value: e.target.value };
-                              setTemplateEnvVars(updated);
-                            }}
-                            className="font-mono text-sm"
-                          />
-                          {isPassword && (
-                            <>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="shrink-0 px-2"
-                                onClick={() => setMaskedFields((prev) => {
-                                  const next = new Set(prev);
-                                  if (next.has(ev.key)) next.delete(ev.key);
-                                  else next.add(ev.key);
-                                  return next;
-                                })}
-                                title={isMasked ? "Show" : "Hide"}
-                              >
-                                {isMasked ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="shrink-0 px-2"
-                                onClick={() => {
-                                  const updated = [...templateEnvVars];
-                                  updated[i] = { ...updated[i], value: generatePassword() };
-                                  setTemplateEnvVars(updated);
-                                }}
-                                title="Regenerate"
-                              >
-                                <Shuffle className="size-3.5" />
-                              </Button>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  You can add more variables after creation.
-                </p>
-              </div>
-            )}
+            {/* Environment Variables */}
+            <div className="grid gap-2">
+              <Label>Environment Variables</Label>
+              <Textarea
+                placeholder="KEY=value&#10;DATABASE_URL=${postgres.DATABASE_URL}&#10;API_KEY=sk-..."
+                className="font-mono text-sm min-h-[120px]"
+                value={envContent}
+                onChange={(e) => setEnvContent(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                One per line in KEY=value format. Use {"${project.url}"}, {"${project.port}"}, etc. for dynamic values.
+              </p>
+            </div>
 
             {/* Port */}
             {(selectedSource === "image" || selectedTemplate || selectedSource === "compose") && (
