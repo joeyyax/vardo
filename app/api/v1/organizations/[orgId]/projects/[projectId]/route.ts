@@ -22,6 +22,7 @@ const updateProjectSchema = z.object({
   deployType: z.enum(["compose", "dockerfile", "image", "static", "nixpacks"]).optional(),
   gitUrl: z.string().optional(),
   imageName: z.string().optional(),
+  restartPolicy: z.string().optional(),
 });
 
 // GET /api/v1/organizations/[orgId]/projects/[projectId]

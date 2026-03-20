@@ -21,6 +21,7 @@ import {
   Check,
   Globe2,
   Star,
+  Copy,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageToolbar } from "@/components/page-toolbar";
@@ -46,6 +47,13 @@ import {
   BottomSheetDescription,
 } from "@/components/ui/bottom-sheet";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { LogViewer, highlightLogLine } from "@/components/log-viewer";
 import { EnvEditor } from "@/components/env-editor";
 import { VolumesPanel } from "@/components/volumes-panel";
@@ -113,6 +121,9 @@ type Project = {
   containerPort: number | null;
   autoTraefikLabels: boolean | null;
   autoDeploy: boolean | null;
+  imageName: string | null;
+  restartPolicy: string | null;
+  connectionInfo: { label: string; value: string; copyRef?: string }[] | null;
   status: "active" | "stopped" | "error" | "deploying";
   createdAt: Date;
   updatedAt: Date;
@@ -276,6 +287,8 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
     project.containerPort?.toString() || ""
   );
   const [autoPort, setAutoPort] = useState(!project.containerPort);
+  const [editImageName, setEditImageName] = useState(project.imageName || "");
+  const [restartPolicy, setRestartPolicy] = useState(project.restartPolicy || "unless-stopped");
   const [autoTraefikLabels, setAutoTraefikLabels] = useState(
     project.autoTraefikLabels ?? false
   );
@@ -373,6 +386,8 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
       } else {
         body.rootDirectory = null;
       }
+      if (editImageName.trim()) body.imageName = editImageName.trim();
+      body.restartPolicy = restartPolicy;
 
       const res = await fetch(
         `/api/v1/organizations/${orgId}/projects/${project.id}`,
@@ -865,22 +880,41 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
             {project.containerPort || "-"}
           </DetailField>
 
-          <DetailField label="Auto Traefik Labels">
-            {project.autoTraefikLabels ? "Enabled" : "Disabled"}
-          </DetailField>
-
-          <DetailField label="Auto Deploy">
-            {project.autoDeploy ? "Enabled" : "Disabled"}
-          </DetailField>
-
           <DetailField label="Created">
             {new Date(project.createdAt).toLocaleDateString()}
           </DetailField>
-
-          <DetailField label="Updated">
-            {new Date(project.updatedAt).toLocaleDateString()}
-          </DetailField>
         </div>
+
+        {/* Connection Info */}
+        {project.connectionInfo && project.connectionInfo.length > 0 && (
+          <div className="space-y-2">
+            <h3 className="text-xs font-medium text-muted-foreground">Connection</h3>
+            <div className="rounded-lg border bg-card divide-y">
+              {project.connectionInfo.map((info) => (
+                <div key={info.label} className="flex items-center justify-between px-4 py-2.5 gap-4">
+                  <span className="text-xs text-muted-foreground shrink-0 w-24">{info.label}</span>
+                  <span className="text-sm font-mono truncate flex-1">{info.value}</span>
+                  {info.copyRef && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(`\${${info.copyRef}}`);
+                        toast.success(`Copied \${${info.copyRef}}`);
+                      }}
+                      className="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
+                      title={`Copy reference: \${${info.copyRef}}`}
+                    >
+                      <Copy className="size-3.5" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Click copy to get the variable reference for use in other projects.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Tabbed sections */}
@@ -1318,6 +1352,20 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
                 </div>
               </div>
 
+              {/* Image */}
+              {project.deployType === "image" && (
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-image">Image</Label>
+                  <Input
+                    id="edit-image"
+                    placeholder="postgres:16"
+                    value={editImageName}
+                    onChange={(e) => setEditImageName(e.target.value)}
+                    className="font-mono"
+                  />
+                </div>
+              )}
+
               {/* Source settings */}
               {project.source === "git" && (
                 <div className="grid gap-4 sm:grid-cols-2">
@@ -1367,6 +1415,22 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
                     />
                   )}
                 </div>
+              </div>
+
+              {/* Restart policy */}
+              <div className="grid gap-2 sm:w-1/2">
+                <Label>Restart Policy</Label>
+                <Select value={restartPolicy} onValueChange={setRestartPolicy}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="unless-stopped">Unless Stopped</SelectItem>
+                    <SelectItem value="always">Always</SelectItem>
+                    <SelectItem value="on-failure">On Failure</SelectItem>
+                    <SelectItem value="no">Never</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               {/* Toggles */}

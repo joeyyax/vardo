@@ -250,6 +250,10 @@ export const projects = pgTable(
     persistentVolumes: jsonb("persistent_volumes").$type<
       { name: string; mountPath: string }[]
     >(),
+    restartPolicy: text("restart_policy").default("unless-stopped"),
+    connectionInfo: jsonb("connection_info").$type<
+      { label: string; value: string; copyRef?: string }[]
+    >(),
     status: projectStatusEnum("status").notNull().default("stopped"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -599,6 +603,9 @@ export const templates = pgTable("template", {
   >(),
   defaultVolumes: jsonb("default_volumes").$type<
     { name: string; mountPath: string; description: string }[]
+  >(),
+  defaultConnectionInfo: jsonb("default_connection_info").$type<
+    { label: string; value: string; copyRef?: string }[]
   >(),
   isBuiltIn: boolean("is_built_in").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
