@@ -47,6 +47,7 @@ type OrgMetricsProps = {
   projects: ProjectSummary[];
   initialSystem?: SystemInfo | null;
   initialProjectStats?: { id: string; name: string; displayName: string; status: string; containers: ContainerStatsSnapshot[] }[];
+  initialDisk?: { total: number; images: number; volumes: number; buildCache: number } | null;
 };
 
 function formatBytes(bytes: number, decimals = 1): string {
@@ -105,9 +106,15 @@ type DiskUsage = {
   total: number;
 };
 
-export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats }: OrgMetricsProps) {
+export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats, initialDisk }: OrgMetricsProps) {
   const [timeRange, setTimeRange] = useState<"5m" | "1h" | "6h" | "24h" | "7d">("1h");
-  const [disk, setDisk] = useState<DiskUsage | null>(null);
+  const [disk, setDisk] = useState<DiskUsage | null>(initialDisk ? {
+    images: { count: 0, totalSize: initialDisk.images },
+    containers: { count: 0, totalSize: 0 },
+    volumes: { count: 0, totalSize: initialDisk.volumes },
+    buildCache: { count: 0, totalSize: initialDisk.buildCache, reclaimable: 0 },
+    total: initialDisk.total,
+  } : null);
   const [system, setSystem] = useState<SystemInfo | null>(initialSystem || null);
   const timeRangeRef = useRef(timeRange);
   timeRangeRef.current = timeRange;

@@ -147,6 +147,34 @@ export async function queryDiskHistory(
   }
 }
 
+/**
+ * Get the latest disk usage values from Redis (instant, no Docker call).
+ */
+export async function getLatestDiskUsage(): Promise<{
+  total: number;
+  images: number;
+  volumes: number;
+  buildCache: number;
+} | null> {
+  try {
+    const [total, images, volumes, buildCache] = await Promise.all([
+      tsRedis.call("TS.GET", "metrics:system:diskTotal") as Promise<[string, string] | null>,
+      tsRedis.call("TS.GET", "metrics:system:diskImages") as Promise<[string, string] | null>,
+      tsRedis.call("TS.GET", "metrics:system:diskVolumes") as Promise<[string, string] | null>,
+      tsRedis.call("TS.GET", "metrics:system:diskBuildCache") as Promise<[string, string] | null>,
+    ]);
+    if (!total) return null;
+    return {
+      total: parseFloat(total[1]),
+      images: images ? parseFloat(images[1]) : 0,
+      volumes: volumes ? parseFloat(volumes[1]) : 0,
+      buildCache: buildCache ? parseFloat(buildCache[1]) : 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export type TimeSeriesPoint = [number, number]; // [timestamp, value]
 
 /**
