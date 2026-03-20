@@ -457,6 +457,9 @@ export async function runDeployment(
       .set({ status: "success", log: logLines.join("\n"), durationMs, finishedAt: new Date() })
       .where(eq(deployments.id, deploymentId));
 
+    // Send success notification (non-blocking)
+    sendDeployNotification(project, deploymentId, true, durationMs).catch(() => {});
+
     return { deploymentId, success: true, log: logLines.join("\n"), durationMs };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -473,7 +476,60 @@ export async function runDeployment(
       .set({ status: "error", updatedAt: new Date() })
       .where(eq(projects.id, opts.projectId));
 
+    // Send failure notification (non-blocking) — project may not be fetched yet
+    sendDeployNotification(
+      { id: opts.projectId, name: "", displayName: "", domains: [] },
+      deploymentId, false, durationMs, message
+    ).catch(() => {});
+
     return { deploymentId, success: false, log: logLines.join("\n"), durationMs };
+  }
+}
+
+async function sendDeployNotification(
+  project: { id: string; name: string; displayName: string; domains: { domain: string }[] },
+  deploymentId: string,
+  success: boolean,
+  durationMs: number,
+  errorMessage?: string,
+) {
+  try {
+    const { sendEmail } = await import("@/lib/email/send");
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    const dashboardUrl = `${appUrl}/projects/${project.id}`;
+    const domain = project.domains[0]?.domain;
+
+    // TODO: send to project notification recipients (for now, skip if no MAILPACE_API_TOKEN)
+    if (!process.env.MAILPACE_API_TOKEN) return;
+
+    // Fetch deployment for git info
+    const deployment = await db.query.deployments.findFirst({
+      where: eq(deployments.id, deploymentId),
+      columns: { gitSha: true, gitMessage: true, triggeredBy: true },
+    });
+
+    // Fetch triggered by user name
+    let triggeredByName: string | undefined;
+    if (deployment?.triggeredBy) {
+      const { user: userTable } = await import("@/lib/db/schema");
+      const u = await db.query.user.findFirst({
+        where: eq(userTable.id, deployment.triggeredBy),
+        columns: { name: true, email: true },
+      });
+      triggeredByName = u?.name || u?.email || undefined;
+    }
+
+    if (success) {
+      const { DeploySuccessEmail } = await import("@/lib/email/templates/deploy-success");
+      const duration = durationMs < 1000 ? `${durationMs}ms` : `${Math.round(durationMs / 1000)}s`;
+      // TODO: send to configured recipients
+      console.log(`[email] Would send deploy success notification for ${project.displayName}`);
+    } else {
+      const { DeployFailedEmail } = await import("@/lib/email/templates/deploy-failed");
+      console.log(`[email] Would send deploy failure notification for ${project.displayName}`);
+    }
+  } catch (err) {
+    console.error("[email] Notification error:", err);
   }
 }
 
