@@ -109,6 +109,7 @@ export async function startExec(execId: string): Promise<net.Socket> {
       : net.connect({ host: conn.host, port: conn.port });
 
     let resolved = false;
+    let headerBuf = Buffer.alloc(0);
 
     socket.on("connect", () => {
       socket.write(httpReq);
@@ -117,8 +118,9 @@ export async function startExec(execId: string): Promise<net.Socket> {
     socket.on("data", (chunk: Buffer) => {
       if (resolved) return; // Already handed off
 
-      const str = chunk.toString();
-      // Wait for the HTTP response headers to complete
+      // Accumulate chunks until we have the full HTTP headers
+      headerBuf = Buffer.concat([headerBuf, chunk]);
+      const str = headerBuf.toString();
       const headerEnd = str.indexOf("\r\n\r\n");
       if (headerEnd === -1) return; // Haven't received full headers yet
 
@@ -133,8 +135,8 @@ export async function startExec(execId: string): Promise<net.Socket> {
       resolved = true;
 
       // Any data after the headers is already terminal output
-      const bodyStart = headerEnd + 4;
-      const remaining = chunk.subarray(bodyStart);
+      const bodyStartByte = Buffer.byteLength(str.substring(0, headerEnd + 4));
+      const remaining = headerBuf.subarray(bodyStartByte);
 
       // Remove our initial data listener and resolve with the raw socket
       socket.removeAllListeners("data");
