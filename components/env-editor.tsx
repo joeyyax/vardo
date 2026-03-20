@@ -305,16 +305,20 @@ export function EnvEditor({ projectId, orgId, initialVars, allProjectNames = [] 
         </Button>
       </div>
 
-      <div className="relative">
-        {/* Syntax highlighted overlay */}
+      <div className="relative rounded-lg border bg-zinc-950 min-h-[400px]">
+        {/* Syntax highlighted layer */}
         <div
-          className="absolute inset-0 rounded-lg border border-transparent bg-black/80 p-4 font-mono text-sm leading-6 whitespace-pre-wrap pointer-events-none overflow-hidden text-transparent"
+          className="absolute inset-0 p-4 font-mono text-sm leading-6 whitespace-pre-wrap overflow-auto pointer-events-none"
           aria-hidden
         >
-          <div dangerouslySetInnerHTML={{ __html: highlightContent(content) }} />
+          {content ? (
+            <div dangerouslySetInnerHTML={{ __html: highlightContent(content) }} />
+          ) : (
+            <span className="text-zinc-600">{"# Environment variables\nDATABASE_URL=postgres://localhost:5432/mydb\nREDIS_URL=redis://localhost:6379\n\n# Reference other projects\nDB_PASSWORD=${postgres.POSTGRES_PASSWORD}"}</span>
+          )}
         </div>
 
-        {/* Actual textarea */}
+        {/* Transparent textarea for input */}
         <textarea
           ref={textareaRef}
           value={content}
@@ -324,8 +328,7 @@ export function EnvEditor({ projectId, orgId, initialVars, allProjectNames = [] 
             setCursorPosition(e.currentTarget.selectionStart);
             setShowSuggestions(false);
           }}
-          placeholder={"# Environment variables\nDATABASE_URL=postgres://localhost:5432/mydb\nREDIS_URL=redis://localhost:6379\n\n# Reference other projects\nDB_PASSWORD=${postgres.POSTGRES_PASSWORD}"}
-          className="relative w-full rounded-lg border bg-black/80 p-4 font-mono text-sm leading-6 text-transparent caret-white resize-none focus:outline-none focus:ring-2 focus:ring-ring min-h-[400px]"
+          className="relative w-full p-4 font-mono text-sm leading-6 text-transparent caret-zinc-400 bg-transparent resize-none focus:outline-none min-h-[400px] selection:bg-zinc-700/50"
           spellCheck={false}
           autoComplete="off"
           autoCorrect="off"
