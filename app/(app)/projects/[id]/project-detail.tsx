@@ -306,6 +306,7 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
   const [deletingDomainId, setDeletingDomainId] = useState<string | null>(null);
 
   const [deploying, setDeploying] = useState(false);
+  const [showVarNames, setShowVarNames] = useState(false);
   const [viewingLogId, setViewingLogId] = useState<string | null>(null);
   const searchParams = useSearchParams();
   const [activeTab, setActiveTabState] = useState(
@@ -1170,13 +1171,23 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
             <div className="space-y-6">
               {/* Internal connection */}
               <div className="space-y-3">
-                <h3 className="text-sm font-medium">Internal <span className="text-muted-foreground font-normal">(Docker network)</span></h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-medium">Internal <span className="text-muted-foreground font-normal">(Docker network)</span></h3>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">{showVarNames ? "Variables" : "Values"}</span>
+                    <Switch
+                      checked={showVarNames}
+                      onCheckedChange={setShowVarNames}
+                    />
+                  </div>
+                </div>
                 <p className="text-xs text-muted-foreground">
-                  Use these values to connect from other projects on the same network.
+                  {showVarNames
+                    ? "Showing variable references — paste these into other projects."
+                    : "Showing resolved values — toggle to see variable references."}
                 </p>
                 <div className="rounded-lg border bg-card divide-y">
                   {project.connectionInfo.map((info) => {
-                    // Resolve ${...} expressions to actual values
                     const resolved = info.value
                       .replace(/\$\{project\.name\}/g, project.name)
                       .replace(/\$\{project\.port\}/g, String(project.containerPort || ""))
@@ -1186,23 +1197,24 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
                         return envVar?.value || `\${${key}}`;
                       });
 
-                    // Build the full reference for copying
-                    const copyValue = info.copyRef
-                      ? `\${${info.copyRef}}`
-                      : resolved;
+                    const varRef = info.copyRef ? `\${${info.copyRef}}` : info.value;
+                    const displayValue = showVarNames ? varRef : resolved;
+                    const copyValue = info.copyRef ? `\${${info.copyRef}}` : resolved;
 
                     return (
                       <div key={info.label} className="flex items-center justify-between px-4 py-3 gap-4">
                         <span className="text-xs text-muted-foreground shrink-0 w-28">{info.label}</span>
-                        <span className="text-sm font-mono truncate flex-1">{resolved}</span>
+                        <span className={`text-sm font-mono truncate flex-1 ${showVarNames ? "text-status-info" : ""}`}>
+                          {displayValue}
+                        </span>
                         <button
                           type="button"
                           onClick={() => {
                             navigator.clipboard.writeText(copyValue);
-                            toast.success(`Copied ${info.copyRef ? `\${${info.copyRef}}` : resolved}`);
+                            toast.success(`Copied ${copyValue}`);
                           }}
                           className="shrink-0 p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                          title={info.copyRef ? `Copy reference: \${${info.copyRef}}` : "Copy value"}
+                          title={`Copy: ${copyValue}`}
                         >
                           <Copy className="size-3.5" />
                         </button>
