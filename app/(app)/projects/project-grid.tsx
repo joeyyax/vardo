@@ -104,7 +104,7 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
   const [localOrder, setLocalOrder] = useState<string[] | null>(null);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 12, tolerance: 5 } })
+    useSensor(PointerSensor, { activationConstraint: { distance: 10 } })
   );
 
   useEffect(() => {
@@ -476,24 +476,33 @@ function DroppableGroup({ groupId, group, projects, isHoldTarget, onClickBg }: {
 // ── Sortable Card (draggable) ─────────────────────────────────────────────
 
 function SortableProjectCard({ project, isHoldTarget, compact }: { project: ProjectWithRelations; isHoldTarget: boolean; compact?: boolean }) {
+  const router = useRouter();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: project.id });
 
-  const style = {
+  const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
+    cursor: "grab",
   };
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners} data-project-card
-      className={`transition-transform ${isDragging ? "opacity-30 scale-95 z-50" : ""} ${isHoldTarget ? "ring-2 ring-status-info/50 scale-105" : ""}`}>
-      <ProjectCardStatic project={project} compact={compact} />
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      data-project-card
+      onClick={() => { if (!isDragging) router.push(`/projects/${project.id}`); }}
+      className={`${isDragging ? "opacity-30 scale-95 z-50" : ""} ${isHoldTarget ? "ring-2 ring-status-info/50 scale-105" : ""}`}
+    >
+      <ProjectCardStatic project={project} compact={compact} noLink />
     </div>
   );
 }
 
 // ── Static Card (no drag, used in overlays, groups, and create preview) ──
 
-function ProjectCardStatic({ project, compact, overlay }: { project: ProjectWithRelations; compact?: boolean; overlay?: boolean }) {
+function ProjectCardStatic({ project, compact, overlay, noLink }: { project: ProjectWithRelations; compact?: boolean; overlay?: boolean; noLink?: boolean }) {
   const isRunning = project.status === "active";
   const lastDeploy = project.deployments[0];
   const primaryDomain = project.domains.find((d) => d.isPrimary) || project.domains[0];
@@ -532,7 +541,7 @@ function ProjectCardStatic({ project, compact, overlay }: { project: ProjectWith
     </div>
   );
 
-  if (overlay) return content;
+  if (overlay || noLink) return content;
 
   return (
     <Link href={`/projects/${project.id}`} className="block">
