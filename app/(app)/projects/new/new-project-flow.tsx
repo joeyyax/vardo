@@ -163,6 +163,8 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
     { label: string; value: string; copyRef?: string }[]
   >([]);
   const [exposePort, setExposePort] = useState(false);
+  const [createRepo, setCreateRepo] = useState(false);
+  const [repoPrivate, setRepoPrivate] = useState(true);
 
   // Domain
   const [generateDomain, setGenerateDomain] = useState(true);
@@ -214,7 +216,7 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
 
   // Auto-fetch installations when GitHub source is selected
   useEffect(() => {
-    if (selectedSource === "github" || gitMode === "github") fetchInstallations();
+    fetchInstallations();
   }, [selectedSource, gitMode, fetchInstallations]);
 
   // Fetch branches when a repo is selected
@@ -371,7 +373,38 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
       };
       if (containerPort) body.containerPort = parseInt(containerPort, 10);
       if (rootDirectory.trim()) body.rootDirectory = rootDirectory.trim();
-      if (source === "git") { body.gitUrl = gitUrl; body.gitBranch = gitBranch; }
+
+      // Create GitHub repo if opted in
+      if (createRepo && installations.length > 0) {
+        const instId = selectedInstallation || installations[0].id;
+        const repoRes = await fetch("/api/v1/github/repos", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            installationId: instId,
+            name: name.trim(),
+            description: description.trim() || undefined,
+            isPrivate: repoPrivate,
+          }),
+        });
+        if (repoRes.ok) {
+          const { repo } = await repoRes.json();
+          body.source = "git";
+          body.deployType = "nixpacks";
+          body.gitUrl = repo.cloneUrl;
+          body.gitBranch = repo.defaultBranch;
+          toast.success(`Repository created: ${repo.fullName}`);
+        } else {
+          const err = await repoRes.json();
+          toast.error(err.error || "Failed to create repository");
+          setCreating(false);
+          return;
+        }
+      } else if (source === "git") {
+        body.gitUrl = gitUrl;
+        body.gitBranch = gitBranch;
+      }
+
       if (deployType === "image") body.imageName = imageName;
       if (source === "direct" && deployType === "compose") {
         body.composeContent = composeContent || undefined;
@@ -817,6 +850,57 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
                 <Switch id="auto-deploy" checked={autoDeploy} onCheckedChange={setAutoDeploy} />
                 <Label htmlFor="auto-deploy">Auto Deploy</Label>
               </div>
+
+              {/* Create GitHub repo — only show if GitHub is connected */}
+              {installations.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <Switch
+                      id="create-repo"
+                      checked={createRepo}
+                      onCheckedChange={setCreateRepo}
+                    />
+                    <div>
+                      <Label htmlFor="create-repo">Create GitHub repository</Label>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Create a new repo on {installations[0]?.accountLogin || "GitHub"}
+                      </p>
+                    </div>
+                  </div>
+                  {createRepo && (
+                    <div className="ml-10 space-y-3">
+                      {installations.length > 1 && (
+                        <div className="grid gap-2">
+                          <Label>GitHub Account</Label>
+                          <Select
+                            value={selectedInstallation || installations[0]?.id}
+                            onValueChange={setSelectedInstallation}
+                          >
+                            <SelectTrigger className="w-64">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {installations.map((inst) => (
+                                <SelectItem key={inst.id} value={inst.id}>
+                                  {inst.accountLogin}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-3">
+                        <Switch
+                          id="repo-private"
+                          checked={repoPrivate}
+                          onCheckedChange={setRepoPrivate}
+                        />
+                        <Label htmlFor="repo-private">Private repository</Label>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {groups.length > 0 && (
                 <div className="grid gap-2">
