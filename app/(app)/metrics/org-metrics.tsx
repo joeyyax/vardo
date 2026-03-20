@@ -442,7 +442,7 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
             </div>
             <div className="p-4">
               <ResponsiveContainer width="100%" height={180}>
-                <AreaChart data={timeSeries}>
+                <AreaChart data={timeSeries} isAnimationActive={false}>
                   <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.005 260 / 40%)" />
                   <XAxis {...xAxisProps} />
                   <YAxis tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} />
@@ -459,7 +459,7 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
             </div>
             <div className="p-4">
               <ResponsiveContainer width="100%" height={180}>
-                <AreaChart data={timeSeries}>
+                <AreaChart data={timeSeries} isAnimationActive={false}>
                   <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.005 260 / 40%)" />
                   <XAxis {...xAxisProps} />
                   <YAxis tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} tickFormatter={(v) => formatBytes(v)} />
@@ -476,7 +476,7 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
             </div>
             <div className="p-4">
               <ResponsiveContainer width="100%" height={180}>
-                <AreaChart data={timeSeries}>
+                <AreaChart data={timeSeries} isAnimationActive={false}>
                   <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.005 260 / 40%)" />
                   <XAxis {...xAxisProps} />
                   <YAxis tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} tickFormatter={(v) => formatBytes(v)} />
@@ -494,7 +494,7 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
             </div>
             <div className="p-4">
               <ResponsiveContainer width="100%" height={180}>
-                <AreaChart data={timeSeries}>
+                <AreaChart data={timeSeries} isAnimationActive={false}>
                   <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.005 260 / 40%)" />
                   <XAxis {...xAxisProps} />
                   <YAxis tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} tickFormatter={(v) => formatBytes(v)} />
