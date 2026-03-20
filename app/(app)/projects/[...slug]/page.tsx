@@ -5,7 +5,7 @@ import { getCurrentOrg } from "@/lib/auth/session";
 import { eq, and, asc, or } from "drizzle-orm";
 import { ProjectDetail } from "./project-detail";
 
-const VALID_TABS = ["deployments", "connect", "variables", "networking", "logs", "volumes", "terminal", "metrics", "environments"] as const;
+const VALID_TABS = ["deployments", "connect", "variables", "networking", "logs", "volumes", "cron", "terminal", "metrics", "environments"] as const;
 type ValidTab = (typeof VALID_TABS)[number];
 
 type PageProps = {

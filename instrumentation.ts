@@ -18,5 +18,20 @@ export async function register() {
     } catch (err) {
       console.error("[instrumentation] Failed to start cron scheduler:", err);
     }
+
+    console.log("[instrumentation] Starting domain monitor...");
+    try {
+      setInterval(async () => {
+        try {
+          const { checkAllDomains } = await import("./lib/domains/monitor");
+          await checkAllDomains();
+        } catch (err) {
+          console.error("[domain-monitor] Error:", err);
+        }
+      }, 5 * 60 * 1000);
+      console.log("[instrumentation] Domain monitor started (every 5 minutes)");
+    } catch (err) {
+      console.error("[instrumentation] Failed to start domain monitor:", err);
+    }
   }
 }

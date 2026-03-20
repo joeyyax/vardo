@@ -69,6 +69,7 @@ const ProjectTerminal = dynamic(
 import { EnvEditor } from "@/components/env-editor";
 import { VolumesPanel } from "@/components/volumes-panel";
 import { ProjectEnvironments } from "./project-environments";
+import { CronManager } from "./project-cron";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -1329,6 +1330,9 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allGroup
           <TabsTrigger value="volumes">
             Volumes
           </TabsTrigger>
+          <TabsTrigger value="cron">
+            Cron
+          </TabsTrigger>
           <TabsTrigger value="terminal">
             Terminal
           </TabsTrigger>
@@ -1874,6 +1878,10 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allGroup
 
         <TabsContent value="volumes" className="pt-4">
           <VolumesPanel projectId={project.id} orgId={orgId} />
+        </TabsContent>
+
+        <TabsContent value="cron" className="pt-4">
+          <CronManager projectId={project.id} orgId={orgId} />
         </TabsContent>
 
         <TabsContent value="terminal" className="pt-4">

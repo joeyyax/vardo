@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { deployments, projects, envVars, orgEnvVars, organizations, environments } from "@/lib/db/schema";
+import { deployments, projects, envVars, orgEnvVars, organizations, environments, volumeLimits } from "@/lib/db/schema";
 import { eq, and, isNull } from "drizzle-orm";
 import { resolveAllEnvVars, type ResolveContext } from "@/lib/env/resolve";
 import { nanoid } from "nanoid";
@@ -755,6 +755,36 @@ export async function runDeployment(
     } catch {
       // Volume detection is best-effort
     }
+
+    // Check volume size limits
+    try {
+      const limit = await db.query.volumeLimits.findFirst({
+        where: eq(volumeLimits.projectId, opts.projectId),
+      });
+      if (limit) {
+        const runningContainers = await listContainers(project.name);
+        for (const c of runningContainers) {
+          const info = await inspectContainer(c.id);
+          for (const mount of info.mounts) {
+            if (mount.type === "volume") {
+              try {
+                const volName = mount.source.split("/").pop();
+                const { stdout } = await execAsync(
+                  `docker run --rm -v ${volName}:/data alpine du -sb /data`,
+                  { timeout: 30000 }
+                );
+                const sizeBytes = parseInt(stdout.split("\t")[0]);
+                const percent = Math.round((sizeBytes / limit.maxSizeBytes) * 100);
+                if (percent >= (limit.warnAtPercent ?? 80)) {
+                  const { formatBytes } = await import("@/lib/metrics/format");
+                  log(`[deploy] WARNING: Volume ${mount.destination} is at ${percent}% of limit (${formatBytes(sizeBytes)} / ${formatBytes(limit.maxSizeBytes)})`);
+                }
+              } catch { /* volume size check failed, non-fatal */ }
+            }
+          }
+        }
+      }
+    } catch { /* volume limit check failed, non-fatal */ }
 
     // Sync cron jobs from template and/or host.toml
     try {
