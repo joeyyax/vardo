@@ -104,13 +104,21 @@ export async function startExec(execId: string): Promise<net.Socket> {
         },
       },
       (res) => {
-        // If we get a normal response instead of an upgrade, we can still
-        // use the socket — Docker returns 200 with a hijacked connection
-        // for TTY exec sessions.
         if (res.statusCode === 200) {
-          // The underlying socket is hijacked for bidirectional I/O
-          const socket = (res as unknown as { socket: net.Socket }).socket;
+          // Docker hijacks the connection — the response object IS the
+          // bidirectional stream. Access the underlying socket from the
+          // request's connection, which Docker has taken over.
+          const socket = req.socket;
           if (socket) {
+            // The response may have already buffered some data — we need
+            // to re-emit it. Pipe remaining response data through the socket
+            // events so the caller sees all output.
+            res.on("data", (chunk: Buffer) => {
+              socket.emit("data", chunk);
+            });
+            res.on("end", () => {
+              socket.emit("end");
+            });
             resolve(socket);
             return;
           }
@@ -125,7 +133,7 @@ export async function startExec(execId: string): Promise<net.Socket> {
       },
     );
 
-    // Docker hijacks the connection on upgrade
+    // Docker may also respond via upgrade event
     req.on("upgrade", (_res, socket) => {
       resolve(socket as net.Socket);
     });

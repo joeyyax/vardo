@@ -67,6 +67,7 @@ const ProjectTerminal = dynamic(
 );
 import { EnvEditor } from "@/components/env-editor";
 import { VolumesPanel } from "@/components/volumes-panel";
+import { ProjectEnvironments } from "./project-environments";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -604,6 +605,7 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
 
   const [deploying, setDeploying] = useState(false);
   const [showVarNames, setShowVarNames] = useState(false);
+  const [selectedEnvId, setSelectedEnvId] = useState<string | undefined>(undefined);
   const [viewingLogId, setViewingLogId] = useState<string | null>(null);
   const searchParams = useSearchParams();
   const [activeTab, setActiveTabState] = useState(initialTab);
@@ -1566,7 +1568,39 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
           </TabsContent>
         )}
 
-        <TabsContent value="variables" className="pt-4">
+        <TabsContent value="variables" className="pt-4 space-y-4">
+          {project.environments.length > 0 && (
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-muted-foreground">Environment:</span>
+              <Select
+                value={selectedEnvId ?? "all"}
+                onValueChange={(v) => setSelectedEnvId(v === "all" ? undefined : v)}
+              >
+                <SelectTrigger className="w-48 h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All environments</SelectItem>
+                  {project.environments.map((env) => (
+                    <SelectItem key={env.id} value={env.id}>
+                      <span className="flex items-center gap-2">
+                        <span
+                          className={`size-1.5 rounded-full ${
+                            env.type === "production"
+                              ? "bg-status-success"
+                              : env.type === "staging"
+                              ? "bg-status-warning"
+                              : "bg-status-info"
+                          }`}
+                        />
+                        {env.name}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <EnvEditor
             projectId={project.id}
             projectName={project.name}
@@ -1574,6 +1608,7 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
             initialVars={project.envVars}
             allProjectNames={allProjectNames}
             orgVarKeys={orgVarKeys}
+            environmentId={selectedEnvId}
           />
         </TabsContent>
 
@@ -1813,38 +1848,12 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
           <ProjectMetrics orgId={orgId} projectId={project.id} />
         </TabsContent>
 
-        <TabsContent value="environments" className="space-y-4 pt-4">
-          {project.environments.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
-              <p className="text-sm text-muted-foreground">
-                No additional environments. This project runs in production by default.
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Add staging or preview environments to test changes before deploying to production.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {project.environments.map((env) => (
-                <div
-                  key={env.id}
-                  className="squircle flex items-center justify-between gap-4 rounded-lg border bg-card p-4"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <p className="text-sm font-medium">{env.name}</p>
-                    <Badge variant="secondary" className="text-xs">
-                      {env.type}
-                    </Badge>
-                  </div>
-                  {env.domain && (
-                    <span className="text-xs text-muted-foreground font-mono truncate">
-                      {env.domain}
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+        <TabsContent value="environments" className="pt-4">
+          <ProjectEnvironments
+            projectId={project.id}
+            orgId={orgId}
+            environments={project.environments}
+          />
         </TabsContent>
       </Tabs>
 
