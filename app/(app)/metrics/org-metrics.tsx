@@ -393,6 +393,22 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
       </div>
 
       {/* Aggregate charts */}
+      {(() => {
+        const rangeMs: Record<string, number> = { "5m": 300000, "1h": 3600000, "6h": 21600000, "24h": 86400000, "7d": 604800000 };
+        const now = Date.now();
+        const xDomain = [now - rangeMs[timeRange], now];
+        const formatTick = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        const xAxisProps = {
+          dataKey: "timestamp" as const,
+          type: "number" as const,
+          domain: xDomain as [number, number],
+          tick: { fontSize: 10, fill: "oklch(0.5 0.005 260)" },
+          tickLine: false,
+          axisLine: false,
+          tickFormatter: formatTick,
+          scale: "time" as const,
+        };
+        return (
       <div className="grid md:grid-cols-2 gap-4">
           <div className="squircle rounded-lg border bg-card overflow-hidden">
             <div className="flex items-center gap-2 px-4 py-3 border-b">
@@ -403,7 +419,7 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
               <ResponsiveContainer width="100%" height={180}>
                 <AreaChart data={timeSeries}>
                   <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.005 260 / 40%)" />
-                  <XAxis dataKey="time" tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} />
+                  <XAxis {...xAxisProps} />
                   <YAxis tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} />
                   <Tooltip {...chartTooltipStyle} formatter={(v: number) => [`${v.toFixed(1)}%`, "CPU"]} />
                   <Area type="monotone" dataKey="cpu" stroke="oklch(0.7 0.12 240)" fill="oklch(0.7 0.12 240 / 15%)" strokeWidth={1.5} dot={false} />
@@ -420,7 +436,7 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
               <ResponsiveContainer width="100%" height={180}>
                 <AreaChart data={timeSeries}>
                   <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.005 260 / 40%)" />
-                  <XAxis dataKey="time" tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} />
+                  <XAxis {...xAxisProps} />
                   <YAxis tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} tickFormatter={(v) => formatBytes(v)} />
                   <Tooltip {...chartTooltipStyle} formatter={(v: number) => [formatBytes(v), "Memory"]} />
                   <Area type="monotone" dataKey="memory" stroke="oklch(0.7 0.12 155)" fill="oklch(0.7 0.12 155 / 15%)" strokeWidth={1.5} dot={false} />
@@ -437,7 +453,7 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
               <ResponsiveContainer width="100%" height={180}>
                 <AreaChart data={timeSeries}>
                   <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.005 260 / 40%)" />
-                  <XAxis dataKey="time" tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} />
+                  <XAxis {...xAxisProps} />
                   <YAxis tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} tickFormatter={(v) => formatBytes(v)} />
                   <Tooltip {...chartTooltipStyle} formatter={(v: number, name: string) => [formatBytes(v), name === "networkRx" ? "↓ Received" : "↑ Sent"]} />
                   <Area type="monotone" dataKey="networkRx" stroke="oklch(0.7 0.12 240)" fill="oklch(0.7 0.12 240 / 10%)" strokeWidth={1.5} dot={false} />
@@ -455,7 +471,7 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
               <ResponsiveContainer width="100%" height={180}>
                 <AreaChart data={timeSeries}>
                   <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.005 260 / 40%)" />
-                  <XAxis dataKey="time" tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} />
+                  <XAxis {...xAxisProps} />
                   <YAxis tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} tickFormatter={(v) => formatBytes(v)} />
                   <Tooltip {...chartTooltipStyle} formatter={(v: number) => [formatBytes(v), "Total"]} />
                   <Area type="monotone" dataKey="diskTotal" stroke="oklch(0.65 0.1 30)" fill="oklch(0.65 0.1 30 / 15%)" strokeWidth={1.5} dot={false} />
@@ -464,6 +480,8 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
             </div>
           </div>
       </div>
+        );
+      })()}
 
       {/* Project list with stats */}
       {projects.length === 0 ? (
