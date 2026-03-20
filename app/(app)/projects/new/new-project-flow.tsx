@@ -343,7 +343,9 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
   }
 
   const projectSlug = name || "my-app";
-  const domainPreview = `${projectSlug}-${wordPair.adjective}-${wordPair.noun}.${baseDomain}`;
+  const domainPreview = slugEdited
+    ? `${projectSlug}.${baseDomain}`
+    : `${projectSlug}-${wordPair.adjective}-${wordPair.noun}.${baseDomain}`;
 
 
   const isConfiguring = selectedSource !== null || selectedTemplate !== null;
@@ -638,21 +640,19 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
                     <span className="text-sm font-mono text-muted-foreground truncate">
                       {domainPreview}
                     </span>
-                    <button
+                    {!slugEdited && <button
                       type="button"
                       onClick={() => {
                         const wp = generateWordPair();
                         setWordPair(wp);
-                        if (!slugEdited) {
-                          const base = selectedTemplate ? slugify(selectedTemplate.name) : slugify(displayName);
-                          setName(`${base}-${wp.adjective}-${wp.noun}`);
-                        }
+                        const base = selectedTemplate ? slugify(selectedTemplate.name) : slugify(displayName);
+                        setName(`${base}-${wp.adjective}-${wp.noun}`);
                       }}
                       className="shrink-0 ml-auto p-1 rounded-md text-muted-foreground hover:text-foreground transition-colors"
                       title="Generate new words"
                     >
                       <RefreshCw className="size-3.5" />
-                    </button>
+                    </button>}
                   </div>
                   <p className="text-xs text-muted-foreground ml-10">
                     You can add custom domains or change this after creation.
