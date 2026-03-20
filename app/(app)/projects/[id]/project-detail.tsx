@@ -22,6 +22,7 @@ import {
   Globe2,
   Star,
   Copy,
+  Container,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageToolbar } from "@/components/page-toolbar";
@@ -55,6 +56,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { LogViewer, highlightLogLine } from "@/components/log-viewer";
+import { detectProjectIcon } from "@/lib/ui/project-icon";
 import { EnvEditor } from "@/components/env-editor";
 import { VolumesPanel } from "@/components/volumes-panel";
 import {
@@ -760,46 +762,104 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
         </DropdownMenu>
       </PageToolbar>
 
-      {/* Overview — always visible */}
-      <div className="space-y-4">
-        {project.description && (
-          <p className="text-sm text-muted-foreground">
-            {project.description}
-          </p>
-        )}
+      {/* Overview */}
+      <div className="flex gap-5">
+        {/* Project icon */}
+        {(() => {
+          const iconUrl = detectProjectIcon({
+            imageName: project.imageName,
+            gitUrl: project.gitUrl,
+            deployType: project.deployType,
+          });
+          return iconUrl ? (
+            <img src={iconUrl} alt="" className="size-12 shrink-0 mt-0.5 opacity-60" />
+          ) : (
+            <div className="size-12 shrink-0 rounded-lg bg-muted/50 flex items-center justify-center mt-0.5">
+              <Container className="size-6 text-muted-foreground/50" />
+            </div>
+          );
+        })()}
 
-        {/* Tags */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {(project.projectTags ?? []).map(({ tag }) => (
-            <span
-              key={tag.id}
-              className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium"
-              style={{
-                backgroundColor: `${tag.color}20`,
-                color: tag.color,
-              }}
-            >
-              <span
-                className="size-2 rounded-full"
-                style={{ backgroundColor: tag.color }}
-                aria-hidden="true"
-              />
-              {tag.name}
+        <div className="flex-1 min-w-0 space-y-3">
+          {/* Description + domain */}
+          {project.description && (
+            <p className="text-sm text-muted-foreground">{project.description}</p>
+          )}
+
+          {project.domains.length > 0 && (
+            <div className="flex items-center gap-2">
+              {(() => {
+                const primary = project.domains.find((d) => d.isPrimary) || project.domains[0];
+                const rest = project.domains.length - 1;
+                return (
+                  <>
+                    <a
+                      href={`https://${primary.domain}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm font-mono text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      {primary.domain}
+                    </a>
+                    {rest > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab("domains")}
+                        className="text-xs text-muted-foreground/60 hover:text-muted-foreground transition-colors"
+                      >
+                        +{rest}
+                      </button>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* Source line */}
+          <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+            {project.source === "git" && project.gitUrl && (
+              <span className="font-mono">
+                {project.gitUrl.replace("https://github.com/", "").replace(".git", "")}
+                {project.gitBranch && project.gitBranch !== "main" && (
+                  <span className="text-muted-foreground/50">:{project.gitBranch}</span>
+                )}
+              </span>
+            )}
+            {project.deployType === "image" && project.imageName && (
+              <span className="font-mono">{project.imageName}</span>
+            )}
+            {project.containerPort && (
+              <span>:{project.containerPort}</span>
+            )}
+            <span className="text-muted-foreground/40">
+              {deployTypeLabel(project.deployType)}
             </span>
-          ))}
+            <span className="text-muted-foreground/40">
+              {new Date(project.createdAt).toLocaleDateString()}
+            </span>
+          </div>
 
-          {allTags.length > 0 && (
-            <Popover open={tagPopoverOpen} onOpenChange={setTagPopoverOpen}>
-              <PopoverTrigger asChild>
-                <button
-                  className="inline-flex items-center justify-center size-6 rounded-full border border-dashed text-muted-foreground hover:text-foreground hover:border-foreground transition-colors"
-                  aria-label="Manage tags"
-                >
-                  <Plus className="size-3" />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent align="start" className="w-56 p-2">
-                <div className="space-y-1">
+          {/* Tags */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {(project.projectTags ?? []).map(({ tag }) => (
+              <span
+                key={tag.id}
+                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
+                style={{ backgroundColor: `${tag.color}15`, color: tag.color }}
+              >
+                <span className="size-1.5 rounded-full" style={{ backgroundColor: tag.color }} />
+                {tag.name}
+              </span>
+            ))}
+            {allTags.length > 0 && (
+              <Popover open={tagPopoverOpen} onOpenChange={setTagPopoverOpen}>
+                <PopoverTrigger asChild>
+                  <button className="inline-flex items-center justify-center size-5 rounded-full border border-dashed border-muted-foreground/20 text-muted-foreground/40 hover:text-muted-foreground hover:border-muted-foreground/40 transition-colors">
+                    <Plus className="size-2.5" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-48 p-1.5">
                   {allTags.map((tag) => {
                     const isApplied = projectTagIds.has(tag.id);
                     const isToggling = togglingTagId === tag.id;
@@ -808,107 +868,19 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
                         key={tag.id}
                         disabled={isToggling}
                         onClick={() => handleToggleTag(tag.id)}
-                        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent transition-colors disabled:opacity-50"
+                        className="flex w-full items-center gap-2 rounded px-2 py-1 text-xs hover:bg-accent transition-colors disabled:opacity-50"
                       >
-                        <span
-                          className="size-3 rounded-full shrink-0"
-                          style={{ backgroundColor: tag.color }}
-                          aria-hidden="true"
-                        />
+                        <span className="size-2.5 rounded-full shrink-0" style={{ backgroundColor: tag.color }} />
                         <span className="flex-1 text-left truncate">{tag.name}</span>
-                        {isToggling ? (
-                          <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
-                        ) : isApplied ? (
-                          <Check className="size-3.5 text-foreground" />
-                        ) : null}
+                        {isToggling ? <Loader2 className="size-3 animate-spin" /> : isApplied ? <Check className="size-3" /> : null}
                       </button>
                     );
                   })}
-                </div>
-              </PopoverContent>
-            </Popover>
-          )}
-        </div>
-
-        {/* Domains summary */}
-        {project.domains.length > 0 && (
-          <div className="flex items-center gap-2 text-sm">
-            <Globe2 className="size-4 text-muted-foreground shrink-0" />
-            {(() => {
-              const primary = project.domains.find((d) => d.isPrimary) || project.domains[0];
-              const rest = project.domains.length - 1;
-              return (
-                <>
-                  <a
-                    href={`https://${primary.domain}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-mono text-muted-foreground hover:text-foreground transition-colors underline-offset-4 hover:underline"
-                  >
-                    {primary.domain}
-                  </a>
-                  {rest > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab("domains")}
-                      className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      and {rest} more
-                    </button>
-                  )}
-                </>
-              );
-            })()}
+                </PopoverContent>
+              </Popover>
+            )}
           </div>
-        )}
-
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <DetailField label="Source">
-            {project.source === "git" ? "Git Repository" : "Direct"}
-          </DetailField>
-
-          <DetailField label="Deploy Type">
-            {deployTypeLabel(project.deployType)}
-          </DetailField>
-
-          {project.source === "git" && (
-            <>
-              <DetailField label="Git URL">
-                {project.gitUrl || "-"}
-              </DetailField>
-              <DetailField label="Branch">
-                {project.gitBranch || "main"}
-              </DetailField>
-            </>
-          )}
-
-          {project.deployType === "image" && (
-            <DetailField label="Image">
-              {project.imageName || "-"}
-            </DetailField>
-          )}
-
-          {project.deployType === "compose" && (
-            <DetailField label="Compose Path">
-              {project.composeFilePath || "docker-compose.yml"}
-            </DetailField>
-          )}
-
-          {project.rootDirectory && (
-            <DetailField label="Root Directory">
-              {project.rootDirectory}
-            </DetailField>
-          )}
-
-          <DetailField label="Container Port">
-            {project.containerPort || "-"}
-          </DetailField>
-
-          <DetailField label="Created">
-            {new Date(project.createdAt).toLocaleDateString()}
-          </DetailField>
         </div>
-
       </div>
 
       {/* Tabbed sections */}

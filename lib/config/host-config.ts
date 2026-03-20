@@ -7,6 +7,7 @@ export type HostConfig = {
     name?: string;
     displayName?: string;
     description?: string;
+    icon?: string;
     deployType?: string;
     port?: number;
     rootDirectory?: string;
