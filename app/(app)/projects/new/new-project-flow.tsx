@@ -268,7 +268,7 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
     setTemplateConnectionInfo(template.defaultConnectionInfo || []);
     if (template.defaultEnvVars?.length) {
       const slug = slugify(template.name);
-      const lines: string[] = [];
+      const lines: string[] = [`# ${template.displayName} configuration`];
 
       for (const ev of template.defaultEnvVars) {
         let value = ev.defaultValue || "";
@@ -298,9 +298,14 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
           }
         }
 
+        // Add description as comment
+        if (ev.description) {
+          lines.push(`# ${ev.description}`);
+        }
         lines.push(`${ev.key}=${value}`);
       }
 
+      lines.push("", "# Add your own variables below");
       setEnvContent(lines.join("\n"));
     } else {
       setEnvContent("");

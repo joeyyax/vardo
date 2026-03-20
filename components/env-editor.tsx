@@ -21,6 +21,8 @@ type EnvEditorProps = {
   onChange: (content: string) => void;
   allProjectNames?: string[];
   orgVarKeys?: string[];
+  /** Hide the cross-project variable reference section below the editor */
+  showReferences?: boolean;
 };
 
 type Suggestion = {
@@ -522,8 +524,8 @@ export function EnvEditor(props: EnvEditorProps) {
         )}
       </div>
 
-      {/* Variable references */}
-      {(() => {
+      {/* Variable references — hidden in standalone mode */}
+      {!isStandalone && (() => {
         const keys = content
           .split("\n")
           .filter((l) => l.includes("=") && !l.startsWith("#"))
