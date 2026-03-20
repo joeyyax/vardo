@@ -111,6 +111,27 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
   const [system, setSystem] = useState<SystemInfo | null>(initialSystem || null);
   const timeRangeRef = useRef(timeRange);
   timeRangeRef.current = timeRange;
+
+  // Stable chart domain — only updates when timeRange changes, not every tick
+  const [chartDomain, setChartDomain] = useState<[number, number]>(() => {
+    const rangeMs: Record<string, number> = { "5m": 300000, "1h": 3600000, "6h": 21600000, "24h": 86400000, "7d": 604800000 };
+    const now = Date.now();
+    return [now - rangeMs[timeRange], now];
+  });
+
+  // Update domain when time range changes, and slowly advance the right edge every 30s
+  useEffect(() => {
+    const rangeMs: Record<string, number> = { "5m": 300000, "1h": 3600000, "6h": 21600000, "24h": 86400000, "7d": 604800000 };
+    const now = Date.now();
+    setChartDomain([now - rangeMs[timeRange], now]);
+
+    // Advance right edge every 30s so the chart slowly scrolls
+    const interval = setInterval(() => {
+      const n = Date.now();
+      setChartDomain([n - rangeMs[timeRange], n]);
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [timeRange]);
   const [projectStats, setProjectStats] = useState<Record<string, ProjectStats>>(() => {
     const initial: Record<string, ProjectStats> = {};
     for (const p of projects) {
@@ -394,14 +415,11 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
 
       {/* Aggregate charts */}
       {(() => {
-        const rangeMs: Record<string, number> = { "5m": 300000, "1h": 3600000, "6h": 21600000, "24h": 86400000, "7d": 604800000 };
-        const now = Date.now();
-        const xDomain = [now - rangeMs[timeRange], now];
         const formatTick = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
         const xAxisProps = {
           dataKey: "timestamp" as const,
           type: "number" as const,
-          domain: xDomain as [number, number],
+          domain: chartDomain as [number, number],
           tick: { fontSize: 10, fill: "oklch(0.5 0.005 260)" },
           tickLine: false,
           axisLine: false,
