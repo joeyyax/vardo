@@ -393,12 +393,6 @@ export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
   return (
     <div className="space-y-6">
       <PageToolbar>
-        <Button variant="ghost" size="sm" asChild>
-          <Link href="/projects">
-            <ArrowLeft className="mr-1.5 size-4" />
-            Projects
-          </Link>
-        </Button>
         <h1 className="text-xl font-semibold tracking-tight">New Project</h1>
       </PageToolbar>
 

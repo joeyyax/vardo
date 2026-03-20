@@ -721,12 +721,6 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
           </div>
         }
       >
-        <Button variant="ghost" size="sm" asChild>
-          <Link href="/projects">
-            <ArrowLeft className="mr-1.5 size-4" />
-            Projects
-          </Link>
-        </Button>
         <h1 className="text-xl font-semibold tracking-tight">
           {project.displayName}
         </h1>
