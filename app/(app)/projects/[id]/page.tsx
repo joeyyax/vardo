@@ -29,6 +29,11 @@ export default async function ProjectDetailPage({ params }: PageProps) {
         deployments: {
           orderBy: (d, { desc }) => [desc(d.startedAt)],
           limit: 10,
+          with: {
+            triggeredByUser: {
+              columns: { id: true, name: true, image: true },
+            },
+          },
         },
         domains: true,
         environments: true,

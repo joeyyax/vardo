@@ -269,6 +269,7 @@ export const deployments = pgTable("deployment", {
   status: deploymentStatusEnum("status").notNull().default("queued"),
   trigger: deploymentTriggerEnum("trigger").notNull(),
   gitSha: text("git_sha"),
+  gitMessage: text("git_message"),
   log: text("log"),
   durationMs: integer("duration_ms"),
   environmentId: text("environment_id").references(() => environments.id, {

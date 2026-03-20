@@ -200,6 +200,19 @@ export async function runDeployment(
         log(`[deploy] Cloned repo (${branch})`);
       }
 
+      // Capture git SHA + commit message
+      try {
+        const { stdout: sha } = await execAsync(`git -C "${repoDir}" rev-parse HEAD`, { timeout: 5000 });
+        const { stdout: msg } = await execAsync(`git -C "${repoDir}" log -1 --format=%s`, { timeout: 5000 });
+        const gitSha = sha.trim();
+        const gitMessage = msg.trim();
+        log(`[deploy] Commit: ${gitSha.slice(0, 7)} ${gitMessage}`);
+        await db
+          .update(deployments)
+          .set({ gitSha, gitMessage })
+          .where(eq(deployments.id, deploymentId));
+      } catch { /* not critical */ }
+
       // Find compose file
       const root = project.rootDirectory ? join(repoDir, project.rootDirectory) : repoDir;
       const composeFilePath = project.composeFilePath || "docker-compose.yml";

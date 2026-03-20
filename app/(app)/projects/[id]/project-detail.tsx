@@ -61,10 +61,16 @@ type Deployment = {
   status: "queued" | "running" | "success" | "failed" | "cancelled";
   trigger: "manual" | "webhook" | "api" | "rollback";
   gitSha: string | null;
+  gitMessage: string | null;
   durationMs: number | null;
   log: string | null;
   startedAt: Date;
   finishedAt: Date | null;
+  triggeredByUser: {
+    id: string;
+    name: string | null;
+    image: string | null;
+  } | null;
 };
 
 type Domain = {
@@ -1016,21 +1022,37 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
                         <DeploymentStatusBadge status={deployment.status} />
                       )}
                       <div className="min-w-0">
-                        <p className="text-sm font-medium">
-                          {isActive ? (
-                            <>
-                              <span className="capitalize">{deployment.trigger}</span>
-                              <span className="text-muted-foreground font-normal"> deploy</span>
-                            </>
-                          ) : (
-                            <span className="capitalize">{deployment.trigger}</span>
-                          )}
-                        </p>
-                        {deployment.gitSha && (
-                          <p className="truncate text-xs text-muted-foreground font-mono">
-                            {deployment.gitSha.slice(0, 7)}
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium">
+                            {deployment.gitMessage || (
+                              isActive ? (
+                                <>
+                                  <span className="capitalize">{deployment.trigger}</span>
+                                  <span className="text-muted-foreground font-normal"> deploy</span>
+                                </>
+                              ) : (
+                                <span className="capitalize">{deployment.trigger}</span>
+                              )
+                            )}
                           </p>
-                        )}
+                          {deployment.gitSha && (
+                            <code className="text-xs text-muted-foreground font-mono bg-muted px-1.5 py-0.5 rounded shrink-0">
+                              {deployment.gitSha.slice(0, 7)}
+                            </code>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {(() => {
+                            const triggerLabel = {
+                              manual: "Manual deploy",
+                              webhook: "Auto deploy",
+                              api: "API deploy",
+                              rollback: "Rollback",
+                            }[deployment.trigger];
+                            const by = deployment.triggeredByUser?.name;
+                            return by ? `${triggerLabel} by ${by}` : triggerLabel;
+                          })()}
+                        </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-4 text-xs text-muted-foreground shrink-0">
