@@ -40,7 +40,7 @@ pnpm test             # Run tests
   /api
     /auth/[...all]                 # Better Auth handler
     /v1/organizations/[orgId]/...  # Versioned REST API (authenticated, org-scoped)
-  /(app)                           # Authenticated routes (services, settings)
+  /(app)                           # Authenticated routes (projects, settings)
   /(public)                        # Public routes (login)
 /components
   /ui                   # shadcn components
@@ -52,7 +52,7 @@ pnpm test             # Run tests
 
 ### Key Concepts
 
-- **Services**: Docker Compose deployments managed through the UI
+- **Projects**: Docker Compose deployments managed through the UI
 - **Multi-tenant**: All queries scoped by `organization_id`
 - **API-first**: Data access through `/api/v1/` endpoints
 

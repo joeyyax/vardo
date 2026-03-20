@@ -1,6 +1,6 @@
 "use client";
 
-import { Menu, Boxes } from "lucide-react";
+import { Menu, FolderKanban } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,9 +37,9 @@ export function MobileSidebar({ currentOrgId, organizations }: MobileSidebarProp
       </SheetTrigger>
       <SheetContent side="left" className="w-64 p-0">
         <SheetHeader className="flex h-14 flex-row items-center justify-between px-4 border-b">
-          <Link href="/services" className="flex items-center gap-2">
+          <Link href="/projects" className="flex items-center gap-2">
             <div className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
-              <Boxes className="size-4" />
+              <FolderKanban className="size-4" />
             </div>
             <SheetTitle className="text-lg font-semibold">Host</SheetTitle>
           </Link>

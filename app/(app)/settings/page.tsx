@@ -8,9 +8,6 @@ export default async function SettingsPage() {
     redirect("/onboarding");
   }
 
-  const { organization, membership } = orgData;
-  const canEdit = membership.role === "owner" || membership.role === "admin";
-
   return (
     <div className="space-y-6">
       <div>

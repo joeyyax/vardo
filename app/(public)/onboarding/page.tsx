@@ -72,7 +72,7 @@ export default function OnboardingPage() {
       }
 
       toast.success("Organization created");
-      router.push("/services");
+      router.push("/projects");
     } catch {
       toast.error("Something went wrong");
     } finally {
@@ -90,7 +90,7 @@ export default function OnboardingPage() {
           <p className="text-sm text-muted-foreground">
             {step === "account"
               ? "Set up your Host admin account."
-              : "Organizations group your services together."}
+              : "Organizations group your projects together."}
           </p>
         </div>
 

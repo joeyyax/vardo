@@ -18,7 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  Boxes,
+  FolderKanban,
   Settings,
 } from "lucide-react";
 
@@ -75,11 +75,11 @@ export function CommandPalette({ orgId }: CommandPaletteProps) {
             {!search && (
               <CommandGroup heading="Navigation">
                 <CommandItem
-                  onSelect={() => runCommand(() => router.push("/services"))}
+                  onSelect={() => runCommand(() => router.push("/projects"))}
                   className="gap-2"
                 >
-                  <Boxes className="size-4" />
-                  <span>Services</span>
+                  <FolderKanban className="size-4" />
+                  <span>Projects</span>
                 </CommandItem>
                 <CommandItem
                   onSelect={() => runCommand(() => router.push("/settings"))}

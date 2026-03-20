@@ -4,7 +4,7 @@ import { Fragment } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Boxes,
+  FolderKanban,
   Settings,
   type LucideIcon,
 } from "lucide-react";
@@ -24,10 +24,10 @@ type NavItem = {
 
 const navItems: NavItem[] = [
   {
-    label: "Services",
-    href: "/services",
-    icon: Boxes,
-    description: "Manage deployed services",
+    label: "Projects",
+    href: "/projects",
+    icon: FolderKanban,
+    description: "Manage deployed projects",
   },
   {
     label: "Settings",

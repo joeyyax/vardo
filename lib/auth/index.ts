@@ -3,6 +3,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { passkey } from "@better-auth/passkey";
 import { twoFactor, magicLink } from "better-auth/plugins";
 import { db } from "@/lib/db";
+import { sql } from "drizzle-orm";
 import * as schema from "@/lib/db/schema";
 
 export const auth = betterAuth({
@@ -94,6 +95,26 @@ export const auth = betterAuth({
     accountLinking: {
       enabled: true,
       trustedProviders: ["github", "google"],
+    },
+  },
+
+  // Auto-promote first user to app admin
+  databaseHooks: {
+    user: {
+      create: {
+        after: async (user) => {
+          const [{ count }] = await db
+            .select({ count: sql<number>`count(*)` })
+            .from(schema.user);
+          if (Number(count) === 1) {
+            const { eq } = await import("drizzle-orm");
+            await db
+              .update(schema.user)
+              .set({ isAppAdmin: true })
+              .where(eq(schema.user.id, user.id));
+          }
+        },
+      },
     },
   },
 
