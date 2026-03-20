@@ -18,7 +18,7 @@ const updateProjectSchema = z.object({
   gitBranch: z.string().optional(),
   rootDirectory: z.string().nullable().optional(),
   source: z.enum(["git", "direct"]).optional(),
-  deployType: z.enum(["compose", "dockerfile", "image", "static"]).optional(),
+  deployType: z.enum(["compose", "dockerfile", "image", "static", "nixpacks"]).optional(),
   gitUrl: z.string().optional(),
   imageName: z.string().optional(),
 });

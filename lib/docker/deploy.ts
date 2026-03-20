@@ -184,11 +184,33 @@ export async function runDeployment(
         } catch { /* try next */ }
       }
 
-      if (!composeContent) {
-        throw new Error(`No compose file found in repo (tried: ${composeCandidates.join(", ")})`);
-      }
+      if (composeContent && project.deployType !== "nixpacks" && project.deployType !== "dockerfile") {
+        compose = parseCompose(composeContent);
+      } else {
+        // Build from repo — Nixpacks, Dockerfile, or auto-detect
+        const imageName = `host/${project.name}:${deploymentId.slice(0, 8)}`;
+        let buildType = project.deployType;
 
-      compose = parseCompose(composeContent);
+        // Auto-detect: if deploy type is compose but no compose file found, try Dockerfile then Nixpacks
+        if (buildType === "compose" && !composeContent) {
+          try {
+            await readFile(join(root, "Dockerfile"), "utf-8");
+            buildType = "dockerfile";
+            logs.push(`[deploy] No compose file, found Dockerfile`);
+          } catch {
+            buildType = "nixpacks";
+            logs.push(`[deploy] No compose file or Dockerfile, falling back to Nixpacks`);
+          }
+        }
+
+        await buildFromRepo(root, imageName, buildType, logs);
+        compose = generateComposeForImage({
+          projectName: project.name,
+          imageName,
+          containerPort: project.containerPort ?? undefined,
+          envVars: envMap,
+        });
+      }
     } else if (project.composeContent) {
       // Direct compose content
       compose = parseCompose(project.composeContent);
@@ -380,6 +402,46 @@ export async function deployProject(opts: DeployOpts): Promise<DeployResult> {
 // ---------------------------------------------------------------------------
 // Health checks
 // ---------------------------------------------------------------------------
+
+async function buildFromRepo(
+  repoPath: string,
+  imageName: string,
+  deployType: string,
+  logs: string[]
+): Promise<void> {
+  if (deployType === "nixpacks") {
+    // Try Nixpacks first — auto-detects language and builds
+    logs.push(`[build] Building with Nixpacks...`);
+    try {
+      const { stdout, stderr } = await execAsync(
+        `nixpacks build "${repoPath}" --name "${imageName}"`,
+        { cwd: repoPath, timeout: 300000 }
+      );
+      if (stdout.trim()) logs.push(`[nixpacks] ${stdout.trim()}`);
+      if (stderr.trim()) logs.push(`[nixpacks] ${stderr.trim()}`);
+      logs.push(`[build] Nixpacks build complete: ${imageName}`);
+      return;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(`Nixpacks build failed: ${message}`);
+    }
+  }
+
+  // Dockerfile build
+  logs.push(`[build] Building with Dockerfile...`);
+  try {
+    const { stdout, stderr } = await execAsync(
+      `docker build -t "${imageName}" "${repoPath}"`,
+      { cwd: repoPath, timeout: 300000 }
+    );
+    if (stdout.trim()) logs.push(`[docker] ${stdout.trim()}`);
+    if (stderr.trim()) logs.push(`[docker] ${stderr.trim()}`);
+    logs.push(`[build] Docker build complete: ${imageName}`);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`Docker build failed: ${message}`);
+  }
+}
 
 async function waitForHealthy(
   projectName: string,

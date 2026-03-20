@@ -45,6 +45,12 @@ import {
   BottomSheetDescription,
 } from "@/components/ui/bottom-sheet";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 type Deployment = {
   id: string;
@@ -232,6 +238,40 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [] }: Projec
   const [viewingLogId, setViewingLogId] = useState<string | null>(null);
   const [containerLogs, setContainerLogs] = useState<string | null>(null);
   const [containerLogsLoading, setContainerLogsLoading] = useState(false);
+
+  // Tag management state
+  const [tagPopoverOpen, setTagPopoverOpen] = useState(false);
+  const [togglingTagId, setTogglingTagId] = useState<string | null>(null);
+
+  const projectTagIds = new Set(
+    (project.projectTags ?? []).map((pt) => pt.tag.id)
+  );
+
+  async function handleToggleTag(tagId: string) {
+    const isApplied = projectTagIds.has(tagId);
+    setTogglingTagId(tagId);
+    try {
+      const res = await fetch(
+        `/api/v1/organizations/${orgId}/projects/${project.id}/tags`,
+        {
+          method: isApplied ? "DELETE" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tagId }),
+        }
+      );
+      if (!res.ok) {
+        const data = await res.json();
+        toast.error(data.error || "Failed to update tag");
+        return;
+      }
+      toast.success(isApplied ? "Tag removed" : "Tag added");
+      router.refresh();
+    } catch {
+      toast.error("Failed to update tag");
+    } finally {
+      setTogglingTagId(null);
+    }
+  }
 
   const canDelete = userRole === "owner" || userRole === "admin";
 
@@ -477,70 +517,79 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [] }: Projec
       <PageToolbar
         actions={
           <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              disabled={deploying}
-              onClick={async () => {
-                setDeploying(true);
-                try {
-                  const res = await fetch(
-                    `/api/v1/organizations/${orgId}/projects/${project.id}/deploy`,
-                    { method: "POST" }
-                  );
-                  const data = await res.json();
-                  if (data.success) {
-                    toast.success(`Deployed in ${data.durationMs}ms`);
-                  } else {
-                    toast.error("Deployment failed");
-                  }
-                  router.refresh();
-                } catch {
-                  toast.error("Deployment failed");
-                } finally {
-                  setDeploying(false);
-                }
-              }}
-            >
-              {deploying ? (
-                <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
-              ) : (
-                <><Rocket className="mr-1.5 size-4" />Deploy</>
-              )}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={async () => {
-                const res = await fetch(`/api/v1/organizations/${orgId}/projects/${project.id}/restart`, { method: "POST" });
-                const data = await res.json();
-                data.success ? toast.success("Restarted") : toast.error("Restart failed");
-                router.refresh();
-              }}
-            >
-              <RotateCcw className="mr-1.5 size-4" />
-              Restart
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={async () => {
-                const res = await fetch(`/api/v1/organizations/${orgId}/projects/${project.id}/stop`, { method: "POST" });
-                const data = await res.json();
-                data.success ? toast.success("Stopped") : toast.error("Stop failed");
-                router.refresh();
-              }}
-            >
-              <Square className="mr-1.5 size-4" />
-              Stop
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => toast.info("Terminal not yet implemented")}
-            >
-              <Terminal className="mr-1.5 size-4" />
-              Terminal
-            </Button>
+            {project.status === "active" ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white">
+                    <span className="mr-1.5 size-2 rounded-full bg-green-300 animate-pulse" />
+                    Running
+                    <ChevronDown className="ml-1.5 size-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    disabled={deploying}
+                    onClick={async () => {
+                      setDeploying(true);
+                      try {
+                        const res = await fetch(`/api/v1/organizations/${orgId}/projects/${project.id}/deploy`, { method: "POST" });
+                        const data = await res.json();
+                        data.success ? toast.success(`Deployed in ${data.durationMs}ms`) : toast.error("Deployment failed");
+                        router.refresh();
+                      } catch { toast.error("Deployment failed"); }
+                      finally { setDeploying(false); }
+                    }}
+                  >
+                    <Rocket className="mr-2 size-4" />
+                    Redeploy
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={async () => {
+                      const res = await fetch(`/api/v1/organizations/${orgId}/projects/${project.id}/restart`, { method: "POST" });
+                      const data = await res.json();
+                      data.success ? toast.success("Restarted") : toast.error("Restart failed");
+                      router.refresh();
+                    }}
+                  >
+                    <RotateCcw className="mr-2 size-4" />
+                    Restart
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={async () => {
+                      const res = await fetch(`/api/v1/organizations/${orgId}/projects/${project.id}/stop`, { method: "POST" });
+                      const data = await res.json();
+                      data.success ? toast.success("Stopped") : toast.error("Stop failed");
+                      router.refresh();
+                    }}
+                  >
+                    <Square className="mr-2 size-4" />
+                    Stop
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <Button
+                size="sm"
+                disabled={deploying}
+                onClick={async () => {
+                  setDeploying(true);
+                  try {
+                    const res = await fetch(`/api/v1/organizations/${orgId}/projects/${project.id}/deploy`, { method: "POST" });
+                    const data = await res.json();
+                    data.success ? toast.success(`Deployed in ${data.durationMs}ms`) : toast.error("Deployment failed");
+                    router.refresh();
+                  } catch { toast.error("Deployment failed"); }
+                  finally { setDeploying(false); }
+                }}
+              >
+                {deploying ? (
+                  <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
+                ) : (
+                  <><Rocket className="mr-1.5 size-4" />{project.status === "error" ? "Retry" : "Deploy"}</>
+                )}
+              </Button>
+            )}
             <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
               <Pencil className="mr-1.5 size-4" />
               Edit
@@ -580,23 +629,66 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [] }: Projec
         )}
 
         {/* Tags */}
-        {(project.projectTags?.length ?? 0) > 0 && (
-          <div className="flex items-center gap-2 flex-wrap">
-            {project.projectTags?.map(({ tag }) => (
+        <div className="flex items-center gap-2 flex-wrap">
+          {(project.projectTags ?? []).map(({ tag }) => (
+            <span
+              key={tag.id}
+              className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium"
+              style={{
+                backgroundColor: `${tag.color}20`,
+                color: tag.color,
+              }}
+            >
               <span
-                key={tag.id}
-                className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium border"
-                style={{ borderColor: tag.color, color: tag.color }}
-              >
-                <span
-                  className="size-2 rounded-full"
-                  style={{ backgroundColor: tag.color }}
-                />
-                {tag.name}
-              </span>
-            ))}
-          </div>
-        )}
+                className="size-2 rounded-full"
+                style={{ backgroundColor: tag.color }}
+                aria-hidden="true"
+              />
+              {tag.name}
+            </span>
+          ))}
+
+          {allTags.length > 0 && (
+            <Popover open={tagPopoverOpen} onOpenChange={setTagPopoverOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  className="inline-flex items-center justify-center size-6 rounded-full border border-dashed text-muted-foreground hover:text-foreground hover:border-foreground transition-colors"
+                  aria-label="Manage tags"
+                >
+                  <Plus className="size-3" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-56 p-2">
+                <div className="space-y-1">
+                  {allTags.map((tag) => {
+                    const isApplied = projectTagIds.has(tag.id);
+                    const isToggling = togglingTagId === tag.id;
+                    return (
+                      <button
+                        key={tag.id}
+                        disabled={isToggling}
+                        onClick={() => handleToggleTag(tag.id)}
+                        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent transition-colors disabled:opacity-50"
+                      >
+                        <span
+                          className="size-3 rounded-full shrink-0"
+                          style={{ backgroundColor: tag.color }}
+                          aria-hidden="true"
+                        />
+                        <span className="flex-1 text-left truncate">{tag.name}</span>
+                        {isToggling ? (
+                          <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
+                        ) : isApplied ? (
+                          <Check className="size-3.5 text-foreground" />
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
+        </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <DetailField label="Source">

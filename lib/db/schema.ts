@@ -22,6 +22,7 @@ export const deployTypeEnum = pgEnum("deploy_type", [
   "dockerfile",
   "image",
   "static",
+  "nixpacks",
 ]);
 
 export const projectStatusEnum = pgEnum("project_status", [

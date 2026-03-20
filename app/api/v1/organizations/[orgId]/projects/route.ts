@@ -20,7 +20,7 @@ const createProjectSchema = z
       .regex(/^[a-z0-9-]+$/, "Name must be lowercase alphanumeric with hyphens"),
     description: z.string().optional(),
     source: z.enum(["git", "direct"]),
-    deployType: z.enum(["compose", "dockerfile", "image", "static"]),
+    deployType: z.enum(["compose", "dockerfile", "image", "static", "nixpacks"]),
     gitUrl: z.string().optional(),
     gitBranch: z.string().optional(),
     imageName: z.string().optional(),
