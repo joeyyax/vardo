@@ -338,7 +338,7 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
 
 
   const isConfiguring = selectedSource !== null || selectedTemplate !== null;
-  const hasRequiredEnvVars = templateEnvVars.some((v) => v.required && !v.value.trim());
+  const hasRequiredEnvVars = false; // Env vars are now free-form in the textarea
 
   async function handleSubmit() {
     if (!displayName.trim() || !name.trim()) return;
