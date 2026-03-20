@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
@@ -274,34 +274,66 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
     if (template.defaultEnvVars?.length) {
       const masked = new Set<string>();
       const slug = slugify(template.name);
+      const domain = `${slug}-${wordPair.adjective}-${wordPair.noun}.${baseDomain}`;
+      const port = template.defaultPort ? String(template.defaultPort) : "3000";
+
       setTemplateEnvVars(template.defaultEnvVars.map((ev) => {
+        // If there's an explicit default, resolve ${project.*} expressions
+        if (ev.defaultValue) {
+          let value = ev.defaultValue;
+          if (value.includes("${")) {
+            value = value
+              .replace(/\$\{project\.url\}/g, `https://${domain}`)
+              .replace(/\$\{project\.domain\}/g, domain)
+              .replace(/\$\{project\.host\}/g, domain)
+              .replace(/\$\{project\.name\}/g, slug)
+              .replace(/\$\{project\.internalHost\}/g, slug)
+              .replace(/\$\{project\.port\}/g, port);
+          }
+          if (isPasswordField(ev.key)) masked.add(ev.key);
+          return { key: ev.key, value, description: ev.description, required: ev.required };
+        }
+
         // Auto-generate passwords and secrets
-        if (isPasswordField(ev.key) && !ev.defaultValue) {
+        if (isPasswordField(ev.key)) {
           masked.add(ev.key);
           return { key: ev.key, value: generatePassword(), description: ev.description, required: ev.required };
         }
-        // Default database name and username to the project slug
+
+        // Smart auto-fill based on env var name patterns
         const lower = ev.key.toLowerCase();
-        if (!ev.defaultValue && (lower.includes("_database") || lower.includes("_db") || lower.includes("_user") || lower === "database__client")) {
-          if (lower.includes("_user")) {
-            return { key: ev.key, value: slug, description: ev.description, required: ev.required };
-          }
-          if (lower.includes("_database") || lower.includes("_db")) {
-            return { key: ev.key, value: slug, description: ev.description, required: ev.required };
-          }
+
+        // URL/hostname patterns
+        if (lower === "url" || lower === "base_url" || lower === "app_url" ||
+            lower === "site_url" || lower === "public_url" || lower === "nextauth_url" ||
+            lower === "next_public_url" || lower === "next_public_app_url" ||
+            lower.endsWith("_base_url") || lower.endsWith("_site_url")) {
+          return { key: ev.key, value: `https://${domain}`, description: ev.description, required: ev.required };
         }
-        // Resolve ${project.*} expressions in default values
-        let value = ev.defaultValue || "";
-        if (value.includes("${project.")) {
-          const domain = `${slug}-${wordPair.adjective}-${wordPair.noun}.${baseDomain}`;
-          value = value
-            .replace(/\$\{project\.url\}/g, `https://${domain}`)
-            .replace(/\$\{project\.domain\}/g, domain)
-            .replace(/\$\{project\.name\}/g, slug)
-            .replace(/\$\{project\.host\}/g, domain)
-            .replace(/\$\{project\.internalHost\}/g, slug);
+        if (lower === "hostname" || lower === "host" || lower === "domain" ||
+            lower === "virtual_host" || lower === "server_name") {
+          return { key: ev.key, value: domain, description: ev.description, required: ev.required };
         }
-        return { key: ev.key, value, description: ev.description, required: ev.required };
+
+        // Port patterns
+        if (lower === "port" || lower === "app_port" || lower === "server_port") {
+          return { key: ev.key, value: port, description: ev.description, required: ev.required };
+        }
+
+        // Node environment
+        if (lower === "node_env") {
+          return { key: ev.key, value: "production", description: ev.description, required: ev.required };
+        }
+
+        // Database name / username defaults to slug
+        if (lower.includes("_database") || lower.includes("_db")) {
+          return { key: ev.key, value: slug, description: ev.description, required: ev.required };
+        }
+        if (lower.includes("_user") && !lower.includes("password")) {
+          return { key: ev.key, value: slug, description: ev.description, required: ev.required };
+        }
+
+        return { key: ev.key, value: "", description: ev.description, required: ev.required };
       }));
       setMaskedFields(masked);
     } else {
@@ -339,6 +371,23 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
 
   const projectSlug = name || "my-app";
   const domainPreview = `${projectSlug}-${wordPair.adjective}-${wordPair.noun}.${baseDomain}`;
+
+  // When wordPair changes, update any env vars containing the old domain
+  const prevDomainRef = useRef(domainPreview);
+  useEffect(() => {
+    const prev = prevDomainRef.current;
+    if (prev === domainPreview) return;
+    prevDomainRef.current = domainPreview;
+
+    setTemplateEnvVars((vars) =>
+      vars.map((v) => {
+        if (v.value.includes(prev)) {
+          return { ...v, value: v.value.replaceAll(prev, domainPreview) };
+        }
+        return v;
+      })
+    );
+  }, [domainPreview]);
 
   const isConfiguring = selectedSource !== null || selectedTemplate !== null;
   const hasRequiredEnvVars = templateEnvVars.some((v) => v.required && !v.value.trim());
