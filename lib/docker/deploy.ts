@@ -17,6 +17,7 @@ import {
 import { ensureNetwork } from "./client";
 import { getInstallationToken } from "@/lib/github/app";
 import { githubAppInstallations, memberships } from "@/lib/db/schema";
+import { detectPreventiveFixes, detectCompatIssues, applyCompatFixes } from "./compat";
 
 const execAsync = promisify(exec);
 
@@ -212,7 +213,33 @@ export async function runDeployment(
           }
         }
 
-        await buildFromRepo(root, imageName, buildType, logs);
+        // Apply preventive compatibility fixes
+        const preventiveFixes = await detectPreventiveFixes(root);
+        if (preventiveFixes.length > 0) {
+          const fixNames = preventiveFixes.map((f) => f.name).join(", ");
+          log(`[compat] Preventive fixes: ${fixNames}`);
+          Object.assign(envMap, applyCompatFixes(envMap, preventiveFixes));
+        }
+
+        // First build attempt
+        try {
+          await buildFromRepo(root, imageName, buildType, logs, envMap);
+        } catch (buildErr) {
+          const errMsg = buildErr instanceof Error ? buildErr.message : String(buildErr);
+
+          // Detect issues from error output and retry with fixes
+          const fixes = detectCompatIssues(errMsg);
+          if (fixes.length > 0) {
+            const fixNames = fixes.map((f) => f.name).join(", ");
+            log(`[compat] Detected issues: ${fixNames}`);
+            log(`[compat] Applying fixes and retrying...`);
+            Object.assign(envMap, applyCompatFixes(envMap, fixes));
+            await buildFromRepo(root, imageName, buildType, logs, envMap);
+          } else {
+            throw buildErr;
+          }
+        }
+
         compose = generateComposeForImage({
           projectName: project.name,
           imageName,
@@ -416,14 +443,24 @@ async function buildFromRepo(
   repoPath: string,
   imageName: string,
   deployType: string,
-  logs: { push: (line: string) => void }
+  logs: { push: (line: string) => void },
+  envVars?: Record<string, string>
 ): Promise<void> {
+  // Build environment for the child process
+  const buildEnv = { ...process.env, ...envVars };
+
   if (deployType === "nixpacks") {
     logs.push(`[build] Building with Nixpacks...`);
+
+    // Pass env vars to nixpacks
+    const envFlags = envVars
+      ? Object.entries(envVars).map(([k, v]) => `--env ${k}=${v}`).join(" ")
+      : "";
+
     try {
       const { stdout, stderr } = await execAsync(
-        `nixpacks build "${repoPath}" --name "${imageName}"`,
-        { cwd: repoPath, timeout: 300000 }
+        `nixpacks build "${repoPath}" --name "${imageName}" ${envFlags}`,
+        { cwd: repoPath, timeout: 300000, env: buildEnv }
       );
       if (stdout.trim()) logs.push(`[nixpacks] ${stdout.trim()}`);
       if (stderr.trim()) logs.push(`[nixpacks] ${stderr.trim()}`);
@@ -436,9 +473,15 @@ async function buildFromRepo(
   }
 
   logs.push(`[build] Building with Dockerfile...`);
+
+  // Pass env vars as build args
+  const buildArgs = envVars
+    ? Object.entries(envVars).map(([k, v]) => `--build-arg ${k}="${v}"`).join(" ")
+    : "";
+
   try {
     const { stdout, stderr } = await execAsync(
-      `docker build -t "${imageName}" "${repoPath}"`,
+      `docker build ${buildArgs} -t "${imageName}" "${repoPath}"`,
       { cwd: repoPath, timeout: 300000 }
     );
     if (stdout.trim()) logs.push(`[docker] ${stdout.trim()}`);
