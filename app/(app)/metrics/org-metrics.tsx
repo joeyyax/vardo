@@ -447,7 +447,7 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
                   <XAxis {...xAxisProps} />
                   <YAxis tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} />
                   <Tooltip {...chartTooltipStyle} formatter={(v: number) => [`${v.toFixed(1)}%`, "CPU"]} />
-                  <Area type="monotone" dataKey="cpu" stroke="oklch(0.7 0.12 240)" fill="oklch(0.7 0.12 240 / 15%)" strokeWidth={1.5} dot={false} />
+                  <Area type="monotone" dataKey="cpu" stroke="oklch(0.7 0.12 240)" fill="oklch(0.7 0.12 240 / 15%)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -464,7 +464,7 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
                   <XAxis {...xAxisProps} />
                   <YAxis tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} tickFormatter={(v) => formatBytes(v)} />
                   <Tooltip {...chartTooltipStyle} formatter={(v: number) => [formatBytes(v), "Memory"]} />
-                  <Area type="monotone" dataKey="memory" stroke="oklch(0.7 0.12 155)" fill="oklch(0.7 0.12 155 / 15%)" strokeWidth={1.5} dot={false} />
+                  <Area type="monotone" dataKey="memory" stroke="oklch(0.7 0.12 155)" fill="oklch(0.7 0.12 155 / 15%)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -481,8 +481,8 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
                   <XAxis {...xAxisProps} />
                   <YAxis tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} tickFormatter={(v) => formatBytes(v)} />
                   <Tooltip {...chartTooltipStyle} formatter={(v: number, name: string) => [formatBytes(v), name === "networkRx" ? "↓ Received" : "↑ Sent"]} />
-                  <Area type="monotone" dataKey="networkRx" stroke="oklch(0.7 0.12 240)" fill="oklch(0.7 0.12 240 / 10%)" strokeWidth={1.5} dot={false} />
-                  <Area type="monotone" dataKey="networkTx" stroke="oklch(0.65 0.1 30)" fill="oklch(0.65 0.1 30 / 10%)" strokeWidth={1.5} dot={false} />
+                  <Area type="monotone" dataKey="networkRx" stroke="oklch(0.7 0.12 240)" fill="oklch(0.7 0.12 240 / 10%)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+                  <Area type="monotone" dataKey="networkTx" stroke="oklch(0.65 0.1 30)" fill="oklch(0.65 0.1 30 / 10%)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -499,7 +499,7 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
                   <XAxis {...xAxisProps} />
                   <YAxis tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} tickFormatter={(v) => formatBytes(v)} />
                   <Tooltip {...chartTooltipStyle} formatter={(v: number) => [formatBytes(v), "Total"]} />
-                  <Area type="monotone" dataKey="diskTotal" stroke="oklch(0.65 0.1 30)" fill="oklch(0.65 0.1 30 / 15%)" strokeWidth={1.5} dot={false} />
+                  <Area type="monotone" dataKey="diskTotal" stroke="oklch(0.65 0.1 30)" fill="oklch(0.65 0.1 30 / 15%)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
