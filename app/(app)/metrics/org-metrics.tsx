@@ -1,8 +1,17 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { Activity, Loader2 } from "lucide-react";
+import { Activity, Cpu, MemoryStick, Loader2 } from "lucide-react";
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 
 type ProjectSummary = {
   id: string;
@@ -44,6 +53,27 @@ function formatBytes(bytes: number, decimals = 1): string {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(decimals))} ${sizes[i]}`;
 }
 
+type TimePoint = {
+  time: string;
+  timestamp: number;
+  cpu: number;
+  memory: number;
+};
+
+const MAX_POINTS = 60; // 5 minutes at 5s intervals
+
+const chartTooltipStyle = {
+  contentStyle: {
+    backgroundColor: "oklch(0.14 0.005 260)",
+    border: "1px solid oklch(0.25 0.005 260)",
+    borderRadius: "8px",
+    fontSize: "12px",
+    color: "oklch(0.87 0.005 260)",
+  },
+  itemStyle: { color: "oklch(0.87 0.005 260)" },
+  labelStyle: { color: "oklch(0.55 0.005 260)" },
+};
+
 export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
   const [projectStats, setProjectStats] = useState<Record<string, ProjectStats>>(() => {
     const initial: Record<string, ProjectStats> = {};
@@ -52,6 +82,8 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
     }
     return initial;
   });
+  const [timeSeries, setTimeSeries] = useState<TimePoint[]>([]);
+  const statsRef = useRef(projectStats);
 
   useEffect(() => {
     const activeProjects = projects.filter((p) => p.status === "active");
@@ -90,7 +122,26 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
             };
           }
         }
+        statsRef.current = next;
         return next;
+      });
+
+      // Add time-series point from aggregated stats
+      const now = Date.now();
+      const allContainers = results
+        .filter((r): r is PromiseFulfilledResult<{ projectId: string; containers: ContainerStatsSnapshot[] }> => r.status === "fulfilled")
+        .flatMap((r) => r.value.containers);
+      const totalCpuNow = allContainers.reduce((s, c) => s + c.cpuPercent, 0);
+      const totalMemNow = allContainers.reduce((s, c) => s + c.memoryUsage, 0);
+
+      setTimeSeries((prev) => {
+        const next = [...prev, {
+          time: new Date(now).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+          timestamp: now,
+          cpu: Math.round(totalCpuNow * 100) / 100,
+          memory: totalMemNow,
+        }];
+        return next.length > MAX_POINTS ? next.slice(-MAX_POINTS) : next;
       });
     }
 
@@ -158,6 +209,46 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
           </p>
         </div>
       </div>
+
+      {/* Aggregate charts */}
+      {timeSeries.length > 1 && (
+        <div className="grid md:grid-cols-2 gap-4">
+          <div className="squircle rounded-lg border bg-card overflow-hidden">
+            <div className="flex items-center gap-2 px-4 py-3 border-b">
+              <Cpu className="size-4 text-muted-foreground" />
+              <h3 className="text-sm font-medium">Total CPU Usage</h3>
+            </div>
+            <div className="p-4">
+              <ResponsiveContainer width="100%" height={200}>
+                <AreaChart data={timeSeries}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.005 260)" />
+                  <XAxis dataKey="time" tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} />
+                  <Tooltip {...chartTooltipStyle} formatter={(v: number) => [`${v.toFixed(1)}%`, "CPU"]} />
+                  <Area type="monotone" dataKey="cpu" stroke="oklch(0.7 0.12 240)" fill="oklch(0.7 0.12 240 / 15%)" strokeWidth={1.5} dot={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+          <div className="squircle rounded-lg border bg-card overflow-hidden">
+            <div className="flex items-center gap-2 px-4 py-3 border-b">
+              <MemoryStick className="size-4 text-muted-foreground" />
+              <h3 className="text-sm font-medium">Total Memory Usage</h3>
+            </div>
+            <div className="p-4">
+              <ResponsiveContainer width="100%" height={200}>
+                <AreaChart data={timeSeries}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.005 260)" />
+                  <XAxis dataKey="time" tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} tickFormatter={(v) => formatBytes(v)} />
+                  <Tooltip {...chartTooltipStyle} formatter={(v: number) => [formatBytes(v), "Memory"]} />
+                  <Area type="monotone" dataKey="memory" stroke="oklch(0.7 0.12 155)" fill="oklch(0.7 0.12 155 / 15%)" strokeWidth={1.5} dot={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Project list with stats */}
       {projects.length === 0 ? (
