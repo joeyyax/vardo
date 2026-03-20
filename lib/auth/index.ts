@@ -23,9 +23,10 @@ export const auth = betterAuth({
     level: "debug",
   },
 
-  // Email + password authentication
+  // Email + password authentication (invite only — no public registration)
   emailAndPassword: {
     enabled: true,
+    disableSignUp: true,
   },
 
   plugins: [

@@ -9,9 +9,6 @@ import { Label } from "@/components/ui/label";
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { KeyRound, Mail, Lock, Loader2, Eye, EyeOff } from "lucide-react";
@@ -20,7 +17,7 @@ type SignInMethod = "passkey" | "password" | "magic";
 
 function LoginForm() {
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get("callbackUrl") ?? "/track";
+  const callbackUrl = searchParams.get("callbackUrl") ?? "/projects";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -132,13 +129,7 @@ function LoginForm() {
 
   return (
     <Card className="w-full max-w-md squircle rounded-2xl">
-      <CardHeader className="text-center">
-        <CardTitle className="text-2xl">Welcome back</CardTitle>
-        <CardDescription>
-          Sign in to continue tracking your time
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-4 pt-6">
         {error && (
           <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-lg">
             {error}
@@ -273,9 +264,6 @@ function LoginForm() {
           </button>
         </div>
 
-        <p className="text-xs text-center text-muted-foreground pt-2">
-          Don&apos;t have an account? Just sign in and we&apos;ll create one.
-        </p>
       </CardContent>
     </Card>
   );
@@ -284,13 +272,7 @@ function LoginForm() {
 function LoginSkeleton() {
   return (
     <Card className="w-full max-w-md squircle rounded-2xl">
-      <CardHeader className="text-center">
-        <CardTitle className="text-2xl">Welcome back</CardTitle>
-        <CardDescription>
-          Sign in to continue tracking your time
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-4 pt-6">
         <div className="h-11 bg-muted animate-pulse rounded-lg" />
         <div className="h-4" />
         <div className="space-y-3">
