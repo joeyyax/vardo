@@ -184,6 +184,18 @@ function deployTypeLabel(deployType: string) {
   }
 }
 
+function formatUptime(date: Date): string {
+  const ms = Date.now() - new Date(date).getTime();
+  const seconds = Math.floor(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ${minutes % 60}m`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ${hours % 24}h`;
+}
+
 function formatDuration(ms: number) {
   if (ms < 1000) return `${ms}ms`;
   const seconds = Math.floor(ms / 1000);
@@ -523,6 +535,14 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [] }: Projec
                   <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white">
                     <span className="mr-1.5 size-2 rounded-full bg-green-300 animate-pulse" />
                     Running
+                    {(() => {
+                      const lastDeploy = project.deployments.find((d) => d.status === "success");
+                      return lastDeploy ? (
+                        <span className="ml-1.5 text-green-200 text-xs font-normal">
+                          {formatUptime(lastDeploy.finishedAt || lastDeploy.startedAt)}
+                        </span>
+                      ) : null;
+                    })()}
                     <ChevronDown className="ml-1.5 size-3.5" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -780,6 +800,9 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [] }: Projec
           <TabsTrigger value="logs">
             Logs
           </TabsTrigger>
+          <TabsTrigger value="terminal">
+            Terminal
+          </TabsTrigger>
           <TabsTrigger value="metrics">
             Metrics
           </TabsTrigger>
@@ -1032,6 +1055,18 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [] }: Projec
                 </p>
               )}
             </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="terminal" className="pt-4">
+          <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
+            <Terminal className="size-8 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">
+              Web terminal coming soon.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Open a shell directly into your running containers.
+            </p>
           </div>
         </TabsContent>
 
