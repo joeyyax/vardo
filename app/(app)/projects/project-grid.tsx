@@ -77,7 +77,6 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [dragPosition, setDragPosition] = useState<"before" | "on" | "after" | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [openGroupId, setOpenGroupId] = useState<string | null>(null);
   const [creatingGroup, setCreatingGroup] = useState<{ projectIds: string[] } | null>(null);
   const [newGroupName, setNewGroupName] = useState("");
   const groupNameRef = useRef<HTMLInputElement>(null);
@@ -184,26 +183,43 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
       return;
     }
 
+    // First, remove source from any existing group
+    const sourceProject = projects.find((p) => p.id === sourceId);
+    if (sourceProject?.projectGroups.length) {
+      for (const pg of sourceProject.projectGroups) {
+        await removeFromGroup(sourceId, pg.group.id);
+      }
+    }
+
     // Drop position determines action
     if (position === "on") {
       // Dropping on center — create a new group
+      // Also remove target from its groups
+      const targetProject = projects.find((p) => p.id === targetId);
+      if (targetProject?.projectGroups.length) {
+        for (const pg of targetProject.projectGroups) {
+          await removeFromGroup(targetId, pg.group.id);
+        }
+      }
       setCreatingGroup({ projectIds: [sourceId, targetId] });
       setNewGroupName("");
       setTimeout(() => groupNameRef.current?.focus(), 100);
     } else {
-      // Dropping before/after — reorder
-      const currentOrder = ungrouped.map((p) => p.id);
-      const sourceIdx = currentOrder.indexOf(sourceId);
-      const targetIdx = currentOrder.indexOf(targetId);
-      if (sourceIdx === -1 || targetIdx === -1) return;
+      // Dropping before/after — reorder in ungrouped
+      const currentOrder = [...ungrouped.map((p) => p.id)];
+      // Add source if not already in ungrouped (was in a group)
+      if (!currentOrder.includes(sourceId)) {
+        const targetIdx = currentOrder.indexOf(targetId);
+        const insertIdx = position === "before" ? targetIdx : targetIdx + 1;
+        currentOrder.splice(insertIdx, 0, sourceId);
+      } else {
+        const sourceIdx = currentOrder.indexOf(sourceId);
+        currentOrder.splice(sourceIdx, 1);
+        const targetIdx = currentOrder.indexOf(targetId);
+        const insertIdx = position === "before" ? targetIdx : targetIdx + 1;
+        currentOrder.splice(insertIdx, 0, sourceId);
+      }
 
-      // Remove source from its position
-      currentOrder.splice(sourceIdx, 1);
-      // Insert at new position
-      const insertIdx = position === "before" ? currentOrder.indexOf(targetId) : currentOrder.indexOf(targetId) + 1;
-      currentOrder.splice(insertIdx, 0, sourceId);
-
-      // Save new order
       try {
         await fetch(`/api/v1/organizations/${orgId}/projects/sort`, {
           method: "PUT",
@@ -244,14 +260,19 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
   }
 
   async function handleCreateGroup() {
-    if (!creatingGroup || !newGroupName.trim()) return;
+    if (!creatingGroup) return;
+
+    // Auto-derive name from project names if blank
+    const groupName = newGroupName.trim() || creatingGroup.projectIds
+      .map((pid) => projects.find((p) => p.id === pid)?.displayName)
+      .filter(Boolean)
+      .join(" & ");
 
     try {
-      // Create the group
       const res = await fetch(`/api/v1/organizations/${orgId}/groups`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newGroupName.trim() }),
+        body: JSON.stringify({ name: groupName }),
       });
       if (!res.ok) {
         toast.error("Failed to create group");
@@ -310,98 +331,102 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
         </div>
       )}
 
-      {/* Create group dialog */}
-      {creatingGroup && (
-        <div className="flex items-center gap-2 rounded-lg border border-status-info/30 bg-status-info-muted p-3">
-          <FolderOpen className="size-4 text-status-info shrink-0" />
-          <span className="text-sm text-status-info">Name this group:</span>
-          <Input
-            ref={groupNameRef}
-            value={newGroupName}
-            onChange={(e) => setNewGroupName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") handleCreateGroup(); if (e.key === "Escape") setCreatingGroup(null); }}
-            placeholder="e.g. Production, Databases"
-            className="h-8 max-w-xs"
-          />
-          <Button size="sm" onClick={handleCreateGroup} disabled={!newGroupName.trim()}>Create</Button>
-          <Button size="sm" variant="ghost" onClick={() => setCreatingGroup(null)}><X className="size-4" /></Button>
-        </div>
-      )}
+      <div className="space-y-6">
+        {/* Pending group creation — renders inline as a real group with editable title */}
+        {creatingGroup && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <input
+                ref={groupNameRef}
+                value={newGroupName}
+                onChange={(e) => setNewGroupName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleCreateGroup(); if (e.key === "Escape") setCreatingGroup(null); }}
+                onBlur={() => { if (!newGroupName.trim()) handleCreateGroup(); }}
+                placeholder="Group name"
+                className="bg-transparent border-none text-sm font-medium text-foreground placeholder:text-muted-foreground/40 focus:outline-none w-48"
+              />
+              <span className="text-xs text-muted-foreground">{creatingGroup.projectIds.length}</span>
+              <button onClick={() => setCreatingGroup(null)} className="ml-auto text-muted-foreground hover:text-foreground p-1">
+                <X className="size-3.5" />
+              </button>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {creatingGroup.projectIds.map((pid) => {
+                const p = projects.find((pr) => pr.id === pid);
+                if (!p) return null;
+                return (
+                  <ProjectCard
+                    key={p.id}
+                    project={p}
+                    draggingId={null}
+                    dragOverId={null}
+                    dragPosition={null}
+                    onDragStart={() => {}}
+                    onDragOver={() => {}}
+                    onDragLeave={() => {}}
+                    onDrop={() => {}}
+                    onDragEnd={() => {}}
+                    compact
+                  />
+                );
+              })}
+            </div>
+          </div>
+        )}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {/* Groups */}
+        {/* Existing groups — always expanded */}
         {Array.from(groupedMap.entries()).map(([groupId, { group, projects: groupProjects }]) => (
           <div
             key={groupId}
-            className={`squircle rounded-lg border p-3 transition-colors ${
-              dragOverId === `group-${groupId}` ? "border-status-info bg-status-info-muted" : "bg-card/50"
+            className={`space-y-2 transition-colors ${
+              dragOverId === `group-${groupId}` ? "opacity-80" : ""
             }`}
             onDragOver={(e) => handleDragOver(e, `group-${groupId}`)}
             onDragLeave={handleDragLeave}
             onDrop={(e) => handleDrop(e, `group-${groupId}`)}
           >
-            <button
-              type="button"
-              onClick={() => setOpenGroupId(openGroupId === groupId ? null : groupId)}
-              className="flex items-center gap-2 w-full text-left mb-2"
-            >
-              <FolderOpen className="size-4 text-muted-foreground" />
-              <span className="text-sm font-medium flex-1">{group.name}</span>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium">{group.name}</span>
               <span className="text-xs text-muted-foreground">{groupProjects.length}</span>
-            </button>
-
-            {openGroupId === groupId ? (
-              <div className="space-y-2">
-                {groupProjects.map((project) => (
-                  <ProjectCard
-                    key={project.id}
-                    project={project}
-                    draggingId={draggingId}
-                    dragOverId={dragOverId}
-                    dragPosition={dragPosition}
-                    onDragStart={handleDragStart}
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onDrop={handleDrop}
-                    onDragEnd={handleDragEnd}
-                    compact
-                  />
-                ))}
-              </div>
-            ) : (
-              <div className="flex -space-x-1">
-                {groupProjects.slice(0, 4).map((project) => {
-                  const icon = detectProjectIcon({ imageName: project.imageName, gitUrl: project.gitUrl, deployType: project.deployType });
-                  return icon ? (
-                    <img key={project.id} src={icon} alt="" className="size-6 rounded-md bg-muted p-0.5 ring-2 ring-card/50" />
-                  ) : (
-                    <div key={project.id} className="size-6 rounded-md bg-muted ring-2 ring-card/50" />
-                  );
-                })}
-                {groupProjects.length > 4 && (
-                  <div className="size-6 rounded-md bg-muted ring-2 ring-card/50 flex items-center justify-center text-[10px] text-muted-foreground">
-                    +{groupProjects.length - 4}
-                  </div>
-                )}
-              </div>
-            )}
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {groupProjects.map((project) => (
+                <ProjectCard
+                  key={project.id}
+                  project={project}
+                  draggingId={draggingId}
+                  dragOverId={dragOverId}
+                  dragPosition={dragPosition}
+                  onDragStart={handleDragStart}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  onDragEnd={handleDragEnd}
+                />
+              ))}
+            </div>
           </div>
         ))}
 
         {/* Ungrouped projects */}
-        {ungrouped.map((project) => (
-          <ProjectCard
-            key={project.id}
-            project={project}
-            draggingId={draggingId}
-            dragOverId={dragOverId}
-            onDragStart={handleDragStart}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            onDragEnd={handleDragEnd}
-          />
-        ))}
+        {ungrouped.length > 0 && (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {ungrouped.map((project) => (
+              <ProjectCard
+                key={project.id}
+                project={project}
+                draggingId={draggingId}
+                dragOverId={dragOverId}
+                dragPosition={dragPosition}
+                onDragStart={handleDragStart}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onDragEnd={handleDragEnd}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       {filteredProjects.length === 0 && projects.length > 0 && (
