@@ -369,7 +369,7 @@ export function EnvEditor(props: EnvEditorProps) {
         }
 
         const eqIdx = line.indexOf("=");
-        if (eqIdx === -1) return escapeHtml(line);
+        if (eqIdx === -1) return `<span class="text-zinc-300">${escapeHtml(line)}</span>`;
 
         const key = line.slice(0, eqIdx);
         const value = line.slice(eqIdx + 1);
