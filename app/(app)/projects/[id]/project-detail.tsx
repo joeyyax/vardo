@@ -932,14 +932,17 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
                 </div>
               )}
 
-              {project.deployments.map((deployment) => {
-                const bgColor = {
-                  success: "bg-status-success-muted",
-                  failed: "bg-status-error-muted",
-                  running: "bg-status-info-muted",
-                  queued: "bg-status-neutral-muted",
-                  cancelled: "bg-status-neutral-muted",
-                }[deployment.status] || "bg-card";
+              {project.deployments.map((deployment, idx) => {
+                const isActive = deployment.status === "success" && project.status === "active" && idx === 0;
+                const bgColor = isActive
+                  ? "bg-status-success-muted"
+                  : {
+                      success: "bg-card",
+                      failed: "bg-status-error-muted",
+                      running: "bg-status-info-muted",
+                      queued: "bg-status-neutral-muted",
+                      cancelled: "bg-status-neutral-muted",
+                    }[deployment.status] || "bg-card";
 
                 return (
                 <div key={deployment.id} className={`squircle rounded-lg border ${bgColor} overflow-hidden`}>
@@ -949,10 +952,24 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
                     className="flex items-center justify-between gap-4 p-4 w-full text-left hover:bg-accent/50 transition-colors"
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <DeploymentStatusBadge status={deployment.status} />
+                      {isActive ? (
+                        <Badge className="border-transparent bg-status-success text-white shrink-0">
+                          <span className="mr-1.5 size-1.5 rounded-full bg-white animate-pulse" />
+                          Live
+                        </Badge>
+                      ) : (
+                        <DeploymentStatusBadge status={deployment.status} />
+                      )}
                       <div className="min-w-0">
-                        <p className="text-sm font-medium capitalize">
-                          {deployment.trigger}
+                        <p className="text-sm font-medium">
+                          {isActive ? (
+                            <>
+                              <span className="capitalize">{deployment.trigger}</span>
+                              <span className="text-muted-foreground font-normal"> deploy</span>
+                            </>
+                          ) : (
+                            <span className="capitalize">{deployment.trigger}</span>
+                          )}
                         </p>
                         {deployment.gitSha && (
                           <p className="truncate text-xs text-muted-foreground font-mono">
@@ -962,11 +979,16 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
                       </div>
                     </div>
                     <div className="flex items-center gap-4 text-xs text-muted-foreground shrink-0">
+                      {isActive && deployment.finishedAt && (
+                        <span className="text-status-success">
+                          <Uptime since={deployment.finishedAt} />
+                        </span>
+                      )}
                       {deployment.durationMs != null && (
-                        <span>{formatDuration(deployment.durationMs)}</span>
+                        <span>built in {formatDuration(deployment.durationMs)}</span>
                       )}
                       <span>
-                        {new Date(deployment.startedAt).toLocaleString()}
+                        {new Date(deployment.startedAt).toLocaleDateString()}
                       </span>
                       <ChevronDown className={`size-4 transition-transform ${viewingLogId === deployment.id ? "rotate-180" : ""}`} />
                     </div>
