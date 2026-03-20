@@ -41,10 +41,12 @@ export function OrgDomainEditor({
   orgId,
   defaultDomain,
   sslEnabled,
+  serverIP,
 }: {
   orgId: string;
   defaultDomain: string;
   sslEnabled: boolean;
+  serverIP?: string;
 }) {
   const router = useRouter();
   const [domains, setDomains] = useState<OrgDomain[]>([]);
@@ -369,7 +371,7 @@ export function OrgDomainEditor({
                       A Record:
                     </span>
                     <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground">
-                      *.{newDomain || "yourdomain.com"} → your-server-ip
+                      *.{newDomain || "yourdomain.com"} → {serverIP || "your-server-ip"}
                     </code>
                   </div>
                   <div className="flex items-start gap-2">

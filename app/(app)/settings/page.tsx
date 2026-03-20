@@ -80,8 +80,9 @@ export default async function SettingsPage({
         <TabsContent value="domains" className="pt-4">
           <OrgDomainEditor
             orgId={orgId}
-            defaultDomain="joeyyax.dev"
+            defaultDomain={process.env.HOST_BASE_DOMAIN || "joeyyax.dev"}
             sslEnabled={orgData.organization.sslEnabled ?? true}
+            serverIP={process.env.HOST_SERVER_IP}
           />
         </TabsContent>
 
