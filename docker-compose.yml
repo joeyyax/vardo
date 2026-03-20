@@ -29,6 +29,7 @@ services:
       - "--providers.docker.network=host-network"
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.websecure.http.tls=true"
       - "--log.level=INFO"
     ports:
       - "80:80"

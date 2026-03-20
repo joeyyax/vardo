@@ -143,6 +143,7 @@ export const organizations = pgTable("organization", {
   slug: text("slug").notNull().unique(),
   logo: text("logo"),
   baseDomain: text("base_domain"),
+  sslEnabled: boolean("ssl_enabled").default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -318,6 +319,7 @@ export const domains = pgTable("domain", {
   middlewares: text("middlewares"),
   certResolver: text("cert_resolver").default("le"),
   isPrimary: boolean("is_primary").default(false),
+  sslEnabled: boolean("ssl_enabled").default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

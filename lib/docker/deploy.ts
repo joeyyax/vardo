@@ -397,6 +397,7 @@ export async function runDeployment(
         domain: domain.domain,
         containerPort: port,
         certResolver: domain.certResolver || "le",
+        ssl: domain.sslEnabled ?? true,
       });
     }
     // Re-inject network since injectTraefikLabels returns a new object

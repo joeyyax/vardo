@@ -94,9 +94,10 @@ export function injectTraefikLabels(
     containerPort: number;
     serviceName?: string;
     certResolver?: string;
+    ssl?: boolean;
   },
 ): ComposeFile {
-  const { projectName, domain, containerPort, certResolver = "le" } = opts;
+  const { projectName, domain, containerPort, certResolver = "le", ssl = true } = opts;
   const serviceName =
     opts.serviceName ?? Object.keys(compose.services)[0];
 
@@ -107,23 +108,29 @@ export function injectTraefikLabels(
   }
 
   const existing = compose.services[serviceName];
-
-  // Use HTTP entrypoint for localhost domains (no TLS needed locally)
   const isLocal = domain.endsWith(".localhost") || domain === "localhost";
-  const entrypoint = isLocal ? "web" : "websecure";
 
   const labels: Record<string, string> = {
     ...existing.labels,
     "traefik.enable": "true",
     [`traefik.http.routers.${projectName}.rule`]: `Host(\`${domain}\`)`,
-    [`traefik.http.routers.${projectName}.entrypoints`]: entrypoint,
     [`traefik.http.services.${projectName}.loadbalancer.server.port`]:
       String(containerPort),
   };
 
-  // Only add TLS config for non-local domains
-  if (!isLocal) {
-    labels[`traefik.http.routers.${projectName}.tls.certresolver`] = certResolver;
+  if (ssl) {
+    // HTTPS — websecure entrypoint with TLS
+    labels[`traefik.http.routers.${projectName}.entrypoints`] = "websecure";
+    labels[`traefik.http.routers.${projectName}.tls`] = "true";
+
+    // Production: use cert resolver (Let's Encrypt / Google)
+    // Local: Traefik auto-generates self-signed certs
+    if (!isLocal) {
+      labels[`traefik.http.routers.${projectName}.tls.certresolver`] = certResolver;
+    }
+  } else {
+    // HTTP only — web entrypoint, no TLS
+    labels[`traefik.http.routers.${projectName}.entrypoints`] = "web";
   }
 
   // Remove host port bindings — Traefik handles external access
