@@ -38,6 +38,7 @@ import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 type CronJob = {
   id: string;
   name: string;
+  type: "command" | "url";
   schedule: string;
   command: string;
   enabled: boolean;
@@ -94,6 +95,7 @@ export function CronManager({ projectId, orgId }: Props) {
   // Form state
   const [editId, setEditId] = useState<string | null>(null);
   const [name, setName] = useState("");
+  const [jobType, setJobType] = useState<"command" | "url">("command");
   const [schedulePreset, setSchedulePreset] = useState("0 * * * *");
   const [customSchedule, setCustomSchedule] = useState("");
   const [command, setCommand] = useState("");
@@ -121,6 +123,7 @@ export function CronManager({ projectId, orgId }: Props) {
   function openCreate() {
     setEditId(null);
     setName("");
+    setJobType("command");
     setSchedulePreset("0 * * * *");
     setCustomSchedule("");
     setCommand("");
@@ -130,6 +133,7 @@ export function CronManager({ projectId, orgId }: Props) {
   function openEdit(job: CronJob) {
     setEditId(job.id);
     setName(job.name);
+    setJobType(job.type);
     setCommand(job.command);
     const preset = SCHEDULE_PRESETS.find((p) => p.value === job.schedule);
     if (preset && preset.value !== "custom") {
@@ -151,8 +155,8 @@ export function CronManager({ projectId, orgId }: Props) {
     setSaving(true);
     try {
       const body = editId
-        ? { id: editId, name: name.trim(), schedule, command: command.trim() }
-        : { name: name.trim(), schedule, command: command.trim() };
+        ? { id: editId, name: name.trim(), type: jobType, schedule, command: command.trim() }
+        : { name: name.trim(), type: jobType, schedule, command: command.trim() };
 
       const res = await fetch(baseUrl, {
         method: editId ? "PATCH" : "POST",
@@ -282,6 +286,9 @@ export function CronManager({ projectId, orgId }: Props) {
                       )}
                     </div>
                     <p className="text-xs font-mono text-muted-foreground truncate">
+                      <Badge variant="outline" className="text-[10px] mr-1.5 font-sans">
+                        {job.type === "url" ? "URL" : "CMD"}
+                      </Badge>
                       {job.command}
                     </p>
                     {job.lastLog && (
@@ -385,16 +392,33 @@ export function CronManager({ projectId, orgId }: Props) {
               </div>
 
               <div className="grid gap-2">
-                <Label htmlFor="cron-command">Command</Label>
+                <Label>Type</Label>
+                <Select value={jobType} onValueChange={(v) => setJobType(v as "command" | "url")}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="command">Command (docker exec)</SelectItem>
+                    <SelectItem value="url">URL (HTTP request)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="cron-command">
+                  {jobType === "url" ? "URL" : "Command"}
+                </Label>
                 <Input
                   id="cron-command"
-                  placeholder="wp cron event run --due-now"
+                  placeholder={jobType === "url" ? "https://myapp.example.com/api/cron" : "wp cron event run --due-now"}
                   className="font-mono"
                   value={command}
                   onChange={(e) => setCommand(e.target.value)}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Runs via <code className="bg-muted px-1 py-0.5 rounded">docker exec</code> inside your container.
+                  {jobType === "url"
+                    ? "Sends a GET request to this URL. Supports internal Docker hostnames and public URLs."
+                    : "Runs via docker exec inside your container."}
                 </p>
               </div>
             </div>

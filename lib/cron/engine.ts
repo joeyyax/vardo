@@ -97,6 +97,37 @@ async function executeInContainer(
 }
 
 /**
+ * Hit a URL and return the result.
+ */
+async function fetchUrl(
+  url: string,
+): Promise<{ success: boolean; log: string; durationMs: number }> {
+  const startTime = Date.now();
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60_000);
+    const res = await fetch(url, {
+      signal: controller.signal,
+      redirect: "follow",
+    });
+    clearTimeout(timeout);
+    const body = await res.text().catch(() => "");
+    const log = `${res.status} ${res.statusText}${body ? `\n${body.slice(0, 2000)}` : ""}`;
+    return {
+      success: res.ok,
+      log,
+      durationMs: Date.now() - startTime,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      log: err instanceof Error ? err.message : String(err),
+      durationMs: Date.now() - startTime,
+    };
+  }
+}
+
+/**
  * Check all enabled cron jobs and run any that are due.
  * Call this every minute from a scheduler.
  */
@@ -140,8 +171,10 @@ export async function tickCronJobs(): Promise<void> {
       updatedAt: now,
     }).where(eq(cronJobs.id, job.id));
 
-    // Execute
-    const result = await executeInContainer(job.project.name, job.command);
+    // Execute based on type
+    const result = job.type === "url"
+      ? await fetchUrl(job.command)
+      : await executeInContainer(job.project.name, job.command);
 
     // Update status
     await db.update(cronJobs).set({
@@ -162,7 +195,7 @@ export async function tickCronJobs(): Promise<void> {
  */
 export async function syncCronJobs(
   projectId: string,
-  definitions: { name: string; schedule: string; command: string; enabled?: boolean }[],
+  definitions: { name: string; type?: "command" | "url"; schedule: string; command: string; enabled?: boolean }[],
 ): Promise<number> {
   const existing = await db.query.cronJobs.findMany({
     where: eq(cronJobs.projectId, projectId),
@@ -178,6 +211,7 @@ export async function syncCronJobs(
       id: nanoid(),
       projectId,
       name: def.name,
+      type: def.type ?? "command",
       schedule: def.schedule,
       command: def.command,
       enabled: def.enabled ?? true,

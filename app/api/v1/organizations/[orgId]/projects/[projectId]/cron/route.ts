@@ -12,6 +12,7 @@ type RouteParams = {
 
 const createCronSchema = z.object({
   name: z.string().min(1, "Name is required"),
+  type: z.enum(["command", "url"]).default("command"),
   schedule: z.string().min(1, "Schedule is required"),
   command: z.string().min(1, "Command is required"),
   enabled: z.boolean().optional().default(true),
@@ -20,6 +21,7 @@ const createCronSchema = z.object({
 const updateCronSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1).optional(),
+  type: z.enum(["command", "url"]).optional(),
   schedule: z.string().min(1).optional(),
   command: z.string().min(1).optional(),
   enabled: z.boolean().optional(),
@@ -101,6 +103,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         id: nanoid(),
         projectId,
         name: parsed.data.name,
+        type: parsed.data.type,
         schedule: parsed.data.schedule,
         command: parsed.data.command,
         enabled: parsed.data.enabled,

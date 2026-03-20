@@ -699,6 +699,11 @@ export const templates = pgTable("template", {
 // Host: Cron Jobs (scheduled tasks)
 // ---------------------------------------------------------------------------
 
+export const cronJobTypeEnum = pgEnum("cron_job_type", [
+  "command",
+  "url",
+]);
+
 export const cronJobStatusEnum = pgEnum("cron_job_status", [
   "success",
   "failed",
@@ -711,8 +716,9 @@ export const cronJobs = pgTable("cron_job", {
     .notNull()
     .references(() => projects.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
+  type: cronJobTypeEnum("type").notNull().default("command"),
   schedule: text("schedule").notNull(), // cron expression
-  command: text("command").notNull(),
+  command: text("command").notNull(), // shell command or URL depending on type
   enabled: boolean("enabled").default(true).notNull(),
   lastRunAt: timestamp("last_run_at"),
   lastStatus: cronJobStatusEnum("last_status"),
