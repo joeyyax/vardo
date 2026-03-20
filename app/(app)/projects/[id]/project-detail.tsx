@@ -1252,6 +1252,7 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
         <TabsContent value="variables" className="pt-4">
           <EnvEditor
             projectId={project.id}
+            projectName={project.name}
             orgId={orgId}
             initialVars={project.envVars}
             allProjectNames={allProjectNames}

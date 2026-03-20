@@ -2,12 +2,13 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Rocket, AlertTriangle } from "lucide-react";
+import { Loader2, Rocket, AlertTriangle, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
 type EnvEditorProps = {
   projectId: string;
+  projectName: string;
   orgId: string;
   initialVars: { key: string; isSecret: boolean | null }[];
   allProjectNames?: string[];
@@ -35,7 +36,7 @@ function isPasswordKey(key: string): boolean {
   return PASSWORD_KEYS.some((p) => lower.includes(p));
 }
 
-export function EnvEditor({ projectId, orgId, initialVars, allProjectNames = [], orgVarKeys = [] }: EnvEditorProps) {
+export function EnvEditor({ projectId, projectName, orgId, initialVars, allProjectNames = [], orgVarKeys = [] }: EnvEditorProps) {
   const router = useRouter();
   const [content, setContent] = useState("");
   const [saving, setSaving] = useState(false);
@@ -475,6 +476,47 @@ export function EnvEditor({ projectId, orgId, initialVars, allProjectNames = [],
           </div>
         )}
       </div>
+
+      {/* Variable references */}
+      {(() => {
+        const keys = content
+          .split("\n")
+          .filter((l) => l.includes("=") && !l.startsWith("#"))
+          .map((l) => l.split("=")[0].trim())
+          .filter(Boolean);
+        if (keys.length === 0) return null;
+        return (
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">
+              Reference these variables from other projects:
+            </p>
+            <div className="grid gap-1">
+              {keys.map((key) => {
+                const ref = `\${${projectName}.${key}}`;
+                return (
+                  <div
+                    key={key}
+                    className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-1.5 group"
+                  >
+                    <code className="text-xs font-mono text-muted-foreground">{ref}</code>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(ref);
+                        toast.success(`Copied ${ref}`);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 p-1 rounded text-muted-foreground hover:text-foreground transition-all"
+                      title="Copy reference"
+                    >
+                      <Copy className="size-3" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
