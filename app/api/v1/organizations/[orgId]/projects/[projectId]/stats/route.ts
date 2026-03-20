@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { projects } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
-import { getProjectContainers, getContainerStats } from "@/lib/docker/client";
+import { fetchProjectMetrics } from "@/lib/metrics/cadvisor";
 
 type RouteParams = {
   params: Promise<{ orgId: string; projectId: string }>;
@@ -31,20 +31,23 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const containers = await getProjectContainers(project.name);
-
-    if (containers.length === 0) {
-      return NextResponse.json({ containers: [], timestamp: new Date().toISOString() });
-    }
-
-    const stats = await Promise.all(
-      containers
-        .filter((c) => c.state === "running")
-        .map((c) => getContainerStats(c.id))
-    );
+    const metrics = await fetchProjectMetrics(project.name);
 
     return NextResponse.json({
-      containers: stats,
+      containers: metrics.map((m) => ({
+        containerId: m.containerId,
+        containerName: m.containerName,
+        cpuPercent: m.cpuPercent,
+        memoryUsage: m.memoryUsage,
+        memoryLimit: m.memoryLimit,
+        memoryPercent: m.memoryPercent,
+        networkRx: m.networkRxBytes,
+        networkTx: m.networkTxBytes,
+        blockRead: 0,
+        blockWrite: 0,
+        diskUsage: m.diskUsage,
+        diskLimit: m.diskLimit,
+      })),
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
