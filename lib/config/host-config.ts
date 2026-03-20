@@ -20,6 +20,7 @@ export type HostConfig = {
   envVars?: { key: string; value: string }[];
   volumes?: { name: string; mountPath: string }[];
   domains?: { domain: string; ssl?: boolean }[];
+  cron?: { name: string; schedule: string; command: string }[];
 };
 
 const CONFIG_FILES = ["host.toml", ".host.toml", "host.config.toml"];

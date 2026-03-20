@@ -9,5 +9,14 @@ export async function register() {
     } catch (err) {
       console.error("[instrumentation] Failed to start collector:", err);
     }
+
+    console.log("[instrumentation] Starting cron scheduler...");
+    try {
+      const { startCronScheduler } = await import("./lib/cron/scheduler");
+      startCronScheduler();
+      console.log("[instrumentation] Cron scheduler started");
+    } catch (err) {
+      console.error("[instrumentation] Failed to start cron scheduler:", err);
+    }
   }
 }

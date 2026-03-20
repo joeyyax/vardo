@@ -638,6 +638,22 @@ export const volumeLimits = pgTable("volume_limit", {
 });
 
 // ---------------------------------------------------------------------------
+// Host: Domain Checks (health monitoring history)
+// ---------------------------------------------------------------------------
+
+export const domainChecks = pgTable("domain_check", {
+  id: text("id").primaryKey(),
+  domainId: text("domain_id")
+    .notNull()
+    .references(() => domains.id, { onDelete: "cascade" }),
+  reachable: boolean("reachable").notNull(),
+  statusCode: integer("status_code"),
+  responseTimeMs: integer("response_time_ms"),
+  error: text("error"),
+  checkedAt: timestamp("checked_at").defaultNow().notNull(),
+});
+
+// ---------------------------------------------------------------------------
 // Host: Templates
 // ---------------------------------------------------------------------------
 
@@ -799,10 +815,18 @@ export const envVarsRelations = relations(envVars, ({ one }) => ({
   }),
 }));
 
-export const domainsRelations = relations(domains, ({ one }) => ({
+export const domainsRelations = relations(domains, ({ one, many }) => ({
   project: one(projects, {
     fields: [domains.projectId],
     references: [projects.id],
+  }),
+  domainChecks: many(domainChecks),
+}));
+
+export const domainChecksRelations = relations(domainChecks, ({ one }) => ({
+  domain: one(domains, {
+    fields: [domainChecks.domainId],
+    references: [domains.id],
   }),
 }));
 

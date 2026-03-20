@@ -157,6 +157,7 @@ export async function runDeployment(
     // Step 1: Generate or fetch compose file
     let compose: ComposeFile;
     let builtLocally = false;
+    let hostConfig: import("@/lib/config/host-config").HostConfig | null = null;
     const projectDir = join(PROJECTS_DIR, project.name);
     await mkdir(projectDir, { recursive: true });
 
@@ -248,7 +249,7 @@ export async function runDeployment(
 
       // Read host.toml config if present
       const { readHostConfig, applyHostConfig } = await import("@/lib/config/host-config");
-      const hostConfig = await readHostConfig(repoDir);
+      hostConfig = await readHostConfig(repoDir);
       if (hostConfig) {
         const applied = applyHostConfig(hostConfig);
         log(`[deploy] Found host.toml`);
@@ -753,6 +754,36 @@ export async function runDeployment(
       }
     } catch {
       // Volume detection is best-effort
+    }
+
+    // Sync cron jobs from template and/or host.toml
+    try {
+      const { syncCronJobs } = await import("@/lib/cron/engine");
+      const cronDefs: { name: string; schedule: string; command: string }[] = [];
+
+      // From host.toml
+      if (hostConfig?.cron?.length) {
+        cronDefs.push(...hostConfig.cron);
+      }
+
+      // From template
+      if (project.templateName) {
+        const { loadTemplates } = await import("@/lib/templates/load");
+        const templates = await loadTemplates();
+        const tpl = templates.find(t => t.name === project.templateName);
+        if (tpl?.defaultCronJobs?.length) {
+          cronDefs.push(...tpl.defaultCronJobs);
+        }
+      }
+
+      if (cronDefs.length > 0) {
+        const created = await syncCronJobs(opts.projectId, cronDefs);
+        if (created > 0) {
+          log(`[deploy] Synced ${created} cron job(s)`);
+        }
+      }
+    } catch (err) {
+      log(`[deploy] Warning: cron sync — ${err instanceof Error ? err.message : err}`);
     }
 
     // Mark project as active
