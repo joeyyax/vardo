@@ -238,6 +238,7 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
 
   const [deploying, setDeploying] = useState(false);
   const [viewingLogId, setViewingLogId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState("deployments");
 
   // Tag management state
   const [tagPopoverOpen, setTagPopoverOpen] = useState(false);
@@ -346,6 +347,31 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
     }
   }
 
+  async function handleDeploy() {
+    setDeploying(true);
+    setActiveTab("deployments");
+    try {
+      const res = await fetch(
+        `/api/v1/organizations/${orgId}/projects/${project.id}/deploy`,
+        { method: "POST" }
+      );
+      const data = await res.json();
+      if (data.success) {
+        toast.success(`Deployed in ${data.durationMs}ms`);
+      } else {
+        toast.error("Deployment failed");
+      }
+      if (data.deploymentId) {
+        setViewingLogId(data.deploymentId);
+      }
+      router.refresh();
+    } catch {
+      toast.error("Deployment failed");
+    } finally {
+      setDeploying(false);
+    }
+  }
+
   async function handleDomainAdd() {
     if (!newDomain.trim()) return;
     setDomainSaving(true);
@@ -426,19 +452,7 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem
-                    disabled={deploying}
-                    onClick={async () => {
-                      setDeploying(true);
-                      try {
-                        const res = await fetch(`/api/v1/organizations/${orgId}/projects/${project.id}/deploy`, { method: "POST" });
-                        const data = await res.json();
-                        data.success ? toast.success(`Deployed in ${data.durationMs}ms`) : toast.error("Deployment failed");
-                        router.refresh();
-                      } catch { toast.error("Deployment failed"); }
-                      finally { setDeploying(false); }
-                    }}
-                  >
+                  <DropdownMenuItem disabled={deploying} onClick={handleDeploy}>
                     <Rocket className="mr-2 size-4" />
                     Redeploy
                   </DropdownMenuItem>
@@ -468,20 +482,7 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : (
-              <Button
-                size="sm"
-                disabled={deploying}
-                onClick={async () => {
-                  setDeploying(true);
-                  try {
-                    const res = await fetch(`/api/v1/organizations/${orgId}/projects/${project.id}/deploy`, { method: "POST" });
-                    const data = await res.json();
-                    data.success ? toast.success(`Deployed in ${data.durationMs}ms`) : toast.error("Deployment failed");
-                    router.refresh();
-                  } catch { toast.error("Deployment failed"); }
-                  finally { setDeploying(false); }
-                }}
-              >
+              <Button size="sm" disabled={deploying} onClick={handleDeploy}>
                 {deploying ? (
                   <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
                 ) : (
@@ -650,7 +651,7 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
       </div>
 
       {/* Tabbed sections */}
-      <Tabs defaultValue="deployments">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList variant="line">
           <TabsTrigger value="deployments">
             Deployments
