@@ -250,6 +250,9 @@ export const projects = pgTable(
     persistentVolumes: jsonb("persistent_volumes").$type<
       { name: string; mountPath: string }[]
     >(),
+    exposedPorts: jsonb("exposed_ports").$type<
+      { internal: number; external?: number; protocol?: string; description?: string }[]
+    >(),
     restartPolicy: text("restart_policy").default("unless-stopped"),
     connectionInfo: jsonb("connection_info").$type<
       { label: string; value: string; copyRef?: string }[]

@@ -135,14 +135,17 @@ export async function runDeployment(
       stage("clone", "skipped");
       stage("build", "running");
       const volumes = (project.persistentVolumes as { name: string; mountPath: string }[] | null) ?? undefined;
+      const exposedPorts = (project.exposedPorts as { internal: number; external?: number; protocol?: string }[] | null) ?? undefined;
       compose = generateComposeForImage({
         projectName: project.name,
         imageName: project.imageName,
         containerPort: project.containerPort ?? undefined,
         envVars: envMap,
         volumes,
+        exposedPorts,
       });
       if (volumes?.length) log(`[deploy] ${volumes.length} persistent volume(s)`);
+      if (exposedPorts?.length) log(`[deploy] ${exposedPorts.length} exposed port(s)`);
       log(`[deploy] Generated compose for image: ${project.imageName}`);
     } else if (project.source === "git" && project.gitUrl) {
       // Git source — clone/pull repo with GitHub App auth if needed
@@ -292,6 +295,7 @@ export async function runDeployment(
           containerPort: project.containerPort ?? undefined,
           envVars: envMap,
           volumes: (project.persistentVolumes as { name: string; mountPath: string }[] | null) ?? undefined,
+          exposedPorts: (project.exposedPorts as { internal: number; external?: number; protocol?: string }[] | null) ?? undefined,
         });
       }
     } else if (project.composeContent) {

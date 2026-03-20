@@ -144,6 +144,10 @@ export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
   const [templateVolumes, setTemplateVolumes] = useState<
     { name: string; mountPath: string; description: string }[]
   >([]);
+  const [templateConnectionInfo, setTemplateConnectionInfo] = useState<
+    { label: string; value: string; copyRef?: string }[]
+  >([]);
+  const [exposePort, setExposePort] = useState(false);
 
   // Domain
   const [generateDomain, setGenerateDomain] = useState(true);
@@ -253,6 +257,9 @@ export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
     setTemplateVolumes(
       (template as { defaultVolumes?: { name: string; mountPath: string; description: string }[] }).defaultVolumes || []
     );
+    setTemplateConnectionInfo(
+      (template as { defaultConnectionInfo?: { label: string; value: string; copyRef?: string }[] }).defaultConnectionInfo || []
+    );
     if (template.defaultEnvVars?.length) {
       const masked = new Set<string>();
       setTemplateEnvVars(template.defaultEnvVars.map((ev) => {
@@ -313,6 +320,10 @@ export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
         source, deployType, autoTraefikLabels: true, autoDeploy, generateDomain,
         persistentVolumes: persistData && templateVolumes.length > 0
           ? templateVolumes.map((v) => ({ name: v.name, mountPath: v.mountPath }))
+          : undefined,
+        connectionInfo: templateConnectionInfo.length > 0 ? templateConnectionInfo : undefined,
+        exposedPorts: exposePort && containerPort
+          ? [{ internal: parseInt(containerPort, 10), description: "Primary port" }]
           : undefined,
       };
       if (containerPort) body.containerPort = parseInt(containerPort, 10);
@@ -795,6 +806,15 @@ export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
                       {templateVolumes.map((v) => v.mountPath).join(", ")}
                     </p>
                   )}
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <Switch id="expose-port" checked={exposePort} onCheckedChange={setExposePort} />
+                <div>
+                  <Label htmlFor="expose-port">Expose Port</Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Map to a public host port for external access (e.g. database tools)
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-3">

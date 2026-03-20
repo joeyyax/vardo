@@ -124,6 +124,7 @@ type Project = {
   imageName: string | null;
   restartPolicy: string | null;
   connectionInfo: { label: string; value: string; copyRef?: string }[] | null;
+  exposedPorts: { internal: number; external?: number; description?: string }[] | null;
   status: "active" | "stopped" | "error" | "deploying";
   createdAt: Date;
   updatedAt: Date;
@@ -887,8 +888,8 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
 
         {/* Connection Info */}
         {project.connectionInfo && project.connectionInfo.length > 0 && (
-          <div className="space-y-2">
-            <h3 className="text-xs font-medium text-muted-foreground">Connection</h3>
+          <div className="space-y-3">
+            <h3 className="text-xs font-medium text-muted-foreground">Internal Connection (Docker network)</h3>
             <div className="rounded-lg border bg-card divide-y">
               {project.connectionInfo.map((info) => (
                 <div key={info.label} className="flex items-center justify-between px-4 py-2.5 gap-4">
@@ -910,8 +911,40 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
                 </div>
               ))}
             </div>
+
+            {/* External connection (if ports exposed) */}
+            {(project.exposedPorts as { internal: number; external?: number; description?: string }[] | null)?.some((p) => p.external) && (
+              <>
+                <h3 className="text-xs font-medium text-muted-foreground">External Connection (host ports)</h3>
+                <div className="rounded-lg border bg-card divide-y">
+                  {(project.exposedPorts as { internal: number; external?: number; description?: string }[])
+                    .filter((p) => p.external)
+                    .map((p) => (
+                      <div key={p.internal} className="flex items-center justify-between px-4 py-2.5 gap-4">
+                        <span className="text-xs text-muted-foreground shrink-0 w-24">
+                          {p.description || `Port ${p.internal}`}
+                        </span>
+                        <span className="text-sm font-mono flex-1">
+                          localhost:{p.external}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(`localhost:${p.external}`);
+                            toast.success("Copied");
+                          }}
+                          className="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          <Copy className="size-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                </div>
+              </>
+            )}
+
             <p className="text-xs text-muted-foreground">
-              Click copy to get the variable reference for use in other projects.
+              Internal refs use the Docker network. Click copy for variable references.
             </p>
           </div>
         )}

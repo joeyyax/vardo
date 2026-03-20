@@ -41,17 +41,21 @@ export function generateComposeForImage(opts: {
   containerPort?: number;
   envVars?: Record<string, string>;
   volumes?: { name: string; mountPath: string }[];
+  exposedPorts?: { internal: number; external?: number; protocol?: string }[];
 }): ComposeFile {
-  const { projectName, imageName, containerPort, envVars, volumes } = opts;
+  const { projectName, imageName, containerPort, envVars, volumes, exposedPorts } = opts;
 
   const service: ComposeService = {
     name: projectName,
     image: imageName,
   };
 
-  // Don't map ports to host — Traefik routes via Docker network
-  // The containerPort is used in Traefik labels, not in port bindings
-  // Expose is implicit in Docker networking
+  // Map exposed ports to host (for non-HTTP services like databases)
+  if (exposedPorts && exposedPorts.length > 0) {
+    service.ports = exposedPorts
+      .filter((p) => p.external)
+      .map((p) => `${p.external}:${p.internal}${p.protocol ? `/${p.protocol}` : ""}`);
+  }
 
   if (envVars && Object.keys(envVars).length > 0) {
     service.environment = { ...envVars };
