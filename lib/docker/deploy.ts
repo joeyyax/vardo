@@ -14,7 +14,7 @@ import {
   composeToYaml,
   type ComposeFile,
 } from "./compose";
-import { ensureNetwork } from "./client";
+import { ensureNetwork, detectExposedPorts } from "./client";
 import { getInstallationToken } from "@/lib/github/app";
 import { githubAppInstallations, memberships } from "@/lib/db/schema";
 import { detectPreventiveFixes, detectCompatIssues, applyCompatFixes } from "./compat";
@@ -302,9 +302,38 @@ export async function runDeployment(
       throw new Error("No image, git repo, or compose content configured");
     }
 
-    // Step 2: Inject Traefik labels + shared network
+    // Step 2: Detect container port
+    let detectedPort: number | null = null;
+
+    // Priority: project config > image inspection > PORT env > default
+    if (project.containerPort) {
+      detectedPort = project.containerPort;
+    } else if (builtLocally) {
+      // Inspect the built image for EXPOSE'd ports
+      try {
+        const imageName = Object.values(compose.services)[0]?.image;
+        if (imageName) {
+          const ports = await detectExposedPorts(imageName);
+          if (ports.length > 0) {
+            detectedPort = ports[0];
+            log(`[deploy] Detected port from image: ${detectedPort}`);
+          }
+        }
+      } catch { /* inspection failed, fall through */ }
+    }
+
+    if (!detectedPort && envMap.PORT) {
+      detectedPort = parseInt(envMap.PORT);
+    }
+
+    const containerPort = detectedPort || 3000;
+    if (!project.containerPort) {
+      log(`[deploy] Using port ${containerPort}${detectedPort ? " (auto-detected)" : " (default)"}`);
+    }
+
+    // Step 3: Inject Traefik labels + shared network
     for (const domain of project.domains) {
-      const port = domain.port || project.containerPort || parseInt(envMap.PORT || "0") || 3000;
+      const port = domain.port || containerPort;
       compose = injectTraefikLabels(compose, {
         projectName: `${project.name}-${domain.id.slice(0, 6)}`,
         domain: domain.domain,
