@@ -121,7 +121,6 @@ type Project = {
   containerPort: number | null;
   autoTraefikLabels: boolean | null;
   autoDeploy: boolean | null;
-  imageName: string | null;
   restartPolicy: string | null;
   connectionInfo: { label: string; value: string; copyRef?: string }[] | null;
   exposedPorts: { internal: number; external?: number; description?: string }[] | null;
@@ -312,10 +311,32 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
     searchParams.get("tab") || "deployments"
   );
 
-  // Poll for project status updates — faster when deploying
-  const pollInterval = (project.status === "deploying" ||
-    project.deployments.some((d) => d.status === "running" || d.status === "queued"))
-    ? 3000 : 15000;
+  // Poll for project status updates — faster when deploying or just navigated from create
+  const [recentlyCreated, setRecentlyCreated] = useState(
+    searchParams.get("tab") === "deployments" && project.deployments.length === 0
+  );
+  const isActive = project.status === "deploying" ||
+    project.deployments.some((d) => d.status === "running" || d.status === "queued") ||
+    recentlyCreated;
+  const pollInterval = isActive ? 2000 : 15000;
+
+  useEffect(() => {
+    // Immediate refresh on mount if we think a deploy is about to happen
+    if (recentlyCreated) {
+      const timeout = setTimeout(() => router.refresh(), 500);
+      // Stop fast-polling after 60s
+      const stop = setTimeout(() => setRecentlyCreated(false), 60000);
+      return () => { clearTimeout(timeout); clearTimeout(stop); };
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (recentlyCreated && project.deployments.length > 0) {
+      setRecentlyCreated(false);
+    }
+  }, [recentlyCreated, project.deployments.length]);
+
   useEffect(() => {
     const interval = setInterval(() => router.refresh(), pollInterval);
     return () => clearInterval(interval);
