@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import {
   FolderKanban,
   Settings,
+  Shield,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -34,6 +35,12 @@ const navItems: NavItem[] = [
     href: "/settings",
     icon: Settings,
     description: "Organization settings",
+  },
+  {
+    label: "Admin",
+    href: "/admin",
+    icon: Shield,
+    description: "System administration",
   },
 ];
 
