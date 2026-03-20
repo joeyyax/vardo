@@ -290,7 +290,18 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
             return { key: ev.key, value: slug, description: ev.description, required: ev.required };
           }
         }
-        return { key: ev.key, value: ev.defaultValue || "", description: ev.description, required: ev.required };
+        // Resolve ${project.*} expressions in default values
+        let value = ev.defaultValue || "";
+        if (value.includes("${project.")) {
+          const domain = `${slug}-${wordPair.adjective}-${wordPair.noun}.${baseDomain}`;
+          value = value
+            .replace(/\$\{project\.url\}/g, `https://${domain}`)
+            .replace(/\$\{project\.domain\}/g, domain)
+            .replace(/\$\{project\.name\}/g, slug)
+            .replace(/\$\{project\.host\}/g, domain)
+            .replace(/\$\{project\.internalHost\}/g, slug);
+        }
+        return { key: ev.key, value, description: ev.description, required: ev.required };
       }));
       setMaskedFields(masked);
     } else {
