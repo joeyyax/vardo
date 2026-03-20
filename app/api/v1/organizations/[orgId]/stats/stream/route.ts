@@ -39,6 +39,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             let projectData;
             try {
               const allMetrics = await fetchAllContainerMetrics();
+              if (allMetrics.length === 0) throw new Error("No metrics from cAdvisor");
               const byProject: Record<string, typeof allMetrics> = {};
               for (const m of allMetrics) {
                 const matched = orgProjects.find(
@@ -65,12 +66,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
                   diskLimit: m.diskLimit,
                 })),
               }));
-            } catch {
+            } catch (cadvisorErr) {
               // cAdvisor not available — fall back to Docker stats
+              console.log("[metrics] cAdvisor unavailable, falling back to Docker stats:", (cadvisorErr as Error).message);
               const activeProjects = orgProjects.filter((p) => p.status === "active");
               const results = await Promise.allSettled(
                 activeProjects.map(async (p) => {
                   const containers = await getProjectContainers(p.name);
+                  console.log(`[metrics] ${p.name}: found ${containers.length} containers`);
                   const stats = await Promise.allSettled(
                     containers.map((c) => getContainerStats(c.Id))
                   );
