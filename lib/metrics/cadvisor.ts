@@ -15,77 +15,73 @@ export type ContainerMetrics = {
   timestamp: number;
 };
 
-type CAdvisorStats = {
+type V2StatEntry = {
   timestamp: string;
-  cpu: {
-    usage: { total: number };
-  };
-  memory: {
-    usage: number;
-    working_set: number;
-    hierarchical_data?: { pgfault: number; pgmajfault: number };
-  };
+  has_cpu: boolean;
+  cpu: { usage: { total: number } };
+  has_memory: boolean;
+  memory: { usage: number; working_set: number };
+  has_network: boolean;
   network?: {
     interfaces?: { name: string; rx_bytes: number; tx_bytes: number }[];
   };
+  has_filesystem: boolean;
   filesystem?: { device: string; usage: number; capacity: number }[];
 };
 
-type CAdvisorContainer = {
-  id: string;
-  name: string;
+type V2SpecEntry = {
   aliases: string[];
   labels: Record<string, string>;
-  stats: CAdvisorStats[];
-  spec: {
-    has_cpu: boolean;
-    has_memory: boolean;
-    memory?: { limit: number };
-    cpu?: { limit: number };
-  };
+  memory?: { limit: number };
 };
 
 /**
- * Fetch metrics for all Docker containers from cAdvisor.
- * Returns parsed metrics with project name extracted from container labels.
+ * Fetch metrics for all Docker containers from cAdvisor v2 API.
  */
 export async function fetchAllContainerMetrics(): Promise<ContainerMetrics[]> {
-  const res = await fetch(`${CADVISOR_URL}/api/v2.0/stats?type=docker&count=2`, {
-    signal: AbortSignal.timeout(5000),
-  });
+  // Fetch stats and specs in parallel
+  const [statsRes, specsRes] = await Promise.all([
+    fetch(`${CADVISOR_URL}/api/v2.0/stats?type=docker&recursive=true&count=2`, {
+      signal: AbortSignal.timeout(5000),
+    }),
+    fetch(`${CADVISOR_URL}/api/v2.0/spec?type=docker&recursive=true`, {
+      signal: AbortSignal.timeout(5000),
+    }),
+  ]);
 
-  if (!res.ok) {
-    throw new Error(`cAdvisor returned ${res.status}`);
-  }
+  if (!statsRes.ok) throw new Error(`cAdvisor stats returned ${statsRes.status}`);
+  if (!specsRes.ok) throw new Error(`cAdvisor spec returned ${specsRes.status}`);
 
-  const data = (await res.json()) as Record<string, CAdvisorContainer>;
+  const statsData = (await statsRes.json()) as Record<string, V2StatEntry[]>;
+  const specsData = (await specsRes.json()) as Record<string, V2SpecEntry>;
+
   const metrics: ContainerMetrics[] = [];
 
-  for (const [, container] of Object.entries(data)) {
-    const stats = container.stats;
-    if (!stats || stats.length < 2) continue;
+  for (const [key, statEntries] of Object.entries(statsData)) {
+    if (!statEntries || statEntries.length < 2) continue;
 
+    const spec = specsData[key];
+    if (!spec) continue;
+
+    // Get project name from labels
     const projectName =
-      container.labels?.["com.docker.compose.project"] ||
-      container.labels?.["host.project"] ||
+      spec.labels?.["host.project"] ||
+      spec.labels?.["com.docker.compose.project"] ||
       "";
-
     if (!projectName) continue;
 
-    const prev = stats[stats.length - 2];
-    const curr = stats[stats.length - 1];
+    const prev = statEntries[statEntries.length - 2];
+    const curr = statEntries[statEntries.length - 1];
 
-    // CPU: delta-based calculation
+    // CPU: delta-based
     const cpuDelta = curr.cpu.usage.total - prev.cpu.usage.total;
-    const timeDelta =
-      new Date(curr.timestamp).getTime() - new Date(prev.timestamp).getTime();
+    const timeDelta = new Date(curr.timestamp).getTime() - new Date(prev.timestamp).getTime();
     const cpuPercent = timeDelta > 0 ? (cpuDelta / (timeDelta * 1e6)) * 100 : 0;
 
     // Memory
     const memoryUsage = curr.memory.working_set || curr.memory.usage;
-    const memoryLimit = container.spec.memory?.limit || 0;
-    const memoryPercent =
-      memoryLimit > 0 ? (memoryUsage / memoryLimit) * 100 : 0;
+    const memoryLimit = spec.memory?.limit || 0;
+    const memoryPercent = memoryLimit > 0 ? (memoryUsage / memoryLimit) * 100 : 0;
 
     // Network
     let networkRxBytes = 0;
@@ -107,12 +103,12 @@ export async function fetchAllContainerMetrics(): Promise<ContainerMetrics[]> {
       }
     }
 
-    // Clean container name (remove leading /)
-    const containerName = container.aliases?.[0] || container.name || container.id;
+    const containerName = spec.aliases?.[0] || key.split("/").pop() || "";
+    const containerId = key.split("/").pop()?.slice(0, 12) || "";
 
     metrics.push({
-      containerId: container.id.slice(0, 12),
-      containerName: containerName.replace(/^\//, ""),
+      containerId,
+      containerName,
       projectName,
       cpuPercent: Math.round(cpuPercent * 100) / 100,
       memoryUsage,
@@ -139,6 +135,6 @@ export async function fetchProjectMetrics(
   return all.filter(
     (m) =>
       m.projectName === projectName ||
-      m.projectName.startsWith(`${projectName}-`) // blue/green slots
+      m.projectName.startsWith(`${projectName}-`)
   );
 }
