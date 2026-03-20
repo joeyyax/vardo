@@ -934,8 +934,14 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
 
               {project.deployments.map((deployment, idx) => {
                 const isActive = deployment.status === "success" && project.status === "active" && idx === 0;
+                const isStopped = deployment.status === "success" && project.status === "stopped" && idx === 0;
+                const isErrored = deployment.status === "success" && project.status === "error" && idx === 0;
                 const bgColor = isActive
                   ? "bg-status-success-muted"
+                  : isStopped
+                  ? "bg-status-neutral-muted"
+                  : isErrored
+                  ? "bg-status-error-muted"
                   : {
                       success: "bg-card",
                       failed: "bg-status-error-muted",
@@ -956,6 +962,18 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
                         <Badge className="border-transparent bg-status-success text-white shrink-0">
                           <span className="mr-1.5 size-1.5 rounded-full bg-white animate-pulse" />
                           Live
+                        </Badge>
+                      ) : isStopped ? (
+                        <Badge className="border-transparent bg-status-neutral-muted text-status-neutral shrink-0">
+                          Stopped
+                        </Badge>
+                      ) : isErrored ? (
+                        <Badge className="border-transparent bg-status-error-muted text-status-error shrink-0">
+                          Crashed
+                        </Badge>
+                      ) : deployment.status === "success" && idx > 0 && project.status === "active" ? (
+                        <Badge className="border-transparent bg-status-neutral-muted text-status-neutral shrink-0">
+                          Superseded
                         </Badge>
                       ) : (
                         <DeploymentStatusBadge status={deployment.status} />
