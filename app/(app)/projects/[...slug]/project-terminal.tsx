@@ -280,12 +280,20 @@ export function ProjectTerminal({ projectId, orgId }: ProjectTerminalProps) {
     };
   }, [sendResize]);
 
-  // Auto-connect when a container is selected
+  // Auto-connect when a container is selected and terminal div is mounted
+  const [termMounted, setTermMounted] = useState(false);
+  const termCallbackRef = useCallback((node: HTMLDivElement | null) => {
+    if (node) {
+      (terminalRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
+      setTermMounted(true);
+    }
+  }, []);
+
   useEffect(() => {
-    if (selectedContainer && !loadingContainers) {
+    if (selectedContainer && !loadingContainers && termMounted) {
       connect(selectedContainer);
     }
-  }, [selectedContainer, connect, loadingContainers]);
+  }, [selectedContainer, connect, loadingContainers, termMounted]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -389,10 +397,15 @@ export function ProjectTerminal({ projectId, orgId }: ProjectTerminalProps) {
         </div>
       )}
 
+      {/* Ephemeral notice */}
+      <p className="text-xs text-muted-foreground">
+        This is an ephemeral shell session. Changes to the filesystem will not persist unless written to a persistent volume.
+      </p>
+
       {/* Terminal */}
       <div className="rounded-lg border border-zinc-800 bg-zinc-950 overflow-hidden">
         <div
-          ref={terminalRef}
+          ref={termCallbackRef}
           className="p-2"
           style={{ minHeight: "400px" }}
         />
