@@ -4,7 +4,7 @@ import { projects } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq } from "drizzle-orm";
 import { fetchAllContainerMetrics } from "@/lib/metrics/cadvisor";
-import { getSystemDiskUsage, getSystemInfo } from "@/lib/docker/client";
+import { getSystemDiskUsage, getSystemInfo, type DiskUsage, type SystemInfo } from "@/lib/docker/client";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -30,14 +30,28 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const stream = new ReadableStream({
       start(controller) {
         let stopped = false;
+        let tickCount = 0;
+
+        // Cache slow calls
+        let cachedDisk: DiskUsage | null = null;
+        let cachedSystem: SystemInfo | null = null;
+
+        // Fetch slow data in background (don't block SSE ticks)
+        async function refreshSlowData() {
+          try { cachedDisk = await getSystemDiskUsage(); } catch { /* skip */ }
+          try { cachedSystem = await getSystemInfo(); } catch { /* skip */ }
+        }
+
+        // Start slow data fetch immediately but don't wait for it
+        refreshSlowData();
 
         async function poll() {
           if (stopped) return;
 
           try {
+            // Fast path: just cAdvisor stats (~10ms)
             const allMetrics = await fetchAllContainerMetrics();
 
-            // Group by project using labels
             const byProject: Record<string, typeof allMetrics> = {};
             for (const m of allMetrics) {
               const matched = orgProjects.find(
@@ -47,12 +61,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
               if (!byProject[matched.id]) byProject[matched.id] = [];
               byProject[matched.id].push(m);
             }
-
-            // Get disk usage and system info
-            let diskUsage;
-            let systemInfo;
-            try { diskUsage = await getSystemDiskUsage(); } catch { /* skip */ }
-            try { systemInfo = await getSystemInfo(); } catch { /* skip */ }
 
             const payload = {
               projects: orgProjects.map((p) => ({
@@ -70,14 +78,20 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
                   blockWrite: 0,
                 })),
               })),
-              disk: diskUsage || null,
-              system: systemInfo || null,
+              disk: cachedDisk,
+              system: cachedSystem,
               timestamp: new Date().toISOString(),
             };
 
             controller.enqueue(
               encoder.encode(`event: stats\ndata: ${JSON.stringify(payload)}\n\n`)
             );
+
+            // Refresh slow data every 60 ticks (~5 min at 5s intervals)
+            tickCount++;
+            if (tickCount % 60 === 0) {
+              refreshSlowData(); // Fire and forget — don't await
+            }
           } catch (err) {
             console.error("[metrics] cAdvisor error:", (err as Error).message);
           }

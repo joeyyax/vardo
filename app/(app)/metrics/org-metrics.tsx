@@ -45,6 +45,8 @@ type ProjectStats = {
 type OrgMetricsProps = {
   orgId: string;
   projects: ProjectSummary[];
+  initialSystem?: SystemInfo | null;
+  initialProjectStats?: { id: string; name: string; displayName: string; status: string; containers: ContainerStatsSnapshot[] }[];
 };
 
 function formatBytes(bytes: number, decimals = 1): string {
@@ -103,20 +105,42 @@ type DiskUsage = {
   total: number;
 };
 
-export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
+export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats }: OrgMetricsProps) {
   const [timeRange, setTimeRange] = useState<"5m" | "1h" | "6h" | "24h" | "7d">("1h");
   const [disk, setDisk] = useState<DiskUsage | null>(null);
-  const [system, setSystem] = useState<SystemInfo | null>(null);
+  const [system, setSystem] = useState<SystemInfo | null>(initialSystem || null);
   const timeRangeRef = useRef(timeRange);
   timeRangeRef.current = timeRange;
   const [projectStats, setProjectStats] = useState<Record<string, ProjectStats>>(() => {
     const initial: Record<string, ProjectStats> = {};
     for (const p of projects) {
-      initial[p.id] = { project: p, containers: [], loading: true, error: null };
+      const preloaded = initialProjectStats?.find((ip) => ip.id === p.id);
+      initial[p.id] = {
+        project: p,
+        containers: preloaded?.containers || [],
+        loading: !preloaded,
+        error: null,
+      };
     }
     return initial;
   });
-  const [timeSeries, setTimeSeries] = useState<TimePoint[]>([]);
+  const [timeSeries, setTimeSeries] = useState<TimePoint[]>(() => {
+    // Seed with initial data if available
+    if (initialProjectStats?.length) {
+      const allC = initialProjectStats.flatMap((p) => p.containers);
+      const now = Date.now();
+      return [{
+        time: new Date(now).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+        timestamp: now,
+        cpu: Math.round(allC.reduce((s, c) => s + c.cpuPercent, 0) * 100) / 100,
+        memory: allC.reduce((s, c) => s + c.memoryUsage, 0),
+        networkRx: allC.reduce((s, c) => s + c.networkRx, 0),
+        networkTx: allC.reduce((s, c) => s + c.networkTx, 0),
+        diskTotal: 0,
+      }];
+    }
+    return [];
+  });
   const statsRef = useRef(projectStats);
 
   // Load history when switching periods
@@ -369,8 +393,7 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
       </div>
 
       {/* Aggregate charts */}
-      {timeSeries.length > 1 && (
-        <div className="grid md:grid-cols-2 gap-4">
+      <div className="grid md:grid-cols-2 gap-4">
           <div className="squircle rounded-lg border bg-card overflow-hidden">
             <div className="flex items-center gap-2 px-4 py-3 border-b">
               <Cpu className="size-4 text-muted-foreground" />
@@ -440,8 +463,7 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
               </ResponsiveContainer>
             </div>
           </div>
-        </div>
-      )}
+      </div>
 
       {/* Project list with stats */}
       {projects.length === 0 ? (
