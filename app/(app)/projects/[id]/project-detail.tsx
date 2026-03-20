@@ -879,10 +879,12 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
               {/* In-progress deployment */}
               {deploying && (
                 <div className="squircle rounded-lg border bg-status-info-muted overflow-hidden">
-                  <button
-                    type="button"
+                  <div
+                    role="button"
+                    tabIndex={0}
                     onClick={() => setExpandedDeployLog(!expandedDeployLog)}
-                    className="flex items-center justify-between gap-4 p-4 w-full text-left hover:bg-accent/50 transition-colors"
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setExpandedDeployLog(!expandedDeployLog); }}
+                    className="flex items-center justify-between gap-4 p-4 w-full text-left hover:bg-accent/50 transition-colors cursor-pointer"
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <Badge variant="outline" className="animate-pulse shrink-0">
@@ -933,7 +935,7 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
                       </Button>
                       <ChevronDown className={`size-4 text-muted-foreground transition-transform ${expandedDeployLog ? "rotate-180" : ""}`} />
                     </div>
-                  </button>
+                  </div>
                   {expandedDeployLog && deployLog.length > 0 && (
                     <div className="border-t bg-black/50 p-4 max-h-80 overflow-auto font-mono text-xs leading-5">
                       {deployLog.map((line, i) => (
