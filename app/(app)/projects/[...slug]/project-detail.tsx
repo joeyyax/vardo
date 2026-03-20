@@ -57,7 +57,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { LogViewer, DeploymentLog, TerminalOutput, highlightLogLine, detectLogLevel } from "@/components/log-viewer";
+import dynamic from "next/dynamic";
 import { detectProjectIcon } from "@/lib/ui/project-icon";
+import { ProjectMetrics } from "./project-metrics";
+
+const ProjectTerminal = dynamic(
+  () => import("./project-terminal").then((m) => m.ProjectTerminal),
+  { ssr: false },
+);
 import { EnvEditor } from "@/components/env-editor";
 import { VolumesPanel } from "@/components/volumes-panel";
 import {
@@ -1798,26 +1805,11 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
         </TabsContent>
 
         <TabsContent value="terminal" className="pt-4">
-          <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
-            <Terminal className="size-8 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">
-              Web terminal coming soon.
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Open a shell directly into your running containers.
-            </p>
-          </div>
+          <ProjectTerminal projectId={project.id} orgId={orgId} />
         </TabsContent>
 
         <TabsContent value="metrics" className="pt-4">
-          <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
-            <p className="text-sm text-muted-foreground">
-              Container metrics coming soon.
-            </p>
-            <p className="text-xs text-muted-foreground">
-              CPU, memory, network, and disk usage for each container.
-            </p>
-          </div>
+          <ProjectMetrics orgId={orgId} projectId={project.id} />
         </TabsContent>
 
         <TabsContent value="environments" className="space-y-4 pt-4">

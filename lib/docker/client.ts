@@ -351,3 +351,104 @@ export async function detectExposedPorts(imageOrId: string): Promise<number[]> {
     return parseInt(key.split("/")[0], 10);
   });
 }
+
+// ---------------------------------------------------------------------------
+// Container Stats
+// ---------------------------------------------------------------------------
+
+export type ContainerStats = {
+  containerId: string;
+  containerName: string;
+  cpuPercent: number;
+  memoryUsage: number;
+  memoryLimit: number;
+  memoryPercent: number;
+  networkRx: number;
+  networkTx: number;
+  blockRead: number;
+  blockWrite: number;
+};
+
+/**
+ * Get current resource usage stats for a container.
+ * Calls the Docker Engine API with stream=false for a single snapshot.
+ */
+export async function getContainerStats(containerId: string): Promise<ContainerStats> {
+  const raw = await dockerRequest<{
+    id: string;
+    name: string;
+    cpu_stats: {
+      cpu_usage: { total_usage: number; percpu_usage?: number[] };
+      system_cpu_usage: number;
+      online_cpus?: number;
+    };
+    precpu_stats: {
+      cpu_usage: { total_usage: number };
+      system_cpu_usage: number;
+      online_cpus?: number;
+    };
+    memory_stats: {
+      usage: number;
+      limit: number;
+      stats?: { cache?: number; inactive_file?: number };
+    };
+    networks?: Record<string, { rx_bytes: number; tx_bytes: number }>;
+    blkio_stats?: {
+      io_service_bytes_recursive?: { op: string; value: number }[] | null;
+    };
+  }>("GET", `/containers/${containerId}/stats?stream=false`);
+
+  // CPU percentage calculation
+  const cpuDelta = raw.cpu_stats.cpu_usage.total_usage - raw.precpu_stats.cpu_usage.total_usage;
+  const systemDelta = raw.cpu_stats.system_cpu_usage - raw.precpu_stats.system_cpu_usage;
+  const numCpus = raw.cpu_stats.online_cpus ?? raw.cpu_stats.cpu_usage.percpu_usage?.length ?? 1;
+  const cpuPercent = systemDelta > 0 ? (cpuDelta / systemDelta) * numCpus * 100 : 0;
+
+  // Memory (subtract cache/inactive_file for actual working set)
+  const cache = raw.memory_stats.stats?.inactive_file ?? raw.memory_stats.stats?.cache ?? 0;
+  const memoryUsage = (raw.memory_stats.usage || 0) - cache;
+  const memoryLimit = raw.memory_stats.limit || 0;
+  const memoryPercent = memoryLimit > 0 ? (memoryUsage / memoryLimit) * 100 : 0;
+
+  // Network I/O (sum across all interfaces)
+  let networkRx = 0;
+  let networkTx = 0;
+  if (raw.networks) {
+    for (const iface of Object.values(raw.networks)) {
+      networkRx += iface.rx_bytes || 0;
+      networkTx += iface.tx_bytes || 0;
+    }
+  }
+
+  // Block I/O
+  let blockRead = 0;
+  let blockWrite = 0;
+  const blkioEntries = raw.blkio_stats?.io_service_bytes_recursive;
+  if (blkioEntries) {
+    for (const entry of blkioEntries) {
+      if (entry.op === "read" || entry.op === "Read") blockRead += entry.value;
+      if (entry.op === "write" || entry.op === "Write") blockWrite += entry.value;
+    }
+  }
+
+  return {
+    containerId: raw.id,
+    containerName: (raw.name || "").replace(/^\//, ""),
+    cpuPercent: Math.round(cpuPercent * 100) / 100,
+    memoryUsage,
+    memoryLimit,
+    memoryPercent: Math.round(memoryPercent * 100) / 100,
+    networkRx,
+    networkTx,
+    blockRead,
+    blockWrite,
+  };
+}
+
+/**
+ * List all running containers that belong to a project.
+ * Uses the `host.project` label set during deploy.
+ */
+export async function getProjectContainers(projectName: string): Promise<ContainerInfo[]> {
+  return listContainers(projectName);
+}
