@@ -1,0 +1,24 @@
+name = "mongo"
+displayName = "MongoDB"
+description = "Document-oriented NoSQL database"
+icon = "https://cdn.simpleicons.org/mongodb/47A248"
+category = "database"
+source = "direct"
+deployType = "image"
+imageName = "mongo:7"
+defaultPort = 27017
+
+[[envVars]]
+key = "MONGO_INITDB_ROOT_USERNAME"
+description = "Root username"
+required = true
+
+[[envVars]]
+key = "MONGO_INITDB_ROOT_PASSWORD"
+description = "Root password"
+required = true
+
+[[volumes]]
+name = "data"
+mountPath = "/data/db"
+description = "MongoDB data files"

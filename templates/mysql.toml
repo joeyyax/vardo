@@ -1,0 +1,40 @@
+name = "mysql"
+displayName = "MySQL"
+description = "Popular open-source relational database"
+icon = "https://cdn.simpleicons.org/mysql/4479A1"
+category = "database"
+source = "direct"
+deployType = "image"
+imageName = "mysql:8"
+defaultPort = 3306
+
+[[envVars]]
+key = "MYSQL_ROOT_PASSWORD"
+description = "Root password"
+required = true
+
+[[envVars]]
+key = "MYSQL_DATABASE"
+description = "Default database name"
+required = false
+
+[[envVars]]
+key = "MYSQL_USER"
+description = "Additional user"
+required = false
+
+[[envVars]]
+key = "MYSQL_PASSWORD"
+description = "Additional user password"
+required = false
+
+[[envVars]]
+key = "DATABASE_URL"
+description = "Connection string (auto-generated)"
+required = false
+defaultValue = "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@${project.name}:3306/${MYSQL_DATABASE}"
+
+[[volumes]]
+name = "data"
+mountPath = "/var/lib/mysql"
+description = "MySQL data files"

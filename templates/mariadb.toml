@@ -1,0 +1,34 @@
+name = "mariadb"
+displayName = "MariaDB"
+description = "Community-developed fork of MySQL"
+icon = "https://cdn.simpleicons.org/mariadb/BA7257"
+category = "database"
+source = "direct"
+deployType = "image"
+imageName = "mariadb:11"
+defaultPort = 3306
+
+[[envVars]]
+key = "MARIADB_ROOT_PASSWORD"
+description = "Root password"
+required = true
+
+[[envVars]]
+key = "MARIADB_DATABASE"
+description = "Default database name"
+required = false
+
+[[envVars]]
+key = "MARIADB_USER"
+description = "Additional user"
+required = false
+
+[[envVars]]
+key = "MARIADB_PASSWORD"
+description = "Additional user password"
+required = false
+
+[[volumes]]
+name = "data"
+mountPath = "/var/lib/mysql"
+description = "MariaDB data files"

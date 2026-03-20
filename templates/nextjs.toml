@@ -1,0 +1,14 @@
+name = "nextjs"
+displayName = "Next.js"
+description = "React framework — deploy from a repo"
+icon = "https://cdn.simpleicons.org/nextdotjs"
+category = "web"
+source = "git"
+deployType = "nixpacks"
+defaultPort = 3000
+
+[[envVars]]
+key = "NODE_ENV"
+description = "Environment"
+required = false
+defaultValue = "production"

@@ -1,0 +1,14 @@
+name = "gitea"
+displayName = "Gitea"
+description = "Lightweight self-hosted Git service"
+icon = "https://cdn.simpleicons.org/gitea"
+category = "tool"
+source = "direct"
+deployType = "image"
+imageName = "gitea/gitea:latest"
+defaultPort = 3000
+
+[[volumes]]
+name = "data"
+mountPath = "/data"
+description = "Gitea repositories and config"
