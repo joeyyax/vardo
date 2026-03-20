@@ -232,12 +232,12 @@ export function CronManager({ projectId, orgId }: Props) {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm text-muted-foreground">
-              Scheduled tasks that run commands inside your containers.
+              Run commands or hit URLs on a recurring schedule.
             </p>
           </div>
           <Button size="sm" onClick={openCreate}>
             <Plus className="mr-1.5 size-4" />
-            Add Task
+            Add Job
           </Button>
         </div>
 
