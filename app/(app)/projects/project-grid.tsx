@@ -45,7 +45,7 @@ function StatusBadge({ status }: { status: string }) {
   switch (status) {
     case "active":
       return (
-        <Badge className="border-transparent bg-green-500/15 text-green-700 dark:text-green-400">
+        <Badge className="border-transparent bg-status-success-muted text-status-success">
           Active
         </Badge>
       );

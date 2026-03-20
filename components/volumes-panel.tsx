@@ -214,7 +214,7 @@ export function VolumesPanel({ projectId, orgId }: Props) {
                       {vol.type}
                     </Badge>
                     {vol.persistent ? (
-                      <Badge className="text-xs shrink-0 border-transparent bg-green-500/15 text-green-700 dark:text-green-400">
+                      <Badge className="text-xs shrink-0 border-transparent bg-status-success-muted text-status-success">
                         <ShieldCheck className="mr-1 size-3" />
                         Persistent
                       </Badge>

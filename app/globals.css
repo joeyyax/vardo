@@ -23,6 +23,16 @@
   --color-chart-2: var(--chart-2);
   --color-chart-1: var(--chart-1);
   --color-ring: var(--ring);
+  --color-status-success: var(--status-success);
+  --color-status-success-muted: var(--status-success-muted);
+  --color-status-error: var(--status-error);
+  --color-status-error-muted: var(--status-error-muted);
+  --color-status-warning: var(--status-warning);
+  --color-status-warning-muted: var(--status-warning-muted);
+  --color-status-info: var(--status-info);
+  --color-status-info-muted: var(--status-info-muted);
+  --color-status-neutral: var(--status-neutral);
+  --color-status-neutral-muted: var(--status-neutral-muted);
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
@@ -153,6 +163,17 @@
   --sidebar-accent-foreground: oklch(0.95 0.01 75);
   --sidebar-border: oklch(1 0.02 75 / 12%);
   --sidebar-ring: oklch(0.75 0.15 65);
+  /* Status colors — muted to match warm dark theme */
+  --status-success: oklch(0.65 0.1 155);
+  --status-success-muted: oklch(0.65 0.1 155 / 10%);
+  --status-error: oklch(0.65 0.12 25);
+  --status-error-muted: oklch(0.65 0.12 25 / 10%);
+  --status-warning: oklch(0.7 0.1 70);
+  --status-warning-muted: oklch(0.7 0.1 70 / 10%);
+  --status-info: oklch(0.65 0.1 240);
+  --status-info-muted: oklch(0.65 0.1 240 / 10%);
+  --status-neutral: oklch(0.5 0.02 60);
+  --status-neutral-muted: oklch(0.5 0.02 60 / 10%);
 }
 
 @layer base {

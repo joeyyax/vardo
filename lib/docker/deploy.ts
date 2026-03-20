@@ -240,8 +240,9 @@ export async function runDeployment(
         // Apply preventive compatibility fixes
         const preventiveFixes = await detectPreventiveFixes(root);
         if (preventiveFixes.length > 0) {
-          const fixNames = preventiveFixes.map((f) => f.name).join(", ");
-          log(`[compat] Preventive fixes: ${fixNames}`);
+          for (const fix of preventiveFixes) {
+            log(`[compat] ${fix.name}: ${fix.description}`);
+          }
           Object.assign(envMap, applyCompatFixes(envMap, preventiveFixes));
         }
 
@@ -254,9 +255,11 @@ export async function runDeployment(
           // Detect issues from error output and retry with fixes
           const fixes = detectCompatIssues(errMsg);
           if (fixes.length > 0) {
-            const fixNames = fixes.map((f) => f.name).join(", ");
-            log(`[compat] Detected issues: ${fixNames}`);
-            log(`[compat] Applying fixes and retrying...`);
+            log(`[compat] Build failed, detected fixable issues:`);
+            for (const fix of fixes) {
+              log(`[compat]   ${fix.name}: ${fix.description}`);
+            }
+            log(`[compat] Retrying with fixes applied...`);
             Object.assign(envMap, applyCompatFixes(envMap, fixes));
             await buildFromRepo(root, imageName, buildType, logs, envMap);
           } else {

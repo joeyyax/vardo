@@ -136,18 +136,22 @@ function StatusBadge({ status }: { status: string }) {
   switch (status) {
     case "active":
       return (
-        <Badge className="border-transparent bg-green-500/15 text-green-700 dark:text-green-400">
+        <Badge className="border-transparent bg-status-success-muted text-status-success">
           Active
         </Badge>
       );
     case "deploying":
       return (
-        <Badge variant="outline" className="animate-pulse">
+        <Badge className="border-transparent bg-status-info-muted text-status-info animate-pulse">
           Deploying
         </Badge>
       );
     case "error":
-      return <Badge variant="destructive">Error</Badge>;
+      return (
+        <Badge className="border-transparent bg-status-error-muted text-status-error">
+          Error
+        </Badge>
+      );
     default:
       return <Badge variant="secondary">Stopped</Badge>;
   }
@@ -157,18 +161,22 @@ function DeploymentStatusBadge({ status }: { status: Deployment["status"] }) {
   switch (status) {
     case "success":
       return (
-        <Badge className="border-transparent bg-green-500/15 text-green-700 dark:text-green-400">
+        <Badge className="border-transparent bg-status-success-muted text-status-success">
           Success
         </Badge>
       );
     case "running":
       return (
-        <Badge variant="outline" className="animate-pulse">
+        <Badge className="border-transparent bg-status-info-muted text-status-info animate-pulse">
           Running
         </Badge>
       );
     case "failed":
-      return <Badge variant="destructive">Failed</Badge>;
+      return (
+        <Badge className="border-transparent bg-status-error-muted text-status-error">
+          Failed
+        </Badge>
+      );
     case "cancelled":
       return <Badge variant="secondary">Cancelled</Badge>;
     default:
@@ -529,13 +537,13 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
             {project.status === "active" ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white">
-                    <span className="mr-1.5 size-2 rounded-full bg-green-300 animate-pulse" />
+                  <Button size="sm" className="bg-status-success-muted text-status-success hover:bg-status-success/20">
+                    <span className="mr-1.5 size-2 rounded-full bg-status-success animate-pulse" />
                     Running
                     {(() => {
                       const lastDeploy = project.deployments.find((d) => d.status === "success");
                       return lastDeploy ? (
-                        <span className="ml-1.5 text-green-200 text-xs font-normal">
+                        <span className="ml-1.5 text-status-success/70 text-xs font-normal">
                           {formatUptime(lastDeploy.finishedAt || lastDeploy.startedAt)}
                         </span>
                       ) : null;
@@ -834,7 +842,7 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
             <div className="space-y-2">
               {/* In-progress deployment */}
               {deploying && (
-                <div className="squircle rounded-lg border-l-[3px] border-l-blue-500 border border-blue-500/20 bg-card overflow-hidden">
+                <div className="squircle rounded-lg border bg-status-info-muted overflow-hidden">
                   <button
                     type="button"
                     onClick={() => setExpandedDeployLog(!expandedDeployLog)}
@@ -851,9 +859,9 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
                           const status = deployStages[s];
                           return (
                             <div key={s} className="flex items-center gap-0.5" title={s}>
-                              {status === "running" && <Loader2 className="size-3 animate-spin text-blue-400" />}
-                              {status === "success" && <Check className="size-3 text-green-400" />}
-                              {status === "failed" && <X className="size-3 text-red-400" />}
+                              {status === "running" && <Loader2 className="size-3 animate-spin text-status-info" />}
+                              {status === "success" && <Check className="size-3 text-status-success" />}
+                              {status === "failed" && <X className="size-3 text-status-error" />}
                               {status === "skipped" && <span className="size-3 text-center text-muted-foreground">-</span>}
                               {!status && <span className="size-3 rounded-full border border-muted-foreground/20" />}
                             </div>
@@ -889,16 +897,16 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
               )}
 
               {project.deployments.map((deployment) => {
-                const borderColor = {
-                  success: "border-l-green-500",
-                  failed: "border-l-red-500",
-                  running: "border-l-blue-500",
-                  queued: "border-l-zinc-500",
-                  cancelled: "border-l-zinc-500",
-                }[deployment.status] || "border-l-zinc-500";
+                const bgColor = {
+                  success: "bg-status-success-muted",
+                  failed: "bg-status-error-muted",
+                  running: "bg-status-info-muted",
+                  queued: "bg-status-neutral-muted",
+                  cancelled: "bg-status-neutral-muted",
+                }[deployment.status] || "bg-card";
 
                 return (
-                <div key={deployment.id} className={`squircle rounded-lg border-l-[3px] ${borderColor} border bg-card overflow-hidden`}>
+                <div key={deployment.id} className={`squircle rounded-lg border ${bgColor} overflow-hidden`}>
                   <button
                     type="button"
                     onClick={() => setViewingLogId(viewingLogId === deployment.id ? null : deployment.id)}
@@ -995,7 +1003,7 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
                       {domain.domain}
                     </p>
                     {domain.isPrimary && (
-                      <Badge className="text-xs border-transparent bg-primary/15 text-primary shrink-0">
+                      <Badge className="text-xs border-transparent bg-status-info-muted text-status-info shrink-0">
                         Primary
                       </Badge>
                     )}
