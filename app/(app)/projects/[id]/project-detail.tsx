@@ -490,7 +490,12 @@ export function ProjectDetail({ project, orgId, userRole }: ProjectDetailProps) 
             <Button
               size="sm"
               variant="outline"
-              onClick={() => toast.info("Restart not yet implemented")}
+              onClick={async () => {
+                const res = await fetch(`/api/v1/organizations/${orgId}/projects/${project.id}/restart`, { method: "POST" });
+                const data = await res.json();
+                data.success ? toast.success("Restarted") : toast.error("Restart failed");
+                router.refresh();
+              }}
             >
               <RotateCcw className="mr-1.5 size-4" />
               Restart
@@ -498,7 +503,12 @@ export function ProjectDetail({ project, orgId, userRole }: ProjectDetailProps) 
             <Button
               size="sm"
               variant="outline"
-              onClick={() => toast.info("Stop not yet implemented")}
+              onClick={async () => {
+                const res = await fetch(`/api/v1/organizations/${orgId}/projects/${project.id}/stop`, { method: "POST" });
+                const data = await res.json();
+                data.success ? toast.success("Stopped") : toast.error("Stop failed");
+                router.refresh();
+              }}
             >
               <Square className="mr-1.5 size-4" />
               Stop
