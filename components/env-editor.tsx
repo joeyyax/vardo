@@ -48,13 +48,12 @@ export function EnvEditor({ projectId, orgId, initialVars, allProjectNames = [],
         if (res.ok) {
           const data = await res.json();
           const vars = data.envVars || [];
-          // We only have keys, not values (secrets). Show keys with placeholder
           if (vars.length > 0) {
-            // Fetch with values would need a dedicated endpoint
-            // For now, show the keys as a starting template
             setContent(
               vars
-                .map((v: { key: string }) => `${v.key}=`)
+                .map((v: { key: string; value: string; isSecret: boolean | null }) =>
+                  v.isSecret ? `# ${v.key} (secret — set a new value to update)\n${v.key}=` : `${v.key}=${v.value}`
+                )
                 .join("\n")
             );
           }

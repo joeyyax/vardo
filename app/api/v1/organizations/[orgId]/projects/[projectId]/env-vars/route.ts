@@ -77,16 +77,19 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     const vars = await db.query.envVars.findMany({
       where: eq(envVars.projectId, projectId),
-      columns: {
-        id: true,
-        key: true,
-        isSecret: true,
-        createdAt: true,
-        updatedAt: true,
-      },
     });
 
-    return NextResponse.json({ envVars: vars });
+    // Return values, but mask secrets
+    const safe = vars.map((v) => ({
+      id: v.id,
+      key: v.key,
+      value: v.isSecret ? "" : v.value,
+      isSecret: v.isSecret,
+      createdAt: v.createdAt,
+      updatedAt: v.updatedAt,
+    }));
+
+    return NextResponse.json({ envVars: safe });
   } catch (error) {
     if (error instanceof Error && error.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
