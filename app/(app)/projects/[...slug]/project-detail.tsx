@@ -1331,7 +1331,7 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allGroup
             Volumes
           </TabsTrigger>
           <TabsTrigger value="cron">
-            Scheduled Tasks
+            Cron
           </TabsTrigger>
           <TabsTrigger value="terminal">
             Terminal

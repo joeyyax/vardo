@@ -245,7 +245,7 @@ export function CronManager({ projectId, orgId }: Props) {
           <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
             <Clock className="size-8 text-muted-foreground" />
             <p className="text-sm text-muted-foreground">
-              No scheduled tasks. Add a cron job to run commands on a schedule.
+              No cron jobs configured. Add one to run commands or hit URLs on a schedule.
             </p>
           </div>
         ) : (
@@ -348,7 +348,7 @@ export function CronManager({ projectId, orgId }: Props) {
               {editId ? "Edit cron job" : "Add cron job"}
             </BottomSheetTitle>
             <BottomSheetDescription>
-              Run a command inside your container on a schedule.
+              Run commands or hit URLs on a recurring schedule.
             </BottomSheetDescription>
           </BottomSheetHeader>
 
@@ -462,7 +462,7 @@ export function CronManager({ projectId, orgId }: Props) {
         onConfirm={handleDelete}
         loading={deleting}
         title="Delete cron job"
-        description="This will permanently remove this scheduled task."
+        description="This will permanently remove this cron job."
       />
     </>
   );
