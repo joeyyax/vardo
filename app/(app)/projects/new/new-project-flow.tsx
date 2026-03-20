@@ -140,6 +140,7 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
   // Form fields
   const [displayName, setDisplayName] = useState("");
   const [name, setName] = useState("");
+  const [slugTaken, setSlugTaken] = useState(false);
   const [description, setDescription] = useState("");
   const [source, setSource] = useState<Source>("git");
   const [deployType, setDeployType] = useState<DeployType>("compose");
@@ -250,7 +251,9 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
     setSelectedTemplate(template);
     setSelectedSource(null);
     setDisplayName(template.displayName);
-    setName(slugify(template.name));
+    const wp = generateWordPair();
+    setWordPair(wp);
+    setName(`${slugify(template.name)}-${wp.adjective}-${wp.noun}`);
     setSlugEdited(false);
     setSource(template.source as Source);
     setDeployType(template.deployType as DeployType);
@@ -578,7 +581,10 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
                   value={displayName}
                   onChange={(e) => {
                     setDisplayName(e.target.value);
-                    if (!slugEdited) setName(slugify(e.target.value));
+                    if (!slugEdited) {
+                      const base = slugify(e.target.value);
+                      setName(base ? `${base}-${wordPair.adjective}-${wordPair.noun}` : "");
+                    }
                   }}
                   autoFocus={selectedSource !== "github"}
                 />
@@ -592,8 +598,24 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
                   onChange={(e) => {
                     setSlugEdited(true);
                     setName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""));
+                    setSlugTaken(false);
                   }}
+                  onBlur={async () => {
+                    if (!name.trim()) return;
+                    try {
+                      const res = await fetch(`/api/v1/organizations/${orgId}/projects`);
+                      if (res.ok) {
+                        const data = await res.json();
+                        const exists = (data.projects || []).some((p: { name: string }) => p.name === name);
+                        setSlugTaken(exists);
+                      }
+                    } catch {}
+                  }}
+                  className={slugTaken ? "border-destructive" : ""}
                 />
+                {slugTaken && (
+                  <p className="text-xs text-destructive">This slug is already in use</p>
+                )}
               </div>
             </div>
 
@@ -618,7 +640,14 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
                     </span>
                     <button
                       type="button"
-                      onClick={() => setWordPair(generateWordPair())}
+                      onClick={() => {
+                        const wp = generateWordPair();
+                        setWordPair(wp);
+                        if (!slugEdited) {
+                          const base = selectedTemplate ? slugify(selectedTemplate.name) : slugify(displayName);
+                          setName(`${base}-${wp.adjective}-${wp.noun}`);
+                        }
+                      }}
                       className="shrink-0 ml-auto p-1 rounded-md text-muted-foreground hover:text-foreground transition-colors"
                       title="Generate new words"
                     >
