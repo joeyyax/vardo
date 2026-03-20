@@ -146,10 +146,10 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
 
     setDragOverId(targetId);
 
-    // Detect drop position: top 25% = before, bottom 25% = after, middle = on (group)
+    // Detect drop position: left 25% = before, right 25% = after, center = on (group)
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const y = e.clientY - rect.top;
-    const pct = y / rect.height;
+    const x = e.clientX - rect.left;
+    const pct = x / rect.width;
     if (pct < 0.25) setDragPosition("before");
     else if (pct > 0.75) setDragPosition("after");
     else setDragPosition("on");
@@ -493,8 +493,8 @@ function ProjectCard({
       className={`squircle relative flex gap-3 rounded-lg border p-3 transition-all cursor-grab active:cursor-grabbing ${
         isDragging ? "opacity-40 scale-95" : ""
       } ${isGroupTarget ? "border-status-info bg-status-info-muted scale-[1.02] ring-2 ring-status-info/30" : "bg-card hover:bg-accent/50"
-      } ${isBeforeTarget ? "border-t-2 border-t-status-info" : ""
-      } ${isAfterTarget ? "border-b-2 border-b-status-info" : ""
+      } ${isBeforeTarget ? "border-l-2 border-l-status-info" : ""
+      } ${isAfterTarget ? "border-r-2 border-r-status-info" : ""
       } ${compact ? "p-2" : "p-3"}`}
     >
       {/* Icon */}
