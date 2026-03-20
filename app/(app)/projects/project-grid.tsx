@@ -6,7 +6,16 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { X, FolderOpen } from "lucide-react";
+import { X, Pencil, Loader2 } from "lucide-react";
+import {
+  BottomSheet,
+  BottomSheetContent,
+  BottomSheetFooter,
+  BottomSheetHeader,
+  BottomSheetTitle,
+  BottomSheetDescription,
+} from "@/components/ui/bottom-sheet";
+import { Label } from "@/components/ui/label";
 import { detectProjectIcon } from "@/lib/ui/project-icon";
 import {
   DndContext,
@@ -82,10 +91,10 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
   const [activeTagIds, setActiveTagIds] = useState<Set<string>>(new Set());
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
-  const [creatingGroup, setCreatingGroup] = useState<{ projectIds: string[] } | null>(null);
-  const [newGroupName, setNewGroupName] = useState("");
   const [confirmDeleteGroupId, setConfirmDeleteGroupId] = useState<string | null>(null);
-  const groupNameRef = useRef<HTMLInputElement>(null);
+  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+  const [editGroupName, setEditGroupName] = useState("");
+  const [savingGroup, setSavingGroup] = useState(false);
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [holdTarget, setHoldTarget] = useState<string | null>(null);
 
@@ -123,9 +132,7 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
     return { ungrouped: ung, groupedMap: gMap };
   }, [filteredProjects]);
 
-  const sortableIds = ungrouped
-    .filter((p) => !creatingGroup?.projectIds.includes(p.id))
-    .map((p) => p.id);
+  const sortableIds = ungrouped.map((p) => p.id);
 
   function handleDragStart(event: DragStartEvent) {
     setActiveId(event.active.id as string);
@@ -168,9 +175,22 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
       if (tp?.projectGroups.length) {
         for (const pg of tp.projectGroups) await rmGroup(targetId, pg.group.id);
       }
-      setCreatingGroup({ projectIds: [sourceId, targetId] });
-      setNewGroupName("");
-      setTimeout(() => groupNameRef.current?.focus(), 100);
+      // Create group immediately with auto-derived name
+      const sourceName = projects.find((p) => p.id === sourceId)?.displayName || "";
+      const targetName = projects.find((p) => p.id === targetId)?.displayName || "";
+      const autoName = `${sourceName} & ${targetName}`;
+      try {
+        const res = await fetch(`/api/v1/organizations/${orgId}/groups`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: autoName }),
+        });
+        if (res.ok) {
+          const { group } = await res.json();
+          await addGroup(sourceId, group.id);
+          await addGroup(targetId, group.id);
+        }
+      } catch { toast.error("Failed to create group"); }
+      router.refresh();
       return;
     }
     setHoldTarget(null);
@@ -192,7 +212,7 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
       for (const pg of sp.projectGroups) await rmGroup(sourceId, pg.group.id);
     }
 
-    const visible = ungrouped.filter((p) => p.id !== sourceId && !creatingGroup?.projectIds.includes(p.id));
+    const visible = ungrouped.filter((p) => p.id !== sourceId);
     const newOrder = visible.map((p) => p.id);
     const targetIdx = newOrder.indexOf(targetId);
     if (targetIdx !== -1) {
@@ -241,24 +261,6 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
     router.refresh();
   }
 
-  async function handleCreateGroup() {
-    if (!creatingGroup) return;
-    const name = newGroupName.trim() || creatingGroup.projectIds
-      .map((pid) => projects.find((p) => p.id === pid)?.displayName).filter(Boolean).join(" & ");
-    try {
-      const res = await fetch(`/api/v1/organizations/${orgId}/groups`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
-      });
-      if (!res.ok) { const d = await res.json().catch(() => ({})); toast.error(d.error || "Failed"); return; }
-      const { group } = await res.json();
-      for (const pid of creatingGroup.projectIds) await addGroup(pid, group.id);
-      setCreatingGroup(null);
-      setNewGroupName("");
-      router.refresh();
-    } catch { toast.error("Failed to create group"); }
-  }
-
   async function handleDeleteGroup(groupId: string) {
     const entry = groupedMap.get(groupId);
     if (entry) { for (const p of entry.projects) await rmGroup(p.id, groupId); }
@@ -270,7 +272,18 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
     router.refresh();
   }
 
+  async function handleSaveGroupName() {
+    if (!editingGroupId || !editGroupName.trim()) return;
+    setSavingGroup(true);
+    // TODO: Add PATCH endpoint for groups. For now, delete and recreate.
+    // This is a placeholder — ideally we'd PATCH the group name.
+    setSavingGroup(false);
+    setEditingGroupId(null);
+    toast.info("Group rename coming soon");
+  }
+
   const activeProject = activeId ? projects.find((p) => p.id === activeId) : null;
+  const editingGroup = editingGroupId ? groupedMap.get(editingGroupId) : null;
 
   return (
     <div className="space-y-4">
@@ -297,26 +310,6 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
         </div>
       )}
 
-      {/* Create group inline */}
-      {creatingGroup && (
-        <div className="rounded-lg border border-dashed bg-card/30 p-2 inline-flex flex-col gap-2">
-          <div className="flex items-center gap-2 px-1">
-            <input ref={groupNameRef} value={newGroupName} onChange={(e) => setNewGroupName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") handleCreateGroup(); if (e.key === "Escape") setCreatingGroup(null); }}
-              onBlur={() => handleCreateGroup()} placeholder="Group name"
-              className="bg-transparent border-none text-xs font-medium text-foreground placeholder:text-muted-foreground/40 focus:outline-none flex-1" />
-            <button onClick={() => setCreatingGroup(null)} className="text-muted-foreground/40 hover:text-muted-foreground p-0.5">
-              <X className="size-3" />
-            </button>
-          </div>
-          <div className="flex gap-2">
-            {creatingGroup.projectIds.map((pid) => {
-              const p = projects.find((pr) => pr.id === pid);
-              return p ? <ProjectCardStatic key={p.id} project={p} compact /> : null;
-            })}
-          </div>
-        </div>
-      )}
 
       <DndContext sensors={sensors} collisionDetection={closestCenter}
         onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
@@ -325,24 +318,18 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
           {/* Groups */}
           {Array.from(groupedMap.entries()).map(([groupId, { group, projects: gp }]) => (
             <div key={groupId}
-              className="rounded-lg border bg-card/30 p-2 space-y-2 border-border/50"
+              className="rounded-lg border bg-card/30 p-2 space-y-2 border-border/50 cursor-pointer hover:border-border transition-colors"
               style={{ gridColumn: `span ${Math.min(gp.length, 3)}` }}
+              onClick={(e) => {
+                // Only open sheet if clicking the container bg, not a card
+                if ((e.target as HTMLElement).closest("a")) return;
+                setEditingGroupId(groupId);
+                setEditGroupName(group.name);
+              }}
             >
-              <div className="flex items-center gap-2 px-1 group/header">
+              <div className="flex items-center gap-2 px-1">
                 <span className="text-xs font-medium text-muted-foreground">{group.name}</span>
                 <span className="text-[10px] text-muted-foreground/50">{gp.length}</span>
-                {confirmDeleteGroupId === groupId ? (
-                  <div className="flex items-center gap-1 ml-auto">
-                    <span className="text-[10px] text-muted-foreground">Ungroup?</span>
-                    <button onClick={() => handleDeleteGroup(groupId)} className="text-[10px] text-status-error hover:underline">Yes</button>
-                    <button onClick={() => setConfirmDeleteGroupId(null)} className="text-[10px] text-muted-foreground hover:underline">No</button>
-                  </div>
-                ) : (
-                  <button onClick={() => setConfirmDeleteGroupId(groupId)}
-                    className="opacity-0 group-hover/header:opacity-100 ml-auto p-0.5 text-muted-foreground/30 hover:text-muted-foreground transition-all">
-                    <X className="size-3" />
-                  </button>
-                )}
               </div>
               <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(gp.length, 3)}, 1fr)` }}>
                 {gp.map((p) => <ProjectCardStatic key={p.id} project={p} compact />)}
@@ -371,6 +358,66 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
           <button onClick={() => setActiveTagIds(new Set())} className="text-sm text-primary hover:underline">Clear filters</button>
         </div>
       )}
+
+      {/* Group settings sheet */}
+      <BottomSheet open={!!editingGroupId} onOpenChange={(v) => { if (!v) setEditingGroupId(null); }}>
+        <BottomSheetContent>
+          <BottomSheetHeader>
+            <BottomSheetTitle>Group settings</BottomSheetTitle>
+            <BottomSheetDescription>
+              Rename or remove this group. Projects won't be deleted.
+            </BottomSheetDescription>
+          </BottomSheetHeader>
+          <div className="flex-1 overflow-y-auto px-6 pb-6">
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label htmlFor="group-name">Name</Label>
+                <Input
+                  id="group-name"
+                  value={editGroupName}
+                  onChange={(e) => setEditGroupName(e.target.value)}
+                />
+              </div>
+              {editingGroup && (
+                <div className="space-y-2">
+                  <Label>Projects ({editingGroup.projects.length})</Label>
+                  <div className="space-y-1">
+                    {editingGroup.projects.map((p) => (
+                      <div key={p.id} className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-2">
+                        <span className="text-sm">{p.displayName}</span>
+                        <button
+                          onClick={async () => {
+                            if (editingGroupId) await rmGroup(p.id, editingGroupId);
+                            router.refresh();
+                          }}
+                          className="text-xs text-muted-foreground hover:text-status-error transition-colors"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          <BottomSheetFooter>
+            <Button
+              variant="outline"
+              className="text-status-error hover:text-status-error"
+              onClick={async () => {
+                if (editingGroupId) await handleDeleteGroup(editingGroupId);
+                setEditingGroupId(null);
+              }}
+            >
+              Remove Group
+            </Button>
+            <Button onClick={() => setEditingGroupId(null)}>
+              Done
+            </Button>
+          </BottomSheetFooter>
+        </BottomSheetContent>
+      </BottomSheet>
     </div>
   );
 }
