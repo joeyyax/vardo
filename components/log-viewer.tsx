@@ -27,28 +27,37 @@ const PATTERNS: [RegExp, string][] = [
   // HTTP methods
   [/\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b/g, "text-cyan-400 font-medium"],
   // HTTP status codes
-  [/\b([2]\d{2})\b/g, "text-green-400"],
-  [/\b([3]\d{2})\b/g, "text-blue-400"],
-  [/\b([4]\d{2})\b/g, "text-yellow-400"],
-  [/\b([5]\d{2})\b/g, "text-red-400"],
+  [/\b([2]\d{2})\b/g, "text-status-success"],
+  [/\b([3]\d{2})\b/g, "text-status-info"],
+  [/\b([4]\d{2})\b/g, "text-status-warning"],
+  [/\b([5]\d{2})\b/g, "text-status-error"],
   // URLs and paths
-  [/https?:\/\/[^\s"']+/g, "text-blue-300 underline"],
+  [/https?:\/\/[^\s"']+/g, "text-status-info underline"],
   [/\/[a-zA-Z0-9\-._~/]+/g, "text-zinc-400"],
   // Quoted strings
-  [/"[^"]*"/g, "text-amber-300"],
+  [/"[^"]*"/g, "text-amber-300/80"],
   // Numbers (standalone)
-  [/\b\d+(\.\d+)?(ms|s|m|MB|KB|GB|B)?\b/g, "text-purple-300"],
-  // Docker/deploy markers
-  [/\[deploy\]/g, "text-cyan-400 font-medium"],
-  [/\[docker\]/g, "text-blue-400 font-medium"],
-  [/\[health\]/g, "text-green-400 font-medium"],
-  [/\[build\]/g, "text-amber-400 font-medium"],
-  [/\[nixpacks\]/g, "text-violet-400 font-medium"],
-  [/\[error\]/g, "text-red-400 font-medium"],
+  [/\b\d+(\.\d+)?(ms|s|m|MB|KB|GB|B)?\b/g, "text-purple-300/80"],
+  // Deploy stage markers — parent[child] format
+  [/\[deploy\]\[compose\]/g, "text-status-info font-medium"],
+  [/\[build\]\[nixpacks\]/g, "text-amber-300/80 font-medium"],
+  [/\[build\]\[docker\]/g, "text-amber-300/80 font-medium"],
+  // Single markers
+  [/\[deploy\]/g, "text-status-info font-medium"],
+  [/\[docker\]/g, "text-status-info/70 font-medium"],
+  [/\[health\]/g, "text-status-success font-medium"],
+  [/\[build\]/g, "text-amber-300/80 font-medium"],
+  [/\[nixpacks\]/g, "text-violet-300/80 font-medium"],
+  [/\[compat\]/g, "text-status-warning font-medium"],
+  [/\[error\]/g, "text-status-error font-medium"],
 ];
 
 export function highlightLogLine(text: string): string {
-  return highlightLine(text);
+  // Count bracket nesting for indentation
+  const brackets = text.match(/^\[[\w]+\](\[[\w]+\])?/);
+  const depth = brackets ? (brackets[0].match(/\[/g)?.length || 1) - 1 : 0;
+  const indent = depth > 0 ? `<span style="padding-left:${depth * 12}px" class="inline-block"></span>` : "";
+  return indent + highlightLine(text);
 }
 
 function highlightLine(text: string): string {

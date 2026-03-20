@@ -1,4 +1,4 @@
-export const DEFAULT_BASE_DOMAIN = "joeyyax.dev";
+export const DEFAULT_BASE_DOMAIN = process.env.HOST_BASE_DOMAIN || "joeyyax.dev";
 
 const ADJECTIVES = [
   "spicy",

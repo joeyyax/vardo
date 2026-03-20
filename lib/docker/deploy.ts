@@ -344,8 +344,8 @@ export async function runDeployment(
         `docker compose -f "${composePath}" -p "${newProjectName}" up -d --pull ${pullPolicy}`,
         { cwd: slotDir, timeout: 120000 }
       );
-      if (stdout.trim()) logs.push(`[docker] ${stdout.trim()}`);
-      if (stderr.trim()) logs.push(`[docker] ${stderr.trim()}`);
+      if (stdout.trim()) logs.push(`[deploy][compose] ${stdout.trim()}`);
+      if (stderr.trim()) logs.push(`[deploy][compose] ${stderr.trim()}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       throw new Error(`docker compose up (${newSlot}) failed: ${message}`);
@@ -502,7 +502,7 @@ async function buildFromRepo(
       }
     }
 
-    await spawnStream("nixpacks", args, { cwd: repoPath, env: buildEnv }, logs, "[nixpacks]");
+    await spawnStream("nixpacks", args, { cwd: repoPath, env: buildEnv }, logs, "[build][nixpacks]");
     logs.push(`[build] Nixpacks build complete: ${imageName}`);
     return;
   }
@@ -517,7 +517,7 @@ async function buildFromRepo(
   }
   args.push(repoPath);
 
-  await spawnStream("docker", args, { cwd: repoPath }, logs, "[docker]");
+  await spawnStream("docker", args, { cwd: repoPath }, logs, "[build][docker]");
   logs.push(`[build] Docker build complete: ${imageName}`);
 }
 
