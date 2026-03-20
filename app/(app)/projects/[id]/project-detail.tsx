@@ -211,6 +211,22 @@ function formatUptime(date: Date): string {
   return `${days}d ${hours % 24}h`;
 }
 
+function Timer({ since, className }: { since: number; className?: string }) {
+  const [elapsed, setElapsed] = useState("0s");
+  useEffect(() => {
+    const tick = () => {
+      const ms = Date.now() - since;
+      const s = Math.floor(ms / 1000);
+      if (s < 60) setElapsed(`${s}s`);
+      else setElapsed(`${Math.floor(s / 60)}m ${s % 60}s`);
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [since]);
+  return <span className={`tabular-nums ${className || ""}`}>{elapsed}</span>;
+}
+
 function Uptime({ since }: { since: Date }) {
   const [text, setText] = useState(formatUptime(since));
   useEffect(() => {
@@ -383,6 +399,7 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
   }
 
   const [deployLog, setDeployLog] = useState<string[]>([]);
+  const [deployStartTime, setDeployStartTime] = useState<number | null>(null);
   const [deployStages, setDeployStages] = useState<
     Record<string, "running" | "success" | "failed" | "skipped">
   >({});
@@ -395,6 +412,7 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
     setDeployLog([]);
     setDeployStages({});
     setExpandedDeployLog(false);
+    setDeployStartTime(Date.now());
 
     const abort = new AbortController();
     setDeployAbort(abort);
@@ -880,7 +898,10 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
                         })}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-3 shrink-0">
+                      {deployStartTime && (
+                        <Timer since={deployStartTime} className="text-xs text-muted-foreground" />
+                      )}
                       <Button
                         size="sm"
                         variant="ghost"
