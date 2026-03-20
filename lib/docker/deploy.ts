@@ -16,7 +16,7 @@ import {
   composeToYaml,
   type ComposeFile,
 } from "./compose";
-import { ensureNetwork, detectExposedPorts } from "./client";
+import { ensureNetwork, detectExposedPorts, listContainers, inspectContainer } from "./client";
 import { getInstallationToken } from "@/lib/github/app";
 import { githubAppInstallations, memberships } from "@/lib/db/schema";
 import { detectPreventiveFixes, detectCompatIssues, applyCompatFixes } from "./compat";
@@ -662,6 +662,45 @@ export async function runDeployment(
     }
 
     stage("done", "success");
+    // Auto-detect persistent volumes from running containers
+    try {
+      const runningContainers = await listContainers(project.name);
+      const detectedVolumes: { name: string; mountPath: string }[] = [];
+      const seen = new Set<string>();
+
+      for (const c of runningContainers) {
+        const info = await inspectContainer(c.id);
+        for (const mount of info.mounts) {
+          if (mount.type === "volume" && !seen.has(mount.destination)) {
+            seen.add(mount.destination);
+            // Extract volume name from source path (last segment)
+            const parts = mount.source.split("/");
+            const rawName = parts[parts.length - 1];
+            // Strip compose project prefix (e.g. "redis-green_data" → "data")
+            const name = rawName.replace(/^[^_]*_/, "");
+            detectedVolumes.push({ name, mountPath: mount.destination });
+          }
+        }
+      }
+
+      if (detectedVolumes.length > 0) {
+        const existing = (project.persistentVolumes as { name: string; mountPath: string }[] | null) ?? [];
+        const existingPaths = new Set(existing.map((v) => v.mountPath));
+        const newVolumes = detectedVolumes.filter((v) => !existingPaths.has(v.mountPath));
+
+        if (newVolumes.length > 0) {
+          const merged = [...existing, ...newVolumes];
+          await db
+            .update(projects)
+            .set({ persistentVolumes: merged })
+            .where(eq(projects.id, opts.projectId));
+          log(`[deploy] Detected ${newVolumes.length} volume(s): ${newVolumes.map((v) => v.mountPath).join(", ")}`);
+        }
+      }
+    } catch {
+      // Volume detection is best-effort
+    }
+
     // Mark project as active
     await db
       .update(projects)

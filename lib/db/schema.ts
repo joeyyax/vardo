@@ -432,7 +432,7 @@ export const activities = pgTable("activity", {
     .notNull()
     .references(() => organizations.id, { onDelete: "cascade" }),
   projectId: text("project_id").references(() => projects.id, {
-    onDelete: "cascade",
+    onDelete: "set null",
   }),
   userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
   action: text("action").notNull(),

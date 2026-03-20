@@ -211,7 +211,7 @@ export function GroupManager({ groups: initialGroups, orgId }: Props) {
                       }`}
                       style={{
                         backgroundColor: c,
-                        ringColor: editColor === c ? c : undefined,
+                        ["--tw-ring-color" as string]: editColor === c ? c : undefined,
                       }}
                     />
                   ))}
