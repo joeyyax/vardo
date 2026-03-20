@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { FolderKanban, Settings, Shield } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Brand } from "../brand";
 import { OrgSwitcher } from "./org-switcher";
 import { UserMenu } from "./user-menu";
 
@@ -35,10 +34,8 @@ export function TopNav({ currentOrgId, organizations }: TopNavProps) {
   return (
     <header className="bg-sidebar shrink-0">
       <div className="mx-auto max-w-screen-xl flex items-center h-14 px-4 lg:px-8 gap-4">
-        {/* Left: brand + org */}
-        <div className="flex items-center gap-3 shrink-0">
-          <Brand />
-          <span className="text-sidebar-foreground/20">/</span>
+        {/* Left: org */}
+        <div className="flex items-center shrink-0">
           <OrgSwitcher
             currentOrgId={currentOrgId}
             organizations={organizations}
