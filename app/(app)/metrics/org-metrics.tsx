@@ -241,19 +241,33 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
         </div>
         <div className="squircle rounded-lg border bg-card px-4 py-3">
           <p className="text-xs text-muted-foreground">Network</p>
-          <p className="text-lg font-semibold tabular-nums mt-1">
-            {anyLoading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : (
-              <><span className="text-muted-foreground text-xs">↓</span> {formatBytes(totalNetworkRx)} <span className="text-muted-foreground text-xs">↑</span> {formatBytes(totalNetworkTx)}</>
-            )}
-          </p>
+          {anyLoading ? <Loader2 className="size-5 animate-spin text-muted-foreground mt-1" /> : (
+            <div className="flex gap-4 mt-1">
+              <div>
+                <p className="text-lg font-semibold tabular-nums">{formatBytes(totalNetworkRx)}</p>
+                <p className="text-[10px] text-muted-foreground">received</p>
+              </div>
+              <div>
+                <p className="text-lg font-semibold tabular-nums">{formatBytes(totalNetworkTx)}</p>
+                <p className="text-[10px] text-muted-foreground">sent</p>
+              </div>
+            </div>
+          )}
         </div>
         <div className="squircle rounded-lg border bg-card px-4 py-3">
           <p className="text-xs text-muted-foreground">Disk I/O</p>
-          <p className="text-lg font-semibold tabular-nums mt-1">
-            {anyLoading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : (
-              <><span className="text-muted-foreground text-xs">R</span> {formatBytes(totalDiskRead)} <span className="text-muted-foreground text-xs">W</span> {formatBytes(totalDiskWrite)}</>
-            )}
-          </p>
+          {anyLoading ? <Loader2 className="size-5 animate-spin text-muted-foreground mt-1" /> : (
+            <div className="flex gap-4 mt-1">
+              <div>
+                <p className="text-lg font-semibold tabular-nums">{formatBytes(totalDiskRead)}</p>
+                <p className="text-[10px] text-muted-foreground">read</p>
+              </div>
+              <div>
+                <p className="text-lg font-semibold tabular-nums">{formatBytes(totalDiskWrite)}</p>
+                <p className="text-[10px] text-muted-foreground">write</p>
+              </div>
+            </div>
+          )}
         </div>
         <div className="squircle rounded-lg border bg-card px-4 py-3">
           <p className="text-xs text-muted-foreground">Projects</p>
