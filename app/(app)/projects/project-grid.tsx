@@ -355,130 +355,87 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
         </div>
       )}
 
-      <div className="space-y-6">
-        {/* Pending group creation — renders inline as a real group with editable title */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {/* Pending group creation */}
         {creatingGroup && (
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
+          <div
+            className="rounded-lg border border-dashed bg-card/30 p-2 space-y-2"
+            style={{ gridColumn: `span ${Math.min(creatingGroup.projectIds.length, 3)}` }}
+          >
+            <div className="flex items-center gap-2 px-1">
               <input
                 ref={groupNameRef}
                 value={newGroupName}
                 onChange={(e) => setNewGroupName(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") handleCreateGroup(); if (e.key === "Escape") setCreatingGroup(null); }}
-                onBlur={() => { if (!newGroupName.trim()) handleCreateGroup(); }}
+                onBlur={() => handleCreateGroup()}
                 placeholder="Group name"
-                className="bg-transparent border-none text-sm font-medium text-foreground placeholder:text-muted-foreground/40 focus:outline-none w-48"
+                className="bg-transparent border-none text-xs font-medium text-foreground placeholder:text-muted-foreground/40 focus:outline-none flex-1"
               />
-              <span className="text-xs text-muted-foreground">{creatingGroup.projectIds.length}</span>
-              <button onClick={() => setCreatingGroup(null)} className="ml-auto text-muted-foreground hover:text-foreground p-1">
-                <X className="size-3.5" />
+              <button onClick={() => setCreatingGroup(null)} className="text-muted-foreground/40 hover:text-muted-foreground p-0.5">
+                <X className="size-3" />
               </button>
             </div>
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(creatingGroup.projectIds.length, 3)}, 1fr)` }}>
               {creatingGroup.projectIds.map((pid) => {
                 const p = projects.find((pr) => pr.id === pid);
                 if (!p) return null;
                 return (
-                  <ProjectCard
-                    key={p.id}
-                    project={p}
-                    draggingId={null}
-                    dragOverId={null}
-                    dragPosition={null}
-                    onDragStart={() => {}}
-                    onDragOver={() => {}}
-                    onDragLeave={() => {}}
-                    onDrop={() => {}}
-                    onDragEnd={() => {}}
-                    compact
-                  />
+                  <ProjectCard key={p.id} project={p} draggingId={null} dragOverId={null} dragPosition={null}
+                    onDragStart={() => {}} onDragOver={() => {}} onDragLeave={() => {}} onDrop={() => {}} onDragEnd={() => {}} compact />
                 );
               })}
             </div>
           </div>
         )}
 
-        {/* Existing groups — always expanded */}
-        {Array.from(groupedMap.entries()).map(([groupId, { group, projects: groupProjects }]) => (
-          <div
-            key={groupId}
-            className={`space-y-2 transition-colors ${
-              dragOverId === `group-${groupId}` ? "opacity-80" : ""
-            }`}
-            onDragOver={(e) => handleDragOver(e, `group-${groupId}`)}
-            onDragLeave={handleDragLeave}
-            onDrop={(e) => handleDrop(e, `group-${groupId}`)}
-          >
-            <div className="flex items-center gap-2 group/header">
-              <span className="text-sm font-medium">{group.name}</span>
-              <span className="text-xs text-muted-foreground">{groupProjects.length}</span>
-              {confirmDeleteGroupId === groupId ? (
-                <div className="flex items-center gap-1.5 ml-2">
-                  <span className="text-xs text-muted-foreground">Remove group? Projects will be ungrouped.</span>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-6 px-2 text-xs text-status-error hover:text-status-error"
-                    onClick={() => handleDeleteGroup(groupId)}
+        {/* Groups as container cards */}
+        {Array.from(groupedMap.entries()).map(([groupId, { group, projects: groupProjects }]) => {
+          const span = Math.min(groupProjects.length, 3);
+          return (
+            <div
+              key={groupId}
+              className={`rounded-lg border bg-card/30 p-2 space-y-2 transition-colors ${
+                dragOverId === `group-${groupId}` ? "border-status-info bg-status-info-muted/50" : "border-border/50"
+              }`}
+              style={{ gridColumn: `span ${span}` }}
+              onDragOver={(e) => handleDragOver(e, `group-${groupId}`)}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, `group-${groupId}`)}
+            >
+              <div className="flex items-center gap-2 px-1 group/header">
+                <span className="text-xs font-medium text-muted-foreground">{group.name}</span>
+                <span className="text-[10px] text-muted-foreground/50">{groupProjects.length}</span>
+                {confirmDeleteGroupId === groupId ? (
+                  <div className="flex items-center gap-1 ml-auto">
+                    <span className="text-[10px] text-muted-foreground">Ungroup?</span>
+                    <button onClick={() => handleDeleteGroup(groupId)} className="text-[10px] text-status-error hover:underline">Yes</button>
+                    <button onClick={() => setConfirmDeleteGroupId(null)} className="text-[10px] text-muted-foreground hover:underline">No</button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setConfirmDeleteGroupId(groupId)}
+                    className="opacity-0 group-hover/header:opacity-100 ml-auto p-0.5 text-muted-foreground/30 hover:text-muted-foreground transition-all"
                   >
-                    Remove
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-6 px-2 text-xs"
-                    onClick={() => setConfirmDeleteGroupId(null)}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              ) : (
-                <button
-                  onClick={() => setConfirmDeleteGroupId(groupId)}
-                  className="opacity-0 group-hover/header:opacity-100 p-1 rounded text-muted-foreground/40 hover:text-muted-foreground transition-all"
-                >
-                  <X className="size-3" />
-                </button>
-              )}
+                    <X className="size-3" />
+                  </button>
+                )}
+              </div>
+              <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${span}, 1fr)` }}>
+                {groupProjects.map((project) => (
+                  <ProjectCard key={project.id} project={project} draggingId={draggingId} dragOverId={dragOverId} dragPosition={dragPosition}
+                    onDragStart={handleDragStart} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} onDragEnd={handleDragEnd} compact />
+                ))}
+              </div>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {groupProjects.map((project) => (
-                <ProjectCard
-                  key={project.id}
-                  project={project}
-                  draggingId={draggingId}
-                  dragOverId={dragOverId}
-                  dragPosition={dragPosition}
-                  onDragStart={handleDragStart}
-                  onDragOver={handleDragOver}
-                  onDragLeave={handleDragLeave}
-                  onDrop={handleDrop}
-                  onDragEnd={handleDragEnd}
-                />
-              ))}
-            </div>
-          </div>
-        ))}
+          );
+        })}
 
         {/* Ungrouped projects */}
-        {ungrouped.length > 0 && (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {ungrouped.map((project) => (
-              <ProjectCard
-                key={project.id}
-                project={project}
-                draggingId={draggingId}
-                dragOverId={dragOverId}
-                dragPosition={dragPosition}
-                onDragStart={handleDragStart}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                onDragEnd={handleDragEnd}
-              />
-            ))}
-          </div>
-        )}
+        {ungrouped.map((project) => (
+          <ProjectCard key={project.id} project={project} draggingId={draggingId} dragOverId={dragOverId} dragPosition={dragPosition}
+            onDragStart={handleDragStart} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} onDragEnd={handleDragEnd} />
+        ))}
       </div>
 
       {filteredProjects.length === 0 && projects.length > 0 && (
