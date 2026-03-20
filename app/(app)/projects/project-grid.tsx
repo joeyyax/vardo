@@ -20,6 +20,7 @@ import { detectProjectIcon } from "@/lib/ui/project-icon";
 import {
   DndContext,
   closestCenter,
+  pointerWithin,
   PointerSensor,
   useSensor,
   useSensors,
@@ -336,7 +337,7 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
       )}
 
 
-      <DndContext sensors={sensors} collisionDetection={closestCenter}
+      <DndContext sensors={sensors} collisionDetection={pointerWithin}
         onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
