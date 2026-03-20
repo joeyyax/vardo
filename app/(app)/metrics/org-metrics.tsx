@@ -139,6 +139,25 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
           return;
         }
 
+        // Build disk lookup by nearest timestamp
+        const diskMap = new Map<number, number>();
+        if (series.disk) {
+          for (const [ts, val] of series.disk as [number, number][]) {
+            diskMap.set(ts, val);
+          }
+        }
+        // Find nearest disk value for a given timestamp
+        const nearestDisk = (ts: number): number => {
+          if (diskMap.has(ts)) return diskMap.get(ts)!;
+          let best = initialDisk?.total || 0;
+          let bestDist = Infinity;
+          for (const [dts, dval] of diskMap) {
+            const dist = Math.abs(dts - ts);
+            if (dist < bestDist) { bestDist = dist; best = dval; }
+          }
+          return best;
+        };
+
         const points: TimePoint[] = series.cpu.map(([ts, cpu]: [number, number], i: number) => {
           const mem = series.memory?.[i] || [ts, 0];
           const rx = series.networkRx?.[i] || [ts, 0];
@@ -150,7 +169,7 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
             memory: mem[1],
             networkRx: rx[1],
             networkTx: tx[1],
-            diskTotal: 0,
+            diskTotal: nearestDisk(ts),
           };
         });
 

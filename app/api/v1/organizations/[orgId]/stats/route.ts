@@ -4,7 +4,7 @@ import { projects } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq } from "drizzle-orm";
 import { fetchAllContainerMetrics } from "@/lib/metrics/cadvisor";
-import { queryMetrics } from "@/lib/metrics/store";
+import { queryMetrics, queryDiskHistory } from "@/lib/metrics/store";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -63,12 +63,16 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       const toSorted = (m: Map<number, number>) =>
         Array.from(m.entries()).sort((a, b) => a[0] - b[0]);
 
+      // Also query system-level disk history
+      const diskHistory = await queryDiskHistory(fromMs, toMs, bucketMs);
+
       return NextResponse.json({
         series: {
           cpu: toSorted(allCpu),
           memory: toSorted(allMem),
           networkRx: toSorted(allNetRx),
           networkTx: toSorted(allNetTx),
+          disk: diskHistory,
         },
       });
     }
