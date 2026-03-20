@@ -25,9 +25,10 @@ function getInitials(name: string): string {
 
 type UserMenuProps = {
   collapsed?: boolean;
+  compact?: boolean;
 };
 
-export function UserMenu({ collapsed }: UserMenuProps) {
+export function UserMenu({ collapsed, compact }: UserMenuProps) {
   const router = useRouter();
   const { data: session, isPending } = useSession();
 
@@ -71,7 +72,7 @@ export function UserMenu({ collapsed }: UserMenuProps) {
               {getInitials(displayName)}
             </AvatarFallback>
           </Avatar>
-          {!collapsed && (
+          {!collapsed && !compact && (
             <>
               <div className="flex flex-1 flex-col items-start gap-0 overflow-hidden">
                 <span className="truncate text-sm font-medium">{displayName}</span>
