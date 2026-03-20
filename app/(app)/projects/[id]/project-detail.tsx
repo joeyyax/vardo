@@ -890,16 +890,29 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
                         Deploying
                       </Badge>
                       {/* Stage indicators inline */}
-                      <div className="flex items-center gap-0.5">
-                        {(["clone", "build", "deploy", "healthcheck", "routing", "cleanup"] as const).map((s) => {
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {(["clone", "build", "deploy", "healthcheck", "routing", "cleanup"] as const).map((s, i) => {
                           const status = deployStages[s];
+                          if (!status) return null;
+                          const labels: Record<string, string> = {
+                            clone: "Clone", build: "Build", deploy: "Deploy",
+                            healthcheck: "Health", routing: "Route", cleanup: "Cleanup",
+                          };
                           return (
-                            <div key={s} className="flex items-center gap-0.5" title={s}>
+                            <div key={s} className="flex items-center gap-1">
+                              {i > 0 && status && <span className="text-muted-foreground/30 text-xs">›</span>}
                               {status === "running" && <Loader2 className="size-3 animate-spin text-status-info" />}
                               {status === "success" && <Check className="size-3 text-status-success" />}
                               {status === "failed" && <X className="size-3 text-status-error" />}
-                              {status === "skipped" && <span className="size-3 text-center text-muted-foreground">-</span>}
-                              {!status && <span className="size-3 rounded-full border border-muted-foreground/20" />}
+                              {status === "skipped" && <span className="text-muted-foreground text-xs">-</span>}
+                              <span className={`text-xs ${
+                                status === "running" ? "text-status-info" :
+                                status === "success" ? "text-status-success" :
+                                status === "failed" ? "text-status-error" :
+                                "text-muted-foreground"
+                              }`}>
+                                {labels[s]}
+                              </span>
                             </div>
                           );
                         })}
