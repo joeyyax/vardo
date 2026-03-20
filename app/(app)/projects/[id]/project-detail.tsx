@@ -421,6 +421,24 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
     setExpandedDeployLog(false);
     setDeployStartTime(Date.now());
 
+    // Queue stage updates with minimum display time
+    const stageQueue: { stage: string; status: string }[] = [];
+    let processingStages = false;
+    const MIN_STAGE_MS = 600;
+
+    async function processStageQueue() {
+      if (processingStages) return;
+      processingStages = true;
+      while (stageQueue.length > 0) {
+        const { stage, status } = stageQueue.shift()!;
+        setDeployStages((prev) => ({ ...prev, [stage]: status as "running" | "success" | "failed" | "skipped" }));
+        if (status === "running") {
+          await new Promise((r) => setTimeout(r, MIN_STAGE_MS));
+        }
+      }
+      processingStages = false;
+    }
+
     const abort = new AbortController();
     setDeployAbort(abort);
 
@@ -458,7 +476,8 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
               setDeployLog((prev) => [...prev, data as string]);
             } else if (eventType === "stage") {
               const { stage, status } = data as { stage: string; status: string };
-              setDeployStages((prev) => ({ ...prev, [stage]: status as "running" | "success" | "failed" | "skipped" }));
+              stageQueue.push({ stage, status });
+              processStageQueue();
             } else if (eventType === "done") {
               const result = data as { deploymentId: string; success: boolean; durationMs: number };
               if (result.success) {
