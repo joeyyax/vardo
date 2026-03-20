@@ -1,3 +1,4 @@
+version = "1"
 name = "vite"
 displayName = "Vite / React"
 description = "Fast frontend build tool — deploy from a repo"

@@ -1,3 +1,4 @@
+version = "1"
 name = "nextjs"
 displayName = "Next.js"
 description = "React framework — deploy from a repo"

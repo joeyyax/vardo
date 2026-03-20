@@ -257,6 +257,8 @@ export const projects = pgTable(
     connectionInfo: jsonb("connection_info").$type<
       { label: string; value: string; copyRef?: string }[]
     >(),
+    templateName: text("template_name"),
+    templateVersion: text("template_version"),
     status: projectStatusEnum("status").notNull().default("stopped"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),

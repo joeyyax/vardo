@@ -6,6 +6,7 @@ const TEMPLATES_DIR = resolve(process.cwd(), "templates");
 
 export type Template = {
   id: string;
+  version: string;
   name: string;
   displayName: string;
   description: string | null;
@@ -52,6 +53,7 @@ export async function loadTemplates(): Promise<Template[]> {
 
       templates.push({
         id: `builtin-${raw.name as string}`,
+        version: (raw.version as string) || "1",
         name: raw.name as string,
         displayName: raw.displayName as string,
         description: (raw.description as string) ?? null,

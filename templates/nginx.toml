@@ -1,3 +1,4 @@
+version = "1"
 name = "nginx"
 displayName = "Nginx"
 description = "High-performance web server and reverse proxy"

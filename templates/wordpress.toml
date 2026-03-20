@@ -1,3 +1,4 @@
+version = "1"
 name = "wordpress"
 displayName = "WordPress"
 description = "Popular CMS with MySQL database"

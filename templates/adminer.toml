@@ -1,3 +1,4 @@
+version = "1"
 name = "adminer"
 displayName = "Adminer"
 description = "Lightweight database management UI"

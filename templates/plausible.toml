@@ -1,3 +1,4 @@
+version = "1"
 name = "plausible"
 displayName = "Plausible Analytics"
 description = "Privacy-friendly web analytics"
