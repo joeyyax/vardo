@@ -23,6 +23,14 @@ export default async function ProjectsPage() {
       where: eq(projects.organizationId, orgId),
       orderBy: [desc(projects.createdAt)],
       with: {
+        domains: {
+          columns: { domain: true, isPrimary: true },
+        },
+        deployments: {
+          columns: { id: true, status: true, startedAt: true, finishedAt: true },
+          orderBy: (d, { desc }) => [desc(d.startedAt)],
+          limit: 1,
+        },
         projectTags: {
           with: { tag: true },
         },

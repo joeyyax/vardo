@@ -679,7 +679,36 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
         <h1 className="text-xl font-semibold tracking-tight">
           {project.displayName}
         </h1>
-        <StatusBadge status={project.status} />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="gap-1.5">
+              <span className="size-2 rounded-full bg-status-success" />
+              Production
+              <ChevronDown className="size-3.5 text-muted-foreground" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem>
+              <span className="mr-2 size-2 rounded-full bg-status-success" />
+              Production
+            </DropdownMenuItem>
+            {project.environments.map((env) => (
+              <DropdownMenuItem key={env.id}>
+                <span className={`mr-2 size-2 rounded-full ${
+                  env.type === "staging" ? "bg-status-warning" : "bg-status-info"
+                }`} />
+                {env.name}
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuItem
+              className="text-muted-foreground"
+              onClick={() => setActiveTab("environments")}
+            >
+              <Plus className="mr-2 size-3.5" />
+              Add environment
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </PageToolbar>
 
       {/* Overview — always visible */}

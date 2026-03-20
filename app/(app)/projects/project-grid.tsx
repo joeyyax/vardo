@@ -28,9 +28,15 @@ type ProjectWithRelations = {
   name: string;
   displayName: string;
   description: string | null;
+  source: string;
   deployType: string;
+  imageName: string | null;
+  gitUrl: string | null;
   status: string;
   createdAt: Date;
+  updatedAt: Date;
+  domains: { domain: string; isPrimary: boolean | null }[];
+  deployments: { id: string; status: string; startedAt: Date; finishedAt: Date | null }[];
   projectTags: { tag: Tag }[];
   projectGroups: { group: Group }[];
 };
@@ -190,62 +196,91 @@ export function ProjectGrid({ projects, allTags, allGroups }: ProjectGridProps) 
       )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {filteredProjects.map((project) => (
-          <Link
-            key={project.id}
-            href={`/projects/${project.id}`}
-            className="squircle flex flex-col gap-3 rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50 cursor-pointer"
-          >
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <h3 className="truncate font-medium">
-                  {project.displayName}
-                </h3>
-                <p className="truncate text-xs text-muted-foreground">
-                  {project.name}
-                </p>
-              </div>
-              <StatusBadge status={project.status} />
-            </div>
+        {filteredProjects.map((project) => {
+          const primaryDomain = project.domains.find((d) => d.isPrimary) || project.domains[0];
+          const lastDeploy = project.deployments[0];
+          const isRunning = project.status === "active";
+          const source = project.gitUrl
+            ? project.gitUrl.replace("https://github.com/", "").replace(".git", "")
+            : project.imageName || deployTypeLabel(project.deployType);
 
-            {project.description && (
-              <p className="line-clamp-2 text-sm text-muted-foreground">
-                {project.description}
-              </p>
-            )}
-
-            <div className="mt-auto flex items-center gap-2 text-xs text-muted-foreground">
-              <span className="rounded bg-muted px-1.5 py-0.5">
-                {deployTypeLabel(project.deployType)}
-              </span>
-              <span>
-                {new Date(project.createdAt).toLocaleDateString()}
-              </span>
-            </div>
-
-            {project.projectTags.length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                {project.projectTags.map(({ tag }) => (
-                  <span
-                    key={tag.id}
-                    className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
-                    style={{
-                      backgroundColor: `${tag.color}20`,
-                      color: tag.color,
-                    }}
-                  >
-                    <span
-                      className="size-1.5 rounded-full"
-                      style={{ backgroundColor: tag.color }}
-                      aria-hidden="true"
-                    />
-                    {tag.name}
+          return (
+            <Link
+              key={project.id}
+              href={`/projects/${project.id}`}
+              className="squircle flex flex-col gap-3 rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50 cursor-pointer"
+            >
+              {/* Header: name + status */}
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <h3 className="truncate font-medium">
+                    {project.displayName}
+                  </h3>
+                  {primaryDomain && (
+                    <p className="truncate text-xs text-muted-foreground font-mono">
+                      {primaryDomain.domain}
+                    </p>
+                  )}
+                </div>
+                {isRunning ? (
+                  <span className="flex items-center gap-1.5 text-xs text-status-success shrink-0">
+                    <span className="size-1.5 rounded-full bg-status-success animate-pulse" />
+                    Running
                   </span>
-                ))}
+                ) : project.status === "error" ? (
+                  <span className="text-xs text-status-error shrink-0">Error</span>
+                ) : project.status === "deploying" ? (
+                  <span className="text-xs text-status-info animate-pulse shrink-0">Deploying</span>
+                ) : (
+                  <span className="text-xs text-status-neutral shrink-0">Stopped</span>
+                )}
               </div>
-            )}
-          </Link>
-        ))}
+
+              {/* Source */}
+              <p className="truncate text-xs text-muted-foreground">
+                {source}
+              </p>
+
+              {/* Footer: deploy type + last deploy */}
+              <div className="mt-auto flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                <span className="rounded bg-muted px-1.5 py-0.5">
+                  {deployTypeLabel(project.deployType)}
+                </span>
+                {lastDeploy ? (
+                  <span>
+                    {lastDeploy.status === "success" ? "Deployed" : lastDeploy.status === "failed" ? "Failed" : "Deploying"}{" "}
+                    {new Date(lastDeploy.startedAt).toLocaleDateString()}
+                  </span>
+                ) : (
+                  <span>Never deployed</span>
+                )}
+              </div>
+
+              {/* Tags */}
+              {project.projectTags.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {project.projectTags.map(({ tag }) => (
+                    <span
+                      key={tag.id}
+                      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
+                      style={{
+                        backgroundColor: `${tag.color}20`,
+                        color: tag.color,
+                      }}
+                    >
+                      <span
+                        className="size-1.5 rounded-full"
+                        style={{ backgroundColor: tag.color }}
+                        aria-hidden="true"
+                      />
+                      {tag.name}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </Link>
+          );
+        })}
       </div>
 
       {filteredProjects.length === 0 && projects.length > 0 && (
