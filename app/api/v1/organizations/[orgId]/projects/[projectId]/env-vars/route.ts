@@ -42,6 +42,7 @@ const bulkUpsertSchema = z
   .object({
     content: z.string().optional(),
     vars: z.array(bulkEnvVarSchema).optional(),
+    environmentId: z.string().optional(),
   })
   .refine((data) => data.content !== undefined || data.vars !== undefined, {
     message: "Either 'content' or 'vars' must be provided",
@@ -66,7 +67,7 @@ async function verifyProjectAccess(orgId: string, projectId: string) {
 }
 
 // GET /api/v1/organizations/[orgId]/projects/[projectId]/env-vars
-export async function GET(_request: NextRequest, { params }: RouteParams) {
+export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, projectId } = await params;
     const project = await verifyProjectAccess(orgId, projectId);
@@ -75,8 +76,20 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    const environmentId = request.nextUrl.searchParams.get("environmentId");
+
+    let conditions;
+    if (environmentId) {
+      conditions = and(
+        eq(envVars.projectId, projectId),
+        eq(envVars.environmentId, environmentId)
+      );
+    } else {
+      conditions = eq(envVars.projectId, projectId);
+    }
+
     const vars = await db.query.envVars.findMany({
-      where: eq(envVars.projectId, projectId),
+      where: conditions,
     });
 
     return NextResponse.json({ envVars: vars });
@@ -296,9 +309,21 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ created: 0, updated: 0 });
     }
 
-    // Fetch existing vars for this project to determine insert vs update
+    const envId = parsed.data.environmentId || null;
+
+    // Fetch existing vars for this project (scoped to environment if provided)
+    let existingConditions;
+    if (envId) {
+      existingConditions = and(
+        eq(envVars.projectId, projectId),
+        eq(envVars.environmentId, envId)
+      );
+    } else {
+      existingConditions = eq(envVars.projectId, projectId);
+    }
+
     const existingVars = await db.query.envVars.findMany({
-      where: eq(envVars.projectId, projectId),
+      where: existingConditions,
       columns: { id: true, key: true },
     });
 
@@ -330,6 +355,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
             key: v.key,
             value: v.value,
             isSecret: v.isSecret,
+            environmentId: envId,
           });
           created++;
         }

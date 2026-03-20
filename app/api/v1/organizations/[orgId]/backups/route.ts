@@ -7,7 +7,7 @@ import {
   backups,
 } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 
@@ -67,19 +67,22 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       orderBy: [desc(backupJobs.createdAt)],
     });
 
-    // Also fetch recent backup history across all jobs
-    const recentHistory = await db.query.backups.findMany({
-      where: eq(
-        backupJobs.organizationId,
-        orgId
-      ),
-      orderBy: [desc(backups.startedAt)],
-      limit: 20,
-      with: {
-        job: { columns: { id: true, name: true } },
-        project: { columns: { id: true, name: true, displayName: true } },
-      },
-    });
+    // Also fetch recent backup history across all jobs for this org
+    const jobIds = jobs.map((j) => j.id);
+    const recentHistory =
+      jobIds.length > 0
+        ? await db.query.backups.findMany({
+            where: inArray(backups.jobId, jobIds),
+            orderBy: [desc(backups.startedAt)],
+            limit: 20,
+            with: {
+              job: { columns: { id: true, name: true } },
+              project: {
+                columns: { id: true, name: true, displayName: true },
+              },
+            },
+          })
+        : [];
 
     return NextResponse.json({ jobs, recentHistory });
   } catch (error) {

@@ -90,60 +90,74 @@ export async function startExec(execId: string): Promise<net.Socket> {
     Tty: true,
   });
 
+  // Build raw HTTP request — we need the raw socket because Docker hijacks
+  // the connection for bidirectional TTY I/O, which http.request can't handle
+  const httpReq = [
+    `POST /v1.43/exec/${execId}/start HTTP/1.1`,
+    `Host: localhost`,
+    `Content-Type: application/json`,
+    `Content-Length: ${Buffer.byteLength(payload)}`,
+    `Connection: Upgrade`,
+    `Upgrade: tcp`,
+    ``,
+    payload,
+  ].join("\r\n");
+
   return new Promise<net.Socket>((resolve, reject) => {
-    const req = http.request(
-      {
-        ...conn,
-        path: `/v1.43/exec/${execId}/start`,
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Content-Length": Buffer.byteLength(payload),
-          Connection: "Upgrade",
-          Upgrade: "tcp",
-        },
-      },
-      (res) => {
-        if (res.statusCode === 200) {
-          // Docker hijacks the connection — the response object IS the
-          // bidirectional stream. Access the underlying socket from the
-          // request's connection, which Docker has taken over.
-          const socket = req.socket;
-          if (socket) {
-            // The response may have already buffered some data — we need
-            // to re-emit it. Pipe remaining response data through the socket
-            // events so the caller sees all output.
-            res.on("data", (chunk: Buffer) => {
-              socket.emit("data", chunk);
-            });
-            res.on("end", () => {
-              socket.emit("end");
-            });
-            resolve(socket);
-            return;
-          }
-        }
+    const socket = conn.socketPath
+      ? net.connect({ path: conn.socketPath })
+      : net.connect({ host: conn.host, port: conn.port });
 
-        const chunks: Buffer[] = [];
-        res.on("data", (chunk: Buffer) => chunks.push(chunk));
-        res.on("end", () => {
-          const raw = Buffer.concat(chunks).toString("utf-8");
-          reject(new Error(`Docker exec start failed (${res.statusCode}): ${raw}`));
-        });
-      },
-    );
+    let resolved = false;
 
-    // Docker may also respond via upgrade event
-    req.on("upgrade", (_res, socket) => {
-      resolve(socket as net.Socket);
+    socket.on("connect", () => {
+      socket.write(httpReq);
     });
 
-    req.on("error", (err) => {
-      reject(new Error(`Docker exec start request failed: ${err.message}`));
+    socket.on("data", (chunk: Buffer) => {
+      if (resolved) return; // Already handed off
+
+      const str = chunk.toString();
+      // Wait for the HTTP response headers to complete
+      const headerEnd = str.indexOf("\r\n\r\n");
+      if (headerEnd === -1) return; // Haven't received full headers yet
+
+      // Check for 200 OK or 101 Switching Protocols
+      const statusLine = str.split("\r\n")[0];
+      if (!statusLine.includes("200") && !statusLine.includes("101")) {
+        reject(new Error(`Docker exec start failed: ${statusLine}`));
+        socket.destroy();
+        return;
+      }
+
+      resolved = true;
+
+      // Any data after the headers is already terminal output
+      const bodyStart = headerEnd + 4;
+      const remaining = chunk.subarray(bodyStart);
+
+      // Remove our initial data listener and resolve with the raw socket
+      socket.removeAllListeners("data");
+
+      // Re-emit the remaining data so the caller gets it
+      if (remaining.length > 0) {
+        process.nextTick(() => socket.emit("data", remaining));
+      }
+
+      resolve(socket);
     });
 
-    req.write(payload);
-    req.end();
+    socket.on("error", (err) => {
+      if (!resolved) {
+        reject(new Error(`Docker exec start socket error: ${err.message}`));
+      }
+    });
+
+    socket.on("close", () => {
+      if (!resolved) {
+        reject(new Error("Docker exec start: socket closed before response"));
+      }
+    });
   });
 }
 

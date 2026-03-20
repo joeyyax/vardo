@@ -121,7 +121,7 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
           setTimeSeries([{
             time: new Date(from).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
             timestamp: from,
-            cpu: 0, memory: 0, networkRx: 0, networkTx: 0, diskTotal: 0,
+            cpu: 0, memory: 0, networkRx: 0, networkTx: 0, diskTotal: initialDisk?.total || 0,
           }]);
           return;
         }
@@ -131,7 +131,7 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
         const startPoint: TimePoint = {
           time: new Date(from).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
           timestamp: from,
-          cpu: 0, memory: 0, networkRx: 0, networkTx: 0, diskTotal: 0,
+          cpu: 0, memory: 0, networkRx: 0, networkTx: 0, diskTotal: initialDisk?.total || 0,
         };
 
         if (!series?.cpu?.length) {
@@ -164,7 +164,7 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
         setTimeSeries([{
           time: new Date(from).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
           timestamp: from,
-          cpu: 0, memory: 0, networkRx: 0, networkTx: 0, diskTotal: 0,
+          cpu: 0, memory: 0, networkRx: 0, networkTx: 0, diskTotal: initialDisk?.total || 0,
         }]);
       }
     }
