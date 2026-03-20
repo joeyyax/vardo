@@ -334,6 +334,7 @@ export async function seedTemplates() {
           defaultPort: tmpl.defaultPort ?? null,
           defaultEnvVars: tmpl.defaultEnvVars,
           defaultVolumes: ((tmpl as Record<string, unknown>).defaultVolumes as { name: string; mountPath: string; description: string }[] | undefined) ?? null,
+          defaultConnectionInfo: ((tmpl as Record<string, unknown>).defaultConnectionInfo as { label: string; value: string; copyRef?: string }[] | undefined) ?? null,
           composeContent: (tmpl as { composeContent?: string }).composeContent ?? null,
           updatedAt: new Date(),
         },

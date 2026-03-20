@@ -56,6 +56,12 @@ type Template = {
   defaultEnvVars:
     | { key: string; description: string; required: boolean; defaultValue?: string }[]
     | null;
+  defaultVolumes:
+    | { name: string; mountPath: string; description: string }[]
+    | null;
+  defaultConnectionInfo:
+    | { label: string; value: string; copyRef?: string }[]
+    | null;
 };
 
 type Installation = {
@@ -254,12 +260,8 @@ export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
     const alwaysPersist = ["database", "cache", "monitoring", "tool"];
     setGenerateDomain(!noUrlCategories.includes(template.category));
     setPersistData(alwaysPersist.includes(template.category));
-    setTemplateVolumes(
-      (template as { defaultVolumes?: { name: string; mountPath: string; description: string }[] }).defaultVolumes || []
-    );
-    setTemplateConnectionInfo(
-      (template as { defaultConnectionInfo?: { label: string; value: string; copyRef?: string }[] }).defaultConnectionInfo || []
-    );
+    setTemplateVolumes(template.defaultVolumes || []);
+    setTemplateConnectionInfo(template.defaultConnectionInfo || []);
     if (template.defaultEnvVars?.length) {
       const masked = new Set<string>();
       setTemplateEnvVars(template.defaultEnvVars.map((ev) => {
