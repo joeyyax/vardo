@@ -19,6 +19,8 @@ import {
   Variable,
   ChevronDown,
   Check,
+  Globe2,
+  Star,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageToolbar } from "@/components/page-toolbar";
@@ -70,6 +72,7 @@ type Domain = {
   domain: string;
   serviceName: string | null;
   port: number | null;
+  isPrimary: boolean | null;
 };
 
 type EnvVar = {
@@ -440,6 +443,27 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
     }
   }
 
+  async function handleSetPrimaryDomain(domainId: string) {
+    try {
+      // Clear all primary flags, then set the selected one
+      for (const d of project.domains) {
+        if (d.id === domainId && !d.isPrimary) {
+          // This is a simple approach — ideally a single API call
+          await fetch(`/api/v1/organizations/${orgId}/projects/${project.id}/domains/primary`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ domainId }),
+          });
+          toast.success("Primary domain updated");
+          router.refresh();
+          return;
+        }
+      }
+    } catch {
+      toast.error("Failed to update primary domain");
+    }
+  }
+
   async function handleDomainAdd() {
     if (!newDomain.trim()) return;
     setDomainSaving(true);
@@ -657,6 +681,38 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
             </Popover>
           )}
         </div>
+
+        {/* Domains summary */}
+        {project.domains.length > 0 && (
+          <div className="flex items-center gap-2 text-sm">
+            <Globe2 className="size-4 text-muted-foreground shrink-0" />
+            {(() => {
+              const primary = project.domains.find((d) => d.isPrimary) || project.domains[0];
+              const rest = project.domains.length - 1;
+              return (
+                <>
+                  <a
+                    href={`https://${primary.domain}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-mono text-muted-foreground hover:text-foreground transition-colors underline-offset-4 hover:underline"
+                  >
+                    {primary.domain}
+                  </a>
+                  {rest > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("domains")}
+                      className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      and {rest} more
+                    </button>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        )}
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <DetailField label="Source">
@@ -917,32 +973,51 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
             </div>
           ) : (
             <div className="space-y-2">
-              {project.domains.map((domain) => (
+              {project.domains
+                .sort((a, b) => (b.isPrimary ? 1 : 0) - (a.isPrimary ? 1 : 0))
+                .map((domain) => (
                 <div
                   key={domain.id}
-                  className="squircle flex items-center justify-between gap-4 rounded-lg border bg-card p-4"
+                  className={`squircle flex items-center justify-between gap-4 rounded-lg border bg-card p-4 ${domain.isPrimary ? "border-primary/30" : ""}`}
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <p className="text-sm font-medium font-mono truncate">
                       {domain.domain}
                     </p>
+                    {domain.isPrimary && (
+                      <Badge className="text-xs border-transparent bg-primary/15 text-primary shrink-0">
+                        Primary
+                      </Badge>
+                    )}
                     {domain.port && (
                       <span className="text-xs text-muted-foreground">:{domain.port}</span>
                     )}
                   </div>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="text-destructive hover:text-destructive shrink-0"
-                    disabled={deletingDomainId === domain.id}
-                    onClick={() => handleDomainDelete(domain.id)}
-                  >
-                    {deletingDomainId === domain.id ? (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    ) : (
-                      <X className="size-3.5" />
+                  <div className="flex items-center gap-1 shrink-0">
+                    {!domain.isPrimary && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        title="Set as primary"
+                        onClick={() => handleSetPrimaryDomain(domain.id)}
+                      >
+                        <Star className="size-3.5" />
+                      </Button>
                     )}
-                  </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-destructive hover:text-destructive"
+                      disabled={deletingDomainId === domain.id}
+                      onClick={() => handleDomainDelete(domain.id)}
+                    >
+                      {deletingDomainId === domain.id ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <X className="size-3.5" />
+                      )}
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>

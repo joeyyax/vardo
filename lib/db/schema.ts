@@ -317,6 +317,7 @@ export const domains = pgTable("domain", {
   port: integer("port"),
   middlewares: text("middlewares"),
   certResolver: text("cert_resolver").default("le"),
+  isPrimary: boolean("is_primary").default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
