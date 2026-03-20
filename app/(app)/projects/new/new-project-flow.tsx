@@ -145,6 +145,8 @@ export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
   const [repos, setRepos] = useState<Repo[]>([]);
   const [reposLoading, setReposLoading] = useState(false);
   const [selectedRepo, setSelectedRepo] = useState("");
+  const [branches, setBranches] = useState<string[]>([]);
+  const [branchesLoading, setBranchesLoading] = useState(false);
 
   const fetchInstallations = useCallback(async () => {
     setInstallationsLoading(true);
@@ -180,6 +182,25 @@ export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
   useEffect(() => {
     if (selectedSource === "github" || gitMode === "github") fetchInstallations();
   }, [selectedSource, gitMode, fetchInstallations]);
+
+  // Fetch branches when a repo is selected
+  useEffect(() => {
+    if (!selectedRepo || !selectedInstallation) { setBranches([]); return; }
+    let cancelled = false;
+    async function fetchBranches() {
+      setBranchesLoading(true);
+      try {
+        const res = await fetch(`/api/v1/github/branches?installationId=${selectedInstallation}&repo=${selectedRepo}`);
+        if (res.ok && !cancelled) {
+          const data = await res.json();
+          setBranches(data.branches || []);
+        }
+      } catch { /* noop */ }
+      finally { if (!cancelled) setBranchesLoading(false); }
+    }
+    fetchBranches();
+    return () => { cancelled = true; };
+  }, [selectedRepo, selectedInstallation]);
 
   function handleRepoSelect(repoFullName: string) {
     setSelectedRepo(repoFullName);
@@ -534,8 +555,26 @@ export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
             {/* Branch — for GitHub, shown after repo selected */}
             {selectedSource === "github" && selectedRepo && (
               <div className="grid gap-2 sm:w-1/3">
-                <Label htmlFor="branch">Branch</Label>
-                <Input id="branch" value={gitBranch} onChange={(e) => setGitBranch(e.target.value)} />
+                <Label>Branch</Label>
+                {branchesLoading ? (
+                  <div className="flex items-center gap-2 rounded-md border px-3 py-2">
+                    <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                    <span className="text-sm text-muted-foreground">Loading...</span>
+                  </div>
+                ) : branches.length > 0 ? (
+                  <Select value={gitBranch} onValueChange={setGitBranch}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select branch" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {branches.map((b) => (
+                        <SelectItem key={b} value={b}>{b}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input value={gitBranch} onChange={(e) => setGitBranch(e.target.value)} placeholder="main" />
+                )}
               </div>
             )}
 
