@@ -7,6 +7,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import { Loader2, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
 import {
   Select,
   SelectContent,
@@ -398,9 +399,9 @@ export function ProjectTerminal({ projectId, orgId }: ProjectTerminalProps) {
       )}
 
       {/* Ephemeral notice */}
-      <p className="text-xs text-muted-foreground">
-        This is an ephemeral shell session. Changes to the filesystem will not persist unless written to a persistent volume.
-      </p>
+      <Callout variant="warning">
+        Ephemeral session — filesystem changes will not persist unless written to a persistent volume.
+      </Callout>
 
       {/* Terminal */}
       <div className="rounded-lg border border-zinc-800 bg-zinc-950 overflow-hidden">

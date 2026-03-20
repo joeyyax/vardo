@@ -5,6 +5,7 @@ import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { stopProject } from "@/lib/docker/deploy";
+import { recordActivity } from "@/lib/activity";
 
 /** Delete a group if it has no remaining projects. */
 async function cleanupEmptyGroup(groupId: string) {
@@ -93,7 +94,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, projectId } = await params;
-    const { organization } = await requireOrg();
+    const { organization, session } = await requireOrg();
 
     if (organization.id !== orgId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -136,6 +137,14 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       await cleanupEmptyGroup(oldGroupId);
     }
 
+    recordActivity({
+      organizationId: orgId,
+      action: "project.updated",
+      projectId,
+      userId: session.user.id,
+      metadata: { changes: Object.keys(parsed.data) },
+    });
+
     return NextResponse.json({ project: updated });
   } catch (error) {
     if (error instanceof Error && error.message === "Unauthorized") {
@@ -153,7 +162,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, projectId } = await params;
-    const { organization, membership } = await requireOrg();
+    const { organization, membership, session } = await requireOrg();
 
     if (organization.id !== orgId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -189,6 +198,13 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     if (project.groupId) {
       await cleanupEmptyGroup(project.groupId);
     }
+
+    recordActivity({
+      organizationId: orgId,
+      action: "project.deleted",
+      userId: session.user.id,
+      metadata: { name: project.name },
+    });
 
     return NextResponse.json({ success: true });
   } catch (error) {

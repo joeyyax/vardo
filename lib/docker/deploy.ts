@@ -20,6 +20,7 @@ import { ensureNetwork, detectExposedPorts } from "./client";
 import { getInstallationToken } from "@/lib/github/app";
 import { githubAppInstallations, memberships } from "@/lib/db/schema";
 import { detectPreventiveFixes, detectCompatIssues, applyCompatFixes } from "./compat";
+import { recordActivity } from "@/lib/activity";
 
 const execAsync = promisify(exec);
 
@@ -96,6 +97,14 @@ export async function runDeployment(
       .update(deployments)
       .set({ status: "running" })
       .where(eq(deployments.id, deploymentId));
+
+    recordActivity({
+      organizationId: opts.organizationId,
+      action: "deployment.started",
+      projectId: opts.projectId,
+      userId: opts.triggeredBy,
+      metadata: { deploymentId, trigger: opts.trigger },
+    }).catch(() => {});
 
     log(`[deploy] Starting deployment ${deploymentId}`);
 
@@ -674,6 +683,13 @@ export async function runDeployment(
       durationMs,
     }).catch(() => {});
 
+    recordActivity({
+      organizationId: opts.organizationId,
+      action: "deployment.succeeded",
+      projectId: opts.projectId,
+      metadata: { deploymentId, durationMs },
+    }).catch(() => {});
+
     // Send success notification (non-blocking)
     sendDeployNotification(project, deploymentId, true, durationMs).catch(() => {});
 
@@ -700,6 +716,13 @@ export async function runDeployment(
       deploymentId,
       success: false,
       durationMs,
+    }).catch(() => {});
+
+    recordActivity({
+      organizationId: opts.organizationId,
+      action: "deployment.failed",
+      projectId: opts.projectId,
+      metadata: { deploymentId, error: message },
     }).catch(() => {});
 
     // Send failure notification (non-blocking) — project may not be fetched yet

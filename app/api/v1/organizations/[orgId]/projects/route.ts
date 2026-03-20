@@ -8,6 +8,7 @@ import { z } from "zod";
 import { generateSubdomain } from "@/lib/domains/auto-domain";
 import { allocatePorts } from "@/lib/docker/ports";
 import { deployProject } from "@/lib/docker/deploy";
+import { recordActivity } from "@/lib/activity";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -180,6 +181,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         certResolver: "le",
       });
     }
+
+    recordActivity({
+      organizationId: orgId,
+      action: "project.created",
+      projectId,
+      userId: session.user.id,
+      metadata: { name: data.name, displayName: data.displayName },
+    });
 
     // Auto-deploy if enabled — fire and forget, don't block the response
     if (data.autoDeploy) {
