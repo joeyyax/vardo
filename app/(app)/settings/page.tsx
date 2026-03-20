@@ -8,6 +8,7 @@ import { OrgEnvVarsEditor } from "./org-env-vars";
 import { OrgSwitcher } from "@/components/layout/org-switcher";
 import { TeamMembers } from "@/app/(app)/team/team-members";
 import { GroupManager } from "./group-manager";
+import { OrgDomainEditor } from "./org-domain-editor";
 
 export default async function SettingsPage({
   searchParams,
@@ -77,19 +78,11 @@ export default async function SettingsPage({
         </TabsContent>
 
         <TabsContent value="domains" className="pt-4">
-          <div className="space-y-4">
-            <div>
-              <p className="text-sm text-muted-foreground">
-                Base domain for auto-generated project URLs.
-              </p>
-              <p className="text-sm font-mono mt-2">
-                {orgData.organization.baseDomain || "joeyyax.dev"}{" "}
-                <span className="text-muted-foreground text-xs font-sans">
-                  {orgData.organization.baseDomain ? "(custom)" : "(default)"}
-                </span>
-              </p>
-            </div>
-          </div>
+          <OrgDomainEditor
+            orgId={orgId}
+            currentDomain={orgData.organization.baseDomain ?? null}
+            defaultDomain="joeyyax.dev"
+          />
         </TabsContent>
 
         <TabsContent value="groups" className="pt-4">

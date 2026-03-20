@@ -299,6 +299,33 @@ export async function runDeployment(
 
       if (composeContent && project.deployType !== "nixpacks" && project.deployType !== "dockerfile") {
         compose = parseCompose(composeContent);
+
+        // Detect declared volumes from compose YAML before deploy starts
+        if (compose.volumes && Object.keys(compose.volumes).length > 0) {
+          const existing = (project.persistentVolumes as { name: string; mountPath: string }[] | null) ?? [];
+          const existingNames = new Set(existing.map(v => v.name));
+          const newVols: { name: string; mountPath: string }[] = [];
+
+          for (const svc of Object.values(compose.services)) {
+            for (const vol of svc.volumes ?? []) {
+              const parts = vol.split(":");
+              if (parts.length >= 2) {
+                const volName = parts[0];
+                const mountPath = parts[1];
+                if (volName in compose.volumes && !existingNames.has(volName)) {
+                  existingNames.add(volName);
+                  newVols.push({ name: volName, mountPath });
+                }
+              }
+            }
+          }
+
+          if (newVols.length > 0) {
+            const merged = [...existing, ...newVols];
+            await db.update(projects).set({ persistentVolumes: merged }).where(eq(projects.id, opts.projectId));
+            log(`[deploy] Detected ${newVols.length} compose volume(s): ${newVols.map(v => `${v.name}:${v.mountPath}`).join(", ")}`);
+          }
+        }
       } else {
         // Build from repo — Nixpacks, Dockerfile, or auto-detect
         const imageName = `host/${project.name}:${deploymentId.slice(0, 8)}`;
@@ -360,6 +387,33 @@ export async function runDeployment(
       // Direct compose content
       compose = parseCompose(project.composeContent);
       log(`[deploy] Parsed compose content`);
+
+      // Detect declared volumes from compose YAML before deploy starts
+      if (compose.volumes && Object.keys(compose.volumes).length > 0) {
+        const existing = (project.persistentVolumes as { name: string; mountPath: string }[] | null) ?? [];
+        const existingNames = new Set(existing.map(v => v.name));
+        const newVols: { name: string; mountPath: string }[] = [];
+
+        for (const svc of Object.values(compose.services)) {
+          for (const vol of svc.volumes ?? []) {
+            const parts = vol.split(":");
+            if (parts.length >= 2) {
+              const volName = parts[0];
+              const mountPath = parts[1];
+              if (volName in compose.volumes && !existingNames.has(volName)) {
+                existingNames.add(volName);
+                newVols.push({ name: volName, mountPath });
+              }
+            }
+          }
+        }
+
+        if (newVols.length > 0) {
+          const merged = [...existing, ...newVols];
+          await db.update(projects).set({ persistentVolumes: merged }).where(eq(projects.id, opts.projectId));
+          log(`[deploy] Detected ${newVols.length} compose volume(s): ${newVols.map(v => `${v.name}:${v.mountPath}`).join(", ")}`);
+        }
+      }
     } else {
       throw new Error("No image, git repo, or compose content configured");
     }

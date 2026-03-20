@@ -93,6 +93,9 @@ type Props = {
   templates: Template[];
   groups?: GroupOption[];
   defaultGroupId?: string;
+  defaultName?: string;
+  defaultImage?: string;
+  defaultTemplate?: string;
 };
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -129,7 +132,7 @@ function slugify(value: string) {
     .replace(/^-+|-+$/g, "");
 }
 
-export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], defaultGroupId }: Props) {
+export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], defaultGroupId, defaultName, defaultImage, defaultTemplate }: Props) {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
   const [slugEdited, setSlugEdited] = useState(false);
@@ -236,6 +239,29 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
     fetchBranches();
     return () => { cancelled = true; };
   }, [selectedRepo, selectedInstallation]);
+
+  // Apply query string defaults on mount
+  useEffect(() => {
+    if (defaultTemplate) {
+      const match = templates.find(
+        (t) => t.name === defaultTemplate || t.displayName === defaultTemplate
+      );
+      if (match) {
+        selectTemplate(match);
+        return;
+      }
+    }
+    if (defaultImage) {
+      selectSource("image");
+      setImageName(defaultImage);
+    }
+    if (defaultName) {
+      setDisplayName(defaultName);
+      const base = slugify(defaultName);
+      setName(base ? `${base}-${wordPair.adjective}-${wordPair.noun}` : "");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function handleRepoSelect(repoFullName: string) {
     setSelectedRepo(repoFullName);

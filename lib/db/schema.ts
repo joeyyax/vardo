@@ -680,6 +680,32 @@ export const templates = pgTable("template", {
 });
 
 // ---------------------------------------------------------------------------
+// Host: Cron Jobs (scheduled tasks)
+// ---------------------------------------------------------------------------
+
+export const cronJobStatusEnum = pgEnum("cron_job_status", [
+  "success",
+  "failed",
+  "running",
+]);
+
+export const cronJobs = pgTable("cron_job", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  schedule: text("schedule").notNull(), // cron expression
+  command: text("command").notNull(),
+  enabled: boolean("enabled").default(true).notNull(),
+  lastRunAt: timestamp("last_run_at"),
+  lastStatus: cronJobStatusEnum("last_status"),
+  lastLog: text("last_log"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// ---------------------------------------------------------------------------
 // Relations
 // ---------------------------------------------------------------------------
 
@@ -740,6 +766,7 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   backupJobProjects: many(backupJobProjects),
   backups: many(backups),
   volumeLimit: many(volumeLimits),
+  cronJobs: many(cronJobs),
 }));
 
 export const deploymentsRelations = relations(deployments, ({ one }) => ({
@@ -955,6 +982,13 @@ export const backupsRelations = relations(backups, ({ one }) => ({
 export const volumeLimitsRelations = relations(volumeLimits, ({ one }) => ({
   project: one(projects, {
     fields: [volumeLimits.projectId],
+    references: [projects.id],
+  }),
+}));
+
+export const cronJobsRelations = relations(cronJobs, ({ one }) => ({
+  project: one(projects, {
+    fields: [cronJobs.projectId],
     references: [projects.id],
   }),
 }));

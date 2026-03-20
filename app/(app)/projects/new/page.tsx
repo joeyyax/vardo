@@ -9,9 +9,9 @@ import { NewProjectFlow } from "./new-project-flow";
 export default async function NewProjectPage({
   searchParams,
 }: {
-  searchParams: Promise<{ group?: string }>;
+  searchParams: Promise<{ group?: string; name?: string; image?: string; template?: string }>;
 }) {
-  const { group: preselectedGroupId } = await searchParams;
+  const { group: preselectedGroupId, name: prefilledName, image: prefilledImage, template: prefilledTemplate } = await searchParams;
   const orgData = await getCurrentOrg();
 
   if (!orgData) {
@@ -39,6 +39,9 @@ export default async function NewProjectPage({
       templates={cleanTemplates}
       groups={groupList}
       defaultGroupId={preselectedGroupId}
+      defaultName={prefilledName}
+      defaultImage={prefilledImage}
+      defaultTemplate={prefilledTemplate}
     />
   );
 }
