@@ -32,6 +32,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { generateWordPair, getBaseDomain } from "@/lib/domains/auto-domain";
+import { isReservedSlug } from "@/lib/domains/reserved";
 import { EnvEditor } from "@/components/env-editor";
 
 type Source = "git" | "direct";
@@ -613,10 +614,13 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
                       }
                     } catch {}
                   }}
-                  className={slugTaken ? "border-destructive" : ""}
+                  className={slugTaken || (generateDomain && isReservedSlug(name)) ? "border-destructive" : ""}
                 />
                 {slugTaken && (
                   <p className="text-xs text-destructive">This slug is already in use</p>
+                )}
+                {!slugTaken && generateDomain && name && isReservedSlug(name) && (
+                  <p className="text-xs text-destructive">"{name}" is reserved</p>
                 )}
               </div>
             </div>

@@ -9,6 +9,7 @@ import { generateSubdomain } from "@/lib/domains/auto-domain";
 import { allocatePorts } from "@/lib/docker/ports";
 import { deployProject } from "@/lib/docker/deploy";
 import { recordActivity } from "@/lib/activity";
+import { isReservedSlug } from "@/lib/domains/reserved";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -124,6 +125,22 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     const data = parsed.data;
+
+    // Check reserved slugs — only when generating a subdomain on our base domain
+    if (data.generateDomain && isReservedSlug(data.name)) {
+      // Allow admins to bypass
+      const { user: userTable } = await import("@/lib/db/schema");
+      const dbUser = await db.query.user.findFirst({
+        where: eq(userTable.id, session.user.id),
+        columns: { isAppAdmin: true },
+      });
+      if (!dbUser?.isAppAdmin) {
+        return NextResponse.json(
+          { error: `"${data.name}" is a reserved name. Choose a different slug.` },
+          { status: 400 }
+        );
+      }
+    }
 
     // Fetch org for baseDomain
     const org = await db.query.organizations.findFirst({
