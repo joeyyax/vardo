@@ -75,7 +75,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
                   const containers = await getProjectContainers(p.name);
                   console.log(`[metrics] ${p.name}: found ${containers.length} containers`);
                   const stats = await Promise.allSettled(
-                    containers.map((c) => getContainerStats(c.Id))
+                    containers.filter((c) => c.state === "running").map((c) => getContainerStats(c.id))
                   );
                   return {
                     id: p.id,
