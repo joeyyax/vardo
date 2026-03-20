@@ -237,7 +237,7 @@ export function CronManager({ projectId, orgId }: Props) {
           </div>
           <Button size="sm" onClick={openCreate}>
             <Plus className="mr-1.5 size-4" />
-            Add Cron Job
+            Add Task
           </Button>
         </div>
 
