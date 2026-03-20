@@ -275,6 +275,7 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
   const [containerPort, setContainerPort] = useState(
     project.containerPort?.toString() || ""
   );
+  const [autoPort, setAutoPort] = useState(!project.containerPort);
   const [autoTraefikLabels, setAutoTraefikLabels] = useState(
     project.autoTraefikLabels ?? false
   );
@@ -1256,77 +1257,89 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
           </BottomSheetHeader>
 
           <div className="flex-1 overflow-y-auto px-6 pb-6">
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label htmlFor="edit-display-name">Display Name</Label>
-                <Input
-                  id="edit-display-name"
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="edit-description">Description</Label>
-                <Textarea
-                  id="edit-description"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  rows={2}
-                />
-              </div>
-
-              {project.source === "git" && (
+            <div className="grid gap-5 py-4">
+              {/* Name + Description */}
+              <div className="grid gap-4 sm:grid-cols-2">
                 <div className="grid gap-2">
-                  <Label htmlFor="edit-git-branch">Branch</Label>
+                  <Label htmlFor="edit-display-name">Display Name</Label>
                   <Input
-                    id="edit-git-branch"
-                    value={gitBranch}
-                    onChange={(e) => setGitBranch(e.target.value)}
+                    id="edit-display-name"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
                   />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-description">Description</Label>
+                  <Input
+                    id="edit-description"
+                    placeholder="Optional"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Source settings */}
+              {project.source === "git" && (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="grid gap-2">
+                    <Label htmlFor="edit-git-branch">Branch</Label>
+                    <Input
+                      id="edit-git-branch"
+                      value={gitBranch}
+                      onChange={(e) => setGitBranch(e.target.value)}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="edit-root-directory">Root Directory</Label>
+                    <Input
+                      id="edit-root-directory"
+                      placeholder="./"
+                      value={rootDirectory}
+                      onChange={(e) => setRootDirectory(e.target.value)}
+                    />
+                  </div>
                 </div>
               )}
 
-              <div className="grid gap-2">
-                <Label htmlFor="edit-root-directory">Root Directory</Label>
-                <Input
-                  id="edit-root-directory"
-                  placeholder="./ (optional)"
-                  value={rootDirectory}
-                  onChange={(e) => setRootDirectory(e.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Subdirectory for build context, e.g. ./dist or ./apps/web
-                </p>
+              {/* Port */}
+              <div className="grid gap-2 sm:w-1/2">
+                <Label>Container Port</Label>
+                <div className="flex items-center gap-3">
+                  <Switch
+                    id="edit-auto-port"
+                    checked={autoPort}
+                    onCheckedChange={(checked) => {
+                      setAutoPort(checked);
+                      if (checked) setContainerPort("");
+                    }}
+                  />
+                  <Label htmlFor="edit-auto-port" className="text-sm font-normal text-muted-foreground">
+                    Auto-detect
+                  </Label>
+                  {!autoPort && (
+                    <Input
+                      id="edit-container-port"
+                      type="number"
+                      placeholder="3000"
+                      className="w-24"
+                      value={containerPort}
+                      onChange={(e) => setContainerPort(e.target.value)}
+                    />
+                  )}
+                </div>
               </div>
 
-              <div className="grid gap-2">
-                <Label htmlFor="edit-container-port">Container Port</Label>
-                <Input
-                  id="edit-container-port"
-                  type="number"
-                  placeholder="3000"
-                  value={containerPort}
-                  onChange={(e) => setContainerPort(e.target.value)}
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <Label htmlFor="edit-auto-traefik">Auto Traefik Labels</Label>
-                <Switch
-                  id="edit-auto-traefik"
-                  checked={autoTraefikLabels}
-                  onCheckedChange={setAutoTraefikLabels}
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <Label htmlFor="edit-auto-deploy">Auto Deploy</Label>
-                <Switch
-                  id="edit-auto-deploy"
-                  checked={autoDeploy}
-                  onCheckedChange={setAutoDeploy}
-                />
+              {/* Toggles */}
+              <div className="grid gap-3">
+                <div className="flex items-center gap-3">
+                  <Switch
+                    id="edit-auto-deploy"
+                    checked={autoDeploy}
+                    onCheckedChange={setAutoDeploy}
+                  />
+                  <Label htmlFor="edit-auto-deploy">Auto Deploy</Label>
+                </div>
               </div>
             </div>
           </div>
