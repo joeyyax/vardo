@@ -33,6 +33,7 @@ import {
   useSortable,
   rectSortingStrategy,
 } from "@dnd-kit/sortable";
+import { useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 
 type Tag = { id: string; name: string; color: string };
@@ -132,6 +133,8 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
     return { ungrouped: ung, groupedMap: gMap };
   }, [filteredProjects]);
 
+  // All project IDs need to be sortable (both grouped and ungrouped)
+  const allProjectIds = filteredProjects.map((p) => p.id);
   const sortableIds = ungrouped.map((p) => p.id);
 
   function handleDragStart(event: DragStartEvent) {
@@ -317,28 +320,14 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {/* Groups */}
           {Array.from(groupedMap.entries()).map(([groupId, { group, projects: gp }]) => (
-            <div key={groupId}
-              className="rounded-lg border bg-card/30 p-2 space-y-2 border-border/50 cursor-pointer hover:border-border transition-colors"
-              style={{ gridColumn: `span ${Math.min(gp.length, 3)}` }}
-              onClick={(e) => {
-                // Only open sheet if clicking the container bg, not a card
-                if ((e.target as HTMLElement).closest("a")) return;
-                setEditingGroupId(groupId);
-                setEditGroupName(group.name);
-              }}
-            >
-              <div className="flex items-center gap-2 px-1">
-                <span className="text-xs font-medium text-muted-foreground">{group.name}</span>
-                <span className="text-[10px] text-muted-foreground/50">{gp.length}</span>
-              </div>
-              <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(gp.length, 3)}, 1fr)` }}>
-                {gp.map((p) => <ProjectCardStatic key={p.id} project={p} compact />)}
-              </div>
-            </div>
+            <DroppableGroup key={groupId} groupId={groupId} group={group} projects={gp}
+              isHoldTarget={holdTarget === `group-${groupId}`}
+              onClickBg={() => { setEditingGroupId(groupId); setEditGroupName(group.name); }} />
+
           ))}
 
           {/* Sortable ungrouped */}
-          <SortableContext items={sortableIds} strategy={rectSortingStrategy}>
+          <SortableContext items={allProjectIds} strategy={rectSortingStrategy}>
             {sortableIds.map((id) => {
               const p = ungrouped.find((pr) => pr.id === id);
               if (!p) return null;
@@ -422,9 +411,45 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
   );
 }
 
+// ── Droppable Group ───────────────────────────────────────────────────────
+
+function DroppableGroup({ groupId, group, projects, isHoldTarget, onClickBg }: {
+  groupId: string;
+  group: Group;
+  projects: ProjectWithRelations[];
+  isHoldTarget: boolean;
+  onClickBg: () => void;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: `group-${groupId}` });
+  const span = Math.min(projects.length, 3);
+
+  return (
+    <div ref={setNodeRef}
+      className={`rounded-lg border bg-card/30 p-2 space-y-2 cursor-pointer hover:border-border transition-colors ${
+        isOver || isHoldTarget ? "border-status-info bg-status-info-muted/30" : "border-border/50"
+      }`}
+      style={{ gridColumn: `span ${span}` }}
+      onClick={(e) => {
+        if ((e.target as HTMLElement).closest("[data-project-card]")) return;
+        onClickBg();
+      }}
+    >
+      <div className="flex items-center gap-2 px-1">
+        <span className="text-xs font-medium text-muted-foreground">{group.name}</span>
+        <span className="text-[10px] text-muted-foreground/50">{projects.length}</span>
+      </div>
+      <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${span}, 1fr)` }}>
+        {projects.map((p) => (
+          <SortableProjectCard key={p.id} project={p} isHoldTarget={false} compact />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Sortable Card (draggable) ─────────────────────────────────────────────
 
-function SortableProjectCard({ project, isHoldTarget }: { project: ProjectWithRelations; isHoldTarget: boolean }) {
+function SortableProjectCard({ project, isHoldTarget, compact }: { project: ProjectWithRelations; isHoldTarget: boolean; compact?: boolean }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: project.id });
 
   const style = {
@@ -433,9 +458,9 @@ function SortableProjectCard({ project, isHoldTarget }: { project: ProjectWithRe
   };
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners}
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners} data-project-card
       className={`transition-transform ${isDragging ? "opacity-30 scale-95 z-50" : ""} ${isHoldTarget ? "ring-2 ring-status-info/50 scale-105" : ""}`}>
-      <ProjectCardStatic project={project} />
+      <ProjectCardStatic project={project} compact={compact} />
     </div>
   );
 }
