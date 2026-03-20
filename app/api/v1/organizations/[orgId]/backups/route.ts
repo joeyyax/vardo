@@ -7,7 +7,7 @@ import {
   backups,
 } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
-import { eq, and, desc, inArray } from "drizzle-orm";
+import { eq, and, or, desc, inArray, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 
@@ -119,11 +119,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const data = parsed.data;
 
-    // Verify target belongs to this org
+    // Verify target belongs to this org or is an app-level target
     const target = await db.query.backupTargets.findFirst({
       where: and(
         eq(backupTargets.id, data.targetId),
-        eq(backupTargets.organizationId, orgId)
+        or(
+          eq(backupTargets.organizationId, orgId),
+          isNull(backupTargets.organizationId),
+        ),
       ),
     });
 

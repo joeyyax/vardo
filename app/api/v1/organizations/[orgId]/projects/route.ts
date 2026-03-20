@@ -7,6 +7,7 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { generateSubdomain } from "@/lib/domains/auto-domain";
 import { allocatePorts } from "@/lib/docker/ports";
+import { deployProject } from "@/lib/docker/deploy";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -47,6 +48,7 @@ const createProjectSchema = z
       value: z.string(),
       copyRef: z.string().optional(),
     })).optional(),
+    groupId: z.string().optional(),
   })
   .refine(
     (data) => {
@@ -104,7 +106,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { organization } = await requireOrg();
+    const { organization, session } = await requireOrg();
 
     if (organization.id !== orgId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -149,6 +151,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         containerPort: data.containerPort,
         autoTraefikLabels: data.autoTraefikLabels,
         autoDeploy: data.autoDeploy,
+        groupId: data.groupId || null,
         persistentVolumes: data.persistentVolumes,
         exposedPorts: data.exposedPorts ? await (async () => {
           // Auto-allocate external ports for any that don't have one
@@ -175,6 +178,18 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         domain: autoDomain,
         port: data.containerPort ?? null,
         certResolver: "le",
+      });
+    }
+
+    // Auto-deploy if enabled — fire and forget, don't block the response
+    if (data.autoDeploy) {
+      deployProject({
+        projectId,
+        organizationId: orgId,
+        trigger: "manual",
+        triggeredBy: session.user.id,
+      }).catch((err) => {
+        console.error(`[auto-deploy] Failed for ${data.name}:`, err);
       });
     }
 

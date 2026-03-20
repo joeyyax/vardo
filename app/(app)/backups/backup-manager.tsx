@@ -6,14 +6,17 @@ import {
   Plus,
   Play,
   Archive,
-  FolderOpen,
+  Cloud,
+  Server,
   Clock,
   CheckCircle2,
   XCircle,
-  AlertCircle,
+
   Trash2,
   Power,
   PowerOff,
+  Download,
+  RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -21,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -54,6 +58,7 @@ type BackupTarget = {
   type: string;
   config: Record<string, unknown>;
   isDefault: boolean;
+  isAppLevel?: boolean;
 };
 
 type BackupHistoryEntry = {
@@ -98,6 +103,8 @@ type Props = {
   projects: Project[];
 };
 
+type TargetType = "s3" | "r2" | "b2" | "ssh";
+
 // ---------------------------------------------------------------------------
 // Schedule presets
 // ---------------------------------------------------------------------------
@@ -113,6 +120,53 @@ function scheduleLabel(cron: string): string {
   const preset = SCHEDULE_PRESETS.find((p) => p.value === cron);
   if (preset) return preset.label;
   return cron;
+}
+
+// ---------------------------------------------------------------------------
+// Target helpers
+// ---------------------------------------------------------------------------
+
+function targetSubtitle(target: BackupTarget): string {
+  const config = target.config as Record<string, string>;
+  switch (target.type) {
+    case "s3":
+    case "r2":
+    case "b2":
+      return config.endpoint || config.region || "";
+    case "ssh":
+      return `${config.username || "root"}@${config.host}:${config.path || "/"}`;
+    case "local":
+      return config.path || "";
+    default:
+      return target.type;
+  }
+}
+
+function targetDisplayName(target: BackupTarget): string {
+  const config = target.config as Record<string, string>;
+  switch (target.type) {
+    case "s3":
+    case "r2":
+    case "b2":
+      return `${target.type}: ${config.bucket || ""}`;
+    case "ssh":
+      return `ssh: ${config.username || "root"}@${config.host}:${config.path || "/"}`;
+    default:
+      return target.name;
+  }
+}
+
+function TargetIcon({ type }: { type: string }) {
+  switch (type) {
+    case "s3":
+    case "r2":
+    case "b2":
+      return <Cloud className="size-4 text-muted-foreground shrink-0" />;
+    case "ssh":
+      return <Server className="size-4 text-muted-foreground shrink-0" />;
+    default:
+      return <Server className="size-4 text-muted-foreground shrink-0" />;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -164,6 +218,9 @@ export function BackupManager({ orgId, projects }: Props) {
   const [recentHistory, setRecentHistory] = useState<RecentBackup[]>([]);
   const [loading, setLoading] = useState(true);
   const [runningJobs, setRunningJobs] = useState<Set<string>>(new Set());
+  const [restoringBackups, setRestoringBackups] = useState<Set<string>>(
+    new Set()
+  );
 
   // New job form
   const [jobSheetOpen, setJobSheetOpen] = useState(false);
@@ -178,7 +235,22 @@ export function BackupManager({ orgId, projects }: Props) {
   const [targetSheetOpen, setTargetSheetOpen] = useState(false);
   const [savingTarget, setSavingTarget] = useState(false);
   const [newTargetName, setNewTargetName] = useState("");
-  const [newTargetPath, setNewTargetPath] = useState("./.host/backups");
+  const [newTargetType, setNewTargetType] = useState<TargetType>("s3");
+
+  // S3/R2/B2 fields
+  const [newBucket, setNewBucket] = useState("");
+  const [newRegion, setNewRegion] = useState("");
+  const [newEndpoint, setNewEndpoint] = useState("");
+  const [newAccessKeyId, setNewAccessKeyId] = useState("");
+  const [newSecretAccessKey, setNewSecretAccessKey] = useState("");
+  const [newPrefix, setNewPrefix] = useState("");
+
+  // SSH fields
+  const [newSshHost, setNewSshHost] = useState("");
+  const [newSshPort, setNewSshPort] = useState("");
+  const [newSshUsername, setNewSshUsername] = useState("");
+  const [newSshPrivateKey, setNewSshPrivateKey] = useState("");
+  const [newSshPath, setNewSshPath] = useState("");
 
   const fetchData = useCallback(async () => {
     try {
@@ -208,9 +280,103 @@ export function BackupManager({ orgId, projects }: Props) {
     fetchData();
   }, [fetchData]);
 
+  // -- Reset target form --
+  function resetTargetForm() {
+    setNewTargetName("");
+    setNewTargetType("s3");
+    setNewBucket("");
+    setNewRegion("");
+    setNewEndpoint("");
+    setNewAccessKeyId("");
+    setNewSecretAccessKey("");
+    setNewPrefix("");
+    setNewSshHost("");
+    setNewSshPort("");
+    setNewSshUsername("");
+    setNewSshPrivateKey("");
+    setNewSshPath("");
+  }
+
+  // -- Build target config from form state --
+  function buildTargetConfig(): Record<string, unknown> {
+    switch (newTargetType) {
+      case "s3":
+        return {
+          bucket: newBucket.trim(),
+          region: newRegion.trim(),
+          ...(newEndpoint.trim() && { endpoint: newEndpoint.trim() }),
+          accessKeyId: newAccessKeyId.trim(),
+          secretAccessKey: newSecretAccessKey.trim(),
+          ...(newPrefix.trim() && { prefix: newPrefix.trim() }),
+        };
+      case "r2":
+        return {
+          bucket: newBucket.trim(),
+          region: newRegion.trim() || "auto",
+          endpoint: newEndpoint.trim(),
+          accessKeyId: newAccessKeyId.trim(),
+          secretAccessKey: newSecretAccessKey.trim(),
+          ...(newPrefix.trim() && { prefix: newPrefix.trim() }),
+        };
+      case "b2":
+        return {
+          bucket: newBucket.trim(),
+          region: newRegion.trim(),
+          endpoint: newEndpoint.trim(),
+          accessKeyId: newAccessKeyId.trim(),
+          secretAccessKey: newSecretAccessKey.trim(),
+          ...(newPrefix.trim() && { prefix: newPrefix.trim() }),
+        };
+      case "ssh":
+        return {
+          host: newSshHost.trim(),
+          ...(newSshPort.trim() && { port: parseInt(newSshPort, 10) }),
+          username: newSshUsername.trim(),
+          ...(newSshPrivateKey.trim() && {
+            privateKey: newSshPrivateKey.trim(),
+          }),
+          path: newSshPath.trim(),
+        };
+    }
+  }
+
+  // -- Validate target form --
+  function isTargetFormValid(): boolean {
+    if (!newTargetName.trim()) return false;
+    switch (newTargetType) {
+      case "s3":
+        return !!(
+          newBucket.trim() &&
+          newRegion.trim() &&
+          newAccessKeyId.trim() &&
+          newSecretAccessKey.trim()
+        );
+      case "r2":
+        return !!(
+          newBucket.trim() &&
+          newEndpoint.trim() &&
+          newAccessKeyId.trim() &&
+          newSecretAccessKey.trim()
+        );
+      case "b2":
+        return !!(
+          newBucket.trim() &&
+          newRegion.trim() &&
+          newAccessKeyId.trim() &&
+          newSecretAccessKey.trim()
+        );
+      case "ssh":
+        return !!(
+          newSshHost.trim() &&
+          newSshUsername.trim() &&
+          newSshPath.trim()
+        );
+    }
+  }
+
   // -- Create target --
   async function createTarget() {
-    if (!newTargetName.trim() || !newTargetPath.trim()) return;
+    if (!isTargetFormValid()) return;
 
     setSavingTarget(true);
     try {
@@ -221,8 +387,8 @@ export function BackupManager({ orgId, projects }: Props) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             name: newTargetName.trim(),
-            type: "local",
-            config: { path: newTargetPath.trim() },
+            type: newTargetType,
+            config: buildTargetConfig(),
             isDefault: targets.length === 0,
           }),
         }
@@ -231,8 +397,7 @@ export function BackupManager({ orgId, projects }: Props) {
       if (res.ok) {
         toast.success("Backup target created");
         setTargetSheetOpen(false);
-        setNewTargetName("");
-        setNewTargetPath("./.host/backups");
+        resetTargetForm();
         fetchData();
       } else {
         const err = await res.json();
@@ -299,7 +464,7 @@ export function BackupManager({ orgId, projects }: Props) {
 
     try {
       const res = await fetch(
-        `/api/v1/organizations/${orgId}/backups/${jobId}/run`,
+        `/api/v1/organizations/${orgId}/backups/jobs/${jobId}/run`,
         { method: "POST" }
       );
 
@@ -330,7 +495,7 @@ export function BackupManager({ orgId, projects }: Props) {
   async function toggleEnabled(jobId: string, enabled: boolean) {
     try {
       const res = await fetch(
-        `/api/v1/organizations/${orgId}/backups/${jobId}`,
+        `/api/v1/organizations/${orgId}/backups/jobs/${jobId}`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -351,7 +516,7 @@ export function BackupManager({ orgId, projects }: Props) {
   async function deleteJob(jobId: string) {
     try {
       const res = await fetch(
-        `/api/v1/organizations/${orgId}/backups/${jobId}`,
+        `/api/v1/organizations/${orgId}/backups/jobs/${jobId}`,
         { method: "DELETE" }
       );
 
@@ -364,6 +529,34 @@ export function BackupManager({ orgId, projects }: Props) {
       }
     } catch {
       toast.error("Failed to delete job");
+    }
+  }
+
+  // -- Restore backup --
+  async function restoreBackup(backupId: string) {
+    setRestoringBackups((prev) => new Set(prev).add(backupId));
+
+    try {
+      const res = await fetch(
+        `/api/v1/organizations/${orgId}/backups/history/${backupId}/restore`,
+        { method: "POST" }
+      );
+
+      if (res.ok) {
+        toast.success("Backup restored successfully");
+        fetchData();
+      } else {
+        const err = await res.json();
+        toast.error(err.error || "Failed to restore backup");
+      }
+    } catch {
+      toast.error("Failed to restore backup");
+    } finally {
+      setRestoringBackups((prev) => {
+        const next = new Set(prev);
+        next.delete(backupId);
+        return next;
+      });
     }
   }
 
@@ -399,8 +592,7 @@ export function BackupManager({ orgId, projects }: Props) {
             size="sm"
             variant="outline"
             onClick={() => {
-              setNewTargetName("");
-              setNewTargetPath("./.host/backups");
+              resetTargetForm();
               setTargetSheetOpen(true);
             }}
           >
@@ -411,7 +603,7 @@ export function BackupManager({ orgId, projects }: Props) {
 
         {targets.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-8">
-            <FolderOpen className="size-8 text-muted-foreground" />
+            <Cloud className="size-8 text-muted-foreground" />
             <p className="text-sm text-muted-foreground">
               No storage targets configured. Add a target to start creating
               backup jobs.
@@ -419,13 +611,13 @@ export function BackupManager({ orgId, projects }: Props) {
             <Button
               size="sm"
               onClick={() => {
-                setNewTargetName("Local Storage");
-                setNewTargetPath("./.host/backups");
+                resetTargetForm();
+                setNewTargetName("S3 Storage");
                 setTargetSheetOpen(true);
               }}
             >
               <Plus className="mr-1.5 size-4" />
-              Add Local Target
+              Add Target
             </Button>
           </div>
         ) : (
@@ -436,7 +628,7 @@ export function BackupManager({ orgId, projects }: Props) {
                 className="squircle flex items-center justify-between gap-4 rounded-lg border bg-card p-4"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <FolderOpen className="size-4 text-muted-foreground shrink-0" />
+                  <TargetIcon type={target.type} />
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-medium">{target.name}</p>
@@ -448,11 +640,14 @@ export function BackupManager({ orgId, projects }: Props) {
                           default
                         </Badge>
                       )}
+                      {target.isAppLevel && (
+                        <Badge variant="outline" className="text-xs">
+                          System
+                        </Badge>
+                      )}
                     </div>
                     <p className="text-xs text-muted-foreground font-mono mt-0.5 truncate">
-                      {target.type === "local"
-                        ? (target.config as { path: string }).path
-                        : target.type}
+                      {targetSubtitle(target)}
                     </p>
                   </div>
                 </div>
@@ -614,40 +809,74 @@ export function BackupManager({ orgId, projects }: Props) {
           </div>
 
           <div className="space-y-1">
-            {recentHistory.map((entry) => (
-              <div
-                key={entry.id}
-                className="flex items-center justify-between gap-4 rounded-md border bg-card px-4 py-3"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <StatusBadge status={entry.status} />
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium truncate">
-                      {entry.project.displayName}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {entry.job.name} --{" "}
-                      {new Date(entry.startedAt).toLocaleString()}
-                    </p>
+            {recentHistory.map((entry) => {
+              const isRestoring = restoringBackups.has(entry.id);
+
+              return (
+                <div
+                  key={entry.id}
+                  className="flex items-center justify-between gap-4 rounded-md border bg-card px-4 py-3"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <StatusBadge status={entry.status} />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">
+                        {entry.project.displayName}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {entry.job.name} --{" "}
+                        {new Date(entry.startedAt).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-xs text-muted-foreground">
+                      {entry.sizeBytes != null && entry.sizeBytes > 0
+                        ? formatBytes(entry.sizeBytes)
+                        : "--"}
+                      {entry.finishedAt && (
+                        <span className="ml-2">
+                          {Math.round(
+                            (new Date(entry.finishedAt).getTime() -
+                              new Date(entry.startedAt).getTime()) /
+                              1000
+                          )}
+                          s
+                        </span>
+                      )}
+                    </span>
+                    {entry.status === "success" && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          asChild
+                        >
+                          <a
+                            href={`/api/v1/organizations/${orgId}/backups/history/${entry.id}/download`}
+                            download
+                          >
+                            <Download className="size-3.5" />
+                          </a>
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => restoreBackup(entry.id)}
+                          disabled={isRestoring}
+                        >
+                          {isRestoring ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : (
+                            <RotateCcw className="size-3.5" />
+                          )}
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </div>
-                <div className="text-xs text-muted-foreground shrink-0">
-                  {entry.sizeBytes != null && entry.sizeBytes > 0
-                    ? formatBytes(entry.sizeBytes)
-                    : "--"}
-                  {entry.finishedAt && (
-                    <span className="ml-2">
-                      {Math.round(
-                        (new Date(entry.finishedAt).getTime() -
-                          new Date(entry.startedAt).getTime()) /
-                          1000
-                      )}
-                      s
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       )}
@@ -658,8 +887,8 @@ export function BackupManager({ orgId, projects }: Props) {
           <BottomSheetHeader>
             <BottomSheetTitle>Add storage target</BottomSheetTitle>
             <BottomSheetDescription>
-              Configure where backups will be stored. Currently supports local
-              filesystem storage.
+              Configure where backups will be stored. Supports S3-compatible
+              storage, Backblaze B2, and SSH/SFTP targets.
             </BottomSheetDescription>
           </BottomSheetHeader>
 
@@ -669,25 +898,207 @@ export function BackupManager({ orgId, projects }: Props) {
                 <Label htmlFor="target-name">Name</Label>
                 <Input
                   id="target-name"
-                  placeholder="Local Storage"
+                  placeholder="My backup storage"
                   value={newTargetName}
                   onChange={(e) => setNewTargetName(e.target.value)}
                 />
               </div>
+
               <div className="grid gap-2">
-                <Label htmlFor="target-path">Storage Path</Label>
-                <Input
-                  id="target-path"
-                  placeholder="./.host/backups"
-                  className="font-mono"
-                  value={newTargetPath}
-                  onChange={(e) => setNewTargetPath(e.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Absolute or relative path on the host filesystem where backup
-                  archives will be stored.
-                </p>
+                <Label>Target Type</Label>
+                <Select
+                  value={newTargetType}
+                  onValueChange={(v) => setNewTargetType(v as TargetType)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="s3">Amazon S3</SelectItem>
+                    <SelectItem value="r2">Cloudflare R2</SelectItem>
+                    <SelectItem value="b2">Backblaze B2</SelectItem>
+                    <SelectItem value="ssh">SSH / SFTP</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
+
+              {/* S3 / R2 / B2 config fields */}
+              {(newTargetType === "s3" ||
+                newTargetType === "r2" ||
+                newTargetType === "b2") && (
+                <>
+                  <div className="grid gap-2">
+                    <Label htmlFor="target-bucket">Bucket</Label>
+                    <Input
+                      id="target-bucket"
+                      placeholder="my-backups"
+                      value={newBucket}
+                      onChange={(e) => setNewBucket(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="target-region">Region</Label>
+                    <Input
+                      id="target-region"
+                      placeholder={
+                        newTargetType === "r2" ? "auto" : "us-east-1"
+                      }
+                      value={newRegion}
+                      onChange={(e) => setNewRegion(e.target.value)}
+                    />
+                    {newTargetType === "r2" && (
+                      <p className="text-xs text-muted-foreground">
+                        Defaults to &quot;auto&quot; if left empty.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="target-endpoint">
+                      Endpoint
+                      {newTargetType === "s3" && (
+                        <span className="text-muted-foreground font-normal">
+                          {" "}
+                          (optional)
+                        </span>
+                      )}
+                    </Label>
+                    <Input
+                      id="target-endpoint"
+                      placeholder={
+                        newTargetType === "r2"
+                          ? "https://{accountId}.r2.cloudflarestorage.com"
+                          : newTargetType === "b2"
+                            ? "https://s3.{region}.backblazeb2.com"
+                            : "https://s3.amazonaws.com"
+                      }
+                      value={newEndpoint}
+                      onChange={(e) => setNewEndpoint(e.target.value)}
+                    />
+                    {newTargetType === "r2" && (
+                      <p className="text-xs text-muted-foreground">
+                        Format: https://&#123;accountId&#125;.r2.cloudflarestorage.com
+                      </p>
+                    )}
+                    {newTargetType === "b2" && (
+                      <p className="text-xs text-muted-foreground">
+                        Format: https://s3.&#123;region&#125;.backblazeb2.com
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="target-access-key">Access Key ID</Label>
+                    <Input
+                      id="target-access-key"
+                      placeholder="AKIA..."
+                      value={newAccessKeyId}
+                      onChange={(e) => setNewAccessKeyId(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="target-secret-key">Secret Access Key</Label>
+                    <Input
+                      id="target-secret-key"
+                      type="password"
+                      value={newSecretAccessKey}
+                      onChange={(e) => setNewSecretAccessKey(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="target-prefix">
+                      Prefix
+                      <span className="text-muted-foreground font-normal">
+                        {" "}
+                        (optional)
+                      </span>
+                    </Label>
+                    <Input
+                      id="target-prefix"
+                      placeholder="backups/"
+                      className="font-mono"
+                      value={newPrefix}
+                      onChange={(e) => setNewPrefix(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Optional key prefix for all backup objects in the bucket.
+                    </p>
+                  </div>
+                </>
+              )}
+
+              {/* SSH config fields */}
+              {newTargetType === "ssh" && (
+                <>
+                  <div className="grid gap-2">
+                    <Label htmlFor="target-ssh-host">Host</Label>
+                    <Input
+                      id="target-ssh-host"
+                      placeholder="backups.example.com"
+                      value={newSshHost}
+                      onChange={(e) => setNewSshHost(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="target-ssh-port">
+                      Port
+                      <span className="text-muted-foreground font-normal">
+                        {" "}
+                        (optional, default 22)
+                      </span>
+                    </Label>
+                    <Input
+                      id="target-ssh-port"
+                      type="number"
+                      placeholder="22"
+                      value={newSshPort}
+                      onChange={(e) => setNewSshPort(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="target-ssh-username">Username</Label>
+                    <Input
+                      id="target-ssh-username"
+                      placeholder="backup"
+                      value={newSshUsername}
+                      onChange={(e) => setNewSshUsername(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="target-ssh-key">
+                      Private Key
+                      <span className="text-muted-foreground font-normal">
+                        {" "}
+                        (optional)
+                      </span>
+                    </Label>
+                    <Textarea
+                      id="target-ssh-key"
+                      placeholder="Paste PEM private key (optional -- uses system SSH key if empty)"
+                      className="font-mono text-xs min-h-[120px]"
+                      value={newSshPrivateKey}
+                      onChange={(e) => setNewSshPrivateKey(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="target-ssh-path">Remote Path</Label>
+                    <Input
+                      id="target-ssh-path"
+                      placeholder="/var/backups"
+                      className="font-mono"
+                      value={newSshPath}
+                      onChange={(e) => setNewSshPath(e.target.value)}
+                    />
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
@@ -701,11 +1112,7 @@ export function BackupManager({ orgId, projects }: Props) {
             </Button>
             <Button
               onClick={createTarget}
-              disabled={
-                savingTarget ||
-                !newTargetName.trim() ||
-                !newTargetPath.trim()
-              }
+              disabled={savingTarget || !isTargetFormValid()}
             >
               {savingTarget ? (
                 <>

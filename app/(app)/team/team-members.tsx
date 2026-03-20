@@ -45,6 +45,8 @@ type TeamMembersProps = {
   currentRole: string;
   currentUserId: string;
   organizations: Organization[];
+  /** When true, skip the page header (used when embedded in settings) */
+  embedded?: boolean;
 };
 
 const ROLE_LABELS: Record<string, string> = {
@@ -53,7 +55,7 @@ const ROLE_LABELS: Record<string, string> = {
   member: "Member",
 };
 
-export function TeamMembers({ members: initialMembers, orgId, orgName, currentRole, currentUserId, organizations }: TeamMembersProps) {
+export function TeamMembers({ members: initialMembers, orgId, orgName, currentRole, currentUserId, organizations, embedded }: TeamMembersProps) {
   const router = useRouter();
   const [members, setMembers] = useState(initialMembers);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -148,30 +150,44 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
   return (
     <>
       <div className="space-y-6">
-        <PageToolbar
-          actions={
-            canManage && (
-              <Button onClick={() => setInviteOpen(true)}>
+        {embedded ? (
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              {members.length} {members.length === 1 ? "member" : "members"}
+            </p>
+            {canManage && (
+              <Button size="sm" onClick={() => setInviteOpen(true)}>
                 <Plus className="mr-1.5 size-4" />
                 Add Member
               </Button>
-            )
-          }
-        >
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-semibold tracking-tight">Team</h1>
-              <OrgSwitcher
-                currentOrgId={orgId}
-                organizations={organizations}
-                collapsed={false}
-              />
-            </div>
-            <p className="text-sm text-muted-foreground mt-1">
-              {members.length} {members.length === 1 ? "member" : "members"}
-            </p>
+            )}
           </div>
-        </PageToolbar>
+        ) : (
+          <PageToolbar
+            actions={
+              canManage && (
+                <Button onClick={() => setInviteOpen(true)}>
+                  <Plus className="mr-1.5 size-4" />
+                  Add Member
+                </Button>
+              )
+            }
+          >
+            <div>
+              <div className="flex items-center gap-3">
+                <h1 className="text-2xl font-semibold tracking-tight">Team</h1>
+                <OrgSwitcher
+                  currentOrgId={orgId}
+                  organizations={organizations}
+                  collapsed={false}
+                />
+              </div>
+              <p className="text-sm text-muted-foreground mt-1">
+                {members.length} {members.length === 1 ? "member" : "members"}
+              </p>
+            </div>
+          </PageToolbar>
+        )}
 
         <div className="divide-y rounded-lg border">
           {sortedMembers.map((member) => {

@@ -1,20 +1,62 @@
 import { db } from "@/lib/db";
 import {
   backupJobs,
-  backupJobProjects,
-  backupTargets,
   backups,
-  projects,
 } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { exec } from "child_process";
 import { promisify } from "util";
-import { mkdir, stat } from "fs/promises";
+import { mkdir, rm } from "fs/promises";
 import { resolve, join } from "path";
-import { listContainers, inspectContainer } from "@/lib/docker/client";
+import {
+  createStorageClient,
+  uploadBackup,
+  downloadBackup,
+  getDownloadUrl as storageGetDownloadUrl,
+  type StorageConfig,
+} from "./storage";
+import {
+  uploadViaSsh,
+  downloadViaSsh,
+  type SshConfig,
+} from "./storage-ssh";
 
 const execAsync = promisify(exec);
+
+// ---------------------------------------------------------------------------
+// Transport abstraction
+// ---------------------------------------------------------------------------
+
+type TargetConfig = StorageConfig | SshConfig;
+
+function isSshConfig(config: TargetConfig): config is SshConfig {
+  return "host" in config && "path" in config && !("bucket" in config);
+}
+
+async function uploadToTarget(
+  config: TargetConfig,
+  key: string,
+  filePath: string,
+): Promise<{ sizeBytes: number }> {
+  if (isSshConfig(config)) {
+    return uploadViaSsh(config, key, filePath);
+  }
+  const client = createStorageClient(config);
+  return uploadBackup(client, config, key, filePath);
+}
+
+async function downloadFromTarget(
+  config: TargetConfig,
+  key: string,
+  destPath: string,
+): Promise<void> {
+  if (isSshConfig(config)) {
+    return downloadViaSsh(config, key, destPath);
+  }
+  const client = createStorageClient(config);
+  return downloadBackup(client, config, key, destPath);
+}
 
 const BACKUPS_DIR = resolve(process.env.HOST_BACKUPS_DIR || "./.host/backups");
 
@@ -25,6 +67,7 @@ const BACKUPS_DIR = resolve(process.env.HOST_BACKUPS_DIR || "./.host/backups");
 export type BackupResult = {
   backupId: string;
   projectId: string;
+  volumeName: string;
   success: boolean;
   sizeBytes: number;
   storagePath: string;
@@ -44,159 +87,48 @@ async function ensureDir(dir: string): Promise<void> {
   await mkdir(dir, { recursive: true });
 }
 
-async function getFileSize(path: string): Promise<number> {
-  try {
-    const s = await stat(path);
-    return s.size;
-  } catch {
-    return 0;
-  }
-}
-
-/**
- * Detect the database type from a container's image name.
- * Returns the dump command strategy or null if not a database.
- */
-function detectDatabaseType(
-  image: string
-): "postgres" | "mysql" | "mariadb" | null {
-  const lower = image.toLowerCase();
-  if (lower.includes("postgres") || lower.includes("pgvector")) return "postgres";
-  if (lower.includes("mariadb")) return "mariadb";
-  if (lower.includes("mysql")) return "mysql";
-  return null;
-}
-
 // ---------------------------------------------------------------------------
-// Core backup execution
+// Core: backup a single volume
 // ---------------------------------------------------------------------------
 
 /**
- * Run a backup for a single project within a job.
- * Creates a tar.gz archive of all named volumes and optionally
- * dumps databases if a known database container is detected.
+ * Create a tar.gz of a Docker volume and upload it to S3-compatible storage.
+ * Returns the storage key and size.
  */
-async function backupProject(
-  projectId: string,
-  projectName: string,
-  targetPath: string
-): Promise<{ archivePath: string; sizeBytes: number; log: string }> {
-  const ts = timestamp();
-  const archiveName = `${projectName}-${ts}.tar.gz`;
-  const archivePath = join(targetPath, archiveName);
-  const logLines: string[] = [];
-
-  const log = (msg: string) => {
-    logLines.push(`[${new Date().toISOString()}] ${msg}`);
-  };
-
-  log(`Starting backup for project: ${projectName}`);
-
-  // Find project containers
-  const containers = await listContainers(projectName);
-  if (containers.length === 0) {
-    log("No running containers found for project");
-  }
-
-  // Create a temp directory for this backup's artifacts
-  const tmpDir = join(targetPath, `.tmp-${projectName}-${ts}`);
+async function backupVolume(
+  dockerVolumeName: string,
+  storageKey: string,
+  config: TargetConfig,
+  logFn: (msg: string) => void,
+): Promise<{ sizeBytes: number }> {
+  const tmpDir = join(BACKUPS_DIR, `.tmp-${nanoid(8)}`);
   await ensureDir(tmpDir);
+  const archiveFile = "volume.tar.gz";
 
   try {
-    // 1. Dump databases from recognized database containers
-    for (const container of containers) {
-      const info = await inspectContainer(container.id);
-      const dbType = detectDatabaseType(info.image);
+    // Tar the volume contents using a temporary Alpine container
+    logFn(`Archiving volume ${dockerVolumeName}`);
+    await execAsync(
+      `docker run --rm -v ${dockerVolumeName}:/data -v ${tmpDir}:/backup alpine tar czf /backup/${archiveFile} -C /data .`,
+      { timeout: 600_000 }, // 10 minute timeout
+    );
 
-      if (dbType) {
-        log(`Detected ${dbType} database in container ${container.name}`);
-        const dumpFile = join(tmpDir, `${container.name}-dump.sql`);
+    // Upload via the appropriate transport
+    logFn(`Uploading to ${storageKey}`);
+    const { sizeBytes } = await uploadToTarget(
+      config,
+      storageKey,
+      join(tmpDir, archiveFile),
+    );
 
-        try {
-          let dumpCmd: string;
-
-          if (dbType === "postgres") {
-            // Extract POSTGRES_USER from env, default to "postgres"
-            const userEnv = info.env.find((e) => e.startsWith("POSTGRES_USER="));
-            const pgUser = userEnv ? userEnv.split("=")[1] : "postgres";
-            dumpCmd = `docker exec ${container.id} pg_dumpall -U ${pgUser}`;
-          } else {
-            // mysql/mariadb
-            const rootPwEnv = info.env.find(
-              (e) =>
-                e.startsWith("MYSQL_ROOT_PASSWORD=") ||
-                e.startsWith("MARIADB_ROOT_PASSWORD=")
-            );
-            const rootPw = rootPwEnv ? rootPwEnv.split("=")[1] : "";
-            dumpCmd = `docker exec ${container.id} mysqldump --all-databases -u root ${rootPw ? `-p${rootPw}` : ""}`;
-          }
-
-          const { stdout } = await execAsync(dumpCmd, {
-            maxBuffer: 512 * 1024 * 1024, // 512MB
-          });
-
-          const { writeFile } = await import("fs/promises");
-          await writeFile(dumpFile, stdout);
-          log(`Database dump complete: ${container.name}`);
-        } catch (err) {
-          const msg =
-            err instanceof Error ? err.message : String(err);
-          log(`Database dump failed for ${container.name}: ${msg}`);
-        }
-      }
-    }
-
-    // 2. Backup named Docker volumes associated with the project
-    // Find volumes by inspecting container mounts
-    const volumeNames = new Set<string>();
-    for (const container of containers) {
-      const info = await inspectContainer(container.id);
-      for (const mount of info.mounts) {
-        if (mount.type === "volume") {
-          // Extract volume name from source path
-          const parts = mount.source.split("/");
-          const volName = parts[parts.length - 1];
-          volumeNames.add(volName);
-        }
-      }
-    }
-
-    if (volumeNames.size > 0) {
-      log(`Found ${volumeNames.size} volume(s) to backup`);
-
-      for (const volName of volumeNames) {
-        const volArchive = join(tmpDir, `volume-${volName}.tar.gz`);
-        try {
-          await execAsync(
-            `docker run --rm -v ${volName}:/data -v ${tmpDir}:/backup alpine tar czf /backup/volume-${volName}.tar.gz -C /data .`,
-            { timeout: 300000 } // 5 minute timeout per volume
-          );
-          log(`Volume backed up: ${volName}`);
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          log(`Volume backup failed for ${volName}: ${msg}`);
-        }
-      }
-    } else {
-      log("No Docker volumes found for project");
-    }
-
-    // 3. Create final archive from all artifacts in tmpDir
-    await execAsync(`tar czf "${archivePath}" -C "${tmpDir}" .`, {
-      timeout: 300000,
-    });
-    log("Final archive created");
-
-    const sizeBytes = await getFileSize(archivePath);
-    log(`Archive size: ${sizeBytes} bytes`);
-
-    return { archivePath, sizeBytes, log: logLines.join("\n") };
+    logFn(`Upload complete (${sizeBytes} bytes)`);
+    return { sizeBytes };
   } finally {
-    // Clean up temp directory
+    // Clean up temp files
     try {
-      await execAsync(`rm -rf "${tmpDir}"`);
+      await rm(tmpDir, { recursive: true, force: true });
     } catch {
-      // best effort cleanup
+      // best effort
     }
   }
 }
@@ -207,7 +139,7 @@ async function backupProject(
 
 /**
  * Execute a full backup run for a given job.
- * Backs up all projects associated with the job.
+ * For each project in the job, backs up every persistent volume.
  */
 export async function runBackup(jobId: string): Promise<BackupResult[]> {
   // 1. Load the job with its target and projects
@@ -216,7 +148,15 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
     with: {
       target: true,
       backupJobProjects: {
-        with: { project: true },
+        with: {
+          project: {
+            with: {
+              organization: {
+                columns: { slug: true },
+              },
+            },
+          },
+        },
       },
     },
   });
@@ -225,93 +165,156 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
     throw new Error(`Backup job not found: ${jobId}`);
   }
 
-  // 2. Resolve target path
-  let targetPath: string;
-  if (job.target.type === "local") {
-    const config = job.target.config as { path: string };
-    targetPath = resolve(config.path || BACKUPS_DIR);
-  } else {
-    // For now, only local targets are supported
-    throw new Error(`Unsupported backup target type: ${job.target.type}`);
-  }
+  const config = job.target.config;
+  const ts = timestamp();
+  await ensureDir(BACKUPS_DIR);
 
-  await ensureDir(targetPath);
-
-  // 3. Back up each project
+  // 2. Back up each project's persistent volumes
   const results: BackupResult[] = [];
 
   for (const bjp of job.backupJobProjects) {
     const project = bjp.project;
-    const backupId = nanoid();
-    const startedAt = new Date();
+    const orgSlug = project.organization.slug;
+    const volumes = project.persistentVolumes ?? [];
 
-    // Create history record
-    await db.insert(backups).values({
-      id: backupId,
-      jobId: job.id,
-      projectId: project.id,
-      targetId: job.target.id,
-      status: "running",
-      startedAt,
-    });
+    if (volumes.length === 0) {
+      // No persistent volumes declared, nothing to back up
+      continue;
+    }
 
-    try {
-      const { archivePath, sizeBytes, log } = await backupProject(
-        project.id,
-        project.name,
-        targetPath
-      );
+    for (const vol of volumes) {
+      const backupId = nanoid();
+      const startedAt = new Date();
+      const logLines: string[] = [];
+      const log = (msg: string) => {
+        logLines.push(`[${new Date().toISOString()}] ${msg}`);
+      };
 
-      const finishedAt = new Date();
-      const durationMs = finishedAt.getTime() - startedAt.getTime();
+      // The actual Docker volume name follows the blue/green slot pattern:
+      // {projectName}-blue_{volumeName} or {projectName}-green_{volumeName}
+      // We try blue first (production slot), then green
+      const blueVolume = `${project.name}-blue_${vol.name}`;
+      const greenVolume = `${project.name}-green_${vol.name}`;
 
-      // Update history with success
-      await db
-        .update(backups)
-        .set({
-          status: "success",
-          sizeBytes,
-          storagePath: archivePath,
+      let dockerVolumeName: string;
+      try {
+        // Check if blue volume exists
+        await execAsync(`docker volume inspect ${blueVolume}`, {
+          timeout: 10_000,
+        });
+        dockerVolumeName = blueVolume;
+      } catch {
+        try {
+          await execAsync(`docker volume inspect ${greenVolume}`, {
+            timeout: 10_000,
+          });
+          dockerVolumeName = greenVolume;
+        } catch {
+          // Neither exists, skip
+          log(`No Docker volume found for ${vol.name} (tried ${blueVolume}, ${greenVolume})`);
+
+          await db.insert(backups).values({
+            id: backupId,
+            jobId: job.id,
+            projectId: project.id,
+            targetId: job.target.id,
+            status: "failed",
+            volumeName: vol.name,
+            log: logLines.join("\n"),
+            startedAt,
+            finishedAt: new Date(),
+          });
+
+          results.push({
+            backupId,
+            projectId: project.id,
+            volumeName: vol.name,
+            success: false,
+            sizeBytes: 0,
+            storagePath: "",
+            error: `Volume not found: ${vol.name}`,
+            durationMs: Date.now() - startedAt.getTime(),
+          });
+          continue;
+        }
+      }
+
+      // Storage path: {orgSlug}/{projectName}/{volumeName}/{timestamp}.tar.gz
+      const storageKey = `${orgSlug}/${project.name}/${vol.name}/${ts}.tar.gz`;
+
+      // Create backup record as running
+      await db.insert(backups).values({
+        id: backupId,
+        jobId: job.id,
+        projectId: project.id,
+        targetId: job.target.id,
+        status: "running",
+        volumeName: vol.name,
+        startedAt,
+      });
+
+      try {
+        log(`Backing up volume ${vol.name} (Docker: ${dockerVolumeName})`);
+        const { sizeBytes } = await backupVolume(
+          dockerVolumeName,
+          storageKey,
+          config,
           log,
-          finishedAt,
-        })
-        .where(eq(backups.id, backupId));
+        );
 
-      results.push({
-        backupId,
-        projectId: project.id,
-        success: true,
-        sizeBytes,
-        storagePath: archivePath,
-        durationMs,
-      });
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      const finishedAt = new Date();
-      const durationMs = finishedAt.getTime() - startedAt.getTime();
+        const finishedAt = new Date();
+        const durationMs = finishedAt.getTime() - startedAt.getTime();
 
-      await db
-        .update(backups)
-        .set({
-          status: "failed",
-          log: errorMsg,
-          finishedAt,
-        })
-        .where(eq(backups.id, backupId));
+        await db
+          .update(backups)
+          .set({
+            status: "success",
+            sizeBytes,
+            storagePath: storageKey,
+            log: logLines.join("\n"),
+            finishedAt,
+          })
+          .where(eq(backups.id, backupId));
 
-      results.push({
-        backupId,
-        projectId: project.id,
-        success: false,
-        sizeBytes: 0,
-        storagePath: "",
-        error: errorMsg,
-        durationMs,
-      });
+        results.push({
+          backupId,
+          projectId: project.id,
+          volumeName: vol.name,
+          success: true,
+          sizeBytes,
+          storagePath: storageKey,
+          durationMs,
+        });
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        log(`Backup failed: ${errorMsg}`);
+        const finishedAt = new Date();
+        const durationMs = finishedAt.getTime() - startedAt.getTime();
+
+        await db
+          .update(backups)
+          .set({
+            status: "failed",
+            log: logLines.join("\n"),
+            finishedAt,
+          })
+          .where(eq(backups.id, backupId));
+
+        results.push({
+          backupId,
+          projectId: project.id,
+          volumeName: vol.name,
+          success: false,
+          sizeBytes: 0,
+          storagePath: "",
+          error: errorMsg,
+          durationMs,
+        });
+      }
     }
   }
 
-  // 4. Update job's last run
+  // 3. Update job's last run timestamp
   await db
     .update(backupJobs)
     .set({ updatedAt: new Date() })
@@ -321,21 +324,146 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
 }
 
 /**
- * Get the size of a backup file.
+ * Restore a backup by downloading the archive from S3 and repopulating
+ * the Docker volume.
  */
-export async function getBackupSize(path: string): Promise<number> {
-  return getFileSize(path);
+export async function restoreBackup(
+  backupId: string,
+): Promise<{ success: boolean; log: string }> {
+  const backup = await db.query.backups.findFirst({
+    where: eq(backups.id, backupId),
+    with: {
+      target: true,
+      project: true,
+    },
+  });
+
+  if (!backup) {
+    throw new Error(`Backup not found: ${backupId}`);
+  }
+
+  if (!backup.storagePath) {
+    throw new Error("Backup has no storage path");
+  }
+
+  if (!backup.volumeName) {
+    throw new Error("Backup has no volume name");
+  }
+
+  const config = backup.target.config;
+  const logLines: string[] = [];
+  const log = (msg: string) => {
+    logLines.push(`[${new Date().toISOString()}] ${msg}`);
+  };
+
+  const tmpDir = join(BACKUPS_DIR, `.tmp-restore-${nanoid(8)}`);
+  await ensureDir(tmpDir);
+  const archivePath = join(tmpDir, "volume.tar.gz");
+
+  try {
+    // 1. Download archive from storage
+    log(`Downloading backup from ${backup.storagePath}`);
+    await downloadFromTarget(config, backup.storagePath, archivePath);
+    log("Download complete");
+
+    // 2. Determine the Docker volume name (try blue first, then green)
+    const blueVolume = `${backup.project.name}-blue_${backup.volumeName}`;
+    const greenVolume = `${backup.project.name}-green_${backup.volumeName}`;
+
+    let dockerVolumeName: string;
+    try {
+      await execAsync(`docker volume inspect ${blueVolume}`, {
+        timeout: 10_000,
+      });
+      dockerVolumeName = blueVolume;
+    } catch {
+      try {
+        await execAsync(`docker volume inspect ${greenVolume}`, {
+          timeout: 10_000,
+        });
+        dockerVolumeName = greenVolume;
+      } catch {
+        // Create the blue volume if neither exists
+        log(`Creating volume ${blueVolume}`);
+        await execAsync(`docker volume create ${blueVolume}`, {
+          timeout: 10_000,
+        });
+        dockerVolumeName = blueVolume;
+      }
+    }
+
+    // 3. Restore: clear and repopulate the volume
+    log(`Restoring to volume ${dockerVolumeName}`);
+    await execAsync(
+      `docker run --rm -v ${dockerVolumeName}:/data -v ${tmpDir}:/backup alpine sh -c "rm -rf /data/* /data/.[!.]* 2>/dev/null; tar xzf /backup/volume.tar.gz -C /data"`,
+      { timeout: 600_000 },
+    );
+    log("Restore complete");
+
+    return { success: true, log: logLines.join("\n") };
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    log(`Restore failed: ${errorMsg}`);
+    return { success: false, log: logLines.join("\n") };
+  } finally {
+    try {
+      await rm(tmpDir, { recursive: true, force: true });
+    } catch {
+      // best effort
+    }
+  }
 }
 
 /**
- * Restore from a backup (stub for future implementation).
+ * Generate a pre-signed download URL for a backup archive (S3 targets),
+ * or return null for SSH targets (must be streamed through the server).
  */
-export async function restoreBackup(
-  _historyId: string
-): Promise<{ success: boolean; message: string }> {
-  return {
-    success: false,
-    message:
-      "Restore is not yet implemented. Manual restore: extract the backup archive and use docker volume create + docker run to repopulate volumes.",
-  };
+export async function getBackupDownloadUrl(
+  backupId: string,
+): Promise<string | null> {
+  const backup = await db.query.backups.findFirst({
+    where: eq(backups.id, backupId),
+    with: { target: true },
+  });
+
+  if (!backup) {
+    throw new Error(`Backup not found: ${backupId}`);
+  }
+
+  if (!backup.storagePath) {
+    throw new Error("Backup has no storage path");
+  }
+
+  const config = backup.target.config;
+
+  // SSH targets don't support pre-signed URLs
+  if (isSshConfig(config)) {
+    return null;
+  }
+
+  const client = createStorageClient(config);
+  return storageGetDownloadUrl(client, config, backup.storagePath, 3600);
+}
+
+/**
+ * Download a backup to a local temp file (for SSH targets or server-side streaming).
+ * Returns the local path. Caller is responsible for cleanup.
+ */
+export async function downloadBackupToTemp(
+  backupId: string,
+): Promise<string> {
+  const backup = await db.query.backups.findFirst({
+    where: eq(backups.id, backupId),
+    with: { target: true },
+  });
+
+  if (!backup) throw new Error(`Backup not found: ${backupId}`);
+  if (!backup.storagePath) throw new Error("Backup has no storage path");
+
+  const tmpDir = join(BACKUPS_DIR, `.tmp-download-${nanoid(8)}`);
+  await ensureDir(tmpDir);
+  const destPath = join(tmpDir, "backup.tar.gz");
+
+  await downloadFromTarget(backup.target.config, backup.storagePath, destPath);
+  return destPath;
 }

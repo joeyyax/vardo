@@ -1,14 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { backupTargets } from "@/lib/db/schema";
-import { requireOrg } from "@/lib/auth/session";
-import { eq, or, isNull } from "drizzle-orm";
+import { backupTargets, user } from "@/lib/db/schema";
+import { requireSession } from "@/lib/auth/session";
+import { eq, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
-
-type RouteParams = {
-  params: Promise<{ orgId: string }>;
-};
 
 const s3ConfigSchema = z.object({
   bucket: z.string().min(1),
@@ -54,52 +50,49 @@ const createTargetSchema = z.discriminatedUnion("type", [
   }),
 ]);
 
-// GET /api/v1/organizations/[orgId]/backups/targets
-export async function GET(_request: NextRequest, { params }: RouteParams) {
+async function requireAppAdmin() {
+  const session = await requireSession();
+  const dbUser = await db.query.user.findFirst({
+    where: eq(user.id, session.user.id),
+    columns: { isAppAdmin: true },
+  });
+
+  if (!dbUser?.isAppAdmin) {
+    throw new Error("Forbidden");
+  }
+
+  return session;
+}
+
+// GET /api/v1/admin/backup-targets — list app-level targets
+export async function GET() {
   try {
-    const { orgId } = await params;
-    const { organization } = await requireOrg();
+    await requireAppAdmin();
 
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    // Return both org-level targets and app-level targets (organizationId IS NULL)
     const targets = await db.query.backupTargets.findMany({
-      where: or(
-        eq(backupTargets.organizationId, orgId),
-        isNull(backupTargets.organizationId),
-      ),
+      where: isNull(backupTargets.organizationId),
     });
 
-    // Mark app-level targets as read-only for the org
-    const enriched = targets.map((t) => ({
-      ...t,
-      isAppLevel: t.organizationId === null,
-    }));
-
-    return NextResponse.json({ targets: enriched });
+    return NextResponse.json({ targets });
   } catch (error) {
     if (error instanceof Error && error.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    console.error("Error fetching backup targets:", error);
+    if (error instanceof Error && error.message === "Forbidden") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    console.error("Error fetching admin backup targets:", error);
     return NextResponse.json(
       { error: "Internal server error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
 
-// POST /api/v1/organizations/[orgId]/backups/targets
-export async function POST(request: NextRequest, { params }: RouteParams) {
+// POST /api/v1/admin/backup-targets — create app-level target
+export async function POST(request: NextRequest) {
   try {
-    const { orgId } = await params;
-    const { organization } = await requireOrg();
-
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    await requireAppAdmin();
 
     const body = await request.json();
     const parsed = createTargetSchema.safeParse(body);
@@ -107,7 +100,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     if (!parsed.success) {
       return NextResponse.json(
         { error: parsed.error.issues[0].message },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -117,7 +110,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       .insert(backupTargets)
       .values({
         id: nanoid(),
-        organizationId: orgId,
+        organizationId: null, // app-level
         name: data.name,
         type: data.type,
         config: data.config,
@@ -130,10 +123,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     if (error instanceof Error && error.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    console.error("Error creating backup target:", error);
+    if (error instanceof Error && error.message === "Forbidden") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    console.error("Error creating admin backup target:", error);
     return NextResponse.json(
       { error: "Internal server error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

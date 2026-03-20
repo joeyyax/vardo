@@ -24,6 +24,7 @@ import {
   Copy,
   Container,
   Info,
+  Layers,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageToolbar } from "@/components/page-toolbar";
@@ -137,6 +138,9 @@ type Project = {
   restartPolicy: string | null;
   connectionInfo: { label: string; value: string; copyRef?: string }[] | null;
   exposedPorts: { internal: number; external?: number; description?: string }[] | null;
+  groupId: string | null;
+  cloneStrategy: string | null;
+  dependsOn: string[] | null;
   status: "active" | "stopped" | "error" | "deploying";
   createdAt: Date;
   updatedAt: Date;
@@ -145,9 +149,16 @@ type Project = {
   envVars: EnvVar[];
   environments: Environment[];
   projectTags?: { tag: Tag }[];
+  group?: { id: string; name: string; color: string } | null;
 };
 
 type Tag = {
+  id: string;
+  name: string;
+  color: string;
+};
+
+type Group = {
   id: string;
   name: string;
   color: string;
@@ -158,8 +169,10 @@ type ProjectDetailProps = {
   orgId: string;
   userRole: string;
   allTags?: Tag[];
+  allGroups?: Group[];
   allProjectNames?: string[];
   orgVarKeys?: string[];
+  groupSiblings?: { name: string; displayName: string; status: string }[];
   initialTab?: string;
   initialSubView?: string;
 };
@@ -545,7 +558,7 @@ function formatDuration(ms: number) {
   return `${minutes}m ${remaining}s`;
 }
 
-export function ProjectDetail({ project, orgId, userRole, allTags = [], allProjectNames = [], orgVarKeys = [], initialTab = "deployments", initialSubView }: ProjectDetailProps) {
+export function ProjectDetail({ project, orgId, userRole, allTags = [], allGroups = [], allProjectNames = [], orgVarKeys = [], groupSiblings = [], initialTab = "deployments", initialSubView }: ProjectDetailProps) {
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -567,7 +580,8 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
   const [autoDeploy, setAutoDeploy] = useState(project.autoDeploy ?? false);
   const [gitBranch, setGitBranch] = useState(project.gitBranch || "");
   const [rootDirectory, setRootDirectory] = useState(project.rootDirectory || "");
-
+  const [editGroupId, setEditGroupId] = useState<string | null>(project.groupId ?? null);
+  const [newGroupName, setNewGroupName] = useState("");
 
   // Domain state
   const [domainOpen, setDomainOpen] = useState(false);
@@ -756,6 +770,12 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
       }
       if (editImageName.trim()) body.imageName = editImageName.trim();
       body.restartPolicy = restartPolicy;
+      // Don't send __new as groupId — only real IDs or null
+      if (editGroupId && editGroupId !== "__new") {
+        body.groupId = editGroupId;
+      } else if (editGroupId !== "__new") {
+        body.groupId = null;
+      }
 
       const res = await fetch(
         `/api/v1/organizations/${orgId}/projects/${project.id}`,
@@ -908,17 +928,7 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
     }
   }
 
-  // Auto-deploy when arriving from project creation with ?deploy=1
-  useEffect(() => {
-    if (searchParams.get("deploy") === "1" && !deploying) {
-      // Clean up the URL
-      const url = new URL(window.location.href);
-      url.searchParams.delete("deploy");
-      window.history.replaceState({}, "", url.toString());
-      handleDeploy();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // (Auto-deploy is now triggered server-side on project creation)
 
   async function handleSetPrimaryDomain(domainId: string) {
     try {
@@ -1106,9 +1116,44 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
           </div>
         }
       >
-        <h1 className="text-2xl font-semibold tracking-tight">
-          {project.displayName}
-        </h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {project.displayName}
+          </h1>
+          {project.group && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors hover:opacity-80"
+                  style={{
+                    backgroundColor: `${project.group.color}15`,
+                    color: project.group.color,
+                  }}
+                >
+                  <Layers className="size-3" />
+                  {project.group.name}
+                  {groupSiblings.length > 0 && (
+                    <ChevronDown className="size-3 opacity-60" />
+                  )}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                {groupSiblings.map((sibling) => (
+                  <DropdownMenuItem key={sibling.name} asChild>
+                    <Link href={`/projects/${sibling.name}`} className="flex items-center gap-2">
+                      <span className={`size-2 rounded-full ${
+                        sibling.status === "active" ? "bg-status-success" :
+                        sibling.status === "error" ? "bg-status-error" :
+                        "bg-status-neutral"
+                      }`} />
+                      {sibling.displayName}
+                    </Link>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm" className="gap-1.5">
@@ -1344,7 +1389,9 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
                 />
               )}
 
-              {project.deployments.map((deployment, idx) => {
+              {project.deployments
+                .filter((d) => d.status !== "queued" && d.status !== "running")
+                .map((deployment, idx) => {
                 const isActive = deployment.status === "success" && project.status === "active" && idx === 0;
                 const isStopped = deployment.status === "success" && project.status === "stopped" && idx === 0;
                 const isErrored = deployment.status === "success" && project.status === "error" && idx === 0;
@@ -1981,6 +2028,87 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
                   />
                   <Label htmlFor="edit-auto-deploy">Auto Deploy</Label>
                 </div>
+              </div>
+
+              {/* Group */}
+              <div className="grid gap-2">
+                <Label>Group</Label>
+                <Select
+                  value={editGroupId === "__new" ? "__new" : (editGroupId ?? "__none")}
+                  onValueChange={(v) => {
+                    if (v === "__new") {
+                      setEditGroupId("__new");
+                      setNewGroupName("");
+                    } else {
+                      setEditGroupId(v === "__none" ? null : v);
+                    }
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="No group" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none">No group</SelectItem>
+                    {allGroups.map((g) => (
+                      <SelectItem key={g.id} value={g.id}>
+                        <span className="flex items-center gap-2">
+                          <span
+                            className="size-2 rounded-full"
+                            style={{ backgroundColor: g.color }}
+                          />
+                          {g.name}
+                        </span>
+                      </SelectItem>
+                    ))}
+                    <SelectItem value="__new">
+                      <span className="flex items-center gap-2">
+                        <Plus className="size-3.5" />
+                        New group
+                      </span>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                {editGroupId === "__new" && (
+                  <div className="flex items-center gap-2">
+                    <Input
+                      placeholder="Group name"
+                      value={newGroupName}
+                      onChange={(e) => setNewGroupName(e.target.value)}
+                      className="flex-1"
+                      autoFocus
+                    />
+                    <Button
+                      size="sm"
+                      disabled={!newGroupName.trim()}
+                      onClick={async () => {
+                        try {
+                          const res = await fetch(`/api/v1/organizations/${orgId}/groups`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ name: newGroupName.trim() }),
+                          });
+                          if (res.ok) {
+                            const data = await res.json();
+                            setEditGroupId(data.group.id);
+                            allGroups.push(data.group);
+                            setNewGroupName("");
+                            toast.success(`Group "${data.group.name}" created`);
+                          } else {
+                            const err = await res.json();
+                            toast.error(err.error || "Failed to create group");
+                          }
+                        } catch {
+                          toast.error("Failed to create group");
+                        }
+                      }}
+                    >
+                      Create
+                    </Button>
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Groups let you deploy related services together.
+                </p>
               </div>
             </div>
           </div>

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { envVars, projects } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { parseEnvContent } from "@/lib/env/parse-env-content";
@@ -77,6 +77,36 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const environmentId = request.nextUrl.searchParams.get("environmentId");
+    const merged = request.nextUrl.searchParams.get("merged") === "true";
+
+    if (environmentId && merged) {
+      // Merged mode: return base vars (environmentId IS NULL) overlaid
+      // with environment-specific vars. Environment vars win on key conflict.
+      const [baseVars, envSpecificVars] = await Promise.all([
+        db.query.envVars.findMany({
+          where: and(
+            eq(envVars.projectId, projectId),
+            isNull(envVars.environmentId)
+          ),
+        }),
+        db.query.envVars.findMany({
+          where: and(
+            eq(envVars.projectId, projectId),
+            eq(envVars.environmentId, environmentId)
+          ),
+        }),
+      ]);
+
+      const mergedMap = new Map<string, (typeof baseVars)[number]>();
+      for (const v of baseVars) {
+        mergedMap.set(v.key, v);
+      }
+      for (const v of envSpecificVars) {
+        mergedMap.set(v.key, v);
+      }
+
+      return NextResponse.json({ envVars: Array.from(mergedMap.values()) });
+    }
 
     let conditions;
     if (environmentId) {
