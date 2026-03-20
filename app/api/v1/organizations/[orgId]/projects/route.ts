@@ -31,6 +31,10 @@ const createProjectSchema = z
     autoTraefikLabels: z.boolean().default(false),
     autoDeploy: z.boolean().default(false),
     generateDomain: z.boolean().default(true),
+    persistentVolumes: z.array(z.object({
+      name: z.string(),
+      mountPath: z.string(),
+    })).optional(),
   })
   .refine(
     (data) => {
@@ -133,6 +137,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         containerPort: data.containerPort,
         autoTraefikLabels: data.autoTraefikLabels,
         autoDeploy: data.autoDeploy,
+        persistentVolumes: data.persistentVolumes,
       })
       .returning();
 

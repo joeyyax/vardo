@@ -140,6 +140,10 @@ export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
   const [rootDirectory, setRootDirectory] = useState("");
   const [containerPort, setContainerPort] = useState("");
   const [autoDeploy, setAutoDeploy] = useState(true);
+  const [persistData, setPersistData] = useState(true);
+  const [templateVolumes, setTemplateVolumes] = useState<
+    { name: string; mountPath: string; description: string }[]
+  >([]);
 
   // Domain
   const [generateDomain, setGenerateDomain] = useState(true);
@@ -241,9 +245,14 @@ export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
     if (template.gitBranch) setGitBranch(template.gitBranch);
     if (template.defaultPort) setContainerPort(template.defaultPort.toString());
     setDescription(template.description || "");
-    // Databases/caches don't need public URLs
+    // Databases/caches don't need public URLs but always need persistence
     const noUrlCategories = ["database", "cache"];
+    const alwaysPersist = ["database", "cache", "monitoring", "tool"];
     setGenerateDomain(!noUrlCategories.includes(template.category));
+    setPersistData(alwaysPersist.includes(template.category));
+    setTemplateVolumes(
+      (template as { defaultVolumes?: { name: string; mountPath: string; description: string }[] }).defaultVolumes || []
+    );
     if (template.defaultEnvVars?.length) {
       const masked = new Set<string>();
       setTemplateEnvVars(template.defaultEnvVars.map((ev) => {
@@ -302,6 +311,9 @@ export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
         displayName: displayName.trim(), name: name.trim(),
         description: description.trim() || undefined,
         source, deployType, autoTraefikLabels: true, autoDeploy, generateDomain,
+        persistentVolumes: persistData && templateVolumes.length > 0
+          ? templateVolumes.map((v) => ({ name: v.name, mountPath: v.mountPath }))
+          : undefined,
       };
       if (containerPort) body.containerPort = parseInt(containerPort, 10);
       if (rootDirectory.trim()) body.rootDirectory = rootDirectory.trim();
@@ -328,12 +340,20 @@ export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
       if (filledVars.length > 0) {
         await fetch(`/api/v1/organizations/${orgId}/projects/${project.id}/env-vars`, {
           method: "PUT", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ vars: filledVars.map((v) => ({ key: v.key, value: v.value, isSecret: true })) }),
+          body: JSON.stringify({ vars: filledVars.map((v) => ({ key: v.key, value: v.value, isSecret: isPasswordField(v.key) })) }),
         });
       }
 
-      toast.success("Project created");
-      router.push(`/projects/${project.id}`);
+      // Auto-deploy on create if enabled
+      if (autoDeploy) {
+        toast.success("Project created — deploying...");
+        // Fire deploy in background, don't wait
+        fetch(`/api/v1/organizations/${orgId}/projects/${project.id}/deploy`, { method: "POST" }).catch(() => {});
+        router.push(`/projects/${project.id}?tab=deployments`);
+      } else {
+        toast.success("Project created");
+        router.push(`/projects/${project.id}`);
+      }
     } catch { toast.error("Failed to create project"); }
     finally { setCreating(false); }
   }
@@ -763,10 +783,23 @@ export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
               <Textarea id="description" placeholder="Optional" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
             </div>
 
-            {/* Auto deploy */}
-            <div className="flex items-center gap-3">
-              <Switch id="auto-deploy" checked={autoDeploy} onCheckedChange={setAutoDeploy} />
-              <Label htmlFor="auto-deploy">Auto Deploy</Label>
+            {/* Toggles */}
+            <div className="grid gap-3">
+              <div className="flex items-center gap-3">
+                <Switch id="persist-data" checked={persistData} onCheckedChange={setPersistData} />
+                <div>
+                  <Label htmlFor="persist-data">Persistent Storage</Label>
+                  {templateVolumes.length > 0 && persistData && (
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {templateVolumes.map((v) => v.mountPath).join(", ")}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <Switch id="auto-deploy" checked={autoDeploy} onCheckedChange={setAutoDeploy} />
+                <Label htmlFor="auto-deploy">Auto Deploy</Label>
+              </div>
             </div>
 
               </>
