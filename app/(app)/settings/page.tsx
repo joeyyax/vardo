@@ -1,8 +1,5 @@
 import { redirect } from "next/navigation";
-import { db } from "@/lib/db";
-import { orgEnvVars } from "@/lib/db/schema";
 import { getCurrentOrg } from "@/lib/auth/session";
-import { eq } from "drizzle-orm";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { OrgEnvVarsEditor } from "./org-env-vars";
 
@@ -14,16 +11,6 @@ export default async function SettingsPage() {
   }
 
   const orgId = orgData.organization.id;
-
-  const vars = await db.query.orgEnvVars.findMany({
-    where: eq(orgEnvVars.organizationId, orgId),
-  });
-
-  // Mask secrets for initial display
-  const safeVars = vars.map((v) => ({
-    ...v,
-    value: v.isSecret ? "" : v.value,
-  }));
 
   return (
     <div className="space-y-6">
@@ -42,10 +29,7 @@ export default async function SettingsPage() {
         </TabsList>
 
         <TabsContent value="variables" className="pt-4">
-          <OrgEnvVarsEditor
-            orgId={orgId}
-            initialVars={safeVars}
-          />
+          <OrgEnvVarsEditor orgId={orgId} />
         </TabsContent>
 
         <TabsContent value="domains" className="pt-4">

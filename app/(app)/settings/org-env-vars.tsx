@@ -1,111 +1,142 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { Loader2, Plus, Pencil, X, EyeOff, Eye } from "lucide-react";
-import { toast } from "sonner";
+import { useState, useRef, useCallback, useEffect } from "react";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import {
-  BottomSheet,
-  BottomSheetContent,
-  BottomSheetFooter,
-  BottomSheetHeader,
-  BottomSheetTitle,
-  BottomSheetDescription,
-} from "@/components/ui/bottom-sheet";
-
-type OrgVar = {
-  id: string;
-  key: string;
-  value: string;
-  description: string | null;
-  isSecret: boolean | null;
-};
+import { toast } from "sonner";
 
 type Props = {
   orgId: string;
-  initialVars: OrgVar[];
 };
 
-export function OrgEnvVarsEditor({ orgId, initialVars }: Props) {
-  const router = useRouter();
-  const [editOpen, setEditOpen] = useState(false);
+type Suggestion = {
+  label: string;
+  detail: string;
+  insert: string;
+};
+
+export function OrgEnvVarsEditor({ orgId }: Props) {
+  const [content, setContent] = useState("");
   const [saving, setSaving] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
+  const [loaded, setLoaded] = useState(false);
+  const [modified, setModified] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [selectedSuggestion, setSelectedSuggestion] = useState(0);
+  const [cursorPosition, setCursorPosition] = useState(0);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Form state
-  const [editId, setEditId] = useState<string | null>(null);
-  const [key, setKey] = useState("");
-  const [value, setValue] = useState("");
-  const [description, setDescription] = useState("");
-  const [isSecret, setIsSecret] = useState(false);
+  useEffect(() => {
+    async function load() {
+      try {
+        const res = await fetch(`/api/v1/organizations/${orgId}/env-vars`);
+        if (res.ok) {
+          const data = await res.json();
+          const vars = data.envVars || [];
+          if (vars.length > 0) {
+            setContent(
+              vars
+                .map((v: { key: string; value: string; isSecret: boolean | null }) =>
+                  v.isSecret ? `${v.key}=` : `${v.key}=${v.value}`
+                )
+                .join("\n")
+            );
+          }
+        }
+      } catch { /* start empty */ }
+      setLoaded(true);
+    }
+    load();
+  }, [orgId]);
 
-  function resetForm() {
-    setEditId(null);
-    setKey("");
-    setValue("");
-    setDescription("");
-    setIsSecret(false);
+  const buildSuggestions = useCallback((text: string, cursor: number) => {
+    const beforeCursor = text.slice(0, cursor);
+    const currentLine = beforeCursor.split("\n").pop() || "";
+
+    if (currentLine === "" || /^[A-Z_]*$/.test(currentLine)) {
+      const commonKeys = [
+        "API_KEY", "SECRET_KEY", "DATABASE_URL", "REDIS_URL",
+        "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD",
+        "S3_BUCKET", "S3_REGION", "S3_ACCESS_KEY", "S3_SECRET_KEY",
+        "SENTRY_DSN", "LOG_LEVEL", "NODE_ENV",
+      ];
+      const existing = new Set(
+        text.split("\n").filter((l) => l.includes("=")).map((l) => l.split("=")[0].trim())
+      );
+      const filtered = commonKeys
+        .filter((k) => !existing.has(k))
+        .filter((k) => k.toLowerCase().includes(currentLine.toLowerCase()))
+        .map((k) => ({ label: k, detail: "Common variable", insert: `${k}=` }));
+
+      if (filtered.length > 0 && currentLine.length > 0) {
+        setSuggestions(filtered);
+        setShowSuggestions(true);
+        setSelectedSuggestion(0);
+        return;
+      }
+    }
+    setShowSuggestions(false);
+  }, []);
+
+  function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    setContent(e.target.value);
+    setModified(true);
+    setCursorPosition(e.target.selectionStart);
+    buildSuggestions(e.target.value, e.target.selectionStart);
   }
 
-  function openAdd() {
-    resetForm();
-    setEditOpen(true);
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (!showSuggestions) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setSelectedSuggestion((p) => Math.min(p + 1, suggestions.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setSelectedSuggestion((p) => Math.max(p - 1, 0));
+    } else if (e.key === "Tab" || e.key === "Enter") {
+      if (suggestions.length > 0) {
+        e.preventDefault();
+        applySuggestion(suggestions[selectedSuggestion]);
+      }
+    } else if (e.key === "Escape") {
+      setShowSuggestions(false);
+    }
   }
 
-  function openEdit(v: OrgVar) {
-    setEditId(v.id);
-    setKey(v.key);
-    setValue(v.value);
-    setDescription(v.description || "");
-    setIsSecret(v.isSecret ?? false);
-    setEditOpen(true);
+  function applySuggestion(s: Suggestion) {
+    if (!textareaRef.current) return;
+    const beforeCursor = content.slice(0, cursorPosition);
+    const afterCursor = content.slice(cursorPosition);
+    const currentLine = beforeCursor.split("\n").pop() || "";
+    const lineStart = beforeCursor.length - currentLine.length;
+    const newContent = content.slice(0, lineStart) + s.insert + afterCursor;
+    const newPos = lineStart + s.insert.length;
+    setContent(newContent);
+    setModified(true);
+    setShowSuggestions(false);
+    requestAnimationFrame(() => {
+      textareaRef.current!.selectionStart = newPos;
+      textareaRef.current!.selectionEnd = newPos;
+      textareaRef.current!.focus();
+    });
   }
 
   async function handleSave() {
-    if (!key.trim()) return;
     setSaving(true);
     try {
-      if (editId) {
-        // Update via PUT with single var
-        const res = await fetch(`/api/v1/organizations/${orgId}/env-vars`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            vars: [{ key: key.trim(), value, isSecret }],
-          }),
-        });
-        if (!res.ok) {
-          const data = await res.json();
-          toast.error(data.error || "Failed to update");
-          return;
-        }
-        toast.success("Variable updated");
-      } else {
-        const res = await fetch(`/api/v1/organizations/${orgId}/env-vars`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            key: key.trim(),
-            value,
-            description: description.trim() || undefined,
-            isSecret,
-          }),
-        });
-        if (!res.ok) {
-          const data = await res.json();
-          toast.error(data.error || "Failed to create");
-          return;
-        }
-        toast.success("Variable added");
+      const res = await fetch(`/api/v1/organizations/${orgId}/env-vars`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        toast.error(data.error || "Failed to save");
+        return;
       }
-      setEditOpen(false);
-      resetForm();
-      router.refresh();
+      const data = await res.json();
+      toast.success(`${data.created} added, ${data.updated} updated`);
+      setModified(false);
     } catch {
       toast.error("Failed to save");
     } finally {
@@ -113,219 +144,91 @@ export function OrgEnvVarsEditor({ orgId, initialVars }: Props) {
     }
   }
 
-  async function handleDelete(id: string) {
-    setDeletingId(id);
-    try {
-      const res = await fetch(`/api/v1/organizations/${orgId}/env-vars`, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
-      });
-      if (!res.ok) {
-        toast.error("Failed to delete");
-        return;
-      }
-      toast.success("Variable deleted");
-      router.refresh();
-    } catch {
-      toast.error("Failed to delete");
-    } finally {
-      setDeletingId(null);
-    }
+  function highlightContent(text: string): string {
+    return text
+      .split("\n")
+      .map((line) => {
+        if (line.startsWith("#"))
+          return `<span class="text-zinc-500">${esc(line)}</span>`;
+        const eq = line.indexOf("=");
+        if (eq === -1) return esc(line);
+        const key = line.slice(0, eq);
+        const val = line.slice(eq + 1);
+        return `<span class="text-amber-400">${esc(key)}</span><span class="text-zinc-500">=</span>${esc(val)}`;
+      })
+      .join("\n");
   }
 
-  function toggleReveal(id: string) {
-    setRevealedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  if (!loaded) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="size-5 animate-spin text-muted-foreground" />
+      </div>
+    );
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm text-muted-foreground">
-            Shared across all projects. Reference with{" "}
-            <code className="bg-muted px-1 py-0.5 rounded text-xs">{"${org.VAR_NAME}"}</code>
-          </p>
-        </div>
-        <Button size="sm" onClick={openAdd}>
-          <Plus className="mr-1.5 size-4" />
-          Add Variable
+        <p className="text-xs text-muted-foreground">
+          Shared across all projects. Reference with{" "}
+          <code className="bg-muted px-1 py-0.5 rounded">{"${org.KEY}"}</code>. Press Tab for autocomplete.
+        </p>
+        <Button size="sm" onClick={handleSave} disabled={saving || !modified}>
+          {saving ? (
+            <><Loader2 className="mr-1.5 size-4 animate-spin" />Saving...</>
+          ) : modified ? "Save Changes" : "Saved"}
         </Button>
       </div>
 
-      {initialVars.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
-          <p className="text-sm text-muted-foreground">
-            No shared variables configured.
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Add variables here that can be referenced from any project.
-          </p>
+      <div className="relative rounded-lg border bg-zinc-950 min-h-[400px]">
+        <div
+          className="absolute inset-0 p-4 font-mono text-sm leading-6 whitespace-pre-wrap overflow-auto pointer-events-none"
+          aria-hidden
+        >
+          {content ? (
+            <div dangerouslySetInnerHTML={{ __html: highlightContent(content) }} />
+          ) : (
+            <span className="text-zinc-600">{"# Organization-wide shared variables\n# Available to all projects via ${org.KEY}\n\nAPI_KEY=your-api-key\nSMTP_HOST=smtp.example.com"}</span>
+          )}
         </div>
-      ) : (
-        <div className="space-y-2">
-          {initialVars.map((v) => (
-            <div
-              key={v.id}
-              className="squircle flex items-center justify-between gap-4 rounded-lg border bg-card p-4"
-            >
-              <div className="flex items-center gap-4 min-w-0 flex-1">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium font-mono">{v.key}</p>
-                    {v.isSecret && (
-                      <EyeOff className="size-3.5 text-muted-foreground" />
-                    )}
-                  </div>
-                  {v.description && (
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {v.description}
-                    </p>
-                  )}
-                </div>
-                {v.value && (
-                  <div className="flex items-center gap-1.5 ml-auto mr-4">
-                    <span className="text-xs font-mono text-muted-foreground truncate max-w-[200px]">
-                      {v.isSecret && !revealedIds.has(v.id) ? "••••••••" : v.value}
-                    </span>
-                    {v.isSecret && (
-                      <button
-                        type="button"
-                        onClick={() => toggleReveal(v.id)}
-                        className="text-muted-foreground hover:text-foreground transition-colors"
-                      >
-                        {revealedIds.has(v.id) ? (
-                          <EyeOff className="size-3" />
-                        ) : (
-                          <Eye className="size-3" />
-                        )}
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-              <div className="flex items-center gap-1 shrink-0">
-                <Button size="sm" variant="ghost" onClick={() => openEdit(v)}>
-                  <Pencil className="size-3.5" />
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="text-destructive hover:text-destructive"
-                  disabled={deletingId === v.id}
-                  onClick={() => handleDelete(v.id)}
-                >
-                  {deletingId === v.id ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <X className="size-3.5" />
-                  )}
-                </Button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
 
-      <BottomSheet
-        open={editOpen}
-        onOpenChange={(v) => {
-          setEditOpen(v);
-          if (!v) resetForm();
-        }}
-      >
-        <BottomSheetContent>
-          <BottomSheetHeader>
-            <BottomSheetTitle>
-              {editId ? "Edit variable" : "Add shared variable"}
-            </BottomSheetTitle>
-            <BottomSheetDescription>
-              {editId
-                ? "Update this organization-level variable."
-                : "Available to all projects via ${org.KEY}."}
-            </BottomSheetDescription>
-          </BottomSheetHeader>
+        <textarea
+          ref={textareaRef}
+          value={content}
+          onChange={handleChange}
+          onKeyDown={handleKeyDown}
+          onClick={(e) => { setCursorPosition(e.currentTarget.selectionStart); setShowSuggestions(false); }}
+          className="relative w-full p-4 font-mono text-sm leading-6 text-transparent caret-zinc-400 bg-transparent resize-none focus:outline-none min-h-[400px] selection:bg-zinc-700/50"
+          spellCheck={false}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+        />
 
-          <div className="flex-1 overflow-y-auto px-6 pb-6">
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label htmlFor="org-var-key">Key</Label>
-                <Input
-                  id="org-var-key"
-                  placeholder="SHARED_API_KEY"
-                  className="font-mono"
-                  value={key}
-                  disabled={!!editId}
-                  onChange={(e) =>
-                    setKey(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ""))
-                  }
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="org-var-value">Value</Label>
-                <Input
-                  id="org-var-value"
-                  placeholder="Enter value"
-                  className="font-mono"
-                  type={isSecret ? "password" : "text"}
-                  value={value}
-                  onChange={(e) => setValue(e.target.value)}
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="org-var-desc">Description</Label>
-                <Input
-                  id="org-var-desc"
-                  placeholder="Optional — what this variable is for"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                />
-              </div>
-
-              <div className="flex items-center gap-3">
-                <Switch
-                  id="org-var-secret"
-                  checked={isSecret}
-                  onCheckedChange={setIsSecret}
-                />
-                <Label htmlFor="org-var-secret">Secret</Label>
-                <span className="text-xs text-muted-foreground">
-                  Secret values are masked in the UI
-                </span>
-              </div>
-            </div>
+        {showSuggestions && suggestions.length > 0 && (
+          <div className="absolute z-50 mt-1 w-72 rounded-lg border bg-popover p-1 shadow-lg" style={{ left: "1rem" }}>
+            {suggestions.slice(0, 8).map((s, i) => (
+              <button
+                key={s.label}
+                type="button"
+                className={`flex items-center justify-between w-full rounded-md px-3 py-1.5 text-sm ${
+                  i === selectedSuggestion ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"
+                }`}
+                onMouseDown={(e) => { e.preventDefault(); applySuggestion(s); }}
+                onMouseEnter={() => setSelectedSuggestion(i)}
+              >
+                <span className="font-mono text-xs">{s.label}</span>
+                <span className="text-xs text-muted-foreground">{s.detail}</span>
+              </button>
+            ))}
           </div>
-
-          <BottomSheetFooter>
-            <Button
-              variant="outline"
-              onClick={() => setEditOpen(false)}
-              disabled={saving}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSave}
-              disabled={saving || !key.trim()}
-            >
-              {saving ? (
-                <><Loader2 className="mr-2 size-4 animate-spin" />Saving...</>
-              ) : editId ? (
-                "Update"
-              ) : (
-                "Add Variable"
-              )}
-            </Button>
-          </BottomSheetFooter>
-        </BottomSheetContent>
-      </BottomSheet>
+        )}
+      </div>
     </div>
   );
+}
+
+function esc(s: string) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
