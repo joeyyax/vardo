@@ -18,7 +18,6 @@ import {
   FileText,
   Variable,
   ChevronDown,
-  ScrollText,
   Check,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -45,6 +44,7 @@ import {
   BottomSheetDescription,
 } from "@/components/ui/bottom-sheet";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
+import { LogViewer } from "@/components/log-viewer";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -248,8 +248,6 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [] }: Projec
 
   const [deploying, setDeploying] = useState(false);
   const [viewingLogId, setViewingLogId] = useState<string | null>(null);
-  const [containerLogs, setContainerLogs] = useState<string | null>(null);
-  const [containerLogsLoading, setContainerLogsLoading] = useState(false);
 
   // Tag management state
   const [tagPopoverOpen, setTagPopoverOpen] = useState(false);
@@ -1009,53 +1007,9 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [] }: Projec
         </TabsContent>
 
         <TabsContent value="logs" className="pt-4">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">
-                Live container output from the running project.
-              </p>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={containerLogsLoading}
-                onClick={async () => {
-                  setContainerLogsLoading(true);
-                  try {
-                    const res = await fetch(
-                      `/api/v1/organizations/${orgId}/projects/${project.id}/logs`
-                    );
-                    if (res.ok) {
-                      const data = await res.json();
-                      setContainerLogs(data.logs || "No output");
-                    } else {
-                      setContainerLogs("Failed to fetch logs");
-                    }
-                  } catch {
-                    setContainerLogs("Failed to fetch logs");
-                  } finally {
-                    setContainerLogsLoading(false);
-                  }
-                }}
-              >
-                {containerLogsLoading ? (
-                  <><Loader2 className="mr-1.5 size-4 animate-spin" />Loading...</>
-                ) : (
-                  <><ScrollText className="mr-1.5 size-4" />Refresh</>
-                )}
-              </Button>
-            </div>
-            <div className="rounded-lg border bg-black/50 p-4 min-h-[300px] max-h-[500px] overflow-auto">
-              {containerLogs ? (
-                <pre className="text-xs font-mono text-green-400 whitespace-pre-wrap">
-                  {containerLogs}
-                </pre>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  Click Refresh to load container logs.
-                </p>
-              )}
-            </div>
-          </div>
+          <LogViewer
+            streamUrl={`/api/v1/organizations/${orgId}/projects/${project.id}/logs/stream`}
+          />
         </TabsContent>
 
         <TabsContent value="terminal" className="pt-4">
