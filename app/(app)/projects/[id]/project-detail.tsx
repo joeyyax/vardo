@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
@@ -209,6 +209,19 @@ function formatUptime(date: Date): string {
   if (hours < 24) return `${hours}h ${minutes % 60}m`;
   const days = Math.floor(hours / 24);
   return `${days}d ${hours % 24}h`;
+}
+
+function Uptime({ since }: { since: Date }) {
+  const [text, setText] = useState(formatUptime(since));
+  useEffect(() => {
+    const interval = setInterval(() => setText(formatUptime(since)), 1000);
+    return () => clearInterval(interval);
+  }, [since]);
+  return (
+    <span className="ml-1.5 text-status-success/70 text-xs font-normal tabular-nums">
+      {text}
+    </span>
+  );
 }
 
 function formatDuration(ms: number) {
@@ -543,9 +556,7 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
                     {(() => {
                       const lastDeploy = project.deployments.find((d) => d.status === "success");
                       return lastDeploy ? (
-                        <span className="ml-1.5 text-status-success/70 text-xs font-normal">
-                          {formatUptime(lastDeploy.finishedAt || lastDeploy.startedAt)}
-                        </span>
+                        <Uptime since={lastDeploy.finishedAt || lastDeploy.startedAt} />
                       ) : null;
                     })()}
                     <ChevronDown className="ml-1.5 size-3.5" />

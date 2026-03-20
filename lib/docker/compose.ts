@@ -49,9 +49,9 @@ export function generateComposeForImage(opts: {
     image: imageName,
   };
 
-  if (containerPort) {
-    service.ports = [`${containerPort}:${containerPort}`];
-  }
+  // Don't map ports to host — Traefik routes via Docker network
+  // The containerPort is used in Traefik labels, not in port bindings
+  // Expose is implicit in Docker networking
 
   if (envVars && Object.keys(envVars).length > 0) {
     service.environment = { ...envVars };
@@ -126,7 +126,13 @@ export function injectTraefikLabels(
     labels[`traefik.http.routers.${projectName}.tls.certresolver`] = certResolver;
   }
 
-  const updatedService: ComposeService = { ...existing, labels };
+  // Remove host port bindings — Traefik handles external access
+  // Keep only the internal port exposure for Docker networking
+  const updatedService: ComposeService = {
+    ...existing,
+    labels,
+    ports: undefined,
+  };
 
   return {
     ...compose,
