@@ -17,6 +17,9 @@ import {
   Terminal,
   FileText,
   Variable,
+  ChevronDown,
+  ScrollText,
+  Check,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageToolbar } from "@/components/page-toolbar";
@@ -28,6 +31,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   BottomSheet,
   BottomSheetContent,
@@ -44,6 +52,7 @@ type Deployment = {
   trigger: "manual" | "webhook" | "api" | "rollback";
   gitSha: string | null;
   durationMs: number | null;
+  log: string | null;
   startedAt: Date;
   finishedAt: Date | null;
 };
@@ -94,12 +103,20 @@ type Project = {
   domains: Domain[];
   envVars: EnvVar[];
   environments: Environment[];
+  projectTags?: { tag: Tag }[];
+};
+
+type Tag = {
+  id: string;
+  name: string;
+  color: string;
 };
 
 type ProjectDetailProps = {
   project: Project;
   orgId: string;
   userRole: string;
+  allTags?: Tag[];
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -170,7 +187,7 @@ function formatDuration(ms: number) {
   return `${minutes}m ${remaining}s`;
 }
 
-export function ProjectDetail({ project, orgId, userRole }: ProjectDetailProps) {
+export function ProjectDetail({ project, orgId, userRole, allTags = [] }: ProjectDetailProps) {
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -212,6 +229,9 @@ export function ProjectDetail({ project, orgId, userRole }: ProjectDetailProps) 
   const [deletingDomainId, setDeletingDomainId] = useState<string | null>(null);
 
   const [deploying, setDeploying] = useState(false);
+  const [viewingLogId, setViewingLogId] = useState<string | null>(null);
+  const [containerLogs, setContainerLogs] = useState<string | null>(null);
+  const [containerLogsLoading, setContainerLogsLoading] = useState(false);
 
   const canDelete = userRole === "owner" || userRole === "admin";
 
@@ -559,6 +579,25 @@ export function ProjectDetail({ project, orgId, userRole }: ProjectDetailProps) 
           </p>
         )}
 
+        {/* Tags */}
+        {(project.projectTags?.length ?? 0) > 0 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            {project.projectTags?.map(({ tag }) => (
+              <span
+                key={tag.id}
+                className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium border"
+                style={{ borderColor: tag.color, color: tag.color }}
+              >
+                <span
+                  className="size-2 rounded-full"
+                  style={{ backgroundColor: tag.color }}
+                />
+                {tag.name}
+              </span>
+            ))}
+          </div>
+        )}
+
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <DetailField label="Source">
             {project.source === "git" ? "Git Repository" : "Direct"}
@@ -646,6 +685,12 @@ export function ProjectDetail({ project, orgId, userRole }: ProjectDetailProps) 
               </Badge>
             )}
           </TabsTrigger>
+          <TabsTrigger value="logs">
+            Logs
+          </TabsTrigger>
+          <TabsTrigger value="metrics">
+            Metrics
+          </TabsTrigger>
           <TabsTrigger value="environments">
             Environments
             {project.environments.length > 0 && (
@@ -666,31 +711,47 @@ export function ProjectDetail({ project, orgId, userRole }: ProjectDetailProps) 
           ) : (
             <div className="space-y-2">
               {project.deployments.map((deployment) => (
-                <div
-                  key={deployment.id}
-                  className="squircle flex items-center justify-between gap-4 rounded-lg border bg-card p-4"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <DeploymentStatusBadge status={deployment.status} />
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium capitalize">
-                        {deployment.trigger}
-                      </p>
-                      {deployment.gitSha && (
-                        <p className="truncate text-xs text-muted-foreground font-mono">
-                          {deployment.gitSha.slice(0, 7)}
+                <div key={deployment.id} className="squircle rounded-lg border bg-card overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setViewingLogId(viewingLogId === deployment.id ? null : deployment.id)}
+                    className="flex items-center justify-between gap-4 p-4 w-full text-left hover:bg-accent/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <DeploymentStatusBadge status={deployment.status} />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium capitalize">
+                          {deployment.trigger}
                         </p>
-                      )}
+                        {deployment.gitSha && (
+                          <p className="truncate text-xs text-muted-foreground font-mono">
+                            {deployment.gitSha.slice(0, 7)}
+                          </p>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-4 text-xs text-muted-foreground shrink-0">
-                    {deployment.durationMs != null && (
-                      <span>{formatDuration(deployment.durationMs)}</span>
-                    )}
-                    <span>
-                      {new Date(deployment.startedAt).toLocaleString()}
-                    </span>
-                  </div>
+                    <div className="flex items-center gap-4 text-xs text-muted-foreground shrink-0">
+                      {deployment.durationMs != null && (
+                        <span>{formatDuration(deployment.durationMs)}</span>
+                      )}
+                      <span>
+                        {new Date(deployment.startedAt).toLocaleString()}
+                      </span>
+                      <ChevronDown className={`size-4 transition-transform ${viewingLogId === deployment.id ? "rotate-180" : ""}`} />
+                    </div>
+                  </button>
+                  {viewingLogId === deployment.id && deployment.log && (
+                    <div className="border-t bg-black/50 p-4 max-h-80 overflow-auto">
+                      <pre className="text-xs font-mono text-green-400 whitespace-pre-wrap">
+                        {deployment.log}
+                      </pre>
+                    </div>
+                  )}
+                  {viewingLogId === deployment.id && !deployment.log && (
+                    <div className="border-t p-4">
+                      <p className="text-xs text-muted-foreground">No log output for this deployment.</p>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -830,6 +891,67 @@ export function ProjectDetail({ project, orgId, userRole }: ProjectDetailProps) 
               ))}
             </div>
           )}
+        </TabsContent>
+
+        <TabsContent value="logs" className="pt-4">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
+                Live container output from the running project.
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={containerLogsLoading}
+                onClick={async () => {
+                  setContainerLogsLoading(true);
+                  try {
+                    const res = await fetch(
+                      `/api/v1/organizations/${orgId}/projects/${project.id}/logs`
+                    );
+                    if (res.ok) {
+                      const data = await res.json();
+                      setContainerLogs(data.logs || "No output");
+                    } else {
+                      setContainerLogs("Failed to fetch logs");
+                    }
+                  } catch {
+                    setContainerLogs("Failed to fetch logs");
+                  } finally {
+                    setContainerLogsLoading(false);
+                  }
+                }}
+              >
+                {containerLogsLoading ? (
+                  <><Loader2 className="mr-1.5 size-4 animate-spin" />Loading...</>
+                ) : (
+                  <><ScrollText className="mr-1.5 size-4" />Refresh</>
+                )}
+              </Button>
+            </div>
+            <div className="rounded-lg border bg-black/50 p-4 min-h-[300px] max-h-[500px] overflow-auto">
+              {containerLogs ? (
+                <pre className="text-xs font-mono text-green-400 whitespace-pre-wrap">
+                  {containerLogs}
+                </pre>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Click Refresh to load container logs.
+                </p>
+              )}
+            </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="metrics" className="pt-4">
+          <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
+            <p className="text-sm text-muted-foreground">
+              Container metrics coming soon.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              CPU, memory, network, and disk usage for each container.
+            </p>
+          </div>
         </TabsContent>
 
         <TabsContent value="environments" className="space-y-4 pt-4">
