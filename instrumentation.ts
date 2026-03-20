@@ -2,7 +2,12 @@ export async function register() {
   // Only run on the server, not during build
   if (process.env.NEXT_RUNTIME === "nodejs") {
     console.log("[instrumentation] Starting metrics collector...");
-    const { startCollector } = await import("@/lib/metrics/collector");
-    startCollector();
+    try {
+      const { startCollector } = await import("./lib/metrics/collector");
+      startCollector();
+      console.log("[instrumentation] Metrics collector started");
+    } catch (err) {
+      console.error("[instrumentation] Failed to start collector:", err);
+    }
   }
 }

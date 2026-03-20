@@ -5,6 +5,7 @@ import { requireOrg } from "@/lib/auth/session";
 import { eq } from "drizzle-orm";
 import { fetchAllContainerMetrics } from "@/lib/metrics/cadvisor";
 import { getSystemDiskUsage, getSystemInfo, type DiskUsage, type SystemInfo } from "@/lib/docker/client";
+import { isCollectorRunning, startCollector } from "@/lib/metrics/collector";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -25,6 +26,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       where: eq(projects.organizationId, orgId),
       columns: { id: true, name: true, displayName: true, status: true },
     });
+
+    // Ensure metrics collector is running (fallback if instrumentation didn't start it)
+    if (!isCollectorRunning()) {
+      startCollector();
+    }
 
     const encoder = new TextEncoder();
     const stream = new ReadableStream({

@@ -3,13 +3,20 @@ import { storeMetrics, storeDiskUsage } from "./store";
 import { getSystemDiskUsage } from "@/lib/docker/client";
 
 let interval: ReturnType<typeof setInterval> | null = null;
+let started = false;
 
 /**
  * Start the metrics collector.
  * Polls cAdvisor every 30s and stores results in Redis TimeSeries.
  */
+export function isCollectorRunning() {
+  return started;
+}
+
 export function startCollector(intervalMs = 30000) {
-  if (interval) return; // Already running
+  if (started) return; // Already running
+  started = true;
+  console.log("[collector] Starting metrics collection every", intervalMs, "ms");
 
   async function collect() {
     try {
