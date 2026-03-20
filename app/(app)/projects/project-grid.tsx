@@ -78,6 +78,7 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
   const [dragPosition, setDragPosition] = useState<"before" | "on" | "after" | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [creatingGroup, setCreatingGroup] = useState<{ projectIds: string[] } | null>(null);
+  const [confirmDeleteGroupId, setConfirmDeleteGroupId] = useState<string | null>(null);
   const [newGroupName, setNewGroupName] = useState("");
   const groupNameRef = useRef<HTMLInputElement>(null);
 
@@ -294,6 +295,29 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
     }
   }
 
+  async function handleDeleteGroup(groupId: string) {
+    try {
+      // Remove all projects from the group first
+      const groupEntry = groupedMap.get(groupId);
+      if (groupEntry) {
+        for (const p of groupEntry.projects) {
+          await removeFromGroup(p.id, groupId);
+        }
+      }
+      // Delete the group itself
+      await fetch(`/api/v1/organizations/${orgId}/groups`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: groupId }),
+      });
+      setConfirmDeleteGroupId(null);
+      toast.success("Group removed");
+      router.refresh();
+    } catch {
+      toast.error("Failed to remove group");
+    }
+  }
+
   const showFilters = allTags.length > 0 || allGroups.length > 0;
 
   return (
@@ -385,9 +409,37 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
             onDragLeave={handleDragLeave}
             onDrop={(e) => handleDrop(e, `group-${groupId}`)}
           >
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 group/header">
               <span className="text-sm font-medium">{group.name}</span>
               <span className="text-xs text-muted-foreground">{groupProjects.length}</span>
+              {confirmDeleteGroupId === groupId ? (
+                <div className="flex items-center gap-1.5 ml-2">
+                  <span className="text-xs text-muted-foreground">Remove group? Projects will be ungrouped.</span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2 text-xs text-status-error hover:text-status-error"
+                    onClick={() => handleDeleteGroup(groupId)}
+                  >
+                    Remove
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2 text-xs"
+                    onClick={() => setConfirmDeleteGroupId(null)}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setConfirmDeleteGroupId(groupId)}
+                  className="opacity-0 group-hover/header:opacity-100 p-1 rounded text-muted-foreground/40 hover:text-muted-foreground transition-all"
+                >
+                  <X className="size-3" />
+                </button>
+              )}
             </div>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {groupProjects.map((project) => (
