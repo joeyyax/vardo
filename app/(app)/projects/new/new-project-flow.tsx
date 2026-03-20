@@ -866,27 +866,25 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
                       </p>
                     </div>
                   </div>
-                  {createRepo && (
-                    {installations.length > 1 && (
-                      <div className="grid gap-2 ml-10">
-                        <Label>GitHub Account</Label>
-                        <Select
-                          value={selectedInstallation || installations[0]?.id}
-                          onValueChange={setSelectedInstallation}
-                        >
-                          <SelectTrigger className="w-64">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {installations.map((inst) => (
-                              <SelectItem key={inst.id} value={inst.id}>
-                                {inst.accountLogin}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
+                  {createRepo && installations.length > 1 && (
+                    <div className="grid gap-2 ml-10">
+                      <Label>GitHub Account</Label>
+                      <Select
+                        value={selectedInstallation || installations[0]?.id}
+                        onValueChange={setSelectedInstallation}
+                      >
+                        <SelectTrigger className="w-64">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {installations.map((inst) => (
+                            <SelectItem key={inst.id} value={inst.id}>
+                              {inst.accountLogin}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   )}
                 </div>
               )}
