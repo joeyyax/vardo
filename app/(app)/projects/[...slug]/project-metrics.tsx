@@ -102,11 +102,11 @@ function ContainerRow({ stats }: { stats: ContainerStatsSnapshot }) {
         <span className="tabular-nums w-24 text-right" title="Memory">
           {formatBytes(stats.memoryUsage)} / {formatBytes(stats.memoryLimit)}
         </span>
-        <span className="tabular-nums w-20 text-right" title="Network RX">
-          {formatBytes(stats.networkRx)} rx
+        <span className="tabular-nums w-20 text-right" title="Network">
+          ↓{formatBytes(stats.networkRx)} ↑{formatBytes(stats.networkTx)}
         </span>
-        <span className="tabular-nums w-20 text-right" title="Network TX">
-          {formatBytes(stats.networkTx)} tx
+        <span className="tabular-nums w-20 text-right" title="Disk I/O">
+          R{formatBytes(stats.blockRead)} W{formatBytes(stats.blockWrite)}
         </span>
       </div>
     </div>

@@ -162,6 +162,22 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
     (sum, ps) => sum + ps.containers.reduce((s, c) => s + c.memoryUsage, 0),
     0
   );
+  const totalNetworkRx = allStats.reduce(
+    (sum, ps) => sum + ps.containers.reduce((s, c) => s + c.networkRx, 0),
+    0
+  );
+  const totalNetworkTx = allStats.reduce(
+    (sum, ps) => sum + ps.containers.reduce((s, c) => s + c.networkTx, 0),
+    0
+  );
+  const totalDiskRead = allStats.reduce(
+    (sum, ps) => sum + ps.containers.reduce((s, c) => s + c.blockRead, 0),
+    0
+  );
+  const totalDiskWrite = allStats.reduce(
+    (sum, ps) => sum + ps.containers.reduce((s, c) => s + c.blockWrite, 0),
+    0
+  );
   const totalContainers = allStats.reduce(
     (sum, ps) => sum + ps.containers.length,
     0
@@ -171,41 +187,43 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
   return (
     <div className="space-y-6">
       {/* Summary cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <div className="squircle rounded-lg border bg-card px-4 py-3">
-          <p className="text-xs text-muted-foreground">Total CPU</p>
+          <p className="text-xs text-muted-foreground">CPU</p>
           <p className="text-2xl font-semibold tabular-nums mt-1">
-            {anyLoading ? (
-              <Loader2 className="size-5 animate-spin text-muted-foreground" />
-            ) : (
-              `${totalCpu.toFixed(1)}%`
+            {anyLoading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : `${totalCpu.toFixed(1)}%`}
+          </p>
+        </div>
+        <div className="squircle rounded-lg border bg-card px-4 py-3">
+          <p className="text-xs text-muted-foreground">Memory</p>
+          <p className="text-2xl font-semibold tabular-nums mt-1">
+            {anyLoading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : formatBytes(totalMemory)}
+          </p>
+        </div>
+        <div className="squircle rounded-lg border bg-card px-4 py-3">
+          <p className="text-xs text-muted-foreground">Network</p>
+          <p className="text-lg font-semibold tabular-nums mt-1">
+            {anyLoading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : (
+              <><span className="text-muted-foreground text-xs">↓</span> {formatBytes(totalNetworkRx)} <span className="text-muted-foreground text-xs">↑</span> {formatBytes(totalNetworkTx)}</>
             )}
           </p>
         </div>
         <div className="squircle rounded-lg border bg-card px-4 py-3">
-          <p className="text-xs text-muted-foreground">Total Memory</p>
-          <p className="text-2xl font-semibold tabular-nums mt-1">
-            {anyLoading ? (
-              <Loader2 className="size-5 animate-spin text-muted-foreground" />
-            ) : (
-              formatBytes(totalMemory)
+          <p className="text-xs text-muted-foreground">Disk I/O</p>
+          <p className="text-lg font-semibold tabular-nums mt-1">
+            {anyLoading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : (
+              <><span className="text-muted-foreground text-xs">R</span> {formatBytes(totalDiskRead)} <span className="text-muted-foreground text-xs">W</span> {formatBytes(totalDiskWrite)}</>
             )}
           </p>
         </div>
         <div className="squircle rounded-lg border bg-card px-4 py-3">
-          <p className="text-xs text-muted-foreground">Active Projects</p>
-          <p className="text-2xl font-semibold tabular-nums mt-1">
-            {activeProjects}
-          </p>
+          <p className="text-xs text-muted-foreground">Projects</p>
+          <p className="text-2xl font-semibold tabular-nums mt-1">{activeProjects}</p>
         </div>
         <div className="squircle rounded-lg border bg-card px-4 py-3">
           <p className="text-xs text-muted-foreground">Containers</p>
           <p className="text-2xl font-semibold tabular-nums mt-1">
-            {anyLoading ? (
-              <Loader2 className="size-5 animate-spin text-muted-foreground" />
-            ) : (
-              totalContainers
-            )}
+            {anyLoading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : totalContainers}
           </p>
         </div>
       </div>
@@ -259,12 +277,14 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
       ) : (
         <div className="squircle rounded-lg border bg-card overflow-hidden">
           {/* Header */}
-          <div className="grid grid-cols-[1fr_80px_100px_100px_80px] gap-4 px-4 py-2 border-b text-xs text-muted-foreground">
+          <div className="grid grid-cols-[1fr_70px_90px_90px_90px_90px_70px] gap-3 px-4 py-2 border-b text-xs text-muted-foreground">
             <span>Project</span>
             <span className="text-right">CPU</span>
             <span className="text-right">Memory</span>
+            <span className="text-right">Network</span>
+            <span className="text-right">Disk I/O</span>
             <span className="text-right">Limit</span>
-            <span className="text-right">Containers</span>
+            <span className="text-right">Ctrs</span>
           </div>
           <div className="divide-y">
             {projects.map((project) => {
@@ -272,14 +292,19 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
               const cpu = ps?.containers.reduce((s, c) => s + c.cpuPercent, 0) ?? 0;
               const mem = ps?.containers.reduce((s, c) => s + c.memoryUsage, 0) ?? 0;
               const memLimit = ps?.containers.reduce((s, c) => s + c.memoryLimit, 0) ?? 0;
+              const netRx = ps?.containers.reduce((s, c) => s + c.networkRx, 0) ?? 0;
+              const netTx = ps?.containers.reduce((s, c) => s + c.networkTx, 0) ?? 0;
+              const diskR = ps?.containers.reduce((s, c) => s + c.blockRead, 0) ?? 0;
+              const diskW = ps?.containers.reduce((s, c) => s + c.blockWrite, 0) ?? 0;
               const containerCount = ps?.containers.length ?? 0;
               const isActive = project.status === "active";
+              const loading = ps?.loading;
 
               return (
                 <Link
                   key={project.id}
                   href={`/projects/${project.name}/metrics`}
-                  className="grid grid-cols-[1fr_80px_100px_100px_80px] gap-4 px-4 py-3 hover:bg-accent/50 transition-colors items-center"
+                  className="grid grid-cols-[1fr_70px_90px_90px_90px_90px_70px] gap-3 px-4 py-3 hover:bg-accent/50 transition-colors items-center"
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <span
@@ -291,41 +316,27 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
                       {project.displayName}
                     </span>
                   </div>
-                  <span className="text-sm text-right tabular-nums text-muted-foreground">
-                    {ps?.loading ? (
-                      <Loader2 className="size-3.5 animate-spin ml-auto" />
-                    ) : isActive ? (
-                      `${cpu.toFixed(1)}%`
-                    ) : (
-                      "-"
-                    )}
+                  <span className="text-xs text-right tabular-nums text-muted-foreground">
+                    {loading ? <Loader2 className="size-3 animate-spin ml-auto" /> : isActive ? `${cpu.toFixed(1)}%` : "-"}
                   </span>
-                  <span className="text-sm text-right tabular-nums text-muted-foreground">
-                    {ps?.loading ? (
-                      <Loader2 className="size-3.5 animate-spin ml-auto" />
-                    ) : isActive && mem > 0 ? (
-                      formatBytes(mem)
-                    ) : (
-                      "-"
-                    )}
+                  <span className="text-xs text-right tabular-nums text-muted-foreground">
+                    {loading ? <Loader2 className="size-3 animate-spin ml-auto" /> : isActive && mem > 0 ? formatBytes(mem) : "-"}
                   </span>
-                  <span className="text-sm text-right tabular-nums text-muted-foreground">
-                    {ps?.loading ? (
-                      <Loader2 className="size-3.5 animate-spin ml-auto" />
-                    ) : isActive && memLimit > 0 ? (
-                      formatBytes(memLimit)
-                    ) : (
-                      "-"
-                    )}
+                  <span className="text-xs text-right tabular-nums text-muted-foreground">
+                    {loading ? <Loader2 className="size-3 animate-spin ml-auto" /> : isActive && (netRx > 0 || netTx > 0) ? (
+                      <>{formatBytes(netRx)} / {formatBytes(netTx)}</>
+                    ) : "-"}
                   </span>
-                  <span className="text-sm text-right tabular-nums text-muted-foreground">
-                    {ps?.loading ? (
-                      <Loader2 className="size-3.5 animate-spin ml-auto" />
-                    ) : isActive ? (
-                      containerCount
-                    ) : (
-                      "-"
-                    )}
+                  <span className="text-xs text-right tabular-nums text-muted-foreground">
+                    {loading ? <Loader2 className="size-3 animate-spin ml-auto" /> : isActive && (diskR > 0 || diskW > 0) ? (
+                      <>{formatBytes(diskR)} / {formatBytes(diskW)}</>
+                    ) : "-"}
+                  </span>
+                  <span className="text-xs text-right tabular-nums text-muted-foreground">
+                    {loading ? <Loader2 className="size-3 animate-spin ml-auto" /> : isActive && memLimit > 0 ? formatBytes(memLimit) : "-"}
+                  </span>
+                  <span className="text-xs text-right tabular-nums text-muted-foreground">
+                    {loading ? <Loader2 className="size-3 animate-spin ml-auto" /> : isActive ? containerCount : "-"}
                   </span>
                 </Link>
               );
