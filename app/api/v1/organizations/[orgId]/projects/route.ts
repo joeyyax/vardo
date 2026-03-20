@@ -208,11 +208,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     // Unique constraint violation (Postgres error code 23505)
-    if (
-      error instanceof Error &&
-      "code" in error &&
-      (error as { code: string }).code === "23505"
-    ) {
+    const pgCode = error instanceof Error
+      ? ("code" in error ? (error as { code: string }).code : null) ??
+        (error.cause && typeof error.cause === "object" && "code" in error.cause ? (error.cause as { code: string }).code : null)
+      : null;
+    if (pgCode === "23505") {
       return NextResponse.json(
         { error: "A project with this name already exists" },
         { status: 409 }
