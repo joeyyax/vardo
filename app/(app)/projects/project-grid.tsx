@@ -452,7 +452,9 @@ export function ProjectGrid({ projects, allTags, allGroups, orgId }: ProjectGrid
         })}
 
         {/* Ungrouped projects */}
-        {ungrouped.map((project) => (
+        {ungrouped
+          .filter((p) => !creatingGroup?.projectIds.includes(p.id))
+          .map((project) => (
           <ProjectCard key={project.id} project={project} draggingId={draggingId} dragOverId={dragOverId} dragPosition={dragPosition}
             onDragStart={handleDragStart} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} onDragEnd={handleDragEnd} />
         ))}
