@@ -412,9 +412,18 @@ export async function runDeployment(
     const composePath = join(slotDir, "docker-compose.yml");
     await writeFile(composePath, composeToYaml(compose), "utf-8");
 
-    // Write .env
+    // Write .env — resolve template expressions first
     if (Object.keys(envMap).length > 0) {
-      const envContent = Object.entries(envMap).map(([k, v]) => `${k}=${v}`).join("\n");
+      // Resolve ${VAR} self-references and ${project.name} built-ins
+      const resolved: Record<string, string> = {};
+      for (const [k, v] of Object.entries(envMap)) {
+        resolved[k] = v
+          .replace(/\$\{project\.name\}/g, project.name)
+          .replace(/\$\{project\.port\}/g, String(project.containerPort || ""))
+          .replace(/\$\{project\.id\}/g, project.id)
+          .replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_m, ref) => envMap[ref] ?? `\${${ref}}`);
+      }
+      const envContent = Object.entries(resolved).map(([k, v]) => `${k}=${v}`).join("\n");
       await writeFile(join(slotDir, ".env"), envContent, "utf-8");
     }
 
