@@ -347,23 +347,62 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
     }
   }
 
+  const [deployLog, setDeployLog] = useState<string[]>([]);
+
   async function handleDeploy() {
     setDeploying(true);
     setActiveTab("deployments");
+    setDeployLog([]);
+
     try {
       const res = await fetch(
         `/api/v1/organizations/${orgId}/projects/${project.id}/deploy`,
         { method: "POST" }
       );
-      const data = await res.json();
-      if (data.success) {
-        toast.success(`Deployed in ${data.durationMs}ms`);
-      } else {
-        toast.error("Deployment failed");
+
+      if (!res.body) {
+        toast.error("Deployment failed — no response");
+        setDeploying(false);
+        return;
       }
-      if (data.deploymentId) {
-        setViewingLogId(data.deploymentId);
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        let eventType = "";
+        for (const line of lines) {
+          if (line.startsWith("event: ")) {
+            eventType = line.slice(7);
+          } else if (line.startsWith("data: ")) {
+            const data = JSON.parse(line.slice(6));
+            if (eventType === "log") {
+              setDeployLog((prev) => [...prev, data as string]);
+            } else if (eventType === "done") {
+              const result = data as { deploymentId: string; success: boolean; durationMs: number };
+              if (result.success) {
+                toast.success(`Deployed in ${result.durationMs}ms`);
+              } else {
+                toast.error("Deployment failed");
+              }
+              if (result.deploymentId) {
+                setViewingLogId(result.deploymentId);
+              }
+            } else if (eventType === "error") {
+              toast.error((data as { message: string }).message);
+            }
+          }
+        }
       }
+
       router.refresh();
     } catch {
       toast.error("Deployment failed");
@@ -696,8 +735,21 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="deployments" className="pt-4">
-          {project.deployments.length === 0 ? (
+        <TabsContent value="deployments" className="pt-4 space-y-4">
+          {/* Live deploy output */}
+          {deploying && deployLog.length > 0 && (
+            <div className="rounded-lg border bg-black/80 p-4 max-h-80 overflow-auto">
+              <div className="flex items-center gap-2 mb-2">
+                <Loader2 className="size-3.5 animate-spin text-blue-400" />
+                <span className="text-xs text-blue-400 font-medium">Deploying...</span>
+              </div>
+              <pre className="text-xs font-mono text-green-400 whitespace-pre-wrap">
+                {deployLog.join("\n")}
+              </pre>
+            </div>
+          )}
+
+          {project.deployments.length === 0 && !deploying ? (
             <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
               <p className="text-sm text-muted-foreground">
                 No deployments yet.

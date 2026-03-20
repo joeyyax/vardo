@@ -10,6 +10,7 @@ type RouteParams = {
 };
 
 // POST /api/v1/organizations/[orgId]/projects/[projectId]/deploy
+// Returns SSE stream of deploy log lines, final event is the result
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, projectId } = await params;
@@ -31,17 +32,47 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const result = await deployProject({
-      projectId,
-      organizationId: orgId,
-      trigger: "manual",
-      triggeredBy: session.user.id,
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      start(controller) {
+        function sendEvent(event: string, data: unknown) {
+          try {
+            controller.enqueue(
+              encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+            );
+          } catch { /* stream closed */ }
+        }
+
+        deployProject({
+          projectId,
+          organizationId: orgId,
+          trigger: "manual",
+          triggeredBy: session.user.id,
+          onLog: (line) => sendEvent("log", line),
+        }).then((result) => {
+          sendEvent("done", {
+            deploymentId: result.deploymentId,
+            success: result.success,
+            durationMs: result.durationMs,
+          });
+          try { controller.close(); } catch { /* already closed */ }
+        }).catch((err) => {
+          sendEvent("error", { message: err instanceof Error ? err.message : "Deploy failed" });
+          try { controller.close(); } catch { /* already closed */ }
+        });
+
+        request.signal.addEventListener("abort", () => {
+          try { controller.close(); } catch { /* already closed */ }
+        });
+      },
     });
 
-    return NextResponse.json({
-      deploymentId: result.deploymentId,
-      success: result.success,
-      durationMs: result.durationMs,
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
     });
   } catch (error) {
     if (error instanceof Error && error.message === "Unauthorized") {

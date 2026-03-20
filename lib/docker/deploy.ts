@@ -31,6 +31,7 @@ type DeployOpts = {
   trigger: "manual" | "webhook" | "api" | "rollback";
   triggeredBy?: string;
   environmentId?: string;
+  onLog?: (line: string) => void;
 };
 
 type DeployResult = {
@@ -61,7 +62,15 @@ export async function runDeployment(
   opts: DeployOpts
 ): Promise<DeployResult> {
   const startTime = Date.now();
-  const logs: string[] = [];
+  const logLines: string[] = [];
+
+  function log(line: string) {
+    logLines.push(line);
+    opts.onLog?.(line);
+  }
+
+  // Proxy for helper functions that expect { push }
+  const logs = { push: log };
 
   try {
     await db
@@ -69,7 +78,7 @@ export async function runDeployment(
       .set({ status: "running" })
       .where(eq(deployments.id, deploymentId));
 
-    logs.push(`[deploy] Starting deployment ${deploymentId}`);
+    log(`[deploy] Starting deployment ${deploymentId}`);
 
     // Fetch project
     const project = await db.query.projects.findFirst({
@@ -82,8 +91,8 @@ export async function runDeployment(
 
     if (!project) throw new Error("Project not found");
 
-    logs.push(`[deploy] Project: ${project.displayName} (${project.name})`);
-    logs.push(`[deploy] Source: ${project.source}, Type: ${project.deployType}`);
+    log(`[deploy] Project: ${project.displayName} (${project.name})`);
+    log(`[deploy] Source: ${project.source}, Type: ${project.deployType}`);
 
     // Fetch env vars
     const projectEnvVars = await db.query.envVars.findMany({
@@ -92,7 +101,7 @@ export async function runDeployment(
     const envMap: Record<string, string> = {};
     for (const v of projectEnvVars) envMap[v.key] = v.value;
 
-    logs.push(`[deploy] ${projectEnvVars.length} env var(s), ${project.domains.length} domain(s)`);
+    log(`[deploy] ${projectEnvVars.length} env var(s), ${project.domains.length} domain(s)`);
 
     // Step 1: Generate or fetch compose file
     let compose: ComposeFile;
@@ -107,7 +116,7 @@ export async function runDeployment(
         containerPort: project.containerPort ?? undefined,
         envVars: envMap,
       });
-      logs.push(`[deploy] Generated compose for image: ${project.imageName}`);
+      log(`[deploy] Generated compose for image: ${project.imageName}`);
     } else if (project.source === "git" && project.gitUrl) {
       // Git source — clone/pull repo with GitHub App auth if needed
       const repoDir = join(projectDir, "repo");
@@ -132,7 +141,7 @@ export async function runDeployment(
             for (const inst of installations) {
               try {
                 installToken = await getInstallationToken(inst.installationId);
-                logs.push(`[deploy] Got GitHub token via ${inst.accountLogin}`);
+                log(`[deploy] Got GitHub token via ${inst.accountLogin}`);
                 break;
               } catch { /* try next */ }
             }
@@ -147,7 +156,7 @@ export async function runDeployment(
             );
           }
         } catch (err) {
-          logs.push(`[deploy] Warning: GitHub auth — ${err instanceof Error ? err.message : err}`);
+          log(`[deploy] Warning: GitHub auth — ${err instanceof Error ? err.message : err}`);
         }
       }
 
@@ -157,11 +166,11 @@ export async function runDeployment(
           `git -C "${repoDir}" remote set-url origin "${cloneUrl}" && git -C "${repoDir}" fetch origin ${branch} && git -C "${repoDir}" reset --hard origin/${branch}`,
           { timeout: 60000 }
         );
-        logs.push(`[deploy] Pulled latest from ${branch}`);
+        log(`[deploy] Pulled latest from ${branch}`);
       } catch {
         // Fresh clone
         await execAsync(`git clone --depth 1 --branch ${branch} "${cloneUrl}" "${repoDir}"`, { timeout: 60000 });
-        logs.push(`[deploy] Cloned repo (${branch})`);
+        log(`[deploy] Cloned repo (${branch})`);
       }
 
       // Find compose file
@@ -179,7 +188,7 @@ export async function runDeployment(
       for (const candidate of composeCandidates) {
         try {
           composeContent = await readFile(join(root, candidate), "utf-8");
-          logs.push(`[deploy] Found ${candidate}`);
+          log(`[deploy] Found ${candidate}`);
           break;
         } catch { /* try next */ }
       }
@@ -196,10 +205,10 @@ export async function runDeployment(
           try {
             await readFile(join(root, "Dockerfile"), "utf-8");
             buildType = "dockerfile";
-            logs.push(`[deploy] No compose file, found Dockerfile`);
+            log(`[deploy] No compose file, found Dockerfile`);
           } catch {
             buildType = "nixpacks";
-            logs.push(`[deploy] No compose file or Dockerfile, falling back to Nixpacks`);
+            log(`[deploy] No compose file or Dockerfile, falling back to Nixpacks`);
           }
         }
 
@@ -214,7 +223,7 @@ export async function runDeployment(
     } else if (project.composeContent) {
       // Direct compose content
       compose = parseCompose(project.composeContent);
-      logs.push(`[deploy] Parsed compose content`);
+      log(`[deploy] Parsed compose content`);
     } else {
       throw new Error("No image, git repo, or compose content configured");
     }
@@ -248,7 +257,7 @@ export async function runDeployment(
     const slotDir = join(projectDir, newSlot);
     await mkdir(slotDir, { recursive: true });
 
-    logs.push(`[deploy] Active slot: ${activeSlot || "none"}, deploying to: ${newSlot}`);
+    log(`[deploy] Active slot: ${activeSlot || "none"}, deploying to: ${newSlot}`);
 
     // Step 5: Write compose file (without Traefik labels — new container starts but doesn't receive traffic)
     const composePath = join(slotDir, "docker-compose.yml");
@@ -264,11 +273,11 @@ export async function runDeployment(
     try {
       await ensureNetwork(NETWORK_NAME);
     } catch (err) {
-      logs.push(`[deploy] Warning: network — ${err instanceof Error ? err.message : err}`);
+      log(`[deploy] Warning: network — ${err instanceof Error ? err.message : err}`);
     }
 
     // Step 7: Pull and start new slot (no traffic yet)
-    logs.push(`[deploy] Starting ${newSlot} slot...`);
+    log(`[deploy] Starting ${newSlot} slot...`);
     try {
       const { stdout, stderr } = await execAsync(
         `docker compose -f "${composePath}" -p "${newProjectName}" up -d --pull always`,
@@ -282,18 +291,18 @@ export async function runDeployment(
     }
 
     // Step 8: Health check — wait for new slot to be ready
-    logs.push(`[deploy] Waiting for ${newSlot} to be healthy...`);
+    log(`[deploy] Waiting for ${newSlot} to be healthy...`);
     const healthy = await waitForHealthy(newProjectName, composePath, slotDir, logs);
     if (!healthy) {
       // Roll back: tear down the failed new slot
-      logs.push(`[deploy] Health check failed, tearing down ${newSlot}`);
+      log(`[deploy] Health check failed, tearing down ${newSlot}`);
       await execAsync(
         `docker compose -f "${composePath}" -p "${newProjectName}" down --remove-orphans`,
         { cwd: slotDir, timeout: 30000 }
       ).catch(() => {});
       throw new Error(`${newSlot} slot did not become healthy within timeout`);
     }
-    logs.push(`[deploy] ${newSlot} healthy`);
+    log(`[deploy] ${newSlot} healthy`);
 
     // Step 9: Swap traffic — inject Traefik labels into the new slot's compose and redeploy
     let composeWithTraefik = compose;
@@ -331,9 +340,9 @@ export async function runDeployment(
         `docker compose -f "${composePath}" -p "${newProjectName}" up -d --no-recreate`,
         { cwd: slotDir, timeout: 30000 }
       );
-      logs.push(`[deploy] Traffic routed to ${newSlot}`);
+      log(`[deploy] Traffic routed to ${newSlot}`);
     } catch (err) {
-      logs.push(`[deploy] Warning: label update — ${err instanceof Error ? err.message : err}`);
+      log(`[deploy] Warning: label update — ${err instanceof Error ? err.message : err}`);
     }
 
     // Step 10: Tear down old slot
@@ -346,9 +355,9 @@ export async function runDeployment(
           `docker compose -f "${oldComposePath}" -p "${oldProjectName}" down --remove-orphans`,
           { cwd: oldSlotDir, timeout: 30000 }
         );
-        logs.push(`[deploy] Old slot (${activeSlot}) removed`);
+        log(`[deploy] Old slot (${activeSlot}) removed`);
       } catch (err) {
-        logs.push(`[deploy] Warning: old slot cleanup — ${err instanceof Error ? err.message : err}`);
+        log(`[deploy] Warning: old slot cleanup — ${err instanceof Error ? err.message : err}`);
       }
     }
 
@@ -371,18 +380,18 @@ export async function runDeployment(
     const durationMs = Date.now() - startTime;
     await db
       .update(deployments)
-      .set({ status: "success", log: logs.join("\n"), durationMs, finishedAt: new Date() })
+      .set({ status: "success", log: logLines.join("\n"), durationMs, finishedAt: new Date() })
       .where(eq(deployments.id, deploymentId));
 
-    return { deploymentId, success: true, log: logs.join("\n"), durationMs };
+    return { deploymentId, success: true, log: logLines.join("\n"), durationMs };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    logs.push(`[deploy] ERROR: ${message}`);
+    log(`[deploy] ERROR: ${message}`);
     const durationMs = Date.now() - startTime;
 
     await db
       .update(deployments)
-      .set({ status: "failed", log: logs.join("\n"), durationMs, finishedAt: new Date() })
+      .set({ status: "failed", log: logLines.join("\n"), durationMs, finishedAt: new Date() })
       .where(eq(deployments.id, deploymentId));
 
     await db
@@ -390,7 +399,7 @@ export async function runDeployment(
       .set({ status: "error", updatedAt: new Date() })
       .where(eq(projects.id, opts.projectId));
 
-    return { deploymentId, success: false, log: logs.join("\n"), durationMs };
+    return { deploymentId, success: false, log: logLines.join("\n"), durationMs };
   }
 }
 
@@ -407,10 +416,9 @@ async function buildFromRepo(
   repoPath: string,
   imageName: string,
   deployType: string,
-  logs: string[]
+  logs: { push: (line: string) => void }
 ): Promise<void> {
   if (deployType === "nixpacks") {
-    // Try Nixpacks first — auto-detects language and builds
     logs.push(`[build] Building with Nixpacks...`);
     try {
       const { stdout, stderr } = await execAsync(
@@ -427,7 +435,6 @@ async function buildFromRepo(
     }
   }
 
-  // Dockerfile build
   logs.push(`[build] Building with Dockerfile...`);
   try {
     const { stdout, stderr } = await execAsync(
@@ -447,7 +454,7 @@ async function waitForHealthy(
   projectName: string,
   composePath: string,
   cwd: string,
-  logs: string[]
+  logs: { push: (line: string) => void }
 ): Promise<boolean> {
   const deadline = Date.now() + HEALTH_CHECK_TIMEOUT_MS;
 
@@ -491,7 +498,7 @@ async function waitForHealthy(
   return false;
 }
 
-async function checkEndpoint(domain: string, logs: string[]): Promise<boolean> {
+async function checkEndpoint(domain: string, logs: { push: (line: string) => void }): Promise<boolean> {
   const paths = ["/healthz", "/health", "/"];
   const timeout = 5000;
 
