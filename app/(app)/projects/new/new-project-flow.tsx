@@ -47,8 +47,8 @@ type Template = {
   description: string | null;
   icon: string | null;
   category: string;
-  source: Source;
-  deployType: DeployType;
+  source: string;
+  deployType: string;
   imageName: string | null;
   gitUrl: string | null;
   gitBranch: string | null;
@@ -248,8 +248,8 @@ export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
     setDisplayName(template.displayName);
     setName(slugify(template.name));
     setSlugEdited(false);
-    setSource(template.source);
-    setDeployType(template.deployType);
+    setSource(template.source as Source);
+    setDeployType(template.deployType as DeployType);
     if (template.imageName) setImageName(template.imageName);
     if (template.gitUrl) setGitUrl(template.gitUrl);
     if (template.gitBranch) setGitBranch(template.gitBranch);

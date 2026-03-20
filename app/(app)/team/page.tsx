@@ -1,14 +1,15 @@
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { memberships } from "@/lib/db/schema";
-import { getCurrentOrg, getUserOrganizations } from "@/lib/auth/session";
+import { getSession, getCurrentOrg, getUserOrganizations } from "@/lib/auth/session";
 import { eq } from "drizzle-orm";
 import { TeamMembers } from "./team-members";
 
 export default async function TeamPage() {
+  const session = await getSession();
   const orgData = await getCurrentOrg();
 
-  if (!orgData) {
+  if (!orgData || !session?.user?.id) {
     redirect("/login");
   }
 
@@ -40,7 +41,7 @@ export default async function TeamPage() {
       orgId={orgId}
       orgName={orgData.organization.name}
       currentRole={currentRole}
-      currentUserId={orgData.membership.userId}
+      currentUserId={session.user.id}
       organizations={organizations}
     />
   );

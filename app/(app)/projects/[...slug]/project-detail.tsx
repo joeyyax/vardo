@@ -123,7 +123,7 @@ type Project = {
   displayName: string;
   description: string | null;
   source: "git" | "direct";
-  deployType: "compose" | "dockerfile" | "image" | "static";
+  deployType: "compose" | "dockerfile" | "image" | "static" | "nixpacks";
   gitUrl: string | null;
   gitBranch: string | null;
   imageName: string | null;
