@@ -38,7 +38,7 @@ export default async function ProjectDetailPage({ params }: PageProps) {
         domains: true,
         environments: true,
         envVars: {
-          columns: { id: true, key: true, isSecret: true, createdAt: true, updatedAt: true },
+          columns: { id: true, key: true, value: true, isSecret: true, createdAt: true, updatedAt: true },
         },
         projectTags: {
           with: { tag: true },

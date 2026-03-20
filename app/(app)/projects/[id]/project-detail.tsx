@@ -92,6 +92,7 @@ type Domain = {
 type EnvVar = {
   id: string;
   key: string;
+  value: string;
   isSecret: boolean | null;
   createdAt: Date;
   updatedAt: Date;
@@ -907,68 +908,6 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
           </DetailField>
         </div>
 
-        {/* Connection Info */}
-        {project.connectionInfo && project.connectionInfo.length > 0 && (
-          <div className="space-y-3">
-            <h3 className="text-xs font-medium text-muted-foreground">Internal Connection (Docker network)</h3>
-            <div className="rounded-lg border bg-card divide-y">
-              {project.connectionInfo.map((info) => (
-                <div key={info.label} className="flex items-center justify-between px-4 py-2.5 gap-4">
-                  <span className="text-xs text-muted-foreground shrink-0 w-24">{info.label}</span>
-                  <span className="text-sm font-mono truncate flex-1">{info.value}</span>
-                  {info.copyRef && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(`\${${info.copyRef}}`);
-                        toast.success(`Copied \${${info.copyRef}}`);
-                      }}
-                      className="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
-                      title={`Copy reference: \${${info.copyRef}}`}
-                    >
-                      <Copy className="size-3.5" />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            {/* External connection (if ports exposed) */}
-            {(project.exposedPorts as { internal: number; external?: number; description?: string }[] | null)?.some((p) => p.external) && (
-              <>
-                <h3 className="text-xs font-medium text-muted-foreground">External Connection (host ports)</h3>
-                <div className="rounded-lg border bg-card divide-y">
-                  {(project.exposedPorts as { internal: number; external?: number; description?: string }[])
-                    .filter((p) => p.external)
-                    .map((p) => (
-                      <div key={p.internal} className="flex items-center justify-between px-4 py-2.5 gap-4">
-                        <span className="text-xs text-muted-foreground shrink-0 w-24">
-                          {p.description || `Port ${p.internal}`}
-                        </span>
-                        <span className="text-sm font-mono flex-1">
-                          localhost:{p.external}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigator.clipboard.writeText(`localhost:${p.external}`);
-                            toast.success("Copied");
-                          }}
-                          className="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
-                        >
-                          <Copy className="size-3.5" />
-                        </button>
-                      </div>
-                    ))}
-                </div>
-              </>
-            )}
-
-            <p className="text-xs text-muted-foreground">
-              Internal refs use the Docker network. Click copy for variable references.
-            </p>
-          </div>
-        )}
       </div>
 
       {/* Tabbed sections */}
@@ -982,6 +921,11 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
               </Badge>
             )}
           </TabsTrigger>
+          {project.connectionInfo && project.connectionInfo.length > 0 && (
+            <TabsTrigger value="connect">
+              Connect
+            </TabsTrigger>
+          )}
           <TabsTrigger value="variables">
             Variables
             {project.envVars.length > 0 && (
@@ -1220,6 +1164,90 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
             </div>
           )}
         </TabsContent>
+
+        {project.connectionInfo && project.connectionInfo.length > 0 && (
+          <TabsContent value="connect" className="pt-4">
+            <div className="space-y-6">
+              {/* Internal connection */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-medium">Internal <span className="text-muted-foreground font-normal">(Docker network)</span></h3>
+                <p className="text-xs text-muted-foreground">
+                  Use these values to connect from other projects on the same network.
+                </p>
+                <div className="rounded-lg border bg-card divide-y">
+                  {project.connectionInfo.map((info) => {
+                    // Resolve ${...} expressions to actual values
+                    const resolved = info.value
+                      .replace(/\$\{project\.name\}/g, project.name)
+                      .replace(/\$\{project\.port\}/g, String(project.containerPort || ""))
+                      .replace(/\$\{project\.id\}/g, project.id)
+                      .replace(/\$\{([A-Z_]+)\}/g, (_match, key) => {
+                        const envVar = project.envVars.find((v) => v.key === key);
+                        return envVar?.value || `\${${key}}`;
+                      });
+
+                    // Build the full reference for copying
+                    const copyValue = info.copyRef
+                      ? `\${${info.copyRef}}`
+                      : resolved;
+
+                    return (
+                      <div key={info.label} className="flex items-center justify-between px-4 py-3 gap-4">
+                        <span className="text-xs text-muted-foreground shrink-0 w-28">{info.label}</span>
+                        <span className="text-sm font-mono truncate flex-1">{resolved}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(copyValue);
+                            toast.success(`Copied ${info.copyRef ? `\${${info.copyRef}}` : resolved}`);
+                          }}
+                          className="shrink-0 p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                          title={info.copyRef ? `Copy reference: \${${info.copyRef}}` : "Copy value"}
+                        >
+                          <Copy className="size-3.5" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* External connection */}
+              {(project.exposedPorts as { internal: number; external?: number; description?: string }[] | null)?.some((p) => p.external) && (
+                <div className="space-y-3">
+                  <h3 className="text-sm font-medium">External <span className="text-muted-foreground font-normal">(host ports)</span></h3>
+                  <p className="text-xs text-muted-foreground">
+                    Use these to connect from outside Docker (e.g. database tools, local development).
+                  </p>
+                  <div className="rounded-lg border bg-card divide-y">
+                    {(project.exposedPorts as { internal: number; external?: number; description?: string }[])
+                      .filter((p) => p.external)
+                      .map((p) => (
+                        <div key={p.internal} className="flex items-center justify-between px-4 py-3 gap-4">
+                          <span className="text-xs text-muted-foreground shrink-0 w-28">
+                            {p.description || `Port ${p.internal}`}
+                          </span>
+                          <span className="text-sm font-mono flex-1">
+                            localhost:{p.external}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(`localhost:${p.external}`);
+                              toast.success("Copied");
+                            }}
+                            className="shrink-0 p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                          >
+                            <Copy className="size-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </TabsContent>
+        )}
 
         <TabsContent value="variables" className="pt-4">
           <EnvEditor
