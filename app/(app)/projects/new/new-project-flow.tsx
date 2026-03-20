@@ -164,7 +164,6 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
   >([]);
   const [exposePort, setExposePort] = useState(false);
   const [createRepo, setCreateRepo] = useState(false);
-  const [repoPrivate, setRepoPrivate] = useState(true);
 
   // Domain
   const [generateDomain, setGenerateDomain] = useState(true);
@@ -384,7 +383,7 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
             installationId: instId,
             name: name.trim(),
             description: description.trim() || undefined,
-            isPrivate: repoPrivate,
+            isPrivate: true,
           }),
         });
         if (repoRes.ok) {
@@ -868,36 +867,26 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
                     </div>
                   </div>
                   {createRepo && (
-                    <div className="ml-10 space-y-3">
-                      {installations.length > 1 && (
-                        <div className="grid gap-2">
-                          <Label>GitHub Account</Label>
-                          <Select
-                            value={selectedInstallation || installations[0]?.id}
-                            onValueChange={setSelectedInstallation}
-                          >
-                            <SelectTrigger className="w-64">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {installations.map((inst) => (
-                                <SelectItem key={inst.id} value={inst.id}>
-                                  {inst.accountLogin}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      )}
-                      <div className="flex items-center gap-3">
-                        <Switch
-                          id="repo-private"
-                          checked={repoPrivate}
-                          onCheckedChange={setRepoPrivate}
-                        />
-                        <Label htmlFor="repo-private">Private repository</Label>
+                    {installations.length > 1 && (
+                      <div className="grid gap-2 ml-10">
+                        <Label>GitHub Account</Label>
+                        <Select
+                          value={selectedInstallation || installations[0]?.id}
+                          onValueChange={setSelectedInstallation}
+                        >
+                          <SelectTrigger className="w-64">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {installations.map((inst) => (
+                              <SelectItem key={inst.id} value={inst.id}>
+                                {inst.accountLogin}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
-                    </div>
+                    )}
                   )}
                 </div>
               )}
