@@ -40,8 +40,9 @@ export function generateComposeForImage(opts: {
   imageName: string;
   containerPort?: number;
   envVars?: Record<string, string>;
+  volumes?: { name: string; mountPath: string }[];
 }): ComposeFile {
-  const { projectName, imageName, containerPort, envVars } = opts;
+  const { projectName, imageName, containerPort, envVars, volumes } = opts;
 
   const service: ComposeService = {
     name: projectName,
@@ -56,11 +57,25 @@ export function generateComposeForImage(opts: {
     service.environment = { ...envVars };
   }
 
-  return {
+  if (volumes && volumes.length > 0) {
+    service.volumes = volumes.map((v) => `${v.name}:${v.mountPath}`);
+  }
+
+  const compose: ComposeFile = {
     services: {
       [projectName]: service,
     },
   };
+
+  // Declare named volumes at top level
+  if (volumes && volumes.length > 0) {
+    compose.volumes = {};
+    for (const v of volumes) {
+      compose.volumes[v.name] = {};
+    }
+  }
+
+  return compose;
 }
 
 // ---------------------------------------------------------------------------

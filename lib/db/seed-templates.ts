@@ -150,6 +150,147 @@ const builtInTemplates = [
     imageName: "louislam/uptime-kuma:1",
     defaultPort: 3001,
     defaultEnvVars: [],
+    defaultVolumes: [
+      { name: "data", mountPath: "/app/data", description: "Uptime Kuma data" },
+    ],
+  },
+  // ── Web / App templates ──
+  {
+    name: "wordpress",
+    displayName: "WordPress",
+    description: "Popular CMS with MySQL database",
+    icon: "https://cdn.simpleicons.org/wordpress",
+    category: "web" as const,
+    source: "direct" as const,
+    deployType: "compose" as const,
+    composeContent: `services:
+  wordpress:
+    image: wordpress:latest
+    ports:
+      - "80:80"
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: \${WORDPRESS_DB_PASSWORD}
+      WORDPRESS_DB_NAME: wordpress
+    volumes:
+      - wp-content:/var/www/html/wp-content
+  db:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: \${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: wordpress
+      MYSQL_USER: wordpress
+      MYSQL_PASSWORD: \${WORDPRESS_DB_PASSWORD}
+    volumes:
+      - db-data:/var/lib/mysql
+volumes:
+  wp-content:
+  db-data:`,
+    defaultPort: 80,
+    defaultEnvVars: [
+      { key: "WORDPRESS_DB_PASSWORD", description: "WordPress database password", required: true },
+      { key: "MYSQL_ROOT_PASSWORD", description: "MySQL root password", required: true },
+    ],
+    defaultVolumes: [
+      { name: "wp-content", mountPath: "/var/www/html/wp-content", description: "WordPress themes, plugins, and uploads" },
+      { name: "db-data", mountPath: "/var/lib/mysql", description: "MySQL database files" },
+    ],
+  },
+  {
+    name: "ghost",
+    displayName: "Ghost",
+    description: "Professional publishing platform",
+    icon: "https://cdn.simpleicons.org/ghost",
+    category: "web" as const,
+    source: "direct" as const,
+    deployType: "image" as const,
+    imageName: "ghost:5-alpine",
+    defaultPort: 2368,
+    defaultEnvVars: [
+      { key: "url", description: "Public URL of your Ghost site", required: true },
+      { key: "database__client", description: "Database client", required: false, defaultValue: "sqlite3" },
+    ],
+    defaultVolumes: [
+      { name: "content", mountPath: "/var/lib/ghost/content", description: "Ghost content and images" },
+    ],
+  },
+  {
+    name: "nextjs",
+    displayName: "Next.js",
+    description: "React framework — deploy from a repo",
+    icon: "https://cdn.simpleicons.org/nextdotjs",
+    category: "web" as const,
+    source: "git" as const,
+    deployType: "nixpacks" as const,
+    defaultPort: 3000,
+    defaultEnvVars: [
+      { key: "NODE_ENV", description: "Environment", required: false, defaultValue: "production" },
+    ],
+  },
+  {
+    name: "vite",
+    displayName: "Vite / React",
+    description: "Fast frontend build tool — deploy from a repo",
+    icon: "https://cdn.simpleicons.org/vite",
+    category: "web" as const,
+    source: "git" as const,
+    deployType: "nixpacks" as const,
+    defaultPort: 3000,
+    defaultEnvVars: [],
+  },
+  {
+    name: "strapi",
+    displayName: "Strapi",
+    description: "Open-source headless CMS",
+    icon: "https://cdn.simpleicons.org/strapi",
+    category: "web" as const,
+    source: "direct" as const,
+    deployType: "image" as const,
+    imageName: "strapi/strapi:latest",
+    defaultPort: 1337,
+    defaultEnvVars: [
+      { key: "DATABASE_CLIENT", description: "Database type", required: false, defaultValue: "sqlite" },
+      { key: "APP_KEYS", description: "Application keys (comma-separated)", required: true },
+      { key: "API_TOKEN_SALT", description: "API token salt", required: true },
+      { key: "ADMIN_JWT_SECRET", description: "Admin JWT secret", required: true },
+    ],
+    defaultVolumes: [
+      { name: "uploads", mountPath: "/opt/app/public/uploads", description: "Media uploads" },
+    ],
+  },
+  {
+    name: "gitea",
+    displayName: "Gitea",
+    description: "Lightweight self-hosted Git service",
+    icon: "https://cdn.simpleicons.org/gitea",
+    category: "tool" as const,
+    source: "direct" as const,
+    deployType: "image" as const,
+    imageName: "gitea/gitea:latest",
+    defaultPort: 3000,
+    defaultEnvVars: [],
+    defaultVolumes: [
+      { name: "data", mountPath: "/data", description: "Gitea repositories and config" },
+    ],
+  },
+  {
+    name: "n8n",
+    displayName: "n8n",
+    description: "Workflow automation tool",
+    icon: "https://cdn.simpleicons.org/n8n",
+    category: "tool" as const,
+    source: "direct" as const,
+    deployType: "image" as const,
+    imageName: "n8nio/n8n:latest",
+    defaultPort: 5678,
+    defaultEnvVars: [
+      { key: "N8N_BASIC_AUTH_USER", description: "Basic auth username", required: false },
+      { key: "N8N_BASIC_AUTH_PASSWORD", description: "Basic auth password", required: false },
+    ],
+    defaultVolumes: [
+      { name: "data", mountPath: "/home/node/.n8n", description: "n8n workflows and credentials" },
+    ],
   },
 ];
 
@@ -176,6 +317,8 @@ export async function seedTemplates() {
           gitBranch: tmpl.gitBranch ?? null,
           defaultPort: tmpl.defaultPort ?? null,
           defaultEnvVars: tmpl.defaultEnvVars,
+          defaultVolumes: ((tmpl as Record<string, unknown>).defaultVolumes as { name: string; mountPath: string; description: string }[] | undefined) ?? null,
+          composeContent: (tmpl as { composeContent?: string }).composeContent ?? null,
           updatedAt: new Date(),
         },
       });

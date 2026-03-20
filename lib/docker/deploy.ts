@@ -111,12 +111,15 @@ export async function runDeployment(
 
     if (project.deployType === "image" && project.imageName) {
       // Image deploy — generate a compose file
+      const volumes = (project.persistentVolumes as { name: string; mountPath: string }[] | null) ?? undefined;
       compose = generateComposeForImage({
         projectName: project.name,
         imageName: project.imageName,
         containerPort: project.containerPort ?? undefined,
         envVars: envMap,
+        volumes,
       });
+      if (volumes?.length) log(`[deploy] ${volumes.length} persistent volume(s)`);
       log(`[deploy] Generated compose for image: ${project.imageName}`);
     } else if (project.source === "git" && project.gitUrl) {
       // Git source — clone/pull repo with GitHub App auth if needed
@@ -245,6 +248,7 @@ export async function runDeployment(
           imageName,
           containerPort: project.containerPort ?? undefined,
           envVars: envMap,
+          volumes: (project.persistentVolumes as { name: string; mountPath: string }[] | null) ?? undefined,
         });
       }
     } else if (project.composeContent) {

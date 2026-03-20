@@ -246,6 +246,9 @@ export const projects = pgTable(
     autoTraefikLabels: boolean("auto_traefik_labels").default(false),
     containerPort: integer("container_port"),
     autoDeploy: boolean("auto_deploy").default(false),
+    persistentVolumes: jsonb("persistent_volumes").$type<
+      { name: string; mountPath: string }[]
+    >(),
     status: projectStatusEnum("status").notNull().default("stopped"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -589,6 +592,9 @@ export const templates = pgTable("template", {
   defaultPort: integer("default_port"),
   defaultEnvVars: jsonb("default_env_vars").$type<
     { key: string; description: string; required: boolean; defaultValue?: string }[]
+  >(),
+  defaultVolumes: jsonb("default_volumes").$type<
+    { name: string; mountPath: string; description: string }[]
   >(),
   isBuiltIn: boolean("is_built_in").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
