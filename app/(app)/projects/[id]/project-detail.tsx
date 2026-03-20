@@ -834,7 +834,7 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
             <div className="space-y-2">
               {/* In-progress deployment */}
               {deploying && (
-                <div className="squircle rounded-lg border border-blue-500/30 bg-card overflow-hidden">
+                <div className="squircle rounded-lg border-l-[3px] border-l-blue-500 border border-blue-500/20 bg-card overflow-hidden">
                   <button
                     type="button"
                     onClick={() => setExpandedDeployLog(!expandedDeployLog)}
@@ -888,8 +888,17 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
                 </div>
               )}
 
-              {project.deployments.map((deployment) => (
-                <div key={deployment.id} className="squircle rounded-lg border bg-card overflow-hidden">
+              {project.deployments.map((deployment) => {
+                const borderColor = {
+                  success: "border-l-green-500",
+                  failed: "border-l-red-500",
+                  running: "border-l-blue-500",
+                  queued: "border-l-zinc-500",
+                  cancelled: "border-l-zinc-500",
+                }[deployment.status] || "border-l-zinc-500";
+
+                return (
+                <div key={deployment.id} className={`squircle rounded-lg border-l-[3px] ${borderColor} border bg-card overflow-hidden`}>
                   <button
                     type="button"
                     onClick={() => setViewingLogId(viewingLogId === deployment.id ? null : deployment.id)}
@@ -935,7 +944,8 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
                     </div>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </TabsContent>
