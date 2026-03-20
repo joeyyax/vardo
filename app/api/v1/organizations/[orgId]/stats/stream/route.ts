@@ -4,6 +4,7 @@ import { projects } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq } from "drizzle-orm";
 import { fetchAllContainerMetrics } from "@/lib/metrics/cadvisor";
+import { getProjectContainers, getContainerStats } from "@/lib/docker/client";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -34,24 +35,69 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           if (stopped) return;
 
           try {
-            const allMetrics = await fetchAllContainerMetrics();
-
-            // Group by project
-            const byProject: Record<string, typeof allMetrics> = {};
-            for (const m of allMetrics) {
-              const matched = orgProjects.find(
-                (p) => m.projectName === p.name || m.projectName.startsWith(`${p.name}-`)
+            // Try cAdvisor first, fall back to Docker stats API
+            let projectData;
+            try {
+              const allMetrics = await fetchAllContainerMetrics();
+              const byProject: Record<string, typeof allMetrics> = {};
+              for (const m of allMetrics) {
+                const matched = orgProjects.find(
+                  (p) => m.projectName === p.name || m.projectName.startsWith(`${p.name}-`)
+                );
+                if (!matched) continue;
+                if (!byProject[matched.id]) byProject[matched.id] = [];
+                byProject[matched.id].push(m);
+              }
+              projectData = orgProjects.map((p) => ({
+                ...p,
+                containers: (byProject[p.id] || []).map((m) => ({
+                  containerId: m.containerId,
+                  containerName: m.containerName,
+                  cpuPercent: m.cpuPercent,
+                  memoryUsage: m.memoryUsage,
+                  memoryLimit: m.memoryLimit,
+                  memoryPercent: m.memoryPercent,
+                  networkRx: m.networkRxBytes,
+                  networkTx: m.networkTxBytes,
+                  blockRead: 0,
+                  blockWrite: 0,
+                  diskUsage: m.diskUsage,
+                  diskLimit: m.diskLimit,
+                })),
+              }));
+            } catch {
+              // cAdvisor not available — fall back to Docker stats
+              const activeProjects = orgProjects.filter((p) => p.status === "active");
+              const results = await Promise.allSettled(
+                activeProjects.map(async (p) => {
+                  const containers = await getProjectContainers(p.name);
+                  const stats = await Promise.allSettled(
+                    containers.map((c) => getContainerStats(c.Id))
+                  );
+                  return {
+                    id: p.id,
+                    containers: stats
+                      .filter((s): s is PromiseFulfilledResult<any> => s.status === "fulfilled")
+                      .map((s) => s.value),
+                  };
+                })
               );
-              if (!matched) continue;
-              if (!byProject[matched.id]) byProject[matched.id] = [];
-              byProject[matched.id].push(m);
+
+              const byId: Record<string, any[]> = {};
+              for (const r of results) {
+                if (r.status === "fulfilled") {
+                  byId[r.value.id] = r.value.containers;
+                }
+              }
+
+              projectData = orgProjects.map((p) => ({
+                ...p,
+                containers: byId[p.id] || [],
+              }));
             }
 
             const payload = {
-              projects: orgProjects.map((p) => ({
-                ...p,
-                containers: byProject[p.id] || [],
-              })),
+              projects: projectData,
               timestamp: new Date().toISOString(),
             };
 
@@ -59,7 +105,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
               encoder.encode(`event: stats\ndata: ${JSON.stringify(payload)}\n\n`)
             );
           } catch {
-            // cAdvisor unavailable — skip this tick
+            // Both failed — skip this tick
           }
 
           if (!stopped) {

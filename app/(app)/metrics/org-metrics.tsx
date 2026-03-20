@@ -188,7 +188,16 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
     });
 
     es.onerror = () => {
-      // Will auto-reconnect
+      // Mark all as not loading so spinners stop
+      setProjectStats((prev) => {
+        const next = { ...prev };
+        for (const key of Object.keys(next)) {
+          if (next[key].loading) {
+            next[key] = { ...next[key], loading: false, error: "Connection lost" };
+          }
+        }
+        return next;
+      });
     };
 
     return () => es.close();
