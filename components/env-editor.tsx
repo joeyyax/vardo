@@ -51,9 +51,7 @@ export function EnvEditor({ projectId, orgId, initialVars, allProjectNames = [],
           if (vars.length > 0) {
             setContent(
               vars
-                .map((v: { key: string; value: string; isSecret: boolean | null }) =>
-                  v.isSecret ? `# ${v.key} (secret — set a new value to update)\n${v.key}=` : `${v.key}=${v.value}`
-                )
+                .map((v: { key: string; value: string }) => `${v.key}=${v.value}`)
                 .join("\n")
             );
           }

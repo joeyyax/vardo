@@ -298,11 +298,15 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
     searchParams.get("tab") || "deployments"
   );
 
-  // Poll for project status updates every 15 seconds
+  // Poll for project status updates — faster when deploying
+  const pollInterval = (project.status === "deploying" ||
+    project.deployments.some((d) => d.status === "running" || d.status === "queued"))
+    ? 3000 : 15000;
   useEffect(() => {
-    const interval = setInterval(() => router.refresh(), 15000);
+    const interval = setInterval(() => router.refresh(), pollInterval);
     return () => clearInterval(interval);
-  }, [router]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pollInterval]);
 
   const setActiveTab = useCallback((tab: string) => {
     setActiveTabState(tab);

@@ -423,9 +423,10 @@ export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
                   >
                     {tmpl.icon ? (
                       <img
-                        src={`${tmpl.icon}/white`}
+                        src={tmpl.icon}
                         alt=""
-                        className="size-8 shrink-0 opacity-70"
+                        className="size-8 shrink-0"
+                        style={{ filter: "drop-shadow(0 0 1px rgba(255,255,255,0.3))" }}
                       />
                     ) : (
                       <Container className="size-8 shrink-0 text-muted-foreground" />

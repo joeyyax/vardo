@@ -79,17 +79,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       where: eq(envVars.projectId, projectId),
     });
 
-    // Return values, but mask secrets
-    const safe = vars.map((v) => ({
-      id: v.id,
-      key: v.key,
-      value: v.isSecret ? "" : v.value,
-      isSecret: v.isSecret,
-      createdAt: v.createdAt,
-      updatedAt: v.updatedAt,
-    }));
-
-    return NextResponse.json({ envVars: safe });
+    return NextResponse.json({ envVars: vars });
   } catch (error) {
     if (error instanceof Error && error.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
