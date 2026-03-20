@@ -5,13 +5,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Brand } from "../brand";
 import { UserMenu } from "./user-menu";
-
-type Organization = {
-  id: string;
-  name: string;
-  slug: string;
-  role: string;
-};
+import type { Organization } from "@/lib/types";
 
 type TopNavProps = {
   currentOrgId?: string;

@@ -12,19 +12,9 @@ import {
   ReferenceLine,
 } from "recharts";
 import { Activity, Container, Cpu, HardDrive, MemoryStick, Network, Loader2 } from "lucide-react";
-
-type ContainerStatsSnapshot = {
-  containerId: string;
-  containerName: string;
-  cpuPercent: number;
-  memoryUsage: number;
-  memoryLimit: number;
-  memoryPercent: number;
-  networkRx: number;
-  networkTx: number;
-  blockRead: number;
-  blockWrite: number;
-};
+import { formatBytes, formatMemLimit, formatBytesRate, formatTime } from "@/lib/metrics/format";
+import { RANGE_MS, BUCKET_MS, chartTooltipStyle, TIME_RANGES, type TimeRange } from "@/lib/metrics/constants";
+import type { ContainerStatsSnapshot } from "@/lib/metrics/types";
 
 type TimeSeriesPoint = {
   time: string;
@@ -47,31 +37,6 @@ type ProjectMetricsProps = {
 };
 
 const MAX_DATA_POINTS = 150; // ~5 minutes at 2s intervals
-
-function formatBytes(bytes: number, decimals = 1): string {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB", "PB"];
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(decimals))} ${sizes[i]}`;
-}
-
-function formatMemLimit(bytes: number): string {
-  if (bytes === 0 || bytes > 1099511627776) return "No limit";
-  return formatBytes(bytes);
-}
-
-function formatBytesRate(bytes: number): string {
-  return `${formatBytes(bytes)}/s`;
-}
-
-function formatTime(timestamp: number): string {
-  return new Date(timestamp).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-}
 
 function ChartCard({
   title,
@@ -133,18 +98,6 @@ function ContainerTable({ containers }: { containers: ContainerStatsSnapshot[] }
   );
 }
 
-const chartTooltipStyle = {
-  contentStyle: {
-    backgroundColor: "oklch(0.21 0.006 285.75)",
-    border: "1px solid oklch(0.30 0.006 285.75)",
-    borderRadius: "8px",
-    fontSize: "12px",
-    color: "oklch(0.87 0.006 285.75)",
-  },
-  itemStyle: { color: "oklch(0.87 0.006 285.75)" },
-  labelStyle: { color: "oklch(0.55 0.006 285.75)" },
-};
-
 export function ProjectMetrics({ orgId, projectId }: ProjectMetricsProps) {
   const [data, setData] = useState<TimeSeriesPoint[]>([]);
   const [containers, setContainers] = useState<ContainerStatsSnapshot[]>([]);
@@ -153,29 +106,13 @@ export function ProjectMetrics({ orgId, projectId }: ProjectMetricsProps) {
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const prevNetworkRef = useRef<{ rx: number; tx: number } | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
-  const [timeRange, setTimeRange] = useState<"5m" | "1h" | "6h" | "24h" | "7d">("1h");
-
-  const rangeMs: Record<string, number> = {
-    "5m": 300000,
-    "1h": 3600000,
-    "6h": 21600000,
-    "24h": 86400000,
-    "7d": 604800000,
-  };
-
-  const bucketMs: Record<string, number> = {
-    "5m": 5000,
-    "1h": 30000,
-    "6h": 120000,
-    "24h": 300000,
-    "7d": 1800000,
-  };
+  const [timeRange, setTimeRange] = useState<TimeRange>("1h");
 
   // Load historical data
   useEffect(() => {
     const now = Date.now();
-    const from = now - rangeMs[timeRange];
-    const bucket = bucketMs[timeRange];
+    const from = now - RANGE_MS[timeRange];
+    const bucket = BUCKET_MS[timeRange];
 
     async function loadHistory() {
       try {
@@ -345,20 +282,13 @@ export function ProjectMetrics({ orgId, projectId }: ProjectMetricsProps) {
 
   const latestMemoryLimit = data.length > 0 ? data[data.length - 1].memoryLimit : 0;
 
-  const timeRanges = [
-    { label: "5m", value: "5m" as const },
-    { label: "1h", value: "1h" as const },
-    { label: "6h", value: "6h" as const },
-    { label: "24h", value: "24h" as const },
-    { label: "7d", value: "7d" as const },
-  ];
 
   return (
     <div className="space-y-6">
       {/* Time range + connection status */}
       <div className="flex items-center justify-between">
         <div className="inline-flex items-center gap-1 rounded-lg bg-muted p-1">
-          {timeRanges.map((r) => (
+          {TIME_RANGES.map((r) => (
             <button
               key={r.value}
               onClick={() => setTimeRange(r.value)}

@@ -13,13 +13,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Brand } from "../brand";
-
-type Organization = {
-  id: string;
-  name: string;
-  slug: string;
-  role: string;
-};
+import type { Organization } from "@/lib/types";
 
 type SidebarProps = {
   currentOrgId?: string;

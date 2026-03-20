@@ -26,6 +26,8 @@ import {
 } from "@/components/ui/bottom-sheet";
 import { isAdmin } from "@/lib/auth/permissions";
 import { OrgSwitcher } from "@/components/layout/org-switcher";
+import { getInitials } from "@/lib/utils";
+import type { Organization } from "@/lib/types";
 
 type Member = {
   id: string;
@@ -36,13 +38,6 @@ type Member = {
   joinedAt: string;
 };
 
-type Organization = {
-  id: string;
-  name: string;
-  slug: string;
-  role: string;
-};
-
 type TeamMembersProps = {
   members: Member[];
   orgId: string;
@@ -51,18 +46,6 @@ type TeamMembersProps = {
   currentUserId: string;
   organizations: Organization[];
 };
-
-function getInitials(name: string | null, email: string): string {
-  if (name) {
-    return name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
-  }
-  return email[0].toUpperCase();
-}
 
 const ROLE_LABELS: Record<string, string> = {
   owner: "Owner",

@@ -35,25 +35,37 @@ type V2SpecEntry = {
   memory?: { limit: number };
 };
 
+// Module-level cache for specs (rarely change)
+let cachedSpecs: Record<string, V2SpecEntry> | null = null;
+let specsCachedAt = 0;
+const SPECS_TTL_MS = 60_000; // 60 seconds
+
 /**
  * Fetch metrics for all Docker containers from cAdvisor v2 API.
  */
 export async function fetchAllContainerMetrics(): Promise<ContainerMetrics[]> {
-  // Fetch stats and specs in parallel
-  const [statsRes, specsRes] = await Promise.all([
-    fetch(`${CADVISOR_URL}/api/v2.0/stats?type=docker&recursive=true&count=2`, {
-      signal: AbortSignal.timeout(5000),
-    }),
-    fetch(`${CADVISOR_URL}/api/v2.0/spec?type=docker&recursive=true`, {
-      signal: AbortSignal.timeout(5000),
-    }),
-  ]);
-
+  // Always fetch fresh stats
+  const statsRes = await fetch(
+    `${CADVISOR_URL}/api/v2.0/stats?type=docker&recursive=true&count=2`,
+    { signal: AbortSignal.timeout(5000) }
+  );
   if (!statsRes.ok) throw new Error(`cAdvisor stats returned ${statsRes.status}`);
-  if (!specsRes.ok) throw new Error(`cAdvisor spec returned ${specsRes.status}`);
-
   const statsData = (await statsRes.json()) as Record<string, V2StatEntry[]>;
-  const specsData = (await specsRes.json()) as Record<string, V2SpecEntry>;
+
+  // Only refetch specs if cache is stale or missing
+  let specsData: Record<string, V2SpecEntry>;
+  if (cachedSpecs && Date.now() - specsCachedAt < SPECS_TTL_MS) {
+    specsData = cachedSpecs;
+  } else {
+    const specsRes = await fetch(
+      `${CADVISOR_URL}/api/v2.0/spec?type=docker&recursive=true`,
+      { signal: AbortSignal.timeout(5000) }
+    );
+    if (!specsRes.ok) throw new Error(`cAdvisor spec returned ${specsRes.status}`);
+    specsData = (await specsRes.json()) as Record<string, V2SpecEntry>;
+    cachedSpecs = specsData;
+    specsCachedAt = Date.now();
+  }
 
   const metrics: ContainerMetrics[] = [];
 

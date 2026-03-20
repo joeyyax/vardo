@@ -6,7 +6,7 @@ import { eq, asc, desc } from "drizzle-orm";
 import { PageToolbar } from "@/components/page-toolbar";
 import { OrgMetrics } from "./org-metrics";
 import { getSystemInfo } from "@/lib/docker/client";
-import { fetchAllContainerMetrics } from "@/lib/metrics/cadvisor";
+import { fetchAllContainerMetrics, type ContainerMetrics } from "@/lib/metrics/cadvisor";
 import { getLatestDiskUsage } from "@/lib/metrics/store";
 
 export default async function MetricsPage() {
@@ -31,7 +31,7 @@ export default async function MetricsPage() {
   ]);
 
   // Pre-aggregate initial stats per project
-  const initialStats: Record<string, typeof initialMetrics> = {};
+  const initialStats: Record<string, ContainerMetrics[]> = {};
   for (const m of initialMetrics) {
     const matched = projectList.find(
       (p) => m.projectName === p.name || m.projectName.startsWith(`${p.name}-`)

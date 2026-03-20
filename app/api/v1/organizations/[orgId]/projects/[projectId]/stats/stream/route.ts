@@ -54,8 +54,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
                 memoryPercent: m.memoryPercent,
                 networkRx: m.networkRxBytes,
                 networkTx: m.networkTxBytes,
-                blockRead: 0,
-                blockWrite: 0,
                 diskUsage: m.diskUsage,
                 diskLimit: m.diskLimit,
               })),

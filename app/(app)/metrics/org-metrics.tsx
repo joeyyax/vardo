@@ -12,27 +12,16 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
+import { formatBytes, formatMemLimit } from "@/lib/metrics/format";
+import { RANGE_MS, BUCKET_MS, chartTooltipStyle, type TimeRange } from "@/lib/metrics/constants";
+import type { ContainerStatsSnapshot, TimePoint } from "@/lib/metrics/types";
+import type { SystemInfo, DiskUsage } from "@/lib/docker/client";
 
 type ProjectSummary = {
   id: string;
   name: string;
   displayName: string;
   status: string;
-};
-
-type ContainerStatsSnapshot = {
-  containerId: string;
-  containerName: string;
-  cpuPercent: number;
-  memoryUsage: number;
-  memoryLimit: number;
-  memoryPercent: number;
-  networkRx: number;
-  networkTx: number;
-  blockRead: number;
-  blockWrite: number;
-  diskUsage: number;
-  diskLimit: number;
 };
 
 type ProjectStats = {
@@ -50,66 +39,10 @@ type OrgMetricsProps = {
   initialDisk?: { total: number; images: number; volumes: number; buildCache: number } | null;
 };
 
-function formatBytes(bytes: number, decimals = 1): string {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(decimals))} ${sizes[i]}`;
-}
-
-// Memory limit > 1TB is effectively "unlimited" (Docker reports host RAM or sentinel)
-function formatMemLimit(bytes: number): string {
-  if (bytes === 0 || bytes > 1099511627776) return "No limit";
-  return formatBytes(bytes);
-}
-
-type TimePoint = {
-  time: string;
-  timestamp: number;
-  cpu: number;
-  memory: number;
-  networkRx: number;
-  networkTx: number;
-  diskTotal: number;
-};
-
-const MAX_POINTS = 60; // 5 minutes at 5s intervals
-
-const chartTooltipStyle = {
-  contentStyle: {
-    backgroundColor: "oklch(0.14 0.005 260)",
-    border: "1px solid oklch(0.25 0.005 260)",
-    borderRadius: "8px",
-    fontSize: "12px",
-    color: "oklch(0.87 0.005 260)",
-  },
-  itemStyle: { color: "oklch(0.87 0.005 260)" },
-  labelStyle: { color: "oklch(0.55 0.005 260)" },
-};
-
-type SystemInfo = {
-  cpus: number;
-  memoryTotal: number;
-  os: string;
-  dockerVersion: string;
-  images: number;
-  containers: number;
-  containersRunning: number;
-};
-
-type DiskUsage = {
-  images: { count: number; totalSize: number };
-  containers: { count: number; totalSize: number };
-  volumes: { count: number; totalSize: number };
-  buildCache: { count: number; totalSize: number; reclaimable: number };
-  total: number;
-};
-
 export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats, initialDisk }: OrgMetricsProps) {
-  const [timeRange, setTimeRange] = useState<"5m" | "1h" | "6h" | "24h" | "7d">("1h");
+  const [timeRange, setTimeRange] = useState<TimeRange>("1h");
   const [disk, setDisk] = useState<DiskUsage | null>(initialDisk ? {
-    images: { count: 0, totalSize: initialDisk.images },
+    images: { count: 0, totalSize: initialDisk.images, reclaimable: 0 },
     containers: { count: 0, totalSize: 0 },
     volumes: { count: 0, totalSize: initialDisk.volumes },
     buildCache: { count: 0, totalSize: initialDisk.buildCache, reclaimable: 0 },
@@ -121,21 +54,19 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
 
   // Stable chart domain — only updates when timeRange changes, not every tick
   const [chartDomain, setChartDomain] = useState<[number, number]>(() => {
-    const rangeMs: Record<string, number> = { "5m": 300000, "1h": 3600000, "6h": 21600000, "24h": 86400000, "7d": 604800000 };
     const now = Date.now();
-    return [now - rangeMs[timeRange], now];
+    return [now - RANGE_MS[timeRange], now];
   });
 
   // Update domain when time range changes, and slowly advance the right edge every 30s
   useEffect(() => {
-    const rangeMs: Record<string, number> = { "5m": 300000, "1h": 3600000, "6h": 21600000, "24h": 86400000, "7d": 604800000 };
     const now = Date.now();
-    setChartDomain([now - rangeMs[timeRange], now]);
+    setChartDomain([now - RANGE_MS[timeRange], now]);
 
     // Advance right edge every 30s so the chart slowly scrolls
     const interval = setInterval(() => {
       const n = Date.now();
-      setChartDomain([n - rangeMs[timeRange], n]);
+      setChartDomain([n - RANGE_MS[timeRange], n]);
     }, 30000);
     return () => clearInterval(interval);
   }, [timeRange]);
@@ -169,19 +100,20 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
     }
     return [];
   });
-  const statsRef = useRef(projectStats);
+  const diskRef = useRef(disk);
+  diskRef.current = disk;
+  const systemRef = useRef(system);
+  systemRef.current = system;
 
   // Load history when switching periods
   useEffect(() => {
-    const rangeMs: Record<string, number> = { "5m": 300000, "1h": 3600000, "6h": 21600000, "24h": 86400000, "7d": 604800000 };
-    const bucketMs: Record<string, number> = { "5m": 5000, "1h": 30000, "6h": 120000, "24h": 300000, "7d": 1800000 };
     const now = Date.now();
-    const from = now - rangeMs[timeRange];
+    const from = now - RANGE_MS[timeRange];
 
     async function loadHistory() {
       try {
         const res = await fetch(
-          `/api/v1/organizations/${orgId}/stats?from=${from}&to=${now}&bucket=${bucketMs[timeRange]}`,
+          `/api/v1/organizations/${orgId}/stats?from=${from}&to=${now}&bucket=${BUCKET_MS[timeRange]}`,
           { signal: AbortSignal.timeout(5000) }
         );
         if (!res.ok) {
@@ -253,8 +185,8 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
           timestamp: string;
         };
 
-        if (payload.disk) setDisk(payload.disk);
-        if (payload.system) setSystem(payload.system);
+        if (payload.disk && JSON.stringify(payload.disk) !== JSON.stringify(diskRef.current)) setDisk(payload.disk);
+        if (payload.system && JSON.stringify(payload.system) !== JSON.stringify(systemRef.current)) setSystem(payload.system);
 
         // Update per-project stats
         setProjectStats((prev) => {
@@ -277,8 +209,7 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
         const totalMemNow = allContainers.reduce((s, c) => s + c.memoryUsage, 0);
         const totalRxNow = allContainers.reduce((s, c) => s + c.networkRx, 0);
         const totalTxNow = allContainers.reduce((s, c) => s + c.networkTx, 0);
-        const rangeMs: Record<string, number> = { "5m": 300000, "1h": 3600000, "6h": 21600000, "24h": 86400000, "7d": 604800000 };
-        const cutoff = now - rangeMs[timeRangeRef.current];
+        const cutoff = now - RANGE_MS[timeRangeRef.current];
 
         setTimeSeries((prev) => {
           const next = [...prev, {
@@ -442,7 +373,7 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
             </div>
             <div className="p-4">
               <ResponsiveContainer width="100%" height={180}>
-                <AreaChart data={timeSeries} isAnimationActive={false}>
+                <AreaChart data={timeSeries}>
                   <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.005 260 / 40%)" />
                   <XAxis {...xAxisProps} />
                   <YAxis tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} />
@@ -459,7 +390,7 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
             </div>
             <div className="p-4">
               <ResponsiveContainer width="100%" height={180}>
-                <AreaChart data={timeSeries} isAnimationActive={false}>
+                <AreaChart data={timeSeries}>
                   <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.005 260 / 40%)" />
                   <XAxis {...xAxisProps} />
                   <YAxis tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} tickFormatter={(v) => formatBytes(v)} />
@@ -476,7 +407,7 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
             </div>
             <div className="p-4">
               <ResponsiveContainer width="100%" height={180}>
-                <AreaChart data={timeSeries} isAnimationActive={false}>
+                <AreaChart data={timeSeries}>
                   <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.005 260 / 40%)" />
                   <XAxis {...xAxisProps} />
                   <YAxis tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} tickFormatter={(v) => formatBytes(v)} />
@@ -494,7 +425,7 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
             </div>
             <div className="p-4">
               <ResponsiveContainer width="100%" height={180}>
-                <AreaChart data={timeSeries} isAnimationActive={false}>
+                <AreaChart data={timeSeries}>
                   <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.005 260 / 40%)" />
                   <XAxis {...xAxisProps} />
                   <YAxis tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} tickFormatter={(v) => formatBytes(v)} />

@@ -44,17 +44,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       const allMem: Map<number, number> = new Map();
       const allNetRx: Map<number, number> = new Map();
       const allNetTx: Map<number, number> = new Map();
-      const allDiskR: Map<number, number> = new Map();
-      const allDiskW: Map<number, number> = new Map();
 
       await Promise.allSettled(
         activeNames.map(async (name) => {
-          const [cpu, mem, netRx, netTx, diskR, diskW] = await Promise.all([
+          const [cpu, mem, netRx, netTx] = await Promise.all([
             queryMetrics(name, "cpu", fromMs, toMs, { type: "avg", bucketMs }),
             queryMetrics(name, "memory", fromMs, toMs, { type: "avg", bucketMs }),
             queryMetrics(name, "networkRx", fromMs, toMs, { type: "sum", bucketMs }),
-            queryMetrics(name, "networkTx", fromMs, toMs, { type: "sum", bucketMs }),
-            queryMetrics(name, "networkRx", fromMs, toMs, { type: "sum", bucketMs }), // Using networkRx as placeholder for disk until we add disk to store
             queryMetrics(name, "networkTx", fromMs, toMs, { type: "sum", bucketMs }),
           ]);
           for (const [ts, v] of cpu) { allCpu.set(ts, (allCpu.get(ts) || 0) + v); }

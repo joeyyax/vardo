@@ -73,6 +73,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { isAdmin } from "@/lib/auth/permissions";
 
 type Deployment = {
   id: string;
@@ -727,7 +728,7 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allProje
     }
   }
 
-  const canDelete = userRole === "owner" || userRole === "admin";
+  const canDelete = isAdmin(userRole);
 
   async function handleSave() {
     setSaving(true);

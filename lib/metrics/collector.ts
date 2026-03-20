@@ -4,6 +4,7 @@ import { getSystemDiskUsage } from "@/lib/docker/client";
 
 let interval: ReturnType<typeof setInterval> | null = null;
 let started = false;
+let diskTickCounter = 0;
 
 /**
  * Start the metrics collector.
@@ -41,18 +42,21 @@ export function startCollector(intervalMs = 30000) {
       console.error("[collector] Error:", (err as Error).message);
     }
 
-    // Also collect disk usage
-    try {
-      const diskUsage = await getSystemDiskUsage();
-      await storeDiskUsage(Date.now(), {
-        images: diskUsage.images.totalSize,
-        volumes: diskUsage.volumes.totalSize,
-        buildCache: diskUsage.buildCache.totalSize,
-        total: diskUsage.total,
-      });
-    } catch (err) {
-      console.error("[collector] Disk error:", (err as Error).message);
+    // Only collect disk usage every 10th cycle (~5 minutes at 30s intervals)
+    if (diskTickCounter % 10 === 0) {
+      try {
+        const diskUsage = await getSystemDiskUsage();
+        await storeDiskUsage(Date.now(), {
+          images: diskUsage.images.totalSize,
+          volumes: diskUsage.volumes.totalSize,
+          buildCache: diskUsage.buildCache.totalSize,
+          total: diskUsage.total,
+        });
+      } catch (err) {
+        console.error("[collector] Disk error:", (err as Error).message);
+      }
     }
+    diskTickCounter++;
   }
 
   // Collect immediately, then on interval
@@ -65,4 +69,5 @@ export function stopCollector() {
     clearInterval(interval);
     interval = null;
   }
+  started = false;
 }

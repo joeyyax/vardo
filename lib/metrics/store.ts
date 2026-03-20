@@ -17,14 +17,19 @@ function tsKey(project: string, metric: string, container?: string) {
     : `metrics:${project}:${metric}`;
 }
 
+// Track which time-series keys have already been created to skip redundant TS.CREATE calls
+const createdKeys = new Set<string>();
+
 /**
  * Ensure a time-series key exists with the correct retention and labels.
- * Uses TS.CREATE with IGNORE_DUPLICATE_KEY if already exists.
+ * Skips the TS.CREATE call if the key was already created in this process.
  */
 async function ensureTimeSeries(
   key: string,
   labels: Record<string, string>
 ) {
+  if (createdKeys.has(key)) return;
+
   try {
     const labelArgs = Object.entries(labels).flat();
     await tsRedis.call(
@@ -43,6 +48,8 @@ async function ensureTimeSeries(
       throw err;
     }
   }
+
+  createdKeys.add(key);
 }
 
 /**
