@@ -211,6 +211,8 @@ export function ProjectDetail({ project, orgId, userRole }: ProjectDetailProps) 
   const [newDomainPort, setNewDomainPort] = useState("");
   const [deletingDomainId, setDeletingDomainId] = useState<string | null>(null);
 
+  const [deploying, setDeploying] = useState(false);
+
   const canDelete = userRole === "owner" || userRole === "admin";
 
   async function handleSave() {
@@ -457,10 +459,33 @@ export function ProjectDetail({ project, orgId, userRole }: ProjectDetailProps) 
           <div className="flex items-center gap-2">
             <Button
               size="sm"
-              onClick={() => toast.info("Deploy not yet implemented")}
+              disabled={deploying}
+              onClick={async () => {
+                setDeploying(true);
+                try {
+                  const res = await fetch(
+                    `/api/v1/organizations/${orgId}/projects/${project.id}/deploy`,
+                    { method: "POST" }
+                  );
+                  const data = await res.json();
+                  if (data.success) {
+                    toast.success(`Deployed in ${data.durationMs}ms`);
+                  } else {
+                    toast.error("Deployment failed");
+                  }
+                  router.refresh();
+                } catch {
+                  toast.error("Deployment failed");
+                } finally {
+                  setDeploying(false);
+                }
+              }}
             >
-              <Rocket className="mr-1.5 size-4" />
-              Deploy
+              {deploying ? (
+                <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
+              ) : (
+                <><Rocket className="mr-1.5 size-4" />Deploy</>
+              )}
             </Button>
             <Button
               size="sm"
