@@ -117,6 +117,11 @@ export async function runDeployment(
     const envMap: Record<string, string> = {};
     for (const v of projectEnvVars) envMap[v.key] = v.value;
 
+    // Ensure PORT is set for Nixpacks-built apps
+    if (project.containerPort && !envMap.PORT) {
+      envMap.PORT = String(project.containerPort);
+    }
+
     log(`[deploy] ${projectEnvVars.length} env var(s), ${project.domains.length} domain(s)`);
 
     // Step 1: Generate or fetch compose file
@@ -358,13 +363,26 @@ export async function runDeployment(
     log(`[deploy] Waiting for ${newSlot} to be healthy...`);
     const healthy = await waitForHealthy(newProjectName, composePath, slotDir, logs);
     if (!healthy) {
-      // Roll back: tear down the failed new slot
-      log(`[deploy] Health check failed, tearing down ${newSlot}`);
+      // Grab container logs before tearing down
+      log(`[deploy] Health check failed — fetching container logs...`);
+      try {
+        const { stdout } = await execAsync(
+          `docker compose -f "${composePath}" -p "${newProjectName}" logs --tail 30`,
+          { cwd: slotDir, timeout: 10000 }
+        );
+        if (stdout.trim()) {
+          for (const line of stdout.trim().split("\n")) {
+            log(`[deploy][crash] ${line}`);
+          }
+        }
+      } catch { /* couldn't get logs */ }
+
+      log(`[deploy] Tearing down ${newSlot}`);
       await execAsync(
         `docker compose -f "${composePath}" -p "${newProjectName}" down --remove-orphans`,
         { cwd: slotDir, timeout: 30000 }
       ).catch(() => {});
-      throw new Error(`${newSlot} slot did not become healthy within timeout`);
+      throw new Error(`${newSlot} slot did not become healthy — container may have crashed (see logs above)`);
     }
     stage("healthcheck", "success");
     stage("routing", "running");
