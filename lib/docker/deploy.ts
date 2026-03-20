@@ -304,7 +304,7 @@ export async function runDeployment(
 
     // Step 2: Inject Traefik labels + shared network
     for (const domain of project.domains) {
-      const port = domain.port || project.containerPort || 80;
+      const port = domain.port || project.containerPort || parseInt(envMap.PORT || "0") || 3000;
       compose = injectTraefikLabels(compose, {
         projectName: `${project.name}-${domain.id.slice(0, 6)}`,
         domain: domain.domain,
