@@ -69,72 +69,33 @@ function AccountInfo() {
     <div className="space-y-4">
       <div>
         <h2 className="text-base font-semibold">Account</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          Your personal account information.
-        </p>
       </div>
 
-      <div className="space-y-3">
-        {/* Name */}
-        <div className="flex items-center justify-between rounded-lg border bg-card p-4">
-          <div className="flex-1 min-w-0">
-            <p className="text-xs text-muted-foreground">Name</p>
-            {editingName ? (
-              <div className="flex items-center gap-2 mt-1">
-                <Input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="h-8 max-w-xs"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleSaveName();
-                    if (e.key === "Escape") {
-                      setEditingName(false);
-                      setName(sessionData?.user?.name || "");
-                    }
-                  }}
-                  autoFocus
-                />
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={handleSaveName}
-                  disabled={saving}
-                >
-                  {saving ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <Check className="size-4" />
-                  )}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    setEditingName(false);
-                    setName(sessionData?.user?.name || "");
-                  }}
-                >
-                  <X className="size-4" />
-                </Button>
-              </div>
-            ) : (
-              <p className="text-sm font-medium mt-0.5">
-                {sessionData?.user?.name || "Not set"}
-              </p>
-            )}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-2">
+          <Label htmlFor="profile-name">Name</Label>
+          <div className="flex gap-2">
+            <Input
+              id="profile-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onBlur={() => {
+                if (name.trim() && name !== sessionData?.user?.name) handleSaveName();
+              }}
+              onKeyDown={(e) => { if (e.key === "Enter") handleSaveName(); }}
+            />
+            {saving && <Loader2 className="size-4 animate-spin text-muted-foreground mt-2.5" />}
           </div>
-          {!editingName && (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setEditingName(true)}
-            >
-              <Pencil className="size-4" />
-            </Button>
-          )}
         </div>
 
-        {/* Email */}
+        <div className="grid gap-2">
+          <Label>Email</Label>
+          <Input value={sessionData?.user?.email || ""} disabled />
+        </div>
+      </div>
+
+      {/* Legacy card sections removed — name/email are now simple fields above */}
+      <div className="hidden">
         <div className="flex items-center justify-between rounded-lg border bg-card p-4">
           <div>
             <p className="text-xs text-muted-foreground">Email</p>
