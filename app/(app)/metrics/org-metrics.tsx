@@ -107,6 +107,8 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
   const [timeRange, setTimeRange] = useState<"5m" | "1h" | "6h" | "24h" | "7d">("1h");
   const [disk, setDisk] = useState<DiskUsage | null>(null);
   const [system, setSystem] = useState<SystemInfo | null>(null);
+  const timeRangeRef = useRef(timeRange);
+  timeRangeRef.current = timeRange;
   const [projectStats, setProjectStats] = useState<Record<string, ProjectStats>>(() => {
     const initial: Record<string, ProjectStats> = {};
     for (const p of projects) {
@@ -130,9 +132,28 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
           `/api/v1/organizations/${orgId}/stats?from=${from}&to=${now}&bucket=${bucketMs[timeRange]}`,
           { signal: AbortSignal.timeout(5000) }
         );
-        if (!res.ok) return;
+        if (!res.ok) {
+          // No history — seed with empty start point so chart shows full range
+          setTimeSeries([{
+            time: new Date(from).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            timestamp: from,
+            cpu: 0, memory: 0, networkRx: 0, networkTx: 0, diskTotal: 0,
+          }]);
+          return;
+        }
         const { series } = await res.json();
-        if (!series?.cpu?.length) return;
+
+        // Seed start point at range start
+        const startPoint: TimePoint = {
+          time: new Date(from).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          timestamp: from,
+          cpu: 0, memory: 0, networkRx: 0, networkTx: 0, diskTotal: 0,
+        };
+
+        if (!series?.cpu?.length) {
+          setTimeSeries([startPoint]);
+          return;
+        }
 
         const points: TimePoint[] = series.cpu.map(([ts, cpu]: [number, number], i: number) => {
           const mem = series.memory?.[i] || [ts, 0];
@@ -148,9 +169,19 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
             diskTotal: 0,
           };
         });
+
+        // Prepend start point if history doesn't cover full range
+        if (points[0]?.timestamp > from + 60000) {
+          points.unshift(startPoint);
+        }
         setTimeSeries(points);
       } catch {
-        // History not available — live data will populate
+        // Seed with empty start point
+        setTimeSeries([{
+          time: new Date(from).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          timestamp: from,
+          cpu: 0, memory: 0, networkRx: 0, networkTx: 0, diskTotal: 0,
+        }]);
       }
     }
 
@@ -194,6 +225,9 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
         const totalMemNow = allContainers.reduce((s, c) => s + c.memoryUsage, 0);
         const totalRxNow = allContainers.reduce((s, c) => s + c.networkRx, 0);
         const totalTxNow = allContainers.reduce((s, c) => s + c.networkTx, 0);
+        const rangeMs: Record<string, number> = { "5m": 300000, "1h": 3600000, "6h": 21600000, "24h": 86400000, "7d": 604800000 };
+        const cutoff = now - rangeMs[timeRangeRef.current];
+
         setTimeSeries((prev) => {
           const next = [...prev, {
             time: new Date(now).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
@@ -204,7 +238,8 @@ export function OrgMetrics({ orgId, projects }: OrgMetricsProps) {
             networkTx: totalTxNow,
             diskTotal: payload.disk?.total || 0,
           }];
-          return next.length > MAX_POINTS ? next.slice(-MAX_POINTS) : next;
+          // Trim data older than the selected time range
+          return next.filter((p) => p.timestamp >= cutoff);
         });
       } catch {
         // Ignore parse errors
