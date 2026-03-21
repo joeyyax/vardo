@@ -155,17 +155,34 @@ export default async function AppDetailPage({ params }: PageProps) {
     redirect(`/apps/${app.name}${envPath}${tabPath}`);
   }
 
-  // Load sibling apps if this app belongs to a project
-  let siblings: { name: string; displayName: string; status: string }[] = [];
+  // Load sibling apps if this app belongs to a project (includes dependsOn for circular dep detection)
+  let siblings: {
+    id: string;
+    name: string;
+    displayName: string;
+    status: string;
+    dependsOn: string[] | null;
+  }[] = [];
   if (app.projectId) {
     const siblingList = await db.query.apps.findMany({
       where: and(
         eq(apps.organizationId, orgId),
         eq(apps.projectId, app.projectId),
       ),
-      columns: { name: true, displayName: true, status: true },
+      columns: {
+        id: true,
+        name: true,
+        displayName: true,
+        status: true,
+        dependsOn: true,
+      },
     });
-    siblings = siblingList.filter((s) => s.name !== app.name);
+    siblings = siblingList
+      .filter((s) => s.name !== app.name)
+      .map((s) => ({
+        ...s,
+        dependsOn: s.dependsOn as string[] | null,
+      }));
   }
 
   // Build project options list from the projects table
