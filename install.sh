@@ -12,7 +12,7 @@ RED="\033[31m"
 RESET="\033[0m"
 
 HOST_DIR="/opt/host"
-COMPOSE_FILE="docker-compose.prod.yml"
+COMPOSE_FILE="docker-compose.yml"
 
 log() { echo -e "${GREEN}▸${RESET} $1"; }
 warn() { echo -e "${YELLOW}▸${RESET} $1"; }
@@ -99,13 +99,6 @@ EOF
 else
   log "Configuration exists at $ENV_FILE"
   source "$ENV_FILE"
-fi
-
-# ── Create network ─────────────────────────────────────────────────────────────
-
-if ! docker network inspect host-network &> /dev/null; then
-  log "Creating host-network..."
-  docker network create host-network
 fi
 
 # ── Start ──────────────────────────────────────────────────────────────────────
