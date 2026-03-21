@@ -287,6 +287,9 @@ export function EnvEditor(props: EnvEditorProps) {
     }
   }
 
+  // Memoize line splits for copy chips (avoids re-split on mousemove renders)
+  const lines = useMemo(() => content.split("\n"), [content]);
+
   if (!loaded) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -294,9 +297,6 @@ export function EnvEditor(props: EnvEditorProps) {
       </div>
     );
   }
-
-  // Memoize line splits for copy chips (avoids re-split on mousemove renders)
-  const lines = useMemo(() => content.split("\n"), [content]);
   const btnClass = "px-2 py-0.5 rounded border border-zinc-700 bg-zinc-800/80 text-[10px] font-mono text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 hover:bg-zinc-700 transition-colors";
 
   function renderCopyChips() {
