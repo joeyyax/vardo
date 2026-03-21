@@ -92,6 +92,7 @@ export function AdminPanel({
               <span className="ml-1.5 tabular-nums text-muted-foreground">{orgBreakdown.length}</span>
             )}
           </TabsTrigger>
+          <TabsTrigger value="system">System</TabsTrigger>
           <TabsTrigger value="users">Users</TabsTrigger>
           <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
           <TabsTrigger value="metrics">Metrics</TabsTrigger>
@@ -119,7 +120,7 @@ export function AdminPanel({
             })}
           </div>
 
-          {/* Resource usage */}
+          {/* Resource usage — highlight only */}
           {systemHealth.resources.length > 0 && (
             <div className="grid gap-4 sm:grid-cols-3 mt-4">
               {systemHealth.resources.map((res) => (
@@ -154,8 +155,24 @@ export function AdminPanel({
             </div>
           )}
 
-          {/* Services health */}
-          <div className="squircle rounded-lg border bg-card overflow-hidden mt-4">
+          {/* Services summary — compact, just dots */}
+          <div className="flex flex-wrap items-center gap-3 mt-4">
+            {systemHealth.services.map((svc) => (
+              <div key={svc.name} className="flex items-center gap-1.5">
+                <span className={`size-1.5 rounded-full ${
+                  svc.status === "healthy" ? "bg-status-success" :
+                  svc.status === "unhealthy" ? "bg-status-error" :
+                  "bg-status-neutral"
+                }`} />
+                <span className="text-xs text-muted-foreground">{svc.name}</span>
+              </div>
+            ))}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="system" className="pt-4 space-y-4">
+          {/* Infrastructure services */}
+          <div className="squircle rounded-lg border bg-card overflow-hidden">
             <div className="px-4 py-2 border-b">
               <p className="text-xs text-muted-foreground">Infrastructure</p>
             </div>
@@ -192,8 +209,8 @@ export function AdminPanel({
             </div>
           </div>
 
-          {/* Auth methods */}
-          <div className="squircle rounded-lg border bg-card p-4 mt-4">
+          {/* Authentication */}
+          <div className="squircle rounded-lg border bg-card p-4">
             <p className="text-xs text-muted-foreground mb-3">Authentication</p>
             <div className="flex flex-wrap gap-2">
               {([
@@ -219,7 +236,7 @@ export function AdminPanel({
           </div>
 
           {/* Feature flags */}
-          <div className="squircle rounded-lg border bg-card overflow-hidden mt-4">
+          <div className="squircle rounded-lg border bg-card overflow-hidden">
             <div className="px-4 py-2 border-b">
               <p className="text-xs text-muted-foreground">Feature Flags</p>
             </div>
