@@ -11,7 +11,6 @@ import {
   ChevronDown,
   Check,
   EllipsisVertical,
-  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageToolbar } from "@/components/page-toolbar";
@@ -24,6 +23,16 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  BottomSheet,
+  BottomSheetContent,
+  BottomSheetFooter,
+  BottomSheetHeader,
+  BottomSheetTitle,
+  BottomSheetDescription,
+} from "@/components/ui/bottom-sheet";
 import { detectProjectIcon } from "@/lib/ui/project-icon";
 
 // ---------------------------------------------------------------------------
@@ -171,6 +180,9 @@ export function ProjectDetail({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [selectedEnv, setSelectedEnv] = useState<string>("production");
+  const [newEnvOpen, setNewEnvOpen] = useState(false);
+  const [newEnvName, setNewEnvName] = useState("");
+  const [newEnvSaving, setNewEnvSaving] = useState(false);
 
   const environments = [
     { name: "production", type: "production" },
@@ -195,6 +207,43 @@ export function ProjectDetail({
       toast.error("Failed to delete project");
     } finally {
       setDeleting(false);
+    }
+  }
+
+  async function handleCreateEnv() {
+    const name = newEnvName.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+    if (!name) return;
+    setNewEnvSaving(true);
+    try {
+      // Create a group environment for this project
+      // The API will fan out per-app environments
+      const firstApp = project.apps[0];
+      if (!firstApp) {
+        toast.error("Add an app to the project first");
+        return;
+      }
+      const res = await fetch(
+        `/api/v1/organizations/${orgId}/apps/${firstApp.id}/environments`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, type: "staging" }),
+        }
+      );
+      if (res.ok) {
+        toast.success(`Environment "${name}" created`);
+        setNewEnvOpen(false);
+        setNewEnvName("");
+        setSelectedEnv(name);
+        router.refresh();
+      } else {
+        const data = await res.json();
+        toast.error(data.error || "Failed to create environment");
+      }
+    } catch {
+      toast.error("Failed to create environment");
+    } finally {
+      setNewEnvSaving(false);
     }
   }
 
@@ -270,7 +319,10 @@ export function ProjectDetail({
                 </DropdownMenuItem>
               ))}
               <DropdownMenuSeparator />
-              <DropdownMenuItem className="text-muted-foreground" disabled>
+              <DropdownMenuItem
+                className="text-muted-foreground"
+                onClick={() => setNewEnvOpen(true)}
+              >
                 <Plus className="mr-2 size-3.5" />
                 New environment
               </DropdownMenuItem>
@@ -302,6 +354,39 @@ export function ProjectDetail({
           ))}
         </div>
       )}
+
+      {/* New environment sheet */}
+      <BottomSheet open={newEnvOpen} onOpenChange={setNewEnvOpen}>
+        <BottomSheetContent>
+          <BottomSheetHeader>
+            <BottomSheetTitle>New Environment</BottomSheetTitle>
+            <BottomSheetDescription>
+              Create a new environment for all apps in this project.
+            </BottomSheetDescription>
+          </BottomSheetHeader>
+          <div className="p-6 space-y-4">
+            <div className="grid gap-2">
+              <Label htmlFor="env-name">Name</Label>
+              <Input
+                id="env-name"
+                placeholder="staging, preview, dev..."
+                value={newEnvName}
+                onChange={(e) => setNewEnvName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleCreateEnv(); }}
+                autoFocus
+              />
+            </div>
+          </div>
+          <BottomSheetFooter>
+            <Button variant="outline" onClick={() => setNewEnvOpen(false)} disabled={newEnvSaving}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreateEnv} disabled={newEnvSaving || !newEnvName.trim()}>
+              {newEnvSaving ? "Creating..." : "Create Environment"}
+            </Button>
+          </BottomSheetFooter>
+        </BottomSheetContent>
+      </BottomSheet>
 
       {/* Delete confirmation */}
       <ConfirmDeleteDialog
