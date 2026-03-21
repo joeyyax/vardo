@@ -3,12 +3,48 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { projects, apps } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
-import { eq, and, or } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 
 type RouteParams = {
   params: Promise<{ orgId: string; projectId: string }>;
 };
+
+/** Look up by ID first, then fall back to name. */
+async function findProject(orgId: string, projectId: string) {
+  let project = await db.query.projects.findFirst({
+    where: and(eq(projects.organizationId, orgId), eq(projects.id, projectId)),
+    with: {
+      apps: {
+        columns: { id: true, name: true, displayName: true, status: true },
+      },
+    },
+  });
+  if (!project) {
+    project = await db.query.projects.findFirst({
+      where: and(eq(projects.organizationId, orgId), eq(projects.name, projectId)),
+      with: {
+        apps: {
+          columns: { id: true, name: true, displayName: true, status: true },
+        },
+      },
+    });
+  }
+  return project;
+}
+
+/** Look up by ID first, then fall back to name (without relations). */
+async function findProjectBasic(orgId: string, projectId: string) {
+  let project = await db.query.projects.findFirst({
+    where: and(eq(projects.organizationId, orgId), eq(projects.id, projectId)),
+  });
+  if (!project) {
+    project = await db.query.projects.findFirst({
+      where: and(eq(projects.organizationId, orgId), eq(projects.name, projectId)),
+    });
+  }
+  return project;
+}
 
 // GET /api/v1/organizations/[orgId]/projects/[projectId]
 // Returns a single project with its apps
@@ -21,17 +57,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const project = await db.query.projects.findFirst({
-      where: and(
-        or(eq(projects.id, projectId), eq(projects.name, projectId)),
-        eq(projects.organizationId, orgId)
-      ),
-      with: {
-        apps: {
-          columns: { id: true, name: true, displayName: true, status: true },
-        },
-      },
-    });
+    const project = await findProject(orgId, projectId);
 
     if (!project) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
@@ -47,7 +73,7 @@ const updateSchema = z.object({
   name: z
     .string()
     .min(1)
-    .regex(/^[a-z0-9-]+$/, "Name must be lowercase alphanumeric with hyphens")
+    .regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/, "Name must be lowercase alphanumeric with hyphens")
     .optional(),
   displayName: z.string().min(1).optional(),
   description: z.string().nullable().optional(),
@@ -78,12 +104,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const existing = await db.query.projects.findFirst({
-      where: and(
-        or(eq(projects.id, projectId), eq(projects.name, projectId)),
-        eq(projects.organizationId, orgId)
-      ),
-    });
+    const existing = await findProjectBasic(orgId, projectId);
 
     if (!existing) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
@@ -105,13 +126,27 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    const [updated] = await db
-      .update(projects)
-      .set(parsed.data)
-      .where(eq(projects.id, existing.id))
-      .returning();
+    try {
+      const [updated] = await db
+        .update(projects)
+        .set(parsed.data)
+        .where(eq(projects.id, existing.id))
+        .returning();
 
-    return NextResponse.json({ project: updated });
+      return NextResponse.json({ project: updated });
+    } catch (updateError) {
+      const pgCode = updateError instanceof Error
+        ? ("code" in updateError ? (updateError as { code: string }).code : null) ??
+          (updateError.cause && typeof updateError.cause === "object" && "code" in updateError.cause ? (updateError.cause as { code: string }).code : null)
+        : null;
+      if (pgCode === "23505") {
+        return NextResponse.json(
+          { error: "A project with that name already exists" },
+          { status: 409 }
+        );
+      }
+      throw updateError;
+    }
   } catch (error) {
     return handleRouteError(error, "Error updating project");
   }
@@ -128,12 +163,7 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const existing = await db.query.projects.findFirst({
-      where: and(
-        or(eq(projects.id, projectId), eq(projects.name, projectId)),
-        eq(projects.organizationId, orgId)
-      ),
-    });
+    const existing = await findProjectBasic(orgId, projectId);
 
     if (!existing) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });

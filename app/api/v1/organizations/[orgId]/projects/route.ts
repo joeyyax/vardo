@@ -15,7 +15,7 @@ const createProjectSchema = z.object({
   name: z
     .string()
     .min(1, "Name is required")
-    .regex(/^[a-z0-9-]+$/, "Name must be lowercase alphanumeric with hyphens"),
+    .regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/, "Name must be lowercase alphanumeric with hyphens"),
   displayName: z.string().min(1, "Display name is required"),
   description: z.string().optional(),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
