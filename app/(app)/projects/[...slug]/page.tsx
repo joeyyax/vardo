@@ -58,6 +58,9 @@ export default async function ProjectDetailPage({
           deployType: true,
           source: true,
           dependsOn: true,
+          parentAppId: true,
+          composeService: true,
+          containerName: true,
         },
         with: {
           domains: { columns: { domain: true, isPrimary: true } },
@@ -83,6 +86,21 @@ export default async function ProjectDetailPage({
           },
           envVars: {
             columns: { id: true, key: true, value: true, isSecret: true, createdAt: true, updatedAt: true },
+          },
+          childApps: {
+            columns: {
+              id: true,
+              name: true,
+              displayName: true,
+              composeService: true,
+              status: true,
+              containerName: true,
+              imageName: true,
+              dependsOn: true,
+              cpuLimit: true,
+              memoryLimit: true,
+              persistentVolumes: true,
+            },
           },
         },
       },
