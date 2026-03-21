@@ -178,7 +178,7 @@ export function useAppMetrics(orgId: string) {
         const now = Date.now();
         const from = now - 3600000;
         const res = await fetch(
-          `/api/v1/organizations/${orgId}/stats?from=${from}&to=${now}&bucket=60000&perProject=true&metric=cpu`
+          `/api/v1/organizations/${orgId}/stats?from=${from}&to=${now}&bucket=60000&perProject=true`
         );
         if (!res.ok) {
           console.warn("[metrics] History API returned", res.status);
