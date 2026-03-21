@@ -26,7 +26,7 @@ export default async function AppLayout({
   const orgData = await getCurrentOrg();
 
   if (!orgData) {
-    redirect("/onboarding");
+    redirect("/create-org");
   }
 
   const { organization } = orgData;
