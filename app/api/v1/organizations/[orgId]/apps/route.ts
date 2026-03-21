@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { apps, projects, domains, organizations, environments } from "@/lib/db/schema";
+import { apps, projects, domains, organizations, environments, volumes } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { and, desc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
@@ -204,6 +204,20 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       type: "production",
       isDefault: true,
     });
+
+    // Create volume records from persistentVolumes input
+    if (data.persistentVolumes?.length) {
+      for (const vol of data.persistentVolumes) {
+        await db.insert(volumes).values({
+          id: nanoid(),
+          appId,
+          organizationId: orgId,
+          name: vol.name,
+          mountPath: vol.mountPath,
+          persistent: true,
+        });
+      }
+    }
 
     // Auto-create domain if requested
     if (data.generateDomain) {
