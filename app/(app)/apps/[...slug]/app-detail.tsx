@@ -777,6 +777,51 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     ? app.deployments.find((d) => d.status === "running" || d.status === "queued")
     : null;
 
+  // If a deploy is already running (e.g. auto-deploy on creation),
+  // show the in-progress UI and poll for updates until it finishes
+  useEffect(() => {
+    if (!serverRunningDeploy || deploying) return;
+    setDeploying(true);
+    setDeployStartTime(new Date(serverRunningDeploy.startedAt).getTime());
+    setActiveTab("deployments");
+    setExpandedDeployLog(false);
+
+    let stopped = false;
+    async function poll() {
+      while (!stopped) {
+        await new Promise((r) => setTimeout(r, 3000));
+        if (stopped) break;
+        try {
+          const res = await fetch(
+            `/api/v1/organizations/${orgId}/apps/${app.id}`,
+          );
+          if (!res.ok) continue;
+          const { app: updated } = await res.json();
+          const dep = updated.deployments?.find((d: { id: string }) => d.id === serverRunningDeploy!.id);
+          if (dep?.log) {
+            setDeployLog(dep.log.split("\n"));
+          }
+          if (dep?.status === "success" || dep?.status === "failed") {
+            if (dep.status === "success") {
+              toast.success(`Deployed in ${dep.durationMs ? Math.round(dep.durationMs / 1000) + "s" : "—"}`);
+            } else {
+              toast.error("Deployment failed");
+            }
+            setViewingLogId(dep.id);
+            stopped = true;
+          }
+        } catch { /* retry */ }
+      }
+      setDeploying(false);
+      setDeployAbort(null);
+      router.refresh();
+    }
+
+    poll();
+    return () => { stopped = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverRunningDeploy?.id]);
+
   // Real-time updates via SSE (Redis pub/sub), with polling fallback
   useEffect(() => {
     const eventsUrl = `/api/v1/organizations/${orgId}/apps/${app.id}/events`;

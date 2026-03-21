@@ -860,8 +860,8 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], default
                 <Label htmlFor="auto-deploy">Auto Deploy</Label>
               </div>
 
-              {/* Create GitHub repo — only show if GitHub is connected */}
-              {installations.length > 0 && (
+              {/* Create GitHub repo — only for non-git sources with GitHub connected */}
+              {installations.length > 0 && source !== "git" && (
                 <div className="space-y-3">
                   <div className="flex items-center gap-3">
                     <Switch
