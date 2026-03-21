@@ -155,8 +155,6 @@
   --metric-network-tx: oklch(0.75 0.15 75);
   --metric-memory-limit: oklch(0.65 0.22 25);
   --metric-disk: oklch(0.65 0.1 30);
-  --metric-grid: oklch(0.30 0.006 285.75 / 40%);
-  --metric-tick: oklch(0.55 0.006 285.75);
 }
 
 .dark {
@@ -209,8 +207,6 @@
   --metric-network-tx: oklch(0.75 0.15 75);
   --metric-memory-limit: oklch(0.65 0.22 25);
   --metric-disk: oklch(0.65 0.1 30);
-  --metric-grid: oklch(0.30 0.006 285.75 / 40%);
-  --metric-tick: oklch(0.55 0.006 285.75);
 }
 
 @layer base {
