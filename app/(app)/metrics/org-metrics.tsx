@@ -131,7 +131,13 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
     return { cpu: 0, memory: 0, networkRx: 0, networkTx: 0, containers: 0 };
   }, [metaApps, points]);
 
-  const activeApps = displayApps.filter((p) => p.status === "active").length;
+  const statusCounts = useMemo(() => {
+    const counts = { active: 0, stopped: 0, error: 0, deploying: 0 };
+    for (const app of displayApps) {
+      if (app.status in counts) counts[app.status as keyof typeof counts]++;
+    }
+    return counts;
+  }, [displayApps]);
 
   return (
     <div className="space-y-6">
@@ -233,7 +239,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
         <div className="squircle rounded-lg border bg-card px-4 py-3">
           <div className="flex items-center gap-2">
             <Box className="size-4 text-muted-foreground shrink-0" />
-            <p className="text-xs text-muted-foreground">Running</p>
+            <p className="text-xs text-muted-foreground">Infrastructure</p>
           </div>
           <div className="flex items-baseline gap-3 mt-1">
             {(streamProjectCount ?? projectCount) !== undefined && (
@@ -243,7 +249,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
               </div>
             )}
             <div>
-              <p className="text-2xl font-semibold tabular-nums">{activeApps}</p>
+              <p className="text-2xl font-semibold tabular-nums">{displayApps.length}</p>
               <p className="text-[10px] text-muted-foreground">apps</p>
             </div>
             <div>
@@ -252,6 +258,32 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
               </p>
               <p className="text-[10px] text-muted-foreground">containers</p>
             </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 mt-2">
+            {statusCounts.active > 0 && (
+              <span className="inline-flex items-center gap-1 text-[10px] text-status-success">
+                <span className="size-1.5 rounded-full bg-status-success" />
+                {statusCounts.active} running
+              </span>
+            )}
+            {statusCounts.error > 0 && (
+              <span className="inline-flex items-center gap-1 text-[10px] text-status-error">
+                <span className="size-1.5 rounded-full bg-status-error" />
+                {statusCounts.error} crashed
+              </span>
+            )}
+            {statusCounts.stopped > 0 && (
+              <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+                <span className="size-1.5 rounded-full bg-status-neutral" />
+                {statusCounts.stopped} stopped
+              </span>
+            )}
+            {statusCounts.deploying > 0 && (
+              <span className="inline-flex items-center gap-1 text-[10px] text-status-info">
+                <span className="size-1.5 rounded-full bg-status-info animate-pulse" />
+                {statusCounts.deploying} deploying
+              </span>
+            )}
           </div>
         </div>
       </div>
