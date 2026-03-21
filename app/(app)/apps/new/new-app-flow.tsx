@@ -459,13 +459,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], default
       } else {
         toast.success("App created");
       }
-      // Redirect to project page if the app belongs to a project, otherwise to the app page
-      const selectedProject = parentId ? parentApps.find((p) => p.id === parentId) : null;
-      if (selectedProject) {
-        router.push(`/projects/${selectedProject.name}`);
-      } else {
-        router.push(`/apps/${app.name}`);
-      }
+      router.push(`/apps/${app.name}`);
     } catch { toast.error("Failed to create app"); }
     finally { setCreating(false); }
   }
