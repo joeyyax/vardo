@@ -232,19 +232,28 @@ function ProjectDeployments({ apps, color }: { apps: ProjectApp[]; color: string
   return (
     <div className="space-y-2">
       {allDeployments
-        .filter((d) => d.status !== "queued")
+        .filter((d) => d.status !== "queued" && d.status !== "running")
         .map((deployment) => {
+          // Determine if this is the latest deployment for its app
+          const isLatestForApp = deployment.app.deployments[0]?.id === deployment.id;
           const isLive = deployment.status === "success" &&
-            deployment.app.status === "active" &&
-            deployment.app.deployments[0]?.id === deployment.id;
+            deployment.app.status === "active" && isLatestForApp;
+          const isStopped = deployment.status === "success" &&
+            deployment.app.status === "stopped" && isLatestForApp;
+          const isErrored = deployment.status === "success" &&
+            deployment.app.status === "error" && isLatestForApp;
+          const isSuperseded = deployment.status === "success" &&
+            !isLatestForApp && deployment.app.status === "active";
 
           const bgColor = isLive
             ? "bg-status-success-muted"
-            : deployment.status === "running"
-              ? "bg-status-info-muted"
-              : deployment.status === "failed"
+            : isStopped
+              ? "bg-status-neutral-muted"
+              : isErrored
                 ? "bg-status-error-muted"
-                : "bg-card";
+                : deployment.status === "failed"
+                  ? "bg-status-error-muted"
+                  : "bg-card";
 
           return (
             <div key={deployment.id} className={`squircle rounded-lg border ${bgColor} overflow-hidden`}>
@@ -258,6 +267,18 @@ function ProjectDeployments({ apps, color }: { apps: ProjectApp[]; color: string
                     <Badge className="border-transparent bg-status-success text-white shrink-0">
                       <span className="mr-1.5 size-1.5 rounded-full bg-white animate-pulse" />
                       Live
+                    </Badge>
+                  ) : isStopped ? (
+                    <Badge className="border-transparent bg-status-neutral-muted text-status-neutral shrink-0">
+                      Stopped
+                    </Badge>
+                  ) : isErrored ? (
+                    <Badge className="border-transparent bg-status-error-muted text-status-error shrink-0">
+                      Crashed
+                    </Badge>
+                  ) : isSuperseded ? (
+                    <Badge className="border-transparent bg-status-neutral-muted text-status-neutral shrink-0">
+                      Superseded
                     </Badge>
                   ) : (
                     <DeploymentStatusBadge status={deployment.status} />
@@ -294,7 +315,7 @@ function ProjectDeployments({ apps, color }: { apps: ProjectApp[]; color: string
                         return by ? `${triggerLabel} by ${by}` : triggerLabel;
                       })()}
                     </p>
-                    {deployment.status === "failed" && deployment.log && (() => {
+                    {(deployment.status === "failed" || isErrored) && deployment.log && (() => {
                       const lines = deployment.log.split("\n");
                       const errorLine = [...lines].reverse().find(
                         (l) => l.includes("ERROR") || l.includes("FATAL") || l.includes("failed") || l.includes("crashed")
@@ -572,7 +593,7 @@ export function ProjectDetail({
       ? project.groupEnvironments.find((e) => e.name === selectedEnv)?.id
       : undefined;
     try {
-      const body: Record<string, string> = {};
+      const body: Record<string, string | boolean> = { deployAll: true };
       if (groupEnvId) body.groupEnvironmentId = groupEnvId;
       const res = await fetch(
         `/api/v1/organizations/${orgId}/apps/${firstApp.id}/deploy`,

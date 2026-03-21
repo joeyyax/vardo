@@ -5,6 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageToolbar } from "@/components/page-toolbar";
 import { AdminActions } from "./admin-actions";
 import { OrgMetrics } from "@/app/(app)/metrics/org-metrics";
+import { Sparkline } from "@/components/app-metrics-card";
 import type { SystemInfo } from "@/lib/docker/client";
 import type { ContainerStatsSnapshot } from "@/lib/metrics/types";
 
@@ -24,6 +25,7 @@ type AppSummary = {
 
 type AdminPanelProps = {
   stats: Stats;
+  sparklines: Record<string, [number, number][]>;
   orgId: string;
   appList: AppSummary[];
   initialSystem: SystemInfo | null;
@@ -33,6 +35,7 @@ type AdminPanelProps = {
 
 export function AdminPanel({
   stats,
+  sparklines,
   orgId,
   appList,
   initialSystem,
@@ -40,6 +43,13 @@ export function AdminPanel({
   initialDisk,
 }: AdminPanelProps) {
   const [activeTab, setActiveTab] = useState("overview");
+
+  const statCards = [
+    { label: "Users", value: stats.userCount, sparklineKey: "users", color: "oklch(0.65 0.18 290)" },
+    { label: "Apps", value: stats.appCount, sparklineKey: "apps", color: "oklch(0.68 0.16 175)" },
+    { label: "Deployments", value: stats.deploymentCount, sparklineKey: "deployments", color: "oklch(0.67 0.17 120)" },
+    { label: "Templates", value: stats.templateCount, sparklineKey: null, color: "oklch(0.65 0.16 335)" },
+  ];
 
   return (
     <div className="space-y-6">
@@ -56,17 +66,24 @@ export function AdminPanel({
         <TabsContent value="overview" className="pt-4 space-y-6">
           {/* Stats */}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {[
-              { label: "Users", value: stats.userCount },
-              { label: "Apps", value: stats.appCount },
-              { label: "Deployments", value: stats.deploymentCount },
-              { label: "Templates", value: stats.templateCount },
-            ].map((stat) => (
-              <div key={stat.label} className="rounded-lg border bg-card p-4">
-                <p className="text-xs text-muted-foreground">{stat.label}</p>
-                <p className="text-2xl font-semibold tabular-nums mt-1">{stat.value}</p>
-              </div>
-            ))}
+            {statCards.map((stat) => {
+              const data = stat.sparklineKey ? sparklines[stat.sparklineKey]?.map(([, v]) => v) : null;
+              return (
+                <div key={stat.label} className="squircle relative rounded-lg border bg-card p-4 overflow-hidden">
+                  {data && data.length > 0 && (
+                    <Sparkline
+                      data={data}
+                      className="absolute inset-0 w-full h-full pointer-events-none"
+                      style={{ color: stat.color }}
+                    />
+                  )}
+                  <div className="relative">
+                    <p className="text-xs text-muted-foreground">{stat.label}</p>
+                    <p className="text-2xl font-semibold tabular-nums mt-1">{stat.value}</p>
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
           {/* Actions */}

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { user, apps, deployments, templates } from "@/lib/db/schema";
+import { user, apps, deployments } from "@/lib/db/schema";
+import { loadTemplates } from "@/lib/templates/load";
 import { getSession, getCurrentOrg } from "@/lib/auth/session";
 import { eq, sql, asc, desc } from "drizzle-orm";
 import { AdminPanel } from "./admin-panel";
@@ -34,7 +35,7 @@ export default async function AdminPage() {
     [{ userCount }],
     [{ appCount }],
     [{ deploymentCount }],
-    [{ templateCount }],
+    templateList,
     appList,
     systemInfo,
     initialMetrics,
@@ -43,7 +44,7 @@ export default async function AdminPage() {
     db.select({ userCount: sql<number>`count(*)` }).from(user),
     db.select({ appCount: sql<number>`count(*)` }).from(apps),
     db.select({ deploymentCount: sql<number>`count(*)` }).from(deployments),
-    db.select({ templateCount: sql<number>`count(*)` }).from(templates),
+    loadTemplates(),
     db.query.apps.findMany({
       where: eq(apps.organizationId, orgId),
       orderBy: [asc(apps.sortOrder), desc(apps.createdAt)],
@@ -85,12 +86,19 @@ export default async function AdminPage() {
     userCount: Number(userCount),
     appCount: Number(appCount),
     deploymentCount: Number(deploymentCount),
-    templateCount: Number(templateCount),
+    templateCount: templateList.length,
   };
+
+  // Build sparklines from cumulative counts over the last 30 days
+  // This works immediately — no collector history needed
+  const now = Date.now();
+  const sparklineDays = 30;
+  const sparklines = await buildSparklines(sparklineDays);
 
   return (
     <AdminPanel
       stats={stats}
+      sparklines={sparklines}
       orgId={orgId}
       appList={appList}
       initialSystem={systemInfo}
@@ -98,4 +106,55 @@ export default async function AdminPage() {
       initialDisk={cachedDisk}
     />
   );
+}
+
+/**
+ * Build sparkline data from cumulative entity counts.
+ * For each day in the range, counts how many rows existed by that day
+ * using created_at timestamps. Works immediately with no collector history.
+ */
+async function buildSparklines(days: number): Promise<Record<string, [number, number][]>> {
+  const results = await db.execute(sql`
+    WITH days AS (
+      SELECT generate_series(
+        NOW() - ${days + ' days'}::interval,
+        NOW(),
+        '1 day'::interval
+      )::date AS day
+    )
+    SELECT
+      'users' AS metric,
+      d.day,
+      (SELECT COUNT(*) FROM "user" WHERE created_at <= d.day + '1 day'::interval) AS count
+    FROM days d
+    UNION ALL
+    SELECT
+      'apps' AS metric,
+      d.day,
+      (SELECT COUNT(*) FROM "app" WHERE created_at <= d.day + '1 day'::interval) AS count
+    FROM days d
+    UNION ALL
+    SELECT
+      'deployments' AS metric,
+      d.day,
+      (SELECT COUNT(*) FROM "deployment" WHERE started_at <= d.day + '1 day'::interval) AS count
+    FROM days d
+    ORDER BY metric, day
+  `);
+
+  const sparklines: Record<string, [number, number][]> = {
+    users: [],
+    apps: [],
+    deployments: [],
+  };
+
+  for (const row of results as unknown as { metric: string; day: string; count: string }[]) {
+    const ts = new Date(row.day).getTime();
+    const val = parseInt(row.count);
+    if (sparklines[row.metric]) {
+      sparklines[row.metric].push([ts, val]);
+    }
+  }
+
+  return sparklines;
 }

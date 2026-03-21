@@ -1,6 +1,9 @@
 import { fetchAllContainerMetrics } from "./cadvisor";
-import { storeMetrics, storeDiskUsage, storeProjectDisk } from "./store";
+import { storeMetrics, storeDiskUsage, storeProjectDisk, storeBusinessMetric } from "./store";
 import { getSystemDiskUsage, getPerProjectDiskUsage } from "@/lib/docker/client";
+import { db } from "@/lib/db";
+import { sql } from "drizzle-orm";
+import { loadTemplates } from "@/lib/templates/load";
 
 let timeout: ReturnType<typeof setTimeout> | null = null;
 let started = false;
@@ -83,6 +86,36 @@ async function collect() {
       );
     } catch (err) {
       console.error("[collector] Per-project disk error:", (err as Error).message);
+    }
+
+    // Business metrics (entity counts)
+    try {
+      const ts = Date.now();
+      const counts = await db.execute(sql`
+        SELECT 'users' AS name, COUNT(*)::text AS count FROM "user"
+        UNION ALL SELECT 'organizations', COUNT(*)::text FROM "organization"
+        UNION ALL SELECT 'projects', COUNT(*)::text FROM "project"
+        UNION ALL SELECT 'apps', COUNT(*)::text FROM "app"
+        UNION ALL SELECT 'deployments', COUNT(*)::text FROM "deployment"
+        UNION ALL SELECT 'domains', COUNT(*)::text FROM "domain"
+        UNION ALL SELECT 'backups', COUNT(*)::text FROM "backup"
+        UNION ALL SELECT 'cronJobs', COUNT(*)::text FROM "cron_job"
+      `);
+      await Promise.allSettled(
+        (counts as unknown as { name: string; count: string }[]).map((row) =>
+          storeBusinessMetric(
+            row.name as Parameters<typeof storeBusinessMetric>[0],
+            ts,
+            parseInt(row.count),
+          )
+        )
+      );
+
+      // Templates (file-based, not in DB)
+      const templateList = await loadTemplates().catch(() => []);
+      await storeBusinessMetric("templates", ts, templateList.length);
+    } catch (err) {
+      console.error("[collector] Business metrics error:", (err as Error).message);
     }
   }
 }

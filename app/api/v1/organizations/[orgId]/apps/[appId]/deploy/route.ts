@@ -39,19 +39,21 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    // Parse optional environmentId and groupEnvironmentId from body
+    // Parse optional environmentId, groupEnvironmentId, and deployAll flag from body
     let environmentId: string | undefined;
     let groupEnvironmentId: string | undefined;
+    let deployAll = false;
     try {
       const body = await request.json();
       environmentId = body?.environmentId;
       groupEnvironmentId = body?.groupEnvironmentId;
+      deployAll = body?.deployAll === true;
     } catch {
       // No body or invalid JSON — deploy to default (production)
     }
 
-    // Check if this app belongs to a project that has group deployments
-    if (app.projectId && groupEnvironmentId) {
+    // Group deploy: triggered by deployAll flag or explicit groupEnvironmentId
+    if (app.projectId && (deployAll || groupEnvironmentId)) {
       // Group deploy via project
       return createSSEResponse(request, async (sendEvent) => {
         const result = await deployGroup({

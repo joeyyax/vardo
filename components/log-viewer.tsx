@@ -346,10 +346,11 @@ export function DeploymentLog({ log, maxHeight = "max-h-96" }: StaticLogProps) {
 
 type LogViewerProps = {
   streamUrl: string;
+  historyUrl?: string;
   maxLines?: number;
 };
 
-export function LogViewer({ streamUrl, maxLines = 1000 }: LogViewerProps) {
+export function LogViewer({ streamUrl, historyUrl, maxLines = 1000 }: LogViewerProps) {
   const [lines, setLines] = useState<{ text: string; html: string; level: LogLevel }[]>([]);
   const [connected, setConnected] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -357,11 +358,35 @@ export function LogViewer({ streamUrl, maxLines = 1000 }: LogViewerProps) {
   pausedRef.current = paused;
 
   useEffect(() => {
+    // The SSE stream now backfills history automatically when Loki is available,
+    // but if a separate historyUrl is provided, pre-load from it for instant content
+    if (historyUrl) {
+      fetch(historyUrl)
+        .then((res) => res.json())
+        .then((data: { logs?: string }) => {
+          if (!data.logs) return;
+          const initial = data.logs
+            .split("\n")
+            .filter(Boolean)
+            .map((text: string) => ({
+              text,
+              html: highlightLine(text),
+              level: detectLevel(text),
+            }));
+          if (initial.length > 0) {
+            setLines(initial.slice(-maxLines));
+          }
+        })
+        .catch(() => {
+          // History unavailable — stream will provide content
+        });
+    }
+
     const es = new EventSource(streamUrl);
 
     es.onopen = () => setConnected(true);
 
-    es.onmessage = (event) => {
+    function handleLogEvent(event: MessageEvent) {
       if (pausedRef.current) return;
       try {
         const text = JSON.parse(event.data) as string;
@@ -375,17 +400,22 @@ export function LogViewer({ streamUrl, maxLines = 1000 }: LogViewerProps) {
       } catch {
         // Skip malformed messages
       }
-    };
+    }
+
+    // Listen for both named "log" events and unnamed events
+    es.addEventListener("log", handleLogEvent);
+    es.onmessage = handleLogEvent;
 
     es.onerror = () => {
       setConnected(false);
     };
 
     return () => {
+      es.removeEventListener("log", handleLogEvent);
       es.close();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [streamUrl, maxLines]);
+  }, [streamUrl, historyUrl, maxLines]);
 
   return (
     <div className="space-y-2">

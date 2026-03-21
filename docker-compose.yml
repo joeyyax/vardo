@@ -31,6 +31,29 @@ services:
       - /var/lib/docker/:/var/lib/docker:ro
     privileged: true
 
+  loki:
+    image: grafana/loki:3.4
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki.yml
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./config/loki.yml:/etc/loki/loki.yml:ro
+      - loki_data:/loki
+    mem_limit: 512m
+
+  promtail:
+    image: grafana/promtail:3.4
+    restart: unless-stopped
+    command: -config.file=/etc/promtail/promtail.yml
+    volumes:
+      - ./config/promtail.yml:/etc/promtail/promtail.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    depends_on:
+      - loki
+    mem_limit: 128m
+
   traefik:
     image: traefik:v3
     restart: unless-stopped
@@ -57,6 +80,7 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  loki_data:
 
 networks:
   host-network:
