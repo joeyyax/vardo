@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
-import { Loader2, Pause, Play, ArrowDown, X, Copy, Check } from "lucide-react";
+import { Loader2, Pause, Play, ArrowDown, X, Copy, Check, Database, HardDrive } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useVisibilityKey } from "@/lib/hooks/use-visible";
@@ -345,6 +345,8 @@ export function DeploymentLog({ log, maxHeight = "max-h-96" }: StaticLogProps) {
 
 // --- Streaming log viewer ---
 
+type LogSource = "loki" | "docker" | null;
+
 type LogViewerProps = {
   streamUrl: string;
   historyUrl?: string;
@@ -357,6 +359,7 @@ export function LogViewer({ streamUrl, historyUrl, maxLines = 1000 }: LogViewerP
   const [timedOut, setTimedOut] = useState(false);
   const [paused, setPaused] = useState(false);
   const [manualReconnect, setManualReconnect] = useState(0);
+  const [logSource, setLogSource] = useState<LogSource>(null);
   const pausedRef = useRef(paused);
   pausedRef.current = paused;
   const visKey = useVisibilityKey();
@@ -364,6 +367,8 @@ export function LogViewer({ streamUrl, historyUrl, maxLines = 1000 }: LogViewerP
   useEffect(() => {
     // Don't connect if tab is hidden
     if (typeof document !== "undefined" && document.hidden) return;
+
+    setLogSource(null);
 
     // The SSE stream now backfills history automatically when Loki is available,
     // but if a separate historyUrl is provided, pre-load from it for instant content
@@ -392,6 +397,17 @@ export function LogViewer({ streamUrl, historyUrl, maxLines = 1000 }: LogViewerP
     const es = new EventSource(streamUrl);
 
     es.onopen = () => setConnected(true);
+
+    es.addEventListener("source", (event: MessageEvent) => {
+      try {
+        const src = JSON.parse(event.data) as string;
+        if (src === "loki" || src === "docker") {
+          setLogSource(src);
+        }
+      } catch {
+        // skip malformed source event
+      }
+    });
 
     function handleLogEvent(event: MessageEvent) {
       if (pausedRef.current) return;
@@ -440,6 +456,15 @@ export function LogViewer({ streamUrl, historyUrl, maxLines = 1000 }: LogViewerP
           <span className="text-xs text-muted-foreground">
             {connected ? "Streaming" : timedOut ? "Paused" : "Disconnected"}
           </span>
+          {logSource && (
+            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground border border-zinc-800 rounded px-1.5 py-0.5">
+              {logSource === "loki" ? (
+                <><Database className="size-3" />Loki</>
+              ) : (
+                <><HardDrive className="size-3" />Container logs</>
+              )}
+            </span>
+          )}
           {timedOut && (
             <Button
               size="xs"

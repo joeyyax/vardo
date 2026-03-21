@@ -62,6 +62,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       });
 
       return createSSEResponse(request, async (sendEvent) => {
+        sendEvent("source", "loki");
+
         // Backfill recent history so the viewer has content immediately
         try {
           const tailCount = parseInt(tail);
@@ -92,6 +94,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     // Docker compose logs fallback
     return createSSEResponse(request, async (sendEvent) => {
+      sendEvent("source", "docker");
+
       let appDir = resolve(PROJECTS_DIR, app.name, environmentName);
       let activeSlot = "blue";
       try {
