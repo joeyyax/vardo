@@ -11,6 +11,7 @@ import { mkdir, rm } from "fs/promises";
 import { resolve, join } from "path";
 import type { BackupStorage } from "./storage-port";
 import { createBackupStorage } from "./storage-factory";
+import { assertSafeName } from "@/lib/docker/validate";
 
 const execAsync = promisify(exec);
 
@@ -62,6 +63,9 @@ async function backupVolume(
   const archiveFile = "volume.tar.gz";
 
   try {
+    // Validate volume name before interpolating into shell command
+    assertSafeName(dockerVolumeName);
+
     // Tar the volume contents using a temporary Alpine container
     logFn(`Archiving volume ${dockerVolumeName}`);
     await execAsync(
@@ -148,6 +152,8 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
       // The actual Docker volume name follows the blue/green slot pattern:
       // {appName}-blue_{volumeName} or {appName}-green_{volumeName}
       // We try blue first (production slot), then green
+      assertSafeName(app.name);
+      assertSafeName(vol.name);
       const blueVolume = `${app.name}-blue_${vol.name}`;
       const greenVolume = `${app.name}-green_${vol.name}`;
 
@@ -322,6 +328,8 @@ export async function restoreBackup(
     log("Download complete");
 
     // 2. Determine the Docker volume name (try blue first, then green)
+    assertSafeName(backup.app.name);
+    assertSafeName(backup.volumeName);
     const blueVolume = `${backup.app.name}-blue_${backup.volumeName}`;
     const greenVolume = `${backup.app.name}-green_${backup.volumeName}`;
 

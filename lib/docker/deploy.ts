@@ -19,6 +19,7 @@ import {
   type ComposeFile,
 } from "./compose";
 import { ensureNetwork, detectExposedPorts, listContainers, inspectContainer } from "./client";
+import { assertSafeName, assertSafeBranch } from "./validate";
 import { getInstallationToken } from "@/lib/github/app";
 import { githubAppInstallations, memberships } from "@/lib/db/schema";
 import { detectPreventiveFixes, detectCompatIssues, applyCompatFixes } from "./compat";
@@ -29,19 +30,6 @@ const execAsync = promisify(exec);
 const PROJECTS_DIR = resolve(process.env.HOST_PROJECTS_DIR || "./.host/projects");
 const NETWORK_NAME = "host-network";
 
-// Validate shell-unsafe strings before interpolation into commands
-const SAFE_BRANCH_RE = /^[a-zA-Z0-9._\-/]+$/;
-function assertSafeBranch(branch: string): void {
-  if (!SAFE_BRANCH_RE.test(branch)) {
-    throw new Error(`Invalid branch name: ${branch}`);
-  }
-}
-const SAFE_NAME_RE = /^[a-zA-Z0-9._\-]+$/;
-function assertSafeName(name: string): void {
-  if (!SAFE_NAME_RE.test(name)) {
-    throw new Error(`Invalid name: ${name}`);
-  }
-}
 const HEALTH_CHECK_TIMEOUT_MS = 60000;
 const HEALTH_CHECK_INTERVAL_MS = 2000;
 
