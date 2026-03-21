@@ -66,13 +66,15 @@ export async function storeMetrics(
     memoryLimit: number;
     networkRxBytes: number;
     networkTxBytes: number;
-  }
+  },
+  organizationId?: string | null,
 ) {
-  const labels = {
+  const labels: Record<string, string> = {
     project: projectName,
     container: containerId,
     containerName: containerName,
   };
+  if (organizationId) labels.organization = organizationId;
 
   const keys = {
     cpu: tsKey(projectName, "cpu", containerId),
@@ -282,53 +284,141 @@ export type TimeSeriesPoint = [number, number]; // [timestamp, value]
  * Query historical metrics for a project.
  * Returns data points within the given time range.
  */
+type MetricName = "cpu" | "memory" | "memoryLimit" | "networkRx" | "networkTx" | "disk";
+type Aggregation = { type: "avg" | "max" | "min" | "sum"; bucketMs: number };
+
+/**
+ * Query historical metrics for a project.
+ */
 export async function queryMetrics(
   projectName: string,
-  metric: "cpu" | "memory" | "memoryLimit" | "networkRx" | "networkTx" | "disk",
+  metric: MetricName,
   fromMs: number,
   toMs: number,
-  aggregation?: { type: "avg" | "max" | "min" | "sum"; bucketMs: number }
+  aggregation?: Aggregation,
 ): Promise<TimeSeriesPoint[]> {
-  // Find all keys for this project + metric
-  const keys = (await tsRedis.call(
-    "TS.QUERYINDEX",
-    `project=${projectName}`,
-    `metric=${metric}`
-  )) as string[];
+  return mrangeQuery(metric, fromMs, toMs, aggregation, [`project=${projectName}`]);
+}
 
-  if (!keys || keys.length === 0) return [];
+/**
+ * Query historical metrics for an organization (all projects in the org).
+ * Requires containers to have the `host.organization` label.
+ */
+export async function queryByOrg(
+  orgId: string,
+  metric: MetricName,
+  fromMs: number,
+  toMs: number,
+  aggregation?: Aggregation,
+): Promise<TimeSeriesPoint[]> {
+  return mrangeQuery(metric, fromMs, toMs, aggregation, [`organization=${orgId}`]);
+}
 
-  // For aggregated queries across multiple containers, use TS.MRANGE
-  const args: string[] = [
-    fromMs.toString(),
-    toMs.toString(),
-  ];
+/**
+ * Query historical metrics across all projects (system-wide).
+ */
+export async function queryAll(
+  metric: MetricName,
+  fromMs: number,
+  toMs: number,
+  aggregation?: Aggregation,
+): Promise<TimeSeriesPoint[]> {
+  return mrangeQuery(metric, fromMs, toMs, aggregation, []);
+}
+
+/**
+ * Internal: run TS.MRANGE with filters and aggregate across series.
+ */
+function mrangeQuery(
+  metric: MetricName,
+  fromMs: number,
+  toMs: number,
+  aggregation: Aggregation | undefined,
+  extraFilters: string[],
+): Promise<TimeSeriesPoint[]> {
+  return mrangeQueryImpl(metric, fromMs, toMs, aggregation, extraFilters);
+}
+
+async function mrangeQueryImpl(
+  metric: MetricName,
+  fromMs: number,
+  toMs: number,
+  aggregation: Aggregation | undefined,
+  extraFilters: string[],
+): Promise<TimeSeriesPoint[]> {
+  const args: string[] = [fromMs.toString(), toMs.toString()];
 
   if (aggregation) {
     args.push("AGGREGATION", aggregation.type, aggregation.bucketMs.toString());
   }
 
-  args.push("FILTER", `project=${projectName}`, `metric=${metric}`);
+  args.push("FILTER", `metric=${metric}`, ...extraFilters);
 
-  const result = (await tsRedis.call("TS.MRANGE", ...args)) as unknown[];
+  let result: unknown[];
+  try {
+    result = (await tsRedis.call("TS.MRANGE", ...args)) as unknown[];
+  } catch {
+    return [];
+  }
 
-  // Parse TS.MRANGE result: [[key, labels, [[ts, val], ...]], ...]
-  // Aggregate across containers by summing at each timestamp
+  if (!result || result.length === 0) return [];
+
+  // Aggregate across series by summing (or max for limits)
   const pointMap = new Map<number, number>();
+  const useMax = metric === "memoryLimit" || metric === "disk";
 
   for (const series of result as [string, string[][], [string, string][]][]) {
     const dataPoints = series[2];
     for (const [ts, val] of dataPoints) {
       const t = parseInt(ts);
       const v = parseFloat(val);
-      if (metric === "cpu" || metric === "memory" || metric === "networkRx" || metric === "networkTx") {
-        pointMap.set(t, (pointMap.get(t) || 0) + v);
-      } else {
-        // For limits, take the max
+      if (useMax) {
         pointMap.set(t, Math.max(pointMap.get(t) || 0, v));
+      } else {
+        pointMap.set(t, (pointMap.get(t) || 0) + v);
       }
     }
   }
 
   return Array.from(pointMap.entries()).sort((a, b) => a[0] - b[0]);
+}
+
+// ---------------------------------------------------------------------------
+// Per-org business metrics
+// ---------------------------------------------------------------------------
+
+/**
+ * Store a per-org business metric snapshot.
+ */
+export async function storeOrgBusinessMetric(
+  orgId: string,
+  metric: BusinessMetricName,
+  timestamp: number,
+  value: number,
+) {
+  const key = `metrics:business:${orgId}:${metric}`;
+  await ensureTimeSeries(key, { scope: "business", organization: orgId, metric });
+  await tsRedis.call("TS.ADD", key, timestamp.toString(), value.toString());
+}
+
+/**
+ * Query historical per-org business metrics.
+ */
+export async function queryOrgBusinessMetric(
+  orgId: string,
+  metric: BusinessMetricName,
+  fromMs: number,
+  toMs: number,
+  bucketMs = 300_000,
+): Promise<TimeSeriesPoint[]> {
+  const key = `metrics:business:${orgId}:${metric}`;
+  try {
+    const result = (await tsRedis.call(
+      "TS.RANGE", key, fromMs.toString(), toMs.toString(),
+      "AGGREGATION", "last", bucketMs.toString(),
+    )) as [string, string][];
+    return result.map(([ts, val]) => [parseInt(ts), parseFloat(val)]);
+  } catch {
+    return [];
+  }
 }

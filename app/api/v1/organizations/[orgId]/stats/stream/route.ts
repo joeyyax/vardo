@@ -9,6 +9,7 @@ import { getSystemDiskUsage, getSystemInfo, type DiskUsage, type SystemInfo } fr
 import { isCollectorRunning, startCollector } from "@/lib/metrics/collector";
 import { getLatestProjectDiskUsage } from "@/lib/metrics/store";
 import { createSSEResponse } from "@/lib/api/sse";
+import { isMetricsEnabled } from "@/lib/metrics/config";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -23,6 +24,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     if (organization.id !== orgId) {
       return new Response("Forbidden", { status: 403 });
+    }
+
+    if (!isMetricsEnabled()) {
+      return new Response(null, { status: 204 });
     }
 
     const orgApps = await db.query.apps.findMany({

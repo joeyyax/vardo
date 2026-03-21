@@ -1,13 +1,31 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
+import { Building2 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageToolbar } from "@/components/page-toolbar";
-import { AdminActions } from "./admin-actions";
+import { DockerPrune, UserManagement } from "./admin-actions";
 import { OrgMetrics } from "@/app/(app)/metrics/org-metrics";
 import { Sparkline } from "@/components/app-metrics-card";
+import { formatBytes } from "@/lib/metrics/format";
 import type { SystemInfo } from "@/lib/docker/client";
 import type { ContainerStatsSnapshot } from "@/lib/metrics/types";
+
+type OrgBreakdown = {
+  id: string;
+  name: string;
+  slug: string;
+  memberCount: number;
+  appCount: number;
+  activeApps: number;
+  deploymentCount: number;
+  cpu: number;
+  memory: number;
+  networkRx: number;
+  networkTx: number;
+  containers: number;
+};
 
 type Stats = {
   userCount: number;
@@ -28,6 +46,7 @@ type AdminPanelProps = {
   sparklines: Record<string, [number, number][]>;
   orgId: string;
   appList: AppSummary[];
+  orgBreakdown: OrgBreakdown[];
   initialSystem: SystemInfo | null;
   initialAppStats: (AppSummary & { containers: ContainerStatsSnapshot[] })[];
   initialDisk: { total: number; images: number; volumes: number; buildCache: number } | null;
@@ -38,6 +57,7 @@ export function AdminPanel({
   sparklines,
   orgId,
   appList,
+  orgBreakdown,
   initialSystem,
   initialAppStats,
   initialDisk,
@@ -60,11 +80,18 @@ export function AdminPanel({
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList variant="line">
           <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="organizations">
+            Organizations
+            {orgBreakdown.length > 0 && (
+              <span className="ml-1.5 tabular-nums text-muted-foreground">{orgBreakdown.length}</span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="users">Users</TabsTrigger>
+          <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
           <TabsTrigger value="metrics">Metrics</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview" className="pt-4 space-y-6">
-          {/* Stats */}
+        <TabsContent value="overview" className="pt-4">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {statCards.map((stat) => {
               const data = stat.sparklineKey ? sparklines[stat.sparklineKey]?.map(([, v]) => v) : null;
@@ -85,9 +112,67 @@ export function AdminPanel({
               );
             })}
           </div>
+        </TabsContent>
 
-          {/* Actions */}
-          <AdminActions />
+        <TabsContent value="organizations" className="pt-4">
+          {orgBreakdown.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
+              <Building2 className="size-8 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">No organizations yet.</p>
+            </div>
+          ) : (
+            <div className="squircle rounded-lg border bg-card overflow-x-auto">
+              <div className="grid grid-cols-[1fr_70px_70px_70px_90px_100px_80px] gap-3 px-4 py-2 border-b text-xs text-muted-foreground whitespace-nowrap min-w-[700px]">
+                <span>Organization</span>
+                <span className="text-right">Members</span>
+                <span className="text-right">Apps</span>
+                <span className="text-right">Deploys</span>
+                <span className="text-right">CPU</span>
+                <span className="text-right">Memory</span>
+                <span className="text-right">Containers</span>
+              </div>
+              <div className="divide-y">
+                {orgBreakdown.map((org) => (
+                  <Link
+                    key={org.id}
+                    href={`/projects`}
+                    className="grid grid-cols-[1fr_70px_70px_70px_90px_100px_80px] gap-3 px-4 py-3 items-center whitespace-nowrap min-w-[700px] hover:bg-accent/50 transition-colors"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{org.name}</p>
+                      <p className="text-xs text-muted-foreground truncate">{org.slug}</p>
+                    </div>
+                    <span className="text-xs text-right tabular-nums text-muted-foreground">
+                      {org.memberCount}
+                    </span>
+                    <span className="text-xs text-right tabular-nums text-muted-foreground">
+                      {org.activeApps}/{org.appCount}
+                    </span>
+                    <span className="text-xs text-right tabular-nums text-muted-foreground">
+                      {org.deploymentCount}
+                    </span>
+                    <span className="text-xs text-right tabular-nums text-muted-foreground">
+                      {org.cpu > 0 ? `${org.cpu.toFixed(1)}%` : "-"}
+                    </span>
+                    <span className="text-xs text-right tabular-nums text-muted-foreground">
+                      {org.memory > 0 ? formatBytes(org.memory) : "-"}
+                    </span>
+                    <span className="text-xs text-right tabular-nums text-muted-foreground">
+                      {org.containers || "-"}
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="users" className="pt-4">
+          <UserManagement />
+        </TabsContent>
+
+        <TabsContent value="maintenance" className="pt-4 space-y-4">
+          <DockerPrune />
         </TabsContent>
 
         <TabsContent value="metrics" className="pt-4">

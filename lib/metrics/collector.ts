@@ -1,5 +1,6 @@
+import { isMetricsEnabled } from "./config";
 import { fetchAllContainerMetrics } from "./cadvisor";
-import { storeMetrics, storeDiskUsage, storeProjectDisk, storeBusinessMetric } from "./store";
+import { storeMetrics, storeDiskUsage, storeProjectDisk, storeBusinessMetric, storeOrgBusinessMetric } from "./store";
 import { getSystemDiskUsage, getPerProjectDiskUsage } from "@/lib/docker/client";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
@@ -23,6 +24,10 @@ export function isCollectorRunning() {
 
 export function startCollector() {
   if (started) return;
+  if (!isMetricsEnabled()) {
+    console.log("[collector] Metrics collection disabled (METRICS_ENABLED=false)");
+    return;
+  }
   started = true;
   tickCount = 0;
   console.log("[collector] Starting metrics collection (fast warmup: 5s × 20, then 30s)");
@@ -50,7 +55,7 @@ async function collect() {
           memoryLimit: m.memoryLimit,
           networkRxBytes: m.networkRxBytes,
           networkTxBytes: m.networkTxBytes,
-        })
+        }, m.organizationId)
       )
     );
     const failed = results.filter((r) => r.status === "rejected").length;
@@ -114,6 +119,25 @@ async function collect() {
       // Templates (file-based, not in DB)
       const templateList = await loadTemplates().catch(() => []);
       await storeBusinessMetric("templates", ts, templateList.length);
+
+      // Per-org business metrics
+      const orgCounts = await db.execute(sql`
+        SELECT
+          o.id AS org_id,
+          (SELECT COUNT(*) FROM "app" a WHERE a.organization_id = o.id)::text AS apps,
+          (SELECT COUNT(*) FROM "deployment" d JOIN "app" a ON d.app_id = a.id WHERE a.organization_id = o.id)::text AS deployments,
+          (SELECT COUNT(*) FROM "domain" dm JOIN "app" a ON dm.app_id = a.id WHERE a.organization_id = o.id)::text AS domains,
+          (SELECT COUNT(*) FROM "membership" m WHERE m.organization_id = o.id)::text AS members
+        FROM "organization" o
+      `);
+      await Promise.allSettled(
+        (orgCounts as unknown as { org_id: string; apps: string; deployments: string; domains: string; members: string }[]).flatMap((row) => [
+          storeOrgBusinessMetric(row.org_id, "apps", ts, parseInt(row.apps)),
+          storeOrgBusinessMetric(row.org_id, "deployments", ts, parseInt(row.deployments)),
+          storeOrgBusinessMetric(row.org_id, "domains", ts, parseInt(row.domains)),
+          storeOrgBusinessMetric(row.org_id, "users", ts, parseInt(row.members)),
+        ])
+      );
     } catch (err) {
       console.error("[collector] Business metrics error:", (err as Error).message);
     }

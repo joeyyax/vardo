@@ -18,7 +18,7 @@ import { Badge } from "@/components/ui/badge";
 // Docker Prune (existing)
 // ---------------------------------------------------------------------------
 
-function DockerPrune() {
+export function DockerPrune() {
   const [pruning, setPruning] = useState(false);
 
   async function handleDockerPrune() {
@@ -71,7 +71,7 @@ type UserInfo = {
   createdAt: string;
 };
 
-function InviteUser() {
+export function UserManagement() {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [inviting, setInviting] = useState(false);
@@ -234,6 +234,7 @@ function InviteUser() {
 // Main Export
 // ---------------------------------------------------------------------------
 
+/** @deprecated Use DockerPrune and UserManagement directly */
 export function AdminActions() {
   return (
     <div className="space-y-6">
@@ -244,7 +245,7 @@ export function AdminActions() {
         </div>
       </div>
 
-      <InviteUser />
+      <UserManagement />
     </div>
   );
 }

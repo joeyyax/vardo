@@ -6,6 +6,7 @@ import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { fetchProjectMetrics } from "@/lib/metrics/cadvisor";
 import { createSSEResponse } from "@/lib/api/sse";
+import { isMetricsEnabled } from "@/lib/metrics/config";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -32,6 +33,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     if (!app) {
       return new Response("Not found", { status: 404 });
+    }
+
+    if (!isMetricsEnabled()) {
+      return new Response(null, { status: 204 });
     }
 
     const environment = request.nextUrl.searchParams.get("environment") || undefined;

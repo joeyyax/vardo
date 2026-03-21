@@ -517,6 +517,7 @@ export async function runDeployment(
           ...svc.labels,
           "host.project": app.name,
           "host.project.id": app.id,
+          "host.organization": opts.organizationId,
           "host.deployment.id": deploymentId,
           "host.environment": envName,
           "host.managed": "true",

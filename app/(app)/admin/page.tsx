@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { user, apps, deployments } from "@/lib/db/schema";
+import { user, apps, deployments, organizations, memberships } from "@/lib/db/schema";
 import { loadTemplates } from "@/lib/templates/load";
 import { getSession, getCurrentOrg } from "@/lib/auth/session";
 import { eq, sql, asc, desc } from "drizzle-orm";
@@ -37,6 +37,8 @@ export default async function AdminPage() {
     [{ deploymentCount }],
     templateList,
     appList,
+    allOrgs,
+    allApps,
     systemInfo,
     initialMetrics,
     cachedDisk,
@@ -50,15 +52,22 @@ export default async function AdminPage() {
       orderBy: [asc(apps.sortOrder), desc(apps.createdAt)],
       columns: { id: true, name: true, displayName: true, status: true },
     }),
+    db.query.organizations.findMany({
+      columns: { id: true, name: true, slug: true },
+    }),
+    db.query.apps.findMany({
+      orderBy: [asc(apps.sortOrder), desc(apps.createdAt)],
+      columns: { id: true, name: true, displayName: true, status: true, organizationId: true },
+    }),
     getSystemInfo().catch(() => null),
     fetchAllContainerMetrics().catch(() => []),
     getLatestDiskUsage().catch(() => null),
   ]);
 
-  // Pre-aggregate initial stats per app
+  // Pre-aggregate initial stats per app (match against all apps for admin view)
   const initialStats: Record<string, ContainerMetrics[]> = {};
   for (const m of initialMetrics) {
-    const matched = appList.find(
+    const matched = allApps.find(
       (a) => m.projectName === a.name || m.projectName.startsWith(`${a.name}-`)
     );
     if (!matched) continue;
@@ -89,6 +98,53 @@ export default async function AdminPage() {
     templateCount: templateList.length,
   };
 
+  // Build org breakdown from live metrics + DB counts
+  const [memberCounts, deploymentCounts] = await Promise.all([
+    db.select({
+      organizationId: memberships.organizationId,
+      count: sql<number>`count(*)`,
+    }).from(memberships).groupBy(memberships.organizationId),
+    db.select({
+      organizationId: apps.organizationId,
+      count: sql<number>`count(*)`,
+    }).from(deployments)
+      .innerJoin(apps, eq(deployments.appId, apps.id))
+      .groupBy(apps.organizationId),
+  ]);
+
+  const memberCountMap = new Map(memberCounts.map((r) => [r.organizationId, Number(r.count)]));
+  const deploymentCountMap = new Map(deploymentCounts.map((r) => [r.organizationId, Number(r.count)]));
+
+  const orgBreakdown = allOrgs.map((org) => {
+    const orgApps = allApps.filter((a) => a.organizationId === org.id);
+    let cpu = 0, memory = 0, networkRx = 0, networkTx = 0, containers = 0;
+    for (const a of orgApps) {
+      const stats = initialStats[a.id];
+      if (!stats) continue;
+      for (const m of stats) {
+        cpu += m.cpuPercent;
+        memory += m.memoryUsage;
+        networkRx += m.networkRxBytes;
+        networkTx += m.networkTxBytes;
+        containers++;
+      }
+    }
+    return {
+      id: org.id,
+      name: org.name,
+      slug: org.slug,
+      memberCount: memberCountMap.get(org.id) ?? 0,
+      appCount: orgApps.length,
+      activeApps: orgApps.filter((a) => a.status === "active").length,
+      deploymentCount: deploymentCountMap.get(org.id) ?? 0,
+      cpu,
+      memory,
+      networkRx,
+      networkTx,
+      containers,
+    };
+  });
+
   // Build sparklines from cumulative counts over the last 30 days
   // This works immediately — no collector history needed
   const now = Date.now();
@@ -101,6 +157,7 @@ export default async function AdminPage() {
       sparklines={sparklines}
       orgId={orgId}
       appList={appList}
+      orgBreakdown={orgBreakdown}
       initialSystem={systemInfo}
       initialAppStats={initialAppStats}
       initialDisk={cachedDisk}
