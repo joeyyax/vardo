@@ -315,6 +315,9 @@ export const apps = pgTable(
     autoTraefikLabels: boolean("auto_traefik_labels").default(false),
     containerPort: integer("container_port"),
     autoDeploy: boolean("auto_deploy").default(false),
+    // DEPRECATED: persistentVolumes JSONB replaced by the `volumes` table.
+    // Column retained temporarily for migration; will be dropped once all data
+    // has been migrated via `scripts/migrate-volumes.ts`.
     persistentVolumes: jsonb("persistent_volumes").$type<
       { name: string; mountPath: string }[]
     >(),
@@ -654,9 +657,38 @@ export const backups = pgTable("backup", {
 });
 
 // ---------------------------------------------------------------------------
-// Host: Volume Limits (per-app storage constraints)
+// Host: Volumes (first-class volume records with integrated limits)
 // ---------------------------------------------------------------------------
 
+export const volumes = pgTable(
+  "volume",
+  {
+    id: text("id").primaryKey(),
+    appId: text("app_id")
+      .notNull()
+      .references(() => apps.id, { onDelete: "cascade" }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    name: text("name").notNull(), // e.g. "data", "uploads"
+    mountPath: text("mount_path").notNull(), // e.g. "/var/lib/postgresql/data"
+    persistent: boolean("persistent").default(true).notNull(), // survives deploys
+    shared: boolean("shared").default(false).notNull(), // can be mounted by other apps in project
+    description: text("description"),
+    maxSizeBytes: bigint("max_size_bytes", { mode: "number" }), // nullable = no limit
+    warnAtPercent: integer("warn_at_percent").default(80),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    unique("volume_app_name_uniq").on(t.appId, t.name),
+    unique("volume_app_mount_uniq").on(t.appId, t.mountPath),
+    index("volume_app_id_idx").on(t.appId),
+    index("volume_org_id_idx").on(t.organizationId),
+  ]
+);
+
+// DEPRECATED: kept for migration only — will be dropped after migrate-volumes.ts runs
 export const volumeLimits = pgTable("volume_limit", {
   id: text("id").primaryKey(),
   appId: text("app_id")
@@ -905,6 +937,7 @@ export const appsRelations = relations(apps, ({ one, many }) => ({
   appTags: many(appTags),
   backupJobApps: many(backupJobApps),
   backups: many(backups),
+  volumes: many(volumes),
   volumeLimit: many(volumeLimits),
   cronJobs: many(cronJobs),
   transfers: many(appTransfers),
@@ -1100,6 +1133,17 @@ export const backupsRelations = relations(backups, ({ one }) => ({
   target: one(backupTargets, {
     fields: [backups.targetId],
     references: [backupTargets.id],
+  }),
+}));
+
+export const volumesRelations = relations(volumes, ({ one }) => ({
+  app: one(apps, {
+    fields: [volumes.appId],
+    references: [apps.id],
+  }),
+  organization: one(organizations, {
+    fields: [volumes.organizationId],
+    references: [organizations.id],
   }),
 }));
 

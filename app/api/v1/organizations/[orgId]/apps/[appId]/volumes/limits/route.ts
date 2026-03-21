@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { volumeLimits } from "@/lib/db/schema";
+import { volumes } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { nanoid } from "nanoid";
 import { z } from "zod";
 import { verifyAppAccess } from "@/lib/api/verify-access";
 
@@ -23,7 +22,8 @@ const volumeLimitSchema = z.object({
   warnAtPercent: z.number().int().min(1).max(100).default(80),
 });
 
-// GET — return the volume limit for an app (or null if not set)
+// GET — return the aggregate volume limit for an app
+// (reads maxSizeBytes/warnAtPercent from the first volume that has a limit set)
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
@@ -33,17 +33,28 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const limit = await db.query.volumeLimits.findFirst({
-      where: eq(volumeLimits.appId, appId),
+    // Find any volume with a limit set
+    const volWithLimit = await db.query.volumes.findFirst({
+      where: eq(volumes.appId, appId),
+      columns: { maxSizeBytes: true, warnAtPercent: true },
     });
 
-    return NextResponse.json({ limit: limit ?? null });
+    if (volWithLimit?.maxSizeBytes) {
+      return NextResponse.json({
+        limit: {
+          maxSizeBytes: volWithLimit.maxSizeBytes,
+          warnAtPercent: volWithLimit.warnAtPercent ?? 80,
+        },
+      });
+    }
+
+    return NextResponse.json({ limit: null });
   } catch (error) {
     return handleRouteError(error, "Error fetching volume limit");
   }
 }
 
-// PUT — set/update the volume limit
+// PUT — set/update the volume limit on all volumes for this app
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
@@ -63,41 +74,28 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Upsert: try to update first, insert if not exists
-    const existing = await db.query.volumeLimits.findFirst({
-      where: eq(volumeLimits.appId, appId),
+    // Apply limit to all volumes for this app
+    await db
+      .update(volumes)
+      .set({
+        maxSizeBytes: parsed.data.maxSizeBytes,
+        warnAtPercent: parsed.data.warnAtPercent,
+        updatedAt: new Date(),
+      })
+      .where(eq(volumes.appId, appId));
+
+    return NextResponse.json({
+      limit: {
+        maxSizeBytes: parsed.data.maxSizeBytes,
+        warnAtPercent: parsed.data.warnAtPercent,
+      },
     });
-
-    let limit;
-    if (existing) {
-      [limit] = await db
-        .update(volumeLimits)
-        .set({
-          maxSizeBytes: parsed.data.maxSizeBytes,
-          warnAtPercent: parsed.data.warnAtPercent,
-          updatedAt: new Date(),
-        })
-        .where(eq(volumeLimits.id, existing.id))
-        .returning();
-    } else {
-      [limit] = await db
-        .insert(volumeLimits)
-        .values({
-          id: nanoid(),
-          appId,
-          maxSizeBytes: parsed.data.maxSizeBytes,
-          warnAtPercent: parsed.data.warnAtPercent,
-        })
-        .returning();
-    }
-
-    return NextResponse.json({ limit });
   } catch (error) {
     return handleRouteError(error, "Error setting volume limit");
   }
 }
 
-// DELETE — remove the volume limit
+// DELETE — remove the volume limit from all volumes for this app
 export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
@@ -107,14 +105,14 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const [deleted] = await db
-      .delete(volumeLimits)
-      .where(eq(volumeLimits.appId, appId))
-      .returning({ id: volumeLimits.id });
-
-    if (!deleted) {
-      return NextResponse.json({ error: "No limit set" }, { status: 404 });
-    }
+    await db
+      .update(volumes)
+      .set({
+        maxSizeBytes: null,
+        warnAtPercent: 80,
+        updatedAt: new Date(),
+      })
+      .where(eq(volumes.appId, appId));
 
     return NextResponse.json({ success: true });
   } catch (error) {
