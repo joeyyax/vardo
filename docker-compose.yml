@@ -6,7 +6,13 @@
 
 services:
   host:
-    build: .
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_BETTER_AUTH_URL: https://${HOST_DOMAIN}
+        NEXT_PUBLIC_APP_URL: https://${HOST_DOMAIN}
+        NEXT_PUBLIC_PLAUSIBLE_DOMAIN: ${NEXT_PUBLIC_PLAUSIBLE_DOMAIN:-}
+        NEXT_PUBLIC_PLAUSIBLE_SRC: ${NEXT_PUBLIC_PLAUSIBLE_SRC:-}
     restart: unless-stopped
     depends_on:
       postgres:
