@@ -87,10 +87,27 @@ export async function runDeployment(
       .replace(/ghs_[A-Za-z0-9]+/g, "***");
     logLines.push(sanitized);
     opts.onLog?.(sanitized);
+
+    // Broadcast log line via Redis pub/sub for live viewers
+    publishEvent(appChannel(opts.appId), {
+      event: "deploy:log",
+      appId: opts.appId,
+      deploymentId,
+      message: sanitized,
+    }).catch(() => {});
   }
 
   function stage(s: DeployStage, status: "running" | "success" | "failed" | "skipped") {
     opts.onStage?.(s, status);
+
+    // Broadcast stage change via Redis pub/sub for live viewers
+    publishEvent(appChannel(opts.appId), {
+      event: "deploy:stage",
+      appId: opts.appId,
+      deploymentId,
+      stage: s,
+      status,
+    }).catch(() => {});
   }
 
   function checkAbort() {
