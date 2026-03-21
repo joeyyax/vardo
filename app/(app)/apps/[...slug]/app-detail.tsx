@@ -1351,20 +1351,6 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
-                {/* Link to project */}
-                <DropdownMenuItem asChild>
-                  <Link href={`/projects/${app.project.name}`} className="flex items-center gap-2">
-                    <span
-                      className="mr-2 size-2 rounded-full"
-                      style={{ backgroundColor: app.project.color || "#6366f1" }}
-                    />
-                    {app.project.displayName}
-                    <span className="ml-auto text-xs text-muted-foreground">
-                      {siblings.length + 1} {siblings.length === 0 ? "App" : "Apps"}
-                    </span>
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
                 {/* Current app */}
                 <DropdownMenuItem disabled>
                   <span className={`mr-2 size-2 rounded-full ${statusDotColor(app.status)}`} />
