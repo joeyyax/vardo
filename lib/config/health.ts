@@ -29,9 +29,22 @@ export type AuthConfig = {
   twoFactor: boolean;
 };
 
+export type RuntimeInfo = {
+  nodeVersion: string;
+  nextVersion: string;
+  platform: string;
+  arch: string;
+  uptime: number; // seconds
+  memoryUsage: number; // bytes (RSS)
+  memoryHeapUsed: number; // bytes
+  memoryHeapTotal: number; // bytes
+  pid: number;
+};
+
 export type SystemHealth = {
   services: ServiceStatus[];
   resources: ResourceStatus[];
+  runtime: RuntimeInfo;
   auth: AuthConfig;
 };
 
@@ -224,5 +237,21 @@ export async function getSystemHealth(): Promise<SystemHealth> {
     twoFactor: true,
   };
 
-  return { services, resources, auth };
+  const mem = process.memoryUsage();
+  let nextVersion = "unknown";
+  try { nextVersion = require("next/package.json").version; } catch { /* skip */ }
+
+  const runtime: RuntimeInfo = {
+    nodeVersion: process.version,
+    nextVersion,
+    platform: process.platform,
+    arch: process.arch,
+    uptime: Math.floor(process.uptime()),
+    memoryUsage: mem.rss,
+    memoryHeapUsed: mem.heapUsed,
+    memoryHeapTotal: mem.heapTotal,
+    pid: process.pid,
+  };
+
+  return { services, resources, runtime, auth };
 }

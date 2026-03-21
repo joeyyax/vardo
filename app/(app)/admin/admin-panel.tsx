@@ -56,6 +56,15 @@ type AdminPanelProps = {
   initialDisk: { total: number; images: number; volumes: number; buildCache: number } | null;
 };
 
+function formatUptime(seconds: number): string {
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
 export function AdminPanel({
   stats,
   sparklines,
@@ -171,6 +180,29 @@ export function AdminPanel({
         </TabsContent>
 
         <TabsContent value="system" className="pt-4 space-y-4">
+          {/* Runtime info */}
+          <div className="squircle rounded-lg border bg-card p-4">
+            <p className="text-xs text-muted-foreground mb-3">Host Runtime</p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div>
+                <p className="text-xs text-muted-foreground">Next.js</p>
+                <p className="text-sm font-medium tabular-nums">{systemHealth.runtime.nextVersion}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Node.js</p>
+                <p className="text-sm font-medium tabular-nums">{systemHealth.runtime.nodeVersion}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Uptime</p>
+                <p className="text-sm font-medium tabular-nums">{formatUptime(systemHealth.runtime.uptime)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Memory (RSS)</p>
+                <p className="text-sm font-medium tabular-nums">{formatBytes(systemHealth.runtime.memoryUsage)}</p>
+              </div>
+            </div>
+          </div>
+
           {/* Infrastructure services */}
           <div className="squircle rounded-lg border bg-card overflow-hidden">
             <div className="px-4 py-2 border-b">
