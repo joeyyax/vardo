@@ -25,7 +25,7 @@ const navItems: NavItem[] = [
     label: "Projects",
     href: "/projects",
     icon: FolderKanban,
-    description: "Manage deployed projects",
+    description: "Manage deployed apps",
   },
 ];
 

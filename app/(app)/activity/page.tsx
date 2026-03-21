@@ -16,7 +16,7 @@ export default async function ActivityPage() {
     where: eq(activities.organizationId, orgId),
     with: {
       user: { columns: { id: true, name: true, email: true, image: true } },
-      project: { columns: { id: true, name: true, displayName: true } },
+      app: { columns: { id: true, name: true, displayName: true } },
     },
     orderBy: [desc(activities.createdAt)],
     limit: 50,

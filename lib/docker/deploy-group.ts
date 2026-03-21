@@ -1,13 +1,13 @@
 // ---------------------------------------------------------------------------
 // Group deploy orchestration
 //
-// Deploys all projects in a group in dependency order, resolving cross-project
-// env var references within the group's environment context.
+// Deploys all apps in a project in dependency order, resolving cross-app
+// env var references within the project's environment context.
 // ---------------------------------------------------------------------------
 
 import { db } from "@/lib/db";
 import {
-  projects,
+  apps,
   envVars,
   environments,
   groupEnvironments,
@@ -22,27 +22,27 @@ import { deployProject, createDeployment, runDeployment } from "./deploy";
 // ---------------------------------------------------------------------------
 
 type GroupDeployOpts = {
-  parentProjectId: string;
+  projectId: string;
   organizationId: string;
   trigger: "manual" | "webhook" | "api";
   triggeredBy?: string;
   /** Deploy to a specific group environment (staging/preview). Null = production. */
   groupEnvironmentId?: string;
-  onLog?: (projectName: string, line: string) => void;
+  onLog?: (appName: string, line: string) => void;
   onStage?: (
-    projectName: string,
+    appName: string,
     stage: string,
     status: "running" | "success" | "failed" | "skipped"
   ) => void;
-  onTier?: (tier: number, projectNames: string[]) => void;
+  onTier?: (tier: number, appNames: string[]) => void;
   signal?: AbortSignal;
 };
 
 type GroupDeployResult = {
   success: boolean;
   results: {
-    projectId: string;
-    projectName: string;
+    appId: string;
+    appName: string;
     deploymentId: string;
     success: boolean;
     durationMs: number;
@@ -57,75 +57,75 @@ export type { GroupDeployOpts, GroupDeployResult };
 // Dependency graph
 // ---------------------------------------------------------------------------
 
-type ProjectNode = {
+type AppNode = {
   id: string;
   name: string;
-  parentId: string | null;
+  projectId: string | null;
   dependsOn: string[];
   inferredDeps: string[];
 };
 
 /**
- * Build the dependency graph for projects in a group.
- * Combines inferred deps (from ${project.VAR} refs) with explicit depends_on.
+ * Build the dependency graph for apps in a project.
+ * Combines inferred deps (from ${app.VAR} refs) with explicit depends_on.
  */
 async function buildDependencyGraph(
-  groupProjects: {
+  projectApps: {
     id: string;
     name: string;
-    parentId: string | null;
+    projectId: string | null;
     dependsOn: string[] | null;
   }[],
   environmentId: string | null
-): Promise<Map<string, ProjectNode>> {
-  const graph = new Map<string, ProjectNode>();
-  const projectNames = new Set(groupProjects.map((p) => p.name));
+): Promise<Map<string, AppNode>> {
+  const graph = new Map<string, AppNode>();
+  const appNames = new Set(projectApps.map((a) => a.name));
 
-  // Batch-fetch all env vars for all projects in a single query (avoids N+1)
-  const allProjectIds = groupProjects.map((p) => p.id);
+  // Batch-fetch all env vars for all apps in a single query (avoids N+1)
+  const allAppIds = projectApps.map((a) => a.id);
   const allVars = await db.query.envVars.findMany({
     where: and(
-      inArray(envVars.projectId, allProjectIds),
+      inArray(envVars.appId, allAppIds),
       environmentId
         ? or(eq(envVars.environmentId, environmentId), isNull(envVars.environmentId))
         : isNull(envVars.environmentId)
     ),
   });
-  // Group by projectId
-  const varsByProject = new Map<string, typeof allVars>();
+  // Group by appId
+  const varsByApp = new Map<string, typeof allVars>();
   for (const v of allVars) {
-    const list = varsByProject.get(v.projectId) || [];
+    const list = varsByApp.get(v.appId) || [];
     list.push(v);
-    varsByProject.set(v.projectId, list);
+    varsByApp.set(v.appId, list);
   }
 
-  for (const project of groupProjects) {
-    const projectVars = varsByProject.get(project.id) || [];
-    const allVarValues = projectVars.map((v) => v.value);
+  for (const app of projectApps) {
+    const appVars = varsByApp.get(app.id) || [];
+    const allVarValues = appVars.map((v) => v.value);
 
-    // Infer dependencies from cross-project refs
+    // Infer dependencies from cross-app refs
     const inferredDeps = new Set<string>();
     for (const value of allVarValues) {
       for (const expr of extractExpressions(value)) {
         const { type, target } = validateExpression(expr);
         if (type === "cross-project") {
-          const refProject = target.split(".")[0];
-          if (projectNames.has(refProject) && refProject !== project.name) {
-            inferredDeps.add(refProject);
+          const refApp = target.split(".")[0];
+          if (appNames.has(refApp) && refApp !== app.name) {
+            inferredDeps.add(refApp);
           }
         }
       }
     }
 
-    // Merge explicit depends_on (filter to projects in the group)
-    const explicitDeps = (project.dependsOn ?? []).filter(
-      (d) => projectNames.has(d) && d !== project.name
+    // Merge explicit depends_on (filter to apps in the project)
+    const explicitDeps = (app.dependsOn ?? []).filter(
+      (d) => appNames.has(d) && d !== app.name
     );
 
-    graph.set(project.name, {
-      id: project.id,
-      name: project.name,
-      parentId: project.parentId,
+    graph.set(app.name, {
+      id: app.id,
+      name: app.name,
+      projectId: app.projectId,
       dependsOn: [...new Set([...inferredDeps, ...explicitDeps])],
       inferredDeps: [...inferredDeps],
     });
@@ -136,11 +136,11 @@ async function buildDependencyGraph(
 
 /**
  * Topological sort into deployment tiers.
- * Projects in the same tier can deploy in parallel.
+ * Apps in the same tier can deploy in parallel.
  * Returns tiers in order (tier 0 has no deps, tier 1 depends on tier 0, etc).
  */
 function topologicalTierSort(
-  graph: Map<string, ProjectNode>
+  graph: Map<string, AppNode>
 ): string[][] {
   const inDegree = new Map<string, number>();
   const dependents = new Map<string, Set<string>>();
@@ -167,7 +167,7 @@ function topologicalTierSort(
     if (tier.length === 0) {
       const unresolved = [...remaining].join(", ");
       throw new Error(
-        `Circular dependency detected among group projects: ${unresolved}`
+        `Circular dependency detected among project apps: ${unresolved}`
       );
     }
 
@@ -189,33 +189,34 @@ function topologicalTierSort(
 // ---------------------------------------------------------------------------
 
 /**
- * Deploy all projects in a group in dependency order.
- * Projects within the same tier are deployed in parallel.
+ * Deploy all apps in a project in dependency order.
+ * Apps within the same tier are deployed in parallel.
  */
 export async function deployGroup(
   opts: GroupDeployOpts
 ): Promise<GroupDeployResult> {
   const startTime = Date.now();
 
-  // Load parent project
-  const parentProject = await db.query.projects.findFirst({
+  // Load project (grouping)
+  const { projects } = await import("@/lib/db/schema");
+  const project = await db.query.projects.findFirst({
     where: and(
-      eq(projects.id, opts.parentProjectId),
+      eq(projects.id, opts.projectId),
       eq(projects.organizationId, opts.organizationId)
     ),
   });
 
-  if (!parentProject) throw new Error("Parent project not found");
+  if (!project) throw new Error("Project not found");
 
-  // Load all projects in the group
-  const groupProjects = await db.query.projects.findMany({
+  // Load all apps in the project
+  const projectApps = await db.query.apps.findMany({
     where: and(
-      eq(projects.parentId, opts.parentProjectId),
-      eq(projects.organizationId, opts.organizationId)
+      eq(apps.projectId, opts.projectId),
+      eq(apps.organizationId, opts.organizationId)
     ),
   });
 
-  if (groupProjects.length === 0) {
+  if (projectApps.length === 0) {
     return {
       success: true,
       results: [],
@@ -223,26 +224,26 @@ export async function deployGroup(
     };
   }
 
-  // Resolve which project-level environmentId to use for each project
-  let projectEnvironmentIds: Map<string, string | undefined> = new Map();
+  // Resolve which app-level environmentId to use for each app
+  let appEnvironmentIds: Map<string, string | undefined> = new Map();
   if (opts.groupEnvironmentId) {
-    // Find project-level environments linked to this group environment
+    // Find app-level environments linked to this group environment
     const envs = await db.query.environments.findMany({
       where: eq(environments.groupEnvironmentId, opts.groupEnvironmentId),
     });
     for (const env of envs) {
-      projectEnvironmentIds.set(env.projectId, env.id);
+      appEnvironmentIds.set(env.appId, env.id);
     }
   }
 
   // Build dependency graph
-  const firstEnvId = [...projectEnvironmentIds.values()][0] ?? null;
+  const firstEnvId = [...appEnvironmentIds.values()][0] ?? null;
   const graph = await buildDependencyGraph(
-    groupProjects.map((p) => ({
-      id: p.id,
-      name: p.name,
-      parentId: p.parentId,
-      dependsOn: p.dependsOn as string[] | null,
+    projectApps.map((a) => ({
+      id: a.id,
+      name: a.name,
+      projectId: a.projectId,
+      dependsOn: a.dependsOn as string[] | null,
     })),
     firstEnvId
   );
@@ -250,7 +251,7 @@ export async function deployGroup(
   // Sort into tiers
   const tiers = topologicalTierSort(graph);
 
-  opts.onLog?.("group", `[group] Deploying "${parentProject.name}" — ${groupProjects.length} project(s), ${tiers.length} tier(s)`);
+  opts.onLog?.("group", `[group] Deploying "${project.name}" — ${projectApps.length} app(s), ${tiers.length} tier(s)`);
   for (let i = 0; i < tiers.length; i++) {
     opts.onLog?.("group", `[group] Tier ${i}: ${tiers[i].join(", ")}`);
   }
@@ -266,27 +267,27 @@ export async function deployGroup(
 
     if (opts.signal?.aborted) throw new Error("Group deployment aborted");
 
-    // Deploy all projects in this tier in parallel
+    // Deploy all apps in this tier in parallel
     const tierResults = await Promise.allSettled(
-      tier.map(async (projectName) => {
-        const node = graph.get(projectName)!;
-        const envId = projectEnvironmentIds.get(node.id);
+      tier.map(async (appName) => {
+        const node = graph.get(appName)!;
+        const envId = appEnvironmentIds.get(node.id);
 
         const result = await deployProject({
-          projectId: node.id,
+          appId: node.id,
           organizationId: opts.organizationId,
           trigger: opts.trigger,
           triggeredBy: opts.triggeredBy,
           environmentId: envId,
           groupEnvironmentId: opts.groupEnvironmentId,
-          onLog: (line) => opts.onLog?.(projectName, line),
-          onStage: (stage, status) => opts.onStage?.(projectName, stage, status),
+          onLog: (line) => opts.onLog?.(appName, line),
+          onStage: (stage, status) => opts.onStage?.(appName, stage, status),
           signal: opts.signal,
         });
 
         return {
-          projectId: node.id,
-          projectName,
+          appId: node.id,
+          appName,
           deploymentId: result.deploymentId,
           success: result.success,
           durationMs: result.durationMs,
@@ -301,22 +302,22 @@ export async function deployGroup(
         if (!result.value.success) allSuccess = false;
       } else {
         // Deployment threw an error
-        const projectName = tier[tierResults.indexOf(result)];
-        const node = graph.get(projectName)!;
+        const appName = tier[tierResults.indexOf(result)];
+        const node = graph.get(appName)!;
         results.push({
-          projectId: node.id,
-          projectName,
+          appId: node.id,
+          appName,
           deploymentId: "",
           success: false,
           durationMs: 0,
           tier: tierIdx,
         });
         allSuccess = false;
-        opts.onLog?.(projectName, `[deploy] FATAL: ${result.reason}`);
+        opts.onLog?.(appName, `[deploy] FATAL: ${result.reason}`);
       }
     }
 
-    // If any project in this tier failed, abort remaining tiers
+    // If any app in this tier failed, abort remaining tiers
     const tierFailed = tierResults.some(
       (r) => r.status === "rejected" || (r.status === "fulfilled" && !r.value.success)
     );

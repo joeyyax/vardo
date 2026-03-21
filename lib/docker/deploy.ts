@@ -1,9 +1,9 @@
 import { db } from "@/lib/db";
-import { deployments, projects, envVars, orgEnvVars, organizations, environments, volumeLimits } from "@/lib/db/schema";
+import { deployments, apps, envVars, orgEnvVars, organizations, environments, volumeLimits } from "@/lib/db/schema";
 import { eq, and, isNull } from "drizzle-orm";
 import { resolveAllEnvVars, type ResolveContext } from "@/lib/env/resolve";
 import { nanoid } from "nanoid";
-import { publishEvent, projectChannel } from "@/lib/events";
+import { publishEvent, appChannel } from "@/lib/events";
 import { exec, spawn as nodeSpawn} from "child_process";
 import { promisify } from "util";
 import { mkdir, writeFile, readFile } from "fs/promises";
@@ -32,7 +32,7 @@ const HEALTH_CHECK_INTERVAL_MS = 2000;
 type DeployStage = "clone" | "build" | "deploy" | "healthcheck" | "routing" | "cleanup" | "done";
 
 type DeployOpts = {
-  projectId: string;
+  appId: string;
   organizationId: string;
   trigger: "manual" | "webhook" | "api" | "rollback";
   triggeredBy?: string;
@@ -57,7 +57,7 @@ export async function createDeployment(opts: DeployOpts): Promise<string> {
     .insert(deployments)
     .values({
       id: nanoid(),
-      projectId: opts.projectId,
+      appId: opts.appId,
       trigger: opts.trigger,
       triggeredBy: opts.triggeredBy,
       status: "queued",
@@ -101,23 +101,23 @@ export async function runDeployment(
     recordActivity({
       organizationId: opts.organizationId,
       action: "deployment.started",
-      projectId: opts.projectId,
+      appId: opts.appId,
       userId: opts.triggeredBy,
       metadata: { deploymentId, trigger: opts.trigger },
     }).catch(() => {});
 
     log(`[deploy] Starting deployment ${deploymentId}`);
 
-    // Fetch project
-    const project = await db.query.projects.findFirst({
+    // Fetch app
+    const app = await db.query.apps.findFirst({
       where: and(
-        eq(projects.id, opts.projectId),
-        eq(projects.organizationId, opts.organizationId)
+        eq(apps.id, opts.appId),
+        eq(apps.organizationId, opts.organizationId)
       ),
       with: { domains: true },
     });
 
-    if (!project) throw new Error("Project not found");
+    if (!app) throw new Error("App not found");
 
     // Resolve environment name + branch override for container/directory naming
     let envName = "production";
@@ -135,15 +135,15 @@ export async function runDeployment(
     log(`[deploy] Environment: ${envName}`);
 
     stage("clone", "running");
-    log(`[deploy] Project: ${project.displayName} (${project.name})`);
-    log(`[deploy] Source: ${project.source}, Type: ${project.deployType}`);
+    log(`[deploy] App: ${app.displayName} (${app.name})`);
+    log(`[deploy] Source: ${app.source}, Type: ${app.deployType}`);
 
     // Fetch env vars with environment layering:
     // 1. Base vars (environmentId IS NULL)
     // 2. Environment-specific vars overlay on top
     const baseVars = await db.query.envVars.findMany({
       where: and(
-        eq(envVars.projectId, opts.projectId),
+        eq(envVars.appId, opts.appId),
         isNull(envVars.environmentId),
       ),
     });
@@ -153,7 +153,7 @@ export async function runDeployment(
     if (opts.environmentId) {
       const envSpecificVars = await db.query.envVars.findMany({
         where: and(
-          eq(envVars.projectId, opts.projectId),
+          eq(envVars.appId, opts.appId),
           eq(envVars.environmentId, opts.environmentId),
         ),
       });
@@ -163,46 +163,46 @@ export async function runDeployment(
     const totalEnvVarCount = Object.keys(envMap).length;
 
     // Ensure PORT is set for Nixpacks-built apps
-    if (project.containerPort && !envMap.PORT) {
-      envMap.PORT = String(project.containerPort);
+    if (app.containerPort && !envMap.PORT) {
+      envMap.PORT = String(app.containerPort);
     }
 
-    log(`[deploy] ${totalEnvVarCount} env var(s), ${project.domains.length} domain(s)`);
+    log(`[deploy] ${totalEnvVarCount} env var(s), ${app.domains.length} domain(s)`);
 
     // Step 1: Generate or fetch compose file
     let compose: ComposeFile;
     let builtLocally = false;
     let hostConfig: import("@/lib/config/host-config").HostConfig | null = null;
-    // Project-level dir holds the repo; env-level dir holds slots
-    const projectBaseDir = join(PROJECTS_DIR, project.name);
-    const projectDir = join(projectBaseDir, envName);
-    await mkdir(projectDir, { recursive: true });
+    // App-level dir holds the repo; env-level dir holds slots
+    const appBaseDir = join(PROJECTS_DIR, app.name);
+    const appDir = join(appBaseDir, envName);
+    await mkdir(appDir, { recursive: true });
 
-    if (project.deployType === "image" && project.imageName) {
+    if (app.deployType === "image" && app.imageName) {
       // Image deploy — no clone needed
       stage("clone", "skipped");
       stage("build", "running");
-      const volumes = (project.persistentVolumes as { name: string; mountPath: string }[] | null) ?? undefined;
-      const exposedPorts = (project.exposedPorts as { internal: number; external?: number; protocol?: string }[] | null) ?? undefined;
+      const volumes = (app.persistentVolumes as { name: string; mountPath: string }[] | null) ?? undefined;
+      const exposedPorts = (app.exposedPorts as { internal: number; external?: number; protocol?: string }[] | null) ?? undefined;
       compose = generateComposeForImage({
-        projectName: project.name,
-        imageName: project.imageName,
-        containerPort: project.containerPort ?? undefined,
+        projectName: app.name,
+        imageName: app.imageName,
+        containerPort: app.containerPort ?? undefined,
         envVars: envMap,
         volumes,
         exposedPorts,
       });
       if (volumes?.length) log(`[deploy] ${volumes.length} persistent volume(s)`);
       if (exposedPorts?.length) log(`[deploy] ${exposedPorts.length} exposed port(s)`);
-      log(`[deploy] Generated compose for image: ${project.imageName}`);
-    } else if (project.source === "git" && project.gitUrl) {
+      log(`[deploy] Generated compose for image: ${app.imageName}`);
+    } else if (app.source === "git" && app.gitUrl) {
       // Git source — clone/pull repo with GitHub App auth if needed
-      // Repo lives at project level (shared across environments)
-      const repoDir = join(projectBaseDir, "repo");
-      const branch = envBranchOverride || project.gitBranch || "main";
+      // Repo lives at app level (shared across environments)
+      const repoDir = join(appBaseDir, "repo");
+      const branch = envBranchOverride || app.gitBranch || "main";
 
       // Build authenticated clone URL for private repos
-      let cloneUrl = project.gitUrl;
+      let cloneUrl = app.gitUrl;
       if (cloneUrl.includes("github.com")) {
         try {
           // Find a GitHub installation for this org
@@ -290,12 +290,12 @@ export async function runDeployment(
       }
 
       // Find compose file
-      const root = project.rootDirectory
-        ? join(repoDir, project.rootDirectory)
+      const root = app.rootDirectory
+        ? join(repoDir, app.rootDirectory)
         : hostConfig?.project?.rootDirectory
         ? join(repoDir, hostConfig.project.rootDirectory)
         : repoDir;
-      const composeFilePath = project.composeFilePath || "docker-compose.yml";
+      const composeFilePath = app.composeFilePath || "docker-compose.yml";
       const composeCandidates = [
         composeFilePath,
         "docker-compose.yml",
@@ -316,12 +316,12 @@ export async function runDeployment(
       stage("clone", "success");
       stage("build", "running");
 
-      if (composeContent && project.deployType !== "nixpacks" && project.deployType !== "dockerfile") {
+      if (composeContent && app.deployType !== "nixpacks" && app.deployType !== "dockerfile") {
         compose = parseCompose(composeContent);
 
         // Detect declared volumes from compose YAML before deploy starts
         if (compose.volumes && Object.keys(compose.volumes).length > 0) {
-          const existing = (project.persistentVolumes as { name: string; mountPath: string }[] | null) ?? [];
+          const existing = (app.persistentVolumes as { name: string; mountPath: string }[] | null) ?? [];
           const existingNames = new Set(existing.map(v => v.name));
           const newVols: { name: string; mountPath: string }[] = [];
 
@@ -341,14 +341,14 @@ export async function runDeployment(
 
           if (newVols.length > 0) {
             const merged = [...existing, ...newVols];
-            await db.update(projects).set({ persistentVolumes: merged }).where(eq(projects.id, opts.projectId));
+            await db.update(apps).set({ persistentVolumes: merged }).where(eq(apps.id, opts.appId));
             log(`[deploy] Detected ${newVols.length} compose volume(s): ${newVols.map(v => `${v.name}:${v.mountPath}`).join(", ")}`);
           }
         }
       } else {
         // Build from repo — Nixpacks, Dockerfile, or auto-detect
-        const imageName = `host/${project.name}:${deploymentId.slice(0, 8)}`;
-        let buildType = project.deployType;
+        const imageName = `host/${app.name}:${deploymentId.slice(0, 8)}`;
+        let buildType = app.deployType;
 
         // Auto-detect: if deploy type is compose but no compose file found, try Dockerfile then Nixpacks
         if (buildType === "compose" && !composeContent) {
@@ -394,22 +394,22 @@ export async function runDeployment(
 
         builtLocally = true;
         compose = generateComposeForImage({
-          projectName: project.name,
+          projectName: app.name,
           imageName,
-          containerPort: project.containerPort ?? undefined,
+          containerPort: app.containerPort ?? undefined,
           envVars: envMap,
-          volumes: (project.persistentVolumes as { name: string; mountPath: string }[] | null) ?? undefined,
-          exposedPorts: (project.exposedPorts as { internal: number; external?: number; protocol?: string }[] | null) ?? undefined,
+          volumes: (app.persistentVolumes as { name: string; mountPath: string }[] | null) ?? undefined,
+          exposedPorts: (app.exposedPorts as { internal: number; external?: number; protocol?: string }[] | null) ?? undefined,
         });
       }
-    } else if (project.composeContent) {
+    } else if (app.composeContent) {
       // Direct compose content
-      compose = parseCompose(project.composeContent);
+      compose = parseCompose(app.composeContent);
       log(`[deploy] Parsed compose content`);
 
       // Detect declared volumes from compose YAML before deploy starts
       if (compose.volumes && Object.keys(compose.volumes).length > 0) {
-        const existing = (project.persistentVolumes as { name: string; mountPath: string }[] | null) ?? [];
+        const existing = (app.persistentVolumes as { name: string; mountPath: string }[] | null) ?? [];
         const existingNames = new Set(existing.map(v => v.name));
         const newVols: { name: string; mountPath: string }[] = [];
 
@@ -429,7 +429,7 @@ export async function runDeployment(
 
         if (newVols.length > 0) {
           const merged = [...existing, ...newVols];
-          await db.update(projects).set({ persistentVolumes: merged }).where(eq(projects.id, opts.projectId));
+          await db.update(apps).set({ persistentVolumes: merged }).where(eq(apps.id, opts.appId));
           log(`[deploy] Detected ${newVols.length} compose volume(s): ${newVols.map(v => `${v.name}:${v.mountPath}`).join(", ")}`);
         }
       }
@@ -440,9 +440,9 @@ export async function runDeployment(
     // Step 2: Detect container port
     let detectedPort: number | null = null;
 
-    // Priority: project config > image inspection > PORT env > default
-    if (project.containerPort) {
-      detectedPort = project.containerPort;
+    // Priority: app config > image inspection > PORT env > default
+    if (app.containerPort) {
+      detectedPort = app.containerPort;
     } else if (builtLocally) {
       // Inspect the built image for EXPOSE'd ports
       try {
@@ -462,15 +462,15 @@ export async function runDeployment(
     }
 
     const containerPort = detectedPort || 3000;
-    if (!project.containerPort) {
+    if (!app.containerPort) {
       log(`[deploy] Using port ${containerPort}${detectedPort ? " (auto-detected)" : " (default)"}`);
     }
 
     // Step 3: Inject Traefik labels + shared network
-    for (const domain of project.domains) {
+    for (const domain of app.domains) {
       const port = domain.port || containerPort;
       compose = injectTraefikLabels(compose, {
-        projectName: `${project.name}-${domain.id.slice(0, 6)}`,
+        projectName: `${app.name}-${domain.id.slice(0, 6)}`,
         domain: domain.domain,
         containerPort: port,
         certResolver: domain.certResolver || "le",
@@ -480,14 +480,14 @@ export async function runDeployment(
     }
     compose = injectNetwork(compose, NETWORK_NAME);
 
-    // Step 3: Add project labels
+    // Step 3: Add app labels
     for (const [svcName, svc] of Object.entries(compose.services)) {
       compose.services[svcName] = {
         ...svc,
         labels: {
           ...svc.labels,
-          "host.project": project.name,
-          "host.project.id": project.id,
+          "host.project": app.name,
+          "host.project.id": app.id,
           "host.deployment.id": deploymentId,
           "host.environment": envName,
           "host.managed": "true",
@@ -498,13 +498,13 @@ export async function runDeployment(
     // Step 4: Blue-green slot management
     let activeSlot: "blue" | "green" | null = null;
     try {
-      const slotFile = await readFile(join(projectDir, ".active-slot"), "utf-8");
+      const slotFile = await readFile(join(appDir, ".active-slot"), "utf-8");
       activeSlot = slotFile.trim() as "blue" | "green";
     } catch { /* no active slot yet */ }
 
     const newSlot = activeSlot === "blue" ? "green" : "blue";
-    const newProjectName = `${project.name}-${envName}-${newSlot}`;
-    const slotDir = join(projectDir, newSlot);
+    const newProjectName = `${app.name}-${envName}-${newSlot}`;
+    const slotDir = join(appDir, newSlot);
     await mkdir(slotDir, { recursive: true });
 
     checkAbort();
@@ -531,18 +531,18 @@ export async function runDeployment(
       const orgEnvVarMap: Record<string, string> = {};
       for (const v of orgVarRows) orgEnvVarMap[v.key] = v.value;
 
-      const primaryDomain = project.domains[0]?.domain ?? null;
+      const primaryDomain = app.domains[0]?.domain ?? null;
 
       const resolveCtx: ResolveContext = {
         project: {
-          id: project.id,
-          name: project.name,
-          displayName: project.displayName,
-          containerPort: project.containerPort,
+          id: app.id,
+          name: app.name,
+          displayName: app.displayName,
+          containerPort: app.containerPort,
           domain: primaryDomain,
-          gitUrl: project.gitUrl,
-          gitBranch: project.gitBranch,
-          imageName: project.imageName,
+          gitUrl: app.gitUrl,
+          gitBranch: app.gitBranch,
+          imageName: app.imageName,
         },
         org: {
           id: opts.organizationId,
@@ -551,18 +551,18 @@ export async function runDeployment(
         },
         envVars: envMap,
         orgEnvVars: orgEnvVarMap,
-        resolveExternalVar: async (projectName: string, varKey: string) => {
-          // Find the referenced project in the same org
-          const refProject = await db.query.projects.findFirst({
+        resolveExternalVar: async (appName: string, varKey: string) => {
+          // Find the referenced app in the same org
+          const refApp = await db.query.apps.findFirst({
             where: and(
-              eq(projects.organizationId, opts.organizationId),
-              eq(projects.name, projectName),
+              eq(apps.organizationId, opts.organizationId),
+              eq(apps.name, appName),
             ),
             columns: {
               id: true,
               name: true,
               displayName: true,
-              parentId: true,
+              projectId: true,
               containerPort: true,
               gitUrl: true,
               gitBranch: true,
@@ -570,39 +570,39 @@ export async function runDeployment(
             },
             with: { domains: { columns: { domain: true }, limit: 1 } },
           });
-          if (!refProject) return null;
+          if (!refApp) return null;
 
-          // Check built-in project fields first
+          // Check built-in app fields first
           const builtinFields: Record<string, string | null> = {
-            name: refProject.name,
-            displayName: refProject.displayName,
-            port: refProject.containerPort?.toString() ?? null,
-            id: refProject.id,
-            domain: refProject.domains[0]?.domain ?? null,
-            url: refProject.domains[0]?.domain
-              ? `https://${refProject.domains[0].domain}`
+            name: refApp.name,
+            displayName: refApp.displayName,
+            port: refApp.containerPort?.toString() ?? null,
+            id: refApp.id,
+            domain: refApp.domains[0]?.domain ?? null,
+            url: refApp.domains[0]?.domain
+              ? `https://${refApp.domains[0].domain}`
               : null,
-            host: refProject.domains[0]?.domain ?? null,
-            internalHost: refProject.name,
-            gitUrl: refProject.gitUrl,
-            gitBranch: refProject.gitBranch,
-            imageName: refProject.imageName,
+            host: refApp.domains[0]?.domain ?? null,
+            internalHost: refApp.name,
+            gitUrl: refApp.gitUrl,
+            gitBranch: refApp.gitBranch,
+            imageName: refApp.imageName,
           };
           if (varKey in builtinFields) return builtinFields[varKey];
 
-          // If the referenced project is in the same group AND we have a
+          // If the referenced app is in the same project AND we have a
           // groupEnvironmentId, try to resolve from the matching environment
           if (
             opts.groupEnvironmentId &&
-            refProject.parentId &&
-            project.parentId &&
-            refProject.parentId === project.parentId
+            refApp.projectId &&
+            app.projectId &&
+            refApp.projectId === app.projectId
           ) {
-            // Find the environment on the referenced project that belongs
+            // Find the environment on the referenced app that belongs
             // to the same group environment
             const refEnv = await db.query.environments.findFirst({
               where: and(
-                eq(environments.projectId, refProject.id),
+                eq(environments.appId, refApp.id),
                 eq(environments.groupEnvironmentId, opts.groupEnvironmentId),
               ),
               columns: { id: true },
@@ -612,7 +612,7 @@ export async function runDeployment(
               // Load base + environment-specific, environment overrides base
               const refBase = await db.query.envVars.findMany({
                 where: and(
-                  eq(envVars.projectId, refProject.id),
+                  eq(envVars.appId, refApp.id),
                   isNull(envVars.environmentId),
                 ),
               });
@@ -621,7 +621,7 @@ export async function runDeployment(
 
               const refEnvVars = await db.query.envVars.findMany({
                 where: and(
-                  eq(envVars.projectId, refProject.id),
+                  eq(envVars.appId, refApp.id),
                   eq(envVars.environmentId, refEnv.id),
                 ),
               });
@@ -631,10 +631,10 @@ export async function runDeployment(
             }
           }
 
-          // Fall back to the referenced project's base vars (environmentId IS NULL)
+          // Fall back to the referenced app's base vars (environmentId IS NULL)
           const refVar = await db.query.envVars.findFirst({
             where: and(
-              eq(envVars.projectId, refProject.id),
+              eq(envVars.appId, refApp.id),
               eq(envVars.key, varKey),
               isNull(envVars.environmentId),
             ),
@@ -710,8 +710,8 @@ export async function runDeployment(
     stage("cleanup", "running");
     // Step 10: Tear down old slot
     if (activeSlot) {
-      const oldSlotDir = join(projectDir, activeSlot);
-      const oldProjectName = `${project.name}-${envName}-${activeSlot}`;
+      const oldSlotDir = join(appDir, activeSlot);
+      const oldProjectName = `${app.name}-${envName}-${activeSlot}`;
       const oldComposePath = join(oldSlotDir, "docker-compose.yml");
       try {
         await execAsync(
@@ -725,11 +725,11 @@ export async function runDeployment(
     }
 
     // Step 11: Record active slot
-    await writeFile(join(projectDir, ".active-slot"), newSlot, "utf-8");
+    await writeFile(join(appDir, ".active-slot"), newSlot, "utf-8");
 
     stage("cleanup", "success");
     // Step 12: HTTP health check on domains
-    for (const domain of project.domains) {
+    for (const domain of app.domains) {
       const ok = await checkEndpoint(domain.domain, logs);
       if (ok) logs.push(`[health] ${domain.domain} responding`);
       else logs.push(`[health] ${domain.domain} not yet reachable (DNS/TLS propagation)`);
@@ -738,7 +738,7 @@ export async function runDeployment(
     stage("done", "success");
     // Auto-detect persistent volumes from running containers
     try {
-      const runningContainers = await listContainers(project.name);
+      const runningContainers = await listContainers(app.name);
       const detectedVolumes: { name: string; mountPath: string }[] = [];
       const seen = new Set<string>();
 
@@ -758,16 +758,16 @@ export async function runDeployment(
       }
 
       if (detectedVolumes.length > 0) {
-        const existing = (project.persistentVolumes as { name: string; mountPath: string }[] | null) ?? [];
+        const existing = (app.persistentVolumes as { name: string; mountPath: string }[] | null) ?? [];
         const existingPaths = new Set(existing.map((v) => v.mountPath));
         const newVolumes = detectedVolumes.filter((v) => !existingPaths.has(v.mountPath));
 
         if (newVolumes.length > 0) {
           const merged = [...existing, ...newVolumes];
           await db
-            .update(projects)
+            .update(apps)
             .set({ persistentVolumes: merged })
-            .where(eq(projects.id, opts.projectId));
+            .where(eq(apps.id, opts.appId));
           log(`[deploy] Detected ${newVolumes.length} volume(s): ${newVolumes.map((v) => v.mountPath).join(", ")}`);
         }
       }
@@ -778,10 +778,10 @@ export async function runDeployment(
     // Check volume size limits
     try {
       const limit = await db.query.volumeLimits.findFirst({
-        where: eq(volumeLimits.projectId, opts.projectId),
+        where: eq(volumeLimits.appId, opts.appId),
       });
       if (limit) {
-        const runningContainers = await listContainers(project.name);
+        const runningContainers = await listContainers(app.name);
         for (const c of runningContainers) {
           const info = await inspectContainer(c.id);
           for (const mount of info.mounts) {
@@ -816,17 +816,17 @@ export async function runDeployment(
       }
 
       // From template
-      if (project.templateName) {
+      if (app.templateName) {
         const { loadTemplates } = await import("@/lib/templates/load");
         const templates = await loadTemplates();
-        const tpl = templates.find(t => t.name === project.templateName);
+        const tpl = templates.find(t => t.name === app.templateName);
         if (tpl?.defaultCronJobs?.length) {
           cronDefs.push(...tpl.defaultCronJobs);
         }
       }
 
       if (cronDefs.length > 0) {
-        const created = await syncCronJobs(opts.projectId, cronDefs);
+        const created = await syncCronJobs(opts.appId, cronDefs);
         if (created > 0) {
           log(`[deploy] Synced ${created} cron job(s)`);
         }
@@ -835,11 +835,11 @@ export async function runDeployment(
       log(`[deploy] Warning: cron sync — ${err instanceof Error ? err.message : err}`);
     }
 
-    // Mark project as active
+    // Mark app as active
     await db
-      .update(projects)
+      .update(apps)
       .set({ status: "active", updatedAt: new Date() })
-      .where(eq(projects.id, opts.projectId));
+      .where(eq(apps.id, opts.appId));
 
     const durationMs = Date.now() - startTime;
     await db
@@ -848,7 +848,7 @@ export async function runDeployment(
       .where(eq(deployments.id, deploymentId));
 
     // Publish event for real-time UI updates
-    publishEvent(projectChannel(opts.projectId), {
+    publishEvent(appChannel(opts.appId), {
       event: "deploy:complete",
       status: "active",
       deploymentId,
@@ -859,12 +859,12 @@ export async function runDeployment(
     recordActivity({
       organizationId: opts.organizationId,
       action: "deployment.succeeded",
-      projectId: opts.projectId,
+      appId: opts.appId,
       metadata: { deploymentId, durationMs },
     }).catch(() => {});
 
     // Send success notification (non-blocking)
-    sendDeployNotification(project, deploymentId, true, durationMs).catch(() => {});
+    sendDeployNotification(app, deploymentId, true, durationMs).catch(() => {});
 
     return { deploymentId, success: true, log: logLines.join("\n"), durationMs };
   } catch (error) {
@@ -878,12 +878,12 @@ export async function runDeployment(
       .where(eq(deployments.id, deploymentId));
 
     await db
-      .update(projects)
+      .update(apps)
       .set({ status: "error", updatedAt: new Date() })
-      .where(eq(projects.id, opts.projectId));
+      .where(eq(apps.id, opts.appId));
 
     // Publish event for real-time UI updates
-    publishEvent(projectChannel(opts.projectId), {
+    publishEvent(appChannel(opts.appId), {
       event: "deploy:complete",
       status: "error",
       deploymentId,
@@ -894,13 +894,13 @@ export async function runDeployment(
     recordActivity({
       organizationId: opts.organizationId,
       action: "deployment.failed",
-      projectId: opts.projectId,
+      appId: opts.appId,
       metadata: { deploymentId, error: message },
     }).catch(() => {});
 
-    // Send failure notification (non-blocking) — project may not be fetched yet
+    // Send failure notification (non-blocking) — app may not be fetched yet
     sendDeployNotification(
-      { id: opts.projectId, name: "", displayName: "", domains: [] },
+      { id: opts.appId, name: "", displayName: "", domains: [] },
       deploymentId, false, durationMs, message
     ).catch(() => {});
 
@@ -909,7 +909,7 @@ export async function runDeployment(
 }
 
 async function sendDeployNotification(
-  project: { id: string; name: string; displayName: string; domains: { domain: string }[] },
+  app: { id: string; name: string; displayName: string; domains: { domain: string }[] },
   deploymentId: string,
   success: boolean,
   durationMs: number,
@@ -918,10 +918,10 @@ async function sendDeployNotification(
   try {
     const { sendEmail } = await import("@/lib/email/send");
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-    const dashboardUrl = `${appUrl}/projects/${project.id}`;
-    const domain = project.domains[0]?.domain;
+    const dashboardUrl = `${appUrl}/projects/${app.id}`;
+    const domain = app.domains[0]?.domain;
 
-    // TODO: send to project notification recipients (for now, skip if no MAILPACE_API_TOKEN)
+    // TODO: send to app notification recipients (for now, skip if no MAILPACE_API_TOKEN)
     if (!process.env.MAILPACE_API_TOKEN) return;
 
     // Fetch deployment for git info
@@ -945,10 +945,10 @@ async function sendDeployNotification(
       const { DeploySuccessEmail } = await import("@/lib/email/templates/deploy-success");
       const duration = durationMs < 1000 ? `${durationMs}ms` : `${Math.round(durationMs / 1000)}s`;
       // TODO: send to configured recipients
-      console.log(`[email] Would send deploy success notification for ${project.displayName}`);
+      console.log(`[email] Would send deploy success notification for ${app.displayName}`);
     } else {
       const { DeployFailedEmail } = await import("@/lib/email/templates/deploy-failed");
-      console.log(`[email] Would send deploy failure notification for ${project.displayName}`);
+      console.log(`[email] Would send deploy failure notification for ${app.displayName}`);
     }
   } catch (err) {
     console.error("[email] Notification error:", err);
@@ -1167,47 +1167,47 @@ async function stopSlotInDir(
 }
 
 export async function stopProject(
-  projectId: string,
-  projectName: string,
+  appId: string,
+  appName: string,
   environmentName?: string,
 ): Promise<{ success: boolean; log: string }> {
   const logs: string[] = [];
   try {
     if (environmentName) {
       // Stop specific environment
-      const envDir = join(PROJECTS_DIR, projectName, environmentName);
-      await stopSlotInDir(envDir, `${projectName}-${environmentName}`, logs);
+      const envDir = join(PROJECTS_DIR, appName, environmentName);
+      await stopSlotInDir(envDir, `${appName}-${environmentName}`, logs);
     } else {
       // Stop all environments — try env-aware layout first
-      const baseDir = join(PROJECTS_DIR, projectName);
+      const baseDir = join(PROJECTS_DIR, appName);
       try {
         const { readdir } = await import("fs/promises");
         const entries = await readdir(baseDir, { withFileTypes: true });
         const envDirs = entries.filter((e) => e.isDirectory() && e.name !== "repo");
         if (envDirs.length > 0) {
           for (const entry of envDirs) {
-            // Skip blue/green slot dirs at project root (legacy layout)
+            // Skip blue/green slot dirs at app root (legacy layout)
             if (entry.name === "blue" || entry.name === "green") {
-              await stopSlotInDir(baseDir, projectName, logs);
+              await stopSlotInDir(baseDir, appName, logs);
               break;
             }
             const envDir = join(baseDir, entry.name);
-            await stopSlotInDir(envDir, `${projectName}-${entry.name}`, logs);
+            await stopSlotInDir(envDir, `${appName}-${entry.name}`, logs);
           }
         } else {
-          // Legacy: slot dirs directly under project
-          await stopSlotInDir(baseDir, projectName, logs);
+          // Legacy: slot dirs directly under app
+          await stopSlotInDir(baseDir, appName, logs);
         }
       } catch {
         // Fallback to legacy layout
-        await stopSlotInDir(baseDir, projectName, logs);
+        await stopSlotInDir(baseDir, appName, logs);
       }
     }
 
     await db
-      .update(projects)
+      .update(apps)
       .set({ status: "stopped", updatedAt: new Date() })
-      .where(eq(projects.id, projectId));
+      .where(eq(apps.id, appId));
 
     return { success: true, log: logs.join("\n") };
   } catch (err) {
@@ -1217,18 +1217,18 @@ export async function stopProject(
 }
 
 export async function restartProject(
-  projectId: string,
-  projectName: string,
+  appId: string,
+  appName: string,
   environmentName?: string,
 ): Promise<{ success: boolean; log: string }> {
   const logs: string[] = [];
   try {
     const dir = environmentName
-      ? join(PROJECTS_DIR, projectName, environmentName)
-      : join(PROJECTS_DIR, projectName);
+      ? join(PROJECTS_DIR, appName, environmentName)
+      : join(PROJECTS_DIR, appName);
     const prefix = environmentName
-      ? `${projectName}-${environmentName}`
-      : projectName;
+      ? `${appName}-${environmentName}`
+      : appName;
 
     let activeSlot: string;
     try {

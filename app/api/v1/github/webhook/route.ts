@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHmac } from "crypto";
 import { db } from "@/lib/db";
-import { projects } from "@/lib/db/schema";
+import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { deployProject } from "@/lib/docker/deploy";
 import { createPreview, destroyPreview } from "@/lib/docker/preview";
@@ -56,43 +56,43 @@ async function handlePush(payload: Record<string, unknown>): Promise<NextRespons
 
   console.log(`[webhook] Push to ${repoFullName}:${branch} by ${pusher} — ${commitSha?.slice(0, 7)} ${commitMessage?.split("\n")[0]}`);
 
-  // Find all projects that match this repo + branch with autoDeploy enabled
+  // Find all apps that match this repo + branch with autoDeploy enabled
   const gitUrl = `https://github.com/${repoFullName}.git`;
-  const allProjects = await db.query.projects.findMany({
+  const allApps = await db.query.apps.findMany({
     where: and(
-      eq(projects.gitUrl, gitUrl),
-      eq(projects.autoDeploy, true)
+      eq(apps.gitUrl, gitUrl),
+      eq(apps.autoDeploy, true)
     ),
   });
 
   // Filter to matching branch
-  const matching = allProjects.filter(
-    (p) => (p.gitBranch || "main") === branch
+  const matching = allApps.filter(
+    (a) => (a.gitBranch || "main") === branch
   );
 
   if (matching.length === 0) {
-    console.log(`[webhook] No auto-deploy projects for ${repoFullName}:${branch}`);
-    return NextResponse.json({ ok: true, skipped: "no matching projects" });
+    console.log(`[webhook] No auto-deploy apps for ${repoFullName}:${branch}`);
+    return NextResponse.json({ ok: true, skipped: "no matching apps" });
   }
 
   // Trigger deploys
   const results = [];
-  for (const project of matching) {
-    console.log(`[webhook] Auto-deploying ${project.displayName} (${project.name})`);
+  for (const app of matching) {
+    console.log(`[webhook] Auto-deploying ${app.displayName} (${app.name})`);
     try {
       const result = await deployProject({
-        projectId: project.id,
-        organizationId: project.organizationId,
+        appId: app.id,
+        organizationId: app.organizationId,
         trigger: "webhook",
       });
       results.push({
-        project: project.name,
+        app: app.name,
         deploymentId: result.deploymentId,
         success: result.success,
       });
     } catch (err) {
       results.push({
-        project: project.name,
+        app: app.name,
         error: err instanceof Error ? err.message : "Deploy failed",
       });
     }
@@ -178,7 +178,7 @@ async function handlePullRequest(payload: Record<string, unknown>): Promise<Next
 async function postPreviewComment(
   repoFullName: string,
   prNumber: number,
-  previewDomains: { projectName: string; domain: string }[]
+  previewDomains: { appName: string; domain: string }[]
 ): Promise<void> {
   const { getInstallationToken } = await import("@/lib/github/app");
   const { githubAppInstallations, memberships } = await import("@/lib/db/schema");
@@ -206,7 +206,7 @@ async function postPreviewComment(
     "| Service | URL |",
     "|---------|-----|",
     ...previewDomains.map(
-      (d) => `| ${d.projectName} | https://${d.domain} |`
+      (d) => `| ${d.appName} | https://${d.domain} |`
     ),
     "",
     "_Deployed by [Host](https://github.com/joeyyax/host)_",

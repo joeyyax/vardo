@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { projects } from "@/lib/db/schema";
+import { apps } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq } from "drizzle-orm";
 import { fetchAllContainerMetrics } from "@/lib/metrics/cadvisor";
@@ -25,8 +25,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return new Response("Forbidden", { status: 403 });
     }
 
-    const orgProjects = await db.query.projects.findMany({
-      where: eq(projects.organizationId, orgId),
+    const orgApps = await db.query.apps.findMany({
+      where: eq(apps.organizationId, orgId),
       columns: { id: true, name: true, displayName: true, status: true },
     });
 
@@ -42,13 +42,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       // Cache slow calls
       let cachedDisk: DiskUsage | null = null;
       let cachedSystem: SystemInfo | null = null;
-      let cachedProjectDisk: Record<string, number> = {};
+      let cachedAppDisk: Record<string, number> = {};
 
       // Fetch per-project disk from Redis (fast — just TS.GET per project)
-      async function refreshProjectDisk() {
+      async function refreshAppDisk() {
         try {
           const diskEntries = await Promise.all(
-            orgProjects.map(async (p) => {
+            orgApps.map(async (p) => {
               const size = await getLatestProjectDiskUsage(p.name);
               return [p.id, size] as const;
             })
@@ -59,7 +59,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
               result[id] = size;
             }
           }
-          cachedProjectDisk = result;
+          cachedAppDisk = result;
         } catch { /* skip */ }
       }
 
@@ -67,11 +67,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       async function refreshSlowData() {
         try { cachedDisk = await getSystemDiskUsage(); } catch { /* skip */ }
         try { cachedSystem = await getSystemInfo(); } catch { /* skip */ }
-        await refreshProjectDisk();
+        await refreshAppDisk();
       }
 
       // Load per-project disk immediately (fast Redis reads), slow data in background
-      await refreshProjectDisk();
+      await refreshAppDisk();
       refreshSlowData();
 
       request.signal.addEventListener("abort", () => {
@@ -85,21 +85,21 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           // Fast path: just cAdvisor stats (~10ms)
           const allMetrics = await fetchAllContainerMetrics();
 
-          const byProject: Record<string, typeof allMetrics> = {};
+          const byApp: Record<string, typeof allMetrics> = {};
           for (const m of allMetrics) {
-            const matched = orgProjects.find(
+            const matched = orgApps.find(
               (p) => m.projectName === p.name || m.projectName.startsWith(`${p.name}-`)
             );
             if (!matched) continue;
-            if (!byProject[matched.id]) byProject[matched.id] = [];
-            byProject[matched.id].push(m);
+            if (!byApp[matched.id]) byApp[matched.id] = [];
+            byApp[matched.id].push(m);
           }
 
           sendEvent("stats", {
-            projects: orgProjects.map((p) => ({
+            projects: orgApps.map((p) => ({
               ...p,
-              diskUsage: cachedProjectDisk[p.id] || 0,
-              containers: (byProject[p.id] || []).map((m) => ({
+              diskUsage: cachedAppDisk[p.id] || 0,
+              containers: (byApp[p.id] || []).map((m) => ({
                 containerId: m.containerId,
                 containerName: m.containerName,
                 cpuPercent: m.cpuPercent,

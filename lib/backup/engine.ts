@@ -66,7 +66,7 @@ const BACKUPS_DIR = resolve(process.env.HOST_BACKUPS_DIR || "./.host/backups");
 
 export type BackupResult = {
   backupId: string;
-  projectId: string;
+  appId: string;
   volumeName: string;
   success: boolean;
   sizeBytes: number;
@@ -139,17 +139,17 @@ async function backupVolume(
 
 /**
  * Execute a full backup run for a given job.
- * For each project in the job, backs up every persistent volume.
+ * For each app in the job, backs up every persistent volume.
  */
 export async function runBackup(jobId: string): Promise<BackupResult[]> {
-  // 1. Load the job with its target and projects
+  // 1. Load the job with its target and apps
   const job = await db.query.backupJobs.findFirst({
     where: eq(backupJobs.id, jobId),
     with: {
       target: true,
-      backupJobProjects: {
+      backupJobApps: {
         with: {
-          project: {
+          app: {
             with: {
               organization: {
                 columns: { slug: true },
@@ -169,13 +169,13 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
   const ts = timestamp();
   await ensureDir(BACKUPS_DIR);
 
-  // 2. Back up each project's persistent volumes
+  // 2. Back up each app's persistent volumes
   const results: BackupResult[] = [];
 
-  for (const bjp of job.backupJobProjects) {
-    const project = bjp.project;
-    const orgSlug = project.organization.slug;
-    const volumes = project.persistentVolumes ?? [];
+  for (const bja of job.backupJobApps) {
+    const app = bja.app;
+    const orgSlug = app.organization.slug;
+    const volumes = app.persistentVolumes ?? [];
 
     if (volumes.length === 0) {
       // No persistent volumes declared, nothing to back up
@@ -191,10 +191,10 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
       };
 
       // The actual Docker volume name follows the blue/green slot pattern:
-      // {projectName}-blue_{volumeName} or {projectName}-green_{volumeName}
+      // {appName}-blue_{volumeName} or {appName}-green_{volumeName}
       // We try blue first (production slot), then green
-      const blueVolume = `${project.name}-blue_${vol.name}`;
-      const greenVolume = `${project.name}-green_${vol.name}`;
+      const blueVolume = `${app.name}-blue_${vol.name}`;
+      const greenVolume = `${app.name}-green_${vol.name}`;
 
       let dockerVolumeName: string;
       try {
@@ -216,7 +216,7 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
           await db.insert(backups).values({
             id: backupId,
             jobId: job.id,
-            projectId: project.id,
+            appId: app.id,
             targetId: job.target.id,
             status: "failed",
             volumeName: vol.name,
@@ -227,7 +227,7 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
 
           results.push({
             backupId,
-            projectId: project.id,
+            appId: app.id,
             volumeName: vol.name,
             success: false,
             sizeBytes: 0,
@@ -239,14 +239,14 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
         }
       }
 
-      // Storage path: {orgSlug}/{projectName}/{volumeName}/{timestamp}.tar.gz
-      const storageKey = `${orgSlug}/${project.name}/${vol.name}/${ts}.tar.gz`;
+      // Storage path: {orgSlug}/{appName}/{volumeName}/{timestamp}.tar.gz
+      const storageKey = `${orgSlug}/${app.name}/${vol.name}/${ts}.tar.gz`;
 
       // Create backup record as running
       await db.insert(backups).values({
         id: backupId,
         jobId: job.id,
-        projectId: project.id,
+        appId: app.id,
         targetId: job.target.id,
         status: "running",
         volumeName: vol.name,
@@ -278,7 +278,7 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
 
         results.push({
           backupId,
-          projectId: project.id,
+          appId: app.id,
           volumeName: vol.name,
           success: true,
           sizeBytes,
@@ -302,7 +302,7 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
 
         results.push({
           backupId,
-          projectId: project.id,
+          appId: app.id,
           volumeName: vol.name,
           success: false,
           sizeBytes: 0,
@@ -334,7 +334,7 @@ export async function restoreBackup(
     where: eq(backups.id, backupId),
     with: {
       target: true,
-      project: true,
+      app: true,
     },
   });
 
@@ -367,8 +367,8 @@ export async function restoreBackup(
     log("Download complete");
 
     // 2. Determine the Docker volume name (try blue first, then green)
-    const blueVolume = `${backup.project.name}-blue_${backup.volumeName}`;
-    const greenVolume = `${backup.project.name}-green_${backup.volumeName}`;
+    const blueVolume = `${backup.app.name}-blue_${backup.volumeName}`;
+    const greenVolume = `${backup.app.name}-green_${backup.volumeName}`;
 
     let dockerVolumeName: string;
     try {

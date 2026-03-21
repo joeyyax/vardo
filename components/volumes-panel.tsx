@@ -42,7 +42,7 @@ type VolumeLimit = {
 } | null;
 
 type Props = {
-  projectId: string;
+  appId: string;
   orgId: string;
 };
 
@@ -53,7 +53,7 @@ function formatMB(bytes: number): string {
   return `${Math.round(bytes / (1024 * 1024))} MB`;
 }
 
-export function VolumesPanel({ projectId, orgId }: Props) {
+export function VolumesPanel({ appId, orgId }: Props) {
   const router = useRouter();
   const [volumes, setVolumes] = useState<Volume[]>([]);
   const [loading, setLoading] = useState(true);
@@ -74,7 +74,7 @@ export function VolumesPanel({ projectId, orgId }: Props) {
     async function load() {
       try {
         const res = await fetch(
-          `/api/v1/organizations/${orgId}/projects/${projectId}/volumes`
+          `/api/v1/organizations/${orgId}/apps/${appId}/volumes`
         );
         if (res.ok) {
           const data = await res.json();
@@ -84,13 +84,13 @@ export function VolumesPanel({ projectId, orgId }: Props) {
       finally { setLoading(false); }
     }
     load();
-  }, [orgId, projectId]);
+  }, [orgId, appId]);
 
   useEffect(() => {
     async function loadLimit() {
       try {
         const res = await fetch(
-          `/api/v1/organizations/${orgId}/projects/${projectId}/volumes/limits`
+          `/api/v1/organizations/${orgId}/apps/${appId}/volumes/limits`
         );
         if (res.ok) {
           const data = await res.json();
@@ -104,7 +104,7 @@ export function VolumesPanel({ projectId, orgId }: Props) {
       finally { setLimitLoading(false); }
     }
     loadLimit();
-  }, [orgId, projectId]);
+  }, [orgId, appId]);
 
   async function togglePersistent(volumeName: string) {
     const updated = volumes.map((v) =>
@@ -120,7 +120,7 @@ export function VolumesPanel({ projectId, orgId }: Props) {
     setSaving(true);
     try {
       const res = await fetch(
-        `/api/v1/organizations/${orgId}/projects/${projectId}/volumes`,
+        `/api/v1/organizations/${orgId}/apps/${appId}/volumes`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -162,7 +162,7 @@ export function VolumesPanel({ projectId, orgId }: Props) {
     setSaving(true);
     try {
       const res = await fetch(
-        `/api/v1/organizations/${orgId}/projects/${projectId}/volumes`,
+        `/api/v1/organizations/${orgId}/apps/${appId}/volumes`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -192,7 +192,7 @@ export function VolumesPanel({ projectId, orgId }: Props) {
 
     try {
       await fetch(
-        `/api/v1/organizations/${orgId}/projects/${projectId}/volumes`,
+        `/api/v1/organizations/${orgId}/apps/${appId}/volumes`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -221,7 +221,7 @@ export function VolumesPanel({ projectId, orgId }: Props) {
     setLimitSaving(true);
     try {
       const res = await fetch(
-        `/api/v1/organizations/${orgId}/projects/${projectId}/volumes/limits`,
+        `/api/v1/organizations/${orgId}/apps/${appId}/volumes/limits`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -250,7 +250,7 @@ export function VolumesPanel({ projectId, orgId }: Props) {
     setLimitSaving(true);
     try {
       const res = await fetch(
-        `/api/v1/organizations/${orgId}/projects/${projectId}/volumes/limits`,
+        `/api/v1/organizations/${orgId}/apps/${appId}/volumes/limits`,
         { method: "DELETE" }
       );
       if (res.ok) {

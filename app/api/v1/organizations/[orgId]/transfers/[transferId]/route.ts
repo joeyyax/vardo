@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { projectTransfers, memberships } from "@/lib/db/schema";
+import { appTransfers, memberships } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
@@ -38,13 +38,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // Fetch the transfer
-    const transfer = await db.query.projectTransfers.findFirst({
+    const transfer = await db.query.appTransfers.findFirst({
       where: and(
-        eq(projectTransfers.id, transferId),
-        eq(projectTransfers.status, "pending"),
+        eq(appTransfers.id, transferId),
+        eq(appTransfers.status, "pending"),
       ),
       with: {
-        project: { columns: { id: true, name: true } },
+        app: { columns: { id: true, name: true } },
       },
     });
 
@@ -90,23 +90,23 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       recordActivity({
         organizationId: transfer.destinationOrgId,
         action: "transfer.accepted",
-        projectId: transfer.projectId,
+        appId: transfer.appId,
         userId: session.user.id,
         metadata: {
           transferId,
           sourceOrgId: transfer.sourceOrgId,
-          projectName: transfer.project?.name,
+          appName: transfer.app?.name,
         },
       });
       recordActivity({
         organizationId: transfer.sourceOrgId,
         action: "transfer.accepted",
-        projectId: transfer.projectId,
+        appId: transfer.appId,
         userId: session.user.id,
         metadata: {
           transferId,
           destinationOrgId: transfer.destinationOrgId,
-          projectName: transfer.project?.name,
+          appName: transfer.app?.name,
         },
       });
 
@@ -117,23 +117,23 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       recordActivity({
         organizationId: transfer.destinationOrgId,
         action: "transfer.rejected",
-        projectId: transfer.projectId,
+        appId: transfer.appId,
         userId: session.user.id,
         metadata: {
           transferId,
           sourceOrgId: transfer.sourceOrgId,
-          projectName: transfer.project?.name,
+          appName: transfer.app?.name,
         },
       });
       recordActivity({
         organizationId: transfer.sourceOrgId,
         action: "transfer.rejected",
-        projectId: transfer.projectId,
+        appId: transfer.appId,
         userId: session.user.id,
         metadata: {
           transferId,
           destinationOrgId: transfer.destinationOrgId,
-          projectName: transfer.project?.name,
+          appName: transfer.app?.name,
         },
       });
 

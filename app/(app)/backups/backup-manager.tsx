@@ -46,7 +46,7 @@ import { formatBytes } from "@/lib/metrics/format";
 // Types
 // ---------------------------------------------------------------------------
 
-type Project = {
+type App = {
   id: string;
   name: string;
   displayName: string;
@@ -80,8 +80,8 @@ type BackupJob = {
   keepMonthly: number | null;
   createdAt: string;
   target: { id: string; name: string; type: string };
-  backupJobProjects: {
-    project: Project;
+  backupJobApps: {
+    app: App;
   }[];
   backups: BackupHistoryEntry[];
 };
@@ -95,12 +95,12 @@ type RecentBackup = {
   storagePath: string | null;
   log: string | null;
   job: { id: string; name: string };
-  project: Project;
+  app: App;
 };
 
 type Props = {
   orgId: string;
-  projects: Project[];
+  apps: App[];
 };
 
 type TargetType = "s3" | "r2" | "b2" | "ssh";
@@ -212,7 +212,7 @@ function StatusBadge({ status }: { status: string }) {
 // Component
 // ---------------------------------------------------------------------------
 
-export function BackupManager({ orgId, projects }: Props) {
+export function BackupManager({ orgId, apps }: Props) {
   const [jobs, setJobs] = useState<BackupJob[]>([]);
   const [targets, setTargets] = useState<BackupTarget[]>([]);
   const [recentHistory, setRecentHistory] = useState<RecentBackup[]>([]);
@@ -228,7 +228,7 @@ export function BackupManager({ orgId, projects }: Props) {
   const [newJobName, setNewJobName] = useState("");
   const [newJobTargetId, setNewJobTargetId] = useState("");
   const [newJobSchedule, setNewJobSchedule] = useState("0 2 * * *");
-  const [newJobProjectIds, setNewJobProjectIds] = useState<string[]>([]);
+  const [newJobAppIds, setNewJobAppIds] = useState<string[]>([]);
   const [newJobKeepLast, setNewJobKeepLast] = useState("7");
 
   // New target form
@@ -415,7 +415,7 @@ export function BackupManager({ orgId, projects }: Props) {
     if (
       !newJobName.trim() ||
       !newJobTargetId ||
-      newJobProjectIds.length === 0
+      newJobAppIds.length === 0
     ) {
       return;
     }
@@ -428,7 +428,7 @@ export function BackupManager({ orgId, projects }: Props) {
         body: JSON.stringify({
           name: newJobName.trim(),
           targetId: newJobTargetId,
-          projectIds: newJobProjectIds,
+          appIds: newJobAppIds,
           schedule: newJobSchedule,
           keepLast: newJobKeepLast ? parseInt(newJobKeepLast, 10) : null,
         }),
@@ -454,7 +454,7 @@ export function BackupManager({ orgId, projects }: Props) {
     setNewJobName("");
     setNewJobTargetId("");
     setNewJobSchedule("0 2 * * *");
-    setNewJobProjectIds([]);
+    setNewJobAppIds([]);
     setNewJobKeepLast("7");
   }
 
@@ -560,12 +560,12 @@ export function BackupManager({ orgId, projects }: Props) {
     }
   }
 
-  // -- Toggle project selection --
-  function toggleProject(projectId: string) {
-    setNewJobProjectIds((prev) =>
-      prev.includes(projectId)
-        ? prev.filter((id) => id !== projectId)
-        : [...prev, projectId]
+  // -- Toggle app selection --
+  function toggleApp(appId: string) {
+    setNewJobAppIds((prev) =>
+      prev.includes(appId)
+        ? prev.filter((id) => id !== appId)
+        : [...prev, appId]
     );
   }
 
@@ -640,7 +640,7 @@ export function BackupManager({ orgId, projects }: Props) {
                     <div className="flex items-center gap-3 min-w-0">
                       <StatusBadge status={backup.status} />
                       <div className="min-w-0">
-                        <p className="text-sm">{backup.project.displayName}</p>
+                        <p className="text-sm">{backup.app.displayName}</p>
                         <p className="text-xs text-muted-foreground">
                           {new Date(backup.startedAt).toLocaleString()}
                           {backup.sizeBytes != null && <> &middot; {formatBytes(backup.sizeBytes)}</>}
@@ -847,13 +847,13 @@ export function BackupManager({ orgId, projects }: Props) {
                       </div>
 
                       <div className="flex flex-wrap gap-1">
-                        {job.backupJobProjects.map(({ project }) => (
+                        {job.backupJobApps.map(({ app }) => (
                           <Badge
-                            key={project.id}
+                            key={app.id}
                             variant="secondary"
                             className="text-xs"
                           >
-                            {project.displayName}
+                            {app.displayName}
                           </Badge>
                         ))}
                       </div>
@@ -929,7 +929,7 @@ export function BackupManager({ orgId, projects }: Props) {
                     <StatusBadge status={entry.status} />
                     <div className="min-w-0">
                       <p className="text-sm font-medium truncate">
-                        {entry.project.displayName}
+                        {entry.app.displayName}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {entry.job.name} --{" "}
@@ -1241,8 +1241,8 @@ export function BackupManager({ orgId, projects }: Props) {
           <BottomSheetHeader>
             <BottomSheetTitle>Create backup job</BottomSheetTitle>
             <BottomSheetDescription>
-              Configure a backup job to protect your project data. Select which
-              projects to include and set a schedule.
+              Configure a backup job to protect your app data. Select which
+              apps to include and set a schedule.
             </BottomSheetDescription>
           </BottomSheetHeader>
 
@@ -1315,34 +1315,34 @@ export function BackupManager({ orgId, projects }: Props) {
               <div className="grid gap-2">
                 <Label>Projects to Back Up</Label>
                 <div className="space-y-1 max-h-48 overflow-y-auto rounded-md border p-2">
-                  {projects.length === 0 ? (
+                  {apps.length === 0 ? (
                     <p className="text-xs text-muted-foreground py-2 text-center">
-                      No projects available
+                      No apps available
                     </p>
                   ) : (
-                    projects.map((project) => (
+                    apps.map((app) => (
                       <label
-                        key={project.id}
+                        key={app.id}
                         className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted cursor-pointer"
                       >
                         <input
                           type="checkbox"
-                          checked={newJobProjectIds.includes(project.id)}
-                          onChange={() => toggleProject(project.id)}
+                          checked={newJobAppIds.includes(app.id)}
+                          onChange={() => toggleApp(app.id)}
                           className="rounded border-input"
                         />
-                        <span className="text-sm">{project.displayName}</span>
+                        <span className="text-sm">{app.displayName}</span>
                         <span className="text-xs text-muted-foreground font-mono">
-                          {project.name}
+                          {app.name}
                         </span>
                       </label>
                     ))
                   )}
                 </div>
-                {newJobProjectIds.length > 0 && (
+                {newJobAppIds.length > 0 && (
                   <p className="text-xs text-muted-foreground">
-                    {newJobProjectIds.length} project
-                    {newJobProjectIds.length !== 1 ? "s" : ""} selected
+                    {newJobAppIds.length} app
+                    {newJobAppIds.length !== 1 ? "s" : ""} selected
                   </p>
                 )}
               </div>
@@ -1363,7 +1363,7 @@ export function BackupManager({ orgId, projects }: Props) {
                 saving ||
                 !newJobName.trim() ||
                 !newJobTargetId ||
-                newJobProjectIds.length === 0
+                newJobAppIds.length === 0
               }
             >
               {saving ? (

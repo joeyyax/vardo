@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentOrg } from "@/lib/auth/session";
 import { db } from "@/lib/db";
-import { projects } from "@/lib/db/schema";
+import { apps } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { PageToolbar } from "@/components/page-toolbar";
 import { BackupManager } from "./backup-manager";
@@ -15,9 +15,9 @@ export default async function BackupsPage() {
 
   const orgId = orgData.organization.id;
 
-  // Fetch projects for the job creation form
-  const projectList = await db.query.projects.findMany({
-    where: eq(projects.organizationId, orgId),
+  // Fetch apps for the job creation form
+  const appList = await db.query.apps.findMany({
+    where: eq(apps.organizationId, orgId),
     columns: { id: true, name: true, displayName: true },
   });
 
@@ -27,7 +27,7 @@ export default async function BackupsPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Backups</h1>
       </PageToolbar>
 
-      <BackupManager orgId={orgId} projects={projectList} />
+      <BackupManager orgId={orgId} apps={appList} />
     </div>
   );
 }

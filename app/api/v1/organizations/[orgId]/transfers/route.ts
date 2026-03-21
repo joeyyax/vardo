@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { projectTransfers } from "@/lib/db/schema";
+import { appTransfers } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, or } from "drizzle-orm";
 
@@ -20,13 +20,13 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const transfers = await db.query.projectTransfers.findMany({
+    const transfers = await db.query.appTransfers.findMany({
       where: or(
-        eq(projectTransfers.sourceOrgId, orgId),
-        eq(projectTransfers.destinationOrgId, orgId),
+        eq(appTransfers.sourceOrgId, orgId),
+        eq(appTransfers.destinationOrgId, orgId),
       ),
       with: {
-        project: {
+        app: {
           columns: { id: true, name: true, displayName: true },
         },
         sourceOrg: {

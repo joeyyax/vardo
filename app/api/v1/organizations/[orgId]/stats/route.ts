@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { projects } from "@/lib/db/schema";
+import { apps } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq } from "drizzle-orm";
 import { fetchAllContainerMetrics } from "@/lib/metrics/cadvisor";
@@ -22,8 +22,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const orgProjects = await db.query.projects.findMany({
-      where: eq(projects.organizationId, orgId),
+    const orgApps = await db.query.apps.findMany({
+      where: eq(apps.organizationId, orgId),
       columns: { id: true, name: true, displayName: true, status: true },
     });
 
@@ -39,15 +39,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       const bucketMs = parseInt(bucket || "30000");
       const perProject = searchParams.get("perProject") === "true";
 
-      const activeProjects = orgProjects.filter((p) => p.status === "active");
-      const activeNames = activeProjects.map((p) => p.name);
+      const activeApps = orgApps.filter((p) => p.status === "active");
+      const activeAppNames = activeApps.map((p) => p.name);
 
       if (perProject) {
         // Per-project sparklines for all metrics (project grid cards)
         const result: Record<string, { cpu: [number, number][]; memory: [number, number][]; networkRx: [number, number][]; networkTx: [number, number][]; disk: [number, number][] }> = {};
 
         await Promise.allSettled(
-          activeProjects.map(async (p) => {
+          activeApps.map(async (p) => {
             const [cpu, memory, networkRx, networkTx, disk] = await Promise.all([
               queryMetrics(p.name, "cpu", fromMs, toMs, { type: "avg", bucketMs }),
               queryMetrics(p.name, "memory", fromMs, toMs, { type: "avg", bucketMs }),
@@ -69,7 +69,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       const allNetTx: Map<number, number> = new Map();
 
       await Promise.allSettled(
-        activeNames.map(async (name) => {
+        activeAppNames.map(async (name) => {
           const [cpu, mem, netRx, netTx] = await Promise.all([
             queryMetrics(name, "cpu", fromMs, toMs, { type: "avg", bucketMs }),
             queryMetrics(name, "memory", fromMs, toMs, { type: "avg", bucketMs }),
@@ -103,31 +103,31 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     // Live snapshot
     try {
       const allMetrics = await fetchAllContainerMetrics();
-      const projectNames = new Set(orgProjects.map((p) => p.name));
+      const appNames = new Set(orgApps.map((p) => p.name));
 
       // Group by project
-      const byProject: Record<string, typeof allMetrics> = {};
+      const byApp: Record<string, typeof allMetrics> = {};
       for (const m of allMetrics) {
         // Match project name (handles blue/green slots like "redis-blue")
-        const matchedProject = orgProjects.find(
+        const matchedApp = orgApps.find(
           (p) => m.projectName === p.name || m.projectName.startsWith(`${p.name}-`)
         );
-        if (!matchedProject) continue;
-        if (!byProject[matchedProject.id]) byProject[matchedProject.id] = [];
-        byProject[matchedProject.id].push(m);
+        if (!matchedApp) continue;
+        if (!byApp[matchedApp.id]) byApp[matchedApp.id] = [];
+        byApp[matchedApp.id].push(m);
       }
 
       return NextResponse.json({
-        projects: orgProjects.map((p) => ({
+        projects: orgApps.map((p) => ({
           ...p,
-          containers: byProject[p.id] || [],
+          containers: byApp[p.id] || [],
         })),
         timestamp: new Date().toISOString(),
       });
     } catch {
       // cAdvisor not available — return projects without stats
       return NextResponse.json({
-        projects: orgProjects.map((p) => ({ ...p, containers: [] })),
+        projects: orgApps.map((p) => ({ ...p, containers: [] })),
         timestamp: new Date().toISOString(),
       });
     }

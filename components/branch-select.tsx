@@ -14,8 +14,8 @@ type BranchSelectProps = {
   onChange: (value: string) => void;
   /** Provide branches directly (skips API fetch) */
   branches?: string[];
-  /** Fetch branches from this project's API */
-  projectId?: string;
+  /** Fetch branches from this app's API */
+  appId?: string;
   orgId?: string;
   /** Branch to exclude from the list (e.g. the production branch) */
   excludeBranch?: string;
@@ -27,7 +27,7 @@ export function BranchSelect({
   value,
   onChange,
   branches: externalBranches,
-  projectId,
+  appId,
   orgId,
   excludeBranch,
   placeholder = "Select a branch...",
@@ -49,11 +49,11 @@ export function BranchSelect({
 
   // Fetch from project API on first open
   const fetchBranches = useCallback(async () => {
-    if (fetched || !projectId || !orgId) return;
+    if (fetched || !appId || !orgId) return;
     setLoading(true);
     try {
       const res = await fetch(
-        `/api/v1/organizations/${orgId}/projects/${projectId}/branches`
+        `/api/v1/organizations/${orgId}/apps/${appId}/branches`
       );
       if (res.ok) {
         const data = await res.json();
@@ -65,7 +65,7 @@ export function BranchSelect({
       setLoading(false);
       setFetched(true);
     }
-  }, [fetched, projectId, orgId]);
+  }, [fetched, appId, orgId]);
 
   useEffect(() => {
     if (open) fetchBranches();

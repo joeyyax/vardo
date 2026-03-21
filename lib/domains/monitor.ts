@@ -6,7 +6,7 @@ import { nanoid } from "nanoid";
 type DomainCheckResult = {
   domainId: string;
   domain: string;
-  projectName: string;
+  appName: string;
   reachable: boolean;
   statusCode?: number;
   responseTimeMs: number;
@@ -14,13 +14,13 @@ type DomainCheckResult = {
 };
 
 /**
- * Check all domains across all active projects.
+ * Check all domains across all active apps.
  * Call this from a scheduled interval (e.g. every 5 minutes).
  */
 export async function checkAllDomains(): Promise<DomainCheckResult[]> {
   const allDomains = await db.query.domains.findMany({
     with: {
-      project: {
+      app: {
         columns: { id: true, name: true, status: true },
       },
     },
@@ -29,8 +29,8 @@ export async function checkAllDomains(): Promise<DomainCheckResult[]> {
   const results: DomainCheckResult[] = [];
 
   for (const d of allDomains) {
-    // Skip domains for non-active projects
-    if (d.project.status !== "active") continue;
+    // Skip domains for non-active apps
+    if (d.app.status !== "active") continue;
     // Skip localhost domains
     if (d.domain.includes("localhost")) continue;
 
@@ -71,7 +71,7 @@ export async function checkAllDomains(): Promise<DomainCheckResult[]> {
     const result: DomainCheckResult = {
       domainId: d.id,
       domain: d.domain,
-      projectName: d.project.name,
+      appName: d.app.name,
       reachable,
       statusCode,
       responseTimeMs,
@@ -110,7 +110,7 @@ export async function checkAllDomains(): Promise<DomainCheckResult[]> {
 
       if (!prevCheck || prevCheck.reachable) {
         console.log(
-          `[domain-monitor] WARNING: ${d.domain} (project: ${d.project.name}) is unreachable` +
+          `[domain-monitor] WARNING: ${d.domain} (app: ${d.app.name}) is unreachable` +
             (error ? ` — ${error}` : "") +
             (statusCode ? ` (HTTP ${statusCode})` : "")
         );

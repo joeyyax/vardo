@@ -39,8 +39,8 @@ export function subscribe(
 }
 
 // Channel naming conventions
-export function projectChannel(projectId: string) {
-  return `project:${projectId}`;
+export function appChannel(appId: string) {
+  return `app:${appId}`;
 }
 
 export function orgChannel(orgId: string) {

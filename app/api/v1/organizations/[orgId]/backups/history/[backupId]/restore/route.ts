@@ -24,13 +24,13 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     const backup = await db.query.backups.findFirst({
       where: eq(backups.id, backupId),
       with: {
-        project: {
+        app: {
           columns: { id: true, organizationId: true },
         },
       },
     });
 
-    if (!backup || backup.project.organizationId !== orgId) {
+    if (!backup || backup.app.organizationId !== orgId) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 

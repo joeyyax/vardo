@@ -1,40 +1,40 @@
 import { db } from "@/lib/db";
 import {
-  projects,
+  apps,
   envVars,
-  projectTransfers,
+  appTransfers,
 } from "@/lib/db/schema";
 import { eq, and, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { extractExpressions, validateExpression } from "@/lib/env/resolve";
 
 /**
- * Analyze what would happen if a project is transferred.
+ * Analyze what would happen if an app is transferred.
  * Returns list of cross-project refs that would become unresolvable.
  */
 export async function analyzeTransfer(
-  projectId: string,
+  appId: string,
   sourceOrgId: string,
   destinationOrgId: string,
 ): Promise<{
   frozenRefs: { key: string; originalRef: string; currentValue: string }[];
   warnings: string[];
 }> {
-  // Load project's env vars (base-level, no environment override)
+  // Load app's env vars (base-level, no environment override)
   const vars = await db.query.envVars.findMany({
-    where: and(eq(envVars.projectId, projectId), isNull(envVars.environmentId)),
+    where: and(eq(envVars.appId, appId), isNull(envVars.environmentId)),
   });
 
-  // Load all project names in destination org
-  const destProjects = await db.query.projects.findMany({
-    where: eq(projects.organizationId, destinationOrgId),
+  // Load all app names in destination org
+  const destApps = await db.query.apps.findMany({
+    where: eq(apps.organizationId, destinationOrgId),
     columns: { name: true },
   });
-  const destProjectNames = new Set(destProjects.map((p) => p.name));
+  const destAppNames = new Set(destApps.map((a) => a.name));
 
-  // Load all project names in source org (for reference resolution)
-  const sourceProjects = await db.query.projects.findMany({
-    where: eq(projects.organizationId, sourceOrgId),
+  // Load all app names in source org (for reference resolution)
+  const sourceApps = await db.query.apps.findMany({
+    where: eq(apps.organizationId, sourceOrgId),
     columns: { name: true },
   });
 
@@ -46,9 +46,9 @@ export async function analyzeTransfer(
     for (const expr of expressions) {
       const { type, target } = validateExpression(expr);
       if (type === "cross-project") {
-        const refProjectName = target.split(".")[0];
-        // If the referenced project won't exist in the destination org
-        if (!destProjectNames.has(refProjectName)) {
+        const refAppName = target.split(".")[0];
+        // If the referenced app won't exist in the destination org
+        if (!destAppNames.has(refAppName)) {
           frozenRefs.push({
             key: v.key,
             originalRef: `\${${expr}}`,
@@ -71,22 +71,22 @@ export async function analyzeTransfer(
  * Initiate a transfer -- creates a pending transfer record.
  */
 export async function initiateTransfer(opts: {
-  projectId: string;
+  appId: string;
   sourceOrgId: string;
   destinationOrgId: string;
   initiatedBy: string;
   note?: string;
 }): Promise<string> {
   const analysis = await analyzeTransfer(
-    opts.projectId,
+    opts.appId,
     opts.sourceOrgId,
     opts.destinationOrgId,
   );
 
   const id = nanoid();
-  await db.insert(projectTransfers).values({
+  await db.insert(appTransfers).values({
     id,
-    projectId: opts.projectId,
+    appId: opts.appId,
     sourceOrgId: opts.sourceOrgId,
     destinationOrgId: opts.destinationOrgId,
     initiatedBy: opts.initiatedBy,
@@ -103,15 +103,15 @@ export async function initiateTransfer(opts: {
 }
 
 /**
- * Accept a transfer -- move the project to the destination org.
+ * Accept a transfer -- move the app to the destination org.
  * Freezes unresolvable cross-project refs by replacing expressions with literal values.
  */
 export async function acceptTransfer(
   transferId: string,
   respondedBy: string,
 ): Promise<void> {
-  const transfer = await db.query.projectTransfers.findFirst({
-    where: eq(projectTransfers.id, transferId),
+  const transfer = await db.query.appTransfers.findFirst({
+    where: eq(appTransfers.id, transferId),
   });
 
   if (!transfer || transfer.status !== "pending") {
@@ -123,7 +123,7 @@ export async function acceptTransfer(
     for (const ref of transfer.frozenRefs) {
       const vars = await db.query.envVars.findMany({
         where: and(
-          eq(envVars.projectId, transfer.projectId),
+          eq(envVars.appId, transfer.appId),
           eq(envVars.key, ref.key),
           isNull(envVars.environmentId),
         ),
@@ -145,25 +145,25 @@ export async function acceptTransfer(
     }
   }
 
-  // Move the project to the destination org
+  // Move the app to the destination org
   await db
-    .update(projects)
+    .update(apps)
     .set({
       organizationId: transfer.destinationOrgId,
-      parentId: null, // Remove from parent (parent projects are org-scoped)
+      projectId: null, // Remove from project (projects are org-scoped)
       updatedAt: new Date(),
     })
-    .where(eq(projects.id, transfer.projectId));
+    .where(eq(apps.id, transfer.appId));
 
   // Update transfer status
   await db
-    .update(projectTransfers)
+    .update(appTransfers)
     .set({
       status: "accepted",
       respondedBy,
       respondedAt: new Date(),
     })
-    .where(eq(projectTransfers.id, transferId));
+    .where(eq(appTransfers.id, transferId));
 }
 
 /**
@@ -175,11 +175,11 @@ export async function rejectTransfer(
   status: "rejected" | "cancelled" = "rejected",
 ): Promise<void> {
   await db
-    .update(projectTransfers)
+    .update(appTransfers)
     .set({
       status,
       respondedBy,
       respondedAt: new Date(),
     })
-    .where(eq(projectTransfers.id, transferId));
+    .where(eq(appTransfers.id, transferId));
 }

@@ -7,21 +7,21 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
 type EnvEditorProps = {
-  projectId: string;
-  projectName: string;
+  appId: string;
+  appName: string;
   orgId: string;
   initialVars: { key: string; isSecret: boolean | null }[];
-  allProjectNames?: string[];
+  allAppNames?: string[];
   orgVarKeys?: string[];
   environmentId?: string;
 } | {
-  /** Standalone mode — no project, just editing content with onChange callback */
+  /** Standalone mode — no app, just editing content with onChange callback */
   standalone: true;
   initialContent?: string;
   onChange: (content: string) => void;
-  allProjectNames?: string[];
+  allAppNames?: string[];
   orgVarKeys?: string[];
-  /** Hide the cross-project variable reference section below the editor */
+  /** Hide the cross-app variable reference section below the editor */
   showReferences?: boolean;
 };
 
@@ -48,11 +48,11 @@ function isPasswordKey(key: string): boolean {
 
 export function EnvEditor(props: EnvEditorProps) {
   const isStandalone = "standalone" in props && props.standalone;
-  const projectId = isStandalone ? "" : (props as Exclude<EnvEditorProps, { standalone: true }>).projectId;
-  const projectName = isStandalone ? "" : (props as Exclude<EnvEditorProps, { standalone: true }>).projectName;
+  const appId = isStandalone ? "" : (props as Exclude<EnvEditorProps, { standalone: true }>).appId;
+  const appName = isStandalone ? "" : (props as Exclude<EnvEditorProps, { standalone: true }>).appName;
   const orgId = isStandalone ? "" : (props as Exclude<EnvEditorProps, { standalone: true }>).orgId;
   const environmentId = isStandalone ? undefined : (props as Exclude<EnvEditorProps, { standalone: true }>).environmentId;
-  const allProjectNames = props.allProjectNames ?? [];
+  const allAppNames = props.allAppNames ?? [];
   const orgVarKeys = props.orgVarKeys ?? [];
 
   const router = useRouter();
@@ -99,7 +99,7 @@ export function EnvEditor(props: EnvEditorProps) {
         const params = new URLSearchParams();
         if (environmentId) params.set("environmentId", environmentId);
         const qs = params.toString();
-        const res = await fetch(`/api/v1/organizations/${orgId}/projects/${projectId}/env-vars${qs ? `?${qs}` : ""}`);
+        const res = await fetch(`/api/v1/organizations/${orgId}/apps/${appId}/env-vars${qs ? `?${qs}` : ""}`);
         if (res.ok) {
           const data = await res.json();
           const vars = data.envVars || [];
@@ -120,7 +120,7 @@ export function EnvEditor(props: EnvEditorProps) {
       setLoaded(true);
     }
     load();
-  }, [orgId, projectId, environmentId, isStandalone]);
+  }, [orgId, appId, environmentId, isStandalone]);
 
   // Build suggestions based on current context
   const buildSuggestions = useCallback(
@@ -155,7 +155,7 @@ export function EnvEditor(props: EnvEditorProps) {
             insert: `\${org.${key}}`,
           })),
           // Cross-project references
-          ...allProjectNames.map((name) => ({
+          ...allAppNames.map((name) => ({
             label: `\${${name}.`,
             detail: "Cross-project ref",
             insert: `\${${name}.`,
@@ -215,7 +215,7 @@ export function EnvEditor(props: EnvEditorProps) {
 
       setShowSuggestions(false);
     },
-    [allProjectNames]
+    [allAppNames]
   );
 
   function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
@@ -303,7 +303,7 @@ export function EnvEditor(props: EnvEditorProps) {
     setSaving(true);
     try {
       const res = await fetch(
-        `/api/v1/organizations/${orgId}/projects/${projectId}/env-vars`,
+        `/api/v1/organizations/${orgId}/apps/${appId}/env-vars`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -344,7 +344,7 @@ export function EnvEditor(props: EnvEditorProps) {
     toast.info("Deploying with updated variables...");
     try {
       const res = await fetch(
-        `/api/v1/organizations/${orgId}/projects/${projectId}/deploy`,
+        `/api/v1/organizations/${orgId}/apps/${appId}/deploy`,
         { method: "POST" }
       );
       // Don't wait for full deploy — it streams
@@ -539,7 +539,7 @@ export function EnvEditor(props: EnvEditorProps) {
             </p>
             <div className="grid gap-1">
               {keys.map((key) => {
-                const ref = `\${${projectName}.${key}}`;
+                const ref = `\${${appName}.${key}}`;
                 return (
                   <div
                     key={key}

@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { cronJobs, projects } from "@/lib/db/schema";
+import { cronJobs, apps } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { exec } from "child_process";
@@ -53,23 +53,23 @@ function matchesCronField(value: number, field: string): boolean {
 }
 
 /**
- * Run a command inside a project's container.
+ * Run a command inside an app's container.
  * Returns { success, log, durationMs }.
  */
 async function executeInContainer(
-  projectName: string,
+  appName: string,
   command: string,
 ): Promise<{ success: boolean; log: string; durationMs: number }> {
   const startTime = Date.now();
 
-  // Find a running container for this project
-  const containers = await listContainers(projectName);
+  // Find a running container for this app
+  const containers = await listContainers(appName);
   const running = containers.find(c => c.state === "running");
 
   if (!running) {
     return {
       success: false,
-      log: "No running container found for project",
+      log: "No running container found for app",
       durationMs: Date.now() - startTime,
     };
   }
@@ -137,15 +137,15 @@ export async function tickCronJobs(): Promise<void> {
   const jobs = await db.query.cronJobs.findMany({
     where: eq(cronJobs.enabled, true),
     with: {
-      project: {
+      app: {
         columns: { id: true, name: true, status: true },
       },
     },
   });
 
   for (const job of jobs) {
-    // Skip if project isn't active
-    if (job.project.status !== "active") continue;
+    // Skip if app isn't active
+    if (job.app.status !== "active") continue;
 
     // Check if this job should run now
     if (!shouldRunNow(job.schedule, now)) continue;
@@ -174,7 +174,7 @@ export async function tickCronJobs(): Promise<void> {
     // Execute based on type
     const result = job.type === "url"
       ? await fetchUrl(job.command)
-      : await executeInContainer(job.project.name, job.command);
+      : await executeInContainer(job.app.name, job.command);
 
     // Update status
     await db.update(cronJobs).set({
@@ -184,21 +184,21 @@ export async function tickCronJobs(): Promise<void> {
     }).where(eq(cronJobs.id, job.id));
 
     console.log(
-      `[cron] ${job.name} (${job.project.name}): ${result.success ? "OK" : "FAILED"} in ${result.durationMs}ms`
+      `[cron] ${job.name} (${job.app.name}): ${result.success ? "OK" : "FAILED"} in ${result.durationMs}ms`
     );
   }
 }
 
 /**
- * Create cron jobs for a project from template or config definitions.
+ * Create cron jobs for an app from template or config definitions.
  * Skips jobs that already exist (by name).
  */
 export async function syncCronJobs(
-  projectId: string,
+  appId: string,
   definitions: { name: string; type?: "command" | "url"; schedule: string; command: string; enabled?: boolean }[],
 ): Promise<number> {
   const existing = await db.query.cronJobs.findMany({
-    where: eq(cronJobs.projectId, projectId),
+    where: eq(cronJobs.appId, appId),
     columns: { name: true },
   });
   const existingNames = new Set(existing.map(j => j.name));
@@ -209,7 +209,7 @@ export async function syncCronJobs(
 
     await db.insert(cronJobs).values({
       id: nanoid(),
-      projectId,
+      appId,
       name: def.name,
       type: def.type ?? "command",
       schedule: def.schedule,
