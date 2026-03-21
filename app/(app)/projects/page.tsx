@@ -86,11 +86,16 @@ export default async function ProjectsPage() {
       </PageToolbar>
 
       {appList.length === 0 && emptyProjects.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
-          <p className="text-sm text-muted-foreground">
-            No projects yet. Create your first project to get started.
-          </p>
-          <Button size="sm" asChild>
+        <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
+          <div className="text-center space-y-1">
+            <p className="text-sm font-medium">
+              Deploy your first app
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Create a project and add apps from a Git repo, Docker image, or Compose file.
+            </p>
+          </div>
+          <Button asChild>
             <Link href="/projects/new">
               <Plus className="mr-1.5 size-4" />
               New Project

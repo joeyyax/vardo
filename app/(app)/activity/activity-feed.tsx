@@ -199,10 +199,13 @@ export function ActivityFeed({ activities: initialActivities, orgId }: ActivityF
 
   if (activities.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
-        <p className="text-sm text-muted-foreground">
-          No activity recorded yet.
-        </p>
+      <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
+        <div className="text-center space-y-1">
+          <p className="text-sm font-medium">No activity yet</p>
+          <p className="text-sm text-muted-foreground">
+            Deployments, configuration changes, and team actions will appear here as they happen.
+          </p>
+        </div>
       </div>
     );
   }

@@ -710,12 +710,14 @@ export function BackupManager({ orgId, apps }: Props) {
         </div>
 
         {targets.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-8">
-            <Cloud className="size-8 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">
-              No storage targets configured. Add a target to start creating
-              backup jobs.
-            </p>
+          <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-8">
+            <Cloud className="size-8 text-muted-foreground/50" />
+            <div className="text-center space-y-1">
+              <p className="text-sm font-medium">Add a storage target to get started</p>
+              <p className="text-sm text-muted-foreground">
+                Connect an S3 bucket, Cloudflare R2, Backblaze B2, or SSH server to store your backups.
+              </p>
+            </div>
             <Button
               size="sm"
               onClick={() => {
@@ -791,13 +793,33 @@ export function BackupManager({ orgId, apps }: Props) {
         </div>
 
         {jobs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-8">
-            <Archive className="size-8 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">
-              {targets.length === 0
-                ? "Add a storage target first, then create backup jobs."
-                : "No backup jobs configured. Create one to start protecting your data."}
-            </p>
+          <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-8">
+            <Archive className="size-8 text-muted-foreground/50" />
+            <div className="text-center space-y-1">
+              <p className="text-sm font-medium">
+                {targets.length === 0 ? "Set up a storage target first" : "Protect your data"}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {targets.length === 0
+                  ? "Add a storage target above, then create backup jobs to schedule automatic backups."
+                  : "Create a backup job to automatically back up your app data on a schedule."}
+              </p>
+            </div>
+            {targets.length > 0 && (
+              <Button
+                size="sm"
+                onClick={() => {
+                  resetJobForm();
+                  if (targets.length > 0) {
+                    setNewJobTargetId(targets[0].id);
+                  }
+                  setJobSheetOpen(true);
+                }}
+              >
+                <Plus className="mr-1.5 size-4" />
+                New Job
+              </Button>
+            )}
           </div>
         ) : (
           <div className="space-y-2">

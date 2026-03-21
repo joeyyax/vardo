@@ -73,7 +73,14 @@ export function NotificationChannelsEditor({ orgId }: { orgId: string }) {
         </div>
       )}
       {channels.length === 0 && !showForm ? (
-        <div className="border border-dashed border-border rounded-lg p-8 text-center text-muted-foreground"><Bell className="h-8 w-8 mx-auto mb-2 opacity-50" /><p className="text-sm">No notification channels configured.</p><p className="text-xs mt-1">Add an email, webhook, or Slack channel to receive alerts.</p></div>
+        <div className="flex flex-col items-center justify-center gap-4 border border-dashed border-border rounded-lg p-12">
+          <Bell className="size-8 text-muted-foreground/50" />
+          <div className="text-center space-y-1">
+            <p className="text-sm font-medium">Stay in the loop</p>
+            <p className="text-sm text-muted-foreground">Add a notification channel to get alerted on deploy failures, backup issues, and cron errors.</p>
+          </div>
+          <Button size="sm" onClick={() => setShowForm(true)} className="squircle"><Plus className="h-4 w-4 mr-1" />Add channel</Button>
+        </div>
       ) : (
         <div className="space-y-2">{channels.map(ch => (
           <div key={ch.id} className="flex items-center justify-between border border-border rounded-lg p-3 bg-card">
