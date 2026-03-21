@@ -26,6 +26,20 @@ const execAsync = promisify(exec);
 
 const PROJECTS_DIR = resolve(process.env.HOST_PROJECTS_DIR || "./.host/projects");
 const NETWORK_NAME = "host-network";
+
+// Validate shell-unsafe strings before interpolation into commands
+const SAFE_BRANCH_RE = /^[a-zA-Z0-9._\-/]+$/;
+function assertSafeBranch(branch: string): void {
+  if (!SAFE_BRANCH_RE.test(branch)) {
+    throw new Error(`Invalid branch name: ${branch}`);
+  }
+}
+const SAFE_NAME_RE = /^[a-zA-Z0-9._\-]+$/;
+function assertSafeName(name: string): void {
+  if (!SAFE_NAME_RE.test(name)) {
+    throw new Error(`Invalid name: ${name}`);
+  }
+}
 const HEALTH_CHECK_TIMEOUT_MS = 60000;
 const HEALTH_CHECK_INTERVAL_MS = 2000;
 
@@ -215,6 +229,7 @@ export async function runDeployment(
       // Repo lives at app level (shared across environments)
       const repoDir = join(appBaseDir, "repo");
       const branch = envBranchOverride || app.gitBranch || "main";
+      assertSafeBranch(branch);
 
       // Build authenticated clone URL for private repos
       let cloneUrl = app.gitUrl;
@@ -257,13 +272,13 @@ export async function runDeployment(
       try {
         // Try pull first (faster if already cloned)
         await execAsync(
-          `git -C "${repoDir}" remote set-url origin "${cloneUrl}" && git -C "${repoDir}" fetch origin ${branch} && git -C "${repoDir}" reset --hard origin/${branch}`,
+          `git -C "${repoDir}" remote set-url origin "${cloneUrl}" && git -C "${repoDir}" fetch origin "${branch}" && git -C "${repoDir}" reset --hard "origin/${branch}"`,
           { timeout: 60000 }
         );
         log(`[deploy] Pulled latest from ${branch}`);
       } catch {
         // Fresh clone
-        await execAsync(`git clone --depth 1 --branch ${branch} "${cloneUrl}" "${repoDir}"`, { timeout: 60000 });
+        await execAsync(`git clone --depth 1 --branch "${branch}" "${cloneUrl}" "${repoDir}"`, { timeout: 60000 });
         log(`[deploy] Cloned repo (${branch})`);
       }
 
@@ -659,7 +674,13 @@ export async function runDeployment(
       };
 
       const resolved = await resolveAllEnvVars(envMap, resolveCtx);
-      const envContent = Object.entries(resolved).map(([k, v]) => `${k}=${v}`).join("\n");
+      const envContent = Object.entries(resolved).map(([k, v]) => {
+        // Quote values containing newlines, quotes, spaces, $, or # to prevent injection
+        if (/[\n\r"' $#\\]/.test(v)) {
+          return `${k}="${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n").replace(/\r/g, "\\r")}"`;
+        }
+        return `${k}=${v}`;
+      }).join("\n");
       await writeFile(join(slotDir, ".env"), envContent, "utf-8");
     }
 
@@ -802,9 +823,10 @@ export async function runDeployment(
           for (const mount of info.mounts) {
             if (mount.type === "volume") {
               try {
-                const volName = mount.source.split("/").pop();
+                const volName = mount.source.split("/").pop() || "";
+                assertSafeName(volName);
                 const { stdout } = await execAsync(
-                  `docker run --rm -v ${volName}:/data alpine du -sb /data`,
+                  `docker run --rm -v "${volName}:/data" alpine du -sb /data`,
                   { timeout: 30000 }
                 );
                 const sizeBytes = parseInt(stdout.split("\t")[0]);

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createHmac } from "crypto";
+import { createHmac, timingSafeEqual } from "crypto";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -13,14 +13,23 @@ export async function POST(request: NextRequest) {
     const event = request.headers.get("x-github-event");
     const signature = request.headers.get("x-hub-signature-256");
 
-    // Verify webhook signature
+    // Verify webhook signature — mandatory
     const secret = process.env.GITHUB_WEBHOOK_SECRET || process.env.BETTER_AUTH_SECRET;
-    if (secret && signature) {
-      const expected = "sha256=" + createHmac("sha256", secret).update(body).digest("hex");
-      if (signature !== expected) {
-        console.error("[webhook] Invalid signature");
-        return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
-      }
+    if (!secret) {
+      console.error("[webhook] No webhook secret configured");
+      return NextResponse.json({ error: "Webhook not configured" }, { status: 500 });
+    }
+    if (!signature) {
+      console.error("[webhook] Missing signature header");
+      return NextResponse.json({ error: "Missing signature" }, { status: 401 });
+    }
+    const expected = "sha256=" + createHmac("sha256", secret).update(body).digest("hex");
+    if (
+      signature.length !== expected.length ||
+      !timingSafeEqual(Buffer.from(signature), Buffer.from(expected))
+    ) {
+      console.error("[webhook] Invalid signature");
+      return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
     }
 
     const payload = JSON.parse(body);

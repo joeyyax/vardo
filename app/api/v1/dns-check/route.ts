@@ -20,6 +20,13 @@ function getServerIPs(): string[] {
 
 // GET /api/v1/dns-check?domain=example.com&expected=auto-generated.localhost
 export async function GET(request: NextRequest) {
+  // Require authentication
+  const { getSession } = await import("@/lib/auth/session");
+  const session = await getSession();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const domain = request.nextUrl.searchParams.get("domain");
   const expected = request.nextUrl.searchParams.get("expected");
 
