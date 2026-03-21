@@ -23,6 +23,7 @@ import { ensureNetwork, detectExposedPorts, listContainers, inspectContainer } f
 import { assertSafeName, assertSafeBranch } from "./validate";
 import { DeployBlockedError } from "./errors";
 import { volumeThreshold } from "@/lib/volumes/threshold";
+import type { ConfigSnapshot } from "@/lib/types/deploy-snapshot";
 import { getInstallationToken } from "@/lib/github/app";
 import { githubAppInstallations, memberships } from "@/lib/db/schema";
 import { detectPreventiveFixes, detectCompatIssues, applyCompatFixes } from "./compat";
@@ -1040,10 +1041,40 @@ export async function runDeployment(
       .set({ status: "active", needsRedeploy: false, updatedAt: new Date() })
       .where(eq(apps.id, opts.appId));
 
+    // Snapshot current config onto deployment record for rollback
+    let envSnapshot: string | null = null;
+    if (app.envContent) {
+      // Re-encrypt under the same org key — snapshot is always encrypted
+      try {
+        const { content: rawEnv } = decryptOrFallback(app.envContent, app.organizationId);
+        if (rawEnv) {
+          envSnapshot = encrypt(rawEnv, app.organizationId);
+        }
+      } catch { /* best-effort snapshot */ }
+    }
+    const configSnapshot: ConfigSnapshot = {
+      cpuLimit: app.cpuLimit,
+      memoryLimit: app.memoryLimit,
+      containerPort: app.containerPort,
+      imageName: app.imageName,
+      gitBranch: app.gitBranch,
+      composeFilePath: app.composeFilePath,
+      rootDirectory: app.rootDirectory,
+      restartPolicy: app.restartPolicy,
+      autoTraefikLabels: app.autoTraefikLabels,
+    };
+
     const durationMs = Date.now() - startTime;
     await db
       .update(deployments)
-      .set({ status: "success", log: logLines.join("\n"), durationMs, finishedAt: new Date() })
+      .set({
+        status: "success",
+        log: logLines.join("\n"),
+        durationMs,
+        finishedAt: new Date(),
+        envSnapshot,
+        configSnapshot,
+      })
       .where(eq(deployments.id, deploymentId));
 
     // Publish event for real-time UI updates

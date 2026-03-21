@@ -26,6 +26,7 @@ import {
   Info,
   EllipsisVertical,
   Layers,
+  History,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageToolbar } from "@/components/page-toolbar";
@@ -90,6 +91,8 @@ type Deployment = {
   durationMs: number | null;
   log: string | null;
   environmentId: string | null;
+  configSnapshot: Record<string, unknown> | null;
+  rollbackFromId: string | null;
   startedAt: Date;
   finishedAt: Date | null;
   triggeredByUser: {
@@ -729,6 +732,21 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
   const [deleting, setDeleting] = useState(false);
   const [deletingEnv, setDeletingEnv] = useState(false);
 
+  // Rollback state
+  const [rollbackTarget, setRollbackTarget] = useState<string | null>(null);
+  const [rollbackPreview, setRollbackPreview] = useState<{
+    deploymentId: string;
+    gitSha: string | null;
+    gitMessage: string | null;
+    deployedAt: string;
+    hasEnvSnapshot: boolean;
+    hasConfigSnapshot: boolean;
+    configChanges: { field: string; from: string | null; to: string | null }[];
+    envKeyChanges: { added: string[]; removed: string[]; changed: string[] } | null;
+  } | null>(null);
+  const [rollbackIncludeEnv, setRollbackIncludeEnv] = useState(false);
+  const [rollbackLoading, setRollbackLoading] = useState(false);
+
   // Edit form state
   const [displayName, setDisplayName] = useState(app.displayName);
   const [description, setDescription] = useState(app.description || "");
@@ -1339,6 +1357,135 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
   }
 
   // (Auto-deploy is now triggered server-side on app creation)
+
+  async function handleRollbackPreview(deploymentId: string) {
+    setRollbackTarget(deploymentId);
+    setRollbackPreview(null);
+    setRollbackIncludeEnv(false);
+    setRollbackLoading(true);
+    try {
+      const res = await fetch(
+        `/api/v1/organizations/${orgId}/apps/${app.id}/rollback?deploymentId=${deploymentId}`,
+      );
+      if (!res.ok) {
+        const data = await res.json();
+        toast.error(data.error || "Failed to load rollback preview");
+        setRollbackTarget(null);
+        return;
+      }
+      const preview = await res.json();
+      setRollbackPreview(preview);
+    } catch {
+      toast.error("Failed to load rollback preview");
+      setRollbackTarget(null);
+    } finally {
+      setRollbackLoading(false);
+    }
+  }
+
+  async function handleRollbackConfirm() {
+    if (!rollbackTarget) return;
+    setRollbackTarget(null);
+    setRollbackPreview(null);
+
+    // Reuse the same SSE deploy flow
+    setDeploying(true);
+    setActiveTab("deployments");
+    setDeployLog([]);
+    setDeployStages({});
+    setExpandedDeployLog(false);
+    setDeployStartTime(Date.now());
+
+    const stageQueue: { stage: string; status: string }[] = [];
+    let processingStages = false;
+    const MIN_STAGE_MS = 600;
+
+    async function processStageQueue() {
+      if (processingStages) return;
+      processingStages = true;
+      while (stageQueue.length > 0) {
+        const next = stageQueue.shift()!;
+        setDeployStages((prev) => ({ ...prev, [next.stage]: next.status as "running" | "success" | "failed" | "skipped" }));
+        await new Promise((r) => setTimeout(r, MIN_STAGE_MS));
+      }
+      processingStages = false;
+    }
+
+    const abort = new AbortController();
+    setDeployAbort(abort);
+
+    try {
+      const res = await fetch(
+        `/api/v1/organizations/${orgId}/apps/${app.id}/rollback`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            deploymentId: rollbackTarget,
+            includeEnvVars: rollbackIncludeEnv,
+          }),
+          signal: abort.signal,
+        },
+      );
+
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => ({}));
+        toast.error((data as { error?: string }).error || "Rollback failed");
+        setDeploying(false);
+        setDeployAbort(null);
+        return;
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        let eventType = "";
+        for (const line of lines) {
+          if (line.startsWith("event: ")) {
+            eventType = line.slice(7);
+          } else if (line.startsWith("data: ")) {
+            const data = JSON.parse(line.slice(6));
+            if (eventType === "log") {
+              setDeployLog((prev) => [...prev, data as string]);
+            } else if (eventType === "stage") {
+              const { stage, status } = data as { stage: string; status: string };
+              stageQueue.push({ stage, status });
+              processStageQueue();
+            } else if (eventType === "done") {
+              const result = data as { deploymentId: string; success: boolean; durationMs: number };
+              if (result.success) {
+                toast.success("Rollback deployed successfully");
+              } else {
+                toast.error("Rollback deployment failed");
+              }
+              if (result.deploymentId) {
+                setViewingLogId(result.deploymentId);
+              }
+            }
+          }
+        }
+      }
+
+      router.refresh();
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        toast.info("Rollback aborted");
+      } else {
+        toast.error("Rollback failed");
+      }
+    } finally {
+      setDeploying(false);
+      setDeployAbort(null);
+    }
+  }
 
   async function handleSetPrimaryDomain(domainId: string) {
     try {
@@ -2069,6 +2216,21 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                       <span>
                         {new Date(deployment.startedAt).toLocaleDateString()}
                       </span>
+                      {/* Restore button — only on past successful deploys, not the active one */}
+                      {deployment.status === "success" && !isActive && !deploying && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-xs gap-1"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRollbackPreview(deployment.id);
+                          }}
+                        >
+                          <History className="size-3" />
+                          Restore
+                        </Button>
+                      )}
                       <ChevronDown className={`size-4 transition-transform ${viewingLogId === deployment.id ? "rotate-180" : ""}`} />
                     </div>
                   </button>
@@ -2894,6 +3056,132 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         onConfirm={handleDeleteEnvironment}
         loading={deletingEnv}
       />
+
+      {/* Rollback Confirmation Dialog */}
+      <BottomSheet open={!!rollbackTarget} onOpenChange={(open) => { if (!open) { setRollbackTarget(null); setRollbackPreview(null); } }}>
+        <BottomSheetContent>
+          <BottomSheetHeader>
+            <BottomSheetTitle>Restore deployment</BottomSheetTitle>
+            <BottomSheetDescription>
+              Roll back to a previous deployment. This will trigger a new deploy using the snapshot from that point in time.
+            </BottomSheetDescription>
+          </BottomSheetHeader>
+          <div className="px-6 py-4 space-y-4">
+            {rollbackLoading && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" />
+                Loading rollback preview...
+              </div>
+            )}
+            {rollbackPreview && (
+              <>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Rolling back to:</p>
+                  <div className="squircle rounded-lg border bg-muted/50 p-3 space-y-1">
+                    <p className="text-sm">{rollbackPreview.gitMessage || "Manual deploy"}</p>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      {rollbackPreview.gitSha && (
+                        <code className="font-mono bg-muted px-1.5 py-0.5 rounded">
+                          {rollbackPreview.gitSha.slice(0, 7)}
+                        </code>
+                      )}
+                      <span>{new Date(rollbackPreview.deployedAt).toLocaleString()}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Config changes diff */}
+                {rollbackPreview.configChanges.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">Config changes</p>
+                    <div className="squircle rounded-lg border divide-y text-xs">
+                      {rollbackPreview.configChanges.map((change) => (
+                        <div key={change.field} className="flex items-center justify-between px-3 py-2">
+                          <span className="text-muted-foreground">{change.field}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="line-through text-status-error">{change.from || "(none)"}</span>
+                            <span>-&gt;</span>
+                            <span className="text-status-success">{change.to || "(none)"}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {rollbackPreview.configChanges.length === 0 && rollbackPreview.hasConfigSnapshot && (
+                  <p className="text-xs text-muted-foreground">No config changes detected.</p>
+                )}
+
+                {/* Env var changes */}
+                {rollbackPreview.hasEnvSnapshot && (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3">
+                      <Switch
+                        id="rollback-env"
+                        checked={rollbackIncludeEnv}
+                        onCheckedChange={setRollbackIncludeEnv}
+                      />
+                      <Label htmlFor="rollback-env" className="text-sm">
+                        Include environment variable rollback
+                      </Label>
+                    </div>
+                    {rollbackIncludeEnv && rollbackPreview.envKeyChanges && (
+                      <div className="squircle rounded-lg border bg-muted/50 p-3 space-y-2 text-xs">
+                        {rollbackPreview.envKeyChanges.added.length > 0 && (
+                          <div>
+                            <span className="text-status-success font-medium">Added: </span>
+                            {rollbackPreview.envKeyChanges.added.join(", ")}
+                          </div>
+                        )}
+                        {rollbackPreview.envKeyChanges.removed.length > 0 && (
+                          <div>
+                            <span className="text-status-error font-medium">Removed: </span>
+                            {rollbackPreview.envKeyChanges.removed.join(", ")}
+                          </div>
+                        )}
+                        {rollbackPreview.envKeyChanges.changed.length > 0 && (
+                          <div>
+                            <span className="text-amber-500 font-medium">Changed: </span>
+                            {rollbackPreview.envKeyChanges.changed.join(", ")}
+                          </div>
+                        )}
+                        {rollbackPreview.envKeyChanges.added.length === 0 &&
+                          rollbackPreview.envKeyChanges.removed.length === 0 &&
+                          rollbackPreview.envKeyChanges.changed.length === 0 && (
+                          <span className="text-muted-foreground">No env var changes detected.</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {!rollbackPreview.hasEnvSnapshot && (
+                  <p className="text-xs text-muted-foreground">
+                    No environment variable snapshot available for this deployment.
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+          <BottomSheetFooter>
+            <Button
+              variant="outline"
+              onClick={() => { setRollbackTarget(null); setRollbackPreview(null); }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleRollbackConfirm}
+              disabled={!rollbackPreview || rollbackLoading}
+              className="squircle"
+            >
+              <RotateCcw className="size-4 mr-2" />
+              Restore this deployment
+            </Button>
+          </BottomSheetFooter>
+        </BottomSheetContent>
+      </BottomSheet>
     </div>
   );
 }
