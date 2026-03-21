@@ -70,6 +70,30 @@ export function isFeatureEnabled(flag: FeatureFlag): boolean {
   return process.env[FLAG_CONFIG[flag].env] !== "false";
 }
 
+/**
+ * Subset of feature flags relevant to UI tab gating.
+ * Passed from server components to client components as a serializable object.
+ */
+export type FeatureFlags = {
+  metrics: boolean;
+  logs: boolean;
+  terminal: boolean;
+  cron: boolean;
+};
+
+/**
+ * Get the feature flags needed for UI tab gating.
+ * Call this in server components and pass the result as a prop.
+ */
+export function getFeatureFlags(): FeatureFlags {
+  return {
+    metrics: isFeatureEnabled("metrics"),
+    logs: isFeatureEnabled("logs"),
+    terminal: isFeatureEnabled("terminal"),
+    cron: isFeatureEnabled("cron"),
+  };
+}
+
 export type FeatureFlagInfo = {
   flag: FeatureFlag;
   enabled: boolean;

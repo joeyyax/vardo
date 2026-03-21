@@ -5,6 +5,7 @@ import { getCurrentOrg } from "@/lib/auth/session";
 import { eq, and, asc, or } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { AppDetail } from "./app-detail";
+import { getFeatureFlags } from "@/lib/config/features";
 
 const VALID_TABS = ["apps", "deployments", "connect", "variables", "networking", "logs", "volumes", "cron", "terminal", "metrics"] as const;
 type ValidTab = (typeof VALID_TABS)[number];
@@ -175,6 +176,19 @@ export default async function AppDetailPage({ params }: PageProps) {
   const allParentApps = allProjectsList
     .map((p) => ({ id: p.id, name: p.name, color: p.color || "#6366f1" }));
 
+  const featureFlags = getFeatureFlags();
+
+  // If the requested tab is gated by a disabled feature flag, fall back to default
+  const gatedTabs: Record<string, keyof typeof featureFlags> = {
+    logs: "logs",
+    cron: "cron",
+    terminal: "terminal",
+    metrics: "metrics",
+  };
+  const effectiveTab = tab && gatedTabs[tab] && !featureFlags[gatedTabs[tab]]
+    ? "deployments"
+    : tab || "deployments";
+
   return (
     <AppDetail
       app={app}
@@ -185,9 +199,10 @@ export default async function AppDetailPage({ params }: PageProps) {
       allAppNames={allApps.map((a) => a.name)}
       orgVarKeys={orgVars.map((v) => v.key)}
       siblings={siblings}
-      initialTab={tab || "deployments"}
+      initialTab={effectiveTab}
       initialEnv={envSegment}
       initialSubView={subSegment}
+      featureFlags={featureFlags}
     />
   );
 }
