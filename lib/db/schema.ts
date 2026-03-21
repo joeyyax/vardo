@@ -73,6 +73,12 @@ export const transferStatusEnum = pgEnum("transfer_status", [
   "cancelled",
 ]);
 
+export const notificationChannelTypeEnum = pgEnum("notification_channel_type", [
+  "email",
+  "webhook",
+  "slack",
+]);
+
 // ---------------------------------------------------------------------------
 // Better Auth tables (snake_case columns, matching Scope's working schema)
 // ---------------------------------------------------------------------------
@@ -804,6 +810,25 @@ export const appTransfers = pgTable("app_transfer", {
 });
 
 // ---------------------------------------------------------------------------
+// Host: Notification Channels
+// ---------------------------------------------------------------------------
+
+export const notificationChannels = pgTable(
+  "notification_channel",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    type: notificationChannelTypeEnum("type").notNull(),
+    config: jsonb("config").notNull().$type<{ recipients: string[] } | { url: string; secret?: string } | { webhookUrl: string }>(),
+    enabled: boolean("enabled").default(true).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [index("notification_channel_org_idx").on(t.organizationId)]
+);
+
+// ---------------------------------------------------------------------------
 // Relations
 // ---------------------------------------------------------------------------
 
@@ -833,6 +858,7 @@ export const organizationsRelations = relations(organizations, ({ many }) => ({
   orgDomains: many(orgDomains),
   outgoingTransfers: many(appTransfers, { relationName: "sourceOrg" }),
   incomingTransfers: many(appTransfers, { relationName: "destinationOrg" }),
+  notificationChannels: many(notificationChannels),
 }));
 
 export const membershipsRelations = relations(memberships, ({ one }) => ({
@@ -1139,3 +1165,5 @@ export const appTransfersRelations = relations(
     }),
   })
 );
+
+export const notificationChannelsRelations = relations(notificationChannels, ({ one }) => ({ organization: one(organizations, { fields: [notificationChannels.organizationId], references: [organizations.id] }) }));

@@ -281,6 +281,13 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
     .set({ updatedAt: new Date() })
     .where(eq(backupJobs.id, jobId));
 
+  try { const hasFailures = results.some((r) => !r.success); const allSuccess = results.every((r) => r.success);
+    if ((hasFailures && job.notifyOnFailure) || (allSuccess && job.notifyOnSuccess)) {
+      const { notify } = await import("@/lib/notifications/dispatch"); const appNames = job.backupJobApps.map((bja) => bja.app.name).join(", ");
+      if (hasFailures) { const failed = results.filter((r) => !r.success); await notify(job.organizationId, { type: "backup-failed", title: `Backup failed: ${job.name}`, message: `${failed.length} of ${results.length} backup(s) failed for: ${appNames}`, metadata: { jobId: job.id, jobName: job.name, failedCount: String(failed.length), totalCount: String(results.length), errors: failed.map((r) => `${r.volumeName}: ${r.error}`).join("; ") } }); }
+      else { await notify(job.organizationId, { type: "backup-success", title: `Backup successful: ${job.name}`, message: `${results.length} backup(s) completed for: ${appNames}`, metadata: { jobId: job.id, jobName: job.name, totalCount: String(results.length), totalSize: String(results.reduce((sum, r) => sum + r.sizeBytes, 0)) } }); }
+    }
+  } catch (err) { console.error("[notifications] Backup notification error:", err); }
   return results;
 }
 

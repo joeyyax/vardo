@@ -924,7 +924,7 @@ export async function runDeployment(
 
     // Send failure notification (non-blocking) — app may not be fetched yet
     sendDeployNotification(
-      { id: opts.appId, name: "", displayName: "", domains: [] },
+      { id: opts.appId, name: "", displayName: "", organizationId: opts.organizationId, domains: [] },
       deploymentId, false, durationMs, message
     ).catch(() => {});
 
@@ -933,50 +933,28 @@ export async function runDeployment(
 }
 
 async function sendDeployNotification(
-  app: { id: string; name: string; displayName: string; domains: { domain: string }[] },
+  app: { id: string; name: string; displayName: string; organizationId?: string; domains: { domain: string }[] },
   deploymentId: string,
   success: boolean,
   durationMs: number,
   errorMessage?: string,
 ) {
   try {
-    const { sendEmail } = await import("@/lib/email/send");
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-    const dashboardUrl = `${appUrl}/projects/${app.id}`;
-    const domain = app.domains[0]?.domain;
-
-    // TODO: send to app notification recipients (for now, skip if no MAILPACE_API_TOKEN)
-    if (!process.env.MAILPACE_API_TOKEN) return;
-
-    // Fetch deployment for git info
-    const deployment = await db.query.deployments.findFirst({
-      where: eq(deployments.id, deploymentId),
-      columns: { gitSha: true, gitMessage: true, triggeredBy: true },
-    });
-
-    // Fetch triggered by user name
+    if (!app.organizationId) return;
+    const { notify } = await import("@/lib/notifications/dispatch");
+    const deployment = await db.query.deployments.findFirst({ where: eq(deployments.id, deploymentId), columns: { gitSha: true, gitMessage: true, triggeredBy: true } });
     let triggeredByName: string | undefined;
-    if (deployment?.triggeredBy) {
-      const { user: userTable } = await import("@/lib/db/schema");
-      const u = await db.query.user.findFirst({
-        where: eq(userTable.id, deployment.triggeredBy),
-        columns: { name: true, email: true },
-      });
-      triggeredByName = u?.name || u?.email || undefined;
-    }
-
-    if (success) {
-      const { DeploySuccessEmail } = await import("@/lib/email/templates/deploy-success");
-      const duration = durationMs < 1000 ? `${durationMs}ms` : `${Math.round(durationMs / 1000)}s`;
-      // TODO: send to configured recipients
-      console.log(`[email] Would send deploy success notification for ${app.displayName}`);
-    } else {
-      const { DeployFailedEmail } = await import("@/lib/email/templates/deploy-failed");
-      console.log(`[email] Would send deploy failure notification for ${app.displayName}`);
-    }
-  } catch (err) {
-    console.error("[email] Notification error:", err);
-  }
+    if (deployment?.triggeredBy) { const { user: userTable } = await import("@/lib/db/schema"); const u = await db.query.user.findFirst({ where: eq(userTable.id, deployment.triggeredBy), columns: { name: true, email: true } }); triggeredByName = u?.name || u?.email || undefined; }
+    const duration = durationMs < 1000 ? `${durationMs}ms` : `${Math.round(durationMs / 1000)}s`;
+    const domain = app.domains[0]?.domain;
+    const metadata: Record<string, string> = { projectName: app.displayName || app.name, appId: app.id, deploymentId };
+    if (domain) metadata.domain = domain;
+    if (deployment?.gitSha) metadata.gitSha = deployment.gitSha;
+    if (deployment?.gitMessage) metadata.gitMessage = deployment.gitMessage;
+    if (triggeredByName) metadata.triggeredBy = triggeredByName;
+    if (success) { metadata.duration = duration; await notify(app.organizationId, { type: "deploy-success", title: `Deploy successful: ${app.displayName || app.name}`, message: `${app.displayName || app.name} was deployed successfully in ${duration}.`, metadata }); }
+    else { if (errorMessage) metadata.errorMessage = errorMessage; await notify(app.organizationId, { type: "deploy-failed", title: `Deploy failed: ${app.displayName || app.name}`, message: errorMessage || "Deployment failed with an unknown error.", metadata }); }
+  } catch (err) { console.error("[notifications] Deploy notification error:", err); }
 }
 
 export async function deployProject(opts: DeployOpts): Promise<DeployResult> {
