@@ -111,11 +111,7 @@ type EnvEditorProps = {
   showReferences?: boolean;
 };
 
-const PASSWORD_KEYS = ["password", "secret", "_key", "jwt"];
-function isPasswordKey(key: string): boolean {
-  const lower = key.toLowerCase();
-  return PASSWORD_KEYS.some((p) => lower.includes(p));
-}
+import { isSecretKey } from "@/lib/env/is-secret-key";
 
 // ---------------------------------------------------------------------------
 // Editor extensions (stable reference)
@@ -245,7 +241,7 @@ export function EnvEditor(props: EnvEditorProps) {
     const changedLines = value.split("\n").filter((line) => {
       if (!line.includes("=") || line.startsWith("#")) return false;
       const key = line.split("=")[0].trim();
-      if (!isPasswordKey(key)) return false;
+      if (!isSecretKey(key)) return false;
       const initialLine = initialContent.split("\n").find((l) => l.startsWith(`${key}=`));
       return initialLine !== line;
     });

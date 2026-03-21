@@ -3,18 +3,10 @@
 import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Globe, Plus } from "lucide-react";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Plus } from "lucide-react";
+import { EndpointsPopover } from "@/components/endpoints-popover";
 import { detectAppType } from "@/lib/ui/app-type";
+import { statusDotColor } from "@/lib/ui/status-colors";
 import { StatusIndicator, AppIcon } from "@/components/app-status";
 import {
   type AppMetrics,
@@ -67,136 +59,11 @@ type AppGridProps = {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function statusDotColor(status: string) {
-  return status === "active" ? "bg-status-success"
-    : status === "error" ? "bg-status-error"
-    : status === "deploying" ? "bg-status-info"
-    : "bg-status-neutral";
-}
 
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
 
-function EndpointsPopover({ app }: { app: AppWithRelations }) {
-  const endpoints: { label: string; domain: string }[] = [];
-
-  for (const d of app.domains) {
-    endpoints.push({ label: app.displayName, domain: d.domain });
-  }
-
-  if (endpoints.length === 0) return null;
-
-  if (endpoints.length === 1) {
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <a
-            href={`https://${endpoints[0].domain}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="shrink-0 text-muted-foreground/40 hover:text-muted-foreground transition-colors"
-          >
-            <Globe className="size-3.5" />
-          </a>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">{endpoints[0].domain}</TooltipContent>
-      </Tooltip>
-    );
-  }
-
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          onClick={(e) => e.preventDefault()}
-          className="shrink-0 text-muted-foreground/40 hover:text-muted-foreground transition-colors"
-        >
-          <Globe className="size-3.5" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-64 p-2" onClick={(e) => e.stopPropagation()}>
-        <div className="space-y-0.5">
-          {endpoints.map((ep) => (
-            <a
-              key={ep.domain}
-              href={`https://${ep.domain}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-between gap-2 rounded-md px-3 py-2 text-sm hover:bg-accent transition-colors"
-            >
-              <span className="truncate text-muted-foreground">{ep.label}</span>
-              <span className="truncate font-mono text-xs text-foreground">{ep.domain}</span>
-            </a>
-          ))}
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-
-function ProjectEndpoints({ projectApps }: { projectApps: AppWithRelations[] }) {
-  const endpoints: { label: string; domain: string }[] = [];
-  for (const a of projectApps) {
-    for (const d of a.domains) {
-      endpoints.push({ label: a.displayName, domain: d.domain });
-    }
-  }
-
-  if (endpoints.length === 0) return null;
-
-  if (endpoints.length === 1) {
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <a
-            href={`https://${endpoints[0].domain}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="shrink-0 text-muted-foreground/40 hover:text-muted-foreground transition-colors"
-          >
-            <Globe className="size-3.5" />
-          </a>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">{endpoints[0].domain}</TooltipContent>
-      </Tooltip>
-    );
-  }
-
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          onClick={(e) => e.preventDefault()}
-          className="shrink-0 text-muted-foreground/40 hover:text-muted-foreground transition-colors"
-        >
-          <Globe className="size-3.5" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-64 p-2" onClick={(e) => e.stopPropagation()}>
-        <div className="space-y-0.5">
-          {endpoints.map((ep) => (
-            <a
-              key={ep.domain}
-              href={`https://${ep.domain}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-between gap-2 rounded-md px-3 py-2 text-sm hover:bg-accent transition-colors"
-            >
-              <span className="truncate text-muted-foreground">{ep.label}</span>
-              <span className="truncate font-mono text-xs text-foreground">{ep.domain}</span>
-            </a>
-          ))}
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // ProjectCard — groups multiple apps under one project
@@ -295,7 +162,7 @@ function ProjectCard({
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
               <h3 className="text-base font-semibold truncate">{project.displayName}</h3>
-              <ProjectEndpoints projectApps={projectApps} />
+              <EndpointsPopover endpoints={projectApps.flatMap((a) => a.domains.map((d) => ({ label: a.displayName, domain: d.domain })))} />
             </div>
             {projectApps.length > 0 ? (
               <StatusIndicator
@@ -401,7 +268,7 @@ function AppCard({
               <h3 className="text-base font-semibold truncate">
                 {app.displayName}
               </h3>
-              <EndpointsPopover app={app} />
+              <EndpointsPopover endpoints={app.domains.map((d) => ({ domain: d.domain }))} />
             </div>
             <StatusIndicator
               status={app.status}

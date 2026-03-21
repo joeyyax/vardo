@@ -11,18 +11,7 @@ import {
   ChevronDown,
   Check,
   EllipsisVertical,
-  Globe,
 } from "lucide-react";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import {
   type AppMetrics as AppMetricsType,
   type MetricsHistory,
@@ -55,7 +44,9 @@ import {
   BottomSheetDescription,
 } from "@/components/ui/bottom-sheet";
 import { detectAppType } from "@/lib/ui/app-type";
+import { envTypeDotColor } from "@/lib/ui/status-colors";
 import { Uptime, StatusIndicator, AppIcon, DeploymentStatusBadge, formatDuration } from "@/components/app-status";
+import { EndpointsPopover } from "@/components/endpoints-popover";
 import { LogViewer, DeploymentLog } from "@/components/log-viewer";
 import { EnvEditor } from "@/components/env-editor";
 import { AppMetrics } from "@/app/(app)/apps/[...slug]/app-metrics";
@@ -128,68 +119,12 @@ type Project = {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function envTypeDotColor(type: string) {
-  return type === "production"
-    ? "bg-status-success"
-    : type === "staging"
-      ? "bg-status-warning"
-      : "bg-status-info";
-}
 
 
 // ---------------------------------------------------------------------------
 // App Card
 // ---------------------------------------------------------------------------
 
-function AppEndpoints({ app }: { app: ProjectApp }) {
-  if (app.domains.length === 0) return null;
-
-  if (app.domains.length === 1) {
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <a
-            href={`https://${app.domains[0].domain}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="shrink-0 text-muted-foreground/40 hover:text-muted-foreground transition-colors"
-          >
-            <Globe className="size-3.5" />
-          </a>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">{app.domains[0].domain}</TooltipContent>
-      </Tooltip>
-    );
-  }
-
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          onClick={(e) => e.preventDefault()}
-          className="shrink-0 text-muted-foreground/40 hover:text-muted-foreground transition-colors"
-        >
-          <Globe className="size-3.5" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-64 p-2" onClick={(e) => e.stopPropagation()}>
-        {app.domains.map((d) => (
-          <a
-            key={d.domain}
-            href={`https://${d.domain}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-accent transition-colors font-mono text-xs"
-          >
-            {d.domain}
-          </a>
-        ))}
-      </PopoverContent>
-    </Popover>
-  );
-}
 
 function AppCard({
   app,
@@ -237,7 +172,7 @@ function AppCard({
               <h3 className="text-sm font-semibold truncate">
                 {app.displayName}
               </h3>
-              <AppEndpoints app={app} />
+              <EndpointsPopover endpoints={app.domains.map((d) => ({ domain: d.domain }))} />
             </div>
             <StatusIndicator status={app.status} finishedAt={lastDeploy?.finishedAt} needsRedeploy={!!app.needsRedeploy} />
           </div>

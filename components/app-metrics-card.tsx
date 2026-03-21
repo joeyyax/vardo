@@ -236,55 +236,71 @@ export function useAppMetrics(orgId: string) {
     loadHistory();
   }, [orgId]);
 
-  // Subscribe to live updates via SSE
+  // Subscribe to live updates via SSE with reconnection
   useEffect(() => {
     const url = `/api/v1/organizations/${orgId}/stats/stream`;
     let es: EventSource | null = null;
+    let retryDelay = 1000;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let disposed = false;
 
-    try {
-      es = new EventSource(url);
+    function connect() {
+      if (disposed) return;
+      try {
+        es = new EventSource(url);
 
-      es.addEventListener("stats", (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          const next = new Map<string, AppMetrics>();
+        es.addEventListener("stats", (event) => {
+          retryDelay = 1000; // reset on successful message
+          try {
+            const data = JSON.parse(event.data);
+            const next = new Map<string, AppMetrics>();
 
-          for (const a of data.apps || []) {
-            let cpu = 0;
-            let mem = 0;
-            let memLimit = 0;
-            let netRx = 0;
-            let netTx = 0;
-            for (const c of a.containers || []) {
-              cpu += c.cpuPercent;
-              mem += c.memoryUsage;
-              memLimit = Math.max(memLimit, c.memoryLimit);
-              netRx += c.networkRx || 0;
-              netTx += c.networkTx || 0;
+            for (const a of data.apps || []) {
+              let cpu = 0;
+              let mem = 0;
+              let memLimit = 0;
+              let netRx = 0;
+              let netTx = 0;
+              for (const c of a.containers || []) {
+                cpu += c.cpuPercent;
+                mem += c.memoryUsage;
+                memLimit = Math.max(memLimit, c.memoryLimit);
+                netRx += c.networkRx || 0;
+                netTx += c.networkTx || 0;
+              }
+              const disk = a.diskUsage || 0;
+              const m: AppMetrics = { cpuPercent: cpu, memoryUsage: mem, memoryLimit: memLimit, diskUsage: disk, networkRx: netRx, networkTx: netTx };
+              next.set(a.id, m);
+
+              if (!historyRef.current.has(a.id)) {
+                historyRef.current.set(a.id, { cpu: [], memory: [], disk: [], network: [] });
+              }
+              pushHistory(historyRef.current.get(a.id)!, m);
             }
-            // Disk comes from per-app Redis TimeSeries (volumes + containers), not cAdvisor
-            const disk = a.diskUsage || 0;
-            const m: AppMetrics = { cpuPercent: cpu, memoryUsage: mem, memoryLimit: memLimit, diskUsage: disk, networkRx: netRx, networkTx: netTx };
-            next.set(a.id, m);
 
-            // Append live point to all history channels
-            if (!historyRef.current.has(a.id)) {
-              historyRef.current.set(a.id, { cpu: [], memory: [], disk: [], network: [] });
-            }
-            pushHistory(historyRef.current.get(a.id)!, m);
+            setMetrics(next);
+            setHistoryTick((t) => t + 1);
+          } catch { /* malformed event */ }
+        });
+
+        es.onerror = () => {
+          es?.close();
+          es = null;
+          if (!disposed) {
+            retryTimer = setTimeout(connect, retryDelay);
+            retryDelay = Math.min(retryDelay * 2, 30000);
           }
+        };
+      } catch { /* EventSource not available */ }
+    }
 
-          setMetrics(next);
-          setHistoryTick((t) => t + 1);
-        } catch { /* malformed event */ }
-      });
+    connect();
 
-      es.onerror = () => {
-        es?.close();
-      };
-    } catch { /* EventSource not available */ }
-
-    return () => es?.close();
+    return () => {
+      disposed = true;
+      es?.close();
+      if (retryTimer) clearTimeout(retryTimer);
+    };
   }, [orgId]);
 
   return { metrics, history: historyRef.current, historyTick };

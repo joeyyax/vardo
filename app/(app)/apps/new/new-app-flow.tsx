@@ -123,17 +123,8 @@ function generatePassword(length = 24): string {
   return Array.from(bytes, (b) => chars[b % chars.length]).join("");
 }
 
-function isPasswordField(key: string): boolean {
-  const lower = key.toLowerCase();
-  return lower.includes("password") || lower.includes("secret") || lower.includes("_key") || lower === "app_keys" || lower.includes("jwt");
-}
-
-function slugify(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
+import { isSecretKey } from "@/lib/env/is-secret-key";
+import { slugify } from "@/lib/ui/slugify";
 
 export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], defaultParentId, defaultProjectId, defaultName, defaultImage, defaultTemplate }: Props) {
   const router = useRouter();
@@ -306,7 +297,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], default
 
         if (!value) {
           // Smart auto-fill
-          if (isPasswordField(ev.key)) {
+          if (isSecretKey(ev.key)) {
             value = generatePassword();
           } else {
             const lower = ev.key.toLowerCase();
