@@ -1,14 +1,40 @@
 "use client";
 
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Plus, Pencil, Rocket } from "lucide-react";
+import {
+  Plus,
+  Pencil,
+  Rocket,
+  Trash2,
+  ChevronDown,
+  Check,
+  EllipsisVertical,
+  Loader2,
+} from "lucide-react";
+import { toast } from "sonner";
 import { PageToolbar } from "@/components/page-toolbar";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { detectProjectIcon } from "@/lib/ui/project-icon";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+type GroupEnvironment = {
+  id: string;
+  name: string;
+  type: string;
+};
 
 type ProjectApp = {
   id: string;
@@ -35,6 +61,7 @@ type Project = {
   description: string | null;
   color: string | null;
   apps: ProjectApp[];
+  groupEnvironments: GroupEnvironment[];
 };
 
 // ---------------------------------------------------------------------------
@@ -49,6 +76,14 @@ function statusDotColor(status: string) {
       : status === "deploying"
         ? "bg-status-info"
         : "bg-status-neutral";
+}
+
+function envTypeDotColor(type: string) {
+  return type === "production"
+    ? "bg-status-success"
+    : type === "staging"
+      ? "bg-status-warning"
+      : "bg-status-info";
 }
 
 function AppIcon({ app, color }: { app: ProjectApp; color: string }) {
@@ -131,7 +166,37 @@ export function ProjectDetail({
   project: Project;
   orgId: string;
 }) {
+  const router = useRouter();
   const color = project.color || "#6366f1";
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [selectedEnv, setSelectedEnv] = useState<string>("production");
+
+  const environments = [
+    { name: "production", type: "production" },
+    ...project.groupEnvironments.map((e) => ({ name: e.name, type: e.type })),
+  ];
+
+  async function handleDelete() {
+    setDeleting(true);
+    try {
+      const res = await fetch(
+        `/api/v1/organizations/${orgId}/projects/${project.id}`,
+        { method: "DELETE" }
+      );
+      if (!res.ok) {
+        const data = await res.json();
+        toast.error(data.error || "Failed to delete project");
+        return;
+      }
+      toast.success("Project deleted");
+      router.push("/projects");
+    } catch {
+      toast.error("Failed to delete project");
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -139,25 +204,38 @@ export function ProjectDetail({
         actions={
           <div className="flex items-center gap-2">
             {project.apps.length > 0 && (
-              <Button variant="outline" size="sm" asChild>
-                <Link href={`/projects/${project.name}/deploy`}>
-                  <Rocket className="mr-1.5 size-4" />
-                  Deploy All
-                </Link>
+              <Button size="sm" disabled>
+                <Rocket className="mr-1.5 size-4" />
+                Deploy All
               </Button>
             )}
-            <Button variant="outline" size="sm" asChild>
-              <Link href={`/projects/${project.name}/edit`}>
-                <Pencil className="mr-1.5 size-4" />
-                Edit
-              </Link>
-            </Button>
             <Button size="sm" asChild>
               <Link href={`/apps/new?project=${project.id}`}>
                 <Plus className="mr-1.5 size-4" />
                 Add App
               </Link>
             </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="icon-sm" variant="outline">
+                  <EllipsisVertical className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem disabled>
+                  <Pencil className="mr-2 size-4" />
+                  Edit project
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onClick={() => setDeleteOpen(true)}
+                >
+                  <Trash2 className="mr-2 size-4" />
+                  Delete project
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         }
       >
@@ -169,6 +247,35 @@ export function ProjectDetail({
           <h1 className="text-2xl font-semibold tracking-tight">
             {project.displayName}
           </h1>
+          {/* Environment switcher */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-1.5">
+                <span className={`size-2 rounded-full ${envTypeDotColor(
+                  environments.find((e) => e.name === selectedEnv)?.type || "production"
+                )}`} />
+                {selectedEnv}
+                <ChevronDown className="size-3.5 opacity-60" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              {environments.map((env) => (
+                <DropdownMenuItem
+                  key={env.name}
+                  onClick={() => setSelectedEnv(env.name)}
+                >
+                  <span className={`mr-2 size-2 rounded-full ${envTypeDotColor(env.type)}`} />
+                  {env.name}
+                  {env.name === selectedEnv && <Check className="ml-auto size-3.5" />}
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem className="text-muted-foreground" disabled>
+                <Plus className="mr-2 size-3.5" />
+                New environment
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </PageToolbar>
 
@@ -195,6 +302,20 @@ export function ProjectDetail({
           ))}
         </div>
       )}
+
+      {/* Delete confirmation */}
+      <ConfirmDeleteDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        onConfirm={handleDelete}
+        loading={deleting}
+        title="Delete project"
+        description={
+          project.apps.length > 0
+            ? `This will remove the project "${project.displayName}" but keep its ${project.apps.length} app(s). They will become unassigned.`
+            : `Delete the project "${project.displayName}"?`
+        }
+      />
     </div>
   );
 }
