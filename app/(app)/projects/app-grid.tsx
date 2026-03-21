@@ -408,7 +408,7 @@ function ProjectCard({
             key={a.id}
             href={`/apps/${a.name}`}
             onClick={(e) => e.stopPropagation()}
-            className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium bg-background hover:bg-accent transition-colors"
+            className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium bg-background hover:bg-accent transition-colors cursor-pointer"
           >
             <span className={`size-1.5 rounded-full ${statusDotColor(a.status)}`} />
             {a.displayName}
@@ -436,7 +436,7 @@ function AppCard({
   return (
     <Link
       href={`/apps/${app.name}`}
-      className="squircle relative flex flex-col rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50 overflow-hidden"
+      className="squircle relative flex flex-col rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50 overflow-hidden cursor-pointer"
     >
       {/* Background sparklines — crossfade on hover */}
       {(["cpu", "memory", "disk", "network"] as MetricKey[]).map((key) => {
