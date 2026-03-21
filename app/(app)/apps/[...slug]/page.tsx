@@ -73,6 +73,20 @@ export default async function AppDetailPage({ params }: PageProps) {
     deployments: {
       orderBy: (d: any, { desc }: any) => [desc(d.startedAt)],
       limit: 10,
+      columns: {
+        id: true,
+        status: true,
+        trigger: true,
+        gitSha: true,
+        gitMessage: true,
+        durationMs: true,
+        log: true,
+        environmentId: true,
+        configSnapshot: true,
+        rollbackFromId: true,
+        startedAt: true,
+        finishedAt: true,
+      },
       with: {
         triggeredByUser: {
           columns: { id: true, name: true, image: true },
