@@ -1,18 +1,6 @@
 import http from "node:http";
 import net from "node:net";
-
-// ---------------------------------------------------------------------------
-// Connection helpers (mirrors client.ts)
-// ---------------------------------------------------------------------------
-
-function getConnectionOptions(): { socketPath?: string; host?: string; port?: number } {
-  const dockerHost = process.env.DOCKER_HOST;
-  if (dockerHost) {
-    const url = new URL(dockerHost);
-    return { host: url.hostname, port: Number(url.port) || 2375 };
-  }
-  return { socketPath: "/var/run/docker.sock" };
-}
+import { getConnectionOptions } from "./client";
 
 // ---------------------------------------------------------------------------
 // Create exec instance
