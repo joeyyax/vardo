@@ -225,14 +225,20 @@ export function OrgMetrics({ orgId, apps, adminMode }: OrgMetricsProps) {
         <div className="squircle rounded-lg border bg-card px-4 py-3">
           <div className="flex items-center gap-2">
             <Box className="size-4 text-muted-foreground shrink-0" />
-            <p className="text-xs text-muted-foreground">Infrastructure</p>
+            <p className="text-xs text-muted-foreground">Apps &amp; Containers</p>
           </div>
-          <p className="text-2xl font-semibold tabular-nums mt-1">
-            {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : totals.containers}
-          </p>
-          <p className="text-[10px] text-muted-foreground mt-0.5">
-            {activeApps} apps · {totals.containers} containers
-          </p>
+          <div className="flex items-baseline gap-3 mt-1">
+            <div>
+              <p className="text-2xl font-semibold tabular-nums">{activeApps}</p>
+              <p className="text-[10px] text-muted-foreground">apps</p>
+            </div>
+            <div>
+              <p className="text-2xl font-semibold tabular-nums">
+                {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : totals.containers}
+              </p>
+              <p className="text-[10px] text-muted-foreground">containers</p>
+            </div>
+          </div>
         </div>
       </div>
 
