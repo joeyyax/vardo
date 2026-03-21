@@ -119,6 +119,41 @@ export function AdminPanel({
             })}
           </div>
 
+          {/* Resource usage */}
+          {systemHealth.resources.length > 0 && (
+            <div className="grid gap-4 sm:grid-cols-3 mt-4">
+              {systemHealth.resources.map((res) => (
+                <div key={res.name} className="squircle rounded-lg border bg-card p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs text-muted-foreground">{res.name}</p>
+                    <span className={`text-xs font-medium ${
+                      res.status === "critical" ? "text-status-error" :
+                      res.status === "warning" ? "text-status-warning" :
+                      "text-status-success"
+                    }`}>
+                      {res.percent}%
+                    </span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${
+                        res.status === "critical" ? "bg-status-error" :
+                        res.status === "warning" ? "bg-status-warning" :
+                        "bg-status-success"
+                      }`}
+                      style={{ width: `${Math.min(res.percent, 100)}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1.5 tabular-nums">
+                    {res.unit === "bytes"
+                      ? `${formatBytes(res.current)} / ${formatBytes(res.total)}`
+                      : `${res.current}${res.unit} / ${res.total}${res.unit}`}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Services health */}
           <div className="squircle rounded-lg border bg-card overflow-hidden mt-4">
             <div className="px-4 py-2 border-b">
