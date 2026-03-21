@@ -176,7 +176,7 @@ export function useAppMetrics(orgId: string) {
         const now = Date.now();
         const from = now - 3600000;
         const res = await fetch(
-          `/api/v1/organizations/${orgId}/stats?from=${from}&to=${now}&bucket=60000&perProject=true`
+          `/api/v1/organizations/${orgId}/stats?from=${from}&to=${now}&bucket=60000&perProject=true&metric=cpu`
         );
         if (!res.ok) return;
         const data = await res.json();
