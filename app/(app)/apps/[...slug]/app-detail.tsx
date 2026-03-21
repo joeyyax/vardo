@@ -149,6 +149,7 @@ type App = {
   exposedPorts: { internal: number; external?: number; description?: string }[] | null;
   cpuLimit: number | null;
   memoryLimit: number | null;
+  diskWriteAlertThreshold: number | null;
   autoRollback: boolean | null;
   rollbackGracePeriod: number | null;
   projectId: string | null;
@@ -773,6 +774,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
   const [editParentId, setEditParentId] = useState<string | null>(app.projectId ?? null);
   const [cpuLimit, setCpuLimit] = useState(app.cpuLimit?.toString() || "");
   const [memoryLimit, setMemoryLimit] = useState(app.memoryLimit?.toString() || "");
+  const [diskWriteAlertThreshold, setDiskWriteAlertThreshold] = useState(app.diskWriteAlertThreshold ? (app.diskWriteAlertThreshold / 1_073_741_824).toString() : "");
   const [autoRollback, setAutoRollback] = useState(app.autoRollback ?? false);
   const [rollbackGracePeriod, setRollbackGracePeriod] = useState(app.rollbackGracePeriod?.toString() || "60");
 
@@ -1174,6 +1176,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
       body.restartPolicy = restartPolicy;
       body.cpuLimit = cpuLimit ? parseFloat(cpuLimit) : null;
       body.memoryLimit = memoryLimit ? parseInt(memoryLimit, 10) : null;
+      body.diskWriteAlertThreshold = diskWriteAlertThreshold ? Math.round(parseFloat(diskWriteAlertThreshold) * 1_073_741_824) : null;
       body.autoRollback = autoRollback;
       body.rollbackGracePeriod = rollbackGracePeriod ? parseInt(rollbackGracePeriod, 10) : 60;
       if (editParentId) {
@@ -2835,7 +2838,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
               </div>
 
               {/* Resource Limits */}
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-4 sm:grid-cols-3">
                 <div className="grid gap-2">
                   <Label htmlFor="edit-cpu-limit">CPU Limit (cores)</Label>
                   <Input id="edit-cpu-limit" type="number" step="0.1" min="0.1" placeholder="No limit" value={cpuLimit} onChange={(e) => setCpuLimit(e.target.value)} />
@@ -2845,6 +2848,11 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                   <Label htmlFor="edit-memory-limit">Memory Limit (MB)</Label>
                   <Input id="edit-memory-limit" type="number" step="64" min="64" placeholder="No limit" value={memoryLimit} onChange={(e) => setMemoryLimit(e.target.value)} />
                   <p className="text-xs text-muted-foreground">{memoryLimit ? memoryLimit + " MB" : "No limit"}</p>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-disk-write-threshold">Disk Write Alert (GB/hr)</Label>
+                  <Input id="edit-disk-write-threshold" type="number" step="0.5" min="0.1" placeholder="Default: 1 GB" value={diskWriteAlertThreshold} onChange={(e) => setDiskWriteAlertThreshold(e.target.value)} />
+                  <p className="text-xs text-muted-foreground">{diskWriteAlertThreshold ? diskWriteAlertThreshold + " GB/hr" : "Default: 1 GB/hr"}</p>
                 </div>
               </div>
 

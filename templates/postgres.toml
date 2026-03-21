@@ -8,6 +8,7 @@ source = "direct"
 deployType = "image"
 imageName = "postgres:16"
 defaultPort = 5432
+diskWriteAlertThreshold = 5368709120  # 5 GB/hour (databases write more)
 
 [[envVars]]
 key = "POSTGRES_PASSWORD"

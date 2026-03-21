@@ -8,6 +8,7 @@ source = "direct"
 deployType = "image"
 imageName = "mariadb:11"
 defaultPort = 3306
+diskWriteAlertThreshold = 5368709120  # 5 GB/hour (databases write more)
 
 [[envVars]]
 key = "MARIADB_ROOT_PASSWORD"
