@@ -9,9 +9,9 @@ import { NewAppFlow } from "./new-app-flow";
 export default async function NewAppPage({
   searchParams,
 }: {
-  searchParams: Promise<{ parent?: string; name?: string; image?: string; template?: string }>;
+  searchParams: Promise<{ parent?: string; project?: string; name?: string; image?: string; template?: string }>;
 }) {
-  const { parent: preselectedParentId, name: prefilledName, image: prefilledImage, template: prefilledTemplate } = await searchParams;
+  const { parent: preselectedParentId, project: preselectedProjectId, name: prefilledName, image: prefilledImage, template: prefilledTemplate } = await searchParams;
   const orgData = await getCurrentOrg();
 
   if (!orgData) {
@@ -46,6 +46,7 @@ export default async function NewAppPage({
       templates={cleanTemplates}
       parentApps={parentOptions}
       defaultParentId={preselectedParentId}
+      defaultProjectId={preselectedProjectId}
       defaultName={prefilledName}
       defaultImage={prefilledImage}
       defaultTemplate={prefilledTemplate}

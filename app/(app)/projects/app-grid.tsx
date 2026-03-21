@@ -421,12 +421,14 @@ function AppCard({
       {/* Project badge */}
       {app.project && (
         <div className="relative flex flex-wrap gap-1.5 mt-3 pt-3 border-t">
-          <span
-            className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium bg-background"
+          <Link
+            href={`/projects/${app.project.name}`}
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium bg-background hover:bg-accent transition-colors"
           >
             <span className="size-1.5 rounded-full" style={{ backgroundColor: app.project.color || "#6366f1" }} />
             {app.project.displayName}
-          </span>
+          </Link>
         </div>
       )}
     </Link>

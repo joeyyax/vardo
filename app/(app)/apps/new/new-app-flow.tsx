@@ -94,6 +94,7 @@ type Props = {
   templates: Template[];
   parentApps?: ParentAppOption[];
   defaultParentId?: string;
+  defaultProjectId?: string;
   defaultName?: string;
   defaultImage?: string;
   defaultTemplate?: string;
@@ -133,7 +134,7 @@ function slugify(value: string) {
     .replace(/^-+|-+$/g, "");
 }
 
-export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], defaultParentId, defaultName, defaultImage, defaultTemplate }: Props) {
+export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], defaultParentId, defaultProjectId, defaultName, defaultImage, defaultTemplate }: Props) {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
   const [slugEdited, setSlugEdited] = useState(false);
@@ -158,7 +159,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], default
   const [rootDirectory, setRootDirectory] = useState("");
   const [containerPort, setContainerPort] = useState("");
   const [autoDeploy, setAutoDeploy] = useState(true);
-  const [parentId, setParentId] = useState<string | null>(defaultParentId ?? null);
+  const [parentId, setParentId] = useState<string | null>(defaultProjectId ?? defaultParentId ?? null);
   const [persistData, setPersistData] = useState(true);
   const [templateVolumes, setTemplateVolumes] = useState<
     { name: string; mountPath: string; description: string }[]
@@ -458,7 +459,13 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], default
       } else {
         toast.success("App created");
       }
-      router.push(`/apps/${app.name}`);
+      // Redirect to project page if the app belongs to a project, otherwise to the app page
+      const selectedProject = parentId ? parentApps.find((p) => p.id === parentId) : null;
+      if (selectedProject) {
+        router.push(`/projects/${selectedProject.name}`);
+      } else {
+        router.push(`/apps/${app.name}`);
+      }
     } catch { toast.error("Failed to create app"); }
     finally { setCreating(false); }
   }
@@ -901,7 +908,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], default
 
               {parentApps.length > 0 && (
                 <div className="grid gap-2">
-                  <Label>Parent App</Label>
+                  <Label>Project</Label>
                   <Select
                     value={parentId ?? "__none"}
                     onValueChange={(v) => setParentId(v === "__none" ? null : v)}

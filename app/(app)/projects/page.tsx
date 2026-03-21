@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { apps, tags } from "@/lib/db/schema";
 import { getCurrentOrg, getUserOrganizations } from "@/lib/auth/session";
 import { eq, desc, asc, sql } from "drizzle-orm";
-import { Plus } from "lucide-react";
+import { FolderPlus, Plus } from "lucide-react";
 import { PageToolbar } from "@/components/page-toolbar";
 import { Button } from "@/components/ui/button";
 import { OrgSwitcher } from "@/components/layout/org-switcher";
@@ -51,12 +51,20 @@ export default async function ProjectsPage() {
     <div className="space-y-6">
       <PageToolbar
         actions={
-          <Button asChild>
-            <Link href="/apps/new">
-              <Plus className="mr-1.5 size-4" />
-              New App
-            </Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button asChild>
+              <Link href="/projects/new">
+                <FolderPlus className="mr-1.5 size-4" />
+                New Project
+              </Link>
+            </Button>
+            <Button variant="outline" asChild>
+              <Link href="/apps/new">
+                <Plus className="mr-1.5 size-4" />
+                New App
+              </Link>
+            </Button>
+          </div>
         }
       >
         <div className="flex items-center gap-3">
