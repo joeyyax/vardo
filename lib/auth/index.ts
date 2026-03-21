@@ -24,9 +24,14 @@ export const auth = betterAuth({
   },
 
   // Email + password authentication (invite only — no public registration)
+  // Sign-up is allowed only when no users exist (initial setup), then locks down
   emailAndPassword: {
     enabled: true,
-    disableSignUp: true,
+    async disableSignUp() {
+      const result = await db.execute(sql`SELECT EXISTS(SELECT 1 FROM "user") AS has_users`);
+      const rows = result as unknown as { has_users: boolean }[];
+      return rows[0]?.has_users ?? false;
+    },
   },
 
   plugins: [
