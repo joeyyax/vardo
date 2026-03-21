@@ -339,6 +339,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
                 categories={["memory"]}
                 colors={[TREMOR_METRIC_COLORS.memory]}
                 valueFormatter={(v) => formatBytes(v)}
+                yAxisWidth={65}
                 showLegend={false}
                 showAnimation={false}
                 curveType="monotone"
@@ -359,6 +360,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
                 categories={["networkRx", "networkTx"]}
                 colors={[TREMOR_METRIC_COLORS.networkRx, TREMOR_METRIC_COLORS.networkTx]}
                 valueFormatter={(v) => formatBytes(v)}
+                yAxisWidth={65}
                 showLegend={false}
                 showAnimation={false}
                 curveType="monotone"
@@ -379,6 +381,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
                 categories={["diskTotal"]}
                 colors={[TREMOR_METRIC_COLORS.diskTotal]}
                 valueFormatter={(v) => formatBytes(v)}
+                yAxisWidth={65}
                 showLegend={false}
                 showAnimation={false}
                 curveType="monotone"
