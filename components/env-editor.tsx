@@ -207,10 +207,9 @@ export function EnvEditor(props: EnvEditorProps) {
     if (isStandalone) return;
     async function load() {
       try {
-        const params = new URLSearchParams();
+        const params = new URLSearchParams({ reveal: "true" });
         if (environmentId) params.set("environmentId", environmentId);
-        const qs = params.toString();
-        const res = await fetch(`/api/v1/organizations/${orgId}/apps/${appId}/env-vars${qs ? `?${qs}` : ""}`);
+        const res = await fetch(`/api/v1/organizations/${orgId}/apps/${appId}/env-vars?${params}`);
         if (res.ok) {
           const data = await res.json();
           const vars = data.envVars || [];

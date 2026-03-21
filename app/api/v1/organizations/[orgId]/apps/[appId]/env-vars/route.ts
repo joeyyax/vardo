@@ -61,6 +61,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const environmentId = request.nextUrl.searchParams.get("environmentId");
     const merged = request.nextUrl.searchParams.get("merged") === "true";
+    const reveal = request.nextUrl.searchParams.get("reveal") === "true";
+
+    let vars;
 
     if (environmentId && merged) {
       const [baseVars, envSpecificVars] = await Promise.all([
@@ -79,29 +82,33 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       ]);
 
       const mergedMap = new Map<string, (typeof baseVars)[number]>();
-      for (const v of baseVars) {
-        mergedMap.set(v.key, v);
-      }
-      for (const v of envSpecificVars) {
-        mergedMap.set(v.key, v);
-      }
-
-      return NextResponse.json({ envVars: Array.from(mergedMap.values()) });
-    }
-
-    let conditions;
-    if (environmentId) {
-      conditions = and(
-        eq(envVars.appId, appId),
-        eq(envVars.environmentId, environmentId)
-      );
+      for (const v of baseVars) mergedMap.set(v.key, v);
+      for (const v of envSpecificVars) mergedMap.set(v.key, v);
+      vars = Array.from(mergedMap.values());
+    } else if (environmentId) {
+      vars = await db.query.envVars.findMany({
+        where: and(
+          eq(envVars.appId, appId),
+          eq(envVars.environmentId, environmentId)
+        ),
+      });
     } else {
-      conditions = eq(envVars.appId, appId);
+      // Default: base vars only (no environment-specific overrides)
+      vars = await db.query.envVars.findMany({
+        where: and(
+          eq(envVars.appId, appId),
+          isNull(envVars.environmentId)
+        ),
+      });
     }
 
-    const vars = await db.query.envVars.findMany({
-      where: conditions,
-    });
+    // Mask secret values unless explicitly revealed
+    if (!reveal) {
+      vars = vars.map((v) => ({
+        ...v,
+        value: v.isSecret ? "••••••••" : v.value,
+      }));
+    }
 
     return NextResponse.json({ envVars: vars });
   } catch (error) {
