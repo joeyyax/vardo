@@ -12,6 +12,15 @@ import {
   Check,
   EllipsisVertical,
 } from "lucide-react";
+import {
+  type AppMetrics,
+  type MetricKey,
+  type MetricsHistory,
+  EMPTY_HISTORY,
+  Sparkline,
+  MetricsLine,
+  useAppMetrics,
+} from "@/components/app-metrics-card";
 import { toast } from "sonner";
 import { PageToolbar } from "@/components/page-toolbar";
 import { Button } from "@/components/ui/button";
@@ -126,39 +135,69 @@ function AppIcon({ app, color }: { app: ProjectApp; color: string }) {
 // App Card
 // ---------------------------------------------------------------------------
 
-function AppCard({ app, color }: { app: ProjectApp; color: string }) {
+function AppCard({
+  app,
+  color,
+  metrics,
+  history,
+}: {
+  app: ProjectApp;
+  color: string;
+  metrics?: AppMetrics;
+  history: MetricsHistory;
+}) {
   const primaryDomain = app.domains.find((d) => d.isPrimary)?.domain ||
     app.domains[0]?.domain;
+  const [hoveredMetric, setHoveredMetric] = useState<MetricKey | null>(null);
+  const activeMetric = hoveredMetric || "cpu";
 
   return (
     <Link
       href={`/apps/${app.name}`}
-      className="squircle flex items-center gap-3 rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50"
+      className="squircle relative flex items-center gap-3 rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50 overflow-hidden"
     >
-      <AppIcon app={app} color={color} />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold truncate">
-            {app.displayName}
-          </h3>
-          <span
-            className={`size-2 shrink-0 rounded-full ${statusDotColor(app.status)}`}
+      {/* Background sparklines — crossfade on hover */}
+      {(["cpu", "memory", "disk", "network"] as MetricKey[]).map((key) => {
+        const data = history[key];
+        if (data.length < 2) return null;
+        return (
+          <Sparkline
+            key={key}
+            data={data}
+            className={`absolute inset-0 w-full h-full text-foreground pointer-events-none transition-opacity duration-300 ${
+              activeMetric === key ? "opacity-100" : "opacity-0"
+            }`}
           />
+        );
+      })}
+
+      <div className="relative flex items-center gap-3 w-full">
+        <AppIcon app={app} color={color} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold truncate">
+              {app.displayName}
+            </h3>
+            <span
+              className={`size-2 shrink-0 rounded-full ${statusDotColor(app.status)}`}
+            />
+          </div>
+          {primaryDomain && (
+            <p className="text-xs text-muted-foreground truncate mt-0.5">
+              {primaryDomain}
+            </p>
+          )}
+          {!primaryDomain && (
+            <p className="text-xs text-muted-foreground/40 truncate mt-0.5">
+              {app.imageName ||
+                app.gitUrl
+                  ?.replace("https://github.com/", "")
+                  .replace(".git", "") ||
+                app.deployType}
+            </p>
+          )}
+          {metrics && <MetricsLine metrics={metrics} onHover={setHoveredMetric} />}
         </div>
-        {primaryDomain && (
-          <p className="text-xs text-muted-foreground truncate mt-0.5">
-            {primaryDomain}
-          </p>
-        )}
-        {!primaryDomain && (
-          <p className="text-xs text-muted-foreground/40 truncate mt-0.5">
-            {app.imageName ||
-              app.gitUrl
-                ?.replace("https://github.com/", "")
-                .replace(".git", "") ||
-              app.deployType}
-          </p>
-        )}
       </div>
     </Link>
   );
@@ -177,6 +216,7 @@ export function ProjectDetail({
 }) {
   const router = useRouter();
   const color = project.color || "#6366f1";
+  const { metrics, history } = useAppMetrics(orgId);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [selectedEnv, setSelectedEnv] = useState<string>("production");
@@ -343,7 +383,13 @@ export function ProjectDetail({
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {project.apps.map((app) => (
-            <AppCard key={app.id} app={app} color={color} />
+            <AppCard
+              key={app.id}
+              app={app}
+              color={color}
+              metrics={metrics.get(app.id)}
+              history={history.get(app.id) || EMPTY_HISTORY}
+            />
           ))}
         </div>
       )}
