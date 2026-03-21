@@ -8,6 +8,7 @@ source = "direct"
 deployType = "image"
 imageName = "redis:7-alpine"
 defaultPort = 6379
+diskWriteAlertThreshold = 5368709120  # 5 GB/hour (data stores write more)
 
 [[envVars]]
 key = "REDIS_PASSWORD"
