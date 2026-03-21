@@ -454,7 +454,7 @@ export function LogViewer({ streamUrl, historyUrl, maxLines = 1000 }: LogViewerP
         <div className="flex items-center gap-2">
           <span className={`size-2 rounded-full ${connected ? "bg-status-success" : timedOut ? "bg-status-warning" : "bg-status-error"}`} />
           <span className="text-xs text-muted-foreground">
-            {connected ? "Streaming" : timedOut ? "Paused" : "Disconnected"}
+            {connected ? "Streaming" : timedOut ? "Paused" : lines.length > 0 ? "Reconnecting..." : "Disconnected"}
           </span>
           {logSource && (
             <span className="inline-flex items-center gap-1 text-xs text-muted-foreground border border-zinc-800 rounded px-1.5 py-0.5">

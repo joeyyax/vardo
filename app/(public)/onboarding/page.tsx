@@ -37,8 +37,8 @@ export default function OnboardingPage() {
       }
       toast.success("Account created");
       router.push("/projects");
-    } catch {
-      toast.error("Something went wrong");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to create account");
     } finally {
       setLoading(false);
     }

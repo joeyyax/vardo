@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
-import { Activity, Box, Cpu, HardDrive, MemoryStick, Network, Loader2 } from "lucide-react";
+import { Activity, Box, Cpu, HardDrive, MemoryStick, Network, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AreaChart } from "@tremor/react";
 import type { CustomTooltipProps } from "@tremor/react";
@@ -88,7 +88,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
     ? `/api/v1/admin/stats/stream`
     : `/api/v1/organizations/${orgId}/stats/stream`;
 
-  const { points, meta, connected, loading } = useMetricsStream({
+  const { points, meta, connected, loading, reconnecting } = useMetricsStream({
     historyUrl,
     streamUrl,
     timeRange,
@@ -190,8 +190,14 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
           ))}
         </div>
         <div className="flex items-center gap-2">
-          <span className={`size-2 rounded-full ${loading ? "bg-status-neutral animate-pulse" : connected ? "bg-status-success" : "bg-status-neutral"}`} />
-          <span className="text-xs text-muted-foreground">Live</span>
+          {reconnecting ? (
+            <RefreshCw className="size-3 text-status-warning animate-spin" />
+          ) : (
+            <span className={`size-2 rounded-full ${loading ? "bg-status-neutral animate-pulse" : connected ? "bg-status-success" : "bg-status-neutral"}`} />
+          )}
+          <span className="text-xs text-muted-foreground">
+            {reconnecting ? "Reconnecting..." : connected ? "Live" : loading ? "Loading..." : "Disconnected"}
+          </span>
         </div>
       </div>
 

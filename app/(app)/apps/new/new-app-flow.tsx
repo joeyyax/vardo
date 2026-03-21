@@ -476,7 +476,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], default
       } else {
         router.push(`/apps/${app.name}`);
       }
-    } catch { toast.error("Failed to create app"); }
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Failed to create app"); }
     finally { setCreating(false); }
   }
 
