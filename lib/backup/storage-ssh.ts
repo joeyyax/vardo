@@ -6,13 +6,13 @@
 // Implements the BackupStorage port interface.
 // ---------------------------------------------------------------------------
 
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import { promisify } from "util";
 import { stat, writeFile as fsWriteFile, unlink } from "fs/promises";
 import { nanoid } from "nanoid";
 import type { BackupStorage } from "./storage-port";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 // ---------------------------------------------------------------------------
 // Types
@@ -33,41 +33,42 @@ export type SshConfig = {
 // ---------------------------------------------------------------------------
 
 /**
- * Build SSH/SCP flags common to all commands.
- * Writes the private key to a temp file if provided.
- * Returns the flags string and an optional cleanup function.
+ * Escape a string for safe inclusion in a remote shell command.
+ * Wraps in single quotes and escapes any embedded single quotes.
  */
-async function buildSshFlags(
-  config: SshConfig
-): Promise<{ flags: string; keyFile?: string }> {
-  const parts: string[] = [
-    "-o StrictHostKeyChecking=accept-new",
-    "-o ConnectTimeout=30",
-  ];
+function shellEscape(value: string): string {
+  return "'" + value.replace(/'/g, "'\\''") + "'";
+}
 
-  if (config.port && config.port !== 22) {
-    parts.push(`-P ${config.port}`);
-  }
+/**
+ * Build SSH/SCP flag arrays common to all commands.
+ * Writes the private key to a temp file if provided.
+ * Returns separate arrays for scp flags and ssh flags (they differ in port flag).
+ */
+async function buildFlags(
+  config: SshConfig
+): Promise<{ scpFlags: string[]; sshFlags: string[]; keyFile?: string }> {
+  const common: string[] = [
+    "-o", "StrictHostKeyChecking=accept-new",
+    "-o", "ConnectTimeout=30",
+  ];
 
   let keyFile: string | undefined;
   if (config.privateKey) {
     keyFile = `/tmp/.host-ssh-key-${nanoid(8)}`;
     await fsWriteFile(keyFile, config.privateKey, { mode: 0o600 });
-    parts.push(`-i ${keyFile}`);
+    common.push("-i", keyFile);
   }
 
-  return { flags: parts.join(" "), keyFile };
-}
+  const scpFlags = [...common];
+  const sshFlags = [...common];
 
-/**
- * Build the ssh command flags (ssh uses -p, scp uses -P for port).
- */
-async function buildSshCmdFlags(
-  config: SshConfig
-): Promise<{ flags: string; keyFile?: string }> {
-  const { flags, keyFile } = await buildSshFlags(config);
-  // Replace -P with -p for ssh command
-  return { flags: flags.replace(/-P (\d+)/, "-p $1"), keyFile };
+  if (config.port && config.port !== 22) {
+    scpFlags.push("-P", String(config.port));
+    sshFlags.push("-p", String(config.port));
+  }
+
+  return { scpFlags, sshFlags, keyFile };
 }
 
 async function cleanupKeyFile(keyFile?: string): Promise<void> {
@@ -91,10 +92,16 @@ async function ensureRemoteDir(
   config: SshConfig,
   remoteDir: string
 ): Promise<void> {
-  const { flags, keyFile } = await buildSshCmdFlags(config);
+  const { sshFlags, keyFile } = await buildFlags(config);
   try {
-    await execAsync(
-      `ssh ${flags} ${config.username}@${config.host} "mkdir -p '${remoteDir}'"`,
+    await execFileAsync(
+      "ssh",
+      [
+        ...sshFlags,
+        "--",
+        `${config.username}@${config.host}`,
+        "mkdir", "-p", remoteDir,
+      ],
       { timeout: 30_000 }
     );
   } finally {
@@ -120,10 +127,16 @@ export class SshBackupStorage implements BackupStorage {
     // Ensure remote directory structure exists
     await ensureRemoteDir(this.config, remoteDir);
 
-    const { flags, keyFile } = await buildSshFlags(this.config);
+    const { scpFlags, keyFile } = await buildFlags(this.config);
     try {
-      await execAsync(
-        `scp ${flags} "${filePath}" "${this.config.username}@${this.config.host}:${remote}"`,
+      await execFileAsync(
+        "scp",
+        [
+          ...scpFlags,
+          "--",
+          filePath,
+          `${this.config.username}@${this.config.host}:${remote}`,
+        ],
         { timeout: 600_000 } // 10 minute timeout
       );
 
@@ -136,11 +149,17 @@ export class SshBackupStorage implements BackupStorage {
 
   async download(key: string, destPath: string): Promise<void> {
     const remote = remotePath(this.config, key);
-    const { flags, keyFile } = await buildSshFlags(this.config);
+    const { scpFlags, keyFile } = await buildFlags(this.config);
 
     try {
-      await execAsync(
-        `scp ${flags} "${this.config.username}@${this.config.host}:${remote}" "${destPath}"`,
+      await execFileAsync(
+        "scp",
+        [
+          ...scpFlags,
+          "--",
+          `${this.config.username}@${this.config.host}:${remote}`,
+          destPath,
+        ],
         { timeout: 600_000 }
       );
     } finally {
@@ -150,11 +169,17 @@ export class SshBackupStorage implements BackupStorage {
 
   async delete(key: string): Promise<void> {
     const remote = remotePath(this.config, key);
-    const { flags, keyFile } = await buildSshCmdFlags(this.config);
+    const { sshFlags, keyFile } = await buildFlags(this.config);
 
     try {
-      await execAsync(
-        `ssh ${flags} ${this.config.username}@${this.config.host} "rm -f '${remote}'"`,
+      await execFileAsync(
+        "ssh",
+        [
+          ...sshFlags,
+          "--",
+          `${this.config.username}@${this.config.host}`,
+          "rm", "-f", remote,
+        ],
         { timeout: 30_000 }
       );
     } finally {
