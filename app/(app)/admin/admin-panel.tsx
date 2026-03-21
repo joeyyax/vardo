@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Building2, Check, X } from "lucide-react";
 import type { FeatureFlagInfo } from "@/lib/config/features";
+import type { SystemHealth } from "@/lib/config/health";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageToolbar } from "@/components/page-toolbar";
 import { DockerPrune, UserManagement } from "./admin-actions";
@@ -48,6 +49,7 @@ type AdminPanelProps = {
   orgId: string;
   appList: AppSummary[];
   featureFlags: FeatureFlagInfo[];
+  systemHealth: SystemHealth;
   orgBreakdown: OrgBreakdown[];
   initialSystem: SystemInfo | null;
   initialAppStats: (AppSummary & { containers: ContainerStatsSnapshot[] })[];
@@ -58,6 +60,7 @@ export function AdminPanel({
   stats,
   sparklines,
   featureFlags,
+  systemHealth,
   orgId,
   appList,
   orgBreakdown,
@@ -114,6 +117,70 @@ export function AdminPanel({
                 </div>
               );
             })}
+          </div>
+
+          {/* Services health */}
+          <div className="squircle rounded-lg border bg-card overflow-hidden mt-4">
+            <div className="px-4 py-2 border-b">
+              <p className="text-xs text-muted-foreground">Infrastructure</p>
+            </div>
+            <div className="divide-y">
+              {systemHealth.services.map((svc) => (
+                <div key={svc.name} className="flex items-center justify-between gap-4 px-4 py-2.5">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className={`size-2 rounded-full shrink-0 ${
+                      svc.status === "healthy" ? "bg-status-success" :
+                      svc.status === "unhealthy" ? "bg-status-error" :
+                      "bg-status-neutral"
+                    }`} />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium">{svc.name}</p>
+                      <p className="text-xs text-muted-foreground">{svc.description}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {svc.latencyMs !== undefined && svc.status === "healthy" && (
+                      <span className="text-xs tabular-nums text-muted-foreground">{svc.latencyMs}ms</span>
+                    )}
+                    <span className={`text-xs font-medium ${
+                      svc.status === "healthy" ? "text-status-success" :
+                      svc.status === "unhealthy" ? "text-status-error" :
+                      "text-muted-foreground"
+                    }`}>
+                      {svc.status === "healthy" ? "Healthy" :
+                       svc.status === "unhealthy" ? "Unhealthy" :
+                       "Not configured"}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Auth methods */}
+          <div className="squircle rounded-lg border bg-card p-4 mt-4">
+            <p className="text-xs text-muted-foreground mb-3">Authentication</p>
+            <div className="flex flex-wrap gap-2">
+              {([
+                { label: "Passkeys", enabled: systemHealth.auth.passkeys },
+                { label: "Magic Link", enabled: systemHealth.auth.magicLink },
+                { label: "GitHub", enabled: systemHealth.auth.github },
+                { label: "Passwords", enabled: systemHealth.auth.passwords },
+                { label: "2FA", enabled: systemHealth.auth.twoFactor },
+              ]).map(({ label, enabled }) => (
+                <div
+                  key={label}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium ${
+                    enabled
+                      ? "bg-status-success-muted text-status-success"
+                      : "bg-muted text-muted-foreground"
+                  }`}
+                >
+                  {enabled ? <Check className="size-3" /> : <X className="size-3" />}
+                  {label}
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* Feature flags */}
