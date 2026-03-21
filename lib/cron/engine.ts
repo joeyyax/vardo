@@ -95,7 +95,7 @@ export async function tickCronJobs(): Promise<void> {
     where: eq(cronJobs.enabled, true),
     with: {
       app: {
-        columns: { id: true, name: true, status: true },
+        columns: { id: true, name: true, status: true, organizationId: true, displayName: true },
       },
     },
   });
@@ -178,6 +178,26 @@ export async function tickCronJobs(): Promise<void> {
     console.log(
       `[cron] ${job.name} (${job.app.name}): ${result.success ? "OK" : "FAILED"} in ${result.durationMs}ms`
     );
+
+    if (!result.success) {
+      try {
+        const { notify } = await import("@/lib/notifications/dispatch");
+        await notify(job.app.organizationId, {
+          type: "cron-failed",
+          title: `Cron failed: ${job.name} (${job.app.displayName || job.app.name})`,
+          message: result.log.slice(0, 500),
+          metadata: {
+            cronJobId: job.id,
+            cronJobName: job.name,
+            appId: job.app.id,
+            projectName: job.app.displayName || job.app.name,
+            durationMs: String(result.durationMs),
+          },
+        });
+      } catch (err) {
+        console.error(`[cron] Failed to send notification for ${job.name}:`, err);
+      }
+    }
   }
 }
 
