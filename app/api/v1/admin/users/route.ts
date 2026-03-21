@@ -2,26 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { user } from "@/lib/db/schema";
-import { requireSession } from "@/lib/auth/session";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { createHash } from "crypto";
-
-// Hash password with bcrypt-compatible approach via Better Auth's internal method
-// Since Better Auth uses its own password hashing, we'll use the auth API to create users
-import { auth } from "@/lib/auth";
-
-async function requireAppAdmin() {
-  const session = await requireSession();
-  const dbUser = await db.query.user.findFirst({
-    where: eq(user.id, session.user.id),
-    columns: { isAppAdmin: true },
-  });
-  if (!dbUser?.isAppAdmin) {
-    throw new Error("Forbidden");
-  }
-  return session;
-}
+import { requireAppAdmin } from "@/lib/auth/admin";
 
 // GET /api/v1/admin/users
 // List all users (admin only)

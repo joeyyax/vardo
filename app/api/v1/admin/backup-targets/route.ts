@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { backupTargets, user } from "@/lib/db/schema";
-import { requireSession } from "@/lib/auth/session";
-import { eq, isNull } from "drizzle-orm";
+import { backupTargets } from "@/lib/db/schema";
+import { isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
+import { requireAppAdmin } from "@/lib/auth/admin";
 
 const s3ConfigSchema = z.object({
   bucket: z.string().min(1),
@@ -50,20 +50,6 @@ const createTargetSchema = z.discriminatedUnion("type", [
     isDefault: z.boolean().default(false),
   }),
 ]);
-
-async function requireAppAdmin() {
-  const session = await requireSession();
-  const dbUser = await db.query.user.findFirst({
-    where: eq(user.id, session.user.id),
-    columns: { isAppAdmin: true },
-  });
-
-  if (!dbUser?.isAppAdmin) {
-    throw new Error("Forbidden");
-  }
-
-  return session;
-}
 
 // GET /api/v1/admin/backup-targets — list app-level targets
 export async function GET() {

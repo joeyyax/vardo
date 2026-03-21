@@ -30,7 +30,7 @@ export type ContainerInspect = {
 // Connection helpers
 // ---------------------------------------------------------------------------
 
-function getConnectionOptions(): { socketPath?: string; host?: string; port?: number } {
+export function getConnectionOptions(): { socketPath?: string; host?: string; port?: number } {
   const dockerHost = process.env.DOCKER_HOST;
   if (dockerHost) {
     // tcp://host:port
