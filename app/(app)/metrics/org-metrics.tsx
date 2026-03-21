@@ -361,6 +361,63 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
         );
       })()}
 
+      {/* Infrastructure overview */}
+      <div className="squircle rounded-lg border bg-card overflow-hidden">
+        <div className="px-4 py-2 border-b">
+          <p className="text-xs text-muted-foreground">Infrastructure Overview</p>
+        </div>
+        <div className="grid grid-cols-3 divide-x">
+          {/* Projects */}
+          <div className="px-4 py-3">
+            <p className="text-xs text-muted-foreground">Projects</p>
+            <p className="text-2xl font-semibold tabular-nums mt-1">{streamProjectCount ?? projectCount ?? 0}</p>
+          </div>
+          {/* Apps by status */}
+          <div className="px-4 py-3">
+            <p className="text-xs text-muted-foreground">Apps</p>
+            <p className="text-2xl font-semibold tabular-nums mt-1">{displayApps.length}</p>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5">
+              {statusCounts.active > 0 && (
+                <span className="inline-flex items-center gap-1 text-[10px] text-status-success">
+                  <span className="size-1.5 rounded-full bg-status-success" />
+                  {statusCounts.active} running
+                </span>
+              )}
+              {statusCounts.error > 0 && (
+                <span className="inline-flex items-center gap-1 text-[10px] text-status-error">
+                  <span className="size-1.5 rounded-full bg-status-error" />
+                  {statusCounts.error} crashed
+                </span>
+              )}
+              {statusCounts.stopped > 0 && (
+                <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+                  <span className="size-1.5 rounded-full bg-status-neutral" />
+                  {statusCounts.stopped} stopped
+                </span>
+              )}
+              {statusCounts.deploying > 0 && (
+                <span className="inline-flex items-center gap-1 text-[10px] text-status-info">
+                  <span className="size-1.5 rounded-full bg-status-info animate-pulse" />
+                  {statusCounts.deploying} deploying
+                </span>
+              )}
+            </div>
+          </div>
+          {/* Containers */}
+          <div className="px-4 py-3">
+            <p className="text-xs text-muted-foreground">Containers</p>
+            <p className="text-2xl font-semibold tabular-nums mt-1">
+              {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : totals.containers}
+            </p>
+            {!loading && totals.containers > 0 && (
+              <p className="text-[10px] text-muted-foreground mt-1.5">
+                {formatBytes(totals.memory)} memory · {totals.cpu.toFixed(1)}% CPU
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* Project list with stats */}
       {displayApps.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
