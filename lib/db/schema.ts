@@ -341,11 +341,16 @@ export const apps = pgTable(
     cpuLimit: real("cpu_limit"), // CPU cores (e.g. 0.5, 1, 2)
     memoryLimit: integer("memory_limit"), // Memory in MB (e.g. 256, 512, 1024)
     envContent: text("env_content"), // Encrypted env file blob (AES-256-GCM)
+    // Compose decomposition: child service records point to parent compose app
+    parentAppId: text("parent_app_id").references(() => apps.id, { onDelete: "cascade" }),
+    composeService: text("compose_service"), // service name from compose YAML
+    containerName: text("container_name"), // computed: {projectName}-{serviceName}-1
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => [
     unique("app_org_name_uniq").on(t.organizationId, t.name),
+    index("app_parent_app_id_idx").on(t.parentAppId),
   ]
 );
 
@@ -929,6 +934,12 @@ export const appsRelations = relations(apps, ({ one, many }) => ({
     fields: [apps.projectId],
     references: [projects.id],
   }),
+  parentApp: one(apps, {
+    fields: [apps.parentAppId],
+    references: [apps.id],
+    relationName: "parentChild",
+  }),
+  childApps: many(apps, { relationName: "parentChild" }),
   deployments: many(deployments),
   envVars: many(envVars),
   domains: many(domains),

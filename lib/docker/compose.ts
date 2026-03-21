@@ -25,6 +25,7 @@ export type ComposeService = {
   volumes?: string[];
   labels?: Record<string, string>;
   networks?: string[];
+  depends_on?: string[];
   deploy?: {
     resources?: {
       limits?: ResourceLimits;
@@ -371,6 +372,14 @@ export function parseCompose(yamlString: string): ComposeFile {
       }
     }
     if (Array.isArray(raw.networks)) svc.networks = raw.networks.map(String);
+    // depends_on: array of strings or object with service keys
+    if (raw.depends_on) {
+      if (Array.isArray(raw.depends_on)) {
+        svc.depends_on = raw.depends_on.map(String);
+      } else if (typeof raw.depends_on === "object") {
+        svc.depends_on = Object.keys(raw.depends_on);
+      }
+    }
     if (
       raw.deploy &&
       typeof raw.deploy === "object" &&
