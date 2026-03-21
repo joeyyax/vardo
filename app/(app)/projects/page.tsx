@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { apps, tags } from "@/lib/db/schema";
 import { getCurrentOrg, getUserOrganizations } from "@/lib/auth/session";
 import { eq, desc, asc, sql } from "drizzle-orm";
-import { FolderPlus, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { PageToolbar } from "@/components/page-toolbar";
 import { Button } from "@/components/ui/button";
 import { OrgSwitcher } from "@/components/layout/org-switcher";
@@ -51,20 +51,12 @@ export default async function ProjectsPage() {
     <div className="space-y-6">
       <PageToolbar
         actions={
-          <div className="flex items-center gap-2">
-            <Button asChild>
-              <Link href="/projects/new">
-                <FolderPlus className="mr-1.5 size-4" />
-                New Project
-              </Link>
-            </Button>
-            <Button variant="outline" asChild>
-              <Link href="/apps/new">
-                <Plus className="mr-1.5 size-4" />
-                New App
-              </Link>
-            </Button>
-          </div>
+          <Button asChild>
+            <Link href="/projects/new">
+              <Plus className="mr-1.5 size-4" />
+              New Project
+            </Link>
+          </Button>
         }
       >
         <div className="flex items-center gap-3">
@@ -80,12 +72,12 @@ export default async function ProjectsPage() {
       {appList.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
           <p className="text-sm text-muted-foreground">
-            No apps deployed yet. Create your first app to get started.
+            No projects yet. Create your first project to get started.
           </p>
           <Button size="sm" asChild>
-            <Link href="/apps/new">
+            <Link href="/projects/new">
               <Plus className="mr-1.5 size-4" />
-              New App
+              New Project
             </Link>
           </Button>
         </div>
