@@ -12,6 +12,7 @@ import {
   jsonb,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
+import type { ConfigSnapshot } from "@/lib/types/deploy-snapshot";
 
 // ---------------------------------------------------------------------------
 // Enums
@@ -379,6 +380,10 @@ export const deployments = pgTable("deployment", {
   triggeredBy: text("triggered_by").references(() => user.id, {
     onDelete: "set null",
   }),
+  // Snapshot fields — captured on successful deploy for rollback
+  envSnapshot: text("env_snapshot"), // Encrypted env blob at deploy time (AES-256-GCM)
+  configSnapshot: jsonb("config_snapshot").$type<ConfigSnapshot>(),
+  rollbackFromId: text("rollback_from_id"), // If this deploy was a rollback, points to source deployment
   startedAt: timestamp("started_at").defaultNow().notNull(),
   finishedAt: timestamp("finished_at"),
 });
