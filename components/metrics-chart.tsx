@@ -32,7 +32,7 @@ const SWATCH_COLORS: Record<string, string> = {
   networkRxRate: CHART_COLORS.networkRx,
   networkTxRate: CHART_COLORS.networkTx,
   memoryLimit: CHART_COLORS.memoryLimit,
-  diskTotal: "oklch(0.65 0.1 30)",
+  diskTotal: CHART_COLORS.disk,
 };
 
 /**

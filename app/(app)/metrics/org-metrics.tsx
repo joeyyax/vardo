@@ -4,11 +4,11 @@ import { useState, useMemo } from "react";
 import Link from "next/link";
 import { Activity, Box, Cpu, HardDrive, MemoryStick, Network, Loader2 } from "lucide-react";
 import { AreaChart } from "@tremor/react";
+import type { CustomTooltipProps } from "@tremor/react";
 import { formatBytes, formatMemLimit, formatTime } from "@/lib/metrics/format";
-import { type TimeRange } from "@/lib/metrics/constants";
+import { CHART_COLORS, type TimeRange } from "@/lib/metrics/constants";
 import { useMetricsStream } from "@/lib/hooks/use-metrics-stream";
 import { Sparkline } from "@/components/app-metrics-card";
-import { CHART_COLORS } from "@/lib/metrics/constants";
 import { TREMOR_METRIC_COLORS, MetricsTooltip } from "@/components/metrics-chart";
 import type { SystemInfo, DiskUsage } from "@/lib/docker/client";
 
@@ -34,6 +34,48 @@ type AppMeta = {
   status: string;
   containers: { cpuPercent: number; memoryUsage: number; memoryLimit: number; networkRx: number; networkTx: number }[];
 };
+
+/* ── Stable tooltip components (outside render to avoid re-creation) ── */
+
+function CpuTooltip(props: CustomTooltipProps) {
+  return (
+    <MetricsTooltip
+      {...props}
+      valueFormatter={(v: number) => `${v.toFixed(1)}%`}
+      categoryLabels={{ cpu: "CPU" }}
+    />
+  );
+}
+
+function MemTooltip(props: CustomTooltipProps) {
+  return (
+    <MetricsTooltip
+      {...props}
+      valueFormatter={(v: number) => formatBytes(v)}
+      categoryLabels={{ memory: "Memory" }}
+    />
+  );
+}
+
+function NetTooltip(props: CustomTooltipProps) {
+  return (
+    <MetricsTooltip
+      {...props}
+      valueFormatter={(v: number) => formatBytes(v)}
+      categoryLabels={{ networkRx: "\u2193 Received", networkTx: "\u2191 Sent" }}
+    />
+  );
+}
+
+function DiskTooltip(props: CustomTooltipProps) {
+  return (
+    <MetricsTooltip
+      {...props}
+      valueFormatter={(v: number) => formatBytes(v)}
+      categoryLabels={{ diskTotal: "Total" }}
+    />
+  );
+}
 
 export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsProps) {
   const [timeRange, setTimeRange] = useState<TimeRange>("1h");
@@ -114,6 +156,19 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
     return counts;
   }, [displayApps]);
 
+  // Memoized chart data
+  const chartPoints = useMemo(
+    () => points.map((p) => ({ ...p, time: formatTime(p.timestamp) })),
+    [points],
+  );
+
+  // Memoized sparkline data arrays
+  const cpuSparkData = useMemo(() => points.map((p) => p.cpu), [points]);
+  const memSparkData = useMemo(() => points.map((p) => p.memory), [points]);
+  const diskSparkData = useMemo(() => points.map((p) => p.diskTotal), [points]);
+  const netRxSparkData = useMemo(() => points.map((p) => p.networkRx), [points]);
+  const netTxSparkData = useMemo(() => points.map((p) => p.networkTx), [points]);
+
   return (
     <div className="space-y-6">
       {/* Period switcher */}
@@ -154,7 +209,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         <div className="squircle relative rounded-lg border bg-card px-4 py-3 overflow-hidden">
           {points.length > 1 && (
-            <Sparkline data={points.map((p) => p.cpu)} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.cpu }} />
+            <Sparkline data={cpuSparkData} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.cpu }} />
           )}
           <div className="relative flex items-center gap-2">
             <Cpu className="size-4 text-muted-foreground shrink-0" />
@@ -166,7 +221,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
         </div>
         <div className="squircle relative rounded-lg border bg-card px-4 py-3 overflow-hidden">
           {points.length > 1 && (
-            <Sparkline data={points.map((p) => p.memory)} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.memory }} />
+            <Sparkline data={memSparkData} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.memory }} />
           )}
           <div className="relative flex items-center gap-2">
             <MemoryStick className="size-4 text-muted-foreground shrink-0" />
@@ -178,7 +233,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
         </div>
         <div className="squircle relative rounded-lg border bg-card px-4 py-3 overflow-hidden">
           {points.length > 1 && (
-            <Sparkline data={points.map((p) => p.diskTotal)} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: "oklch(0.65 0.1 30)" }} />
+            <Sparkline data={diskSparkData} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.disk }} />
           )}
           <div className="relative flex items-center gap-2">
             <HardDrive className="size-4 text-muted-foreground shrink-0" />
@@ -195,8 +250,8 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
         </div>
         <div className="squircle relative rounded-lg border bg-card px-4 py-3 overflow-hidden">
           {points.length > 1 && (<>
-            <Sparkline data={points.map((p) => p.networkRx)} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.networkRx }} />
-            <Sparkline data={points.map((p) => p.networkTx)} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.networkTx }} />
+            <Sparkline data={netRxSparkData} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.networkRx }} />
+            <Sparkline data={netTxSparkData} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.networkTx }} />
           </>)}
           <div className="relative flex items-center gap-2">
             <Network className="size-4 text-muted-foreground shrink-0" />
@@ -249,42 +304,6 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
       </div>
 
       {/* Aggregate charts */}
-      {(() => {
-        const chartPoints = points.map((p) => ({
-          ...p,
-          time: formatTime(p.timestamp),
-        }));
-
-        const CpuTooltip = (props: any) => (
-          <MetricsTooltip
-            {...props}
-            valueFormatter={(v: number) => `${v.toFixed(1)}%`}
-            categoryLabels={{ cpu: "CPU" }}
-          />
-        );
-        const MemTooltip = (props: any) => (
-          <MetricsTooltip
-            {...props}
-            valueFormatter={(v: number) => formatBytes(v)}
-            categoryLabels={{ memory: "Memory" }}
-          />
-        );
-        const NetTooltip = (props: any) => (
-          <MetricsTooltip
-            {...props}
-            valueFormatter={(v: number, cat: string) => formatBytes(v)}
-            categoryLabels={{ networkRx: "\u2193 Received", networkTx: "\u2191 Sent" }}
-          />
-        );
-        const DiskTooltip = (props: any) => (
-          <MetricsTooltip
-            {...props}
-            valueFormatter={(v: number) => formatBytes(v)}
-            categoryLabels={{ diskTotal: "Total" }}
-          />
-        );
-
-        return (
       <div className="grid md:grid-cols-2 gap-4">
           <div className="squircle rounded-lg border bg-card overflow-hidden">
             <div className="flex items-center gap-2 px-4 py-3 border-b">
@@ -367,8 +386,6 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
             </div>
           </div>
       </div>
-        );
-      })()}
 
       {/* Infrastructure overview — half donuts on top, tables below */}
       {(() => {

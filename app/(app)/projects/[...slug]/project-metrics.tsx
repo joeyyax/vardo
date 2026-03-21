@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { AreaChart } from "@tremor/react";
+import type { CustomTooltipProps } from "@tremor/react";
 import { Loader2 } from "lucide-react";
 import { Cpu, MemoryStick, Network } from "lucide-react";
 import { ChartCard } from "@/components/app-status";
@@ -22,6 +23,35 @@ type ProjectMetricsProps = {
   apps: AppInfo[];
 };
 
+function CpuTooltip(props: CustomTooltipProps) {
+  return (
+    <MetricsTooltip
+      {...props}
+      valueFormatter={(v) => `${v.toFixed(2)}%`}
+      categoryLabels={{ cpu: "CPU" }}
+    />
+  );
+}
+
+function MemTooltip(props: CustomTooltipProps) {
+  return (
+    <MetricsTooltip
+      {...props}
+      valueFormatter={(v) => formatBytes(v)}
+      categoryLabels={{ memory: "Memory" }}
+    />
+  );
+}
+
+function NetTooltip(props: CustomTooltipProps) {
+  return (
+    <MetricsTooltip
+      {...props}
+      valueFormatter={(v) => formatBytes(v)}
+      categoryLabels={{ networkRx: "Received", networkTx: "Sent" }}
+    />
+  );
+}
 
 export function ProjectMetrics({ orgId, projectId, apps }: ProjectMetricsProps) {
   const [timeRange, setTimeRange] = useState<TimeRange>("1h");
@@ -32,10 +62,10 @@ export function ProjectMetrics({ orgId, projectId, apps }: ProjectMetricsProps) 
     timeRange,
   });
 
-  const chartPoints = points.map((p) => ({
-    ...p,
-    time: formatTime(p.timestamp),
-  }));
+  const chartPoints = useMemo(
+    () => points.map((p) => ({ ...p, time: formatTime(p.timestamp) })),
+    [points],
+  );
 
   if (loading && points.length === 0) {
     return (
@@ -48,16 +78,16 @@ export function ProjectMetrics({ orgId, projectId, apps }: ProjectMetricsProps) 
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-1">
+      <div className="inline-flex items-center gap-1 rounded-lg bg-muted p-1">
         {TIME_RANGES.map((r) => (
           <button
             key={r.value}
             type="button"
             onClick={() => setTimeRange(r.value)}
-            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
               timeRange === r.value
-                ? "bg-foreground text-background"
-                : "bg-muted text-muted-foreground hover:bg-accent"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
             }`}
           >
             {r.label}
@@ -78,13 +108,7 @@ export function ProjectMetrics({ orgId, projectId, apps }: ProjectMetricsProps) 
           curveType="monotone"
           autoMinValue={false}
           minValue={0}
-          customTooltip={(props) => (
-            <MetricsTooltip
-              {...props}
-              valueFormatter={(v) => `${v.toFixed(2)}%`}
-              categoryLabels={{ cpu: "CPU" }}
-            />
-          )}
+          customTooltip={CpuTooltip}
         />
       </ChartCard>
 
@@ -101,13 +125,7 @@ export function ProjectMetrics({ orgId, projectId, apps }: ProjectMetricsProps) 
           curveType="monotone"
           autoMinValue={false}
           minValue={0}
-          customTooltip={(props) => (
-            <MetricsTooltip
-              {...props}
-              valueFormatter={(v) => formatBytes(v)}
-              categoryLabels={{ memory: "Memory" }}
-            />
-          )}
+          customTooltip={MemTooltip}
         />
       </ChartCard>
 
@@ -124,13 +142,7 @@ export function ProjectMetrics({ orgId, projectId, apps }: ProjectMetricsProps) 
           curveType="monotone"
           autoMinValue={false}
           minValue={0}
-          customTooltip={(props) => (
-            <MetricsTooltip
-              {...props}
-              valueFormatter={(v) => formatBytes(v)}
-              categoryLabels={{ networkRx: "Received", networkTx: "Sent" }}
-            />
-          )}
+          customTooltip={NetTooltip}
         />
       </ChartCard>
     </div>

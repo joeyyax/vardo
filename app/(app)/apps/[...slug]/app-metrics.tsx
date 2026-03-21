@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { AreaChart } from "@tremor/react";
+import type { CustomTooltipProps } from "@tremor/react";
 import { Activity, Container, Cpu, MemoryStick, Network, Loader2 } from "lucide-react";
 import { ChartCard } from "@/components/app-status";
 import { formatBytes, formatMemLimit, formatBytesRate, formatTime } from "@/lib/metrics/format";
@@ -27,6 +28,38 @@ type ChartPoint = {
   networkRxRate: number;
   networkTxRate: number;
 };
+
+/* ── Stable tooltip components (outside render to avoid re-creation) ── */
+
+function CpuTooltip(props: CustomTooltipProps) {
+  return (
+    <MetricsTooltip
+      {...props}
+      valueFormatter={(v) => `${v.toFixed(2)}%`}
+      categoryLabels={{ cpu: "CPU" }}
+    />
+  );
+}
+
+function MemTooltip(props: CustomTooltipProps) {
+  return (
+    <MetricsTooltip
+      {...props}
+      valueFormatter={(v) => formatBytes(v)}
+      categoryLabels={{ memory: "Memory" }}
+    />
+  );
+}
+
+function NetTooltip(props: CustomTooltipProps) {
+  return (
+    <MetricsTooltip
+      {...props}
+      valueFormatter={(v) => formatBytesRate(v)}
+      categoryLabels={{ networkRxRate: "RX", networkTxRate: "TX" }}
+    />
+  );
+}
 
 function ContainerTable({ containers }: { containers: ContainerPoint[] }) {
   return (
@@ -203,13 +236,7 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
           curveType="monotone"
           autoMinValue={false}
           minValue={0}
-          customTooltip={(props) => (
-            <MetricsTooltip
-              {...props}
-              valueFormatter={(v) => `${v.toFixed(2)}%`}
-              categoryLabels={{ cpu: "CPU" }}
-            />
-          )}
+          customTooltip={CpuTooltip}
         />
       </ChartCard>
 
@@ -233,13 +260,7 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
           autoMinValue={false}
           minValue={0}
           maxValue={latestMemoryLimit > 0 ? latestMemoryLimit * 1.1 : undefined}
-          customTooltip={(props) => (
-            <MetricsTooltip
-              {...props}
-              valueFormatter={(v) => formatBytes(v)}
-              categoryLabels={{ memory: "Memory" }}
-            />
-          )}
+          customTooltip={MemTooltip}
         />
       </ChartCard>
 
@@ -257,13 +278,7 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
           curveType="monotone"
           autoMinValue={false}
           minValue={0}
-          customTooltip={(props) => (
-            <MetricsTooltip
-              {...props}
-              valueFormatter={(v) => formatBytesRate(v)}
-              categoryLabels={{ networkRxRate: "RX", networkTxRate: "TX" }}
-            />
-          )}
+          customTooltip={NetTooltip}
         />
       </ChartCard>
 
