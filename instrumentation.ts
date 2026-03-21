@@ -28,6 +28,19 @@ export async function register() {
       console.error("[instrumentation] Failed to start cron scheduler:", err);
     }
 
+    console.log("[instrumentation] Ensuring Host-level backup target...");
+    try {
+      const { ensureHostBackupTarget } = await import("./lib/backup/auto-backup");
+      const target = await ensureHostBackupTarget();
+      if (target) {
+        console.log(`[instrumentation] Host backup target ready: ${target.name} (${target.type})`);
+      } else {
+        console.log("[instrumentation] No backup storage configured (set BACKUP_STORAGE_* env vars or configure in settings)");
+      }
+    } catch (err) {
+      console.error("[instrumentation] Failed to ensure backup target:", err);
+    }
+
     console.log("[instrumentation] Starting backup scheduler...");
     try {
       const { startBackupScheduler } = await import("./lib/backup/scheduler");
