@@ -212,9 +212,10 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
           )}
         </div>
         <div className="squircle relative rounded-lg border bg-card px-4 py-3 overflow-hidden">
-          {points.length > 1 && (
-            <Sparkline data={points.map((p) => p.networkRx + p.networkTx)} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.networkRx }} />
-          )}
+          {points.length > 1 && (<>
+            <Sparkline data={points.map((p) => p.networkRx)} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.networkRx }} />
+            <Sparkline data={points.map((p) => p.networkTx)} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.networkTx }} />
+          </>)}
           <div className="relative flex items-center gap-2">
             <Network className="size-4 text-muted-foreground shrink-0" />
             <p className="text-xs text-muted-foreground">Bandwidth</p>
@@ -222,6 +223,11 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
           <p className="relative text-2xl font-semibold tabular-nums mt-1">
             {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : formatBytes(totals.networkRx + totals.networkTx)}
           </p>
+          {!loading && (
+            <p className="relative text-[10px] text-muted-foreground mt-0.5">
+              ↓ {formatBytes(totals.networkRx)} · ↑ {formatBytes(totals.networkTx)}
+            </p>
+          )}
         </div>
         <div className="squircle rounded-lg border bg-card px-4 py-3">
           <div className="flex items-center gap-2">
