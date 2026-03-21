@@ -3,6 +3,7 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { backupJobs } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
+import { isFeatureEnabled } from "@/lib/config/features";
 import { eq, and } from "drizzle-orm";
 import { runBackup } from "@/lib/backup/engine";
 
@@ -13,6 +14,10 @@ type RouteParams = {
 // POST /api/v1/organizations/[orgId]/backups/[jobId]/run
 export async function POST(_request: NextRequest, { params }: RouteParams) {
   try {
+    if (!isFeatureEnabled("backups")) {
+      return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
+    }
+
     const { orgId, jobId } = await params;
     const { organization } = await requireOrg();
 
