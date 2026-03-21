@@ -891,6 +891,21 @@ export async function runDeployment(
       // Volume detection is best-effort
     }
 
+    // Auto-create backup job for apps with persistent volumes
+    try {
+      const { ensureAutoBackupJob } = await import("@/lib/backup/auto-backup");
+      const backupJobId = await ensureAutoBackupJob({
+        appId: opts.appId,
+        appName: app.name,
+        organizationId: opts.organizationId,
+      });
+      if (backupJobId) {
+        log(`[deploy] Auto-configured daily backup job for persistent volumes`);
+      }
+    } catch {
+      // Auto-backup is best-effort — don't fail the deploy
+    }
+
     // Check volume size limits (reads limits directly from volume records)
     try {
       const limitedVolumes = await db.query.volumes.findMany({
