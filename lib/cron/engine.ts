@@ -5,52 +5,9 @@ import { nanoid } from "nanoid";
 import { exec } from "child_process";
 import { promisify } from "util";
 import { listContainers } from "@/lib/docker/client";
+import { shouldRunNow } from "./parse";
 
 const execAsync = promisify(exec);
-
-/**
- * Parse a cron expression and check if it should run now.
- * Supports: minute hour dayOfMonth month dayOfWeek
- * Supports: *, *\/N, N, N-M, N,M
- */
-function shouldRunNow(schedule: string, now: Date): boolean {
-  const parts = schedule.trim().split(/\s+/);
-  if (parts.length !== 5) return false;
-
-  const checks = [
-    { value: now.getMinutes(), field: parts[0] },
-    { value: now.getHours(), field: parts[1] },
-    { value: now.getDate(), field: parts[2] },
-    { value: now.getMonth() + 1, field: parts[3] },
-    { value: now.getDay(), field: parts[4] },
-  ];
-
-  return checks.every(({ value, field }) => matchesCronField(value, field));
-}
-
-function matchesCronField(value: number, field: string): boolean {
-  if (field === "*") return true;
-
-  // */N — every N
-  if (field.startsWith("*/")) {
-    const interval = parseInt(field.slice(2));
-    return value % interval === 0;
-  }
-
-  // Comma-separated values
-  const parts = field.split(",");
-  for (const part of parts) {
-    // Range N-M
-    if (part.includes("-")) {
-      const [start, end] = part.split("-").map(Number);
-      if (value >= start && value <= end) return true;
-    } else {
-      if (parseInt(part) === value) return true;
-    }
-  }
-
-  return false;
-}
 
 /**
  * Run a command inside an app's container.
