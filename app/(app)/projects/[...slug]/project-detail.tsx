@@ -11,7 +11,18 @@ import {
   ChevronDown,
   Check,
   EllipsisVertical,
+  Globe,
 } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   type AppMetrics,
   type MetricKey,
@@ -58,15 +69,18 @@ type ProjectApp = {
   id: string;
   name: string;
   displayName: string;
+  description: string | null;
   status: string;
   imageName: string | null;
   gitUrl: string | null;
+  gitBranch: string | null;
   deployType: string;
   source: string;
   domains: { domain: string; isPrimary: boolean | null }[];
   deployments: {
     id: string;
     status: string;
+    gitSha: string | null;
     startedAt: Date;
     finishedAt: Date | null;
   }[];
@@ -135,6 +149,56 @@ function AppIcon({ app, color }: { app: ProjectApp; color: string }) {
 // App Card
 // ---------------------------------------------------------------------------
 
+function AppEndpoints({ app }: { app: ProjectApp }) {
+  if (app.domains.length === 0) return null;
+
+  if (app.domains.length === 1) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <a
+            href={`https://${app.domains[0].domain}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="shrink-0 text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+          >
+            <Globe className="size-3.5" />
+          </a>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">{app.domains[0].domain}</TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          onClick={(e) => e.preventDefault()}
+          className="shrink-0 text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+        >
+          <Globe className="size-3.5" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-64 p-2" onClick={(e) => e.stopPropagation()}>
+        {app.domains.map((d) => (
+          <a
+            key={d.domain}
+            href={`https://${d.domain}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-accent transition-colors font-mono text-xs"
+          >
+            {d.domain}
+          </a>
+        ))}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function AppCard({
   app,
   color,
@@ -146,15 +210,20 @@ function AppCard({
   metrics?: AppMetrics;
   history: MetricsHistory;
 }) {
-  const primaryDomain = app.domains.find((d) => d.isPrimary)?.domain ||
-    app.domains[0]?.domain;
   const [hoveredMetric, setHoveredMetric] = useState<MetricKey | null>(null);
   const activeMetric = hoveredMetric || "cpu";
+  const lastDeploy = app.deployments[0];
+  const gitSha = lastDeploy?.gitSha;
+
+  // Source line: repo:branch + sha, or image name
+  const sourceLine = app.source === "git" && app.gitUrl
+    ? `${app.gitUrl.replace("https://github.com/", "").replace(".git", "")}:${app.gitBranch || "main"}`
+    : app.imageName || app.deployType;
 
   return (
     <Link
       href={`/apps/${app.name}`}
-      className="squircle relative flex items-center gap-3 rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50 overflow-hidden cursor-pointer"
+      className="squircle relative flex flex-col rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50 overflow-hidden cursor-pointer"
     >
       {/* Background sparklines — crossfade on hover */}
       {(["cpu", "memory", "disk", "network"] as MetricKey[]).map((key) => {
@@ -171,31 +240,39 @@ function AppCard({
         );
       })}
 
-      <div className="relative flex items-center gap-3 w-full">
+      <div className="relative flex gap-3 w-full">
         <AppIcon app={app} color={color} />
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold truncate">
-              {app.displayName}
-            </h3>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <h3 className="text-sm font-semibold truncate">
+                {app.displayName}
+              </h3>
+              <AppEndpoints app={app} />
+            </div>
             <span
               className={`size-2 shrink-0 rounded-full ${statusDotColor(app.status)}`}
             />
           </div>
-          {primaryDomain && (
+          {app.description ? (
             <p className="text-xs text-muted-foreground truncate mt-0.5">
-              {primaryDomain}
+              {app.description}
             </p>
-          )}
-          {!primaryDomain && (
+          ) : (
             <p className="text-xs text-muted-foreground/40 truncate mt-0.5">
-              {app.imageName ||
-                app.gitUrl
-                  ?.replace("https://github.com/", "")
-                  .replace(".git", "") ||
-                app.deployType}
+              {app.name}
             </p>
           )}
+          <div className="flex items-center gap-2 mt-0.5">
+            <span className="text-xs text-muted-foreground/40 font-mono truncate">
+              {sourceLine}
+            </span>
+            {gitSha && (
+              <code className="text-[10px] font-mono bg-muted px-1 py-0.5 rounded text-muted-foreground shrink-0">
+                {gitSha.slice(0, 7)}
+              </code>
+            )}
+          </div>
           {metrics && <MetricsLine metrics={metrics} onHover={setHoveredMetric} />}
         </div>
       </div>

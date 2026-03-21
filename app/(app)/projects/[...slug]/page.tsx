@@ -30,6 +30,7 @@ export default async function ProjectDetailPage({
             columns: {
               id: true,
               status: true,
+              gitSha: true,
               startedAt: true,
               finishedAt: true,
             },
