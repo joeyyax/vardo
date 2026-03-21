@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
-import { Activity, Cpu, HardDrive, MemoryStick, Network, Loader2 } from "lucide-react";
+import { Activity, Box, Cpu, HardDrive, MemoryStick, Network, Loader2 } from "lucide-react";
 import {
   AreaChart,
   Area,
@@ -15,6 +15,8 @@ import {
 import { formatBytes, formatMemLimit } from "@/lib/metrics/format";
 import { RANGE_MS, chartTooltipStyle, type TimeRange } from "@/lib/metrics/constants";
 import { useMetricsStream } from "@/lib/hooks/use-metrics-stream";
+import { Sparkline } from "@/components/app-metrics-card";
+import { CHART_COLORS } from "@/lib/metrics/constants";
 import type { SystemInfo, DiskUsage } from "@/lib/docker/client";
 
 type AppSummary = {
@@ -165,45 +167,71 @@ export function OrgMetrics({ orgId, apps, adminMode }: OrgMetricsProps) {
         </div>
       )}
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <div className="squircle rounded-lg border bg-card px-4 py-3">
-          <p className="text-xs text-muted-foreground">CPU</p>
-          <p className="text-2xl font-semibold tabular-nums mt-1">
+      {/* Summary cards with sparklines */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+        <div className="squircle relative rounded-lg border bg-card px-4 py-3 overflow-hidden">
+          {points.length > 1 && (
+            <Sparkline data={points.map((p) => p.cpu)} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.cpu }} />
+          )}
+          <div className="relative flex items-center gap-2">
+            <Cpu className="size-4 text-muted-foreground shrink-0" />
+            <p className="text-xs text-muted-foreground">CPU</p>
+          </div>
+          <p className="relative text-2xl font-semibold tabular-nums mt-1">
             {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : `${totals.cpu.toFixed(1)}%`}
           </p>
         </div>
-        <div className="squircle rounded-lg border bg-card px-4 py-3">
-          <p className="text-xs text-muted-foreground">Memory</p>
-          <p className="text-2xl font-semibold tabular-nums mt-1">
+        <div className="squircle relative rounded-lg border bg-card px-4 py-3 overflow-hidden">
+          {points.length > 1 && (
+            <Sparkline data={points.map((p) => p.memory)} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.memory }} />
+          )}
+          <div className="relative flex items-center gap-2">
+            <MemoryStick className="size-4 text-muted-foreground shrink-0" />
+            <p className="text-xs text-muted-foreground">Memory</p>
+          </div>
+          <p className="relative text-2xl font-semibold tabular-nums mt-1">
             {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : formatBytes(totals.memory)}
           </p>
         </div>
-        <div className="squircle rounded-lg border bg-card px-4 py-3">
-          <p className="text-xs text-muted-foreground">Disk</p>
-          <p className="text-2xl font-semibold tabular-nums mt-1">
+        <div className="squircle relative rounded-lg border bg-card px-4 py-3 overflow-hidden">
+          {points.length > 1 && (
+            <Sparkline data={points.map((p) => p.diskTotal)} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: "oklch(0.65 0.1 30)" }} />
+          )}
+          <div className="relative flex items-center gap-2">
+            <HardDrive className="size-4 text-muted-foreground shrink-0" />
+            <p className="text-xs text-muted-foreground">Disk</p>
+          </div>
+          <p className="relative text-2xl font-semibold tabular-nums mt-1">
             {disk ? formatBytes(disk.total) : <Loader2 className="size-5 animate-spin text-muted-foreground" />}
           </p>
           {disk && (
-            <p className="text-[10px] text-muted-foreground mt-0.5">
+            <p className="relative text-[10px] text-muted-foreground mt-0.5">
               {formatBytes(disk.images.totalSize)} images · {formatBytes(disk.volumes.totalSize)} volumes
             </p>
           )}
         </div>
-        <div className="squircle rounded-lg border bg-card px-4 py-3">
-          <p className="text-xs text-muted-foreground">Bandwidth</p>
-          <p className="text-2xl font-semibold tabular-nums mt-1">
+        <div className="squircle relative rounded-lg border bg-card px-4 py-3 overflow-hidden">
+          {points.length > 1 && (
+            <Sparkline data={points.map((p) => p.networkRx + p.networkTx)} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.networkRx }} />
+          )}
+          <div className="relative flex items-center gap-2">
+            <Network className="size-4 text-muted-foreground shrink-0" />
+            <p className="text-xs text-muted-foreground">Bandwidth</p>
+          </div>
+          <p className="relative text-2xl font-semibold tabular-nums mt-1">
             {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : formatBytes(totals.networkRx + totals.networkTx)}
           </p>
         </div>
         <div className="squircle rounded-lg border bg-card px-4 py-3">
-          <p className="text-xs text-muted-foreground">Apps</p>
-          <p className="text-2xl font-semibold tabular-nums mt-1">{activeApps}</p>
-        </div>
-        <div className="squircle rounded-lg border bg-card px-4 py-3">
-          <p className="text-xs text-muted-foreground">Containers</p>
+          <div className="flex items-center gap-2">
+            <Box className="size-4 text-muted-foreground shrink-0" />
+            <p className="text-xs text-muted-foreground">Infrastructure</p>
+          </div>
           <p className="text-2xl font-semibold tabular-nums mt-1">
             {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : totals.containers}
+          </p>
+          <p className="text-[10px] text-muted-foreground mt-0.5">
+            {activeApps} apps · {totals.containers} containers
           </p>
         </div>
       </div>
