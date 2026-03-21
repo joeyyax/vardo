@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { AreaChart } from "@tremor/react";
-import type { CustomTooltipProps } from "@tremor/react";
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+} from "recharts";
 import { Activity, AlertTriangle, Container, Cpu, MemoryStick, Network, Loader2, RefreshCw } from "lucide-react";
 import { ChartCard } from "@/components/app-status";
-import { formatBytes, formatMemLimit, formatBytesRate, formatTime } from "@/lib/metrics/format";
-import { CHART_COLORS, TIME_RANGES, type TimeRange } from "@/lib/metrics/constants";
-import { TREMOR_METRIC_COLORS, MetricsTooltip } from "@/components/metrics-chart";
+import { formatBytes, formatBytesShort, formatMemLimit, formatBytesRate, formatTime } from "@/lib/metrics/format";
+import { CHART_COLORS, chartTickStyle, TIME_RANGES, type TimeRange } from "@/lib/metrics/constants";
+import { MetricsTooltip } from "@/components/metrics-chart";
 import type { ContainerPoint } from "@/lib/metrics/types";
 import { useMetricsStream } from "@/lib/hooks/use-metrics-stream";
 
@@ -31,7 +32,7 @@ type ChartPoint = {
 
 /* ── Stable tooltip components (outside render to avoid re-creation) ── */
 
-function CpuTooltip(props: CustomTooltipProps) {
+function CpuTooltip(props: { active?: boolean; payload?: Array<{ dataKey?: string; name?: string; value?: number; color?: string }>; label?: string }) {
   return (
     <MetricsTooltip
       {...props}
@@ -41,7 +42,7 @@ function CpuTooltip(props: CustomTooltipProps) {
   );
 }
 
-function MemTooltip(props: CustomTooltipProps) {
+function MemTooltip(props: { active?: boolean; payload?: Array<{ dataKey?: string; name?: string; value?: number; color?: string }>; label?: string }) {
   return (
     <MetricsTooltip
       {...props}
@@ -51,7 +52,7 @@ function MemTooltip(props: CustomTooltipProps) {
   );
 }
 
-function NetTooltip(props: CustomTooltipProps) {
+function NetTooltip(props: { active?: boolean; payload?: Array<{ dataKey?: string; name?: string; value?: number; color?: string }>; label?: string }) {
   return (
     <MetricsTooltip
       {...props}
@@ -241,20 +242,21 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
 
       {/* CPU Chart */}
       <ChartCard title="CPU Usage" icon={Cpu}>
-        <AreaChart
-          className="h-[200px]"
-          data={chartData}
-          index="time"
-          categories={["cpu"]}
-          colors={[TREMOR_METRIC_COLORS.cpu]}
-          valueFormatter={(v) => `${v.toFixed(2)}%`}
-          showLegend={false}
-          showAnimation={false}
-          curveType="monotone"
-          autoMinValue={false}
-          minValue={0}
-          customTooltip={CpuTooltip}
-        />
+        <ResponsiveContainer width="100%" height={200}>
+          <AreaChart data={chartData}>
+            <defs>
+              <linearGradient id="appCpuGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={CHART_COLORS.cpu} stopOpacity={0.3} />
+                <stop offset="100%" stopColor={CHART_COLORS.cpu} stopOpacity={0.02} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+            <XAxis dataKey="time" tick={chartTickStyle} />
+            <YAxis width={45} tickFormatter={(v) => `${v}%`} tick={chartTickStyle} />
+            <Tooltip content={<CpuTooltip />} />
+            <Area type="monotone" dataKey="cpu" stroke={CHART_COLORS.cpu} fill="url(#appCpuGradient)" />
+          </AreaChart>
+        </ResponsiveContainer>
       </ChartCard>
 
       {/* Memory Chart */}
@@ -264,41 +266,50 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
             Limit: {formatBytes(latestMemoryLimit, 0)}
           </p>
         )}
-        <AreaChart
-          className="h-[200px]"
-          data={chartData}
-          index="time"
-          categories={["memory"]}
-          colors={[TREMOR_METRIC_COLORS.memory]}
-          valueFormatter={(v) => formatBytes(v)}
-          yAxisWidth={65}
-          showLegend={false}
-          showAnimation={false}
-          curveType="monotone"
-          autoMinValue={false}
-          minValue={0}
-          maxValue={latestMemoryLimit > 0 ? latestMemoryLimit * 1.1 : undefined}
-          customTooltip={MemTooltip}
-        />
+        <ResponsiveContainer width="100%" height={200}>
+          <AreaChart data={chartData}>
+            <defs>
+              <linearGradient id="appMemGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={CHART_COLORS.memory} stopOpacity={0.3} />
+                <stop offset="100%" stopColor={CHART_COLORS.memory} stopOpacity={0.02} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+            <XAxis dataKey="time" tick={chartTickStyle} />
+            <YAxis
+              width={65}
+              tickFormatter={formatBytesShort}
+              tick={chartTickStyle}
+              domain={[0, latestMemoryLimit > 0 ? latestMemoryLimit * 1.1 : "auto"]}
+            />
+            <Tooltip content={<MemTooltip />} />
+            <Area type="monotone" dataKey="memory" stroke={CHART_COLORS.memory} fill="url(#appMemGradient)" />
+          </AreaChart>
+        </ResponsiveContainer>
       </ChartCard>
 
       {/* Network I/O Chart */}
       <ChartCard title="Network I/O" icon={Network}>
-        <AreaChart
-          className="h-[200px]"
-          data={chartData}
-          index="time"
-          categories={["networkRxRate", "networkTxRate"]}
-          colors={[TREMOR_METRIC_COLORS.networkRxRate, TREMOR_METRIC_COLORS.networkTxRate]}
-          valueFormatter={(v) => formatBytesRate(v)}
-          yAxisWidth={75}
-          showLegend={false}
-          showAnimation={false}
-          curveType="monotone"
-          autoMinValue={false}
-          minValue={0}
-          customTooltip={NetTooltip}
-        />
+        <ResponsiveContainer width="100%" height={200}>
+          <AreaChart data={chartData}>
+            <defs>
+              <linearGradient id="appNetRxGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={CHART_COLORS.networkRx} stopOpacity={0.3} />
+                <stop offset="100%" stopColor={CHART_COLORS.networkRx} stopOpacity={0.02} />
+              </linearGradient>
+              <linearGradient id="appNetTxGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={CHART_COLORS.networkTx} stopOpacity={0.3} />
+                <stop offset="100%" stopColor={CHART_COLORS.networkTx} stopOpacity={0.02} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+            <XAxis dataKey="time" tick={chartTickStyle} />
+            <YAxis width={75} tickFormatter={(v) => `${formatBytesShort(v)}/s`} tick={chartTickStyle} />
+            <Tooltip content={<NetTooltip />} />
+            <Area type="monotone" dataKey="networkRxRate" stroke={CHART_COLORS.networkRx} fill="url(#appNetRxGradient)" />
+            <Area type="monotone" dataKey="networkTxRate" stroke={CHART_COLORS.networkTx} fill="url(#appNetTxGradient)" />
+          </AreaChart>
+        </ResponsiveContainer>
       </ChartCard>
 
       {/* Container list */}
