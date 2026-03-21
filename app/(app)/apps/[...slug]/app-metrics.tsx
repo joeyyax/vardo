@@ -254,6 +254,7 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
           categories={["memory"]}
           colors={[TREMOR_METRIC_COLORS.memory]}
           valueFormatter={(v) => formatBytes(v)}
+          yAxisWidth={65}
           showLegend={false}
           showAnimation={false}
           curveType="monotone"
@@ -273,6 +274,7 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
           categories={["networkRxRate", "networkTxRate"]}
           colors={[TREMOR_METRIC_COLORS.networkRxRate, TREMOR_METRIC_COLORS.networkTxRate]}
           valueFormatter={(v) => formatBytesRate(v)}
+          yAxisWidth={75}
           showLegend={false}
           showAnimation={false}
           curveType="monotone"
