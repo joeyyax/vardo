@@ -13,6 +13,7 @@ export type ContainerMetrics = {
   networkTxBytes: number;
   diskUsage: number;
   diskLimit: number;
+  diskWriteBytes: number; // cumulative block I/O writes
   timestamp: number;
 };
 
@@ -28,6 +29,10 @@ type V2StatEntry = {
   };
   has_filesystem: boolean;
   filesystem?: { device: string; usage: number; capacity: number }[];
+  has_diskio: boolean;
+  diskio?: {
+    io_service_bytes?: { device: string; major: number; minor: number; stats: Record<string, number> }[];
+  };
 };
 
 type V2SpecEntry = {
@@ -118,6 +123,14 @@ export async function fetchAllContainerMetrics(): Promise<ContainerMetrics[]> {
       }
     }
 
+    // Disk I/O writes (cumulative)
+    let diskWriteBytes = 0;
+    if (curr.diskio?.io_service_bytes) {
+      for (const dev of curr.diskio.io_service_bytes) {
+        diskWriteBytes += dev.stats?.Write || 0;
+      }
+    }
+
     const containerName = spec.aliases?.[0] || key.split("/").pop() || "";
     const containerId = key.split("/").pop()?.slice(0, 12) || "";
 
@@ -134,6 +147,7 @@ export async function fetchAllContainerMetrics(): Promise<ContainerMetrics[]> {
       networkTxBytes,
       diskUsage,
       diskLimit,
+      diskWriteBytes,
       timestamp: new Date(curr.timestamp).getTime(),
     });
   }

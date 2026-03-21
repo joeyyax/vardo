@@ -107,6 +107,50 @@ export async function storeMetrics(
 }
 
 /**
+ * Store cumulative disk write bytes for a container.
+ */
+export async function storeDiskWrite(
+  projectName: string,
+  containerId: string,
+  containerName: string,
+  timestamp: number,
+  writeBytes: number,
+  organizationId?: string | null,
+) {
+  const key = tsKey(projectName, "diskWrite", containerId);
+  const labels: Record<string, string> = {
+    project: projectName,
+    container: containerId,
+    containerName: containerName,
+    metric: "diskWrite",
+  };
+  if (organizationId) labels.organization = organizationId;
+  await ensureTimeSeries(key, labels);
+  await tsRedis.call("TS.ADD", key, timestamp.toString(), writeBytes.toString());
+}
+
+/**
+ * Query disk write bytes for a specific container over a time range.
+ * Returns raw [timestamp, value] pairs (cumulative counters).
+ */
+export async function queryDiskWriteRange(
+  projectName: string,
+  containerId: string,
+  fromMs: number,
+  toMs: number,
+): Promise<TimeSeriesPoint[]> {
+  const key = tsKey(projectName, "diskWrite", containerId);
+  try {
+    const result = (await tsRedis.call(
+      "TS.RANGE", key, fromMs.toString(), toMs.toString(),
+    )) as [string, string][];
+    return result.map(([ts, val]) => [parseInt(ts), parseFloat(val)]);
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Store system-level disk usage (not per-project).
  */
 export async function storeDiskUsage(
@@ -286,7 +330,7 @@ export type TimeSeriesPoint = [number, number]; // [timestamp, value]
  * Query historical metrics for a project.
  * Returns data points within the given time range.
  */
-type MetricName = "cpu" | "memory" | "memoryLimit" | "networkRx" | "networkTx" | "disk";
+type MetricName = "cpu" | "memory" | "memoryLimit" | "networkRx" | "networkTx" | "disk" | "diskWrite";
 type Aggregation = { type: "avg" | "max" | "min" | "sum"; bucketMs: number };
 
 /**
