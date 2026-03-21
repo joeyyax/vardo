@@ -298,6 +298,34 @@ if [ ! -f "$ENV_FILE" ]; then
     warn "Could not determine server IP — skipping DNS validation"
   fi
 
+  # ── Optional services ─────────────────────────────────────────────────────
+  echo ""
+  log "Optional services (can be changed later in .env.prod)"
+
+  COMPOSE_PROFILES=""
+  FEATURE_METRICS="true"
+  FEATURE_LOGS="true"
+
+  read -p "  Enable container metrics? (requires cAdvisor) [Y/n] " ENABLE_METRICS
+  if [ "$ENABLE_METRICS" = "n" ] || [ "$ENABLE_METRICS" = "N" ]; then
+    FEATURE_METRICS="false"
+  else
+    COMPOSE_PROFILES="metrics"
+  fi
+
+  read -p "  Enable persistent logs? (requires Loki + Promtail) [Y/n] " ENABLE_LOGS
+  if [ "$ENABLE_LOGS" = "n" ] || [ "$ENABLE_LOGS" = "N" ]; then
+    FEATURE_LOGS="false"
+  else
+    if [ -n "$COMPOSE_PROFILES" ]; then
+      COMPOSE_PROFILES="$COMPOSE_PROFILES,logs"
+    else
+      COMPOSE_PROFILES="logs"
+    fi
+  fi
+
+  echo ""
+
   # Generate secrets
   DB_PASSWORD=$(openssl rand -base64 32 | tr -d '/+=' | head -c 32)
   AUTH_SECRET=$(openssl rand -base64 32 | tr -d '/+=' | head -c 48)
@@ -317,6 +345,14 @@ ENCRYPTION_MASTER_KEY=$ENCRYPTION_MASTER_KEY
 GITHUB_WEBHOOK_SECRET=$GITHUB_WEBHOOK_SECRET
 ACME_EMAIL=$ACME_EMAIL
 TRAEFIK_DASHBOARD_AUTH=$TRAEFIK_DASHBOARD_AUTH
+
+# Optional services — controls which Docker Compose profiles are active.
+# Add/remove profiles to enable/disable: logs (Loki + Promtail), metrics (cAdvisor)
+COMPOSE_PROFILES=$COMPOSE_PROFILES
+
+# Feature flags — set to "false" to hide disabled services from the UI
+FEATURE_METRICS=$FEATURE_METRICS
+FEATURE_LOGS=$FEATURE_LOGS
 
 # GitHub App (optional — configure later in Settings)
 GITHUB_APP_ID=
