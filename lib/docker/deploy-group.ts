@@ -208,11 +208,12 @@ export async function deployGroup(
 
   if (!project) throw new Error("Project not found");
 
-  // Load all apps in the project
+  // Load all top-level apps in the project (exclude compose child services)
   const projectApps = await db.query.apps.findMany({
     where: and(
       eq(apps.projectId, opts.projectId),
-      eq(apps.organizationId, opts.organizationId)
+      eq(apps.organizationId, opts.organizationId),
+      isNull(apps.parentAppId),
     ),
   });
 
