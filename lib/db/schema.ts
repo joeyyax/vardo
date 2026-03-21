@@ -40,6 +40,7 @@ export const deploymentStatusEnum = pgEnum("deployment_status", [
   "success",
   "failed",
   "cancelled",
+  "rolled_back",
 ]);
 
 export const deploymentTriggerEnum = pgEnum("deployment_trigger", [
@@ -340,6 +341,8 @@ export const apps = pgTable(
     needsRedeploy: boolean("needs_redeploy").default(false),
     cpuLimit: real("cpu_limit"), // CPU cores (e.g. 0.5, 1, 2)
     memoryLimit: integer("memory_limit"), // Memory in MB (e.g. 256, 512, 1024)
+    autoRollback: boolean("auto_rollback").default(false), // Rollback on crash after deploy
+    rollbackGracePeriod: integer("rollback_grace_period").default(60), // Seconds to monitor after deploy
     envContent: text("env_content"), // Encrypted env file blob (AES-256-GCM)
     // Compose decomposition: child service records point to parent compose app
     parentAppId: text("parent_app_id").references(() => apps.id, { onDelete: "cascade" }),

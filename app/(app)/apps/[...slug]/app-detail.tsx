@@ -83,7 +83,7 @@ import type { FeatureFlags } from "@/lib/config/features";
 
 type Deployment = {
   id: string;
-  status: "queued" | "running" | "success" | "failed" | "cancelled";
+  status: "queued" | "running" | "success" | "failed" | "cancelled" | "rolled_back";
   trigger: "manual" | "webhook" | "api" | "rollback";
   gitSha: string | null;
   gitMessage: string | null;
@@ -146,6 +146,8 @@ type App = {
   exposedPorts: { internal: number; external?: number; description?: string }[] | null;
   cpuLimit: number | null;
   memoryLimit: number | null;
+  autoRollback: boolean | null;
+  rollbackGracePeriod: number | null;
   projectId: string | null;
   cloneStrategy: string | null;
   dependsOn: string[] | null;
@@ -245,6 +247,12 @@ function DeploymentStatusBadge({ status }: { status: Deployment["status"] }) {
       );
     case "cancelled":
       return <Badge variant="secondary">Cancelled</Badge>;
+    case "rolled_back":
+      return (
+        <Badge className="border-transparent bg-status-warning-muted text-status-warning">
+          Rolled Back
+        </Badge>
+      );
     default:
       return <Badge variant="secondary">Queued</Badge>;
   }
@@ -747,6 +755,8 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
   const [editParentId, setEditParentId] = useState<string | null>(app.projectId ?? null);
   const [cpuLimit, setCpuLimit] = useState(app.cpuLimit?.toString() || "");
   const [memoryLimit, setMemoryLimit] = useState(app.memoryLimit?.toString() || "");
+  const [autoRollback, setAutoRollback] = useState(app.autoRollback ?? false);
+  const [rollbackGracePeriod, setRollbackGracePeriod] = useState(app.rollbackGracePeriod?.toString() || "60");
 
   // New environment form state
   const [newEnvOpen, setNewEnvOpen] = useState(false);
@@ -1146,6 +1156,8 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
       body.restartPolicy = restartPolicy;
       body.cpuLimit = cpuLimit ? parseFloat(cpuLimit) : null;
       body.memoryLimit = memoryLimit ? parseInt(memoryLimit, 10) : null;
+      body.autoRollback = autoRollback;
+      body.rollbackGracePeriod = rollbackGracePeriod ? parseInt(rollbackGracePeriod, 10) : 60;
       if (editParentId) {
         body.projectId = editParentId;
       } else {
@@ -2684,6 +2696,31 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                   />
                   <Label htmlFor="edit-auto-deploy">Auto Deploy</Label>
                 </div>
+                <div className="flex items-center gap-3">
+                  <Switch
+                    id="edit-auto-rollback"
+                    checked={autoRollback}
+                    onCheckedChange={setAutoRollback}
+                  />
+                  <Label htmlFor="edit-auto-rollback">Auto Rollback</Label>
+                </div>
+                {autoRollback && (
+                  <div className="grid gap-2 pl-10">
+                    <Label htmlFor="edit-rollback-grace">Grace Period (seconds)</Label>
+                    <Input
+                      id="edit-rollback-grace"
+                      type="number"
+                      step="10"
+                      min="10"
+                      max="600"
+                      value={rollbackGracePeriod}
+                      onChange={(e) => setRollbackGracePeriod(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Monitor for container crashes for this duration after deploy. If a crash is detected, automatically roll back to the previous version.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Project */}
