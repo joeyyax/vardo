@@ -11,6 +11,7 @@ import {
   ChevronDown,
   Check,
   EllipsisVertical,
+  Loader2,
 } from "lucide-react";
 import {
   type AppMetrics as AppMetricsType,
@@ -518,6 +519,11 @@ export function ProjectDetail({
   const [newEnvOpen, setNewEnvOpen] = useState(false);
   const [newEnvName, setNewEnvName] = useState("");
   const [newEnvSaving, setNewEnvSaving] = useState(false);
+  const [deploying, setDeploying] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editDisplayName, setEditDisplayName] = useState(project.displayName);
+  const [editDescription, setEditDescription] = useState(project.description || "");
+  const [editSaving, setEditSaving] = useState(false);
 
   const environments = [
     { name: "production", type: "production" },
@@ -557,6 +563,67 @@ export function ProjectDetail({
     }
   }
 
+  async function handleDeployAll() {
+    if (project.apps.length === 0) return;
+    setDeploying(true);
+    const firstApp = project.apps[0];
+    const groupEnvId = selectedEnv !== "production"
+      ? project.groupEnvironments.find((e) => e.name === selectedEnv)?.id
+      : undefined;
+    try {
+      const body: Record<string, string> = {};
+      if (groupEnvId) body.groupEnvironmentId = groupEnvId;
+      const res = await fetch(
+        `/api/v1/organizations/${orgId}/apps/${firstApp.id}/deploy`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }
+      );
+      if (res.ok) {
+        toast.success("Deploying all apps...");
+        router.refresh();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || "Deploy failed");
+      }
+    } catch {
+      toast.error("Deploy failed");
+    } finally {
+      setDeploying(false);
+    }
+  }
+
+  async function handleEditProject() {
+    setEditSaving(true);
+    try {
+      const res = await fetch(
+        `/api/v1/organizations/${orgId}/projects/${project.id}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            displayName: editDisplayName.trim(),
+            description: editDescription.trim() || null,
+          }),
+        }
+      );
+      if (res.ok) {
+        toast.success("Project updated");
+        setEditOpen(false);
+        router.refresh();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || "Failed to update");
+      }
+    } catch {
+      toast.error("Failed to update");
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
   async function handleCreateEnv() {
     const name = newEnvName.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
     if (!name) return;
@@ -593,9 +660,12 @@ export function ProjectDetail({
         actions={
           <div className="flex items-center gap-2">
             {project.apps.length > 0 && (
-              <Button size="sm" disabled>
-                <Rocket className="mr-1.5 size-4" />
-                Deploy All
+              <Button size="sm" disabled={deploying} onClick={handleDeployAll}>
+                {deploying ? (
+                  <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
+                ) : (
+                  <><Rocket className="mr-1.5 size-4" />Deploy All</>
+                )}
               </Button>
             )}
             <Button size="sm" asChild>
@@ -611,7 +681,7 @@ export function ProjectDetail({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem disabled>
+                <DropdownMenuItem onClick={() => setEditOpen(true)}>
                   <Pencil className="mr-2 size-4" />
                   Edit project
                 </DropdownMenuItem>
@@ -779,6 +849,47 @@ export function ProjectDetail({
             </Button>
             <Button onClick={handleCreateEnv} disabled={newEnvSaving || !newEnvName.trim()}>
               {newEnvSaving ? "Creating..." : "Create Environment"}
+            </Button>
+          </BottomSheetFooter>
+        </BottomSheetContent>
+      </BottomSheet>
+
+      {/* Edit project sheet */}
+      <BottomSheet open={editOpen} onOpenChange={setEditOpen}>
+        <BottomSheetContent>
+          <BottomSheetHeader>
+            <BottomSheetTitle>Edit Project</BottomSheetTitle>
+            <BottomSheetDescription>
+              Update project name and description.
+            </BottomSheetDescription>
+          </BottomSheetHeader>
+          <div className="p-6 space-y-4">
+            <div className="grid gap-2">
+              <Label htmlFor="edit-name">Name</Label>
+              <Input
+                id="edit-name"
+                value={editDisplayName}
+                onChange={(e) => setEditDisplayName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleEditProject(); }}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="edit-desc">Description</Label>
+              <Input
+                id="edit-desc"
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                placeholder="Optional description"
+                onKeyDown={(e) => { if (e.key === "Enter") handleEditProject(); }}
+              />
+            </div>
+          </div>
+          <BottomSheetFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)} disabled={editSaving}>
+              Cancel
+            </Button>
+            <Button onClick={handleEditProject} disabled={editSaving || !editDisplayName.trim()}>
+              {editSaving ? "Saving..." : "Save"}
             </Button>
           </BottomSheetFooter>
         </BottomSheetContent>

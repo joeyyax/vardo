@@ -288,22 +288,12 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       }));
     }
 
-    if (varsToUpsert.length === 0) {
-      return NextResponse.json({ created: 0, updated: 0 });
-    }
-
     const envId = parsed.data.environmentId || null;
 
     // Fetch existing vars for this app (scoped to environment if provided)
-    let existingConditions;
-    if (envId) {
-      existingConditions = and(
-        eq(envVars.appId, appId),
-        eq(envVars.environmentId, envId)
-      );
-    } else {
-      existingConditions = eq(envVars.appId, appId);
-    }
+    const existingConditions = envId
+      ? and(eq(envVars.appId, appId), eq(envVars.environmentId, envId))
+      : eq(envVars.appId, appId);
 
     const existingVars = await db.query.envVars.findMany({
       where: existingConditions,
@@ -311,11 +301,14 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     });
 
     const existingByKey = new Map(existingVars.map((v) => [v.key, v.id]));
+    const incomingKeys = new Set(varsToUpsert.map((v) => v.key));
 
     let created = 0;
     let updated = 0;
+    let deleted = 0;
 
     await db.transaction(async (tx) => {
+      // Upsert incoming vars
       for (const v of varsToUpsert) {
         const existingId = existingByKey.get(v.key);
 
@@ -343,17 +336,27 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
           created++;
         }
       }
+
+      // Delete vars that were removed from the editor
+      for (const [key, id] of existingByKey) {
+        if (!incomingKeys.has(key)) {
+          await tx.delete(envVars).where(
+            and(eq(envVars.id, id), eq(envVars.appId, appId))
+          );
+          deleted++;
+        }
+      }
     });
 
-    // Flag app as needing a redeploy to pick up the new vars
-    if (created > 0 || updated > 0) {
+    // Flag app as needing a redeploy to pick up changes
+    if (created > 0 || updated > 0 || deleted > 0) {
       await db
         .update(apps)
         .set({ needsRedeploy: true, updatedAt: new Date() })
         .where(eq(apps.id, appId));
     }
 
-    return NextResponse.json({ created, updated });
+    return NextResponse.json({ created, updated, deleted });
   } catch (error) {
     return handleRouteError(error, "Error bulk upserting env vars");
   }
