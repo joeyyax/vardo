@@ -323,10 +323,15 @@ function ProjectCard({
     return result;
   }, [projectApps]);
 
+  const router = useRouter();
+
   return (
-    <Link
-      href={`/projects/${project.name}`}
-      className="squircle relative flex flex-col rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50 overflow-hidden"
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => router.push(`/projects/${project.name}`)}
+      onKeyDown={(e) => { if (e.key === "Enter") router.push(`/projects/${project.name}`); }}
+      className="squircle relative flex flex-col rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50 overflow-hidden cursor-pointer"
     >
       {aggregatedCpu.length >= 1 && (
         <Sparkline
@@ -410,7 +415,7 @@ function ProjectCard({
           </Link>
         ))}
       </div>
-    </Link>
+    </div>
   );
 }
 
