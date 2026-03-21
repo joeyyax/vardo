@@ -1,22 +1,15 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
 import { Activity, Box, Cpu, HardDrive, MemoryStick, Network, Loader2 } from "lucide-react";
-import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
-import { formatBytes, formatMemLimit } from "@/lib/metrics/format";
-import { RANGE_MS, chartTooltipStyle, type TimeRange } from "@/lib/metrics/constants";
+import { AreaChart } from "@tremor/react";
+import { formatBytes, formatMemLimit, formatTime } from "@/lib/metrics/format";
+import { type TimeRange } from "@/lib/metrics/constants";
 import { useMetricsStream } from "@/lib/hooks/use-metrics-stream";
 import { Sparkline } from "@/components/app-metrics-card";
 import { CHART_COLORS } from "@/lib/metrics/constants";
+import { TREMOR_METRIC_COLORS, MetricsTooltip } from "@/components/metrics-chart";
 import type { SystemInfo, DiskUsage } from "@/lib/docker/client";
 
 type AppSummary = {
@@ -44,24 +37,6 @@ type AppMeta = {
 
 export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsProps) {
   const [timeRange, setTimeRange] = useState<TimeRange>("1h");
-
-  // Stable chart domain — only updates when timeRange changes, not every tick
-  const [chartDomain, setChartDomain] = useState<[number, number]>(() => {
-    const now = Date.now();
-    return [now - RANGE_MS[timeRange], now];
-  });
-
-  // Update domain when time range changes, and slowly advance the right edge every 30s
-  useEffect(() => {
-    const now = Date.now();
-    setChartDomain([now - RANGE_MS[timeRange], now]);
-
-    const interval = setInterval(() => {
-      const n = Date.now();
-      setChartDomain([n - RANGE_MS[timeRange], n]);
-    }, 30000);
-    return () => clearInterval(interval);
-  }, [timeRange]);
 
   const historyUrl = adminMode
     ? `/api/v1/admin/stats`
@@ -275,17 +250,40 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
 
       {/* Aggregate charts */}
       {(() => {
-        const formatTick = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-        const xAxisProps = {
-          dataKey: "timestamp" as const,
-          type: "number" as const,
-          domain: chartDomain as [number, number],
-          tick: { fontSize: 10, fill: "oklch(0.5 0.005 260)" },
-          tickLine: false,
-          axisLine: false,
-          tickFormatter: formatTick,
-          scale: "time" as const,
-        };
+        const chartPoints = points.map((p) => ({
+          ...p,
+          time: formatTime(p.timestamp),
+        }));
+
+        const CpuTooltip = (props: any) => (
+          <MetricsTooltip
+            {...props}
+            valueFormatter={(v: number) => `${v.toFixed(1)}%`}
+            categoryLabels={{ cpu: "CPU" }}
+          />
+        );
+        const MemTooltip = (props: any) => (
+          <MetricsTooltip
+            {...props}
+            valueFormatter={(v: number) => formatBytes(v)}
+            categoryLabels={{ memory: "Memory" }}
+          />
+        );
+        const NetTooltip = (props: any) => (
+          <MetricsTooltip
+            {...props}
+            valueFormatter={(v: number, cat: string) => formatBytes(v)}
+            categoryLabels={{ networkRx: "\u2193 Received", networkTx: "\u2191 Sent" }}
+          />
+        );
+        const DiskTooltip = (props: any) => (
+          <MetricsTooltip
+            {...props}
+            valueFormatter={(v: number) => formatBytes(v)}
+            categoryLabels={{ diskTotal: "Total" }}
+          />
+        );
+
         return (
       <div className="grid md:grid-cols-2 gap-4">
           <div className="squircle rounded-lg border bg-card overflow-hidden">
@@ -294,15 +292,18 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
               <h3 className="text-sm font-medium">CPU</h3>
             </div>
             <div className="p-4">
-              <ResponsiveContainer width="100%" height={180}>
-                <AreaChart data={points}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.005 260 / 40%)" />
-                  <XAxis {...xAxisProps} />
-                  <YAxis tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} />
-                  <Tooltip {...chartTooltipStyle} formatter={(v: number) => [`${v.toFixed(1)}%`, "CPU"]} labelFormatter={(ts: number) => new Date(ts).toLocaleTimeString()} />
-                  <Area type="monotone" dataKey="cpu" stroke="oklch(0.7 0.12 240)" fill="oklch(0.7 0.12 240 / 15%)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
-                </AreaChart>
-              </ResponsiveContainer>
+              <AreaChart
+                className="h-[180px]"
+                data={chartPoints}
+                index="time"
+                categories={["cpu"]}
+                colors={[TREMOR_METRIC_COLORS.cpu]}
+                valueFormatter={(v) => `${v.toFixed(1)}%`}
+                showLegend={false}
+                showAnimation={false}
+                curveType="monotone"
+                customTooltip={CpuTooltip}
+              />
             </div>
           </div>
           <div className="squircle rounded-lg border bg-card overflow-hidden">
@@ -311,15 +312,18 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
               <h3 className="text-sm font-medium">Memory</h3>
             </div>
             <div className="p-4">
-              <ResponsiveContainer width="100%" height={180}>
-                <AreaChart data={points}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.005 260 / 40%)" />
-                  <XAxis {...xAxisProps} />
-                  <YAxis tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} tickFormatter={(v) => formatBytes(v)} />
-                  <Tooltip {...chartTooltipStyle} formatter={(v: number) => [formatBytes(v), "Memory"]} labelFormatter={(ts: number) => new Date(ts).toLocaleTimeString()} />
-                  <Area type="monotone" dataKey="memory" stroke="oklch(0.7 0.12 155)" fill="oklch(0.7 0.12 155 / 15%)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
-                </AreaChart>
-              </ResponsiveContainer>
+              <AreaChart
+                className="h-[180px]"
+                data={chartPoints}
+                index="time"
+                categories={["memory"]}
+                colors={[TREMOR_METRIC_COLORS.memory]}
+                valueFormatter={(v) => formatBytes(v)}
+                showLegend={false}
+                showAnimation={false}
+                curveType="monotone"
+                customTooltip={MemTooltip}
+              />
             </div>
           </div>
           <div className="squircle rounded-lg border bg-card overflow-hidden">
@@ -328,16 +332,18 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
               <h3 className="text-sm font-medium">Network</h3>
             </div>
             <div className="p-4">
-              <ResponsiveContainer width="100%" height={180}>
-                <AreaChart data={points}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.005 260 / 40%)" />
-                  <XAxis {...xAxisProps} />
-                  <YAxis tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} tickFormatter={(v) => formatBytes(v)} />
-                  <Tooltip {...chartTooltipStyle} formatter={(v: number, name: string) => [formatBytes(v), name === "networkRx" ? "↓ Received" : "↑ Sent"]} labelFormatter={(ts: number) => new Date(ts).toLocaleTimeString()} />
-                  <Area type="monotone" dataKey="networkRx" stroke="oklch(0.7 0.12 240)" fill="oklch(0.7 0.12 240 / 10%)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
-                  <Area type="monotone" dataKey="networkTx" stroke="oklch(0.65 0.1 30)" fill="oklch(0.65 0.1 30 / 10%)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
-                </AreaChart>
-              </ResponsiveContainer>
+              <AreaChart
+                className="h-[180px]"
+                data={chartPoints}
+                index="time"
+                categories={["networkRx", "networkTx"]}
+                colors={[TREMOR_METRIC_COLORS.networkRx, TREMOR_METRIC_COLORS.networkTx]}
+                valueFormatter={(v) => formatBytes(v)}
+                showLegend={false}
+                showAnimation={false}
+                curveType="monotone"
+                customTooltip={NetTooltip}
+              />
             </div>
           </div>
           <div className="squircle rounded-lg border bg-card overflow-hidden">
@@ -346,15 +352,18 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
               <h3 className="text-sm font-medium">Disk Usage</h3>
             </div>
             <div className="p-4">
-              <ResponsiveContainer width="100%" height={180}>
-                <AreaChart data={points}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.005 260 / 40%)" />
-                  <XAxis {...xAxisProps} />
-                  <YAxis tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} tickFormatter={(v) => formatBytes(v)} />
-                  <Tooltip {...chartTooltipStyle} formatter={(v: number) => [formatBytes(v), "Total"]} labelFormatter={(ts: number) => new Date(ts).toLocaleTimeString()} />
-                  <Area type="monotone" dataKey="diskTotal" stroke="oklch(0.65 0.1 30)" fill="oklch(0.65 0.1 30 / 15%)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
-                </AreaChart>
-              </ResponsiveContainer>
+              <AreaChart
+                className="h-[180px]"
+                data={chartPoints}
+                index="time"
+                categories={["diskTotal"]}
+                colors={[TREMOR_METRIC_COLORS.diskTotal]}
+                valueFormatter={(v) => formatBytes(v)}
+                showLegend={false}
+                showAnimation={false}
+                curveType="monotone"
+                customTooltip={DiskTooltip}
+              />
             </div>
           </div>
       </div>
