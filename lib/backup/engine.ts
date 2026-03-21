@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import {
   backupJobs,
   backups,
+  volumes,
 } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
@@ -134,14 +135,19 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
   for (const bja of job.backupJobApps) {
     const app = bja.app;
     const orgSlug = app.organization.slug;
-    const volumes = app.persistentVolumes ?? [];
 
-    if (volumes.length === 0) {
+    // Query persistent volumes from the volumes table
+    const appVolumes = await db.query.volumes.findMany({
+      where: eq(volumes.appId, app.id),
+    });
+    const persistentVols = appVolumes.filter((v) => v.persistent);
+
+    if (persistentVols.length === 0) {
       // No persistent volumes declared, nothing to back up
       continue;
     }
 
-    for (const vol of volumes) {
+    for (const vol of persistentVols) {
       const backupId = nanoid();
       const startedAt = new Date();
       const logLines: string[] = [];

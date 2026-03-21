@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { apps } from "@/lib/db/schema";
+import { apps, volumes } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { listContainers, inspectContainer } from "@/lib/docker/client";
 import { z } from "zod";
+import { nanoid } from "nanoid";
 import { exec } from "child_process";
 import { promisify } from "util";
 
@@ -16,6 +17,10 @@ const volumeSchema = z.object({
   mountPath: z.string().min(1)
     .refine((p) => p.startsWith("/"), "Mount path must be absolute")
     .refine((p) => !p.includes(".."), "Mount path must not contain '..'"),
+  persistent: z.boolean().default(true),
+  description: z.string().optional(),
+  maxSizeBytes: z.number().int().positive().nullable().optional(),
+  warnAtPercent: z.number().int().min(1).max(100).optional(),
 });
 
 type RouteParams = {
@@ -23,15 +28,20 @@ type RouteParams = {
 };
 
 type VolumeInfo = {
+  id: string | null;
   name: string;
   mountPath: string;
   type: "named" | "anonymous" | "bind";
   persistent: boolean;
+  shared: boolean;
+  description: string | null;
+  maxSizeBytes: number | null;
+  warnAtPercent: number | null;
   source: string;
   sizeBytes: number | null;
 };
 
-// GET — list all volumes for this app (from Docker + saved config)
+// GET — list all volumes for this app (from Docker + volumes table)
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
@@ -42,12 +52,18 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     const app = await db.query.apps.findFirst({
       where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
-      columns: { id: true, name: true, persistentVolumes: true },
+      columns: { id: true, name: true },
     });
 
     if (!app) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+
+    // Load saved volumes from the volumes table
+    const savedVolumes = await db.query.volumes.findMany({
+      where: eq(volumes.appId, appId),
+    });
+    const savedByName = new Map(savedVolumes.map((v) => [v.name, v]));
 
     // Get volumes from running containers
     const dockerVolumes: VolumeInfo[] = [];
@@ -57,11 +73,18 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         try {
           const info = await inspectContainer(container.id);
           for (const mount of info.mounts) {
+            const name = mount.type === "volume" ? mount.source.split("/").pop() || mount.source : mount.source;
+            const saved = savedByName.get(name);
             dockerVolumes.push({
-              name: mount.type === "volume" ? mount.source.split("/").pop() || mount.source : mount.source,
+              id: saved?.id ?? null,
+              name,
               mountPath: mount.destination,
               type: mount.type === "volume" ? "named" : "bind",
-              persistent: false,
+              persistent: saved?.persistent ?? false,
+              shared: saved?.shared ?? false,
+              description: saved?.description ?? null,
+              maxSizeBytes: saved?.maxSizeBytes ?? null,
+              warnAtPercent: saved?.warnAtPercent ?? null,
               source: mount.source,
               sizeBytes: null,
             });
@@ -97,30 +120,33 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
               dockerVolumes[measurable[i].idx].sizeBytes = bytes;
             }
           }
-          // If rejected (timeout or error), sizeBytes stays null
         }
       }
     } catch { /* Docker not available */ }
 
-    // Merge with saved persistent volume config
-    const savedVolumes = (app.persistentVolumes as { name: string; mountPath: string }[] | null) || [];
-    const persistentNames = new Set(savedVolumes.map((v) => v.name));
-
     // Mark Docker volumes as persistent if they match saved config
+    const dockerNames = new Set(dockerVolumes.map((v) => v.name));
     for (const vol of dockerVolumes) {
-      if (persistentNames.has(vol.name)) {
-        vol.persistent = true;
+      const saved = savedByName.get(vol.name);
+      if (saved) {
+        vol.persistent = saved.persistent;
+        vol.id = saved.id;
       }
     }
 
     // Add saved volumes that aren't running (may not be deployed yet)
     for (const saved of savedVolumes) {
-      if (!dockerVolumes.find((v) => v.name === saved.name)) {
+      if (!dockerNames.has(saved.name)) {
         dockerVolumes.push({
+          id: saved.id,
           name: saved.name,
           mountPath: saved.mountPath,
           type: "named",
-          persistent: true,
+          persistent: saved.persistent,
+          shared: saved.shared,
+          description: saved.description,
+          maxSizeBytes: saved.maxSizeBytes,
+          warnAtPercent: saved.warnAtPercent,
           source: saved.name,
           sizeBytes: null,
         });
@@ -133,7 +159,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
   }
 }
 
-// PUT — update persistent volumes config
+// PUT — sync volumes config (replaces all volumes for this app)
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
@@ -147,17 +173,67 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
     }
-    const volumes = parsed.data;
+    const incoming = parsed.data;
 
-    const [updated] = await db
-      .update(apps)
-      .set({ persistentVolumes: volumes, updatedAt: new Date() })
-      .where(and(eq(apps.id, appId), eq(apps.organizationId, orgId)))
-      .returning({ id: apps.id });
-
-    if (!updated) {
+    // Verify app exists
+    const app = await db.query.apps.findFirst({
+      where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
+      columns: { id: true },
+    });
+    if (!app) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+
+    // Load existing volumes
+    const existing = await db.query.volumes.findMany({
+      where: eq(volumes.appId, appId),
+    });
+    const existingByName = new Map(existing.map((v) => [v.name, v]));
+    const incomingNames = new Set(incoming.map((v) => v.name));
+
+    // Delete volumes not in the incoming list
+    for (const vol of existing) {
+      if (!incomingNames.has(vol.name)) {
+        await db.delete(volumes).where(eq(volumes.id, vol.id));
+      }
+    }
+
+    // Upsert incoming volumes
+    for (const vol of incoming) {
+      const prev = existingByName.get(vol.name);
+      if (prev) {
+        await db.update(volumes)
+          .set({
+            mountPath: vol.mountPath,
+            persistent: vol.persistent,
+            description: vol.description ?? prev.description,
+            maxSizeBytes: vol.maxSizeBytes !== undefined ? vol.maxSizeBytes : prev.maxSizeBytes,
+            warnAtPercent: vol.warnAtPercent ?? prev.warnAtPercent,
+            updatedAt: new Date(),
+          })
+          .where(eq(volumes.id, prev.id));
+      } else {
+        await db.insert(volumes).values({
+          id: nanoid(),
+          appId,
+          organizationId: orgId,
+          name: vol.name,
+          mountPath: vol.mountPath,
+          persistent: vol.persistent,
+          description: vol.description,
+          maxSizeBytes: vol.maxSizeBytes ?? null,
+          warnAtPercent: vol.warnAtPercent ?? 80,
+        });
+      }
+    }
+
+    // Keep legacy JSONB in sync during migration period
+    const persistentList = incoming
+      .filter((v) => v.persistent)
+      .map((v) => ({ name: v.name, mountPath: v.mountPath }));
+    await db.update(apps)
+      .set({ persistentVolumes: persistentList, updatedAt: new Date() })
+      .where(eq(apps.id, appId));
 
     return NextResponse.json({ success: true });
   } catch (error) {
