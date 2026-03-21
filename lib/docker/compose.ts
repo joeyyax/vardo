@@ -10,6 +10,11 @@
 // Types
 // ---------------------------------------------------------------------------
 
+export type ResourceLimits = {
+  cpus?: string;
+  memory?: string;
+};
+
 export type ComposeService = {
   name: string;
   image?: string;
@@ -20,6 +25,11 @@ export type ComposeService = {
   volumes?: string[];
   labels?: Record<string, string>;
   networks?: string[];
+  deploy?: {
+    resources?: {
+      limits?: ResourceLimits;
+    };
+  };
 };
 
 export type ComposeFile = {
@@ -195,6 +205,25 @@ export function injectNetwork(
 }
 
 // ---------------------------------------------------------------------------
+// Resource limit injection
+// ---------------------------------------------------------------------------
+
+export function injectResourceLimits(
+  compose: ComposeFile,
+  opts: { cpuLimit?: number | null; memoryLimit?: number | null },
+): ComposeFile {
+  if (!opts.cpuLimit && !opts.memoryLimit) return compose;
+  const limits: ResourceLimits = {};
+  if (opts.cpuLimit) limits.cpus = String(opts.cpuLimit);
+  if (opts.memoryLimit) limits.memory = `${opts.memoryLimit}M`;
+  const updatedServices: Record<string, ComposeService> = {};
+  for (const [key, svc] of Object.entries(compose.services)) {
+    updatedServices[key] = { ...svc, deploy: { ...svc.deploy, resources: { ...svc.deploy?.resources, limits: { ...svc.deploy?.resources?.limits, ...limits } } } };
+  }
+  return { ...compose, services: updatedServices };
+}
+
+// ---------------------------------------------------------------------------
 // Port detection
 // ---------------------------------------------------------------------------
 
@@ -342,6 +371,17 @@ export function parseCompose(yamlString: string): ComposeFile {
       }
     }
     if (Array.isArray(raw.networks)) svc.networks = raw.networks.map(String);
+    if (
+      raw.deploy &&
+      typeof raw.deploy === "object" &&
+      !Array.isArray(raw.deploy) &&
+      (
+        !("resources" in raw.deploy) ||
+        (typeof raw.deploy.resources === "object" && raw.deploy.resources !== null)
+      )
+    ) {
+      svc.deploy = raw.deploy as ComposeService["deploy"];
+    }
 
     services[name] = svc;
   }

@@ -5,6 +5,7 @@ import {
   integer,
   pgEnum,
   pgTable,
+  real,
   text,
   timestamp,
   unique,
@@ -328,6 +329,8 @@ export const apps = pgTable(
     templateVersion: text("template_version"),
     status: appStatusEnum("status").notNull().default("stopped"),
     needsRedeploy: boolean("needs_redeploy").default(false),
+    cpuLimit: real("cpu_limit"), // CPU cores (e.g. 0.5, 1, 2)
+    memoryLimit: integer("memory_limit"), // Memory in MB (e.g. 256, 512, 1024)
     envContent: text("env_content"), // Encrypted env file blob (AES-256-GCM)
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),

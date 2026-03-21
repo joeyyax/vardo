@@ -16,6 +16,8 @@ export type HostConfig = {
     autoDeploy?: boolean;
     branch?: string;
     restartPolicy?: string;
+    cpuLimit?: number;
+    memoryLimit?: number;
   };
   envVars?: { key: string; value: string }[];
   volumes?: { name: string; mountPath: string }[];
@@ -50,6 +52,8 @@ export function applyHostConfig(config: HostConfig): {
   autoDeploy?: boolean;
   rootDirectory?: string;
   restartPolicy?: string;
+  cpuLimit?: number;
+  memoryLimit?: number;
   envVars?: { key: string; value: string }[];
   persistentVolumes?: { name: string; mountPath: string }[];
 } {
@@ -59,6 +63,8 @@ export function applyHostConfig(config: HostConfig): {
   if (config.project?.rootDirectory) result.rootDirectory = config.project.rootDirectory;
   if (config.deploy?.autoDeploy !== undefined) result.autoDeploy = config.deploy.autoDeploy;
   if (config.deploy?.restartPolicy) result.restartPolicy = config.deploy.restartPolicy;
+  if (config.deploy?.cpuLimit) result.cpuLimit = config.deploy.cpuLimit;
+  if (config.deploy?.memoryLimit) result.memoryLimit = config.deploy.memoryLimit;
   if (config.envVars?.length) result.envVars = config.envVars;
   if (config.volumes?.length) {
     result.persistentVolumes = config.volumes.map((v) => ({

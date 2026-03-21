@@ -14,6 +14,7 @@ import {
   generateComposeForImage,
   injectTraefikLabels,
   injectNetwork,
+  injectResourceLimits,
   parseCompose,
   composeToYaml,
   type ComposeFile,
@@ -469,6 +470,10 @@ export async function runDeployment(
       }
     } else {
       throw new Error("No image, git repo, or compose content configured");
+    }
+
+    if (app.cpuLimit || app.memoryLimit) {
+      compose = injectResourceLimits(compose, { cpuLimit: app.cpuLimit, memoryLimit: app.memoryLimit });
     }
 
     // Step 2: Detect container port

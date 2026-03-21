@@ -32,6 +32,8 @@ export type Template = {
   defaultCronJobs:
     | { name: string; schedule: string; command: string }[]
     | null;
+  defaultCpuLimit: number | null;
+  defaultMemoryLimit: number | null;
   isBuiltIn: boolean;
 };
 
@@ -74,6 +76,8 @@ export async function loadTemplates(): Promise<Template[]> {
         defaultVolumes: (raw.volumes as Template["defaultVolumes"]) ?? null,
         defaultConnectionInfo: (raw.connectionInfo as Template["defaultConnectionInfo"]) ?? null,
         defaultCronJobs: (raw.cronJobs as Template["defaultCronJobs"]) ?? null,
+        defaultCpuLimit: (raw.cpuLimit as number) ?? null,
+        defaultMemoryLimit: (raw.memoryLimit as number) ?? null,
         isBuiltIn: true,
       });
     } catch (err) {
