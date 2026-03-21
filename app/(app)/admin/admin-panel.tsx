@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import Link from "next/link";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Building2, Check, X } from "lucide-react";
 import type { FeatureFlagInfo } from "@/lib/config/features";
 import type { SystemHealth } from "@/lib/config/health";
@@ -77,7 +78,21 @@ export function AdminPanel({
   initialAppStats,
   initialDisk,
 }: AdminPanelProps) {
-  const [activeTab, setActiveTab] = useState("overview");
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const activeTab = searchParams.get("tab") || "overview";
+
+  const setActiveTab = useCallback((tab: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (tab === "overview") {
+      params.delete("tab");
+    } else {
+      params.set("tab", tab);
+    }
+    const query = params.toString();
+    router.replace(`${pathname}${query ? `?${query}` : ""}`, { scroll: false });
+  }, [searchParams, router, pathname]);
 
   const statCards = [
     { label: "Users", value: stats.userCount, sparklineKey: "users", color: "oklch(0.65 0.18 290)" },
