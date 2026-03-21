@@ -8,6 +8,7 @@ source = "direct"
 deployType = "image"
 imageName = "mongo:7"
 defaultPort = 27017
+diskWriteAlertThreshold = 5368709120  # 5 GB/hour (databases write more)
 
 [[envVars]]
 key = "MONGO_INITDB_ROOT_USERNAME"

@@ -52,6 +52,7 @@ const createAppSchema = z
     })).optional(),
     cpuLimit: z.number().positive().max(64).nullable().optional(),
     memoryLimit: z.number().int().min(64).max(65536).nullable().optional(),
+    diskWriteAlertThreshold: z.number().int().min(0).nullable().optional(),
     projectId: z.string().optional(),
   })
   .refine(
@@ -193,6 +194,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         connectionInfo: data.connectionInfo,
         cpuLimit: data.cpuLimit ?? null,
         memoryLimit: data.memoryLimit ?? null,
+        diskWriteAlertThreshold: data.diskWriteAlertThreshold ?? null,
       })
       .returning();
 
