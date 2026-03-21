@@ -28,8 +28,9 @@ export async function GET(request: NextRequest) {
     }
 
     const allApps = await db.query.apps.findMany({
-      columns: { id: true, name: true, displayName: true, status: true, organizationId: true },
+      columns: { id: true, name: true, displayName: true, status: true, organizationId: true, projectId: true },
     });
+    const projectCount = new Set(allApps.map((a) => a.projectId).filter(Boolean)).size;
 
     return createSSEResponse(request, async (sendEvent) => {
       let tickCount = 0;
@@ -70,6 +71,7 @@ export async function GET(request: NextRequest) {
 
         const payload: Record<string, unknown> = {
           ...point,
+          projectCount,
           apps: allApps.map((app) => ({
             id: app.id,
             name: app.name,

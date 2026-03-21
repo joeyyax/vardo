@@ -32,8 +32,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const orgApps = await db.query.apps.findMany({
       where: eq(apps.organizationId, orgId),
-      columns: { id: true, name: true, displayName: true, status: true },
+      columns: { id: true, name: true, displayName: true, status: true, projectId: true },
     });
+    const projectCount = new Set(orgApps.map((a) => a.projectId).filter(Boolean)).size;
 
     if (!isCollectorRunning()) {
       startCollector();
@@ -100,6 +101,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
         sendEvent("point", {
           ...point,
+          projectCount,
           apps: orgApps.map((p) => ({
             ...p,
             diskUsage: cachedAppDisk[p.id] || 0,

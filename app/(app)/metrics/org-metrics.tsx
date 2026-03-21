@@ -79,6 +79,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
   const disk = meta?.disk as DiskUsage | null | undefined;
   const system = meta?.system as SystemInfo | null | undefined;
   const metaApps = meta?.apps as AppMeta[] | undefined;
+  const streamProjectCount = meta?.projectCount as number | undefined;
 
   // Derive display apps from SSE meta when available, fall back to props
   const displayApps = useMemo(() => {
@@ -235,9 +236,9 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
             <p className="text-xs text-muted-foreground">Running</p>
           </div>
           <div className="flex items-baseline gap-3 mt-1">
-            {projectCount !== undefined && (
+            {(streamProjectCount ?? projectCount) !== undefined && (
               <div>
-                <p className="text-2xl font-semibold tabular-nums">{projectCount}</p>
+                <p className="text-2xl font-semibold tabular-nums">{streamProjectCount ?? projectCount}</p>
                 <p className="text-[10px] text-muted-foreground">projects</p>
               </div>
             )}

@@ -13,6 +13,8 @@ type MetricsMeta = {
   disk: unknown;
   system: unknown;
   apps: unknown[];
+  projectCount?: number;
+  [key: string]: unknown;
 };
 
 type UseMetricsStreamOptions = {
@@ -119,11 +121,12 @@ export function useMetricsStream(
         }
 
         // Auxiliary metadata — merge incrementally
-        if (data.disk || data.system || data.apps) {
+        if (data.disk || data.system || data.apps || data.projectCount !== undefined) {
           setMeta((prev) => ({
             disk: data.disk ?? prev?.disk ?? null,
             system: data.system ?? prev?.system ?? null,
             apps: data.apps ?? prev?.apps ?? [],
+            projectCount: data.projectCount ?? prev?.projectCount,
           }));
         }
 
