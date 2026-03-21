@@ -17,7 +17,8 @@ export type FeatureFlag =
   | "terminal"
   | "environments"
   | "backups"
-  | "cron";
+  | "cron"
+  | "passwordAuth";
 
 type FlagConfig = {
   env: string;
@@ -60,6 +61,12 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
     env: "FEATURE_CRON",
     label: "Cron Jobs",
     description: "Scheduled command execution inside containers",
+  },
+  passwordAuth: {
+    env: "FEATURE_PASSWORD_AUTH",
+    label: "Password Auth",
+    description:
+      "Email/password authentication for sign-in and onboarding",
   },
 };
 
