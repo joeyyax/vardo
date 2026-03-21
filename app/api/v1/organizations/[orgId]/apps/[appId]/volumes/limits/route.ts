@@ -11,8 +11,15 @@ type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
 };
 
+const MIN_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
+const MAX_SIZE_BYTES = 100 * 1024 * 1024 * 1024; // 100 GB
+
 const volumeLimitSchema = z.object({
-  maxSizeBytes: z.number().int().positive("Max size must be a positive number"),
+  maxSizeBytes: z
+    .number()
+    .int()
+    .min(MIN_SIZE_BYTES, `Minimum size is 10 MB`)
+    .max(MAX_SIZE_BYTES, `Maximum size is 100 GB`),
   warnAtPercent: z.number().int().min(1).max(100).default(80),
 });
 

@@ -6,6 +6,10 @@ import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { listContainers, inspectContainer } from "@/lib/docker/client";
 import { z } from "zod";
+import { exec } from "child_process";
+import { promisify } from "util";
+
+const execAsync = promisify(exec);
 
 const volumeSchema = z.object({
   name: z.string().min(1).regex(/^[a-zA-Z0-9._-]+$/, "Invalid volume name"),
@@ -24,6 +28,7 @@ type VolumeInfo = {
   type: "named" | "anonymous" | "bind";
   persistent: boolean;
   source: string;
+  sizeBytes: number | null;
 };
 
 // GET — list all volumes for this app (from Docker + saved config)
@@ -58,9 +63,42 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
               type: mount.type === "volume" ? "named" : "bind",
               persistent: false,
               source: mount.source,
+              sizeBytes: null,
             });
           }
         } catch { /* skip */ }
+      }
+
+      // Measure all volume sizes in parallel (5s timeout per volume)
+      const measurable = dockerVolumes
+        .map((vol, idx) => ({ vol, idx }))
+        .filter(({ vol }) => {
+          if (vol.type !== "named") return false;
+          const volName = vol.source.split("/").pop() || "";
+          return /^[a-zA-Z0-9._-]+$/.test(volName);
+        });
+
+      if (measurable.length > 0) {
+        const results = await Promise.allSettled(
+          measurable.map(({ vol }) => {
+            const volName = vol.source.split("/").pop() || "";
+            return execAsync(
+              `docker run --rm -v "${volName}:/data" alpine du -sb /data`,
+              { timeout: 5000 }
+            );
+          })
+        );
+
+        for (let i = 0; i < results.length; i++) {
+          const result = results[i];
+          if (result.status === "fulfilled") {
+            const bytes = parseInt(result.value.stdout.split("\t")[0]);
+            if (!isNaN(bytes)) {
+              dockerVolumes[measurable[i].idx].sizeBytes = bytes;
+            }
+          }
+          // If rejected (timeout or error), sizeBytes stays null
+        }
       }
     } catch { /* Docker not available */ }
 
@@ -84,6 +122,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
           type: "named",
           persistent: true,
           source: saved.name,
+          sizeBytes: null,
         });
       }
     }
