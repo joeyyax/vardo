@@ -4,13 +4,12 @@ import { db } from "@/lib/db";
 import { user, apps } from "@/lib/db/schema";
 import { requireSession } from "@/lib/auth/session";
 import { eq } from "drizzle-orm";
-import { fetchAllContainerMetrics } from "@/lib/metrics/cadvisor";
 import { getSystemDiskUsage, getSystemInfo } from "@/lib/docker/client";
 import { createSSEResponse } from "@/lib/api/sse";
 import { isMetricsEnabled } from "@/lib/metrics/config";
+import { subscribe } from "@/lib/metrics/broadcast";
 
 // GET /api/v1/admin/stats/stream
-// SSE stream of system-wide metrics (all containers across all orgs)
 export async function GET(request: NextRequest) {
   try {
     const session = await requireSession();
@@ -31,71 +30,57 @@ export async function GET(request: NextRequest) {
     });
 
     return createSSEResponse(request, async (sendEvent) => {
-      let stopped = false;
-      let timer: ReturnType<typeof setTimeout> | null = null;
       let tickCount = 0;
+      let cachedSystem: Record<string, unknown> | null = null;
+      let cachedDisk: Record<string, unknown> | null = null;
 
-      request.signal.addEventListener("abort", () => {
-        stopped = true;
-        if (timer) clearTimeout(timer);
-      });
-
-      async function poll() {
-        if (stopped) return;
-
-        try {
-          const allMetrics = await fetchAllContainerMetrics();
-
-          const appStats = allApps.map((app) => {
-            const containers = allMetrics
-              .filter((m) => m.projectName === app.name || m.projectName.startsWith(`${app.name}-`))
-              .map((m) => ({
-                containerId: m.containerId,
-                containerName: m.containerName,
-                cpuPercent: m.cpuPercent,
-                memoryUsage: m.memoryUsage,
-                memoryLimit: m.memoryLimit,
-                memoryPercent: m.memoryPercent,
-                networkRx: m.networkRxBytes,
-                networkTx: m.networkTxBytes,
-              }));
-            return {
-              id: app.id,
-              name: app.name,
-              displayName: app.displayName,
-              status: app.status,
-              organizationId: app.organizationId,
-              containers,
-            };
-          });
-
-          const payload: Record<string, unknown> = {
-            apps: appStats,
-            timestamp: new Date().toISOString(),
-          };
-
-          // Slow data: system info + disk (every 60 ticks = ~5 min)
-          if (tickCount % 60 === 0) {
-            const [system, disk] = await Promise.all([
-              getSystemInfo().catch(() => null),
-              getSystemDiskUsage().catch(() => null),
-            ]);
-            payload.system = system;
-            payload.disk = disk;
-          }
-
-          sendEvent("stats", payload);
-          tickCount++;
-        } catch (err) {
-          sendEvent("error", { message: err instanceof Error ? err.message : "Unknown error" });
-        }
-
-        if (!stopped) {
-          timer = setTimeout(poll, 5000);
-        }
+      async function refreshSlowData() {
+        try { cachedSystem = await getSystemInfo() as unknown as Record<string, unknown>; } catch { /* skip */ }
+        try { cachedDisk = await getSystemDiskUsage() as unknown as Record<string, unknown>; } catch { /* skip */ }
       }
 
-      await poll();
+      refreshSlowData();
+
+      const unsubscribe = subscribe((allMetrics) => {
+        const appStats = allApps.map((app) => {
+          const containers = allMetrics
+            .filter((m) => m.projectName === app.name || m.projectName.startsWith(`${app.name}-`))
+            .map((m) => ({
+              containerId: m.containerId,
+              containerName: m.containerName,
+              cpuPercent: m.cpuPercent,
+              memoryUsage: m.memoryUsage,
+              memoryLimit: m.memoryLimit,
+              memoryPercent: m.memoryPercent,
+              networkRx: m.networkRxBytes,
+              networkTx: m.networkTxBytes,
+            }));
+          return {
+            id: app.id,
+            name: app.name,
+            displayName: app.displayName,
+            status: app.status,
+            organizationId: app.organizationId,
+            containers,
+          };
+        });
+
+        const payload: Record<string, unknown> = {
+          apps: appStats,
+          timestamp: new Date().toISOString(),
+        };
+
+        if (tickCount % 60 === 0) {
+          payload.system = cachedSystem;
+          payload.disk = cachedDisk;
+          refreshSlowData();
+        }
+
+        sendEvent("stats", payload);
+        tickCount++;
+      });
+
+      request.signal.addEventListener("abort", unsubscribe);
 
       await new Promise<void>((resolve) => {
         request.signal.addEventListener("abort", () => resolve());

@@ -13,6 +13,8 @@ export function createSSEResponse(
     start(controller) {
       function sendEvent(event: string, data: unknown) {
         try {
+          // Backpressure: skip events if the client can't keep up
+          if (controller.desiredSize !== null && controller.desiredSize <= 0) return;
           controller.enqueue(
             encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
           );
