@@ -207,8 +207,117 @@ function EndpointsPopover({ app }: { app: AppWithRelations }) {
 
 
 // ---------------------------------------------------------------------------
-// ProjectCard
+// ProjectCard — groups multiple apps under one project
 // ---------------------------------------------------------------------------
+
+function ProjectCard({
+  project,
+  projectApps,
+  metrics,
+  history,
+}: {
+  project: NonNullable<AppWithRelations["project"]>;
+  projectApps: AppWithRelations[];
+  metrics: Map<string, AppMetrics>;
+  history: Map<string, MetricsHistory>;
+}) {
+  const color = project.color || "#6366f1";
+
+  // Aggregate status from all apps
+  const allActive = projectApps.every((a) => a.status === "active");
+  const anyError = projectApps.some((a) => a.status === "error");
+  const anyDeploying = projectApps.some((a) => a.status === "deploying");
+  const status = allActive ? "running" : anyError ? "error" : anyDeploying ? "deploying" : "stopped";
+
+  // Aggregate CPU for sparkline from all apps
+  const aggregatedCpu = useMemo(() => {
+    const maxLen = Math.max(...projectApps.map((a) => (history.get(a.id)?.cpu || []).length), 0);
+    if (maxLen < 2) return [];
+    const result: number[] = [];
+    for (let i = 0; i < maxLen; i++) {
+      let sum = 0;
+      for (const a of projectApps) {
+        const cpu = history.get(a.id)?.cpu || [];
+        sum += cpu[i] || 0;
+      }
+      result.push(sum);
+    }
+    return result;
+  }, [projectApps, history]);
+
+  // Collect unique icons
+  const icons = useMemo(() => {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const a of projectApps) {
+      const icon = getAppIcon(a);
+      if (icon && !seen.has(icon)) {
+        seen.add(icon);
+        result.push(icon);
+      }
+      if (result.length >= 4) break;
+    }
+    return result;
+  }, [projectApps]);
+
+  return (
+    <Link
+      href={`/projects/${project.name}`}
+      className="squircle relative flex flex-col rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50 overflow-hidden"
+    >
+      {aggregatedCpu.length >= 2 && (
+        <Sparkline
+          data={aggregatedCpu}
+          className="absolute inset-0 w-full h-full text-foreground pointer-events-none"
+        />
+      )}
+
+      <div className="relative flex gap-4">
+        {/* Icon grid */}
+        {icons.length === 0 ? (
+          <div className="size-12 shrink-0 rounded-md flex items-center justify-center" style={{ backgroundColor: `${color}20` }}>
+            <span className="size-3 rounded-full" style={{ backgroundColor: color }} />
+          </div>
+        ) : icons.length === 1 ? (
+          <div className="size-12 shrink-0 rounded-md flex items-center justify-center" style={{ backgroundColor: `${color}10` }}>
+            <img src={icons[0]} alt="" className="size-8 opacity-70" />
+          </div>
+        ) : (
+          <div className="size-12 shrink-0 rounded-md grid grid-cols-2 gap-0.5 p-1" style={{ backgroundColor: `${color}10` }}>
+            {icons.slice(0, 4).map((icon, i) => (
+              <img key={i} src={icon} alt="" className="size-full opacity-60" />
+            ))}
+          </div>
+        )}
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-base font-semibold truncate">{project.displayName}</h3>
+            <StatusIndicator status={status} />
+          </div>
+          {project.displayName !== project.name && (
+            <p className="text-sm text-muted-foreground/40 mt-0.5 truncate">{project.name}</p>
+          )}
+        </div>
+      </div>
+
+      {/* App chips */}
+      <div className="relative flex flex-wrap gap-1.5 mt-3 pt-3 border-t">
+        {projectApps.map((a) => (
+          <Link
+            key={a.id}
+            href={`/apps/${a.name}`}
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium bg-background hover:bg-accent transition-colors"
+          >
+            <span className={`size-1.5 rounded-full ${statusDotColor(a.status)}`} />
+            {a.displayName}
+          </Link>
+        ))}
+      </div>
+    </Link>
+  );
+}
 
 function AppCard({
   app,
@@ -302,19 +411,6 @@ function AppCard({
         </div>
       </div>
 
-      {/* Project badge */}
-      {app.project && (
-        <div className="relative flex flex-wrap gap-1.5 mt-3 pt-3 border-t">
-          <Link
-            href={`/projects/${app.project.name}`}
-            onClick={(e) => e.stopPropagation()}
-            className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium bg-background hover:bg-accent transition-colors"
-          >
-            <span className="size-1.5 rounded-full" style={{ backgroundColor: app.project.color || "#6366f1" }} />
-            {app.project.displayName}
-          </Link>
-        </div>
-      )}
     </Link>
   );
 }
@@ -337,7 +433,6 @@ export function AppGrid({
     return () => clearInterval(interval);
   }, [router]);
 
-  // Filter by tags, then hide child apps (they appear as chips on their parent)
   const filtered = useMemo(() => {
     let list = apps;
     if (activeTagIds.size > 0) {
@@ -349,6 +444,27 @@ export function AppGrid({
     }
     return list;
   }, [apps, activeTagIds]);
+
+  // Group apps by project for rendering
+  const { projectCards, standaloneApps } = useMemo(() => {
+    const byProject = new Map<string, { project: NonNullable<AppWithRelations["project"]>; apps: AppWithRelations[] }>();
+    const standalone: AppWithRelations[] = [];
+
+    for (const app of filtered) {
+      if (app.project) {
+        const existing = byProject.get(app.project.id);
+        if (existing) {
+          existing.apps.push(app);
+        } else {
+          byProject.set(app.project.id, { project: app.project, apps: [app] });
+        }
+      } else {
+        standalone.push(app);
+      }
+    }
+
+    return { projectCards: Array.from(byProject.values()), standaloneApps: standalone };
+  }, [filtered]);
 
   return (
     <div className="space-y-4">
@@ -398,7 +514,16 @@ export function AppGrid({
       )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {filtered.map((app) => (
+        {projectCards.map(({ project, apps: projectApps }) => (
+          <ProjectCard
+            key={project.id}
+            project={project}
+            projectApps={projectApps}
+            metrics={metrics}
+            history={history}
+          />
+        ))}
+        {standaloneApps.map((app) => (
           <AppCard
             key={app.id}
             app={app}
