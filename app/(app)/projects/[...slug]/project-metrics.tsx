@@ -25,6 +25,7 @@ type AppInfo = {
 
 type ProjectMetricsProps = {
   orgId: string;
+  projectId: string;
   apps: AppInfo[];
 };
 
@@ -38,18 +39,14 @@ type AggPoint = {
 };
 
 
-export function ProjectMetrics({ orgId, apps }: ProjectMetricsProps) {
+export function ProjectMetrics({ orgId, projectId, apps }: ProjectMetricsProps) {
   const uid = useId();
   const [timeRange, setTimeRange] = useState<TimeRange>("1h");
   const [data, setData] = useState<AggPoint[]>([]);
   const [loading, setLoading] = useState(true);
-  const eventSourcesRef = useRef<EventSource[]>([]);
-  const liveDataRef = useRef<Map<string, { cpu: number; mem: number; rxRate: number; txRate: number }>>(new Map());
   const prevNetworkRef = useRef<Map<string, { rx: number; tx: number; ts: number }>>(new Map());
 
-  const appIds = apps.map((a) => a.id).join(",");
-
-  // Load historical data for all apps, aggregate into single series
+  // Load historical data from the project-level endpoint (single request)
   useEffect(() => {
     const now = Date.now();
     const from = now - RANGE_MS[timeRange];
@@ -58,95 +55,52 @@ export function ProjectMetrics({ orgId, apps }: ProjectMetricsProps) {
     async function loadHistory() {
       setLoading(true);
       try {
-        const results = await Promise.all(
-          apps.map(async (app) => {
-            try {
-              const res = await fetch(
-                `/api/v1/organizations/${orgId}/apps/${app.id}/stats/history?from=${from}&to=${now}&bucket=${bucket}`
-              );
-              if (!res.ok) return null;
-              const { series } = await res.json();
-              return series;
-            } catch {
-              return null;
-            }
-          })
+        const res = await fetch(
+          `/api/v1/organizations/${orgId}/projects/${projectId}/stats/history?from=${from}&to=${now}&bucket=${bucket}`
         );
+        if (!res.ok) { setData([]); setLoading(false); return; }
+        const { series } = await res.json();
 
-        // Collect all timestamps
-        const tsSet = new Set<number>();
-        for (const series of results) {
-          if (!series?.cpu) continue;
-          for (const [ts] of series.cpu) tsSet.add(ts);
-        }
+        if (!series?.cpu) { setData([]); setLoading(false); return; }
 
-        const timestamps = Array.from(tsSet).sort((a, b) => a - b);
-        if (timestamps.length === 0) {
-          setData([]);
-          setLoading(false);
-          return;
-        }
-
-        // Build per-timestamp lookup for each app
-        const lookups = results.map((series) => {
-          if (!series?.cpu) return null;
-          const map = new Map<number, number>();
-          series.cpu.forEach(([ts, val]: [number, number], _i: number) => map.set(ts, _i));
-          return { map, series };
-        });
-
-        const merged: AggPoint[] = timestamps.map((ts) => {
-          let cpu = 0, mem = 0, rx = 0, tx = 0;
-          for (const lookup of lookups) {
-            if (!lookup) continue;
-            const idx = lookup.map.get(ts);
-            if (idx === undefined) continue;
-            cpu += lookup.series.cpu[idx]?.[1] || 0;
-            mem += lookup.series.memory[idx]?.[1] || 0;
-            rx += lookup.series.networkRx[idx]?.[1] || 0;
-            tx += lookup.series.networkTx[idx]?.[1] || 0;
-          }
-          return {
-            time: formatTime(ts),
-            timestamp: ts,
-            cpu: Math.round(cpu * 100) / 100,
-            memory: mem,
-            rxRate: rx,
-            txRate: tx,
-          };
-        });
+        const merged: AggPoint[] = (series.cpu as [number, number][]).map(([ts, cpuVal]: [number, number], i: number) => ({
+          time: formatTime(ts),
+          timestamp: ts,
+          cpu: Math.round(cpuVal * 100) / 100,
+          memory: series.memory?.[i]?.[1] || 0,
+          rxRate: series.networkRx?.[i]?.[1] || 0,
+          txRate: series.networkTx?.[i]?.[1] || 0,
+        }));
 
         setData(merged);
       } catch {
-        // Failed
+        setData([]);
       }
       setLoading(false);
     }
 
     loadHistory();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgId, appIds, timeRange]);
+  }, [orgId, projectId, timeRange]);
 
-  // Live SSE streams — aggregate across all apps
+  // Live SSE stream — single connection to project endpoint
   useEffect(() => {
-    for (const es of eventSourcesRef.current) es.close();
-    eventSourcesRef.current = [];
+    const es = new EventSource(
+      `/api/v1/organizations/${orgId}/projects/${projectId}/stats/stream`
+    );
 
-    for (const app of apps) {
-      const es = new EventSource(
-        `/api/v1/organizations/${orgId}/apps/${app.id}/stats/stream`
-      );
-      es.addEventListener("stats", (event: MessageEvent) => {
-        try {
-          const payload = JSON.parse(event.data) as {
-            containers: ContainerStatsSnapshot[];
-          };
-          const c = payload.containers;
-          const cpu = c.reduce((s, x) => s + x.cpuPercent, 0);
-          const mem = c.reduce((s, x) => s + x.memoryUsage, 0);
-          const totalRx = c.reduce((s, x) => s + x.networkRx, 0);
-          const totalTx = c.reduce((s, x) => s + x.networkTx, 0);
-          const now = Date.now();
+    es.addEventListener("stats", (event: MessageEvent) => {
+      try {
+        const payload = JSON.parse(event.data) as {
+          apps: { id: string; name: string; containers: ContainerStatsSnapshot[] }[];
+        };
+
+        const now = Date.now();
+        let aggCpu = 0, aggMem = 0, aggRxRate = 0, aggTxRate = 0;
+
+        for (const app of payload.apps) {
+          const totalRx = app.containers.reduce((s, c) => s + c.networkRx, 0);
+          const totalTx = app.containers.reduce((s, c) => s + c.networkTx, 0);
 
           const prev = prevNetworkRef.current.get(app.id);
           let rxRate = 0, txRate = 0;
@@ -158,38 +112,31 @@ export function ProjectMetrics({ orgId, apps }: ProjectMetricsProps) {
             }
           }
           prevNetworkRef.current.set(app.id, { rx: totalRx, tx: totalTx, ts: now });
-          liveDataRef.current.set(app.id, { cpu, mem, rxRate, txRate });
 
-          // Sum across all apps
-          let aggCpu = 0, aggMem = 0, aggRx = 0, aggTx = 0;
-          for (const a of apps) {
-            const d = liveDataRef.current.get(a.id);
-            if (d) { aggCpu += d.cpu; aggMem += d.mem; aggRx += d.rxRate; aggTx += d.txRate; }
-          }
+          aggCpu += app.containers.reduce((s, c) => s + c.cpuPercent, 0);
+          aggMem += app.containers.reduce((s, c) => s + c.memoryUsage, 0);
+          aggRxRate += rxRate;
+          aggTxRate += txRate;
+        }
 
-          setData((prev) => {
-            const next = [...prev, {
-              time: formatTime(now),
-              timestamp: now,
-              cpu: Math.round(aggCpu * 100) / 100,
-              memory: aggMem,
-              rxRate: aggRx,
-              txRate: aggTx,
-            }];
-            if (next.length > 300) next.splice(0, next.length - 300);
-            return next;
-          });
-        } catch { /* skip */ }
-      });
-      eventSourcesRef.current.push(es);
-    }
+        setData((prev) => {
+          const next = [...prev, {
+            time: formatTime(now),
+            timestamp: now,
+            cpu: Math.round(aggCpu * 100) / 100,
+            memory: aggMem,
+            rxRate: aggRxRate,
+            txRate: aggTxRate,
+          }];
+          if (next.length > 300) next.splice(0, next.length - 300);
+          return next;
+        });
+      } catch { /* skip */ }
+    });
 
-    return () => {
-      for (const es of eventSourcesRef.current) es.close();
-      eventSourcesRef.current = [];
-    };
+    return () => es.close();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgId, appIds]);
+  }, [orgId, projectId]);
 
   if (loading && data.length === 0) {
     return (

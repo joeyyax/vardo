@@ -464,7 +464,7 @@ function ProjectLogs({ apps, orgId }: { apps: ProjectApp[]; orgId: string }) {
 // Metrics Tab (combined + individual)
 // ---------------------------------------------------------------------------
 
-function ProjectMetricsTab({ apps, orgId }: { apps: ProjectApp[]; orgId: string }) {
+function ProjectMetricsTab({ apps, orgId, projectId }: { apps: ProjectApp[]; orgId: string; projectId: string }) {
   const [selected, setSelected] = useState<string>("combined");
 
   if (apps.length === 0) {
@@ -510,7 +510,7 @@ function ProjectMetricsTab({ apps, orgId }: { apps: ProjectApp[]; orgId: string 
       </div>
 
       {selected === "combined" ? (
-        <ProjectMetrics orgId={orgId} apps={apps} />
+        <ProjectMetrics orgId={orgId} projectId={projectId} apps={apps} />
       ) : (
         <AppMetrics key={`metrics-${selected}`} orgId={orgId} appId={selected} />
       )}
@@ -901,7 +901,7 @@ export function ProjectDetail({
         </TabsContent>
 
         <TabsContent value="metrics" className="pt-4">
-          <ProjectMetricsTab apps={project.apps} orgId={orgId} />
+          <ProjectMetricsTab apps={project.apps} orgId={orgId} projectId={project.id} />
         </TabsContent>
       </Tabs>
 
