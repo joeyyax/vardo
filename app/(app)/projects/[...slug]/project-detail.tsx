@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -108,6 +108,43 @@ function statusDotColor(status: string) {
       : status === "deploying"
         ? "bg-status-info"
         : "bg-status-neutral";
+}
+
+function formatUptime(date: Date): string {
+  const ms = Date.now() - new Date(date).getTime();
+  const s = Math.floor(ms / 1000) % 60;
+  const m = Math.floor(ms / 60000) % 60;
+  const h = Math.floor(ms / 3600000) % 24;
+  const d = Math.floor(ms / 86400000);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
+function Uptime({ since }: { since: Date }) {
+  const [text, setText] = useState<string | null>(null);
+  useEffect(() => {
+    setText(formatUptime(since));
+    const interval = setInterval(() => setText(formatUptime(since)), 1000);
+    return () => clearInterval(interval);
+  }, [since]);
+  if (!text) return null;
+  return <span className="tabular-nums">{text}</span>;
+}
+
+function StatusIndicator({ status, finishedAt }: { status: string; finishedAt?: Date | null }) {
+  if (status === "active") {
+    return (
+      <span className="flex items-center gap-1.5 text-sm text-status-success shrink-0">
+        <span className="size-2 rounded-full bg-status-success animate-pulse" />
+        {finishedAt ? <Uptime since={finishedAt} /> : "Running"}
+      </span>
+    );
+  }
+  if (status === "error") return <span className="text-sm text-status-error shrink-0">Error</span>;
+  if (status === "deploying") return <span className="text-sm text-status-info animate-pulse shrink-0">Deploying</span>;
+  return <span className="text-sm text-status-neutral shrink-0">Stopped</span>;
 }
 
 function envTypeDotColor(type: string) {
@@ -250,9 +287,7 @@ function AppCard({
               </h3>
               <AppEndpoints app={app} />
             </div>
-            <span
-              className={`size-2 shrink-0 rounded-full ${statusDotColor(app.status)}`}
-            />
+            <StatusIndicator status={app.status} finishedAt={lastDeploy?.finishedAt} />
           </div>
           {app.description ? (
             <p className="text-xs text-muted-foreground truncate mt-0.5">
