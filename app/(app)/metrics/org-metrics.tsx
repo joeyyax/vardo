@@ -361,107 +361,174 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
         );
       })()}
 
-      {/* Infrastructure overview */}
-      <div className="grid md:grid-cols-2 gap-4">
-        {/* App status distribution */}
-        <div className="squircle rounded-lg border bg-card overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b">
-            <h3 className="text-sm font-medium">App Status</h3>
-            <span className="text-xs text-muted-foreground">{displayApps.length} apps · {streamProjectCount ?? projectCount ?? 0} projects</span>
-          </div>
-          <div className="p-4">
-            {/* Status bar */}
-            {displayApps.length > 0 && (
-              <div className="h-3 rounded-full overflow-hidden flex mb-4">
-                {statusCounts.active > 0 && (
-                  <div className="bg-status-success" style={{ width: `${(statusCounts.active / displayApps.length) * 100}%` }} />
-                )}
-                {statusCounts.deploying > 0 && (
-                  <div className="bg-status-info" style={{ width: `${(statusCounts.deploying / displayApps.length) * 100}%` }} />
-                )}
-                {statusCounts.error > 0 && (
-                  <div className="bg-status-error" style={{ width: `${(statusCounts.error / displayApps.length) * 100}%` }} />
-                )}
-                {statusCounts.stopped > 0 && (
-                  <div className="bg-muted-foreground/20" style={{ width: `${(statusCounts.stopped / displayApps.length) * 100}%` }} />
-                )}
+      {/* Infrastructure overview — half donuts + tables */}
+      {(() => {
+        // App status donut data
+        const statusSlices = [
+          { label: "Running", count: statusCounts.active, color: "var(--color-status-success, #22c55e)" },
+          { label: "Deploying", count: statusCounts.deploying, color: "var(--color-status-info, #3b82f6)" },
+          { label: "Crashed", count: statusCounts.error, color: "var(--color-status-error, #ef4444)" },
+          { label: "Stopped", count: statusCounts.stopped, color: "oklch(0.5 0 0 / 30%)" },
+        ].filter((s) => s.count > 0);
+        const totalAppsCount = displayApps.length;
+
+        // Resource donut data — memory share per app
+        const MAX_DONUT_SLICES = 8;
+        const allActiveApps = displayApps
+          .filter((a) => a.status === "active")
+          .map((a) => {
+            const ps = appStats[a.id];
+            return {
+              name: a.displayName,
+              cpu: ps?.containers.reduce((s, c) => s + c.cpuPercent, 0) ?? 0,
+              memory: ps?.containers.reduce((s, c) => s + c.memoryUsage, 0) ?? 0,
+              containerCount: ps?.containers.length ?? 0,
+            };
+          })
+          .filter((a) => a.memory > 0)
+          .sort((a, b) => b.memory - a.memory);
+
+        const activeAppsData = allActiveApps.length > MAX_DONUT_SLICES
+          ? [
+              ...allActiveApps.slice(0, MAX_DONUT_SLICES - 1),
+              {
+                name: `${allActiveApps.length - MAX_DONUT_SLICES + 1} others`,
+                cpu: allActiveApps.slice(MAX_DONUT_SLICES - 1).reduce((s, a) => s + a.cpu, 0),
+                memory: allActiveApps.slice(MAX_DONUT_SLICES - 1).reduce((s, a) => s + a.memory, 0),
+                containerCount: allActiveApps.slice(MAX_DONUT_SLICES - 1).reduce((s, a) => s + a.containerCount, 0),
+              },
+            ]
+          : allActiveApps;
+
+        const appColors = [
+          CHART_COLORS.cpu,
+          CHART_COLORS.memory,
+          CHART_COLORS.networkRx,
+          CHART_COLORS.networkTx,
+          "oklch(0.65 0.16 335)",
+          "oklch(0.68 0.16 175)",
+          "oklch(0.65 0.18 290)",
+          "oklch(0.67 0.17 120)",
+        ];
+
+        return (
+          <div className="grid md:grid-cols-2 gap-4">
+            {/* App Status — half donut + table */}
+            <div className="squircle rounded-lg border bg-card overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 border-b">
+                <h3 className="text-sm font-medium">App Status</h3>
+                <span className="text-xs text-muted-foreground">{streamProjectCount ?? projectCount ?? 0} projects</span>
               </div>
-            )}
-            {/* Legend */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex items-center justify-between">
-                <span className="inline-flex items-center gap-1.5 text-xs">
-                  <span className="size-2 rounded-full bg-status-success" />
-                  Running
-                </span>
-                <span className="text-sm font-semibold tabular-nums">{statusCounts.active}</span>
+              <div className="p-4">
+                <div className="flex items-center gap-6">
+                  {/* Half donut SVG */}
+                  <svg viewBox="0 0 120 70" className="w-32 shrink-0">
+                    {(() => {
+                      const r = 50;
+                      const cx = 60;
+                      const cy = 60;
+                      const total = totalAppsCount || 1;
+                      let cumAngle = Math.PI; // start from left (180°)
+                      return statusSlices.map((slice) => {
+                        const angle = (slice.count / total) * Math.PI;
+                        const startX = cx + r * Math.cos(cumAngle);
+                        const startY = cy + r * Math.sin(cumAngle);
+                        cumAngle += angle;
+                        const endX = cx + r * Math.cos(cumAngle);
+                        const endY = cy + r * Math.sin(cumAngle);
+                        const largeArc = angle > Math.PI ? 1 : 0;
+                        return (
+                          <path
+                            key={slice.label}
+                            d={`M ${cx} ${cy} L ${startX} ${startY} A ${r} ${r} 0 ${largeArc} 1 ${endX} ${endY} Z`}
+                            fill={slice.color}
+                            opacity={0.85}
+                          />
+                        );
+                      });
+                    })()}
+                    <text x="60" y="58" textAnchor="middle" fill="currentColor" fontSize="22" fontWeight="600">
+                      {totalAppsCount}
+                    </text>
+                    <text x="60" y="68" textAnchor="middle" fill="currentColor" opacity={0.5} fontSize="8">
+                      apps
+                    </text>
+                  </svg>
+                  {/* Legend table */}
+                  <div className="flex-1 space-y-1.5">
+                    {statusSlices.map((slice) => (
+                      <div key={slice.label} className="flex items-center justify-between">
+                        <span className="inline-flex items-center gap-1.5 text-xs">
+                          <span className="size-2 rounded-full shrink-0" style={{ backgroundColor: slice.color }} />
+                          {slice.label}
+                        </span>
+                        <span className="text-xs font-semibold tabular-nums">{slice.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="inline-flex items-center gap-1.5 text-xs">
-                  <span className="size-2 rounded-full bg-status-error" />
-                  Crashed
-                </span>
-                <span className="text-sm font-semibold tabular-nums">{statusCounts.error}</span>
+            </div>
+
+            {/* Resource distribution — half donut + table */}
+            <div className="squircle rounded-lg border bg-card overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 border-b">
+                <h3 className="text-sm font-medium">Memory by App</h3>
+                <span className="text-xs text-muted-foreground">{totals.containers} containers</span>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="inline-flex items-center gap-1.5 text-xs">
-                  <span className="size-2 rounded-full bg-status-info" />
-                  Deploying
-                </span>
-                <span className="text-sm font-semibold tabular-nums">{statusCounts.deploying}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="inline-flex items-center gap-1.5 text-xs">
-                  <span className="size-2 rounded-full bg-muted-foreground/30" />
-                  Stopped
-                </span>
-                <span className="text-sm font-semibold tabular-nums">{statusCounts.stopped}</span>
+              <div className="p-4">
+                <div className="flex items-center gap-6">
+                  {/* Half donut SVG */}
+                  <svg viewBox="0 0 120 70" className="w-32 shrink-0">
+                    {(() => {
+                      const r = 50;
+                      const cx = 60;
+                      const cy = 60;
+                      const total = totals.memory || 1;
+                      let cumAngle = Math.PI;
+                      return activeAppsData.map((app, i) => {
+                        const angle = (app.memory / total) * Math.PI;
+                        const startX = cx + r * Math.cos(cumAngle);
+                        const startY = cy + r * Math.sin(cumAngle);
+                        cumAngle += angle;
+                        const endX = cx + r * Math.cos(cumAngle);
+                        const endY = cy + r * Math.sin(cumAngle);
+                        const largeArc = angle > Math.PI ? 1 : 0;
+                        return (
+                          <path
+                            key={app.name}
+                            d={`M ${cx} ${cy} L ${startX} ${startY} A ${r} ${r} 0 ${largeArc} 1 ${endX} ${endY} Z`}
+                            fill={appColors[i % appColors.length]}
+                            opacity={0.85}
+                          />
+                        );
+                      });
+                    })()}
+                    <text x="60" y="58" textAnchor="middle" fill="currentColor" fontSize="14" fontWeight="600">
+                      {loading ? "..." : formatBytes(totals.memory)}
+                    </text>
+                  </svg>
+                  {/* Legend table */}
+                  <div className="flex-1 space-y-1.5">
+                    {activeAppsData.map((app, i) => (
+                      <div key={app.name} className="flex items-center justify-between">
+                        <span className="inline-flex items-center gap-1.5 text-xs truncate">
+                          <span className="size-2 rounded-full shrink-0" style={{ backgroundColor: appColors[i % appColors.length] }} />
+                          {app.name}
+                        </span>
+                        <span className="text-xs tabular-nums text-muted-foreground shrink-0 ml-2">{formatBytes(app.memory)}</span>
+                      </div>
+                    ))}
+                    {activeAppsData.length === 0 && (
+                      <p className="text-xs text-muted-foreground">No active apps</p>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-
-        {/* Per-app resource usage */}
-        <div className="squircle rounded-lg border bg-card overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b">
-            <h3 className="text-sm font-medium">Resource Usage by App</h3>
-            <span className="text-xs text-muted-foreground">{totals.containers} containers</span>
-          </div>
-          <div className="p-4 space-y-3">
-            {displayApps
-              .filter((a) => a.status === "active")
-              .map((a) => {
-                const ps = appStats[a.id];
-                const appCpu = ps?.containers.reduce((s, c) => s + c.cpuPercent, 0) ?? 0;
-                const appMem = ps?.containers.reduce((s, c) => s + c.memoryUsage, 0) ?? 0;
-                const memPct = totals.memory > 0 ? (appMem / totals.memory) * 100 : 0;
-                return (
-                  <div key={a.id}>
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="size-1.5 rounded-full bg-status-success shrink-0" />
-                        <span className="text-xs font-medium truncate">{a.displayName}</span>
-                      </div>
-                      <div className="flex items-center gap-3 text-[10px] text-muted-foreground tabular-nums shrink-0">
-                        <span>{appCpu.toFixed(1)}% CPU</span>
-                        <span>{formatBytes(appMem)}</span>
-                      </div>
-                    </div>
-                    <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-foreground/20 transition-all"
-                        style={{ width: `${Math.min(memPct, 100)}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            {displayApps.filter((a) => a.status === "active").length === 0 && (
-              <p className="text-xs text-muted-foreground text-center py-4">No active apps</p>
-            )}
-          </div>
-        </div>
-      </div>
+        );
+      })()}
 
       {/* Project list with stats */}
       {displayApps.length === 0 ? (
