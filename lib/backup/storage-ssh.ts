@@ -1,15 +1,16 @@
 // ---------------------------------------------------------------------------
-// SSH/SCP backup storage transport
+// SSH/SCP Backup Storage Adapter
 //
 // Backs up to any SSH-accessible host (NAS over Tailscale, remote server,
 // etc.) using scp for file transfer and ssh for remote operations.
+// Implements the BackupStorage port interface.
 // ---------------------------------------------------------------------------
 
 import { exec } from "child_process";
 import { promisify } from "util";
 import { stat, writeFile as fsWriteFile, unlink } from "fs/promises";
-import { join } from "path";
 import { nanoid } from "nanoid";
+import type { BackupStorage } from "./storage-port";
 
 const execAsync = promisify(exec);
 
@@ -102,83 +103,65 @@ async function ensureRemoteDir(
 }
 
 // ---------------------------------------------------------------------------
-// Operations
+// Adapter
 // ---------------------------------------------------------------------------
 
-/**
- * Upload a local file to the SSH target via scp.
- */
-export async function uploadViaSsh(
-  config: SshConfig,
-  key: string,
-  filePath: string
-): Promise<{ sizeBytes: number }> {
-  const remote = remotePath(config, key);
-  const remoteDir = remote.substring(0, remote.lastIndexOf("/"));
+export class SshBackupStorage implements BackupStorage {
+  private config: SshConfig;
 
-  // Ensure remote directory structure exists
-  await ensureRemoteDir(config, remoteDir);
-
-  const { flags, keyFile } = await buildSshFlags(config);
-  try {
-    await execAsync(
-      `scp ${flags} "${filePath}" "${config.username}@${config.host}:${remote}"`,
-      { timeout: 600_000 } // 10 minute timeout
-    );
-
-    const fileInfo = await stat(filePath);
-    return { sizeBytes: fileInfo.size };
-  } finally {
-    await cleanupKeyFile(keyFile);
+  constructor(config: SshConfig) {
+    this.config = config;
   }
-}
 
-/**
- * Download a file from the SSH target via scp.
- */
-export async function downloadViaSsh(
-  config: SshConfig,
-  key: string,
-  destPath: string
-): Promise<void> {
-  const remote = remotePath(config, key);
-  const { flags, keyFile } = await buildSshFlags(config);
+  async upload(key: string, filePath: string): Promise<{ sizeBytes: number }> {
+    const remote = remotePath(this.config, key);
+    const remoteDir = remote.substring(0, remote.lastIndexOf("/"));
 
-  try {
-    await execAsync(
-      `scp ${flags} "${config.username}@${config.host}:${remote}" "${destPath}"`,
-      { timeout: 600_000 }
-    );
-  } finally {
-    await cleanupKeyFile(keyFile);
+    // Ensure remote directory structure exists
+    await ensureRemoteDir(this.config, remoteDir);
+
+    const { flags, keyFile } = await buildSshFlags(this.config);
+    try {
+      await execAsync(
+        `scp ${flags} "${filePath}" "${this.config.username}@${this.config.host}:${remote}"`,
+        { timeout: 600_000 } // 10 minute timeout
+      );
+
+      const fileInfo = await stat(filePath);
+      return { sizeBytes: fileInfo.size };
+    } finally {
+      await cleanupKeyFile(keyFile);
+    }
   }
-}
 
-/**
- * Delete a file on the SSH target.
- */
-export async function deleteViaSsh(
-  config: SshConfig,
-  key: string
-): Promise<void> {
-  const remote = remotePath(config, key);
-  const { flags, keyFile } = await buildSshCmdFlags(config);
+  async download(key: string, destPath: string): Promise<void> {
+    const remote = remotePath(this.config, key);
+    const { flags, keyFile } = await buildSshFlags(this.config);
 
-  try {
-    await execAsync(
-      `ssh ${flags} ${config.username}@${config.host} "rm -f '${remote}'"`,
-      { timeout: 30_000 }
-    );
-  } finally {
-    await cleanupKeyFile(keyFile);
+    try {
+      await execAsync(
+        `scp ${flags} "${this.config.username}@${this.config.host}:${remote}" "${destPath}"`,
+        { timeout: 600_000 }
+      );
+    } finally {
+      await cleanupKeyFile(keyFile);
+    }
   }
-}
 
-/**
- * Generate a download URL for an SSH backup.
- * SSH doesn't have pre-signed URLs, so this returns a placeholder
- * that the API will handle by streaming the file through the server.
- */
-export function getSshDownloadPath(config: SshConfig, key: string): string {
-  return remotePath(config, key);
+  async delete(key: string): Promise<void> {
+    const remote = remotePath(this.config, key);
+    const { flags, keyFile } = await buildSshCmdFlags(this.config);
+
+    try {
+      await execAsync(
+        `ssh ${flags} ${this.config.username}@${this.config.host} "rm -f '${remote}'"`,
+        { timeout: 30_000 }
+      );
+    } finally {
+      await cleanupKeyFile(keyFile);
+    }
+  }
+
+  // SSH targets don't support pre-signed URLs.
+  // getDownloadUrl is intentionally omitted from this adapter.
 }
