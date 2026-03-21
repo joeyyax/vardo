@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Building2 } from "lucide-react";
+import { Building2, Check, X } from "lucide-react";
+import type { FeatureFlagInfo } from "@/lib/config/features";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageToolbar } from "@/components/page-toolbar";
 import { DockerPrune, UserManagement } from "./admin-actions";
@@ -46,6 +47,7 @@ type AdminPanelProps = {
   sparklines: Record<string, [number, number][]>;
   orgId: string;
   appList: AppSummary[];
+  featureFlags: FeatureFlagInfo[];
   orgBreakdown: OrgBreakdown[];
   initialSystem: SystemInfo | null;
   initialAppStats: (AppSummary & { containers: ContainerStatsSnapshot[] })[];
@@ -55,6 +57,7 @@ type AdminPanelProps = {
 export function AdminPanel({
   stats,
   sparklines,
+  featureFlags,
   orgId,
   appList,
   orgBreakdown,
@@ -111,6 +114,31 @@ export function AdminPanel({
                 </div>
               );
             })}
+          </div>
+
+          {/* Feature flags */}
+          <div className="squircle rounded-lg border bg-card overflow-hidden mt-4">
+            <div className="px-4 py-2 border-b">
+              <p className="text-xs text-muted-foreground">Feature Flags</p>
+            </div>
+            <div className="divide-y">
+              {featureFlags.map(({ flag, enabled, label, description }) => (
+                <div key={flag} className="flex items-center justify-between gap-4 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">{label}</p>
+                    <p className="text-xs text-muted-foreground">{description}</p>
+                  </div>
+                  <div className={`inline-flex items-center gap-1 shrink-0 rounded-md px-2 py-0.5 text-xs font-medium ${
+                    enabled
+                      ? "bg-status-success-muted text-status-success"
+                      : "bg-muted text-muted-foreground"
+                  }`}>
+                    {enabled ? <Check className="size-3" /> : <X className="size-3" />}
+                    {enabled ? "On" : "Off"}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </TabsContent>
 

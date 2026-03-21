@@ -8,6 +8,7 @@ import { AdminPanel } from "./admin-panel";
 import { getSystemInfo } from "@/lib/docker/client";
 import { fetchAllContainerMetrics, type ContainerMetrics } from "@/lib/metrics/cadvisor";
 import { getLatestDiskUsage } from "@/lib/metrics/store";
+import { getAllFeatureFlags } from "@/lib/config/features";
 
 export default async function AdminPage() {
   const session = await getSession();
@@ -150,11 +151,13 @@ export default async function AdminPage() {
   const now = Date.now();
   const sparklineDays = 30;
   const sparklines = await buildSparklines(sparklineDays);
+  const featureFlags = getAllFeatureFlags();
 
   return (
     <AdminPanel
       stats={stats}
       sparklines={sparklines}
+      featureFlags={featureFlags}
       orgId={orgId}
       appList={appList}
       orgBreakdown={orgBreakdown}

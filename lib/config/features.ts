@@ -18,30 +18,67 @@ export type FeatureFlag =
   | "backups"
   | "cron";
 
-const FLAG_ENV_MAP: Record<FeatureFlag, string> = {
-  metrics: "FEATURE_METRICS",
-  logs: "FEATURE_LOGS",
-  terminal: "FEATURE_TERMINAL",
-  environments: "FEATURE_ENVIRONMENTS",
-  backups: "FEATURE_BACKUPS",
-  cron: "FEATURE_CRON",
+type FlagConfig = {
+  env: string;
+  label: string;
+  description: string;
+};
+
+const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
+  metrics: {
+    env: "FEATURE_METRICS",
+    label: "Metrics",
+    description: "Container CPU, memory, and network monitoring with historical charts",
+  },
+  logs: {
+    env: "FEATURE_LOGS",
+    label: "Logs",
+    description: "Persistent log collection and streaming via Loki",
+  },
+  terminal: {
+    env: "FEATURE_TERMINAL",
+    label: "Terminal",
+    description: "Web-based terminal access to running containers",
+  },
+  environments: {
+    env: "FEATURE_ENVIRONMENTS",
+    label: "Environments",
+    description: "Multiple deployment environments per app (staging, preview)",
+  },
+  backups: {
+    env: "FEATURE_BACKUPS",
+    label: "Backups",
+    description: "Scheduled volume backups with S3-compatible storage",
+  },
+  cron: {
+    env: "FEATURE_CRON",
+    label: "Cron Jobs",
+    description: "Scheduled command execution inside containers",
+  },
 };
 
 /**
  * Check if a feature is enabled. Defaults to true.
  */
 export function isFeatureEnabled(flag: FeatureFlag): boolean {
-  const envVar = FLAG_ENV_MAP[flag];
-  return process.env[envVar] !== "false";
+  return process.env[FLAG_CONFIG[flag].env] !== "false";
 }
 
+export type FeatureFlagInfo = {
+  flag: FeatureFlag;
+  enabled: boolean;
+  label: string;
+  description: string;
+};
+
 /**
- * Get all feature flags and their states.
+ * Get all feature flags with their states and metadata.
  */
-export function getAllFeatureFlags(): Record<FeatureFlag, boolean> {
-  const flags = {} as Record<FeatureFlag, boolean>;
-  for (const key of Object.keys(FLAG_ENV_MAP) as FeatureFlag[]) {
-    flags[key] = isFeatureEnabled(key);
-  }
-  return flags;
+export function getAllFeatureFlags(): FeatureFlagInfo[] {
+  return (Object.keys(FLAG_CONFIG) as FeatureFlag[]).map((flag) => ({
+    flag,
+    enabled: isFeatureEnabled(flag),
+    label: FLAG_CONFIG[flag].label,
+    description: FLAG_CONFIG[flag].description,
+  }));
 }
