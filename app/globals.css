@@ -263,6 +263,46 @@ html[data-bottom-sheet-open] [data-main-content] {
   height: 0;
 }
 
+/* ── Tremor chart color overrides ──
+ * Tremor v3 generates arbitrary-value Tailwind classes like
+ * stroke-[var(--metric-cpu)] and fill-[var(--metric-cpu)].
+ * In Tailwind v4, these are only generated if they appear in source.
+ * We add explicit CSS to ensure strokes, fills, and gradient stops
+ * resolve our oklch metric colors correctly. */
+
+/* Stroke colors for area chart lines */
+.stroke-\[var\(--metric-cpu\)\] { stroke: var(--metric-cpu); }
+.stroke-\[var\(--metric-memory\)\] { stroke: var(--metric-memory); }
+.stroke-\[var\(--metric-network-rx\)\] { stroke: var(--metric-network-rx); }
+.stroke-\[var\(--metric-network-tx\)\] { stroke: var(--metric-network-tx); }
+.stroke-\[var\(--metric-memory-limit\)\] { stroke: var(--metric-memory-limit); }
+.stroke-\[var\(--metric-disk\)\] { stroke: var(--metric-disk); }
+
+/* Fill colors for area fills */
+.fill-\[var\(--metric-cpu\)\] { fill: var(--metric-cpu); }
+.fill-\[var\(--metric-memory\)\] { fill: var(--metric-memory); }
+.fill-\[var\(--metric-network-rx\)\] { fill: var(--metric-network-rx); }
+.fill-\[var\(--metric-network-tx\)\] { fill: var(--metric-network-tx); }
+.fill-\[var\(--metric-memory-limit\)\] { fill: var(--metric-memory-limit); }
+.fill-\[var\(--metric-disk\)\] { fill: var(--metric-disk); }
+
+/* Text/currentColor for gradient <stop> elements (Tremor uses stopColor: currentColor) */
+.text-\[var\(--metric-cpu\)\] { color: var(--metric-cpu); }
+.text-\[var\(--metric-memory\)\] { color: var(--metric-memory); }
+.text-\[var\(--metric-network-rx\)\] { color: var(--metric-network-rx); }
+.text-\[var\(--metric-network-tx\)\] { color: var(--metric-network-tx); }
+.text-\[var\(--metric-memory-limit\)\] { color: var(--metric-memory-limit); }
+.text-\[var\(--metric-disk\)\] { color: var(--metric-disk); }
+
+/* Tremor Y-axis and grid styling */
+.tremor-AreaChart-root .recharts-cartesian-axis-tick text {
+  fill: var(--muted-foreground) !important;
+  font-size: 11px;
+}
+.tremor-AreaChart-root .recharts-cartesian-grid line {
+  stroke: oklch(0.30 0.006 285.75 / 40%);
+}
+
 /* Squircle progressive enhancement */
 @supports (corner-shape: squircle) {
   .squircle {

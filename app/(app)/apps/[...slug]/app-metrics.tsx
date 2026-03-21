@@ -5,9 +5,9 @@ import { AreaChart } from "@tremor/react";
 import type { CustomTooltipProps } from "@tremor/react";
 import { Activity, AlertTriangle, Container, Cpu, MemoryStick, Network, Loader2, RefreshCw } from "lucide-react";
 import { ChartCard } from "@/components/app-status";
-import { formatBytes, formatMemLimit, formatBytesRate, formatTime } from "@/lib/metrics/format";
+import { formatBytes, formatBytesShort, formatBytesRateShort, formatMemLimit, formatBytesRate, formatTime } from "@/lib/metrics/format";
 import { CHART_COLORS, TIME_RANGES, type TimeRange } from "@/lib/metrics/constants";
-import { TREMOR_METRIC_COLORS, MetricsTooltip } from "@/components/metrics-chart";
+import { TREMOR_METRIC_COLORS, CHART_DEFAULTS, MetricsTooltip } from "@/components/metrics-chart";
 import type { ContainerPoint } from "@/lib/metrics/types";
 import { useMetricsStream } from "@/lib/hooks/use-metrics-stream";
 
@@ -242,17 +242,13 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
       {/* CPU Chart */}
       <ChartCard title="CPU Usage" icon={Cpu}>
         <AreaChart
+          {...CHART_DEFAULTS}
           className="h-[200px]"
           data={chartData}
           index="time"
           categories={["cpu"]}
           colors={[TREMOR_METRIC_COLORS.cpu]}
-          valueFormatter={(v) => `${v.toFixed(2)}%`}
-          showLegend={false}
-          showAnimation={false}
-          curveType="monotone"
-          autoMinValue={false}
-          minValue={0}
+          valueFormatter={(v) => `${v.toFixed(1)}%`}
           customTooltip={CpuTooltip}
         />
       </ChartCard>
@@ -265,18 +261,13 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
           </p>
         )}
         <AreaChart
+          {...CHART_DEFAULTS}
           className="h-[200px]"
           data={chartData}
           index="time"
           categories={["memory"]}
           colors={[TREMOR_METRIC_COLORS.memory]}
-          valueFormatter={(v) => formatBytes(v)}
-          yAxisWidth={65}
-          showLegend={false}
-          showAnimation={false}
-          curveType="monotone"
-          autoMinValue={false}
-          minValue={0}
+          valueFormatter={(v) => formatBytesShort(v)}
           maxValue={latestMemoryLimit > 0 ? latestMemoryLimit * 1.1 : undefined}
           customTooltip={MemTooltip}
         />
@@ -285,18 +276,13 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
       {/* Network I/O Chart */}
       <ChartCard title="Network I/O" icon={Network}>
         <AreaChart
+          {...CHART_DEFAULTS}
           className="h-[200px]"
           data={chartData}
           index="time"
           categories={["networkRxRate", "networkTxRate"]}
           colors={[TREMOR_METRIC_COLORS.networkRxRate, TREMOR_METRIC_COLORS.networkTxRate]}
-          valueFormatter={(v) => formatBytesRate(v)}
-          yAxisWidth={75}
-          showLegend={false}
-          showAnimation={false}
-          curveType="monotone"
-          autoMinValue={false}
-          minValue={0}
+          valueFormatter={(v) => formatBytesRateShort(v)}
           customTooltip={NetTooltip}
         />
       </ChartCard>

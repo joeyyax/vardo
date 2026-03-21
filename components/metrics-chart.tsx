@@ -36,6 +36,22 @@ const SWATCH_COLORS: Record<string, string> = {
 };
 
 /**
+ * Common props shared by all Tremor AreaCharts across metric views.
+ * Apply these as defaults and override per-chart as needed.
+ */
+export const CHART_DEFAULTS = {
+  showLegend: false,
+  showAnimation: false,
+  showGradient: true,
+  showGridLines: true,
+  connectNulls: true,
+  curveType: "monotone" as const,
+  autoMinValue: false,
+  minValue: 0,
+  yAxisWidth: 80,
+} as const;
+
+/**
  * Custom dark-themed tooltip for metric area charts.
  * Replaces Tremor's default light tooltip with one that matches
  * the existing dark card style (oklch-based background, border, text).

@@ -6,11 +6,11 @@ import { Activity, Box, Cpu, HardDrive, MemoryStick, Network, Loader2, RefreshCw
 import { Button } from "@/components/ui/button";
 import { AreaChart } from "@tremor/react";
 import type { CustomTooltipProps } from "@tremor/react";
-import { formatBytes, formatMemLimit, formatTime } from "@/lib/metrics/format";
+import { formatBytes, formatBytesShort, formatBytesRate, formatBytesRateShort, formatMemLimit, formatTime } from "@/lib/metrics/format";
 import { CHART_COLORS, type TimeRange } from "@/lib/metrics/constants";
 import { useMetricsStream } from "@/lib/hooks/use-metrics-stream";
 import { Sparkline } from "@/components/app-metrics-card";
-import { TREMOR_METRIC_COLORS, MetricsTooltip } from "@/components/metrics-chart";
+import { TREMOR_METRIC_COLORS, CHART_DEFAULTS, MetricsTooltip } from "@/components/metrics-chart";
 import type { SystemInfo, DiskUsage } from "@/lib/docker/client";
 
 type AppSummary = {
@@ -62,8 +62,8 @@ function NetTooltip(props: CustomTooltipProps) {
   return (
     <MetricsTooltip
       {...props}
-      valueFormatter={(v: number) => formatBytes(v)}
-      categoryLabels={{ networkRx: "\u2193 Received", networkTx: "\u2191 Sent" }}
+      valueFormatter={(v: number) => formatBytesRate(v)}
+      categoryLabels={{ networkRxRate: "\u2193 Received", networkTxRate: "\u2191 Sent" }}
     />
   );
 }
@@ -157,9 +157,24 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
     return counts;
   }, [displayApps]);
 
-  // Memoized chart data
+  // Memoized chart data with computed network rates (delta bytes / delta seconds)
   const chartPoints = useMemo(
-    () => points.map((p) => ({ ...p, time: formatTime(p.timestamp) })),
+    () =>
+      points.map((p, i) => {
+        let networkRxRate = 0;
+        let networkTxRate = 0;
+        if (i > 0) {
+          const prev = points[i - 1];
+          const dtSec = (p.timestamp - prev.timestamp) / 1000;
+          if (dtSec > 0) {
+            const rxDelta = p.networkRx - prev.networkRx;
+            const txDelta = p.networkTx - prev.networkTx;
+            networkRxRate = Math.max(0, rxDelta / dtSec);
+            networkTxRate = Math.max(0, txDelta / dtSec);
+          }
+        }
+        return { ...p, time: formatTime(p.timestamp), networkRxRate, networkTxRate };
+      }),
     [points],
   );
 
@@ -319,15 +334,13 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
             </div>
             <div className="p-4">
               <AreaChart
+                {...CHART_DEFAULTS}
                 className="h-[180px]"
                 data={chartPoints}
                 index="time"
                 categories={["cpu"]}
                 colors={[TREMOR_METRIC_COLORS.cpu]}
                 valueFormatter={(v) => `${v.toFixed(1)}%`}
-                showLegend={false}
-                showAnimation={false}
-                curveType="monotone"
                 customTooltip={CpuTooltip}
               />
             </div>
@@ -339,16 +352,13 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
             </div>
             <div className="p-4">
               <AreaChart
+                {...CHART_DEFAULTS}
                 className="h-[180px]"
                 data={chartPoints}
                 index="time"
                 categories={["memory"]}
                 colors={[TREMOR_METRIC_COLORS.memory]}
-                valueFormatter={(v) => formatBytes(v)}
-                yAxisWidth={65}
-                showLegend={false}
-                showAnimation={false}
-                curveType="monotone"
+                valueFormatter={(v) => formatBytesShort(v)}
                 customTooltip={MemTooltip}
               />
             </div>
@@ -360,16 +370,13 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
             </div>
             <div className="p-4">
               <AreaChart
+                {...CHART_DEFAULTS}
                 className="h-[180px]"
                 data={chartPoints}
                 index="time"
-                categories={["networkRx", "networkTx"]}
-                colors={[TREMOR_METRIC_COLORS.networkRx, TREMOR_METRIC_COLORS.networkTx]}
-                valueFormatter={(v) => formatBytes(v)}
-                yAxisWidth={65}
-                showLegend={false}
-                showAnimation={false}
-                curveType="monotone"
+                categories={["networkRxRate", "networkTxRate"]}
+                colors={[TREMOR_METRIC_COLORS.networkRxRate, TREMOR_METRIC_COLORS.networkTxRate]}
+                valueFormatter={(v) => formatBytesRateShort(v)}
                 customTooltip={NetTooltip}
               />
             </div>
@@ -381,16 +388,13 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
             </div>
             <div className="p-4">
               <AreaChart
+                {...CHART_DEFAULTS}
                 className="h-[180px]"
                 data={chartPoints}
                 index="time"
                 categories={["diskTotal"]}
                 colors={[TREMOR_METRIC_COLORS.diskTotal]}
-                valueFormatter={(v) => formatBytes(v)}
-                yAxisWidth={65}
-                showLegend={false}
-                showAnimation={false}
-                curveType="monotone"
+                valueFormatter={(v) => formatBytesShort(v)}
                 customTooltip={DiskTooltip}
               />
             </div>
