@@ -6,6 +6,7 @@ import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { createSSEResponse } from "@/lib/api/sse";
 import { isMetricsEnabled } from "@/lib/metrics/config";
+import { isFeatureEnabled } from "@/lib/config/features";
 import { subscribe } from "@/lib/metrics/broadcast";
 import { aggregateContainers } from "@/lib/metrics/aggregate";
 
@@ -16,6 +17,13 @@ type RouteParams = {
 // GET /api/v1/organizations/[orgId]/projects/[projectId]/stats/stream
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
+    if (!isFeatureEnabled("metrics")) {
+      return new Response(JSON.stringify({ error: "Feature not enabled" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     const { orgId, projectId } = await params;
     const { organization } = await requireOrg();
 

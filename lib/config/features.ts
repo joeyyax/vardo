@@ -71,15 +71,15 @@ export function isFeatureEnabled(flag: FeatureFlag): boolean {
 }
 
 /**
+ * Feature flags that gate UI tabs and their corresponding API endpoints.
+ */
+export type UIGatedFlag = "metrics" | "logs" | "terminal" | "cron" | "backups";
+
+/**
  * Subset of feature flags relevant to UI tab gating.
  * Passed from server components to client components as a serializable object.
  */
-export type FeatureFlags = {
-  metrics: boolean;
-  logs: boolean;
-  terminal: boolean;
-  cron: boolean;
-};
+export type FeatureFlags = Record<UIGatedFlag, boolean>;
 
 /**
  * Get the feature flags needed for UI tab gating.
@@ -91,6 +91,7 @@ export function getFeatureFlags(): FeatureFlags {
     logs: isFeatureEnabled("logs"),
     terminal: isFeatureEnabled("terminal"),
     cron: isFeatureEnabled("cron"),
+    backups: isFeatureEnabled("backups"),
   };
 }
 
