@@ -30,7 +30,6 @@ export default async function AdminPage({ params }: PageProps) {
     redirect("/login");
   }
 
-  // Check admin status
   const dbUser = await db.query.user.findFirst({
     where: eq(user.id, session.user.id),
     columns: { isAppAdmin: true },
@@ -44,41 +43,72 @@ export default async function AdminPage({ params }: PageProps) {
   if (!orgData) redirect("/login");
   const orgId = orgData.organization.id;
 
-  // Gather stats + metrics data in parallel
+  // Only fetch data needed for the active tab
+  const needsStats = activeTab === "overview";
+  const needsHealth = activeTab === "overview" || activeTab === "system";
+  const needsOrgs = activeTab === "overview" || activeTab === "organizations";
+  const needsMetrics = activeTab === "metrics";
+  const needsFlags = activeTab === "system";
+
+  // Lightweight queries (always fast)
+  const featureFlags = needsFlags ? getAllFeatureFlags() : [];
+
+  // Parallel data fetching — only what's needed
   const [
-    [{ userCount }],
-    [{ appCount }],
-    [{ deploymentCount }],
+    statCounts,
     templateList,
     appList,
     allOrgs,
     allApps,
+    systemHealth,
     systemInfo,
     initialMetrics,
     cachedDisk,
+    sparklines,
   ] = await Promise.all([
-    db.select({ userCount: sql<number>`count(*)` }).from(user),
-    db.select({ appCount: sql<number>`count(*)` }).from(apps),
-    db.select({ deploymentCount: sql<number>`count(*)` }).from(deployments),
-    loadTemplates(),
-    db.query.apps.findMany({
-      where: eq(apps.organizationId, orgId),
-      orderBy: [asc(apps.sortOrder), desc(apps.createdAt)],
-      columns: { id: true, name: true, displayName: true, status: true },
-    }),
-    db.query.organizations.findMany({
-      columns: { id: true, name: true, slug: true },
-    }),
-    db.query.apps.findMany({
-      orderBy: [asc(apps.sortOrder), desc(apps.createdAt)],
-      columns: { id: true, name: true, displayName: true, status: true, organizationId: true },
-    }),
-    getSystemInfo().catch(() => null),
-    fetchAllContainerMetrics().catch(() => []),
-    getLatestDiskUsage().catch(() => null),
+    needsStats
+      ? Promise.all([
+          db.select({ userCount: sql<number>`count(*)` }).from(user),
+          db.select({ appCount: sql<number>`count(*)` }).from(apps),
+          db.select({ deploymentCount: sql<number>`count(*)` }).from(deployments),
+          loadTemplates(),
+        ])
+      : Promise.resolve(null),
+    needsStats ? loadTemplates() : Promise.resolve([]),
+    needsMetrics
+      ? db.query.apps.findMany({
+          where: eq(apps.organizationId, orgId),
+          orderBy: [asc(apps.sortOrder), desc(apps.createdAt)],
+          columns: { id: true, name: true, displayName: true, status: true },
+        })
+      : Promise.resolve([]),
+    needsOrgs
+      ? db.query.organizations.findMany({ columns: { id: true, name: true, slug: true } })
+      : Promise.resolve([]),
+    needsOrgs || needsMetrics
+      ? db.query.apps.findMany({
+          orderBy: [asc(apps.sortOrder), desc(apps.createdAt)],
+          columns: { id: true, name: true, displayName: true, status: true, organizationId: true },
+        })
+      : Promise.resolve([]),
+    needsHealth ? getSystemHealth() : Promise.resolve({ services: [], resources: [], runtime: { nodeVersion: "", nextVersion: "", platform: "", arch: "", uptime: 0, memoryUsage: 0, memoryHeapUsed: 0, memoryHeapTotal: 0, pid: 0 }, auth: { passkeys: false, magicLink: false, github: false, passwords: false, twoFactor: false } }),
+    needsMetrics ? getSystemInfo().catch(() => null) : Promise.resolve(null),
+    needsOrgs || needsMetrics ? fetchAllContainerMetrics().catch(() => []) : Promise.resolve([]),
+    needsMetrics ? getLatestDiskUsage().catch(() => null) : Promise.resolve(null),
+    needsStats ? buildSparklines(30) : Promise.resolve({}),
   ]);
 
-  // Pre-aggregate initial stats per app (match against all apps for admin view)
+  // Stats
+  const stats = statCounts
+    ? {
+        userCount: Number(statCounts[0][0].userCount),
+        appCount: Number(statCounts[1][0].appCount),
+        deploymentCount: Number(statCounts[2][0].deploymentCount),
+        templateCount: statCounts[3].length,
+      }
+    : { userCount: 0, appCount: 0, deploymentCount: 0, templateCount: 0 };
+
+  // Pre-aggregate metrics per app
   const initialStats: Record<string, ContainerMetrics[]> = {};
   for (const m of initialMetrics) {
     const matched = allApps.find(
@@ -105,73 +135,57 @@ export default async function AdminPage({ params }: PageProps) {
     })),
   }));
 
-  const stats = {
-    userCount: Number(userCount),
-    appCount: Number(appCount),
-    deploymentCount: Number(deploymentCount),
-    templateCount: templateList.length,
-  };
+  // Org breakdown
+  let orgBreakdown: Parameters<typeof AdminPanel>[0]["orgBreakdown"] = [];
+  if (needsOrgs && allOrgs.length > 0) {
+    const [memberCounts, deploymentCounts] = await Promise.all([
+      db.select({
+        organizationId: memberships.organizationId,
+        count: sql<number>`count(*)`,
+      }).from(memberships).groupBy(memberships.organizationId),
+      db.select({
+        organizationId: apps.organizationId,
+        count: sql<number>`count(*)`,
+      }).from(deployments)
+        .innerJoin(apps, eq(deployments.appId, apps.id))
+        .groupBy(apps.organizationId),
+    ]);
 
-  // Build org breakdown from live metrics + DB counts
-  const [memberCounts, deploymentCounts] = await Promise.all([
-    db.select({
-      organizationId: memberships.organizationId,
-      count: sql<number>`count(*)`,
-    }).from(memberships).groupBy(memberships.organizationId),
-    db.select({
-      organizationId: apps.organizationId,
-      count: sql<number>`count(*)`,
-    }).from(deployments)
-      .innerJoin(apps, eq(deployments.appId, apps.id))
-      .groupBy(apps.organizationId),
-  ]);
+    const memberCountMap = new Map(memberCounts.map((r) => [r.organizationId, Number(r.count)]));
+    const deploymentCountMap = new Map(deploymentCounts.map((r) => [r.organizationId, Number(r.count)]));
 
-  const memberCountMap = new Map(memberCounts.map((r) => [r.organizationId, Number(r.count)]));
-  const deploymentCountMap = new Map(deploymentCounts.map((r) => [r.organizationId, Number(r.count)]));
-
-  const orgBreakdown = allOrgs.map((org) => {
-    const orgApps = allApps.filter((a) => a.organizationId === org.id);
-    let cpu = 0, memory = 0, networkRx = 0, networkTx = 0, containers = 0;
-    for (const a of orgApps) {
-      const stats = initialStats[a.id];
-      if (!stats) continue;
-      for (const m of stats) {
-        cpu += m.cpuPercent;
-        memory += m.memoryUsage;
-        networkRx += m.networkRxBytes;
-        networkTx += m.networkTxBytes;
-        containers++;
+    orgBreakdown = allOrgs.map((org) => {
+      const orgApps = allApps.filter((a) => a.organizationId === org.id);
+      let cpu = 0, memory = 0, networkRx = 0, networkTx = 0, containers = 0;
+      for (const a of orgApps) {
+        const s = initialStats[a.id];
+        if (!s) continue;
+        for (const m of s) {
+          cpu += m.cpuPercent;
+          memory += m.memoryUsage;
+          networkRx += m.networkRxBytes;
+          networkTx += m.networkTxBytes;
+          containers++;
+        }
       }
-    }
-    return {
-      id: org.id,
-      name: org.name,
-      slug: org.slug,
-      memberCount: memberCountMap.get(org.id) ?? 0,
-      appCount: orgApps.length,
-      activeApps: orgApps.filter((a) => a.status === "active").length,
-      deploymentCount: deploymentCountMap.get(org.id) ?? 0,
-      cpu,
-      memory,
-      networkRx,
-      networkTx,
-      containers,
-    };
-  });
-
-  // Build sparklines from cumulative counts over the last 30 days
-  // This works immediately — no collector history needed
-  const now = Date.now();
-  const sparklineDays = 30;
-  const sparklines = await buildSparklines(sparklineDays);
-  const featureFlags = getAllFeatureFlags();
-  const systemHealth = await getSystemHealth();
+      return {
+        id: org.id,
+        name: org.name,
+        slug: org.slug,
+        memberCount: memberCountMap.get(org.id) ?? 0,
+        appCount: orgApps.length,
+        activeApps: orgApps.filter((a) => a.status === "active").length,
+        deploymentCount: deploymentCountMap.get(org.id) ?? 0,
+        cpu, memory, networkRx, networkTx, containers,
+      };
+    });
+  }
 
   return (
     <AdminPanel
       activeTab={activeTab}
       stats={stats}
-      sparklines={sparklines}
+      sparklines={sparklines as Record<string, [number, number][]>}
       featureFlags={featureFlags}
       systemHealth={systemHealth}
       orgId={orgId}
@@ -184,11 +198,6 @@ export default async function AdminPage({ params }: PageProps) {
   );
 }
 
-/**
- * Build sparkline data from cumulative entity counts.
- * For each day in the range, counts how many rows existed by that day
- * using created_at timestamps. Works immediately with no collector history.
- */
 async function buildSparklines(days: number): Promise<Record<string, [number, number][]>> {
   const results = await db.execute(sql`
     WITH days AS (
