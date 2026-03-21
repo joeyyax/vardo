@@ -3,6 +3,17 @@ import { db } from "@/lib/db";
 import { redis } from "@/lib/redis";
 import { sql } from "drizzle-orm";
 
+const TIMEOUT_MS = 5_000;
+
+function withTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out`)), TIMEOUT_MS),
+    ),
+  ]);
+}
+
 // GET /api/health — unauthenticated, for Traefik/Docker/external monitoring
 export async function GET() {
   const services: Record<string, string> = {};
@@ -10,21 +21,29 @@ export async function GET() {
 
   // Check PostgreSQL
   try {
-    await db.execute(sql`SELECT 1`);
+    await withTimeout(db.execute(sql`SELECT 1`), "postgres");
     services.postgres = "ok";
   } catch (err) {
     healthy = false;
-    services.postgres = err instanceof Error ? err.message : "unreachable";
+    services.postgres = "error";
+    console.error(
+      "[health] postgres check failed:",
+      err instanceof Error ? err.message : err,
+    );
   }
 
   // Check Redis
   try {
-    const pong = await redis.ping();
+    const pong = await withTimeout(redis.ping(), "redis");
     services.redis = pong === "PONG" ? "ok" : "unexpected response";
     if (services.redis !== "ok") healthy = false;
   } catch (err) {
     healthy = false;
-    services.redis = err instanceof Error ? err.message : "unreachable";
+    services.redis = "error";
+    console.error(
+      "[health] redis check failed:",
+      err instanceof Error ? err.message : err,
+    );
   }
 
   return NextResponse.json(

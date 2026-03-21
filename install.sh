@@ -197,6 +197,19 @@ fi
 
 if [ "$NEEDS_DOCKER_RESTART" = true ]; then
   systemctl restart docker 2>/dev/null || true
+  log "Waiting for Docker daemon to be ready..."
+  DOCKER_WAIT=0
+  while [ $DOCKER_WAIT -lt 30 ]; do
+    if docker info > /dev/null 2>&1; then
+      break
+    fi
+    sleep 1
+    DOCKER_WAIT=$((DOCKER_WAIT + 1))
+  done
+  if [ $DOCKER_WAIT -ge 30 ]; then
+    error "Docker daemon did not become ready within 30 seconds"
+  fi
+  log "Docker daemon is ready"
 fi
 
 # Git check
@@ -210,6 +223,10 @@ fi
 if [ -d "$HOST_DIR" ]; then
   log "Updating Host..."
   cd "$HOST_DIR"
+  if ! git diff --quiet || ! git diff --cached --quiet; then
+    warn "Local changes detected, stashing..."
+    git stash --quiet
+  fi
   git pull --quiet
 else
   log "Installing Host to $HOST_DIR..."
@@ -289,7 +306,7 @@ if [ ! -f "$ENV_FILE" ]; then
 
   # Generate Traefik dashboard BasicAuth credentials
   TRAEFIK_DASH_PASS=$(openssl rand -base64 12)
-  TRAEFIK_DASHBOARD_AUTH=$(printf 'admin:%s' "$(openssl passwd -apr1 "$TRAEFIK_DASH_PASS")")
+  TRAEFIK_DASHBOARD_AUTH=$(printf 'admin:%s' "$(openssl passwd -apr1 "$TRAEFIK_DASH_PASS")" | sed 's/\$/\$\$/g')
 
   cat > "$ENV_FILE" <<EOF
 HOST_DOMAIN=$HOST_DOMAIN
@@ -342,9 +359,8 @@ if [ $ELAPSED -ge $TIMEOUT ]; then
   warn "Health check timed out after ${TIMEOUT}s — continuing anyway"
 fi
 
-# Run migrations
-log "Running database migrations..."
-docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec -T host npx drizzle-kit push --force 2>/dev/null || true
+# NOTE: Migrations run automatically via the app's start script (drizzle-kit migrate).
+# No need to run drizzle-kit push separately inside the container.
 
 # Seed templates
 log "Seeding templates..."
