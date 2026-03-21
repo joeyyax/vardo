@@ -95,14 +95,23 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     // Validate projectId changes — must belong to same org
-    if (parsed.data.projectId) {
-      const project = await db.query.projects.findFirst({
-        where: and(eq(projects.id, parsed.data.projectId), eq(projects.organizationId, orgId)),
-        columns: { id: true },
-      });
-      if (!project) {
-        return NextResponse.json({ error: "Project not found" }, { status: 400 });
+    let oldProjectId: string | null = null;
+    if ("projectId" in parsed.data) {
+      if (parsed.data.projectId) {
+        const project = await db.query.projects.findFirst({
+          where: and(eq(projects.id, parsed.data.projectId), eq(projects.organizationId, orgId)),
+          columns: { id: true },
+        });
+        if (!project) {
+          return NextResponse.json({ error: "Project not found" }, { status: 400 });
+        }
       }
+      // Track old project for cleanup
+      const existing = await db.query.apps.findFirst({
+        where: eq(apps.id, appId),
+        columns: { projectId: true },
+      });
+      oldProjectId = existing?.projectId ?? null;
     }
 
     const [updated] = await db
@@ -112,6 +121,17 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         and(eq(apps.id, appId), eq(apps.organizationId, orgId))
       )
       .returning();
+
+    // Clean up empty projects after moving an app
+    if (oldProjectId && oldProjectId !== updated?.projectId) {
+      const remaining = await db.query.apps.findFirst({
+        where: eq(apps.projectId, oldProjectId),
+        columns: { id: true },
+      });
+      if (!remaining) {
+        await db.delete(projects).where(eq(projects.id, oldProjectId));
+      }
+    }
 
     if (!updated) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -151,7 +171,7 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     // Fetch app before deleting
     const app = await db.query.apps.findFirst({
       where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
-      columns: { id: true, name: true },
+      columns: { id: true, name: true, projectId: true },
     });
 
     if (!app) {
@@ -166,6 +186,18 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     await db
       .delete(apps)
       .where(and(eq(apps.id, appId), eq(apps.organizationId, orgId)));
+
+    // Clean up empty projects — if this was the last app, delete the project
+    if (app.projectId) {
+      const { projects } = await import("@/lib/db/schema");
+      const remaining = await db.query.apps.findFirst({
+        where: eq(apps.projectId, app.projectId),
+        columns: { id: true },
+      });
+      if (!remaining) {
+        await db.delete(projects).where(eq(projects.id, app.projectId));
+      }
+    }
 
     recordActivity({
       organizationId: orgId,
