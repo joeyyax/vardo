@@ -21,7 +21,7 @@ const updateAppSchema = z.object({
   gitBranch: z.string().nullable().optional(),
   rootDirectory: z.string().nullable().optional(),
   source: z.enum(["git", "direct"]).optional(),
-  deployType: z.enum(["compose", "dockerfile", "image", "static", "nixpacks"]).optional(),
+  deployType: z.enum(["compose", "dockerfile", "image", "nixpacks"]).optional(),
   gitUrl: z.string().nullable().optional(),
   imageName: z.string().nullable().optional(),
   restartPolicy: z.string().nullable().optional(),

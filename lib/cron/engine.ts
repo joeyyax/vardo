@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { cronJobs, apps } from "@/lib/db/schema";
+import { cronJobs, cronJobRuns } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { exec } from "child_process";
@@ -122,6 +122,9 @@ export async function tickCronJobs(): Promise<void> {
     }
 
     // Mark as running
+    const runId = nanoid();
+    const startedAt = new Date();
+
     await db.update(cronJobs).set({
       lastRunAt: now,
       lastStatus: "running",
@@ -133,12 +136,26 @@ export async function tickCronJobs(): Promise<void> {
       ? await fetchUrl(job.command)
       : await executeInContainer(job.app.name, job.command);
 
-    // Update status
+    const completedAt = new Date();
+    const status = result.success ? "success" : "failed";
+
+    // Update cron job summary
     await db.update(cronJobs).set({
-      lastStatus: result.success ? "success" : "failed",
+      lastStatus: status,
       lastLog: result.log.slice(0, 10000), // Cap log size
-      updatedAt: new Date(),
+      updatedAt: completedAt,
     }).where(eq(cronJobs.id, job.id));
+
+    // Write run history record
+    await db.insert(cronJobRuns).values({
+      id: runId,
+      cronJobId: job.id,
+      status,
+      startedAt,
+      completedAt,
+      output: result.success ? result.log.slice(0, 50000) : null,
+      error: result.success ? null : result.log.slice(0, 50000),
+    });
 
     console.log(
       `[cron] ${job.name} (${job.app.name}): ${result.success ? "OK" : "FAILED"} in ${result.durationMs}ms`

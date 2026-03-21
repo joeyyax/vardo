@@ -24,7 +24,7 @@ const createAppSchema = z
       .regex(/^[a-z0-9-]+$/, "Name must be lowercase alphanumeric with hyphens"),
     description: z.string().optional(),
     source: z.enum(["git", "direct"]),
-    deployType: z.enum(["compose", "dockerfile", "image", "static", "nixpacks"]),
+    deployType: z.enum(["compose", "dockerfile", "image", "nixpacks"]),
     gitUrl: z.string().url().refine((url) => url.startsWith("https://"), { message: "Only HTTPS git URLs are allowed" }).optional(),
     gitBranch: z.string().regex(/^[a-zA-Z0-9._\-/]+$/, "Invalid branch name").optional(),
     imageName: z.string().optional(),

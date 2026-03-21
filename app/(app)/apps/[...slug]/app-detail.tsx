@@ -132,7 +132,7 @@ type App = {
   displayName: string;
   description: string | null;
   source: "git" | "direct";
-  deployType: "compose" | "dockerfile" | "image" | "static" | "nixpacks";
+  deployType: "compose" | "dockerfile" | "image" | "nixpacks";
   gitUrl: string | null;
   gitBranch: string | null;
   imageName: string | null;
@@ -502,8 +502,6 @@ function deployTypeLabel(deployType: string) {
       return "Dockerfile";
     case "image":
       return "Image";
-    case "static":
-      return "Static";
     default:
       return deployType;
   }

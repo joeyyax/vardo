@@ -109,7 +109,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         domain,
         isDefault: false,
         enabled: true,
-        verified: false,
+        // Auto-verify: DNS verification skipped for self-hosted PaaS
+        verified: true,
       })
       .returning();
 

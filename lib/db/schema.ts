@@ -21,7 +21,6 @@ export const deployTypeEnum = pgEnum("deploy_type", [
   "compose",
   "dockerfile",
   "image",
-  "static",
   "nixpacks",
 ]);
 
@@ -750,6 +749,27 @@ export const cronJobs = pgTable("cron_job", {
 });
 
 // ---------------------------------------------------------------------------
+// Host: Cron Job Runs (execution history)
+// ---------------------------------------------------------------------------
+
+export const cronJobRunStatusEnum = pgEnum("cron_job_run_status", [
+  "success",
+  "failed",
+]);
+
+export const cronJobRuns = pgTable("cron_job_run", {
+  id: text("id").primaryKey(),
+  cronJobId: text("cron_job_id")
+    .notNull()
+    .references(() => cronJobs.id, { onDelete: "cascade" }),
+  status: cronJobRunStatusEnum("status").notNull(),
+  startedAt: timestamp("started_at").defaultNow().notNull(),
+  completedAt: timestamp("completed_at"),
+  output: text("output"),
+  error: text("error"),
+});
+
+// ---------------------------------------------------------------------------
 // Host: App Transfers (move apps between organizations)
 // ---------------------------------------------------------------------------
 
@@ -1055,10 +1075,18 @@ export const volumeLimitsRelations = relations(volumeLimits, ({ one }) => ({
   }),
 }));
 
-export const cronJobsRelations = relations(cronJobs, ({ one }) => ({
+export const cronJobsRelations = relations(cronJobs, ({ one, many }) => ({
   app: one(apps, {
     fields: [cronJobs.appId],
     references: [apps.id],
+  }),
+  runs: many(cronJobRuns),
+}));
+
+export const cronJobRunsRelations = relations(cronJobRuns, ({ one }) => ({
+  cronJob: one(cronJobs, {
+    fields: [cronJobRuns.cronJobId],
+    references: [cronJobs.id],
   }),
 }));
 
