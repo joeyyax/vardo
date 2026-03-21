@@ -65,7 +65,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       async function refreshSlowData() {
         try {
           const d = await getLatestDiskUsage();
-          if (d) cachedDisk = d as unknown as DiskUsage;
+          if (d) {
+            cachedDisk = {
+              images: { count: 0, totalSize: d.images, reclaimable: 0 },
+              containers: { count: 0, totalSize: 0 },
+              volumes: { count: 0, totalSize: d.volumes },
+              buildCache: { count: 0, totalSize: d.buildCache, reclaimable: 0 },
+              total: d.total,
+            };
+          }
         } catch { /* skip */ }
         try { cachedSystem = await getSystemInfo(); } catch { /* skip */ }
         await refreshAppDisk();

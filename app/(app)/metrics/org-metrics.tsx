@@ -300,7 +300,10 @@ export function OrgMetrics({ orgId, apps, initialSystem, initialAppStats, initia
     (sum, ps) => sum + ps.containers.length,
     0
   );
-  const activeApps = apps.filter((p) => p.status === "active").length;
+  // In admin mode, derive app count from SSE data since apps prop may be empty
+  const liveApps = Object.values(appStats).map((s) => s.app);
+  const displayApps = liveApps.length > 0 ? liveApps : apps;
+  const activeApps = displayApps.filter((p) => p.status === "active").length;
 
   return (
     <div className="space-y-6">
@@ -470,7 +473,7 @@ export function OrgMetrics({ orgId, apps, initialSystem, initialAppStats, initia
       })()}
 
       {/* Project list with stats */}
-      {apps.length === 0 ? (
+      {displayApps.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
           <Activity className="size-8 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">No apps yet.</p>
@@ -487,7 +490,7 @@ export function OrgMetrics({ orgId, apps, initialSystem, initialAppStats, initia
             <span className="text-right">Containers</span>
           </div>
           <div className="divide-y">
-            {apps.map((a) => {
+            {displayApps.map((a) => {
               const ps = appStats[a.id];
               const cpu = ps?.containers.reduce((s, c) => s + c.cpuPercent, 0) ?? 0;
               const mem = ps?.containers.reduce((s, c) => s + c.memoryUsage, 0) ?? 0;
