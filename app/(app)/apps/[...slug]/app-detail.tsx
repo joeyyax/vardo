@@ -144,6 +144,8 @@ type App = {
   restartPolicy: string | null;
   connectionInfo: { label: string; value: string; copyRef?: string }[] | null;
   exposedPorts: { internal: number; external?: number; description?: string }[] | null;
+  cpuLimit: number | null;
+  memoryLimit: number | null;
   projectId: string | null;
   cloneStrategy: string | null;
   dependsOn: string[] | null;
@@ -594,6 +596,8 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
   const [gitBranch, setGitBranch] = useState(app.gitBranch || "");
   const [rootDirectory, setRootDirectory] = useState(app.rootDirectory || "");
   const [editParentId, setEditParentId] = useState<string | null>(app.projectId ?? null);
+  const [cpuLimit, setCpuLimit] = useState(app.cpuLimit?.toString() || "");
+  const [memoryLimit, setMemoryLimit] = useState(app.memoryLimit?.toString() || "");
 
   // New environment form state
   const [newEnvOpen, setNewEnvOpen] = useState(false);
@@ -981,6 +985,8 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
       }
       if (editImageName.trim()) body.imageName = editImageName.trim();
       body.restartPolicy = restartPolicy;
+      body.cpuLimit = cpuLimit ? parseFloat(cpuLimit) : null;
+      body.memoryLimit = memoryLimit ? parseInt(memoryLimit, 10) : null;
       if (editParentId) {
         body.projectId = editParentId;
       } else {
@@ -2454,6 +2460,20 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                     <SelectItem value="no">Never</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+
+              {/* Resource Limits */}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-cpu-limit">CPU Limit (cores)</Label>
+                  <Input id="edit-cpu-limit" type="number" step="0.1" min="0.1" placeholder="No limit" value={cpuLimit} onChange={(e) => setCpuLimit(e.target.value)} />
+                  <p className="text-xs text-muted-foreground">{cpuLimit ? cpuLimit + " CPU core(s)" : "No limit"}</p>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-memory-limit">Memory Limit (MB)</Label>
+                  <Input id="edit-memory-limit" type="number" step="64" min="64" placeholder="No limit" value={memoryLimit} onChange={(e) => setMemoryLimit(e.target.value)} />
+                  <p className="text-xs text-muted-foreground">{memoryLimit ? memoryLimit + " MB" : "No limit"}</p>
+                </div>
               </div>
 
               {/* Toggles */}
