@@ -34,6 +34,7 @@ export type Template = {
     | null;
   defaultCpuLimit: number | null;
   defaultMemoryLimit: number | null;
+  defaultDiskWriteAlertThreshold: number | null; // bytes/hour, null = system default (1GB)
   isBuiltIn: boolean;
 };
 
@@ -78,6 +79,7 @@ export async function loadTemplates(): Promise<Template[]> {
         defaultCronJobs: (raw.cronJobs as Template["defaultCronJobs"]) ?? null,
         defaultCpuLimit: (raw.cpuLimit as number) ?? null,
         defaultMemoryLimit: (raw.memoryLimit as number) ?? null,
+        defaultDiskWriteAlertThreshold: (raw.diskWriteAlertThreshold as number) ?? null,
         isBuiltIn: true,
       });
     } catch (err) {

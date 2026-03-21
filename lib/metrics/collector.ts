@@ -1,6 +1,7 @@
 import { isMetricsEnabled } from "./config";
 import { fetchAllContainerMetrics } from "./cadvisor";
-import { storeMetrics, storeDiskUsage, storeProjectDisk, storeBusinessMetric, storeOrgBusinessMetric } from "./store";
+import { storeMetrics, storeDiskUsage, storeDiskWrite, storeProjectDisk, storeBusinessMetric, storeOrgBusinessMetric } from "./store";
+import { checkDiskWriteAlerts } from "./disk-write-alerts";
 import { getSystemDiskUsage, getPerProjectDiskUsage } from "@/lib/docker/client";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
@@ -45,18 +46,20 @@ function scheduleTick() {
 }
 
 async function collect() {
+  let metrics: Awaited<ReturnType<typeof fetchAllContainerMetrics>> = [];
   try {
-    const metrics = await fetchAllContainerMetrics();
+    metrics = await fetchAllContainerMetrics();
     const results = await Promise.allSettled(
-      metrics.map((m) =>
+      metrics.flatMap((m) => [
         storeMetrics(m.projectName, m.containerId, m.containerName, m.timestamp, {
           cpuPercent: m.cpuPercent,
           memoryUsage: m.memoryUsage,
           memoryLimit: m.memoryLimit,
           networkRxBytes: m.networkRxBytes,
           networkTxBytes: m.networkTxBytes,
-        }, m.organizationId)
-      )
+        }, m.organizationId),
+        storeDiskWrite(m.projectName, m.containerId, m.containerName, m.timestamp, m.diskWriteBytes, m.organizationId),
+      ])
     );
     const failed = results.filter((r) => r.status === "rejected").length;
     if (failed > 0) {
@@ -64,6 +67,16 @@ async function collect() {
     }
   } catch (err) {
     console.error("[collector] Error:", (err as Error).message);
+  }
+
+  // Disk write alert check: every 6th tick after warmup (~3 min at 30s interval)
+  // During warmup, skip to accumulate baseline data
+  if (tickCount >= WARMUP_TICKS && tickCount % 6 === 0 && metrics.length > 0) {
+    try {
+      await checkDiskWriteAlerts(metrics);
+    } catch (err) {
+      console.error("[collector] Disk write alert check error:", (err as Error).message);
+    }
   }
 
   // Disk usage: every 10th tick during warmup, every 10th tick after (~5 min at 30s)

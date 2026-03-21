@@ -342,6 +342,7 @@ export const apps = pgTable(
     needsRedeploy: boolean("needs_redeploy").default(false),
     cpuLimit: real("cpu_limit"), // CPU cores (e.g. 0.5, 1, 2)
     memoryLimit: integer("memory_limit"), // Memory in MB (e.g. 256, 512, 1024)
+    diskWriteAlertThreshold: bigint("disk_write_alert_threshold", { mode: "number" }), // bytes/hour, null = default 1GB
     autoRollback: boolean("auto_rollback").default(false), // Rollback on crash after deploy
     rollbackGracePeriod: integer("rollback_grace_period").default(60), // Seconds to monitor after deploy
     envContent: text("env_content"), // Encrypted env file blob (AES-256-GCM)
