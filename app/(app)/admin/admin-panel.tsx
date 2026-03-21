@@ -182,6 +182,7 @@ export function AdminPanel({
             initialSystem={initialSystem}
             initialAppStats={initialAppStats}
             initialDisk={initialDisk}
+            adminMode
           />
         </TabsContent>
       </Tabs>

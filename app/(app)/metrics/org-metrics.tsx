@@ -37,9 +37,11 @@ type OrgMetricsProps = {
   initialSystem?: SystemInfo | null;
   initialAppStats?: { id: string; name: string; displayName: string; status: string; containers: ContainerStatsSnapshot[] }[];
   initialDisk?: { total: number; images: number; volumes: number; buildCache: number } | null;
+  /** When true, uses admin system-wide endpoints instead of org-scoped ones */
+  adminMode?: boolean;
 };
 
-export function OrgMetrics({ orgId, apps, initialSystem, initialAppStats, initialDisk }: OrgMetricsProps) {
+export function OrgMetrics({ orgId, apps, initialSystem, initialAppStats, initialDisk, adminMode }: OrgMetricsProps) {
   const [timeRange, setTimeRange] = useState<TimeRange>("1h");
   const [disk, setDisk] = useState<DiskUsage | null>(initialDisk ? {
     images: { count: 0, totalSize: initialDisk.images, reclaimable: 0 },
@@ -113,7 +115,9 @@ export function OrgMetrics({ orgId, apps, initialSystem, initialAppStats, initia
     async function loadHistory() {
       try {
         const res = await fetch(
-          `/api/v1/organizations/${orgId}/stats?from=${from}&to=${now}&bucket=${BUCKET_MS[timeRange]}`,
+          adminMode
+            ? `/api/v1/admin/stats?from=${from}&to=${now}&bucket=${BUCKET_MS[timeRange]}`
+            : `/api/v1/organizations/${orgId}/stats?from=${from}&to=${now}&bucket=${BUCKET_MS[timeRange]}`,
           { signal: AbortSignal.timeout(5000) }
         );
         if (!res.ok) {
@@ -193,7 +197,10 @@ export function OrgMetrics({ orgId, apps, initialSystem, initialAppStats, initia
 
   // SSE stream — always running, appends live data to the chart
   useEffect(() => {
-    const es = new EventSource(`/api/v1/organizations/${orgId}/stats/stream`);
+    const streamUrl = adminMode
+      ? `/api/v1/admin/stats/stream`
+      : `/api/v1/organizations/${orgId}/stats/stream`;
+    const es = new EventSource(streamUrl);
 
     es.addEventListener("stats", (event) => {
       try {
