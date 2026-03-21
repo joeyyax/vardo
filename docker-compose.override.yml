@@ -4,6 +4,9 @@
 # - Exposes service ports to localhost for direct access
 # - Disables TLS / ACME (uses insecure Traefik dashboard)
 # - Attaches all services to host-network so localhost can reach them
+#
+# All optional profiles (logs, metrics) are activated in .env via COMPOSE_PROFILES
+# so that `docker compose up` in dev starts everything by default.
 
 services:
   # Disable the host app in dev — use `pnpm dev` instead.
