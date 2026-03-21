@@ -189,6 +189,8 @@ echo -e "${RESET}"
 
 step "Rebuilding containers"
 
+# COMPOSE_PROFILES from .env.prod controls which optional services start.
+# Docker Compose reads it automatically from the --env-file.
 log "Building images (this may take a few minutes)..."
 docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" build --quiet
 
