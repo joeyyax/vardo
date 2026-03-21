@@ -275,11 +275,13 @@ function ProjectCard({
   projectApps,
   metrics,
   history,
+  historyTick,
 }: {
   project: NonNullable<AppWithRelations["project"]>;
   projectApps: AppWithRelations[];
   metrics: Map<string, AppMetrics>;
   history: Map<string, MetricsHistory>;
+  historyTick: number;
 }) {
   const color = project.color || "#6366f1";
 
@@ -303,7 +305,8 @@ function ProjectCard({
       result.push(sum);
     }
     return result;
-  }, [projectApps, history]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectApps, historyTick]);
 
   // Collect unique icons
   const icons = useMemo(() => {
@@ -518,7 +521,7 @@ export function AppGrid({
 }: AppGridProps) {
   const router = useRouter();
   const [activeTagIds, setActiveTagIds] = useState<Set<string>>(new Set());
-  const { metrics, history } = useAppMetrics(orgId);
+  const { metrics, history, historyTick } = useAppMetrics(orgId);
 
   useEffect(() => {
     const interval = setInterval(() => router.refresh(), 10000);
@@ -613,6 +616,7 @@ export function AppGrid({
             projectApps={projectApps}
             metrics={metrics}
             history={history}
+            historyTick={historyTick}
           />
         ))}
         {standaloneApps.map((app) => (
