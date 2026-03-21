@@ -1,38 +1,37 @@
 "use client";
 
 import type { CustomTooltipProps } from "@tremor/react";
-import { CHART_COLORS } from "@/lib/metrics/constants";
 
 /**
  * Color mapping for Tremor charts.
  *
- * Tremor v3 generates Tailwind utility classes from the color strings you pass.
- * It detects "--" in the string and wraps it as an arbitrary value, e.g.
- * `stroke-[var(--metric-cpu)]`. This works with Tailwind v4's native CSS
- * variable support. The actual oklch values live in globals.css under both
- * :root and .dark.
+ * Uses Tremor's native Tailwind color names so gradients, fills, and strokes
+ * work out of the box without CSS variable hacks.
  */
 export const TREMOR_METRIC_COLORS = {
-  cpu: "var(--metric-cpu)",
-  memory: "var(--metric-memory)",
-  networkRx: "var(--metric-network-rx)",
-  networkTx: "var(--metric-network-tx)",
-  networkRxRate: "var(--metric-network-rx)",
-  networkTxRate: "var(--metric-network-tx)",
-  memoryLimit: "var(--metric-memory-limit)",
-  diskTotal: "var(--metric-disk)",
+  cpu: "blue",
+  memory: "emerald",
+  networkRx: "cyan",
+  networkTx: "amber",
+  networkRxRate: "cyan",
+  networkTxRate: "amber",
+  memoryLimit: "orange",
+  diskTotal: "slate",
 } as const;
 
-/** Maps data keys to the raw oklch color used for tooltip swatches. */
+/**
+ * Maps data keys to hex colors for tooltip swatches.
+ * These correspond to Tailwind's color-500 values to match what Tremor renders.
+ */
 const SWATCH_COLORS: Record<string, string> = {
-  cpu: CHART_COLORS.cpu,
-  memory: CHART_COLORS.memory,
-  networkRx: CHART_COLORS.networkRx,
-  networkTx: CHART_COLORS.networkTx,
-  networkRxRate: CHART_COLORS.networkRx,
-  networkTxRate: CHART_COLORS.networkTx,
-  memoryLimit: CHART_COLORS.memoryLimit,
-  diskTotal: CHART_COLORS.disk,
+  cpu: "#3b82f6",        // blue-500
+  memory: "#10b981",     // emerald-500
+  networkRx: "#06b6d4",  // cyan-500
+  networkTx: "#f59e0b",  // amber-500
+  networkRxRate: "#06b6d4",
+  networkTxRate: "#f59e0b",
+  memoryLimit: "#f97316", // orange-500
+  diskTotal: "#64748b",   // slate-500
 };
 
 /**
