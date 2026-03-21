@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import { AreaChart } from "@tremor/react";
 import type { CustomTooltipProps } from "@tremor/react";
-import { Loader2 } from "lucide-react";
+import { AlertTriangle, Loader2 } from "lucide-react";
 import { Cpu, MemoryStick, Network } from "lucide-react";
 import { ChartCard } from "@/components/app-status";
 import { formatBytes, formatTime } from "@/lib/metrics/format";
@@ -56,7 +56,7 @@ function NetTooltip(props: CustomTooltipProps) {
 export function ProjectMetrics({ orgId, projectId, apps }: ProjectMetricsProps) {
   const [timeRange, setTimeRange] = useState<TimeRange>("1h");
 
-  const { points, loading } = useMetricsStream({
+  const { points, loading, error, connected } = useMetricsStream({
     historyUrl: `/api/v1/organizations/${orgId}/projects/${projectId}/stats/history`,
     streamUrl: `/api/v1/organizations/${orgId}/projects/${projectId}/stats/stream`,
     timeRange,
@@ -66,6 +66,18 @@ export function ProjectMetrics({ orgId, projectId, apps }: ProjectMetricsProps) 
     () => points.map((p) => ({ ...p, time: formatTime(p.timestamp) })),
     [points],
   );
+
+  if (error && !connected && !loading && points.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
+        <AlertTriangle className="size-6 text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">Metrics unavailable</p>
+        <p className="text-xs text-muted-foreground max-w-xs text-center">
+          Could not connect to the metrics service. This may be a temporary issue.
+        </p>
+      </div>
+    );
+  }
 
   if (loading && points.length === 0) {
     return (

@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import { AreaChart } from "@tremor/react";
 import type { CustomTooltipProps } from "@tremor/react";
-import { Activity, Container, Cpu, MemoryStick, Network, Loader2 } from "lucide-react";
+import { Activity, AlertTriangle, Container, Cpu, MemoryStick, Network, Loader2, RefreshCw } from "lucide-react";
 import { ChartCard } from "@/components/app-status";
 import { formatBytes, formatMemLimit, formatBytesRate, formatTime } from "@/lib/metrics/format";
 import { CHART_COLORS, TIME_RANGES, type TimeRange } from "@/lib/metrics/constants";
@@ -104,7 +104,7 @@ function ContainerTable({ containers }: { containers: ContainerPoint[] }) {
 export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
   const [timeRange, setTimeRange] = useState<TimeRange>("1h");
 
-  const { points, containers, connected, loading } = useMetricsStream({
+  const { points, containers, connected, loading, reconnecting, error } = useMetricsStream({
     historyUrl: `/api/v1/organizations/${orgId}/apps/${appId}/stats/history`,
     streamUrl: `/api/v1/organizations/${orgId}/apps/${appId}/stats/stream${environmentName ? "?environment=" + environmentName : ""}`,
     timeRange,
@@ -140,6 +140,19 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
       };
     });
   }, [points]);
+
+  // Error state -- metrics service unreachable
+  if (error && !connected && !loading && points.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
+        <AlertTriangle className="size-6 text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">Metrics unavailable</p>
+        <p className="text-xs text-muted-foreground max-w-xs text-center">
+          Could not connect to the metrics service. This may be a temporary issue.
+        </p>
+      </div>
+    );
+  }
 
   // Loading state -- show if still loading history and not connected
   if (loading && !connected) {
@@ -187,9 +200,13 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
           ))}
         </div>
         <div className="flex items-center gap-2">
-          <span className={`size-2 rounded-full ${connected ? "bg-status-success" : "bg-status-neutral"}`} />
+          {reconnecting ? (
+            <RefreshCw className="size-3 text-status-warning animate-spin" />
+          ) : (
+            <span className={`size-2 rounded-full ${connected ? "bg-status-success" : "bg-status-neutral"}`} />
+          )}
           <span className="text-xs text-muted-foreground">
-            {connected ? "Live" : "Historical"}
+            {reconnecting ? "Reconnecting..." : connected ? "Live" : "Historical"}
           </span>
         </div>
       </div>

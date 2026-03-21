@@ -64,7 +64,12 @@ export function StatusIndicator({
       </span>
     );
   }
-  if (status === "error") return <span className="text-sm text-status-error shrink-0">Error</span>;
+  if (status === "error") return (
+    <span className="flex items-center gap-1.5 text-sm text-status-error shrink-0">
+      <span className="size-2 rounded-full bg-status-error" />
+      Crashed
+    </span>
+  );
   if (status === "deploying") return <span className="text-sm text-status-info animate-pulse shrink-0">Deploying</span>;
   return <span className="text-sm text-status-neutral shrink-0">Stopped</span>;
 }
