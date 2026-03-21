@@ -1925,10 +1925,8 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
             appId={app.id}
             appName={app.name}
             orgId={orgId}
-            initialVars={app.envVars}
             allAppNames={allAppNames}
             orgVarKeys={orgVarKeys}
-            environmentId={isProduction ? undefined : selectedEnvId}
           />
         </TabsContent>
 

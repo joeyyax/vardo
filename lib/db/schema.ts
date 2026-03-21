@@ -327,6 +327,7 @@ export const apps = pgTable(
     templateVersion: text("template_version"),
     status: appStatusEnum("status").notNull().default("stopped"),
     needsRedeploy: boolean("needs_redeploy").default(false),
+    envContent: text("env_content"), // Encrypted env file blob (AES-256-GCM)
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

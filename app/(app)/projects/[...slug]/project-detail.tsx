@@ -383,7 +383,6 @@ function ProjectVariables({ apps, orgId }: { apps: ProjectApp[]; orgId: string }
                 appId={app.id}
                 appName={app.name}
                 orgId={orgId}
-                initialVars={app.envVars}
               />
             </div>
           )}

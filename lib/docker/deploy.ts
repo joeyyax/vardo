@@ -1,5 +1,7 @@
 import { db } from "@/lib/db";
-import { deployments, apps, envVars, orgEnvVars, organizations, environments, volumeLimits } from "@/lib/db/schema";
+import { deployments, apps, orgEnvVars, organizations, environments, volumeLimits } from "@/lib/db/schema";
+import { encrypt, decrypt } from "@/lib/crypto/encrypt";
+import { parseEnvToMap } from "@/lib/env/parse-env";
 import { eq, and, isNull } from "drizzle-orm";
 import { resolveAllEnvVars, type ResolveContext } from "@/lib/env/resolve";
 import { nanoid } from "nanoid";
@@ -167,26 +169,15 @@ export async function runDeployment(
     log(`[deploy] App: ${app.displayName} (${app.name})`);
     log(`[deploy] Source: ${app.source}, Type: ${app.deployType}`);
 
-    // Fetch env vars with environment layering:
-    // 1. Base vars (environmentId IS NULL)
-    // 2. Environment-specific vars overlay on top
-    const baseVars = await db.query.envVars.findMany({
-      where: and(
-        eq(envVars.appId, opts.appId),
-        isNull(envVars.environmentId),
-      ),
-    });
+    // Load env vars from encrypted blob
     const envMap: Record<string, string> = {};
-    for (const v of baseVars) envMap[v.key] = v.value;
-
-    if (opts.environmentId) {
-      const envSpecificVars = await db.query.envVars.findMany({
-        where: and(
-          eq(envVars.appId, opts.appId),
-          eq(envVars.environmentId, opts.environmentId),
-        ),
-      });
-      for (const v of envSpecificVars) envMap[v.key] = v.value;
+    if (app.envContent) {
+      try {
+        const decrypted = decrypt(app.envContent, app.organizationId);
+        Object.assign(envMap, parseEnvToMap(decrypted));
+      } catch (err) {
+        log(`[deploy] Warning: failed to decrypt env vars — ${err instanceof Error ? err.message : err}`);
+      }
     }
 
     const totalEnvVarCount = Object.keys(envMap).length;
@@ -592,11 +583,13 @@ export async function runDeployment(
               id: true,
               name: true,
               displayName: true,
+              organizationId: true,
               projectId: true,
               containerPort: true,
               gitUrl: true,
               gitBranch: true,
               imageName: true,
+              envContent: true,
             },
             with: { domains: { columns: { domain: true }, limit: 1 } },
           });
@@ -639,37 +632,20 @@ export async function runDeployment(
             });
 
             if (refEnv) {
-              // Load base + environment-specific, environment overrides base
-              const refBase = await db.query.envVars.findMany({
-                where: and(
-                  eq(envVars.appId, refApp.id),
-                  isNull(envVars.environmentId),
-                ),
-              });
-              const refMap: Record<string, string> = {};
-              for (const v of refBase) refMap[v.key] = v.value;
-
-              const refEnvVars = await db.query.envVars.findMany({
-                where: and(
-                  eq(envVars.appId, refApp.id),
-                  eq(envVars.environmentId, refEnv.id),
-                ),
-              });
-              for (const v of refEnvVars) refMap[v.key] = v.value;
-
-              if (varKey in refMap) return refMap[varKey];
+              // Environment-specific resolution would go here
+              // For now, fall through to base env content
             }
           }
 
-          // Fall back to the referenced app's base vars (environmentId IS NULL)
-          const refVar = await db.query.envVars.findFirst({
-            where: and(
-              eq(envVars.appId, refApp.id),
-              eq(envVars.key, varKey),
-              isNull(envVars.environmentId),
-            ),
-          });
-          return refVar?.value ?? null;
+          // Decrypt the referenced app's env content and look up the key
+          if (!refApp.envContent) return null;
+          try {
+            const refDecrypted = decrypt(refApp.envContent, refApp.organizationId);
+            const refMap = parseEnvToMap(refDecrypted);
+            return refMap[varKey] ?? null;
+          } catch {
+            return null;
+          }
         },
       };
 

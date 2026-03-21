@@ -98,10 +98,8 @@ type EnvEditorProps = {
   appId: string;
   appName: string;
   orgId: string;
-  initialVars: { key: string; isSecret: boolean | null }[];
   allAppNames?: string[];
   orgVarKeys?: string[];
-  environmentId?: string;
 } | {
   standalone: true;
   initialContent?: string;
@@ -133,7 +131,6 @@ export function EnvEditor(props: EnvEditorProps) {
   const appId = isStandalone ? "" : (props as Exclude<EnvEditorProps, { standalone: true }>).appId;
   const appName = isStandalone ? "" : (props as Exclude<EnvEditorProps, { standalone: true }>).appName;
   const orgId = isStandalone ? "" : (props as Exclude<EnvEditorProps, { standalone: true }>).orgId;
-  const environmentId = isStandalone ? undefined : (props as Exclude<EnvEditorProps, { standalone: true }>).environmentId;
 
   const router = useRouter();
   const [content, setContentState] = useState(isStandalone ? (props.initialContent || "") : "");
@@ -202,27 +199,16 @@ export function EnvEditor(props: EnvEditorProps) {
     }
   }, [isStandalone, isStandalone ? props.initialContent : null]);
 
-  // Load current env vars (skip in standalone mode)
+  // Load env content (skip in standalone mode)
   useEffect(() => {
     if (isStandalone) return;
     async function load() {
       try {
-        const params = new URLSearchParams({ reveal: "true" });
-        if (environmentId) params.set("environmentId", environmentId);
-        const res = await fetch(`/api/v1/organizations/${orgId}/apps/${appId}/env-vars?${params}`);
+        const res = await fetch(`/api/v1/organizations/${orgId}/apps/${appId}/env-vars?reveal=true`);
         if (res.ok) {
           const data = await res.json();
-          const vars = data.envVars || [];
-          if (vars.length > 0) {
-            const c = vars
-              .map((v: { key: string; value: string }) => `${v.key}=${v.value}`)
-              .join("\n");
-            setContentState(c);
-            setInitialContent(c);
-          } else {
-            setContentState("");
-            setInitialContent("");
-          }
+          setContentState(data.content || "");
+          setInitialContent(data.content || "");
         }
       } catch {
         // Start empty
@@ -230,7 +216,7 @@ export function EnvEditor(props: EnvEditorProps) {
       setLoaded(true);
     }
     load();
-  }, [orgId, appId, environmentId, isStandalone]);
+  }, [orgId, appId, isStandalone]);
 
   function handleChange(value: string) {
     setContent(value);
@@ -259,7 +245,7 @@ export function EnvEditor(props: EnvEditorProps) {
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content, environmentId }),
+          body: JSON.stringify({ content }),
         }
       );
       if (!res.ok) {
@@ -267,8 +253,7 @@ export function EnvEditor(props: EnvEditorProps) {
         toast.error(data.error || "Failed to save");
         return false;
       }
-      const data = await res.json();
-      toast.success(`${data.created} added, ${data.updated} updated`);
+      toast.success("Variables saved");
       setModified(false);
       setNeedsRedeploy(true);
       setInitialContent(content);
