@@ -361,171 +361,131 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
         );
       })()}
 
-      {/* Infrastructure overview — half donuts + tables */}
+      {/* Infrastructure overview — half donuts on top, tables below */}
       {(() => {
-        // App status donut data
-        const statusSlices = [
-          { label: "Running", count: statusCounts.active, color: "var(--color-status-success, #22c55e)" },
-          { label: "Deploying", count: statusCounts.deploying, color: "var(--color-status-info, #3b82f6)" },
-          { label: "Crashed", count: statusCounts.error, color: "var(--color-status-error, #ef4444)" },
-          { label: "Stopped", count: statusCounts.stopped, color: "oklch(0.5 0 0 / 30%)" },
-        ].filter((s) => s.count > 0);
-        const totalAppsCount = displayApps.length;
+        const MAX_SLICES = 8;
+        const appColors = [
+          CHART_COLORS.cpu, CHART_COLORS.memory, CHART_COLORS.networkRx, CHART_COLORS.networkTx,
+          "oklch(0.65 0.16 335)", "oklch(0.68 0.16 175)", "oklch(0.65 0.18 290)", "oklch(0.67 0.17 120)",
+        ];
 
-        // Resource donut data — memory share per app
-        const MAX_DONUT_SLICES = 8;
-        const allActiveApps = displayApps
+        // Status donut
+        const statusSlices = [
+          { label: "Running", value: statusCounts.active, color: "var(--color-status-success, #22c55e)" },
+          { label: "Deploying", value: statusCounts.deploying, color: "var(--color-status-info, #3b82f6)" },
+          { label: "Crashed", value: statusCounts.error, color: "var(--color-status-error, #ef4444)" },
+          { label: "Stopped", value: statusCounts.stopped, color: "oklch(0.5 0 0 / 30%)" },
+        ].filter((s) => s.value > 0);
+
+        // Per-app resource data
+        const allActive = displayApps
           .filter((a) => a.status === "active")
           .map((a) => {
             const ps = appStats[a.id];
+            const containers = ps?.containers || [];
             return {
               name: a.displayName,
-              cpu: ps?.containers.reduce((s, c) => s + c.cpuPercent, 0) ?? 0,
-              memory: ps?.containers.reduce((s, c) => s + c.memoryUsage, 0) ?? 0,
-              containerCount: ps?.containers.length ?? 0,
+              cpu: containers.reduce((s, c) => s + c.cpuPercent, 0),
+              memory: containers.reduce((s, c) => s + c.memoryUsage, 0),
+              network: containers.reduce((s, c) => s + c.networkRx + c.networkTx, 0),
             };
           })
-          .filter((a) => a.memory > 0)
-          .sort((a, b) => b.memory - a.memory);
+          .filter((a) => a.memory > 0);
 
-        const activeAppsData = allActiveApps.length > MAX_DONUT_SLICES
-          ? [
-              ...allActiveApps.slice(0, MAX_DONUT_SLICES - 1),
-              {
-                name: `${allActiveApps.length - MAX_DONUT_SLICES + 1} others`,
-                cpu: allActiveApps.slice(MAX_DONUT_SLICES - 1).reduce((s, a) => s + a.cpu, 0),
-                memory: allActiveApps.slice(MAX_DONUT_SLICES - 1).reduce((s, a) => s + a.memory, 0),
-                containerCount: allActiveApps.slice(MAX_DONUT_SLICES - 1).reduce((s, a) => s + a.containerCount, 0),
-              },
-            ]
-          : allActiveApps;
+        function topN(items: typeof allActive, key: "cpu" | "memory" | "network") {
+          const sorted = [...items].sort((a, b) => b[key] - a[key]);
+          if (sorted.length <= MAX_SLICES) return sorted;
+          const top = sorted.slice(0, MAX_SLICES - 1);
+          const rest = sorted.slice(MAX_SLICES - 1);
+          top.push({
+            name: `${rest.length} others`,
+            cpu: rest.reduce((s, a) => s + a.cpu, 0),
+            memory: rest.reduce((s, a) => s + a.memory, 0),
+            network: rest.reduce((s, a) => s + a.network, 0),
+          });
+          return top;
+        }
 
-        const appColors = [
-          CHART_COLORS.cpu,
-          CHART_COLORS.memory,
-          CHART_COLORS.networkRx,
-          CHART_COLORS.networkTx,
-          "oklch(0.65 0.16 335)",
-          "oklch(0.68 0.16 175)",
-          "oklch(0.65 0.18 290)",
-          "oklch(0.67 0.17 120)",
-        ];
+        const memApps = topN(allActive, "memory");
+        const cpuApps = topN(allActive, "cpu");
+        const netApps = topN(allActive, "network");
+
+        type Slice = { label: string; value: number; color: string; detail?: string };
+
+        function HalfDonut({ title, subtitle, slices, centerLabel, centerSub }: {
+          title: string; subtitle?: string; slices: Slice[]; centerLabel: string; centerSub?: string;
+        }) {
+          const total = slices.reduce((s, sl) => s + sl.value, 0) || 1;
+          return (
+            <div className="squircle rounded-lg border bg-card overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-2 border-b">
+                <h3 className="text-sm font-medium">{title}</h3>
+                {subtitle && <span className="text-[10px] text-muted-foreground">{subtitle}</span>}
+              </div>
+              <div className="flex justify-center pt-4 pb-2">
+                <svg viewBox="0 0 120 68" className="w-28">
+                  {(() => {
+                    const r = 48, cx = 60, cy = 58;
+                    let a = Math.PI;
+                    return slices.map((sl) => {
+                      const ang = (sl.value / total) * Math.PI;
+                      const x1 = cx + r * Math.cos(a), y1 = cy + r * Math.sin(a);
+                      a += ang;
+                      const x2 = cx + r * Math.cos(a), y2 = cy + r * Math.sin(a);
+                      return (
+                        <path key={sl.label} d={`M${cx} ${cy}L${x1} ${y1}A${r} ${r} 0 ${ang > Math.PI ? 1 : 0} 1 ${x2} ${y2}Z`}
+                          fill={sl.color} opacity={0.85} />
+                      );
+                    });
+                  })()}
+                  <text x="60" y="52" textAnchor="middle" fill="currentColor" fontSize="16" fontWeight="600">{centerLabel}</text>
+                  {centerSub && <text x="60" y="63" textAnchor="middle" fill="currentColor" opacity={0.5} fontSize="8">{centerSub}</text>}
+                </svg>
+              </div>
+              <div className="px-4 pb-3 space-y-1">
+                {slices.map((sl) => (
+                  <div key={sl.label} className="flex items-center justify-between py-0.5">
+                    <span className="inline-flex items-center gap-1.5 text-xs truncate">
+                      <span className="size-2 rounded-full shrink-0" style={{ backgroundColor: sl.color }} />
+                      {sl.label}
+                    </span>
+                    <span className="text-xs tabular-nums text-muted-foreground shrink-0 ml-2">
+                      {sl.detail ?? sl.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        }
 
         return (
-          <div className="grid md:grid-cols-2 gap-4">
-            {/* App Status — half donut + table */}
-            <div className="squircle rounded-lg border bg-card overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-3 border-b">
-                <h3 className="text-sm font-medium">App Status</h3>
-                <span className="text-xs text-muted-foreground">{streamProjectCount ?? projectCount ?? 0} projects</span>
-              </div>
-              <div className="p-4">
-                <div className="flex items-center gap-6">
-                  {/* Half donut SVG */}
-                  <svg viewBox="0 0 120 70" className="w-32 shrink-0">
-                    {(() => {
-                      const r = 50;
-                      const cx = 60;
-                      const cy = 60;
-                      const total = totalAppsCount || 1;
-                      let cumAngle = Math.PI; // start from left (180°)
-                      return statusSlices.map((slice) => {
-                        const angle = (slice.count / total) * Math.PI;
-                        const startX = cx + r * Math.cos(cumAngle);
-                        const startY = cy + r * Math.sin(cumAngle);
-                        cumAngle += angle;
-                        const endX = cx + r * Math.cos(cumAngle);
-                        const endY = cy + r * Math.sin(cumAngle);
-                        const largeArc = angle > Math.PI ? 1 : 0;
-                        return (
-                          <path
-                            key={slice.label}
-                            d={`M ${cx} ${cy} L ${startX} ${startY} A ${r} ${r} 0 ${largeArc} 1 ${endX} ${endY} Z`}
-                            fill={slice.color}
-                            opacity={0.85}
-                          />
-                        );
-                      });
-                    })()}
-                    <text x="60" y="58" textAnchor="middle" fill="currentColor" fontSize="22" fontWeight="600">
-                      {totalAppsCount}
-                    </text>
-                    <text x="60" y="68" textAnchor="middle" fill="currentColor" opacity={0.5} fontSize="8">
-                      apps
-                    </text>
-                  </svg>
-                  {/* Legend table */}
-                  <div className="flex-1 space-y-1.5">
-                    {statusSlices.map((slice) => (
-                      <div key={slice.label} className="flex items-center justify-between">
-                        <span className="inline-flex items-center gap-1.5 text-xs">
-                          <span className="size-2 rounded-full shrink-0" style={{ backgroundColor: slice.color }} />
-                          {slice.label}
-                        </span>
-                        <span className="text-xs font-semibold tabular-nums">{slice.count}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Resource distribution — half donut + table */}
-            <div className="squircle rounded-lg border bg-card overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-3 border-b">
-                <h3 className="text-sm font-medium">Memory by App</h3>
-                <span className="text-xs text-muted-foreground">{totals.containers} containers</span>
-              </div>
-              <div className="p-4">
-                <div className="flex items-center gap-6">
-                  {/* Half donut SVG */}
-                  <svg viewBox="0 0 120 70" className="w-32 shrink-0">
-                    {(() => {
-                      const r = 50;
-                      const cx = 60;
-                      const cy = 60;
-                      const total = totals.memory || 1;
-                      let cumAngle = Math.PI;
-                      return activeAppsData.map((app, i) => {
-                        const angle = (app.memory / total) * Math.PI;
-                        const startX = cx + r * Math.cos(cumAngle);
-                        const startY = cy + r * Math.sin(cumAngle);
-                        cumAngle += angle;
-                        const endX = cx + r * Math.cos(cumAngle);
-                        const endY = cy + r * Math.sin(cumAngle);
-                        const largeArc = angle > Math.PI ? 1 : 0;
-                        return (
-                          <path
-                            key={app.name}
-                            d={`M ${cx} ${cy} L ${startX} ${startY} A ${r} ${r} 0 ${largeArc} 1 ${endX} ${endY} Z`}
-                            fill={appColors[i % appColors.length]}
-                            opacity={0.85}
-                          />
-                        );
-                      });
-                    })()}
-                    <text x="60" y="58" textAnchor="middle" fill="currentColor" fontSize="14" fontWeight="600">
-                      {loading ? "..." : formatBytes(totals.memory)}
-                    </text>
-                  </svg>
-                  {/* Legend table */}
-                  <div className="flex-1 space-y-1.5">
-                    {activeAppsData.map((app, i) => (
-                      <div key={app.name} className="flex items-center justify-between">
-                        <span className="inline-flex items-center gap-1.5 text-xs truncate">
-                          <span className="size-2 rounded-full shrink-0" style={{ backgroundColor: appColors[i % appColors.length] }} />
-                          {app.name}
-                        </span>
-                        <span className="text-xs tabular-nums text-muted-foreground shrink-0 ml-2">{formatBytes(app.memory)}</span>
-                      </div>
-                    ))}
-                    {activeAppsData.length === 0 && (
-                      <p className="text-xs text-muted-foreground">No active apps</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <HalfDonut
+              title="Status"
+              subtitle={`${streamProjectCount ?? projectCount ?? 0} projects`}
+              slices={statusSlices}
+              centerLabel={String(displayApps.length)}
+              centerSub="apps"
+            />
+            <HalfDonut
+              title="CPU"
+              subtitle="by app"
+              slices={cpuApps.map((a, i) => ({ label: a.name, value: a.cpu, color: appColors[i % appColors.length], detail: `${a.cpu.toFixed(1)}%` }))}
+              centerLabel={`${totals.cpu.toFixed(1)}%`}
+            />
+            <HalfDonut
+              title="Memory"
+              subtitle="by app"
+              slices={memApps.map((a, i) => ({ label: a.name, value: a.memory, color: appColors[i % appColors.length], detail: formatBytes(a.memory) }))}
+              centerLabel={formatBytes(totals.memory)}
+            />
+            <HalfDonut
+              title="Network"
+              subtitle="by app"
+              slices={netApps.map((a, i) => ({ label: a.name, value: a.network, color: appColors[i % appColors.length], detail: formatBytes(a.network) }))}
+              centerLabel={formatBytes(totals.networkRx + totals.networkTx)}
+            />
           </div>
         );
       })()}
