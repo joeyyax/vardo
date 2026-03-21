@@ -10,9 +10,11 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { Cpu, MemoryStick, Network, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import { Cpu, MemoryStick, Network } from "lucide-react";
+import { ChartCard } from "@/components/app-status";
 import { formatBytes, formatBytesRate, formatTime } from "@/lib/metrics/format";
-import { RANGE_MS, BUCKET_MS, chartTooltipStyle, TIME_RANGES, type TimeRange } from "@/lib/metrics/constants";
+import { RANGE_MS, BUCKET_MS, chartTooltipStyle, chartTickStyle, CHART_COLORS, TIME_RANGES, type TimeRange } from "@/lib/metrics/constants";
 import type { ContainerStatsSnapshot } from "@/lib/metrics/types";
 
 type AppInfo = {
@@ -35,26 +37,6 @@ type AggPoint = {
   txRate: number;
 };
 
-
-function ChartCard({
-  title,
-  icon: Icon,
-  children,
-}: {
-  title: string;
-  icon: React.ComponentType<{ className?: string }>;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="squircle rounded-lg border bg-card overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-3 border-b">
-        <Icon className="size-4 text-muted-foreground" />
-        <h3 className="text-sm font-medium">{title}</h3>
-      </div>
-      <div className="p-4">{children}</div>
-    </div>
-  );
-}
 
 export function ProjectMetrics({ orgId, apps }: ProjectMetricsProps) {
   const uid = useId();
@@ -217,8 +199,6 @@ export function ProjectMetrics({ orgId, apps }: ProjectMetricsProps) {
     );
   }
 
-  const grid = "oklch(0.30 0.006 285.75 / 40%)";
-  const tick = { fontSize: 10, fill: "oklch(0.55 0.006 285.75)" };
 
   return (
     <div className="space-y-4">
@@ -244,15 +224,15 @@ export function ProjectMetrics({ orgId, apps }: ProjectMetricsProps) {
           <AreaChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id={`cpu-${uid}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="oklch(0.65 0.19 255)" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="oklch(0.65 0.19 255)" stopOpacity={0} />
+                <stop offset="5%" stopColor={CHART_COLORS.cpu} stopOpacity={0.3} />
+                <stop offset="95%" stopColor={CHART_COLORS.cpu} stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke={grid} />
-            <XAxis dataKey="time" tick={tick} tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={60} />
-            <YAxis tick={tick} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} domain={[0, "auto"]} width={45} />
+            <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+            <XAxis dataKey="time" tick={chartTickStyle} tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={60} />
+            <YAxis tick={chartTickStyle} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} domain={[0, "auto"]} width={45} />
             <Tooltip {...chartTooltipStyle} formatter={(v: number) => [`${v.toFixed(2)}%`, "CPU"]} />
-            <Area type="monotone" dataKey="cpu" stroke="oklch(0.65 0.19 255)" fill={`url(#cpu-${uid})`} strokeWidth={1.5} dot={false} isAnimationActive={false} />
+            <Area type="monotone" dataKey="cpu" stroke={CHART_COLORS.cpu} fill={`url(#cpu-${uid})`} strokeWidth={1.5} dot={false} isAnimationActive={false} />
           </AreaChart>
         </ResponsiveContainer>
       </ChartCard>
@@ -262,15 +242,15 @@ export function ProjectMetrics({ orgId, apps }: ProjectMetricsProps) {
           <AreaChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id={`mem-${uid}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="oklch(0.72 0.17 150)" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="oklch(0.72 0.17 150)" stopOpacity={0} />
+                <stop offset="5%" stopColor={CHART_COLORS.memory} stopOpacity={0.3} />
+                <stop offset="95%" stopColor={CHART_COLORS.memory} stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke={grid} />
-            <XAxis dataKey="time" tick={tick} tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={60} />
-            <YAxis tick={tick} tickLine={false} axisLine={false} tickFormatter={(v) => formatBytes(v, 0)} domain={[0, "auto"]} width={60} />
+            <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+            <XAxis dataKey="time" tick={chartTickStyle} tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={60} />
+            <YAxis tick={chartTickStyle} tickLine={false} axisLine={false} tickFormatter={(v) => formatBytes(v, 0)} domain={[0, "auto"]} width={60} />
             <Tooltip {...chartTooltipStyle} formatter={(v: number) => [formatBytes(v), "Memory"]} />
-            <Area type="monotone" dataKey="memory" stroke="oklch(0.72 0.17 150)" fill={`url(#mem-${uid})`} strokeWidth={1.5} dot={false} isAnimationActive={false} />
+            <Area type="monotone" dataKey="memory" stroke={CHART_COLORS.memory} fill={`url(#mem-${uid})`} strokeWidth={1.5} dot={false} isAnimationActive={false} />
           </AreaChart>
         </ResponsiveContainer>
       </ChartCard>
@@ -280,20 +260,20 @@ export function ProjectMetrics({ orgId, apps }: ProjectMetricsProps) {
           <AreaChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id={`rx-${uid}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="oklch(0.70 0.15 200)" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="oklch(0.70 0.15 200)" stopOpacity={0} />
+                <stop offset="5%" stopColor={CHART_COLORS.networkRx} stopOpacity={0.3} />
+                <stop offset="95%" stopColor={CHART_COLORS.networkRx} stopOpacity={0} />
               </linearGradient>
               <linearGradient id={`tx-${uid}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="oklch(0.75 0.15 75)" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="oklch(0.75 0.15 75)" stopOpacity={0} />
+                <stop offset="5%" stopColor={CHART_COLORS.networkTx} stopOpacity={0.3} />
+                <stop offset="95%" stopColor={CHART_COLORS.networkTx} stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke={grid} />
-            <XAxis dataKey="time" tick={tick} tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={60} />
-            <YAxis tick={tick} tickLine={false} axisLine={false} tickFormatter={(v) => formatBytesRate(v)} domain={[0, "auto"]} width={70} />
+            <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+            <XAxis dataKey="time" tick={chartTickStyle} tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={60} />
+            <YAxis tick={chartTickStyle} tickLine={false} axisLine={false} tickFormatter={(v) => formatBytesRate(v)} domain={[0, "auto"]} width={70} />
             <Tooltip {...chartTooltipStyle} formatter={(v: number, name: string) => [formatBytesRate(v), name === "rxRate" ? "RX" : "TX"]} />
-            <Area type="monotone" dataKey="rxRate" stroke="oklch(0.70 0.15 200)" fill={`url(#rx-${uid})`} strokeWidth={1.5} dot={false} isAnimationActive={false} name="rxRate" />
-            <Area type="monotone" dataKey="txRate" stroke="oklch(0.75 0.15 75)" fill={`url(#tx-${uid})`} strokeWidth={1.5} dot={false} isAnimationActive={false} name="txRate" />
+            <Area type="monotone" dataKey="rxRate" stroke={CHART_COLORS.networkRx} fill={`url(#rx-${uid})`} strokeWidth={1.5} dot={false} isAnimationActive={false} name="rxRate" />
+            <Area type="monotone" dataKey="txRate" stroke={CHART_COLORS.networkTx} fill={`url(#tx-${uid})`} strokeWidth={1.5} dot={false} isAnimationActive={false} name="txRate" />
           </AreaChart>
         </ResponsiveContainer>
       </ChartCard>

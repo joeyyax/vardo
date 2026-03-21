@@ -466,7 +466,9 @@ export function AppGrid({
   const { metrics, history, historyTick } = useAppMetrics(orgId);
 
   useEffect(() => {
-    const interval = setInterval(() => router.refresh(), 30000);
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") router.refresh();
+    }, 30000);
     return () => clearInterval(interval);
   }, [router]);
 

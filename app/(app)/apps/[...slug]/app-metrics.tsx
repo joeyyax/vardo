@@ -12,8 +12,9 @@ import {
   ReferenceLine,
 } from "recharts";
 import { Activity, Container, Cpu, HardDrive, MemoryStick, Network, Loader2 } from "lucide-react";
+import { ChartCard } from "@/components/app-status";
 import { formatBytes, formatMemLimit, formatBytesRate, formatTime } from "@/lib/metrics/format";
-import { RANGE_MS, BUCKET_MS, chartTooltipStyle, TIME_RANGES, type TimeRange } from "@/lib/metrics/constants";
+import { RANGE_MS, BUCKET_MS, chartTooltipStyle, chartTickStyle, CHART_COLORS, TIME_RANGES, type TimeRange } from "@/lib/metrics/constants";
 import type { ContainerStatsSnapshot } from "@/lib/metrics/types";
 
 type TimeSeriesPoint = {
@@ -39,25 +40,6 @@ type AppMetricsProps = {
 
 const MAX_DATA_POINTS = 150; // ~5 minutes at 2s intervals
 
-function ChartCard({
-  title,
-  icon: Icon,
-  children,
-}: {
-  title: string;
-  icon: React.ComponentType<{ className?: string }>;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="squircle rounded-lg border bg-card overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-3 border-b">
-        <Icon className="size-4 text-muted-foreground" />
-        <h3 className="text-sm font-medium">{title}</h3>
-      </div>
-      <div className="p-4">{children}</div>
-    </div>
-  );
-}
 
 function ContainerTable({ containers }: { containers: ContainerStatsSnapshot[] }) {
   return (
@@ -167,8 +149,8 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
       };
 
       setContainers(payload.containers);
-      setConnected(true);
-      setError(null);
+      setConnected((prev) => prev ? prev : true);
+      setError((prev) => prev === null ? prev : null);
 
       if (payload.containers.length === 0) return;
 
@@ -346,21 +328,21 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
           <AreaChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id={`cpuGradient-${uid}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="oklch(0.65 0.19 255)" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="oklch(0.65 0.19 255)" stopOpacity={0} />
+                <stop offset="5%" stopColor={CHART_COLORS.cpu} stopOpacity={0.3} />
+                <stop offset="95%" stopColor={CHART_COLORS.cpu} stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.30 0.006 285.75 / 40%)" />
+            <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
             <XAxis
               dataKey="time"
-              tick={{ fontSize: 10, fill: "oklch(0.55 0.006 285.75)" }}
+              tick={chartTickStyle}
               tickLine={false}
               axisLine={false}
               interval="preserveStartEnd"
               minTickGap={60}
             />
             <YAxis
-              tick={{ fontSize: 10, fill: "oklch(0.55 0.006 285.75)" }}
+              tick={chartTickStyle}
               tickLine={false}
               axisLine={false}
               tickFormatter={(v) => `${v}%`}
@@ -374,7 +356,7 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
             <Area
               type="monotone"
               dataKey="cpuPercent"
-              stroke="oklch(0.65 0.19 255)"
+              stroke={CHART_COLORS.cpu}
               fill={`url(#cpuGradient-${uid})`}
               strokeWidth={1.5}
               dot={false}
@@ -390,21 +372,21 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
           <AreaChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id={`memGradient-${uid}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="oklch(0.72 0.17 150)" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="oklch(0.72 0.17 150)" stopOpacity={0} />
+                <stop offset="5%" stopColor={CHART_COLORS.memory} stopOpacity={0.3} />
+                <stop offset="95%" stopColor={CHART_COLORS.memory} stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.30 0.006 285.75 / 40%)" />
+            <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
             <XAxis
               dataKey="time"
-              tick={{ fontSize: 10, fill: "oklch(0.55 0.006 285.75)" }}
+              tick={chartTickStyle}
               tickLine={false}
               axisLine={false}
               interval="preserveStartEnd"
               minTickGap={60}
             />
             <YAxis
-              tick={{ fontSize: 10, fill: "oklch(0.55 0.006 285.75)" }}
+              tick={chartTickStyle}
               tickLine={false}
               axisLine={false}
               tickFormatter={(v) => formatBytes(v, 0)}
@@ -418,13 +400,13 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
             {latestMemoryLimit > 0 && (
               <ReferenceLine
                 y={latestMemoryLimit}
-                stroke="oklch(0.65 0.22 25)"
+                stroke={CHART_COLORS.memoryLimit}
                 strokeDasharray="4 4"
                 strokeWidth={1}
                 label={{
                   value: `Limit: ${formatBytes(latestMemoryLimit, 0)}`,
                   position: "insideTopRight",
-                  fill: "oklch(0.65 0.22 25)",
+                  fill: CHART_COLORS.memoryLimit,
                   fontSize: 10,
                 }}
               />
@@ -432,7 +414,7 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
             <Area
               type="monotone"
               dataKey="memoryUsage"
-              stroke="oklch(0.72 0.17 150)"
+              stroke={CHART_COLORS.memory}
               fill={`url(#memGradient-${uid})`}
               strokeWidth={1.5}
               dot={false}
@@ -448,25 +430,25 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
           <AreaChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id={`rxGradient-${uid}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="oklch(0.70 0.15 200)" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="oklch(0.70 0.15 200)" stopOpacity={0} />
+                <stop offset="5%" stopColor={CHART_COLORS.networkRx} stopOpacity={0.3} />
+                <stop offset="95%" stopColor={CHART_COLORS.networkRx} stopOpacity={0} />
               </linearGradient>
               <linearGradient id={`txGradient-${uid}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="oklch(0.75 0.15 75)" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="oklch(0.75 0.15 75)" stopOpacity={0} />
+                <stop offset="5%" stopColor={CHART_COLORS.networkTx} stopOpacity={0.3} />
+                <stop offset="95%" stopColor={CHART_COLORS.networkTx} stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.30 0.006 285.75 / 40%)" />
+            <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
             <XAxis
               dataKey="time"
-              tick={{ fontSize: 10, fill: "oklch(0.55 0.006 285.75)" }}
+              tick={chartTickStyle}
               tickLine={false}
               axisLine={false}
               interval="preserveStartEnd"
               minTickGap={60}
             />
             <YAxis
-              tick={{ fontSize: 10, fill: "oklch(0.55 0.006 285.75)" }}
+              tick={chartTickStyle}
               tickLine={false}
               axisLine={false}
               tickFormatter={(v) => formatBytesRate(v)}
@@ -483,7 +465,7 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
             <Area
               type="monotone"
               dataKey="networkRxRate"
-              stroke="oklch(0.70 0.15 200)"
+              stroke={CHART_COLORS.networkRx}
               fill={`url(#rxGradient-${uid})`}
               strokeWidth={1.5}
               dot={false}
@@ -493,7 +475,7 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
             <Area
               type="monotone"
               dataKey="networkTxRate"
-              stroke="oklch(0.75 0.15 75)"
+              stroke={CHART_COLORS.networkTx}
               fill={`url(#txGradient-${uid})`}
               strokeWidth={1.5}
               dot={false}

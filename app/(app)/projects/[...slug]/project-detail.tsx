@@ -55,7 +55,7 @@ import {
   BottomSheetDescription,
 } from "@/components/ui/bottom-sheet";
 import { detectAppType } from "@/lib/ui/app-type";
-import { Uptime, StatusIndicator, AppIcon } from "@/components/app-status";
+import { Uptime, StatusIndicator, AppIcon, DeploymentStatusBadge, formatDuration } from "@/components/app-status";
 import { LogViewer, DeploymentLog } from "@/components/log-viewer";
 import { EnvEditor } from "@/components/env-editor";
 import { AppMetrics } from "@/app/(app)/apps/[...slug]/app-metrics";
@@ -136,40 +136,6 @@ function envTypeDotColor(type: string) {
       : "bg-status-info";
 }
 
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  return `${m}m ${s % 60}s`;
-}
-
-function DeploymentStatusBadge({ status }: { status: Deployment["status"] }) {
-  switch (status) {
-    case "success":
-      return (
-        <Badge className="border-transparent bg-status-success-muted text-status-success">
-          Success
-        </Badge>
-      );
-    case "running":
-      return (
-        <Badge className="border-transparent bg-status-info-muted text-status-info animate-pulse">
-          Running
-        </Badge>
-      );
-    case "failed":
-      return (
-        <Badge className="border-transparent bg-status-error-muted text-status-error">
-          Failed
-        </Badge>
-      );
-    case "cancelled":
-      return <Badge variant="secondary">Cancelled</Badge>;
-    default:
-      return <Badge variant="secondary">Queued</Badge>;
-  }
-}
 
 // ---------------------------------------------------------------------------
 // App Card

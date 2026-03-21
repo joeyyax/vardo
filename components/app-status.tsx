@@ -111,3 +111,60 @@ export function AppIcon({
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// formatDuration — ms to human-readable
+// ---------------------------------------------------------------------------
+
+export function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  return `${m}m ${s % 60}s`;
+}
+
+// ---------------------------------------------------------------------------
+// DeploymentStatusBadge
+// ---------------------------------------------------------------------------
+
+import { Badge } from "@/components/ui/badge";
+
+export function DeploymentStatusBadge({ status }: { status: "queued" | "running" | "success" | "failed" | "cancelled" }) {
+  switch (status) {
+    case "success":
+      return <Badge className="border-transparent bg-status-success-muted text-status-success">Success</Badge>;
+    case "running":
+      return <Badge className="border-transparent bg-status-info-muted text-status-info animate-pulse">Running</Badge>;
+    case "failed":
+      return <Badge className="border-transparent bg-status-error-muted text-status-error">Failed</Badge>;
+    case "cancelled":
+      return <Badge variant="secondary">Cancelled</Badge>;
+    default:
+      return <Badge variant="secondary">Queued</Badge>;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// ChartCard — shared wrapper for metric charts
+// ---------------------------------------------------------------------------
+
+export function ChartCard({
+  title,
+  icon: Icon,
+  children,
+}: {
+  title: string;
+  icon: React.ComponentType<{ className?: string }>;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="squircle rounded-lg border bg-card overflow-hidden">
+      <div className="flex items-center gap-2 px-4 py-3 border-b">
+        <Icon className="size-4 text-muted-foreground" />
+        <h3 className="text-sm font-medium">{title}</h3>
+      </div>
+      <div className="p-4">{children}</div>
+    </div>
+  );
+}
