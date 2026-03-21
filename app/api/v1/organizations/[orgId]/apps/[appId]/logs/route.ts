@@ -69,6 +69,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       const containers = await listContainers(app.name).catch(() => []);
 
       return NextResponse.json({
+        source: "loki",
         logs: entries.map((e) => e.line).join("\n"),
         entries: entries.map((e) => ({
           timestamp: e.timestamp,
@@ -89,6 +90,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     if (containers.length === 0) {
       return NextResponse.json({
+        source: "docker",
         logs: "No running containers found for this app.",
         containers: [],
       });
@@ -109,6 +111,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     return NextResponse.json({
+      source: "docker",
       logs: allLogs.join("\n"),
       containers: containers.map((c) => ({
         id: c.id,
