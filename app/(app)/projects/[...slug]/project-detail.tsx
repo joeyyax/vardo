@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
-  AlertTriangle,
   Plus,
   Pencil,
   Rocket,
@@ -56,6 +55,7 @@ import {
   BottomSheetDescription,
 } from "@/components/ui/bottom-sheet";
 import { detectAppType } from "@/lib/ui/app-type";
+import { Uptime, StatusIndicator, AppIcon } from "@/components/app-status";
 import { LogViewer, DeploymentLog } from "@/components/log-viewer";
 import { EnvEditor } from "@/components/env-editor";
 import { AppMetrics } from "@/app/(app)/apps/[...slug]/app-metrics";
@@ -128,84 +128,12 @@ type Project = {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function formatUptime(date: Date): string {
-  const ms = Date.now() - new Date(date).getTime();
-  const s = Math.floor(ms / 1000) % 60;
-  const m = Math.floor(ms / 60000) % 60;
-  const h = Math.floor(ms / 3600000) % 24;
-  const d = Math.floor(ms / 86400000);
-  if (d > 0) return `${d}d ${h}h`;
-  if (h > 0) return `${h}h ${m}m`;
-  if (m > 0) return `${m}m ${s}s`;
-  return `${s}s`;
-}
-
-function Uptime({ since }: { since: Date }) {
-  const [text, setText] = useState<string | null>(null);
-  useEffect(() => {
-    setText(formatUptime(since));
-    const interval = setInterval(() => setText(formatUptime(since)), 1000);
-    return () => clearInterval(interval);
-  }, [since]);
-  if (!text) return null;
-  return <span className="tabular-nums">{text}</span>;
-}
-
-function StatusIndicator({ status, finishedAt, needsRedeploy }: { status: string; finishedAt?: Date | null; needsRedeploy?: boolean }) {
-  if (status === "active" && needsRedeploy) {
-    return (
-      <span className="flex items-center gap-1.5 text-sm text-status-warning shrink-0">
-        <AlertTriangle className="size-3.5" />
-        Restart
-      </span>
-    );
-  }
-  if (status === "active") {
-    return (
-      <span className="flex items-center gap-1.5 text-sm text-status-success shrink-0">
-        <span className="size-2 rounded-full bg-status-success animate-pulse" />
-        {finishedAt ? <Uptime since={finishedAt} /> : "Running"}
-      </span>
-    );
-  }
-  if (status === "error") return <span className="text-sm text-status-error shrink-0">Error</span>;
-  if (status === "deploying") return <span className="text-sm text-status-info animate-pulse shrink-0">Deploying</span>;
-  return <span className="text-sm text-status-neutral shrink-0">Stopped</span>;
-}
-
 function envTypeDotColor(type: string) {
   return type === "production"
     ? "bg-status-success"
     : type === "staging"
       ? "bg-status-warning"
       : "bg-status-info";
-}
-
-function AppIcon({ app, color }: { app: ProjectApp; color: string }) {
-  const { icon, color: typeColor } = detectAppType(app);
-
-  if (!icon) {
-    return (
-      <div
-        className="size-10 shrink-0 rounded-md flex items-center justify-center"
-        style={{ backgroundColor: `${typeColor}20` }}
-      >
-        <span
-          className="size-2.5 rounded-full"
-          style={{ backgroundColor: typeColor }}
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className="size-10 shrink-0 rounded-md flex items-center justify-center"
-      style={{ backgroundColor: `${typeColor}10` }}
-    >
-      <img src={icon} alt="" className="size-6 opacity-70" />
-    </div>
-  );
 }
 
 function formatDuration(ms: number): string {
@@ -336,7 +264,7 @@ function AppCard({
       )}
 
       <div className="relative flex gap-3 w-full">
-        <AppIcon app={app} color={color} />
+        <AppIcon app={app} />
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">

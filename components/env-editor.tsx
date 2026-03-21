@@ -292,15 +292,19 @@ export function EnvEditor(props: EnvEditorProps) {
     if (saved) router.refresh();
   }
 
-  // Mouse tracking for copy chips
+  // Mouse tracking for copy chips — only update state when line changes
+  const hoveredLineRef = useRef(-1);
   function handleMouseMove(e: React.MouseEvent) {
     const view = cmRef.current?.view;
     if (!view) return;
     const rect = view.dom.getBoundingClientRect();
     const y = e.clientY - rect.top;
     const block = view.lineBlockAtHeight(y + view.scrollDOM.scrollTop);
-    const lineNum = view.state.doc.lineAt(block.from).number - 1; // 0-indexed
-    setHoveredLine(lineNum);
+    const lineNum = view.state.doc.lineAt(block.from).number - 1;
+    if (lineNum !== hoveredLineRef.current) {
+      hoveredLineRef.current = lineNum;
+      setHoveredLine(lineNum);
+    }
   }
 
   if (!loaded) {
@@ -429,7 +433,7 @@ export function EnvEditor(props: EnvEditorProps) {
         ref={containerRef}
         className="relative rounded-lg border bg-zinc-950 overflow-hidden"
         onMouseMove={handleMouseMove}
-        onMouseLeave={() => setHoveredLine(-1)}
+        onMouseLeave={() => { hoveredLineRef.current = -1; setHoveredLine(-1); }}
       >
         <CodeMirror
           ref={cmRef}

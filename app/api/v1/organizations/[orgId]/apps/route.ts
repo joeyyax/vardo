@@ -8,7 +8,6 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { generateSubdomain } from "@/lib/domains/auto-domain";
 import { allocatePorts } from "@/lib/docker/ports";
-import { deployProject } from "@/lib/docker/deploy";
 import { recordActivity } from "@/lib/activity";
 import { isReservedSlug } from "@/lib/domains/reserved";
 
@@ -221,18 +220,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       userId: session.user.id,
       metadata: { name: data.name, displayName: data.displayName },
     });
-
-    // Auto-deploy if enabled — fire and forget, don't block the response
-    if (data.autoDeploy) {
-      deployProject({
-        appId: appId,
-        organizationId: orgId,
-        trigger: "manual",
-        triggeredBy: session.user.id,
-      }).catch((err) => {
-        console.error(`[auto-deploy] Failed for ${data.name}:`, err);
-      });
-    }
 
     return NextResponse.json({ app }, { status: 201 });
   } catch (error) {

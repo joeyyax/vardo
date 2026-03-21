@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useId } from "react";
 import {
   AreaChart,
   Area,
@@ -99,10 +99,8 @@ function ContainerTable({ containers }: { containers: ContainerStatsSnapshot[] }
   );
 }
 
-let metricsInstanceId = 0;
-
 export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
-  const [uid] = useState(() => `m${++metricsInstanceId}`);
+  const uid = useId();
   const [data, setData] = useState<TimeSeriesPoint[]>([]);
   const [containers, setContainers] = useState<ContainerStatsSnapshot[]>([]);
   const [connected, setConnected] = useState(false);

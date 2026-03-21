@@ -119,7 +119,8 @@ type SourceOption = (typeof SOURCE_OPTIONS)[number]["id"];
 
 function generatePassword(length = 24): string {
   const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  return Array.from({ length }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+  const bytes = crypto.getRandomValues(new Uint8Array(length));
+  return Array.from(bytes, (b) => chars[b % chars.length]).join("");
 }
 
 function isPasswordField(key: string): boolean {
@@ -454,7 +455,13 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], default
         });
       }
 
+      // Trigger deploy via API so the app detail page can pick up the SSE stream
       if (autoDeploy) {
+        fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/deploy`, {
+          method: "POST",
+        }).catch(() => {
+          // Deploy started server-side — client will see it on the detail page
+        });
         toast.success("App created — deploying...");
       } else {
         toast.success("App created");

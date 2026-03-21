@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useId } from "react";
 import { Cpu, HardDrive, MemoryStick, Network } from "lucide-react";
 import {
   Tooltip,
@@ -54,8 +54,6 @@ export function pushHistory(h: MetricsHistory, m: AppMetrics) {
 // Sparkline — tiny SVG chart from an array of numbers
 // ---------------------------------------------------------------------------
 
-let sparkId = 0;
-
 // Build a smooth cubic bezier path through points (monotone spline like Recharts)
 function smoothPath(pts: [number, number][]): string {
   if (pts.length < 2) return "";
@@ -78,7 +76,7 @@ function smoothPath(pts: [number, number][]): string {
 }
 
 export function Sparkline({ data, className, style }: { data: number[]; className?: string; style?: React.CSSProperties }) {
-  const [id] = useState(() => `sparkFill-${++sparkId}`);
+  const id = useId();
   if (data.length === 0) return null;
   const plotData = data.length === 1 ? [data[0], data[0]] : data;
 

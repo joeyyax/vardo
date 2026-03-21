@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useId } from "react";
 import {
   AreaChart,
   Area,
@@ -35,7 +35,6 @@ type AggPoint = {
   txRate: number;
 };
 
-let pmUid = 0;
 
 function ChartCard({
   title,
@@ -58,7 +57,7 @@ function ChartCard({
 }
 
 export function ProjectMetrics({ orgId, apps }: ProjectMetricsProps) {
-  const [uid] = useState(() => `pm${++pmUid}`);
+  const uid = useId();
   const [timeRange, setTimeRange] = useState<TimeRange>("1h");
   const [data, setData] = useState<AggPoint[]>([]);
   const [loading, setLoading] = useState(true);

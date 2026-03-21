@@ -3,7 +3,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { AlertTriangle, Globe, Plus } from "lucide-react";
+import { Globe, Plus } from "lucide-react";
 import {
   Popover,
   PopoverContent,
@@ -15,6 +15,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { detectAppType } from "@/lib/ui/app-type";
+import { StatusIndicator, AppIcon } from "@/components/app-status";
 import {
   type AppMetrics,
   type MetricKey,
@@ -73,96 +74,9 @@ function statusDotColor(status: string) {
     : "bg-status-neutral";
 }
 
-function formatUptime(date: Date): string {
-  const ms = Date.now() - new Date(date).getTime();
-  const s = Math.floor(ms / 1000) % 60;
-  const m = Math.floor(ms / 60000) % 60;
-  const h = Math.floor(ms / 3600000) % 24;
-  const d = Math.floor(ms / 86400000);
-  if (d > 0) return `${d}d ${h}h`;
-  if (h > 0) return `${h}h ${m}m`;
-  if (m > 0) return `${m}m ${s}s`;
-  return `${s}s`;
-}
-
-function Uptime({ since }: { since: Date }) {
-  const [text, setText] = useState<string | null>(null);
-  useEffect(() => {
-    setText(formatUptime(since));
-    const interval = setInterval(() => setText(formatUptime(since)), 1000);
-    return () => clearInterval(interval);
-  }, [since]);
-  if (!text) return null;
-  return <span className="tabular-nums">{text}</span>;
-}
-
-/** Get type info (icon + color) for an app */
-function getAppTypeInfo(app: { imageName: string | null; gitUrl: string | null; deployType: string; name: string; displayName: string }, fallbackColor?: string) {
-  return detectAppType(app, fallbackColor);
-}
-
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
-
-function AppIcon({ app }: { app: AppWithRelations }) {
-  const { icon, color: typeColor } = getAppTypeInfo(app);
-
-  if (!icon) {
-    return (
-      <div
-        className="size-12 shrink-0 rounded-md flex items-center justify-center"
-        style={{ backgroundColor: `${typeColor}20` }}
-      >
-        <span className="size-3 rounded-full" style={{ backgroundColor: typeColor }} />
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className="size-12 shrink-0 rounded-md flex items-center justify-center"
-      style={{ backgroundColor: `${typeColor}10` }}
-    >
-      <img src={icon} alt="" className="size-8 opacity-70" />
-    </div>
-  );
-}
-
-function StatusIndicator({
-  status,
-  finishedAt,
-  needsRedeploy,
-}: {
-  status: "running" | "error" | "deploying" | "stopped";
-  finishedAt?: Date | null;
-  needsRedeploy?: boolean;
-}) {
-  switch (status) {
-    case "running":
-      if (needsRedeploy) {
-        return (
-          <span className="flex items-center gap-1.5 text-sm text-status-warning shrink-0">
-            <AlertTriangle className="size-3.5" />
-            Restart
-          </span>
-        );
-      }
-      return (
-        <span className="flex items-center gap-1.5 text-sm text-status-success shrink-0">
-          <span className="size-2 rounded-full bg-status-success animate-pulse" />
-          {finishedAt ? <Uptime since={finishedAt} /> : "Running"}
-        </span>
-      );
-    case "error":
-      return <span className="text-sm text-status-error shrink-0">Error</span>;
-    case "deploying":
-      return <span className="text-sm text-status-info animate-pulse shrink-0">Deploying</span>;
-    default:
-      return <span className="text-sm text-status-neutral shrink-0">Stopped</span>;
-  }
-}
-
 
 function EndpointsPopover({ app }: { app: AppWithRelations }) {
   const endpoints: { label: string; domain: string }[] = [];
@@ -331,7 +245,7 @@ function ProjectCard({
     const seen = new Set<string>();
     const result: string[] = [];
     for (const a of projectApps) {
-      const icon = getAppTypeInfo(a).icon;
+      const icon = detectAppType(a).icon;
       if (icon && !seen.has(icon)) {
         seen.add(icon);
         result.push(icon);
@@ -463,7 +377,7 @@ function AppCard({
 }) {
   const lastDeploy = app.deployments[0];
   const projectColor = app.project?.color || "#6366f1";
-  const { color: typeColor } = getAppTypeInfo(app, projectColor);
+  const { color: typeColor } = detectAppType(app);
   const cpuData = history.cpu;
 
   return (
@@ -480,7 +394,7 @@ function AppCard({
       )}
 
       <div className="relative flex gap-4">
-        <AppIcon app={app} />
+        <AppIcon app={app} size="lg" />
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
@@ -490,12 +404,7 @@ function AppCard({
               <EndpointsPopover app={app} />
             </div>
             <StatusIndicator
-              status={
-                app.status === "active" ? "running"
-                  : app.status === "error" ? "error"
-                  : app.status === "deploying" ? "deploying"
-                  : "stopped"
-              }
+              status={app.status}
               finishedAt={lastDeploy?.finishedAt}
               needsRedeploy={!!app.needsRedeploy}
             />
@@ -557,7 +466,7 @@ export function AppGrid({
   const { metrics, history, historyTick } = useAppMetrics(orgId);
 
   useEffect(() => {
-    const interval = setInterval(() => router.refresh(), 10000);
+    const interval = setInterval(() => router.refresh(), 30000);
     return () => clearInterval(interval);
   }, [router]);
 
