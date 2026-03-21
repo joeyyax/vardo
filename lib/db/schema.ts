@@ -600,6 +600,7 @@ export const backupJobs = pgTable("backup_job", {
   // Notification settings
   notifyOnSuccess: boolean("notify_on_success").default(false),
   notifyOnFailure: boolean("notify_on_failure").default(true),
+  lastRunAt: timestamp("last_run_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

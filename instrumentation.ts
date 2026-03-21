@@ -28,6 +28,15 @@ export async function register() {
       console.error("[instrumentation] Failed to start cron scheduler:", err);
     }
 
+    console.log("[instrumentation] Starting backup scheduler...");
+    try {
+      const { startBackupScheduler } = await import("./lib/backup/scheduler");
+      startBackupScheduler();
+      console.log("[instrumentation] Backup scheduler started");
+    } catch (err) {
+      console.error("[instrumentation] Failed to start backup scheduler:", err);
+    }
+
     console.log("[instrumentation] Starting domain monitor...");
     try {
       setInterval(async () => {
