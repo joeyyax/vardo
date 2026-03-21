@@ -70,8 +70,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         await refreshAppDisk();
       }
 
-      // Load per-project disk immediately (fast Redis reads), slow data in background
-      await refreshAppDisk();
+      // Start slow data fetch in background — don't block first SSE tick
       refreshSlowData();
 
       request.signal.addEventListener("abort", () => {
