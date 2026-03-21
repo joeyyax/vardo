@@ -6,7 +6,6 @@ import { requireSession } from "@/lib/auth/session";
 import { eq } from "drizzle-orm";
 import { fetchAllContainerMetrics } from "@/lib/metrics/cadvisor";
 import { queryAll, queryDiskHistory } from "@/lib/metrics/store";
-import { getSystemDiskUsage } from "@/lib/docker/client";
 import { isMetricsEnabled } from "@/lib/metrics/config";
 
 // GET /api/v1/admin/stats

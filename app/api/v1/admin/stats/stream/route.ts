@@ -4,7 +4,8 @@ import { db } from "@/lib/db";
 import { user, apps } from "@/lib/db/schema";
 import { requireSession } from "@/lib/auth/session";
 import { eq } from "drizzle-orm";
-import { getSystemDiskUsage, getSystemInfo } from "@/lib/docker/client";
+import { getSystemInfo } from "@/lib/docker/client";
+import { getLatestDiskUsage } from "@/lib/metrics/store";
 import { createSSEResponse } from "@/lib/api/sse";
 import { isMetricsEnabled } from "@/lib/metrics/config";
 import { subscribe } from "@/lib/metrics/broadcast";
@@ -36,7 +37,10 @@ export async function GET(request: NextRequest) {
 
       async function refreshSlowData() {
         try { cachedSystem = await getSystemInfo() as unknown as Record<string, unknown>; } catch { /* skip */ }
-        try { cachedDisk = await getSystemDiskUsage() as unknown as Record<string, unknown>; } catch { /* skip */ }
+        try {
+          const d = await getLatestDiskUsage();
+          if (d) cachedDisk = d as unknown as Record<string, unknown>;
+        } catch { /* skip */ }
       }
 
       refreshSlowData();
@@ -70,9 +74,10 @@ export async function GET(request: NextRequest) {
           timestamp: new Date().toISOString(),
         };
 
-        if (tickCount % 60 === 0) {
-          payload.system = cachedSystem;
-          payload.disk = cachedDisk;
+        // Always include slow data if available, refresh every 60 ticks
+        if (cachedSystem) payload.system = cachedSystem;
+        if (cachedDisk) payload.disk = cachedDisk;
+        if (tickCount > 0 && tickCount % 60 === 0) {
           refreshSlowData();
         }
 

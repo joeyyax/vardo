@@ -4,9 +4,9 @@ import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq } from "drizzle-orm";
-import { getSystemDiskUsage, getSystemInfo, type DiskUsage, type SystemInfo } from "@/lib/docker/client";
+import { getSystemInfo, type DiskUsage, type SystemInfo } from "@/lib/docker/client";
 import { isCollectorRunning, startCollector } from "@/lib/metrics/collector";
-import { getLatestProjectDiskUsage } from "@/lib/metrics/store";
+import { getLatestProjectDiskUsage, getLatestDiskUsage } from "@/lib/metrics/store";
 import { createSSEResponse } from "@/lib/api/sse";
 import { isMetricsEnabled } from "@/lib/metrics/config";
 import { subscribe } from "@/lib/metrics/broadcast";
@@ -63,7 +63,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       }
 
       async function refreshSlowData() {
-        try { cachedDisk = await getSystemDiskUsage(); } catch { /* skip */ }
+        try {
+          const d = await getLatestDiskUsage();
+          if (d) cachedDisk = d as unknown as DiskUsage;
+        } catch { /* skip */ }
         try { cachedSystem = await getSystemInfo(); } catch { /* skip */ }
         await refreshAppDisk();
       }
