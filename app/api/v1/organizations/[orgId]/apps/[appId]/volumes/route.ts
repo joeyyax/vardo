@@ -37,6 +37,8 @@ type VolumeInfo = {
   description: string | null;
   maxSizeBytes: number | null;
   warnAtPercent: number | null;
+  ignorePatterns: string[] | null;
+  driftCount: number;
   source: string;
   sizeBytes: number | null;
 };
@@ -85,6 +87,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
               description: saved?.description ?? null,
               maxSizeBytes: saved?.maxSizeBytes ?? null,
               warnAtPercent: saved?.warnAtPercent ?? null,
+              ignorePatterns: saved?.ignorePatterns ?? null,
+              driftCount: saved?.driftCount ?? 0,
               source: mount.source,
               sizeBytes: null,
             });
@@ -147,6 +151,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
           description: saved.description,
           maxSizeBytes: saved.maxSizeBytes,
           warnAtPercent: saved.warnAtPercent,
+          ignorePatterns: saved.ignorePatterns,
+          driftCount: saved.driftCount ?? 0,
           source: saved.name,
           sizeBytes: null,
         });

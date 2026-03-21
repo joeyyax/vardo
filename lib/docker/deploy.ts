@@ -1117,6 +1117,20 @@ export async function runDeployment(
       }
     }
 
+    // Post-deploy drift check (non-blocking, purely informational).
+    // Wait 10s for containers to settle before scanning volumes.
+    setTimeout(() => {
+      import("@/lib/volumes/drift-check")
+        .then(({ runPostDeployDriftCheck }) =>
+          runPostDeployDriftCheck({
+            appId: opts.appId,
+            organizationId: opts.organizationId,
+            appName: app.name,
+            log,
+          }),
+        )
+        .catch(() => {});
+    }, 10000);
     return { deploymentId, success: true, log: logLines.join("\n"), durationMs };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";

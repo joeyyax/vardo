@@ -12,6 +12,15 @@ import {
   Pencil,
   Trash2,
   AlertTriangle,
+  GitCompareArrows,
+  ChevronDown,
+  ChevronRight,
+  FileWarning,
+  FilePlus,
+  FileMinus,
+  RefreshCw,
+  EyeOff,
+  Check,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -50,6 +59,22 @@ type Volume = {
   warnAtPercent: number | null;
   source: string;
   sizeBytes: number | null;
+  driftCount?: number;
+  ignorePatterns?: string[];
+};
+
+type DiffEntry = {
+  path: string;
+  imageHash?: string;
+  volumeHash?: string;
+  sizeBytes: number;
+};
+
+type DiffResult = {
+  modified: DiffEntry[];
+  addedOnDisk: DiffEntry[];
+  missingFromDisk: DiffEntry[];
+  ignored: DiffEntry[];
 };
 
 type VolumeLimit = {
@@ -97,6 +122,303 @@ function thresholdProgressClass(level: ThresholdLevel): string {
   if (level === "critical") return "h-1.5 [&>[data-slot=progress-indicator]]:bg-destructive";
   if (level === "warning") return "h-1.5 [&>[data-slot=progress-indicator]]:bg-amber-500";
   return "h-1.5";
+}
+
+function VolumeDiffSection({
+  appId,
+  orgId,
+  volume,
+  onIgnoreAdded,
+}: {
+  appId: string;
+  orgId: string;
+  volume: Volume;
+  onIgnoreAdded: (pattern: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [diff, setDiff] = useState<DiffResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState<Set<string>>(new Set());
+  const [synced, setSynced] = useState<Set<string>>(new Set());
+
+  async function loadDiff() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(
+        `/api/v1/organizations/${orgId}/apps/${appId}/volumes/${encodeURIComponent(volume.name)}/diff`
+      );
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || "Failed to load diff");
+        return;
+      }
+      const data = await res.json();
+      setDiff(data.diff);
+    } catch {
+      setError("Failed to load diff");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleToggle() {
+    if (!expanded && !diff && !loading) {
+      loadDiff();
+    }
+    setExpanded(!expanded);
+  }
+
+  async function syncFile(path: string) {
+    setSyncing((prev) => new Set(prev).add(path));
+    try {
+      const res = await fetch(
+        `/api/v1/organizations/${orgId}/apps/${appId}/volumes/${encodeURIComponent(volume.name)}/sync`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ paths: [path] }),
+        }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (data.synced?.includes(path)) {
+          setSynced((prev) => new Set(prev).add(path));
+          toast.success(`Synced ${path}`);
+        } else {
+          toast.error(`Failed to sync ${path}`);
+        }
+      } else {
+        toast.error("Sync failed");
+      }
+    } catch {
+      toast.error("Sync failed");
+    } finally {
+      setSyncing((prev) => {
+        const next = new Set(prev);
+        next.delete(path);
+        return next;
+      });
+    }
+  }
+
+  async function ignorePattern(path: string) {
+    // Add the exact file path as the ignore pattern.
+    // Users can manually add directory globs (e.g. "uploads/**") if they want broader ignores.
+    const pattern = path;
+
+    const currentPatterns = volume.ignorePatterns ?? [];
+    if (currentPatterns.includes(pattern)) {
+      toast.success("Pattern already ignored");
+      return;
+    }
+
+    try {
+      const res = await fetch(
+        `/api/v1/organizations/${orgId}/apps/${appId}/volumes/${encodeURIComponent(volume.name)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ignorePatterns: [...currentPatterns, pattern],
+          }),
+        }
+      );
+      if (res.ok) {
+        toast.success(`Added ignore pattern: ${pattern}`);
+        onIgnoreAdded(pattern);
+        // Reload diff
+        loadDiff();
+      } else {
+        toast.error("Failed to add ignore pattern");
+      }
+    } catch {
+      toast.error("Failed to add ignore pattern");
+    }
+  }
+
+  const totalChanges = diff
+    ? diff.modified.length + diff.addedOnDisk.length + diff.missingFromDisk.length
+    : volume.driftCount ?? 0;
+
+  return (
+    <div className="mt-2">
+      <button
+        onClick={handleToggle}
+        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+      >
+        {expanded ? (
+          <ChevronDown className="size-3" />
+        ) : (
+          <ChevronRight className="size-3" />
+        )}
+        <GitCompareArrows className="size-3" />
+        <span>Changes</span>
+        {totalChanges > 0 && (
+          <Badge
+            variant="secondary"
+            className="text-[10px] px-1.5 py-0 h-4 bg-amber-500/10 text-amber-600 border-amber-500/20"
+          >
+            {totalChanges}
+          </Badge>
+        )}
+      </button>
+
+      {expanded && (
+        <div className="mt-2 rounded-md border bg-muted/30 p-3 space-y-2">
+          {loading && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2 className="size-3 animate-spin" />
+              Computing diff...
+            </div>
+          )}
+
+          {error && (
+            <p className="text-xs text-destructive">{error}</p>
+          )}
+
+          {diff && totalChanges === 0 && (
+            <p className="text-xs text-muted-foreground">
+              No drift detected. Volume matches image contents.
+            </p>
+          )}
+
+          {diff && diff.modified.length > 0 && (
+            <DiffFileGroup
+              label="Modified"
+              icon={<FileWarning className="size-3 text-amber-500" />}
+              entries={diff.modified}
+              syncing={syncing}
+              synced={synced}
+              onSync={syncFile}
+              onIgnore={ignorePattern}
+            />
+          )}
+
+          {diff && diff.addedOnDisk.length > 0 && (
+            <DiffFileGroup
+              label="Added on disk"
+              icon={<FilePlus className="size-3 text-blue-500" />}
+              entries={diff.addedOnDisk}
+              syncing={syncing}
+              synced={synced}
+              onIgnore={ignorePattern}
+            />
+          )}
+
+          {diff && diff.missingFromDisk.length > 0 && (
+            <DiffFileGroup
+              label="Missing from disk"
+              icon={<FileMinus className="size-3 text-red-500" />}
+              entries={diff.missingFromDisk}
+              syncing={syncing}
+              synced={synced}
+              onSync={syncFile}
+              onIgnore={ignorePattern}
+            />
+          )}
+
+          {diff && diff.ignored.length > 0 && (
+            <details className="text-xs">
+              <summary className="text-muted-foreground cursor-pointer hover:text-foreground">
+                {diff.ignored.length} ignored file(s)
+              </summary>
+              <ul className="mt-1 space-y-0.5 pl-4">
+                {diff.ignored.map((entry) => (
+                  <li
+                    key={entry.path}
+                    className="font-mono text-muted-foreground truncate"
+                  >
+                    {entry.path}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+
+          {diff && (
+            <button
+              onClick={loadDiff}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              disabled={loading}
+            >
+              <RefreshCw className={`size-3 ${loading ? "animate-spin" : ""}`} />
+              Refresh
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DiffFileGroup({
+  label,
+  icon,
+  entries,
+  syncing,
+  synced,
+  onSync,
+  onIgnore,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  entries: DiffEntry[];
+  syncing: Set<string>;
+  synced: Set<string>;
+  onSync?: (path: string) => void;
+  onIgnore: (path: string) => void;
+}) {
+  return (
+    <div>
+      <div className="flex items-center gap-1.5 text-xs font-medium mb-1">
+        {icon}
+        {label} ({entries.length})
+      </div>
+      <ul className="space-y-0.5">
+        {entries.map((entry) => (
+          <li
+            key={entry.path}
+            className="flex items-center justify-between gap-2 text-xs group"
+          >
+            <span className="font-mono text-muted-foreground truncate min-w-0 flex-1">
+              {entry.path}
+            </span>
+            <span className="text-muted-foreground shrink-0 text-[10px]">
+              {formatBytes(entry.sizeBytes)}
+            </span>
+            <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+              {onSync && !synced.has(entry.path) && (
+                <button
+                  onClick={() => onSync(entry.path)}
+                  disabled={syncing.has(entry.path)}
+                  className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50"
+                  title="Sync from image"
+                >
+                  {syncing.has(entry.path) ? (
+                    <Loader2 className="size-2.5 animate-spin" />
+                  ) : (
+                    "Sync"
+                  )}
+                </button>
+              )}
+              {synced.has(entry.path) && (
+                <Check className="size-3 text-green-500" />
+              )}
+              <button
+                onClick={() => onIgnore(entry.path)}
+                className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground hover:bg-muted/80"
+                title="Add ignore pattern"
+              >
+                <EyeOff className="size-2.5" />
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 export function VolumesPanel({ appId, orgId }: Props) {
@@ -388,71 +710,105 @@ export function VolumesPanel({ appId, orgId }: Props) {
             {volumes.map((vol) => (
               <div
                 key={`${vol.name}-${vol.mountPath}`}
-                className="squircle flex items-center justify-between gap-4 rounded-lg border bg-card p-4"
+                className="squircle rounded-lg border bg-card p-4"
               >
-                <div className="flex items-center gap-4 min-w-0 flex-1">
-                  <HardDrive className="size-4 text-muted-foreground shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium font-mono truncate">
-                        {vol.name}
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-4 min-w-0 flex-1">
+                    <HardDrive className="size-4 text-muted-foreground shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium font-mono truncate">
+                          {vol.name}
+                        </p>
+                        <Badge variant="secondary" className="text-xs shrink-0">
+                          {vol.type}
+                        </Badge>
+                        {vol.persistent ? (
+                          <Badge className="text-xs shrink-0 border-transparent bg-status-success-muted text-status-success">
+                            <ShieldCheck className="mr-1 size-3" />
+                            Persistent
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-xs shrink-0">
+                            <Clock className="mr-1 size-3" />
+                            Ephemeral
+                          </Badge>
+                        )}
+                        {(vol.driftCount ?? 0) > 0 && (
+                          <Badge
+                            variant="secondary"
+                            className="text-xs shrink-0 bg-amber-500/10 text-amber-600 border-amber-500/20"
+                          >
+                            <GitCompareArrows className="mr-1 size-3" />
+                            {vol.driftCount} change{vol.driftCount !== 1 ? "s" : ""}
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground font-mono mt-0.5 truncate">
+                        {vol.mountPath}
                       </p>
-                      <Badge variant="secondary" className="text-xs shrink-0">
-                        {vol.type}
-                      </Badge>
-                      {vol.persistent ? (
-                        <Badge className="text-xs shrink-0 border-transparent bg-status-success-muted text-status-success">
-                          <ShieldCheck className="mr-1 size-3" />
-                          Persistent
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className="text-xs shrink-0">
-                          <Clock className="mr-1 size-3" />
-                          Ephemeral
-                        </Badge>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground font-mono mt-0.5 truncate">
-                      {vol.mountPath}
-                    </p>
-                    {/* Per-volume usage vs limit */}
-                    {vol.sizeBytes != null && vol.sizeBytes > 0 && limit && (() => {
-                      const level = volumeThreshold(vol.sizeBytes!, limit.maxSizeBytes, limit.warnAtPercent ?? 80);
-                      const percent = Math.round((vol.sizeBytes! / limit.maxSizeBytes) * 100);
-                      return (
-                        <div className="mt-2 space-y-1">
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="text-muted-foreground">
-                              {formatBytes(vol.sizeBytes!)} / {formatBytes(limit.maxSizeBytes)}
-                            </span>
-                            <span className={thresholdTextClass(level)}>
-                              {percent}%
-                            </span>
+                      {/* Per-volume usage vs limit */}
+                      {vol.sizeBytes != null && vol.sizeBytes > 0 && limit && (() => {
+                        const level = volumeThreshold(vol.sizeBytes!, limit.maxSizeBytes, limit.warnAtPercent ?? 80);
+                        const percent = Math.round((vol.sizeBytes! / limit.maxSizeBytes) * 100);
+                        return (
+                          <div className="mt-2 space-y-1">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-muted-foreground">
+                                {formatBytes(vol.sizeBytes!)} / {formatBytes(limit.maxSizeBytes)}
+                              </span>
+                              <span className={thresholdTextClass(level)}>
+                                {percent}%
+                              </span>
+                            </div>
+                            <Progress
+                              value={Math.min(percent, 100)}
+                              className={thresholdProgressClass(level)}
+                            />
                           </div>
-                          <Progress
-                            value={Math.min(percent, 100)}
-                            className={thresholdProgressClass(level)}
-                          />
-                        </div>
-                      );
-                    })()}
+                        );
+                      })()}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <Switch
+                      checked={vol.persistent}
+                      onCheckedChange={() => togglePersistent(vol.name)}
+                      disabled={saving}
+                    />
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => removeVolume(vol.name)}
+                    >
+                      <X className="size-3.5" />
+                    </Button>
                   </div>
                 </div>
-                <div className="flex items-center gap-3 shrink-0">
-                  <Switch
-                    checked={vol.persistent}
-                    onCheckedChange={() => togglePersistent(vol.name)}
-                    disabled={saving}
+                {/* Volume diff / changes section */}
+                {vol.persistent && (
+                  <VolumeDiffSection
+                    appId={appId}
+                    orgId={orgId}
+                    volume={vol}
+                    onIgnoreAdded={(pattern) => {
+                      setVolumes((prev) =>
+                        prev.map((v) =>
+                          v.name === vol.name
+                            ? {
+                                ...v,
+                                ignorePatterns: [
+                                  ...(v.ignorePatterns ?? []),
+                                  pattern,
+                                ],
+                              }
+                            : v
+                        )
+                      );
+                    }}
                   />
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="text-destructive hover:text-destructive"
-                    onClick={() => removeVolume(vol.name)}
-                  >
-                    <X className="size-3.5" />
-                  </Button>
-                </div>
+                )}
               </div>
             ))}
           </div>
