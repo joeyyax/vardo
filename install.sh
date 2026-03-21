@@ -111,8 +111,21 @@ docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d
 
 # ── Wait for healthy ───────────────────────────────────────────────────────────
 
-log "Waiting for services to start..."
-sleep 5
+log "Waiting for Host to become healthy..."
+TIMEOUT=60
+INTERVAL=2
+ELAPSED=0
+while [ $ELAPSED -lt $TIMEOUT ]; do
+  if docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec -T host curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
+    log "Host is healthy"
+    break
+  fi
+  sleep $INTERVAL
+  ELAPSED=$((ELAPSED + INTERVAL))
+done
+if [ $ELAPSED -ge $TIMEOUT ]; then
+  warn "Health check timed out after ${TIMEOUT}s — continuing anyway"
+fi
 
 # Run migrations
 log "Running database migrations..."
