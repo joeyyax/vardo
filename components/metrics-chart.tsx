@@ -1,27 +1,6 @@
 "use client";
 
-import type { CustomTooltipProps } from "@tremor/react";
 import { CHART_COLORS } from "@/lib/metrics/constants";
-
-/**
- * Color mapping for Tremor charts.
- *
- * Tremor v3 generates Tailwind utility classes from the color strings you pass.
- * It detects "--" in the string and wraps it as an arbitrary value, e.g.
- * `stroke-[var(--metric-cpu)]`. This works with Tailwind v4's native CSS
- * variable support. The actual oklch values live in globals.css under both
- * :root and .dark.
- */
-export const TREMOR_METRIC_COLORS = {
-  cpu: "var(--metric-cpu)",
-  memory: "var(--metric-memory)",
-  networkRx: "var(--metric-network-rx)",
-  networkTx: "var(--metric-network-tx)",
-  networkRxRate: "var(--metric-network-rx)",
-  networkTxRate: "var(--metric-network-tx)",
-  memoryLimit: "var(--metric-memory-limit)",
-  diskTotal: "var(--metric-disk)",
-} as const;
 
 /** Maps data keys to the raw oklch color used for tooltip swatches. */
 const SWATCH_COLORS: Record<string, string> = {
@@ -35,10 +14,24 @@ const SWATCH_COLORS: Record<string, string> = {
   diskTotal: CHART_COLORS.disk,
 };
 
+type RechartsPayloadEntry = {
+  dataKey?: string;
+  name?: string;
+  value?: number;
+  color?: string;
+};
+
+type MetricsTooltipProps = {
+  active?: boolean;
+  payload?: RechartsPayloadEntry[];
+  label?: string;
+  valueFormatter?: (value: number, category: string) => string;
+  categoryLabels?: Record<string, string>;
+};
+
 /**
- * Custom dark-themed tooltip for metric area charts.
- * Replaces Tremor's default light tooltip with one that matches
- * the existing dark card style (oklch-based background, border, text).
+ * Custom dark-themed tooltip for Recharts area charts.
+ * oklch-based background, border, and text colors for dark UI consistency.
  */
 export function MetricsTooltip({
   payload,
@@ -46,10 +39,7 @@ export function MetricsTooltip({
   label,
   valueFormatter,
   categoryLabels,
-}: CustomTooltipProps & {
-  valueFormatter?: (value: number, category: string) => string;
-  categoryLabels?: Record<string, string>;
-}) {
+}: MetricsTooltipProps) {
   if (!active || !payload || payload.length === 0) return null;
 
   return (
