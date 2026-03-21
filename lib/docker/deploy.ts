@@ -1096,6 +1096,27 @@ export async function runDeployment(
     // Send success notification (non-blocking)
     sendDeployNotification(app, deploymentId, true, durationMs).catch(() => {});
 
+    // Start auto-rollback monitor if enabled
+    if (app.autoRollback && activeSlot) {
+      const gracePeriod = app.rollbackGracePeriod ?? 60;
+      log(`[deploy] Auto-rollback enabled — monitoring for ${gracePeriod}s`);
+      try {
+        const { startRollbackMonitor } = await import("./rollback-monitor");
+        startRollbackMonitor({
+          appId: opts.appId,
+          appName: app.name,
+          organizationId: opts.organizationId,
+          deploymentId,
+          gracePeriodSeconds: gracePeriod,
+          currentSlot: newSlot,
+          previousSlot: activeSlot,
+          envName,
+        });
+      } catch (err) {
+        log(`[deploy] Warning: rollback monitor — ${err instanceof Error ? err.message : err}`);
+      }
+    }
+
     return { deploymentId, success: true, log: logLines.join("\n"), durationMs };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
