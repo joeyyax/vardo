@@ -5,7 +5,6 @@ import {
   Loader2,
   Trash2,
   UserPlus,
-  Copy,
   Shield,
   ShieldCheck,
 } from "lucide-react";
@@ -76,8 +75,7 @@ function InviteUser() {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [inviting, setInviting] = useState(false);
-  const [tempPassword, setTempPassword] = useState<string | null>(null);
-  const [invitedEmail, setInvitedEmail] = useState<string | null>(null);
+  const [inviteMessage, setInviteMessage] = useState<string | null>(null);
   const [users, setUsers] = useState<UserInfo[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
 
@@ -103,7 +101,7 @@ function InviteUser() {
     e.preventDefault();
     if (!email.trim()) return;
     setInviting(true);
-    setTempPassword(null);
+    setInviteMessage(null);
     try {
       const res = await fetch("/api/v1/admin/users", {
         method: "POST",
@@ -112,8 +110,7 @@ function InviteUser() {
       });
       if (res.ok) {
         const data = await res.json();
-        setTempPassword(data.tempPassword);
-        setInvitedEmail(email.trim());
+        setInviteMessage(data.message);
         setEmail("");
         setName("");
         fetchUsers();
@@ -178,31 +175,9 @@ function InviteUser() {
           </Button>
         </form>
 
-        {/* Temp password display */}
-        {tempPassword && invitedEmail && (
-          <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-4 space-y-2">
-            <p className="text-sm font-medium">
-              Account created for {invitedEmail}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Share this temporary password with the user. They should change it after
-              signing in.
-            </p>
-            <div className="flex items-center gap-2">
-              <code className="flex-1 rounded bg-muted px-3 py-2 text-sm font-mono break-all">
-                {tempPassword}
-              </code>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  navigator.clipboard.writeText(tempPassword);
-                  toast.success("Copied to clipboard");
-                }}
-              >
-                <Copy className="size-4" />
-              </Button>
-            </div>
+        {inviteMessage && (
+          <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-4">
+            <p className="text-sm text-green-400">{inviteMessage}</p>
           </div>
         )}
       </div>

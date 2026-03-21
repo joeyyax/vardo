@@ -7,6 +7,7 @@ import { eq, and } from "drizzle-orm";
 import { deployProject } from "@/lib/docker/deploy";
 import { deployGroup } from "@/lib/docker/deploy-group";
 import { createSSEResponse } from "@/lib/api/sse";
+import { rateLimit } from "@/lib/api/rate-limit";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -15,6 +16,9 @@ type RouteParams = {
 // POST /api/v1/organizations/[orgId]/apps/[appId]/deploy
 // Returns SSE stream of deploy log lines, final event is the result
 export async function POST(request: NextRequest, { params }: RouteParams) {
+  const limited = rateLimit(request, { key: "deploy", limit: 10, windowMs: 60000 });
+  if (limited) return limited;
+
   try {
     const { orgId, appId } = await params;
     const { organization, session } = await requireOrg();
