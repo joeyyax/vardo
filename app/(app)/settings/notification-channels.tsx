@@ -41,15 +41,15 @@ export function NotificationChannelsEditor({ orgId }: { orgId: string }) {
       const res = await fetch(`/api/v1/organizations/${orgId}/notifications`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, type, config, enabled: true }) });
       if (!res.ok) { const d = await res.json(); toast.error(d.error || "Failed"); return; }
       toast.success("Channel created"); reset(); load();
-    } catch { toast.error("Failed"); } finally { setSaving(false); }
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Failed to save channel"); } finally { setSaving(false); }
   };
 
   const handleToggle = async (id: string, enabled: boolean) => {
-    try { const res = await fetch(`/api/v1/organizations/${orgId}/notifications/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled }) }); if (res.ok) setChannels(prev => prev.map(c => c.id === id ? { ...c, enabled } : c)); } catch { toast.error("Failed"); }
+    try { const res = await fetch(`/api/v1/organizations/${orgId}/notifications/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled }) }); if (res.ok) setChannels(prev => prev.map(c => c.id === id ? { ...c, enabled } : c)); } catch { toast.error("Failed to toggle channel"); }
   };
 
   const handleDelete = async (id: string) => {
-    try { const res = await fetch(`/api/v1/organizations/${orgId}/notifications/${id}`, { method: "DELETE" }); if (res.ok) { setChannels(prev => prev.filter(c => c.id !== id)); toast.success("Deleted"); } } catch { toast.error("Failed"); }
+    try { const res = await fetch(`/api/v1/organizations/${orgId}/notifications/${id}`, { method: "DELETE" }); if (res.ok) { setChannels(prev => prev.filter(c => c.id !== id)); toast.success("Deleted"); } } catch { toast.error("Failed to delete channel"); }
   };
 
   if (loading) return <div className="flex items-center gap-2 text-muted-foreground py-8"><Loader2 className="h-4 w-4 animate-spin" />Loading...</div>;

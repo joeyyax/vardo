@@ -39,6 +39,10 @@ type UseMetricsStreamReturn = {
   connected: boolean;
   /** Whether historical data is still loading */
   loading: boolean;
+  /** Whether the stream is reconnecting after a disconnect */
+  reconnecting: boolean;
+  /** Error message when historical fetch or stream fails */
+  error: string | null;
 };
 
 export function useMetricsStream(
@@ -51,6 +55,9 @@ export function useMetricsStream(
   const [meta, setMeta] = useState<MetricsMeta | null>(null);
   const [connected, setConnected] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [reconnecting, setReconnecting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const wasConnectedRef = useRef(false);
 
   const visKey = useVisibilityKey();
 
@@ -79,8 +86,11 @@ export function useMetricsStream(
           setPoints(data.points ?? []);
         }
       })
-      .catch(() => {
-        if (!cancelled) setPoints([]);
+      .catch((err) => {
+        if (!cancelled) {
+          setPoints([]);
+          setError(err instanceof Error ? err.message : "Failed to load metrics history");
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -99,7 +109,12 @@ export function useMetricsStream(
 
     const es = new EventSource(streamUrl);
 
-    es.onopen = () => setConnected(true);
+    es.onopen = () => {
+      setConnected(true);
+      setReconnecting(false);
+      setError(null);
+      wasConnectedRef.current = true;
+    };
 
     function handlePoint(event: MessageEvent) {
       try {
@@ -154,12 +169,18 @@ export function useMetricsStream(
       es.close();
     });
 
-    es.onerror = () => setConnected(false);
+    es.onerror = () => {
+      setConnected(false);
+      // If we were previously connected, the browser will auto-retry -- show reconnecting
+      if (wasConnectedRef.current) {
+        setReconnecting(true);
+      }
+    };
 
     return () => {
       es.close();
     };
   }, [streamUrl, visKey, maxPoints]);
 
-  return { points, containers, meta, connected, loading };
+  return { points, containers, meta, connected, loading, reconnecting, error };
 }
