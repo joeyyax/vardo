@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { deployments, apps, orgEnvVars, organizations, environments, volumeLimits } from "@/lib/db/schema";
+import { deployments, apps, orgEnvVars, organizations, environments, volumes } from "@/lib/db/schema";
 import { encrypt, decryptOrFallback } from "@/lib/crypto/encrypt";
 import { parseEnvToMap } from "@/lib/env/parse-env";
 import { eq, and, isNull } from "drizzle-orm";
@@ -221,21 +221,27 @@ export async function runDeployment(
     const appDir = join(appBaseDir, envName);
     await mkdir(appDir, { recursive: true });
 
+    // Load volumes from the volumes table
+    const appVolumes = await db.query.volumes.findMany({
+      where: eq(volumes.appId, opts.appId),
+    });
+    const volumesList = appVolumes.filter((v) => v.persistent).map((v) => ({ name: v.name, mountPath: v.mountPath }));
+
     if (app.deployType === "image" && app.imageName) {
       // Image deploy — no clone needed
       stage("clone", "skipped");
       stage("build", "running");
-      const volumes = (app.persistentVolumes as { name: string; mountPath: string }[] | null) ?? undefined;
+      const volsForCompose = volumesList.length > 0 ? volumesList : undefined;
       const exposedPorts = (app.exposedPorts as { internal: number; external?: number; protocol?: string }[] | null) ?? undefined;
       compose = generateComposeForImage({
         projectName: app.name,
         imageName: app.imageName,
         containerPort: app.containerPort ?? undefined,
         envVars: envMap,
-        volumes,
+        volumes: volsForCompose,
         exposedPorts,
       });
-      if (volumes?.length) log(`[deploy] ${volumes.length} persistent volume(s)`);
+      if (volsForCompose?.length) log(`[deploy] ${volsForCompose.length} persistent volume(s)`);
       if (exposedPorts?.length) log(`[deploy] ${exposedPorts.length} exposed port(s)`);
       log(`[deploy] Generated compose for image: ${app.imageName}`);
     } else if (app.source === "git" && app.gitUrl) {
@@ -364,6 +370,23 @@ export async function runDeployment(
           log(`[deploy] host.toml: ${applied.envVars.length} env var(s)`);
         }
         if (applied.persistentVolumes) {
+          // Insert host.toml volumes into the volumes table
+          for (const vol of applied.persistentVolumes) {
+            await db.insert(volumes).values({
+              id: nanoid(),
+              appId: opts.appId,
+              organizationId: opts.organizationId,
+              name: vol.name,
+              mountPath: vol.mountPath,
+              persistent: true,
+            }).onConflictDoNothing();
+          }
+          // Refresh the volumes list so compose generation picks them up
+          const refreshed = await db.query.volumes.findMany({
+            where: eq(volumes.appId, opts.appId),
+          });
+          volumesList.length = 0;
+          volumesList.push(...refreshed.filter((v) => v.persistent).map((v) => ({ name: v.name, mountPath: v.mountPath })));
           log(`[deploy] host.toml: ${applied.persistentVolumes.length} volume(s)`);
         }
       }
@@ -400,8 +423,7 @@ export async function runDeployment(
 
         // Detect declared volumes from compose YAML before deploy starts
         if (compose.volumes && Object.keys(compose.volumes).length > 0) {
-          const existing = (app.persistentVolumes as { name: string; mountPath: string }[] | null) ?? [];
-          const existingNames = new Set(existing.map(v => v.name));
+          const existingNames = new Set(appVolumes.map(v => v.name));
           const newVols: { name: string; mountPath: string }[] = [];
 
           for (const svc of Object.values(compose.services)) {
@@ -419,8 +441,16 @@ export async function runDeployment(
           }
 
           if (newVols.length > 0) {
-            const merged = [...existing, ...newVols];
-            await db.update(apps).set({ persistentVolumes: merged }).where(eq(apps.id, opts.appId));
+            for (const vol of newVols) {
+              await db.insert(volumes).values({
+                id: nanoid(),
+                appId: opts.appId,
+                organizationId: opts.organizationId,
+                name: vol.name,
+                mountPath: vol.mountPath,
+                persistent: true,
+              }).onConflictDoNothing();
+            }
             log(`[deploy] Detected ${newVols.length} compose volume(s): ${newVols.map(v => `${v.name}:${v.mountPath}`).join(", ")}`);
           }
         }
@@ -477,7 +507,7 @@ export async function runDeployment(
           imageName,
           containerPort: app.containerPort ?? undefined,
           envVars: envMap,
-          volumes: (app.persistentVolumes as { name: string; mountPath: string }[] | null) ?? undefined,
+          volumes: volumesList.length > 0 ? volumesList : undefined,
           exposedPorts: (app.exposedPorts as { internal: number; external?: number; protocol?: string }[] | null) ?? undefined,
         });
       }
@@ -488,8 +518,7 @@ export async function runDeployment(
 
       // Detect declared volumes from compose YAML before deploy starts
       if (compose.volumes && Object.keys(compose.volumes).length > 0) {
-        const existing = (app.persistentVolumes as { name: string; mountPath: string }[] | null) ?? [];
-        const existingNames = new Set(existing.map(v => v.name));
+        const existingNames = new Set(appVolumes.map(v => v.name));
         const newVols: { name: string; mountPath: string }[] = [];
 
         for (const svc of Object.values(compose.services)) {
@@ -507,8 +536,16 @@ export async function runDeployment(
         }
 
         if (newVols.length > 0) {
-          const merged = [...existing, ...newVols];
-          await db.update(apps).set({ persistentVolumes: merged }).where(eq(apps.id, opts.appId));
+          for (const vol of newVols) {
+            await db.insert(volumes).values({
+              id: nanoid(),
+              appId: opts.appId,
+              organizationId: opts.organizationId,
+              name: vol.name,
+              mountPath: vol.mountPath,
+              persistent: true,
+            }).onConflictDoNothing();
+          }
           log(`[deploy] Detected ${newVols.length} compose volume(s): ${newVols.map(v => `${v.name}:${v.mountPath}`).join(", ")}`);
         }
       }
@@ -819,10 +856,8 @@ export async function runDeployment(
         for (const mount of info.mounts) {
           if (mount.type === "volume" && !seen.has(mount.destination)) {
             seen.add(mount.destination);
-            // Extract volume name from source path (last segment)
             const parts = mount.source.split("/");
             const rawName = parts[parts.length - 1];
-            // Strip compose project prefix (e.g. "redis-green_data" → "data")
             const name = rawName.replace(/^[^_]*_/, "");
             detectedVolumes.push({ name, mountPath: mount.destination });
           }
@@ -830,31 +865,40 @@ export async function runDeployment(
       }
 
       if (detectedVolumes.length > 0) {
-        const existing = (app.persistentVolumes as { name: string; mountPath: string }[] | null) ?? [];
-        const existingPaths = new Set(existing.map((v) => v.mountPath));
-        const newVolumes = detectedVolumes.filter((v) => !existingPaths.has(v.mountPath));
+        // Re-fetch current volumes from the table (may have been updated during deploy)
+        const currentVolumes = await db.query.volumes.findMany({
+          where: eq(volumes.appId, opts.appId),
+        });
+        const existingPaths = new Set(currentVolumes.map((v) => v.mountPath));
+        const newDetected = detectedVolumes.filter((v) => !existingPaths.has(v.mountPath));
 
-        if (newVolumes.length > 0) {
-          const merged = [...existing, ...newVolumes];
-          await db
-            .update(apps)
-            .set({ persistentVolumes: merged })
-            .where(eq(apps.id, opts.appId));
-          log(`[deploy] Detected ${newVolumes.length} volume(s): ${newVolumes.map((v) => v.mountPath).join(", ")}`);
+        if (newDetected.length > 0) {
+          for (const vol of newDetected) {
+            await db.insert(volumes).values({
+              id: nanoid(),
+              appId: opts.appId,
+              organizationId: opts.organizationId,
+              name: vol.name,
+              mountPath: vol.mountPath,
+              persistent: true,
+            }).onConflictDoNothing();
+          }
+          log(`[deploy] Detected ${newDetected.length} volume(s): ${newDetected.map((v) => v.mountPath).join(", ")}`);
         }
       }
     } catch {
       // Volume detection is best-effort
     }
 
-    // Check volume size limits
+    // Check volume size limits (reads limits directly from volume records)
     try {
-      const limit = await db.query.volumeLimits.findFirst({
-        where: eq(volumeLimits.appId, opts.appId),
+      const limitedVolumes = await db.query.volumes.findMany({
+        where: eq(volumes.appId, opts.appId),
       });
-      if (limit) {
+      const anyLimited = limitedVolumes.some((v) => v.maxSizeBytes != null);
+
+      if (anyLimited) {
         const { formatBytes } = await import("@/lib/metrics/format");
-        const warnThreshold = limit.warnAtPercent ?? 80;
         const runningContainers = await listContainers(app.name);
 
         // Collect all named volumes across containers
@@ -871,6 +915,13 @@ export async function runDeployment(
             }
           }
         }
+
+        // Build a lookup of limit config by volume name
+        const limitByName = new Map(
+          limitedVolumes
+            .filter((v) => v.maxSizeBytes != null)
+            .map((v) => [v.name, { maxSizeBytes: v.maxSizeBytes!, warnAtPercent: v.warnAtPercent ?? 80 }])
+        );
 
         // Measure all volumes in parallel
         if (volEntries.length > 0) {
@@ -890,8 +941,11 @@ export async function runDeployment(
             const sizeBytes = parseInt(result.value.stdout.split("\t")[0]);
             if (isNaN(sizeBytes)) continue;
             const { displayName } = volEntries[i];
+            const limit = limitByName.get(displayName);
+            if (!limit) continue;
+
             const percent = Math.round((sizeBytes / limit.maxSizeBytes) * 100);
-            const level = volumeThreshold(sizeBytes, limit.maxSizeBytes, warnThreshold);
+            const level = volumeThreshold(sizeBytes, limit.maxSizeBytes, limit.warnAtPercent);
 
             if (level === "critical") {
               log(`[deploy] Volume '${displayName}': ${formatBytes(sizeBytes)} / ${formatBytes(limit.maxSizeBytes)} (${percent}%) -- OVER LIMIT, deploy blocked`);
