@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { deployments, apps, orgEnvVars, organizations, environments, volumeLimits } from "@/lib/db/schema";
-import { encrypt, decrypt } from "@/lib/crypto/encrypt";
+import { encrypt, decryptOrFallback } from "@/lib/crypto/encrypt";
 import { parseEnvToMap } from "@/lib/env/parse-env";
 import { eq, and, isNull } from "drizzle-orm";
 import { resolveAllEnvVars, type ResolveContext } from "@/lib/env/resolve";
@@ -169,14 +169,22 @@ export async function runDeployment(
     log(`[deploy] App: ${app.displayName} (${app.name})`);
     log(`[deploy] Source: ${app.source}, Type: ${app.deployType}`);
 
-    // Load env vars from encrypted blob
+    // Load env vars from encrypted blob (gracefully handles unmigrated plaintext)
     const envMap: Record<string, string> = {};
     if (app.envContent) {
-      try {
-        const decrypted = decrypt(app.envContent, app.organizationId);
-        Object.assign(envMap, parseEnvToMap(decrypted));
-      } catch (err) {
-        log(`[deploy] Warning: failed to decrypt env vars — ${err instanceof Error ? err.message : err}`);
+      const { content: envText, wasEncrypted } = decryptOrFallback(app.envContent, app.organizationId);
+      if (envText) {
+        Object.assign(envMap, parseEnvToMap(envText));
+        if (!wasEncrypted) {
+          log("[deploy] Warning: env vars were not encrypted — auto-encrypting");
+          try {
+            await db.update(apps)
+              .set({ envContent: encrypt(envText, app.organizationId) })
+              .where(eq(apps.id, app.id));
+          } catch { /* best-effort */ }
+        }
+      } else if (!wasEncrypted) {
+        log("[deploy] Warning: failed to decrypt env vars — check ENCRYPTION_MASTER_KEY");
       }
     }
 
@@ -639,13 +647,10 @@ export async function runDeployment(
 
           // Decrypt the referenced app's env content and look up the key
           if (!refApp.envContent) return null;
-          try {
-            const refDecrypted = decrypt(refApp.envContent, refApp.organizationId);
-            const refMap = parseEnvToMap(refDecrypted);
-            return refMap[varKey] ?? null;
-          } catch {
-            return null;
-          }
+          const { content: refText } = decryptOrFallback(refApp.envContent, refApp.organizationId);
+          if (!refText) return null;
+          const refMap = parseEnvToMap(refText);
+          return refMap[varKey] ?? null;
         },
       };
 

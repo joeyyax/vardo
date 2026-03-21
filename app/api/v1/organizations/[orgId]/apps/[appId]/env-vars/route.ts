@@ -5,7 +5,7 @@ import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { verifyAppAccess } from "@/lib/api/verify-access";
-import { encrypt, decrypt } from "@/lib/crypto/encrypt";
+import { encrypt, decryptOrFallback } from "@/lib/crypto/encrypt";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -32,9 +32,22 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ content: "" });
     }
 
+    const { content: decrypted, wasEncrypted } = decryptOrFallback(record.envContent, orgId);
+
+    if (!decrypted && !wasEncrypted) {
+      return NextResponse.json({
+        content: "",
+        error: "Failed to decrypt env vars — check ENCRYPTION_MASTER_KEY",
+      });
+    }
+
+    // If data was plaintext (unmigrated), encrypt it on read
+    if (!wasEncrypted && decrypted) {
+      const encrypted = encrypt(decrypted, orgId);
+      await db.update(apps).set({ envContent: encrypted }).where(eq(apps.id, appId));
+    }
+
     if (!reveal) {
-      // Return key names only, mask all values
-      const decrypted = decrypt(record.envContent, orgId);
       const masked = decrypted
         .split("\n")
         .map((line) => {
@@ -46,8 +59,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ content: masked });
     }
 
-    const content = decrypt(record.envContent, orgId);
-    return NextResponse.json({ content });
+    return NextResponse.json({ content: decrypted });
   } catch (error) {
     return handleRouteError(error, "Error fetching env vars");
   }
