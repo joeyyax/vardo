@@ -1,23 +1,26 @@
+import { Heading, Section, Text } from "@react-email/components";
 import {
-  Body,
-  Container,
-  Head,
-  Heading,
-  Hr,
-  Html,
-  Preview,
-  Section,
-  Text,
-  Link,
-} from "@react-email/components";
+  EmailLayout,
+  CTA,
+  ErrorBox,
+  InfoBox,
+  CodeBlock,
+  Label,
+  styles,
+} from "./components";
 
 type DeployFailedProps = {
   projectName: string;
   deploymentId: string;
   errorMessage?: string;
+  errorSnapshot?: string;
+  failedAtStage?: string;
   gitSha?: string;
   gitMessage?: string;
+  gitAuthor?: string;
+  gitBranch?: string;
   triggeredBy?: string;
+  triggerReason?: string;
   dashboardUrl: string;
 };
 
@@ -25,54 +28,111 @@ export function DeployFailedEmail({
   projectName,
   deploymentId,
   errorMessage,
+  errorSnapshot,
+  failedAtStage,
   gitSha,
   gitMessage,
+  gitAuthor,
+  gitBranch,
   triggeredBy,
+  triggerReason,
   dashboardUrl,
 }: DeployFailedProps) {
+  const trigger =
+    triggerReason || (triggeredBy ? `Manual deploy by ${triggeredBy}` : null);
+
   return (
-    <Html>
-      <Head />
-      <Preview>{projectName} deployment failed</Preview>
-      <Body style={body}>
-        <Container style={container}>
-          <Heading style={h1}>Deploy failed</Heading>
-          <Text style={text}>
-            <strong>{projectName}</strong> failed to deploy.
-          </Text>
-          {errorMessage && (
-            <Section style={errorBox}>
-              <Text style={errorText}>{errorMessage}</Text>
-            </Section>
-          )}
-          {gitMessage && (
-            <Text style={meta}>
-              {gitSha && <code style={sha}>{gitSha.slice(0, 7)}</code>}{" "}
-              {gitMessage}
+    <EmailLayout preview={`${projectName} deployment failed`}>
+      <Heading style={styles.h1}>Deploy failed</Heading>
+      <Text style={styles.text}>
+        <strong>{projectName}</strong> failed to deploy.
+      </Text>
+
+      {(failedAtStage || trigger) && (
+        <ErrorBox>
+          {failedAtStage && (
+            <Text style={styles.kvRow}>
+              <span style={{ ...styles.kvLabel, color: "#991b1b" }}>
+                Failed at
+              </span>{" "}
+              <span style={styles.kvValue}>{failedAtStage}</span>
             </Text>
           )}
-          {triggeredBy && (
-            <Text style={meta}>Triggered by {triggeredBy}</Text>
+          {trigger && (
+            <Text style={styles.kvRow}>
+              <span style={{ ...styles.kvLabel, color: "#991b1b" }}>
+                Trigger
+              </span>{" "}
+              <span style={styles.kvValue}>{trigger}</span>
+            </Text>
           )}
-          <Hr style={hr} />
-          <Text style={meta}>
-            <Link href={`${dashboardUrl}?tab=deployments`} style={link}>
-              View logs →
-            </Link>
+        </ErrorBox>
+      )}
+
+      {errorMessage && (
+        <ErrorBox>
+          <Text style={styles.errorLabel}>Error</Text>
+          <Text style={styles.errorText}>{errorMessage}</Text>
+        </ErrorBox>
+      )}
+
+      {errorSnapshot && (
+        <Section style={{ margin: "0 0 16px" }}>
+          <Label>Build log (last lines)</Label>
+          <CodeBlock>{errorSnapshot}</CodeBlock>
+        </Section>
+      )}
+
+      {(gitSha || gitMessage) && (
+        <InfoBox>
+          <Label>Commit</Label>
+          <Text
+            style={{
+              ...styles.mono,
+              color: "#333333",
+              fontSize: "13px",
+              margin: "0",
+              lineHeight: "20px",
+            }}
+          >
+            {gitSha && <code style={styles.code}>{gitSha.slice(0, 7)}</code>}{" "}
+            {gitMessage}
           </Text>
-        </Container>
-      </Body>
-    </Html>
+          {(gitAuthor || gitBranch) && (
+            <Text
+              style={{
+                color: "#888888",
+                fontSize: "12px",
+                lineHeight: "22px",
+                margin: "4px 0 0",
+              }}
+            >
+              {gitAuthor && <span>{gitAuthor}</span>}
+              {gitAuthor && gitBranch && <span> on </span>}
+              {gitBranch && <code style={styles.code}>{gitBranch}</code>}
+            </Text>
+          )}
+        </InfoBox>
+      )}
+
+      <CTA href={`${dashboardUrl}?tab=deployments`}>View logs &rarr;</CTA>
+    </EmailLayout>
   );
 }
 
-const body = { backgroundColor: "#18181b", fontFamily: "system-ui, sans-serif" };
-const container = { maxWidth: "480px", margin: "40px auto", padding: "24px" };
-const h1 = { color: "#fafafa", fontSize: "20px", fontWeight: "600" as const, margin: "0 0 16px" };
-const text = { color: "#a1a1aa", fontSize: "14px", lineHeight: "24px" };
-const meta = { color: "#71717a", fontSize: "12px", lineHeight: "20px" };
-const link = { color: "#d4a574" };
-const hr = { borderColor: "#27272a", margin: "24px 0" };
-const errorBox = { backgroundColor: "#2d1215", borderRadius: "8px", padding: "12px 16px", margin: "12px 0", borderLeft: "3px solid #7f1d1d" };
-const errorText = { color: "#fca5a5", fontSize: "13px", margin: "0", fontFamily: "monospace", whiteSpace: "pre-wrap" as const };
-const sha = { color: "#71717a", fontSize: "12px" };
+DeployFailedEmail.PreviewProps = {
+  projectName: "acme-web",
+  deploymentId: "dep_abc123def456",
+  failedAtStage: "docker build",
+  errorMessage: "COPY failed: file not found in build context",
+  errorSnapshot:
+    "Step 8/12 : COPY package.json ./\n ---> Using cache\nStep 9/12 : RUN npm ci\n ---> Running in 3a2b1c0d\nStep 10/12 : COPY . .\nCOPY failed: file not found in build context or excluded by .dockerignore: stat src/config.ts: file does not exist",
+  gitSha: "f9e8d7c6b5a4f3e2d1c0",
+  gitMessage: "chore: update dependencies",
+  gitAuthor: "Joey Yax",
+  gitBranch: "main",
+  triggerReason: "Push to main",
+  dashboardUrl: "https://host.example.com/projects/acme-web",
+} satisfies DeployFailedProps;
+
+export default DeployFailedEmail;

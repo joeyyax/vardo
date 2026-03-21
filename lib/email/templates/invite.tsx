@@ -1,42 +1,47 @@
-import {
-  Body,
-  Container,
-  Head,
-  Heading,
-  Html,
-  Preview,
-  Text,
-} from "@react-email/components";
+import { Heading, Text } from "@react-email/components";
+import { EmailLayout, CTA, styles } from "./components";
 
 type InviteEmailProps = {
   email: string;
+  orgName?: string;
+  inviterName?: string;
+  inviteUrl?: string;
 };
 
-export function InviteEmail({ email }: InviteEmailProps) {
+export function InviteEmail({
+  email,
+  orgName,
+  inviterName,
+  inviteUrl,
+}: InviteEmailProps) {
+  const heading = orgName
+    ? `You've been invited to ${orgName}`
+    : "You've been invited to Host";
+
+  const description = inviterName
+    ? `${inviterName} invited you to join ${orgName ? `**${orgName}** on ` : ""}Host.`
+    : `An account has been created for ${email}. Sign in using a magic link — just enter your email on the login page and check your inbox.`;
+
   return (
-    <Html>
-      <Head />
-      <Preview>You've been invited to Host</Preview>
-      <Body style={body}>
-        <Container style={container}>
-          <Heading style={h1}>You've been invited to Host</Heading>
-          <Text style={text}>
-            An account has been created for <strong>{email}</strong>. You can
-            sign in using a magic link — just enter your email on the login page
-            and check your inbox.
-          </Text>
-          <Text style={meta}>
-            If you didn't expect this invitation, you can safely ignore this
-            email.
-          </Text>
-        </Container>
-      </Body>
-    </Html>
+    <EmailLayout preview={heading}>
+      <Heading style={styles.h1}>{heading}</Heading>
+      <Text style={{ ...styles.text, margin: "0 0 24px" }}>{description}</Text>
+      {inviteUrl && (
+        <CTA href={inviteUrl}>Accept invitation &rarr;</CTA>
+      )}
+      <Text style={{ ...styles.muted, margin: "24px 0 0" }}>
+        If you didn&apos;t expect this invitation, you can safely ignore this
+        email.
+      </Text>
+    </EmailLayout>
   );
 }
 
-const body = { backgroundColor: "#18181b", fontFamily: "system-ui, sans-serif" };
-const container = { maxWidth: "480px", margin: "40px auto", padding: "24px" };
-const h1 = { color: "#fafafa", fontSize: "20px", fontWeight: "600" as const, margin: "0 0 16px" };
-const text = { color: "#a1a1aa", fontSize: "14px", lineHeight: "24px" };
-const meta = { color: "#71717a", fontSize: "12px", lineHeight: "20px", marginTop: "24px" };
+InviteEmail.PreviewProps = {
+  email: "newuser@example.com",
+  orgName: "Acme Inc",
+  inviterName: "Joey Yax",
+  inviteUrl: "https://host.example.com/invite/abc123",
+} satisfies InviteEmailProps;
+
+export default InviteEmail;
