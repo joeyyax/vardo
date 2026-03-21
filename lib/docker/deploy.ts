@@ -25,6 +25,12 @@ import { getInstallationToken } from "@/lib/github/app";
 import { githubAppInstallations, memberships } from "@/lib/db/schema";
 import { detectPreventiveFixes, detectCompatIssues, applyCompatFixes } from "./compat";
 import { recordActivity } from "@/lib/activity";
+import {
+  getDecryptedPrivateKey,
+  writeTemporaryKeyFile,
+  cleanupKeyFile,
+  buildGitSshCommand,
+} from "@/lib/crypto/deploy-key";
 
 const execAsync = promisify(exec);
 
@@ -85,7 +91,8 @@ export async function runDeployment(
     // Sanitize secrets from log output
     const sanitized = line
       .replace(/x-access-token:[^\s@]+/g, "x-access-token:***")
-      .replace(/ghs_[A-Za-z0-9]+/g, "***");
+      .replace(/ghs_[A-Za-z0-9]+/g, "***")
+      .replace(/\.host-deploy-key-[A-Za-z0-9_-]+/g, ".host-deploy-key-***");
     logLines.push(sanitized);
     opts.onLog?.(sanitized);
 
@@ -236,8 +243,12 @@ export async function runDeployment(
       const branch = envBranchOverride || app.gitBranch || "main";
       assertSafeBranch(branch);
 
-      // Build authenticated clone URL for private repos
+      // Build authenticated clone URL/env for private repos
       let cloneUrl = app.gitUrl;
+      let gitEnv: Record<string, string> = {};
+      let sshKeyFile: string | null = null;
+
+      // Strategy 1: GitHub App token (for github.com URLs)
       if (cloneUrl.includes("github.com")) {
         try {
           // Find a GitHub installation for this org
@@ -274,17 +285,48 @@ export async function runDeployment(
         }
       }
 
+      // Strategy 2: SSH deploy key (for any git URL when app has a key assigned)
+      // Used as fallback for GitHub URLs without App token, and as primary for non-GitHub
+      if (cloneUrl === app.gitUrl && app.gitKeyId) {
+        try {
+          const privateKeyPem = await getDecryptedPrivateKey(app.gitKeyId, app.organizationId);
+          if (privateKeyPem) {
+            sshKeyFile = await writeTemporaryKeyFile(privateKeyPem);
+            gitEnv.GIT_SSH_COMMAND = buildGitSshCommand(sshKeyFile);
+
+            // Convert HTTPS URL to SSH if needed for key-based auth
+            if (cloneUrl.startsWith("https://")) {
+              const url = new URL(cloneUrl);
+              cloneUrl = `git@${url.hostname}:${url.pathname.replace(/^\//, "")}`;
+              if (!cloneUrl.endsWith(".git")) cloneUrl += ".git";
+            }
+
+            log(`[deploy] Using SSH deploy key for authentication`);
+          }
+        } catch (err) {
+          log(`[deploy] Warning: deploy key — ${err instanceof Error ? err.message : err}`);
+        }
+      }
+
       try {
-        // Try pull first (faster if already cloned)
-        await execAsync(
-          `git -C "${repoDir}" remote set-url origin "${cloneUrl}" && git -C "${repoDir}" fetch origin "${branch}" && git -C "${repoDir}" reset --hard "origin/${branch}"`,
-          { timeout: 60000 }
-        );
-        log(`[deploy] Pulled latest from ${branch}`);
-      } catch {
-        // Fresh clone
-        await execAsync(`git clone --depth 1 --branch "${branch}" "${cloneUrl}" "${repoDir}"`, { timeout: 60000 });
-        log(`[deploy] Cloned repo (${branch})`);
+        const execOpts = { timeout: 60000, env: { ...process.env, ...gitEnv } };
+        try {
+          // Try pull first (faster if already cloned)
+          await execAsync(
+            `git -C "${repoDir}" remote set-url origin "${cloneUrl}" && git -C "${repoDir}" fetch origin "${branch}" && git -C "${repoDir}" reset --hard "origin/${branch}"`,
+            execOpts
+          );
+          log(`[deploy] Pulled latest from ${branch}`);
+        } catch {
+          // Fresh clone
+          await execAsync(`git clone --depth 1 --branch "${branch}" "${cloneUrl}" "${repoDir}"`, execOpts);
+          log(`[deploy] Cloned repo (${branch})`);
+        }
+      } finally {
+        // Always clean up temporary SSH key file
+        if (sshKeyFile) {
+          await cleanupKeyFile(sshKeyFile);
+        }
       }
 
       // Capture git SHA + commit message
