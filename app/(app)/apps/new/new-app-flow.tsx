@@ -62,6 +62,8 @@ type Template = {
   defaultConnectionInfo:
     | { label: string; value: string; copyRef?: string }[]
     | null;
+  defaultCpuLimit: number | null;
+  defaultMemoryLimit: number | null;
 };
 
 type Installation = {
@@ -161,6 +163,8 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], default
   >([]);
   const [exposePort, setExposePort] = useState(false);
   const [createRepo, setCreateRepo] = useState(false);
+  const [cpuLimit, setCpuLimit] = useState("");
+  const [memoryLimit, setMemoryLimit] = useState("");
 
   // Domain
   const [generateDomain, setGenerateDomain] = useState(true);
@@ -288,6 +292,8 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], default
     setPersistData(alwaysPersist.includes(template.category));
     setTemplateVolumes(template.defaultVolumes || []);
     setTemplateConnectionInfo(template.defaultConnectionInfo || []);
+    setCpuLimit(template.defaultCpuLimit?.toString() || "");
+    setMemoryLimit(template.defaultMemoryLimit?.toString() || "");
     if (template.defaultEnvVars?.length) {
       const slug = slugify(template.name);
       const lines: string[] = [`# ${template.displayName} configuration`];
@@ -388,6 +394,8 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], default
           : undefined,
       };
       if (containerPort) body.containerPort = parseInt(containerPort, 10);
+      if (cpuLimit) body.cpuLimit = parseFloat(cpuLimit);
+      if (memoryLimit) body.memoryLimit = parseInt(memoryLimit, 10);
       if (rootDirectory.trim()) body.rootDirectory = rootDirectory.trim();
 
       // Create GitHub repo if opted in
@@ -827,6 +835,18 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], default
                 />
               </div>
             )}
+
+            {/* Resource Limits */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <Label htmlFor="cpu-limit">CPU Limit (cores)</Label>
+                <Input id="cpu-limit" type="number" step="0.1" min="0.1" placeholder="No limit" value={cpuLimit} onChange={(e) => setCpuLimit(e.target.value)} />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="memory-limit">Memory Limit (MB)</Label>
+                <Input id="memory-limit" type="number" step="64" min="64" placeholder="No limit" value={memoryLimit} onChange={(e) => setMemoryLimit(e.target.value)} />
+              </div>
+            </div>
 
             {/* Root directory — only for git/repo sources */}
             {(selectedSource === "github" || (selectedSource === "compose" && contentMode === "url")) && (

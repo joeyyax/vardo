@@ -50,6 +50,8 @@ const createAppSchema = z
       value: z.string(),
       copyRef: z.string().optional(),
     })).optional(),
+    cpuLimit: z.number().positive().max(64).nullable().optional(),
+    memoryLimit: z.number().int().min(64).max(65536).nullable().optional(),
     projectId: z.string().optional(),
   })
   .refine(
@@ -189,6 +191,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           return data.exposedPorts;
         })() : undefined,
         connectionInfo: data.connectionInfo,
+        cpuLimit: data.cpuLimit ?? null,
+        memoryLimit: data.memoryLimit ?? null,
       })
       .returning();
 
