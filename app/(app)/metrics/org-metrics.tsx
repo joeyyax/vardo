@@ -239,27 +239,12 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
         <div className="squircle rounded-lg border bg-card px-4 py-3">
           <div className="flex items-center gap-2">
             <Box className="size-4 text-muted-foreground shrink-0" />
-            <p className="text-xs text-muted-foreground">Infrastructure</p>
+            <p className="text-xs text-muted-foreground">Containers</p>
           </div>
-          <div className="flex items-baseline gap-3 mt-1">
-            {(streamProjectCount ?? projectCount) !== undefined && (
-              <div>
-                <p className="text-2xl font-semibold tabular-nums">{streamProjectCount ?? projectCount}</p>
-                <p className="text-[10px] text-muted-foreground">projects</p>
-              </div>
-            )}
-            <div>
-              <p className="text-2xl font-semibold tabular-nums">{displayApps.length}</p>
-              <p className="text-[10px] text-muted-foreground">apps</p>
-            </div>
-            <div>
-              <p className="text-2xl font-semibold tabular-nums">
-                {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : totals.containers}
-              </p>
-              <p className="text-[10px] text-muted-foreground">containers</p>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 mt-2">
+          <p className="text-2xl font-semibold tabular-nums mt-1">
+            {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : totals.containers}
+          </p>
+          <div className="flex flex-wrap items-center gap-2 mt-1">
             {statusCounts.active > 0 && (
               <span className="inline-flex items-center gap-1 text-[10px] text-status-success">
                 <span className="size-1.5 rounded-full bg-status-success" />
