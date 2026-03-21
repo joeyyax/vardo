@@ -362,57 +362,102 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
       })()}
 
       {/* Infrastructure overview */}
-      <div className="squircle rounded-lg border bg-card overflow-hidden">
-        <div className="px-4 py-2 border-b">
-          <p className="text-xs text-muted-foreground">Infrastructure Overview</p>
-        </div>
-        <div className="grid grid-cols-3 divide-x">
-          {/* Projects */}
-          <div className="px-4 py-3">
-            <p className="text-xs text-muted-foreground">Projects</p>
-            <p className="text-2xl font-semibold tabular-nums mt-1">{streamProjectCount ?? projectCount ?? 0}</p>
+      <div className="grid md:grid-cols-2 gap-4">
+        {/* App status distribution */}
+        <div className="squircle rounded-lg border bg-card overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b">
+            <h3 className="text-sm font-medium">App Status</h3>
+            <span className="text-xs text-muted-foreground">{displayApps.length} apps · {streamProjectCount ?? projectCount ?? 0} projects</span>
           </div>
-          {/* Apps by status */}
-          <div className="px-4 py-3">
-            <p className="text-xs text-muted-foreground">Apps</p>
-            <p className="text-2xl font-semibold tabular-nums mt-1">{displayApps.length}</p>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5">
-              {statusCounts.active > 0 && (
-                <span className="inline-flex items-center gap-1 text-[10px] text-status-success">
-                  <span className="size-1.5 rounded-full bg-status-success" />
-                  {statusCounts.active} running
+          <div className="p-4">
+            {/* Status bar */}
+            {displayApps.length > 0 && (
+              <div className="h-3 rounded-full overflow-hidden flex mb-4">
+                {statusCounts.active > 0 && (
+                  <div className="bg-status-success" style={{ width: `${(statusCounts.active / displayApps.length) * 100}%` }} />
+                )}
+                {statusCounts.deploying > 0 && (
+                  <div className="bg-status-info" style={{ width: `${(statusCounts.deploying / displayApps.length) * 100}%` }} />
+                )}
+                {statusCounts.error > 0 && (
+                  <div className="bg-status-error" style={{ width: `${(statusCounts.error / displayApps.length) * 100}%` }} />
+                )}
+                {statusCounts.stopped > 0 && (
+                  <div className="bg-muted-foreground/20" style={{ width: `${(statusCounts.stopped / displayApps.length) * 100}%` }} />
+                )}
+              </div>
+            )}
+            {/* Legend */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex items-center justify-between">
+                <span className="inline-flex items-center gap-1.5 text-xs">
+                  <span className="size-2 rounded-full bg-status-success" />
+                  Running
                 </span>
-              )}
-              {statusCounts.error > 0 && (
-                <span className="inline-flex items-center gap-1 text-[10px] text-status-error">
-                  <span className="size-1.5 rounded-full bg-status-error" />
-                  {statusCounts.error} crashed
+                <span className="text-sm font-semibold tabular-nums">{statusCounts.active}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="inline-flex items-center gap-1.5 text-xs">
+                  <span className="size-2 rounded-full bg-status-error" />
+                  Crashed
                 </span>
-              )}
-              {statusCounts.stopped > 0 && (
-                <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
-                  <span className="size-1.5 rounded-full bg-status-neutral" />
-                  {statusCounts.stopped} stopped
+                <span className="text-sm font-semibold tabular-nums">{statusCounts.error}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="inline-flex items-center gap-1.5 text-xs">
+                  <span className="size-2 rounded-full bg-status-info" />
+                  Deploying
                 </span>
-              )}
-              {statusCounts.deploying > 0 && (
-                <span className="inline-flex items-center gap-1 text-[10px] text-status-info">
-                  <span className="size-1.5 rounded-full bg-status-info animate-pulse" />
-                  {statusCounts.deploying} deploying
+                <span className="text-sm font-semibold tabular-nums">{statusCounts.deploying}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="inline-flex items-center gap-1.5 text-xs">
+                  <span className="size-2 rounded-full bg-muted-foreground/30" />
+                  Stopped
                 </span>
-              )}
+                <span className="text-sm font-semibold tabular-nums">{statusCounts.stopped}</span>
+              </div>
             </div>
           </div>
-          {/* Containers */}
-          <div className="px-4 py-3">
-            <p className="text-xs text-muted-foreground">Containers</p>
-            <p className="text-2xl font-semibold tabular-nums mt-1">
-              {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : totals.containers}
-            </p>
-            {!loading && totals.containers > 0 && (
-              <p className="text-[10px] text-muted-foreground mt-1.5">
-                {formatBytes(totals.memory)} memory · {totals.cpu.toFixed(1)}% CPU
-              </p>
+        </div>
+
+        {/* Per-app resource usage */}
+        <div className="squircle rounded-lg border bg-card overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b">
+            <h3 className="text-sm font-medium">Resource Usage by App</h3>
+            <span className="text-xs text-muted-foreground">{totals.containers} containers</span>
+          </div>
+          <div className="p-4 space-y-3">
+            {displayApps
+              .filter((a) => a.status === "active")
+              .map((a) => {
+                const ps = appStats[a.id];
+                const appCpu = ps?.containers.reduce((s, c) => s + c.cpuPercent, 0) ?? 0;
+                const appMem = ps?.containers.reduce((s, c) => s + c.memoryUsage, 0) ?? 0;
+                const memPct = totals.memory > 0 ? (appMem / totals.memory) * 100 : 0;
+                return (
+                  <div key={a.id}>
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="size-1.5 rounded-full bg-status-success shrink-0" />
+                        <span className="text-xs font-medium truncate">{a.displayName}</span>
+                      </div>
+                      <div className="flex items-center gap-3 text-[10px] text-muted-foreground tabular-nums shrink-0">
+                        <span>{appCpu.toFixed(1)}% CPU</span>
+                        <span>{formatBytes(appMem)}</span>
+                      </div>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-foreground/20 transition-all"
+                        style={{ width: `${Math.min(memPct, 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            {displayApps.filter((a) => a.status === "active").length === 0 && (
+              <p className="text-xs text-muted-foreground text-center py-4">No active apps</p>
             )}
           </div>
         </div>
