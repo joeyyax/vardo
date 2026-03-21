@@ -1,13 +1,5 @@
-import {
-  Body,
-  Button,
-  Container,
-  Head,
-  Heading,
-  Html,
-  Preview,
-  Text,
-} from "@react-email/components";
+import { Heading, Text } from "@react-email/components";
+import { EmailLayout, CTA, styles } from "./components";
 
 type MagicLinkProps = {
   url: string;
@@ -16,40 +8,23 @@ type MagicLinkProps = {
 
 export function MagicLinkEmail({ url, email }: MagicLinkProps) {
   return (
-    <Html>
-      <Head />
-      <Preview>Sign in to Host</Preview>
-      <Body style={body}>
-        <Container style={container}>
-          <Heading style={h1}>Sign in to Host</Heading>
-          <Text style={text}>
-            Click the button below to sign in as <strong>{email}</strong>.
-            This link expires in 10 minutes.
-          </Text>
-          <Button href={url} style={button}>
-            Sign in
-          </Button>
-          <Text style={meta}>
-            If you didn't request this, you can safely ignore this email.
-          </Text>
-        </Container>
-      </Body>
-    </Html>
+    <EmailLayout preview="Sign in to Host">
+      <Heading style={styles.h1}>Sign in to Host</Heading>
+      <Text style={{ ...styles.text, margin: "0 0 24px" }}>
+        Click the link below to sign in as <strong>{email}</strong>. This link
+        expires in 15 minutes.
+      </Text>
+      <CTA href={url}>Sign in to Host &rarr;</CTA>
+      <Text style={{ ...styles.muted, margin: "24px 0 0" }}>
+        If you didn&apos;t request this, you can safely ignore this email.
+      </Text>
+    </EmailLayout>
   );
 }
 
-const body = { backgroundColor: "#18181b", fontFamily: "system-ui, sans-serif" };
-const container = { maxWidth: "480px", margin: "40px auto", padding: "24px" };
-const h1 = { color: "#fafafa", fontSize: "20px", fontWeight: "600" as const, margin: "0 0 16px" };
-const text = { color: "#a1a1aa", fontSize: "14px", lineHeight: "24px" };
-const meta = { color: "#71717a", fontSize: "12px", lineHeight: "20px", marginTop: "24px" };
-const button = {
-  backgroundColor: "#d4a574",
-  color: "#18181b",
-  padding: "12px 24px",
-  borderRadius: "8px",
-  fontWeight: "600" as const,
-  fontSize: "14px",
-  textDecoration: "none",
-  display: "inline-block" as const,
-};
+MagicLinkEmail.PreviewProps = {
+  url: "https://host.example.com/auth/verify?token=abc123",
+  email: "joey@example.com",
+} satisfies MagicLinkProps;
+
+export default MagicLinkEmail;
