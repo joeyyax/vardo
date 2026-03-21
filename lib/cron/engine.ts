@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
-import { cronJobs, apps } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { cronJobs, cronJobRuns } from "@/lib/db/schema";
+import { and, eq, lt } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { exec } from "child_process";
 import { promisify } from "util";
@@ -122,23 +122,58 @@ export async function tickCronJobs(): Promise<void> {
     }
 
     // Mark as running
+    const runId = nanoid();
+    const startedAt = new Date();
+
     await db.update(cronJobs).set({
       lastRunAt: now,
       lastStatus: "running",
       updatedAt: now,
     }).where(eq(cronJobs.id, job.id));
 
-    // Execute based on type
-    const result = job.type === "url"
-      ? await fetchUrl(job.command)
-      : await executeInContainer(job.app.name, job.command);
+    // Execute based on type, catching unhandled errors
+    let result: { success: boolean; log: string; durationMs: number };
+    try {
+      result = job.type === "url"
+        ? await fetchUrl(job.command)
+        : await executeInContainer(job.app.name, job.command);
+    } catch (err) {
+      result = {
+        success: false,
+        log: (err as Error).message,
+        durationMs: Date.now() - startedAt.getTime(),
+      };
+    }
 
-    // Update status
+    const completedAt = new Date();
+    const status = result.success ? "success" : "failed";
+
+    // Update cron job summary
     await db.update(cronJobs).set({
-      lastStatus: result.success ? "success" : "failed",
+      lastStatus: status,
       lastLog: result.log.slice(0, 10000), // Cap log size
-      updatedAt: new Date(),
+      updatedAt: completedAt,
     }).where(eq(cronJobs.id, job.id));
+
+    // Write run history record
+    await db.insert(cronJobRuns).values({
+      id: runId,
+      cronJobId: job.id,
+      status,
+      startedAt,
+      completedAt,
+      output: result.success ? result.log.slice(0, 50000) : null,
+      error: result.success ? null : result.log.slice(0, 50000),
+    });
+
+    // Retain last 500 runs per job — delete anything older than 30 days
+    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    await db.delete(cronJobRuns).where(
+      and(
+        eq(cronJobRuns.cronJobId, job.id),
+        lt(cronJobRuns.startedAt, cutoff),
+      )
+    );
 
     console.log(
       `[cron] ${job.name} (${job.app.name}): ${result.success ? "OK" : "FAILED"} in ${result.durationMs}ms`
