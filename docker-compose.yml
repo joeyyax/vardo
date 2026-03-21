@@ -119,9 +119,8 @@ services:
     image: traefik:v3
     restart: unless-stopped
     command:
-      # NOTE: The dashboard is exposed via Traefik labels below and requires
-      # TLS. For additional security in production, add BasicAuth or
-      # ForwardAuth middleware to the traefik router (not included by default).
+      # The dashboard is exposed via Traefik labels below with TLS and
+      # BasicAuth protection (TRAEFIK_DASHBOARD_AUTH env var).
       - "--api.dashboard=true"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
@@ -147,6 +146,8 @@ services:
       - "traefik.http.routers.traefik.entrypoints=websecure"
       - "traefik.http.routers.traefik.tls.certresolver=le"
       - "traefik.http.routers.traefik.service=api@internal"
+      - "traefik.http.middlewares.traefik-auth.basicauth.users=${TRAEFIK_DASHBOARD_AUTH}"
+      - "traefik.http.routers.traefik.middlewares=traefik-auth"
     networks:
       - host-network
 

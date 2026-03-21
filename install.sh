@@ -80,12 +80,17 @@ if [ ! -f "$ENV_FILE" ]; then
   DB_PASSWORD=$(openssl rand -base64 32 | tr -d '/+=' | head -c 32)
   AUTH_SECRET=$(openssl rand -base64 32 | tr -d '/+=' | head -c 48)
 
+  # Generate Traefik dashboard BasicAuth credentials
+  TRAEFIK_DASH_PASS=$(openssl rand -base64 12)
+  TRAEFIK_DASHBOARD_AUTH=$(printf 'admin:%s' "$(openssl passwd -apr1 "$TRAEFIK_DASH_PASS")")
+
   cat > "$ENV_FILE" <<EOF
 HOST_DOMAIN=$HOST_DOMAIN
 HOST_BASE_DOMAIN=$HOST_BASE_DOMAIN
 DB_PASSWORD=$DB_PASSWORD
 BETTER_AUTH_SECRET=$AUTH_SECRET
 ACME_EMAIL=$ACME_EMAIL
+TRAEFIK_DASHBOARD_AUTH=$TRAEFIK_DASHBOARD_AUTH
 
 # GitHub App (optional — configure later in Settings)
 GITHUB_APP_ID=
@@ -147,6 +152,9 @@ echo -e "${GREEN}${BOLD}  Host is running!${RESET}"
 echo ""
 echo -e "  ${BOLD}Dashboard:${RESET}  https://${HOST_DOMAIN:-localhost}"
 echo -e "  ${BOLD}Traefik:${RESET}    https://traefik.${HOST_BASE_DOMAIN:-localhost}"
+if [ -n "$TRAEFIK_DASH_PASS" ]; then
+echo -e "  ${BOLD}Traefik login:${RESET} admin / ${TRAEFIK_DASH_PASS}"
+fi
 echo ""
 echo -e "  ${DIM}Create your first account to get started.${RESET}"
 echo -e "  ${DIM}The first user is automatically an admin.${RESET}"
