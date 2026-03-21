@@ -6,7 +6,7 @@ import { requireSession } from "@/lib/auth/session";
 import { eq } from "drizzle-orm";
 import { fetchAllContainerMetrics } from "@/lib/metrics/cadvisor";
 import { queryAll, queryDiskHistory } from "@/lib/metrics/store";
-import { getSystemDiskUsage, getSystemInfo } from "@/lib/docker/client";
+import { getSystemDiskUsage } from "@/lib/docker/client";
 import { isMetricsEnabled } from "@/lib/metrics/config";
 
 // GET /api/v1/admin/stats
@@ -59,11 +59,9 @@ export async function GET(request: NextRequest) {
       columns: { id: true, name: true, displayName: true, status: true, organizationId: true },
     });
 
-    const [allMetrics, systemInfo, diskUsage] = await Promise.all([
-      fetchAllContainerMetrics(),
-      getSystemInfo().catch(() => null),
-      getSystemDiskUsage().catch(() => null),
-    ]);
+    // Only fetch fast data synchronously — disk and system info are slow (3s+)
+    // and will arrive via the SSE stream instead
+    const allMetrics = await fetchAllContainerMetrics();
 
     // Group containers by app
     const appStats = allApps.map((app) => {
@@ -84,8 +82,6 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       apps: appStats,
-      system: systemInfo,
-      disk: diskUsage,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {

@@ -108,19 +108,18 @@ async function getResourceStatuses(): Promise<ResourceStatus[]> {
   const resources: ResourceStatus[] = [];
 
   try {
-    const { getSystemInfo, getSystemDiskUsage } = await import("@/lib/docker/client");
-    const { fetchAllContainerMetrics } = await import("@/lib/metrics/cadvisor");
+    const { getSystemInfo } = await import("@/lib/docker/client");
+    const { getLatestSnapshot } = await import("@/lib/metrics/broadcast");
 
-    const [systemInfo, diskUsage, metrics] = await Promise.all([
+    // Use cached metrics snapshot (no cAdvisor call) + system info (fast, ~20ms)
+    const [systemInfo, metrics] = await Promise.all([
       getSystemInfo().catch(() => null),
-      getSystemDiskUsage().catch(() => null),
-      fetchAllContainerMetrics().catch(() => []),
+      Promise.resolve(getLatestSnapshot() || []),
     ]);
 
     // CPU — aggregate across all containers
     if (systemInfo && metrics.length > 0) {
       const totalCpu = metrics.reduce((s, m) => s + m.cpuPercent, 0);
-      // Normalize to total available CPU (100% per core)
       const maxCpu = systemInfo.cpus * 100;
       const cpuPercent = maxCpu > 0 ? (totalCpu / maxCpu) * 100 : 0;
       resources.push({
@@ -135,7 +134,7 @@ async function getResourceStatuses(): Promise<ResourceStatus[]> {
 
     // Memory
     if (systemInfo) {
-      const totalMemUsed = metrics.reduce((s, m) => s + m.memoryUsage, 0);
+      const totalMemUsed = (metrics || []).reduce((s, m) => s + m.memoryUsage, 0);
       const memPercent = systemInfo.memoryTotal > 0
         ? (totalMemUsed / systemInfo.memoryTotal) * 100
         : 0;
@@ -149,42 +148,32 @@ async function getResourceStatuses(): Promise<ResourceStatus[]> {
       });
     }
 
-    // Disk
-    if (diskUsage) {
-      // Use Docker's reported total vs used. Estimate capacity from image sizes.
-      // For a more accurate reading, we'd need host filesystem info.
-      // Use a reasonable heuristic: if total usage > 80% of available docker storage
+    // Disk — use df directly (fast, ~50ms). Skip docker system df (3s+).
+    try {
       const { execSync } = await import("child_process");
-      let diskTotal = 0;
-      let diskUsed = 0;
-      try {
-        const dfOutput = execSync("df -B1 /var/lib/docker 2>/dev/null || df -B1 / 2>/dev/null", {
-          encoding: "utf-8",
-          timeout: 3000,
-        });
-        const lines = dfOutput.trim().split("\n");
-        if (lines.length >= 2) {
-          const parts = lines[1].split(/\s+/);
-          diskTotal = parseInt(parts[1]) || 0;
-          diskUsed = parseInt(parts[2]) || 0;
+      const dfOutput = execSync("df -B1 /var/lib/docker 2>/dev/null || df -B1 / 2>/dev/null", {
+        encoding: "utf-8",
+        timeout: 3000,
+      });
+      const lines = dfOutput.trim().split("\n");
+      if (lines.length >= 2) {
+        const parts = lines[1].split(/\s+/);
+        const diskTotal = parseInt(parts[1]) || 0;
+        const diskUsed = parseInt(parts[2]) || 0;
+        if (diskTotal > 0) {
+          const diskPercent = (diskUsed / diskTotal) * 100;
+          resources.push({
+            name: "Disk",
+            current: diskUsed,
+            total: diskTotal,
+            percent: Math.round(diskPercent * 10) / 10,
+            unit: "bytes",
+            status: resourceStatus(diskPercent, THRESHOLDS.disk),
+          });
         }
-      } catch {
-        // Fallback to Docker-reported sizes
-        diskUsed = diskUsage.total;
-        diskTotal = diskUsage.total * 2; // rough estimate
       }
-
-      if (diskTotal > 0) {
-        const diskPercent = (diskUsed / diskTotal) * 100;
-        resources.push({
-          name: "Disk",
-          current: diskUsed,
-          total: diskTotal,
-          percent: Math.round(diskPercent * 10) / 10,
-          unit: "bytes",
-          status: resourceStatus(diskPercent, THRESHOLDS.disk),
-        });
-      }
+    } catch {
+      // df not available
     }
   } catch {
     // Resource checks are best-effort

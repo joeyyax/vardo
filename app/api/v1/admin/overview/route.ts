@@ -17,16 +17,18 @@ export async function GET() {
       [{ appCount }],
       [{ deploymentCount }],
       templateList,
-      { resources, services },
       sparklines,
     ] = await Promise.all([
       db.select({ userCount: sql<number>`count(*)` }).from(user),
       db.select({ appCount: sql<number>`count(*)` }).from(apps),
       db.select({ deploymentCount: sql<number>`count(*)` }).from(deployments),
       loadTemplates(),
-      getSystemHealth(),
       buildSparklines(30),
     ]);
+
+    // Health checks run in parallel but don't block the response shape
+    // Resource checks (docker system df) are slow (~3s), service checks are fast
+    const { resources, services } = await getSystemHealth();
 
     return NextResponse.json({
       stats: {
