@@ -211,7 +211,7 @@ function StatusBadge({ status }: { status: string }) {
     case "error":
       return (
         <Badge className="border-transparent bg-status-error-muted text-status-error">
-          Error
+          Crashed
         </Badge>
       );
     default:
@@ -973,7 +973,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         if (data.success) {
           toast.success(`Deployed in ${data.durationMs ? Math.round(data.durationMs / 1000) + "s" : "---"}`);
         } else {
-          toast.error("Deployment failed");
+          toast.error(data.error || "Deployment failed");
         }
         if (data.deploymentId) {
           setViewingLogId(data.deploymentId);
@@ -1017,7 +1017,17 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
               if (dep.status === "success") {
                 toast.success(`Deployed in ${dep.durationMs ? Math.round(dep.durationMs / 1000) + "s" : "---"}`);
               } else {
-                toast.error("Deployment failed");
+                // Extract last error line from deploy log for the toast
+                const errorLine = dep.log
+                  ?.split("\n")
+                  .reverse()
+                  .find((l: string) => l.includes("ERROR") || l.includes("FATAL") || l.includes("failed"));
+                const cleaned = errorLine
+                  ?.replace(/^\[.*?\]\s*/, "")
+                  .replace(/x-access-token:[^\s@]+/g, "***")
+                  .replace(/ghs_[A-Za-z0-9]+/g, "***")
+                  .trim();
+                toast.error(cleaned || "Deployment failed");
               }
               setViewingLogId(dep.id);
               stopped = true;
@@ -1299,11 +1309,11 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
               stageQueue.push({ stage, status });
               processStageQueue();
             } else if (eventType === "done") {
-              const result = data as { deploymentId: string; success: boolean; durationMs: number };
+              const result = data as { deploymentId: string; success: boolean; durationMs: number; error?: string };
               if (result.success) {
                 toast.success(`Deployed in ${result.durationMs}ms`);
               } else {
-                toast.error("Deployment failed");
+                toast.error(result.error || "Deployment failed");
               }
               if (result.deploymentId) {
                 setViewingLogId(result.deploymentId);
@@ -1320,7 +1330,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
       if (err instanceof Error && err.name === "AbortError") {
         toast.info("Deployment aborted");
       } else {
-        toast.error("Deployment failed");
+        toast.error(err instanceof Error ? err.message : "Deployment failed");
       }
     } finally {
       setDeploying(false);
@@ -1473,9 +1483,13 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={async () => {
-                      const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/restart`, { method: "POST" });
-                      const data = await res.json();
-                      data.success ? toast.success("Restarted") : toast.error("Restart failed");
+                      try {
+                        const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/restart`, { method: "POST" });
+                        const data = await res.json();
+                        data.success ? toast.success("Restarted") : toast.error(data.error || "Restart failed");
+                      } catch (err) {
+                        toast.error(err instanceof Error ? err.message : "Restart failed");
+                      }
                       router.refresh();
                     }}
                   >
@@ -1485,9 +1499,13 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                   <DropdownMenuItem
                     className="text-destructive focus:text-destructive"
                     onClick={async () => {
-                      const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/stop`, { method: "POST" });
-                      const data = await res.json();
-                      data.success ? toast.success("Stopped") : toast.error("Stop failed");
+                      try {
+                        const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/stop`, { method: "POST" });
+                        const data = await res.json();
+                        data.success ? toast.success("Stopped") : toast.error(data.error || "Stop failed");
+                      } catch (err) {
+                        toast.error(err instanceof Error ? err.message : "Stop failed");
+                      }
                       router.refresh();
                     }}
                   >
@@ -1661,15 +1679,25 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           <div className="flex items-center gap-2 rounded-lg bg-status-error-muted px-4 py-2.5 text-sm text-status-error">
             <X className="size-4 shrink-0" />
             <span className="truncate">{cleaned || "App crashed — check the deploy log for details"}</span>
-            {failedDeploy && (
+            <div className="flex items-center gap-2 shrink-0">
+              {failedDeploy && (
+                <button
+                  type="button"
+                  onClick={() => { setActiveTab("deployments"); setViewingLogId(failedDeploy.id); }}
+                  className="text-xs underline underline-offset-2 opacity-80 hover:opacity-100"
+                >
+                  View log
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => { setActiveTab("deployments"); setViewingLogId(failedDeploy.id); }}
-                className="shrink-0 text-xs underline underline-offset-2 opacity-80 hover:opacity-100"
+                disabled={deploying}
+                onClick={handleDeploy}
+                className="text-xs underline underline-offset-2 opacity-80 hover:opacity-100"
               >
-                View log
+                Retry
               </button>
-            )}
+            </div>
           </div>
         );
       })()}

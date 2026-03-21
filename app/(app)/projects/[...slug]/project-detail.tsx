@@ -872,8 +872,8 @@ export function ProjectDetail({
         const data = await res.json().catch(() => ({}));
         toast.error(data.error || "Deploy failed");
       }
-    } catch {
-      toast.error("Deploy failed");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Deploy failed");
     } finally {
       setDeploying(false);
     }
