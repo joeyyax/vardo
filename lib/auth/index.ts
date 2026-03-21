@@ -23,9 +23,11 @@ export const auth = betterAuth({
     level: "debug",
   },
 
-  // Password auth disabled — use magic link, passkey, or OAuth
+  // Password auth enabled — required for onboarding first-user signup
+  // and password-based sign-in on the login page
   emailAndPassword: {
-    enabled: false,
+    enabled: true,
+    minPasswordLength: 8,
   },
 
   plugins: [
