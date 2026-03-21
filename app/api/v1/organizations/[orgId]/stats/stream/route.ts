@@ -96,7 +96,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           }
 
           sendEvent("stats", {
-            projects: orgApps.map((p) => ({
+            apps: orgApps.map((p) => ({
               ...p,
               diskUsage: cachedAppDisk[p.id] || 0,
               containers: (byApp[p.id] || []).map((m) => ({

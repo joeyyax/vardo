@@ -206,6 +206,66 @@ function EndpointsPopover({ app }: { app: AppWithRelations }) {
 }
 
 
+function ProjectEndpoints({ projectApps }: { projectApps: AppWithRelations[] }) {
+  const endpoints: { label: string; domain: string }[] = [];
+  for (const a of projectApps) {
+    for (const d of a.domains) {
+      endpoints.push({ label: a.displayName, domain: d.domain });
+    }
+  }
+
+  if (endpoints.length === 0) return null;
+
+  if (endpoints.length === 1) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <a
+            href={`https://${endpoints[0].domain}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="shrink-0 text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+          >
+            <Globe className="size-3.5" />
+          </a>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">{endpoints[0].domain}</TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          onClick={(e) => e.preventDefault()}
+          className="shrink-0 text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+        >
+          <Globe className="size-3.5" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-64 p-2" onClick={(e) => e.stopPropagation()}>
+        <div className="space-y-0.5">
+          {endpoints.map((ep) => (
+            <a
+              key={ep.domain}
+              href={`https://${ep.domain}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-between gap-2 rounded-md px-3 py-2 text-sm hover:bg-accent transition-colors"
+            >
+              <span className="truncate text-muted-foreground">{ep.label}</span>
+              <span className="truncate font-mono text-xs text-foreground">{ep.domain}</span>
+            </a>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // ProjectCard — groups multiple apps under one project
 // ---------------------------------------------------------------------------
@@ -292,12 +352,44 @@ function ProjectCard({
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2">
-            <h3 className="text-base font-semibold truncate">{project.displayName}</h3>
-            <StatusIndicator status={status} />
+            <div className="flex items-center gap-2 min-w-0">
+              <h3 className="text-base font-semibold truncate">{project.displayName}</h3>
+              <ProjectEndpoints projectApps={projectApps} />
+            </div>
+            <StatusIndicator
+              status={status}
+              finishedAt={allActive ? (() => {
+                // Latest deploy finish across all apps
+                let latest: Date | null = null;
+                for (const a of projectApps) {
+                  const f = a.deployments[0]?.finishedAt;
+                  if (f) {
+                    const d = new Date(f);
+                    if (!latest || d > latest) latest = d;
+                  }
+                }
+                return latest;
+              })() : undefined}
+            />
           </div>
-          {project.displayName !== project.name && (
-            <p className="text-sm text-muted-foreground/40 mt-0.5 truncate">{project.name}</p>
-          )}
+          {/* Aggregated metrics */}
+          {(() => {
+            const agg: AppMetrics = { cpuPercent: 0, memoryUsage: 0, memoryLimit: 0, diskUsage: 0, networkRx: 0, networkTx: 0 };
+            for (const a of projectApps) {
+              const m = metrics.get(a.id);
+              if (m) {
+                agg.cpuPercent += m.cpuPercent;
+                agg.memoryUsage += m.memoryUsage;
+                agg.memoryLimit = Math.max(agg.memoryLimit, m.memoryLimit);
+                agg.diskUsage += m.diskUsage;
+                agg.networkRx += m.networkRx;
+                agg.networkTx += m.networkTx;
+              }
+            }
+            return (agg.cpuPercent > 0 || agg.memoryUsage > 0)
+              ? <MetricsLine metrics={agg} onHover={() => {}} />
+              : null;
+          })()}
         </div>
       </div>
 
