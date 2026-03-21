@@ -8,6 +8,7 @@ import { OrgEnvVarsEditor } from "./org-env-vars";
 import { OrgSwitcher } from "@/components/layout/org-switcher";
 import { TeamMembers } from "@/app/(app)/team/team-members";
 import { OrgDomainEditor } from "./org-domain-editor";
+import { NotificationChannelsEditor } from "./notification-channels";
 
 export default async function SettingsPage({
   searchParams,
@@ -58,6 +59,7 @@ export default async function SettingsPage({
         <TabsList variant="line">
           <TabsTrigger value="variables">Shared Variables</TabsTrigger>
           <TabsTrigger value="domains">Domains</TabsTrigger>
+          <TabsTrigger value="notifications">Notifications</TabsTrigger>
           <TabsTrigger value="team">Team</TabsTrigger>
         </TabsList>
 
@@ -72,6 +74,10 @@ export default async function SettingsPage({
             sslEnabled={orgData.organization.sslEnabled ?? true}
             serverIP={process.env.HOST_SERVER_IP}
           />
+        </TabsContent>
+
+        <TabsContent value="notifications" className="pt-4">
+          <NotificationChannelsEditor orgId={orgId} />
         </TabsContent>
 
         <TabsContent value="team" className="pt-4">
