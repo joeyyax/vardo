@@ -12,6 +12,8 @@ import {
   Check,
   EllipsisVertical,
   Loader2,
+  RotateCcw,
+  Square,
 } from "lucide-react";
 import {
   type AppMetrics as AppMetricsType,
@@ -594,6 +596,26 @@ export function ProjectDetail({
     }
   }
 
+  async function handleRestartAll() {
+    for (const app of project.apps) {
+      try {
+        await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/restart`, { method: "POST" });
+      } catch { /* continue */ }
+    }
+    toast.success("All apps restarted");
+    router.refresh();
+  }
+
+  async function handleStopAll() {
+    for (const app of project.apps) {
+      try {
+        await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/stop`, { method: "POST" });
+      } catch { /* continue */ }
+    }
+    toast.success("All apps stopped");
+    router.refresh();
+  }
+
   async function handleEditProject() {
     setEditSaving(true);
     try {
@@ -658,15 +680,57 @@ export function ProjectDetail({
       <PageToolbar
         actions={
           <div className="flex items-center gap-2">
-            {project.apps.length > 0 && (
-              <Button size="sm" disabled={deploying} onClick={handleDeployAll}>
-                {deploying ? (
-                  <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
-                ) : (
-                  <><Rocket className="mr-1.5 size-4" />Deploy All</>
-                )}
-              </Button>
-            )}
+            {project.apps.length > 0 && (() => {
+              const allActive = project.apps.every((a) => a.status === "active");
+              const anyNeedsRedeploy = project.apps.some((a) => a.needsRedeploy);
+
+              if (allActive) {
+                return (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button size="sm" className={anyNeedsRedeploy
+                        ? "bg-status-warning-muted text-status-warning hover:bg-status-warning/20"
+                        : "bg-status-success-muted text-status-success hover:bg-status-success/20"
+                      }>
+                        {anyNeedsRedeploy ? (
+                          <><RotateCcw className="mr-1.5 size-3.5" />Restart Needed</>
+                        ) : (
+                          <><span className="mr-1.5 size-2 rounded-full bg-status-success animate-pulse" />Running</>
+                        )}
+                        <ChevronDown className="ml-1.5 size-3.5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem disabled={deploying} onClick={handleDeployAll}>
+                        <Rocket className="mr-2 size-4" />
+                        Redeploy All
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={handleRestartAll}>
+                        <RotateCcw className="mr-2 size-4" />
+                        Restart All
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onClick={handleStopAll}
+                      >
+                        <Square className="mr-2 size-4" />
+                        Stop All
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                );
+              }
+
+              return (
+                <Button size="sm" disabled={deploying} onClick={handleDeployAll}>
+                  {deploying ? (
+                    <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
+                  ) : (
+                    <><Rocket className="mr-1.5 size-4" />Deploy All</>
+                  )}
+                </Button>
+              );
+            })()}
             <Button size="sm" asChild>
               <Link href={`/apps/new?project=${project.id}`}>
                 <Plus className="mr-1.5 size-4" />
