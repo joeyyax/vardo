@@ -194,8 +194,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       .returning();
 
     // Auto-create production environment
+    const prodEnvId = nanoid();
     await db.insert(environments).values({
-      id: nanoid(),
+      id: prodEnvId,
       appId,
       name: "production",
       type: "production",
@@ -229,6 +230,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         organizationId: orgId,
         trigger: "manual",
         triggeredBy: session.user.id,
+        environmentId: prodEnvId,
       }).catch((err) => {
         console.error(`[auto-deploy] Failed for ${data.name}:`, err);
       });
