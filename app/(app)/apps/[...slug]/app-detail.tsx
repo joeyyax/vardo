@@ -1418,22 +1418,28 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         </DropdownMenu>
       </PageToolbar>
 
-      {/* Error banner */}
+      {/* Error banner — only show if the current environment has a failed deploy */}
       {app.status === "error" && (() => {
-        const lastDeploy = app.deployments[0];
-        const errorLine = lastDeploy?.log
+        const failedDeploy = filteredDeployments.find((d) => d.status === "failed");
+        if (!failedDeploy) return null;
+        const errorLine = failedDeploy.log
           ?.split("\n")
           .reverse()
           .find((l) => l.includes("ERROR") || l.includes("FATAL") || l.includes("failed") || l.includes("crashed"));
-        const cleaned = errorLine?.replace(/^\[.*?\]\s*/, "").trim();
+        // Sanitize tokens/secrets from error messages
+        const cleaned = errorLine
+          ?.replace(/^\[.*?\]\s*/, "")
+          .replace(/x-access-token:[^\s@]+/g, "x-access-token:***")
+          .replace(/ghs_[A-Za-z0-9]+/g, "***")
+          .trim();
         return (
           <div className="flex items-center gap-2 rounded-lg bg-status-error-muted px-4 py-2.5 text-sm text-status-error">
             <X className="size-4 shrink-0" />
             <span className="truncate">{cleaned || "App crashed — check the deploy log for details"}</span>
-            {lastDeploy && (
+            {failedDeploy && (
               <button
                 type="button"
-                onClick={() => { setActiveTab("deployments"); setViewingLogId(lastDeploy.id); }}
+                onClick={() => { setActiveTab("deployments"); setViewingLogId(failedDeploy.id); }}
                 className="shrink-0 text-xs underline underline-offset-2 opacity-80 hover:opacity-100"
               >
                 View log
@@ -1759,7 +1765,11 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                             (l) => l.includes("ERROR") || l.includes("FATAL") || l.includes("failed") || l.includes("crashed")
                           );
                           if (!errorLine) return null;
-                          const cleaned = errorLine.replace(/^\[.*?\]\s*/, "").trim();
+                          const cleaned = errorLine
+                            .replace(/^\[.*?\]\s*/, "")
+                            .replace(/x-access-token:[^\s@]+/g, "x-access-token:***")
+                            .replace(/ghs_[A-Za-z0-9]+/g, "***")
+                            .trim();
                           return (
                             <p className="text-xs text-status-error mt-1 truncate max-w-md" title={cleaned}>
                               {cleaned}

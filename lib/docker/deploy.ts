@@ -77,8 +77,12 @@ export async function runDeployment(
   const logLines: string[] = [];
 
   function log(line: string) {
-    logLines.push(line);
-    opts.onLog?.(line);
+    // Sanitize secrets from log output
+    const sanitized = line
+      .replace(/x-access-token:[^\s@]+/g, "x-access-token:***")
+      .replace(/ghs_[A-Za-z0-9]+/g, "***");
+    logLines.push(sanitized);
+    opts.onLog?.(sanitized);
   }
 
   function stage(s: DeployStage, status: "running" | "success" | "failed" | "skipped") {
