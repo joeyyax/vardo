@@ -10,7 +10,7 @@ setInterval(() => {
   }
 }, 60000);
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   // Rate limit auth POST requests (login, signup, magic link, etc.)
   if (request.nextUrl.pathname.startsWith("/api/auth/") && request.method === "POST") {
     const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
