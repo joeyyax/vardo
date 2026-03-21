@@ -45,6 +45,20 @@ export default async function ProjectDetailPage({
     ),
     with: {
       apps: {
+        columns: {
+          id: true,
+          name: true,
+          displayName: true,
+          description: true,
+          status: true,
+          needsRedeploy: true,
+          imageName: true,
+          gitUrl: true,
+          gitBranch: true,
+          deployType: true,
+          source: true,
+          dependsOn: true,
+        },
         with: {
           domains: { columns: { domain: true, isPrimary: true } },
           deployments: {
