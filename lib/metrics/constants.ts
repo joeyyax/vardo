@@ -34,3 +34,5 @@ export const CHART_COLORS = {
   grid: "oklch(0.30 0.006 285.75 / 40%)",
   tick: "oklch(0.55 0.006 285.75)",
 };
+
+export const chartTickStyle = { fontSize: 10, fill: CHART_COLORS.tick };

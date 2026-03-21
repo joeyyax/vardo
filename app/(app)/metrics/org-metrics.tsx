@@ -2,15 +2,16 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+} from "recharts";
 import { Activity, Box, Cpu, HardDrive, MemoryStick, Network, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { AreaChart } from "@tremor/react";
-import type { CustomTooltipProps } from "@tremor/react";
-import { formatBytes, formatMemLimit, formatTime } from "@/lib/metrics/format";
-import { CHART_COLORS, type TimeRange } from "@/lib/metrics/constants";
+import { formatBytes, formatBytesShort, formatMemLimit, formatTime } from "@/lib/metrics/format";
+import { CHART_COLORS, chartTickStyle, type TimeRange } from "@/lib/metrics/constants";
 import { useMetricsStream } from "@/lib/hooks/use-metrics-stream";
 import { Sparkline } from "@/components/app-metrics-card";
-import { TREMOR_METRIC_COLORS, MetricsTooltip } from "@/components/metrics-chart";
+import { MetricsTooltip } from "@/components/metrics-chart";
 import type { SystemInfo, DiskUsage } from "@/lib/docker/client";
 
 type AppSummary = {
@@ -38,7 +39,7 @@ type AppMeta = {
 
 /* ── Stable tooltip components (outside render to avoid re-creation) ── */
 
-function CpuTooltip(props: CustomTooltipProps) {
+function CpuTooltip(props: { active?: boolean; payload?: Array<{ dataKey?: string; name?: string; value?: number; color?: string }>; label?: string }) {
   return (
     <MetricsTooltip
       {...props}
@@ -48,7 +49,7 @@ function CpuTooltip(props: CustomTooltipProps) {
   );
 }
 
-function MemTooltip(props: CustomTooltipProps) {
+function MemTooltip(props: { active?: boolean; payload?: Array<{ dataKey?: string; name?: string; value?: number; color?: string }>; label?: string }) {
   return (
     <MetricsTooltip
       {...props}
@@ -58,17 +59,17 @@ function MemTooltip(props: CustomTooltipProps) {
   );
 }
 
-function NetTooltip(props: CustomTooltipProps) {
+function NetTooltip(props: { active?: boolean; payload?: Array<{ dataKey?: string; name?: string; value?: number; color?: string }>; label?: string }) {
   return (
     <MetricsTooltip
       {...props}
-      valueFormatter={(v: number) => formatBytes(v)}
-      categoryLabels={{ networkRx: "\u2193 Received", networkTx: "\u2191 Sent" }}
+      valueFormatter={(v: number) => `${formatBytesShort(v)}/s`}
+      categoryLabels={{ networkRxRate: "\u2193 Received", networkTxRate: "\u2191 Sent" }}
     />
   );
 }
 
-function DiskTooltip(props: CustomTooltipProps) {
+function DiskTooltip(props: { active?: boolean; payload?: Array<{ dataKey?: string; name?: string; value?: number; color?: string }>; label?: string }) {
   return (
     <MetricsTooltip
       {...props}
@@ -157,9 +158,29 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
     return counts;
   }, [displayApps]);
 
-  // Memoized chart data
+  // Memoized chart data with network rate computation
   const chartPoints = useMemo(
-    () => points.map((p) => ({ ...p, time: formatTime(p.timestamp) })),
+    () =>
+      points.map((p, i) => {
+        let networkRxRate = 0;
+        let networkTxRate = 0;
+        if (i > 0) {
+          const prev = points[i - 1];
+          const dtSec = (p.timestamp - prev.timestamp) / 1000;
+          if (dtSec > 0) {
+            const rxDelta = p.networkRx - prev.networkRx;
+            const txDelta = p.networkTx - prev.networkTx;
+            networkRxRate = Math.max(0, rxDelta / dtSec);
+            networkTxRate = Math.max(0, txDelta / dtSec);
+          }
+        }
+        return {
+          ...p,
+          time: formatTime(p.timestamp),
+          networkRxRate,
+          networkTxRate,
+        };
+      }),
     [points],
   );
 
@@ -318,18 +339,21 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
               <h3 className="text-sm font-medium">CPU</h3>
             </div>
             <div className="p-4">
-              <AreaChart
-                className="h-[180px]"
-                data={chartPoints}
-                index="time"
-                categories={["cpu"]}
-                colors={[TREMOR_METRIC_COLORS.cpu]}
-                valueFormatter={(v) => `${v.toFixed(1)}%`}
-                showLegend={false}
-                showAnimation={false}
-                curveType="monotone"
-                customTooltip={CpuTooltip}
-              />
+              <ResponsiveContainer width="100%" height={180}>
+                <AreaChart data={chartPoints}>
+                  <defs>
+                    <linearGradient id="orgCpuGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={CHART_COLORS.cpu} stopOpacity={0.3} />
+                      <stop offset="100%" stopColor={CHART_COLORS.cpu} stopOpacity={0.02} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+                  <XAxis dataKey="time" tick={chartTickStyle} />
+                  <YAxis width={45} tickFormatter={(v) => `${v}%`} tick={chartTickStyle} />
+                  <Tooltip content={<CpuTooltip />} />
+                  <Area type="monotone" dataKey="cpu" stroke={CHART_COLORS.cpu} fill="url(#orgCpuGradient)" />
+                </AreaChart>
+              </ResponsiveContainer>
             </div>
           </div>
           <div className="squircle rounded-lg border bg-card overflow-hidden">
@@ -338,19 +362,21 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
               <h3 className="text-sm font-medium">Memory</h3>
             </div>
             <div className="p-4">
-              <AreaChart
-                className="h-[180px]"
-                data={chartPoints}
-                index="time"
-                categories={["memory"]}
-                colors={[TREMOR_METRIC_COLORS.memory]}
-                valueFormatter={(v) => formatBytes(v)}
-                yAxisWidth={65}
-                showLegend={false}
-                showAnimation={false}
-                curveType="monotone"
-                customTooltip={MemTooltip}
-              />
+              <ResponsiveContainer width="100%" height={180}>
+                <AreaChart data={chartPoints}>
+                  <defs>
+                    <linearGradient id="orgMemGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={CHART_COLORS.memory} stopOpacity={0.3} />
+                      <stop offset="100%" stopColor={CHART_COLORS.memory} stopOpacity={0.02} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+                  <XAxis dataKey="time" tick={chartTickStyle} />
+                  <YAxis width={65} tickFormatter={formatBytesShort} tick={chartTickStyle} />
+                  <Tooltip content={<MemTooltip />} />
+                  <Area type="monotone" dataKey="memory" stroke={CHART_COLORS.memory} fill="url(#orgMemGradient)" />
+                </AreaChart>
+              </ResponsiveContainer>
             </div>
           </div>
           <div className="squircle rounded-lg border bg-card overflow-hidden">
@@ -359,19 +385,26 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
               <h3 className="text-sm font-medium">Network</h3>
             </div>
             <div className="p-4">
-              <AreaChart
-                className="h-[180px]"
-                data={chartPoints}
-                index="time"
-                categories={["networkRx", "networkTx"]}
-                colors={[TREMOR_METRIC_COLORS.networkRx, TREMOR_METRIC_COLORS.networkTx]}
-                valueFormatter={(v) => formatBytes(v)}
-                yAxisWidth={65}
-                showLegend={false}
-                showAnimation={false}
-                curveType="monotone"
-                customTooltip={NetTooltip}
-              />
+              <ResponsiveContainer width="100%" height={180}>
+                <AreaChart data={chartPoints}>
+                  <defs>
+                    <linearGradient id="orgNetRxGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={CHART_COLORS.networkRx} stopOpacity={0.3} />
+                      <stop offset="100%" stopColor={CHART_COLORS.networkRx} stopOpacity={0.02} />
+                    </linearGradient>
+                    <linearGradient id="orgNetTxGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={CHART_COLORS.networkTx} stopOpacity={0.3} />
+                      <stop offset="100%" stopColor={CHART_COLORS.networkTx} stopOpacity={0.02} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+                  <XAxis dataKey="time" tick={chartTickStyle} />
+                  <YAxis width={65} tickFormatter={(v) => `${formatBytesShort(v)}/s`} tick={chartTickStyle} />
+                  <Tooltip content={<NetTooltip />} />
+                  <Area type="monotone" dataKey="networkRxRate" stroke={CHART_COLORS.networkRx} fill="url(#orgNetRxGradient)" />
+                  <Area type="monotone" dataKey="networkTxRate" stroke={CHART_COLORS.networkTx} fill="url(#orgNetTxGradient)" />
+                </AreaChart>
+              </ResponsiveContainer>
             </div>
           </div>
           <div className="squircle rounded-lg border bg-card overflow-hidden">
@@ -380,19 +413,21 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
               <h3 className="text-sm font-medium">Disk Usage</h3>
             </div>
             <div className="p-4">
-              <AreaChart
-                className="h-[180px]"
-                data={chartPoints}
-                index="time"
-                categories={["diskTotal"]}
-                colors={[TREMOR_METRIC_COLORS.diskTotal]}
-                valueFormatter={(v) => formatBytes(v)}
-                yAxisWidth={65}
-                showLegend={false}
-                showAnimation={false}
-                curveType="monotone"
-                customTooltip={DiskTooltip}
-              />
+              <ResponsiveContainer width="100%" height={180}>
+                <AreaChart data={chartPoints}>
+                  <defs>
+                    <linearGradient id="orgDiskGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={CHART_COLORS.disk} stopOpacity={0.3} />
+                      <stop offset="100%" stopColor={CHART_COLORS.disk} stopOpacity={0.02} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+                  <XAxis dataKey="time" tick={chartTickStyle} />
+                  <YAxis width={65} tickFormatter={formatBytesShort} tick={chartTickStyle} />
+                  <Tooltip content={<DiskTooltip />} />
+                  <Area type="monotone" dataKey="diskTotal" stroke={CHART_COLORS.disk} fill="url(#orgDiskGradient)" />
+                </AreaChart>
+              </ResponsiveContainer>
             </div>
           </div>
       </div>
