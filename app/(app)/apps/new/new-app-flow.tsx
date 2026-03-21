@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import Link from "next/link";
 import {
   ArrowLeft,
   Loader2,
@@ -180,6 +179,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], default
   const [selectedInstallation, setSelectedInstallation] = useState("");
   const [repos, setRepos] = useState<Repo[]>([]);
   const [reposLoading, setReposLoading] = useState(false);
+  const [connectingGithub, setConnectingGithub] = useState(false);
   const [selectedRepo, setSelectedRepo] = useState("");
   const [branches, setBranches] = useState<string[]>([]);
 
@@ -592,11 +592,42 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], default
                     <Loader2 className="size-5 animate-spin text-muted-foreground" />
                   </div>
                 ) : installations.length === 0 ? (
-                  <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed p-8 text-center">
-                    <Github className="size-6 text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">No GitHub account connected.</p>
-                    <Button size="sm" variant="outline" asChild>
-                      <Link href="/profile"><Github className="mr-1.5 size-4" />Connect in Profile</Link>
+                  <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed p-8 text-center">
+                    <Github className="size-8 text-muted-foreground" />
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium">Connect GitHub to continue</p>
+                      <p className="text-xs text-muted-foreground">
+                        Install the GitHub App to import repositories and enable auto-deploy.
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      disabled={connectingGithub}
+                      onClick={async () => {
+                        setConnectingGithub(true);
+                        try {
+                          const res = await fetch("/api/v1/github/connect");
+                          if (res.ok) {
+                            const data = await res.json();
+                            if (data.url) {
+                              window.location.href = data.url;
+                              return;
+                            }
+                          }
+                          toast.error("Failed to start GitHub connection");
+                        } catch {
+                          toast.error("Failed to connect GitHub");
+                        } finally {
+                          setConnectingGithub(false);
+                        }
+                      }}
+                    >
+                      {connectingGithub ? (
+                        <Loader2 className="mr-1.5 size-4 animate-spin" />
+                      ) : (
+                        <Github className="mr-1.5 size-4" />
+                      )}
+                      Connect GitHub
                     </Button>
                   </div>
                 ) : (
