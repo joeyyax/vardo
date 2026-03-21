@@ -2388,14 +2388,13 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
               <div className="grid gap-2">
                 <Label>Project</Label>
                 <Select
-                  value={editParentId ?? "__none"}
-                  onValueChange={(v) => setEditParentId(v === "__none" ? null : v)}
+                  value={editParentId ?? ""}
+                  onValueChange={setEditParentId}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="None" />
+                    <SelectValue placeholder="Select a project" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="__none">Standalone</SelectItem>
                     {allParentApps.map((p) => (
                       <SelectItem key={p.id} value={p.id}>
                         <span className="flex items-center gap-2">

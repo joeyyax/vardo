@@ -386,7 +386,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], default
         displayName: displayName.trim(), name: name.trim(),
         description: description.trim() || undefined,
         source, deployType, autoTraefikLabels: true, autoDeploy, generateDomain,
-        parentId: parentId || undefined,
+        projectId: parentId || undefined,
         persistentVolumes: persistData && templateVolumes.length > 0
           ? templateVolumes.map((v) => ({ name: v.name, mountPath: v.mountPath }))
           : undefined,
@@ -906,30 +906,27 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], default
                 </div>
               )}
 
-              {parentApps.length > 0 && (
-                <div className="grid gap-2">
-                  <Label>Project</Label>
-                  <Select
-                    value={parentId ?? "__none"}
-                    onValueChange={(v) => setParentId(v === "__none" ? null : v)}
-                  >
-                    <SelectTrigger className="w-64">
-                      <SelectValue placeholder="Standalone" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none">Standalone</SelectItem>
-                      {parentApps.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>
-                          <span className="flex items-center gap-2">
-                            <span className="size-2 rounded-full" style={{ backgroundColor: p.color }} />
-                            {p.name}
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
+              <div className="grid gap-2">
+                <Label>Project</Label>
+                <Select
+                  value={parentId ?? ""}
+                  onValueChange={setParentId}
+                >
+                  <SelectTrigger className="w-64">
+                    <SelectValue placeholder="Select a project" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {parentApps.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        <span className="flex items-center gap-2">
+                          <span className="size-2 rounded-full" style={{ backgroundColor: p.color }} />
+                          {p.name}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
                   </Select>
                 </div>
-              )}
             </div>
 
               </>
