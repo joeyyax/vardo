@@ -9,6 +9,7 @@ import { getLatestDiskUsage } from "@/lib/metrics/store";
 import { createSSEResponse } from "@/lib/api/sse";
 import { isMetricsEnabled } from "@/lib/metrics/config";
 import { subscribe } from "@/lib/metrics/broadcast";
+import { aggregateContainers, containerToPoint } from "@/lib/metrics/aggregate";
 
 // GET /api/v1/admin/stats/stream
 export async function GET(request: NextRequest) {
@@ -54,42 +55,39 @@ export async function GET(request: NextRequest) {
       refreshSlowData();
 
       const unsubscribe = subscribe((allMetrics) => {
-        const appStats = allApps.map((app) => {
-          const containers = allMetrics
-            .filter((m) => m.projectName === app.name || m.projectName.startsWith(`${app.name}-`))
-            .map((m) => ({
-              containerId: m.containerId,
-              containerName: m.containerName,
-              cpuPercent: m.cpuPercent,
-              memoryUsage: m.memoryUsage,
-              memoryLimit: m.memoryLimit,
-              memoryPercent: m.memoryPercent,
-              networkRx: m.networkRxBytes,
-              networkTx: m.networkTxBytes,
-            }));
-          return {
+        const byApp: Record<string, typeof allMetrics> = {};
+        for (const m of allMetrics) {
+          const matched = allApps.find(
+            (app) => m.projectName === app.name || m.projectName.startsWith(`${app.name}-`)
+          );
+          if (!matched) continue;
+          if (!byApp[matched.id]) byApp[matched.id] = [];
+          byApp[matched.id].push(m);
+        }
+
+        const diskTotal = (cachedDisk as Record<string, unknown> | null)?.total as number ?? 0;
+        const point = aggregateContainers(allMetrics, diskTotal);
+
+        const payload: Record<string, unknown> = {
+          ...point,
+          apps: allApps.map((app) => ({
             id: app.id,
             name: app.name,
             displayName: app.displayName,
             status: app.status,
             organizationId: app.organizationId,
-            containers,
-          };
-        });
-
-        const payload: Record<string, unknown> = {
-          apps: appStats,
-          timestamp: new Date().toISOString(),
+            diskUsage: 0,
+            containers: (byApp[app.id] || []).map(containerToPoint),
+          })),
         };
 
-        // Always include slow data if available, refresh every 60 ticks
         if (cachedSystem) payload.system = cachedSystem;
         if (cachedDisk) payload.disk = cachedDisk;
         if (tickCount > 0 && tickCount % 60 === 0) {
           refreshSlowData();
         }
 
-        sendEvent("stats", payload);
+        sendEvent("point", payload);
         tickCount++;
       });
 

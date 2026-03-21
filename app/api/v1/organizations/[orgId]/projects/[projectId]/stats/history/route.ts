@@ -4,7 +4,8 @@ import { db } from "@/lib/db";
 import { apps, projects } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
-import { queryMetrics } from "@/lib/metrics/store";
+import { queryMetricsPoints } from "@/lib/metrics/store";
+import type { MetricsPoint } from "@/lib/metrics/types";
 import { isMetricsEnabled } from "@/lib/metrics/config";
 
 type RouteParams = {
@@ -44,42 +45,31 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const to = parseInt(searchParams.get("to") || String(Date.now()));
     const bucket = parseInt(searchParams.get("bucket") || "30000");
 
-    const agg = { type: "avg" as const, bucketMs: bucket };
-    const metrics = ["cpu", "memory", "networkRx", "networkTx"] as const;
-
-    // Query all apps in parallel, then merge
-    const perAppResults = await Promise.all(
-      projectApps.map(async (app) => {
-        const series: Record<string, [number, number][]> = {};
-        await Promise.all(
-          metrics.map(async (metric) => {
-            series[metric] = await queryMetrics(app.name, metric, from, to,
-              metric === "memory" ? { type: "avg", bucketMs: bucket } : agg
-            );
-          })
-        );
-        return series;
-      })
+    // Query all apps in parallel, then merge points
+    const perAppPoints = await Promise.all(
+      projectApps.map((app) => queryMetricsPoints(app.name, from, to, bucket))
     );
 
-    // Aggregate across apps at each timestamp
-    const merged: Record<string, [number, number][]> = {};
-    for (const metric of metrics) {
-      const pointMap = new Map<number, number>();
-      for (const appSeries of perAppResults) {
-        for (const [ts, val] of appSeries[metric] || []) {
-          pointMap.set(ts, (pointMap.get(ts) || 0) + val);
+    // Merge by summing at each timestamp
+    const pointMap = new Map<number, MetricsPoint>();
+    for (const appPoints of perAppPoints) {
+      for (const p of appPoints) {
+        const existing = pointMap.get(p.timestamp);
+        if (existing) {
+          existing.cpu += p.cpu;
+          existing.memory += p.memory;
+          existing.memoryLimit = Math.max(existing.memoryLimit, p.memoryLimit);
+          existing.networkRx += p.networkRx;
+          existing.networkTx += p.networkTx;
+        } else {
+          pointMap.set(p.timestamp, { ...p });
         }
       }
-      merged[metric] = Array.from(pointMap.entries()).sort((a, b) => a[0] - b[0]);
     }
 
-    return NextResponse.json({
-      from,
-      to,
-      bucketMs: bucket,
-      series: merged,
-    });
+    const points = Array.from(pointMap.values()).sort((a, b) => a.timestamp - b.timestamp);
+
+    return NextResponse.json({ points });
   } catch (error) {
     return handleRouteError(error, "Error fetching project metrics history");
   }

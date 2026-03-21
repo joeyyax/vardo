@@ -10,6 +10,7 @@ import { getLatestProjectDiskUsage, getLatestDiskUsage } from "@/lib/metrics/sto
 import { createSSEResponse } from "@/lib/api/sse";
 import { isMetricsEnabled } from "@/lib/metrics/config";
 import { subscribe } from "@/lib/metrics/broadcast";
+import { aggregateContainers, containerToPoint } from "@/lib/metrics/aggregate";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -93,25 +94,19 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           byApp[matched.id].push(m);
         }
 
-        sendEvent("stats", {
+        const allOrgContainers = Object.values(byApp).flat();
+        const diskTotal = cachedDisk?.total ?? 0;
+        const point = aggregateContainers(allOrgContainers, diskTotal);
+
+        sendEvent("point", {
+          ...point,
           apps: orgApps.map((p) => ({
             ...p,
             diskUsage: cachedAppDisk[p.id] || 0,
-            containers: (byApp[p.id] || []).map((m) => ({
-              containerId: m.containerId,
-              containerName: m.containerName,
-              cpuPercent: m.cpuPercent,
-              memoryUsage: m.memoryUsage,
-              memoryLimit: m.memoryLimit,
-              memoryPercent: m.memoryPercent,
-              networkRx: m.networkRxBytes,
-              networkTx: m.networkTxBytes,
-              diskUsage: m.diskUsage,
-            })),
+            containers: (byApp[p.id] || []).map(containerToPoint),
           })),
           disk: cachedDisk,
           system: cachedSystem,
-          timestamp: new Date().toISOString(),
         });
 
         tickCount++;

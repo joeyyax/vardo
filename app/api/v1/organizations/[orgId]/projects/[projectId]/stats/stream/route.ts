@@ -7,6 +7,7 @@ import { eq, and } from "drizzle-orm";
 import { createSSEResponse } from "@/lib/api/sse";
 import { isMetricsEnabled } from "@/lib/metrics/config";
 import { subscribe } from "@/lib/metrics/broadcast";
+import { aggregateContainers } from "@/lib/metrics/aggregate";
 
 type RouteParams = {
   params: Promise<{ orgId: string; projectId: string }>;
@@ -41,26 +42,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     return createSSEResponse(request, async (sendEvent) => {
       const unsubscribe = subscribe((allMetrics) => {
-        const appStats = projectApps.map((app) => {
-          const containers = allMetrics
-            .filter((m) => m.projectName === app.name || m.projectName.startsWith(`${app.name}-`))
-            .map((m) => ({
-              containerId: m.containerId,
-              containerName: m.containerName,
-              cpuPercent: m.cpuPercent,
-              memoryUsage: m.memoryUsage,
-              memoryLimit: m.memoryLimit,
-              memoryPercent: m.memoryPercent,
-              networkRx: m.networkRxBytes,
-              networkTx: m.networkTxBytes,
-            }));
-          return { id: app.id, name: app.name, containers };
-        });
+        // Collect all containers belonging to this project's apps
+        const projectContainers = allMetrics.filter((m) =>
+          projectApps.some(
+            (app) => m.projectName === app.name || m.projectName.startsWith(`${app.name}-`)
+          )
+        );
 
-        sendEvent("stats", {
-          apps: appStats,
-          timestamp: new Date().toISOString(),
-        });
+        const point = aggregateContainers(projectContainers);
+        sendEvent("point", point);
       });
 
       request.signal.addEventListener("abort", unsubscribe);

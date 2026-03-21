@@ -5,7 +5,7 @@ import { user, apps } from "@/lib/db/schema";
 import { requireSession } from "@/lib/auth/session";
 import { eq } from "drizzle-orm";
 import { fetchAllContainerMetrics } from "@/lib/metrics/cadvisor";
-import { queryAll, queryDiskHistory } from "@/lib/metrics/store";
+import { queryAllPoints } from "@/lib/metrics/store";
 import { isMetricsEnabled } from "@/lib/metrics/config";
 
 // GET /api/v1/admin/stats
@@ -35,22 +35,9 @@ export async function GET(request: NextRequest) {
       const fromMs = parseInt(from);
       const toMs = parseInt(to);
       const bucket = parseInt(searchParams.get("bucket") || "30000");
-      const agg = { type: "avg" as const, bucketMs: bucket };
+      const points = await queryAllPoints(fromMs, toMs, bucket);
 
-      const [cpu, memory, networkRx, networkTx, disk] = await Promise.all([
-        queryAll("cpu", fromMs, toMs, agg),
-        queryAll("memory", fromMs, toMs, agg),
-        queryAll("networkRx", fromMs, toMs, { type: "sum", bucketMs: bucket }),
-        queryAll("networkTx", fromMs, toMs, { type: "sum", bucketMs: bucket }),
-        queryDiskHistory(fromMs, toMs, bucket),
-      ]);
-
-      return NextResponse.json({
-        from: fromMs,
-        to: toMs,
-        bucketMs: bucket,
-        series: { cpu, memory, networkRx, networkTx, disk },
-      });
+      return NextResponse.json({ points });
     }
 
     // Live snapshot

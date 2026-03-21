@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
-import { queryMetrics } from "@/lib/metrics/store";
+import { queryMetricsPoints } from "@/lib/metrics/store";
 import { isMetricsEnabled } from "@/lib/metrics/config";
 
 type RouteParams = {
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     if (!isMetricsEnabled()) {
-      return NextResponse.json({ series: {} });
+      return NextResponse.json({ points: [] });
     }
 
     const app = await db.query.apps.findFirst({
@@ -44,20 +44,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const to = parseInt(searchParams.get("to") || String(now));
     const bucketMs = parseInt(searchParams.get("bucket") || "30000"); // default 30s
 
-    const [cpu, memory, memoryLimit, networkRx, networkTx] = await Promise.all([
-      queryMetrics(app.name, "cpu", from, to, { type: "avg", bucketMs }),
-      queryMetrics(app.name, "memory", from, to, { type: "avg", bucketMs }),
-      queryMetrics(app.name, "memoryLimit", from, to, { type: "max", bucketMs }),
-      queryMetrics(app.name, "networkRx", from, to, { type: "sum", bucketMs }),
-      queryMetrics(app.name, "networkTx", from, to, { type: "sum", bucketMs }),
-    ]);
+    const points = await queryMetricsPoints(app.name, from, to, bucketMs);
 
-    return NextResponse.json({
-      from,
-      to,
-      bucketMs,
-      series: { cpu, memory, memoryLimit, networkRx, networkTx },
-    });
+    return NextResponse.json({ points });
   } catch (error) {
     return handleRouteError(error, "Error fetching metrics history");
   }

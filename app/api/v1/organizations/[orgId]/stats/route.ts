@@ -5,7 +5,8 @@ import { apps } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq } from "drizzle-orm";
 import { fetchAllContainerMetrics } from "@/lib/metrics/cadvisor";
-import { queryMetrics, queryDiskHistory } from "@/lib/metrics/store";
+import { queryMetrics, queryDiskHistory, queryMetricsPoints } from "@/lib/metrics/store";
+import type { MetricsPoint } from "@/lib/metrics/types";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -69,41 +70,36 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       }
 
       // Aggregate across all projects
-      const allCpu: Map<number, number> = new Map();
-      const allMem: Map<number, number> = new Map();
-      const allNetRx: Map<number, number> = new Map();
-      const allNetTx: Map<number, number> = new Map();
-
-      await Promise.allSettled(
-        activeAppNames.map(async (name) => {
-          const [cpu, mem, netRx, netTx] = await Promise.all([
-            queryMetrics(name, "cpu", fromMs, toMs, { type: "avg", bucketMs }),
-            queryMetrics(name, "memory", fromMs, toMs, { type: "avg", bucketMs }),
-            queryMetrics(name, "networkRx", fromMs, toMs, { type: "sum", bucketMs }),
-            queryMetrics(name, "networkTx", fromMs, toMs, { type: "sum", bucketMs }),
-          ]);
-          for (const [ts, v] of cpu) { allCpu.set(ts, (allCpu.get(ts) || 0) + v); }
-          for (const [ts, v] of mem) { allMem.set(ts, (allMem.get(ts) || 0) + v); }
-          for (const [ts, v] of netRx) { allNetRx.set(ts, (allNetRx.get(ts) || 0) + v); }
-          for (const [ts, v] of netTx) { allNetTx.set(ts, (allNetTx.get(ts) || 0) + v); }
-        })
+      const perAppPoints = await Promise.all(
+        activeAppNames.map((name) => queryMetricsPoints(name, fromMs, toMs, bucketMs))
       );
-
-      const toSorted = (m: Map<number, number>) =>
-        Array.from(m.entries()).sort((a, b) => a[0] - b[0]);
-
-      // Also query system-level disk history
       const diskHistory = await queryDiskHistory(fromMs, toMs, bucketMs);
 
-      return NextResponse.json({
-        series: {
-          cpu: toSorted(allCpu),
-          memory: toSorted(allMem),
-          networkRx: toSorted(allNetRx),
-          networkTx: toSorted(allNetTx),
-          disk: diskHistory,
-        },
-      });
+      // Merge all apps' points by timestamp
+      const pointMap = new Map<number, MetricsPoint>();
+      for (const appPoints of perAppPoints) {
+        for (const p of appPoints) {
+          const existing = pointMap.get(p.timestamp);
+          if (existing) {
+            existing.cpu += p.cpu;
+            existing.memory += p.memory;
+            existing.memoryLimit = Math.max(existing.memoryLimit, p.memoryLimit);
+            existing.networkRx += p.networkRx;
+            existing.networkTx += p.networkTx;
+          } else {
+            pointMap.set(p.timestamp, { ...p });
+          }
+        }
+      }
+      // Add disk data
+      const diskMap = new Map(diskHistory);
+      for (const [ts, val] of diskMap) {
+        const existing = pointMap.get(ts);
+        if (existing) existing.diskTotal = val;
+      }
+
+      const points = Array.from(pointMap.values()).sort((a, b) => a.timestamp - b.timestamp);
+      return NextResponse.json({ points });
     }
 
     // Live snapshot
