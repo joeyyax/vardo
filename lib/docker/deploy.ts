@@ -123,7 +123,18 @@ export async function runDeployment(
 
     if (!app) throw new Error("App not found");
 
-    // Resolve environment name + branch override for container/directory naming
+    // Resolve environment — default to production if not specified
+    if (!opts.environmentId) {
+      const defaultEnv = await db.query.environments.findFirst({
+        where: and(
+          eq(environments.appId, opts.appId),
+          eq(environments.isDefault, true),
+        ),
+        columns: { id: true },
+      });
+      if (defaultEnv) opts.environmentId = defaultEnv.id;
+    }
+
     let envName = "production";
     let envBranchOverride: string | null = null;
     if (opts.environmentId) {

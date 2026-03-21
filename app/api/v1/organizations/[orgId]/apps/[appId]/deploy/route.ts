@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { apps, environments } from "@/lib/db/schema";
+import { apps } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { deployProject } from "@/lib/docker/deploy";
@@ -72,19 +72,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       });
     }
 
-    // Single app deploy
-    // Default to production environment
-    if (!environmentId) {
-      const defaultEnv = await db.query.environments.findFirst({
-        where: and(
-          eq(environments.appId, appId),
-          eq(environments.isDefault, true),
-        ),
-        columns: { id: true },
-      });
-      environmentId = defaultEnv?.id;
-    }
-
+    // Single app deploy (deployProject resolves default environment if not specified)
     return createSSEResponse(request, async (sendEvent) => {
       const result = await deployProject({
         appId: appId,
