@@ -1418,6 +1418,31 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         </DropdownMenu>
       </PageToolbar>
 
+      {/* Error banner */}
+      {app.status === "error" && (() => {
+        const lastDeploy = app.deployments[0];
+        const errorLine = lastDeploy?.log
+          ?.split("\n")
+          .reverse()
+          .find((l) => l.includes("ERROR") || l.includes("FATAL") || l.includes("failed") || l.includes("crashed"));
+        const cleaned = errorLine?.replace(/^\[.*?\]\s*/, "").trim();
+        return (
+          <div className="flex items-center gap-2 rounded-lg bg-status-error-muted px-4 py-2.5 text-sm text-status-error">
+            <X className="size-4 shrink-0" />
+            <span className="truncate">{cleaned || "App crashed — check the deploy log for details"}</span>
+            {lastDeploy && (
+              <button
+                type="button"
+                onClick={() => { setActiveTab("deployments"); setViewingLogId(lastDeploy.id); }}
+                className="shrink-0 text-xs underline underline-offset-2 opacity-80 hover:opacity-100"
+              >
+                View log
+              </button>
+            )}
+          </div>
+        );
+      })()}
+
       {/* Environment context banner */}
       {selectedEnv && !isProduction && (
         <div className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm ${
@@ -1727,6 +1752,20 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                             return by ? `${triggerLabel} by ${by}` : triggerLabel;
                           })()}
                         </p>
+                        {(deployment.status === "failed" || isErrored) && deployment.log && (() => {
+                          // Extract the last ERROR line from the deploy log
+                          const lines = deployment.log.split("\n");
+                          const errorLine = [...lines].reverse().find(
+                            (l) => l.includes("ERROR") || l.includes("FATAL") || l.includes("failed") || l.includes("crashed")
+                          );
+                          if (!errorLine) return null;
+                          const cleaned = errorLine.replace(/^\[.*?\]\s*/, "").trim();
+                          return (
+                            <p className="text-xs text-status-error mt-1 truncate max-w-md" title={cleaned}>
+                              {cleaned}
+                            </p>
+                          );
+                        })()}
                       </div>
                     </div>
                     <div className="flex items-center gap-4 text-xs text-foreground/50 shrink-0">
