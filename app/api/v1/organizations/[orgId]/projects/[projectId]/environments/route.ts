@@ -1,0 +1,105 @@
+import { NextRequest, NextResponse } from "next/server";
+import { handleRouteError } from "@/lib/api/error-response";
+import { db } from "@/lib/db";
+import { projects, groupEnvironments } from "@/lib/db/schema";
+import { requireOrg } from "@/lib/auth/session";
+import { eq, and } from "drizzle-orm";
+import { nanoid } from "nanoid";
+import { z } from "zod";
+
+type RouteParams = {
+  params: Promise<{ orgId: string; projectId: string }>;
+};
+
+const createEnvSchema = z.object({
+  name: z
+    .string()
+    .min(1, "Name is required")
+    .regex(/^[a-z0-9][a-z0-9-]*$/, "Name must be lowercase alphanumeric with hyphens"),
+  type: z.enum(["staging", "preview"]).default("staging"),
+});
+
+// GET /api/v1/organizations/[orgId]/projects/[projectId]/environments
+export async function GET(_request: NextRequest, { params }: RouteParams) {
+  try {
+    const { orgId, projectId } = await params;
+    const { organization } = await requireOrg();
+
+    if (organization.id !== orgId) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const project = await db.query.projects.findFirst({
+      where: and(eq(projects.id, projectId), eq(projects.organizationId, orgId)),
+      columns: { id: true },
+    });
+
+    if (!project) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    const envs = await db.query.groupEnvironments.findMany({
+      where: eq(groupEnvironments.projectId, projectId),
+    });
+
+    return NextResponse.json({ environments: envs });
+  } catch (error) {
+    return handleRouteError(error, "Error fetching project environments");
+  }
+}
+
+// POST /api/v1/organizations/[orgId]/projects/[projectId]/environments
+export async function POST(request: NextRequest, { params }: RouteParams) {
+  try {
+    const { orgId, projectId } = await params;
+    const { organization, session } = await requireOrg();
+
+    if (organization.id !== orgId) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const project = await db.query.projects.findFirst({
+      where: and(eq(projects.id, projectId), eq(projects.organizationId, orgId)),
+      columns: { id: true },
+    });
+
+    if (!project) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    const body = await request.json();
+    const parsed = createEnvSchema.safeParse(body);
+
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: parsed.error.issues[0].message },
+        { status: 400 }
+      );
+    }
+
+    const [env] = await db
+      .insert(groupEnvironments)
+      .values({
+        id: nanoid(),
+        projectId,
+        name: parsed.data.name,
+        type: parsed.data.type,
+        createdBy: session.user.id,
+      })
+      .returning();
+
+    return NextResponse.json({ environment: env }, { status: 201 });
+  } catch (error) {
+    const pgCode = error instanceof Error
+      ? ("code" in error ? (error as { code: string }).code : null) ??
+        (error.cause && typeof error.cause === "object" && "code" in error.cause ? (error.cause as { code: string }).code : null)
+      : null;
+    if (pgCode === "23505") {
+      return NextResponse.json(
+        { error: "An environment with this name already exists" },
+        { status: 409 }
+      );
+    }
+    return handleRouteError(error, "Error creating project environment");
+  }
+}

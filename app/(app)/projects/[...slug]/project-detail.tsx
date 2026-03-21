@@ -215,15 +215,8 @@ export function ProjectDetail({
     if (!name) return;
     setNewEnvSaving(true);
     try {
-      // Create a group environment for this project
-      // The API will fan out per-app environments
-      const firstApp = project.apps[0];
-      if (!firstApp) {
-        toast.error("Add an app to the project first");
-        return;
-      }
       const res = await fetch(
-        `/api/v1/organizations/${orgId}/apps/${firstApp.id}/environments`,
+        `/api/v1/organizations/${orgId}/projects/${project.id}/environments`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
