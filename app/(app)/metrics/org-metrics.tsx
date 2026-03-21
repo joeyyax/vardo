@@ -29,6 +29,7 @@ type AppSummary = {
 type OrgMetricsProps = {
   orgId: string;
   apps: AppSummary[];
+  projectCount?: number;
   /** When true, uses admin system-wide endpoints instead of org-scoped ones */
   adminMode?: boolean;
 };
@@ -41,7 +42,7 @@ type AppMeta = {
   containers: { cpuPercent: number; memoryUsage: number; memoryLimit: number; networkRx: number; networkTx: number }[];
 };
 
-export function OrgMetrics({ orgId, apps, adminMode }: OrgMetricsProps) {
+export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsProps) {
   const [timeRange, setTimeRange] = useState<TimeRange>("1h");
 
   // Stable chart domain — only updates when timeRange changes, not every tick
@@ -225,9 +226,15 @@ export function OrgMetrics({ orgId, apps, adminMode }: OrgMetricsProps) {
         <div className="squircle rounded-lg border bg-card px-4 py-3">
           <div className="flex items-center gap-2">
             <Box className="size-4 text-muted-foreground shrink-0" />
-            <p className="text-xs text-muted-foreground">Apps &amp; Containers</p>
+            <p className="text-xs text-muted-foreground">Running</p>
           </div>
           <div className="flex items-baseline gap-3 mt-1">
+            {projectCount !== undefined && (
+              <div>
+                <p className="text-2xl font-semibold tabular-nums">{projectCount}</p>
+                <p className="text-[10px] text-muted-foreground">projects</p>
+              </div>
+            )}
             <div>
               <p className="text-2xl font-semibold tabular-nums">{activeApps}</p>
               <p className="text-[10px] text-muted-foreground">apps</p>
