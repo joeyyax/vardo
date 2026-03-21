@@ -59,12 +59,20 @@ export default async function ProjectsPage() {
     <div className="space-y-6">
       <PageToolbar
         actions={
-          <Button asChild>
-            <Link href="/projects/new">
-              <Plus className="mr-1.5 size-4" />
-              New Project
+          <div className="flex items-center gap-3">
+            <Button asChild>
+              <Link href="/projects/new">
+                <Plus className="mr-1.5 size-4" />
+                New Project
+              </Link>
+            </Button>
+            <Link
+              href="/apps/new"
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              New App
             </Link>
-          </Button>
+          </div>
         }
       >
         <div className="flex items-center gap-3">
