@@ -469,9 +469,9 @@ export function EnvEditor(props: EnvEditorProps) {
         >
           {content ? (
             <div dangerouslySetInnerHTML={{ __html: highlightContent(content) }} />
-          ) : (
+          ) : isStandalone ? (
             <span className="text-zinc-600">{"# Environment variables\nDATABASE_URL=postgres://localhost:5432/mydb\nREDIS_URL=redis://localhost:6379\n\n# Reference other projects\nDB_PASSWORD=${postgres.POSTGRES_PASSWORD}"}</span>
-          )}
+          ) : null}
         </div>
 
         {/* Transparent textarea for input */}

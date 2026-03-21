@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { volumeLimits, projects } from "@/lib/db/schema";
-import { requireOrg } from "@/lib/auth/session";
-import { eq, and } from "drizzle-orm";
+import { volumeLimits } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
+import { verifyProjectAccess } from "@/lib/api/verify-access";
 
 type RouteParams = {
   params: Promise<{ orgId: string; projectId: string }>;
@@ -14,24 +15,6 @@ const volumeLimitSchema = z.object({
   maxSizeBytes: z.number().int().positive("Max size must be a positive number"),
   warnAtPercent: z.number().int().min(1).max(100).default(80),
 });
-
-async function verifyProjectAccess(orgId: string, projectId: string) {
-  const { organization } = await requireOrg();
-
-  if (organization.id !== orgId) {
-    return null;
-  }
-
-  const project = await db.query.projects.findFirst({
-    where: and(
-      eq(projects.id, projectId),
-      eq(projects.organizationId, orgId)
-    ),
-    columns: { id: true },
-  });
-
-  return project;
-}
 
 // GET — return the volume limit for a project (or null if not set)
 export async function GET(_request: NextRequest, { params }: RouteParams) {
@@ -49,14 +32,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ limit: limit ?? null });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error fetching volume limit:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error fetching volume limit");
   }
 }
 
@@ -110,14 +86,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ limit });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error setting volume limit:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error setting volume limit");
   }
 }
 
@@ -142,13 +111,6 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error deleting volume limit:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error deleting volume limit");
   }
 }

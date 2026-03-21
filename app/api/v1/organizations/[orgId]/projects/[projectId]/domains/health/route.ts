@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { domains, domainChecks, projects } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
@@ -55,13 +56,6 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ checks });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error fetching domain health:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error fetching domain health");
   }
 }

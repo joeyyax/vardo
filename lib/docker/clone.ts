@@ -11,7 +11,6 @@ import {
   envVars,
   environments,
   groupEnvironments,
-  groups,
   domains,
 } from "@/lib/db/schema";
 import { eq, and, isNull } from "drizzle-orm";
@@ -28,11 +27,16 @@ import { extractExpressions, validateExpression } from "@/lib/env/resolve";
 // ---------------------------------------------------------------------------
 
 type CreateGroupEnvironmentOpts = {
-  groupId: string;
+  parentProjectId: string;
   organizationId: string;
   name: string;
   type: "staging" | "preview";
   sourceEnvironment?: string;
+  /** Per-project overrides for clone strategy and git branch */
+  projectOverrides?: Record<
+    string,
+    { strategy?: string; gitBranch?: string }
+  >;
   prNumber?: number;
   prUrl?: string;
   createdBy?: string;
@@ -64,15 +68,15 @@ export type { CreateGroupEnvironmentOpts, GroupEnvironmentResult };
 export async function createGroupEnvironment(
   opts: CreateGroupEnvironmentOpts
 ): Promise<GroupEnvironmentResult> {
-  // Verify group exists and belongs to org
-  const group = await db.query.groups.findFirst({
+  // Verify parent project exists and belongs to org
+  const parentProject = await db.query.projects.findFirst({
     where: and(
-      eq(groups.id, opts.groupId),
-      eq(groups.organizationId, opts.organizationId)
+      eq(projects.id, opts.parentProjectId),
+      eq(projects.organizationId, opts.organizationId)
     ),
   });
 
-  if (!group) throw new Error("Group not found");
+  if (!parentProject) throw new Error("Parent project not found");
 
   // Load org for base domain
   const { organizations } = await import("@/lib/db/schema");
@@ -85,7 +89,7 @@ export async function createGroupEnvironment(
   const groupEnvId = nanoid();
   await db.insert(groupEnvironments).values({
     id: groupEnvId,
-    groupId: opts.groupId,
+    parentProjectId: opts.parentProjectId,
     name: opts.name,
     type: opts.type,
     sourceEnvironment: opts.sourceEnvironment ?? "production",
@@ -97,7 +101,7 @@ export async function createGroupEnvironment(
 
   // Load all projects in the group
   const groupProjects = await db.query.projects.findMany({
-    where: eq(projects.groupId, opts.groupId),
+    where: eq(projects.parentId, opts.parentProjectId),
   });
 
   const projectEnvironments: GroupEnvironmentResult["projectEnvironments"] = [];
@@ -109,7 +113,8 @@ export async function createGroupEnvironment(
   }
 
   for (const project of groupProjects) {
-    const strategy = project.cloneStrategy ?? "clone";
+    const override = opts.projectOverrides?.[project.id];
+    const strategy = override?.strategy ?? project.cloneStrategy ?? "clone";
 
     // Skip projects marked as skip
     if (strategy === "skip") {
@@ -150,6 +155,7 @@ export async function createGroupEnvironment(
       name: opts.name,
       type: envType,
       domain: envDomain,
+      gitBranch: override?.gitBranch || undefined,
       groupEnvironmentId: groupEnvId,
     });
 
@@ -230,7 +236,7 @@ export async function destroyGroupEnvironment(
   const groupEnv = await db.query.groupEnvironments.findFirst({
     where: eq(groupEnvironments.id, groupEnvironmentId),
     with: {
-      group: {
+      parentProject: {
         columns: { organizationId: true },
       },
       environments: {
@@ -244,7 +250,7 @@ export async function destroyGroupEnvironment(
   });
 
   if (!groupEnv) throw new Error("Group environment not found");
-  if (groupEnv.group.organizationId !== organizationId) {
+  if (groupEnv.parentProject.organizationId !== organizationId) {
     throw new Error("Forbidden");
   }
 

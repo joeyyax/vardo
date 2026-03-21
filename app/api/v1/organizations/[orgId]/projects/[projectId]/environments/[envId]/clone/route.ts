@@ -1,32 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { environments, envVars, projects } from "@/lib/db/schema";
-import { requireOrg } from "@/lib/auth/session";
+import { environments, envVars } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
+import { verifyProjectAccess } from "@/lib/api/verify-access";
 
 type RouteParams = {
   params: Promise<{ orgId: string; projectId: string; envId: string }>;
 };
-
-async function verifyProjectAccess(orgId: string, projectId: string) {
-  const { organization } = await requireOrg();
-
-  if (organization.id !== orgId) {
-    return null;
-  }
-
-  const project = await db.query.projects.findFirst({
-    where: and(
-      eq(projects.id, projectId),
-      eq(projects.organizationId, orgId)
-    ),
-    columns: { id: true },
-  });
-
-  return project;
-}
 
 const cloneSchema = z.object({
   name: z
@@ -125,9 +108,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       { status: 201 }
     );
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
     if (
       error instanceof Error &&
       "code" in error &&
@@ -138,10 +118,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         { status: 409 }
       );
     }
-    console.error("Error cloning environment:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error cloning environment");
   }
 }

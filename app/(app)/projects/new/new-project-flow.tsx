@@ -34,6 +34,7 @@ import {
 import { generateWordPair, getBaseDomain } from "@/lib/domains/auto-domain";
 import { isReservedSlug } from "@/lib/domains/reserved";
 import { EnvEditor } from "@/components/env-editor";
+import { BranchSelect } from "@/components/branch-select";
 
 type Source = "git" | "direct";
 type DeployType = "compose" | "dockerfile" | "image" | "static";
@@ -81,7 +82,7 @@ type Repo = {
   description: string | null;
 };
 
-type GroupOption = {
+type ParentProjectOption = {
   id: string;
   name: string;
   color: string;
@@ -91,8 +92,8 @@ type Props = {
   orgId: string;
   orgSlug: string;
   templates: Template[];
-  groups?: GroupOption[];
-  defaultGroupId?: string;
+  parentProjects?: ParentProjectOption[];
+  defaultParentId?: string;
   defaultName?: string;
   defaultImage?: string;
   defaultTemplate?: string;
@@ -132,7 +133,7 @@ function slugify(value: string) {
     .replace(/^-+|-+$/g, "");
 }
 
-export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], defaultGroupId, defaultName, defaultImage, defaultTemplate }: Props) {
+export function NewProjectFlow({ orgId, orgSlug, templates, parentProjects = [], defaultParentId, defaultName, defaultImage, defaultTemplate }: Props) {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
   const [slugEdited, setSlugEdited] = useState(false);
@@ -157,7 +158,7 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
   const [rootDirectory, setRootDirectory] = useState("");
   const [containerPort, setContainerPort] = useState("");
   const [autoDeploy, setAutoDeploy] = useState(true);
-  const [groupId, setGroupId] = useState<string | null>(defaultGroupId ?? null);
+  const [parentId, setParentId] = useState<string | null>(defaultParentId ?? null);
   const [persistData, setPersistData] = useState(true);
   const [templateVolumes, setTemplateVolumes] = useState<
     { name: string; mountPath: string; description: string }[]
@@ -184,7 +185,6 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
   const [reposLoading, setReposLoading] = useState(false);
   const [selectedRepo, setSelectedRepo] = useState("");
   const [branches, setBranches] = useState<string[]>([]);
-  const [branchesLoading, setBranchesLoading] = useState(false);
 
   const fetchInstallations = useCallback(async () => {
     setInstallationsLoading(true);
@@ -226,7 +226,6 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
     if (!selectedRepo || !selectedInstallation) { setBranches([]); return; }
     let cancelled = false;
     async function fetchBranches() {
-      setBranchesLoading(true);
       try {
         const res = await fetch(`/api/v1/github/branches?installationId=${selectedInstallation}&repo=${selectedRepo}`);
         if (res.ok && !cancelled) {
@@ -234,7 +233,6 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
           setBranches(data.branches || []);
         }
       } catch { /* noop */ }
-      finally { if (!cancelled) setBranchesLoading(false); }
     }
     fetchBranches();
     return () => { cancelled = true; };
@@ -387,7 +385,7 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
         displayName: displayName.trim(), name: name.trim(),
         description: description.trim() || undefined,
         source, deployType, autoTraefikLabels: true, autoDeploy, generateDomain,
-        groupId: groupId || undefined,
+        parentId: parentId || undefined,
         persistentVolumes: persistData && templateVolumes.length > 0
           ? templateVolumes.map((v) => ({ name: v.name, mountPath: v.mountPath }))
           : undefined,
@@ -727,25 +725,11 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
             {selectedSource === "github" && selectedRepo && (
               <div className="grid gap-2 sm:w-1/3">
                 <Label>Branch</Label>
-                {branchesLoading ? (
-                  <div className="flex items-center gap-2 rounded-md border px-3 py-2">
-                    <Loader2 className="size-4 animate-spin text-muted-foreground" />
-                    <span className="text-sm text-muted-foreground">Loading...</span>
-                  </div>
-                ) : branches.length > 0 ? (
-                  <Select value={gitBranch} onValueChange={setGitBranch}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select branch" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {branches.map((b) => (
-                        <SelectItem key={b} value={b}>{b}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <Input value={gitBranch} onChange={(e) => setGitBranch(e.target.value)} placeholder="main" />
-                )}
+                <BranchSelect
+                  value={gitBranch}
+                  onChange={setGitBranch}
+                  branches={branches}
+                />
               </div>
             )}
 
@@ -915,23 +899,23 @@ export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], default
                 </div>
               )}
 
-              {groups.length > 0 && (
+              {parentProjects.length > 0 && (
                 <div className="grid gap-2">
-                  <Label>Group</Label>
+                  <Label>Parent Project</Label>
                   <Select
-                    value={groupId ?? "__none"}
-                    onValueChange={(v) => setGroupId(v === "__none" ? null : v)}
+                    value={parentId ?? "__none"}
+                    onValueChange={(v) => setParentId(v === "__none" ? null : v)}
                   >
                     <SelectTrigger className="w-64">
-                      <SelectValue placeholder="No group" />
+                      <SelectValue placeholder="Standalone" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="__none">No group</SelectItem>
-                      {groups.map((g) => (
-                        <SelectItem key={g.id} value={g.id}>
+                      <SelectItem value="__none">Standalone</SelectItem>
+                      {parentProjects.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
                           <span className="flex items-center gap-2">
-                            <span className="size-2 rounded-full" style={{ backgroundColor: g.color }} />
-                            {g.name}
+                            <span className="size-2 rounded-full" style={{ backgroundColor: p.color }} />
+                            {p.name}
                           </span>
                         </SelectItem>
                       ))}

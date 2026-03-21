@@ -1,6 +1,7 @@
 import {
   bigint,
   boolean,
+  foreignKey,
   integer,
   pgEnum,
   pgTable,
@@ -296,9 +297,8 @@ export const projects = pgTable(
     connectionInfo: jsonb("connection_info").$type<
       { label: string; value: string; copyRef?: string }[]
     >(),
-    groupId: text("group_id").references(() => groups.id, {
-      onDelete: "set null",
-    }),
+    parentId: text("parent_id"),
+    color: text("color").default("#6366f1"),
     cloneStrategy: cloneStrategyEnum("clone_strategy").default("clone"),
     dependsOn: jsonb("depends_on").$type<string[]>(),
     sortOrder: integer("sort_order").default(0),
@@ -308,7 +308,10 @@ export const projects = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
-  (t) => [unique("project_org_name_uniq").on(t.organizationId, t.name)]
+  (t) => [
+    unique("project_org_name_uniq").on(t.organizationId, t.name),
+    foreignKey({ columns: [t.parentId], foreignColumns: [t.id] }).onDelete("cascade"),
+  ]
 );
 
 // ---------------------------------------------------------------------------
@@ -390,9 +393,9 @@ export const groupEnvironments = pgTable(
   "group_environment",
   {
     id: text("id").primaryKey(),
-    groupId: text("group_id")
+    parentProjectId: text("parent_project_id")
       .notNull()
-      .references(() => groups.id, { onDelete: "cascade" }),
+      .references(() => projects.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     type: groupEnvironmentTypeEnum("type").notNull().default("staging"),
     sourceEnvironment: text("source_environment").default("production"),
@@ -402,7 +405,7 @@ export const groupEnvironments = pgTable(
     expiresAt: timestamp("expires_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
-  (t) => [unique("group_env_group_name_uniq").on(t.groupId, t.name)]
+  (t) => [unique("group_env_parent_name_uniq").on(t.parentProjectId, t.name)]
 );
 
 // ---------------------------------------------------------------------------
@@ -419,6 +422,7 @@ export const environments = pgTable(
     name: text("name").notNull(),
     type: environmentTypeEnum("type").notNull().default("production"),
     domain: text("domain"),
+    gitBranch: text("git_branch"),
     isDefault: boolean("is_default").default(false),
     clonedFromId: text("cloned_from_id"),
     groupEnvironmentId: text("group_environment_id").references(
@@ -466,38 +470,6 @@ export const activities = pgTable("activity", {
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
-
-// ---------------------------------------------------------------------------
-// Host: Groups (nestable project containers)
-// ---------------------------------------------------------------------------
-
-export const groups = pgTable(
-  "group",
-  {
-    id: text("id").primaryKey(),
-    organizationId: text("organization_id")
-      .notNull()
-      .references(() => organizations.id, { onDelete: "cascade" }),
-    parentId: text("parent_id"),
-    name: text("name").notNull(),
-    color: text("color").notNull().default("#6366f1"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-  },
-  (t) => [unique("group_org_name_uniq").on(t.organizationId, t.name)]
-);
-
-export const projectGroups = pgTable(
-  "project_group",
-  {
-    projectId: text("project_id")
-      .notNull()
-      .references(() => projects.id, { onDelete: "cascade" }),
-    groupId: text("group_id")
-      .notNull()
-      .references(() => groups.id, { onDelete: "cascade" }),
-  },
-  (t) => [unique("project_group_uniq").on(t.projectId, t.groupId)]
-);
 
 // ---------------------------------------------------------------------------
 // Host: Tags (flat labels for filtering)
@@ -804,7 +776,6 @@ export const organizationsRelations = relations(organizations, ({ many }) => ({
   deployKeys: many(deployKeys),
   apiTokens: many(apiTokens),
   activities: many(activities),
-  groups: many(groups),
   tags: many(tags),
   backupTargets: many(backupTargets),
   backupJobs: many(backupJobs),
@@ -834,16 +805,17 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
     fields: [projects.gitKeyId],
     references: [deployKeys.id],
   }),
-  group: one(groups, {
-    fields: [projects.groupId],
-    references: [groups.id],
+  parent: one(projects, {
+    fields: [projects.parentId],
+    references: [projects.id],
+    relationName: "parentChild",
   }),
+  children: many(projects, { relationName: "parentChild" }),
   deployments: many(deployments),
   envVars: many(envVars),
   domains: many(domains),
   environments: many(environments),
   activities: many(activities),
-  projectGroups: many(projectGroups),
   projectTags: many(projectTags),
   backupJobProjects: many(backupJobProjects),
   backups: many(backups),
@@ -956,26 +928,12 @@ export const activitiesRelations = relations(activities, ({ one }) => ({
   }),
 }));
 
-export const groupsRelations = relations(groups, ({ one, many }) => ({
-  organization: one(organizations, {
-    fields: [groups.organizationId],
-    references: [organizations.id],
-  }),
-  parent: one(groups, {
-    fields: [groups.parentId],
-    references: [groups.id],
-  }),
-  projects: many(projects),
-  projectGroups: many(projectGroups),
-  groupEnvironments: many(groupEnvironments),
-}));
-
 export const groupEnvironmentsRelations = relations(
   groupEnvironments,
   ({ one, many }) => ({
-    group: one(groups, {
-      fields: [groupEnvironments.groupId],
-      references: [groups.id],
+    parentProject: one(projects, {
+      fields: [groupEnvironments.parentProjectId],
+      references: [projects.id],
     }),
     createdByUser: one(user, {
       fields: [groupEnvironments.createdBy],
@@ -985,17 +943,6 @@ export const groupEnvironmentsRelations = relations(
     deployments: many(deployments),
   })
 );
-
-export const projectGroupsRelations = relations(projectGroups, ({ one }) => ({
-  project: one(projects, {
-    fields: [projectGroups.projectId],
-    references: [projects.id],
-  }),
-  group: one(groups, {
-    fields: [projectGroups.groupId],
-    references: [groups.id],
-  }),
-}));
 
 export const tagsRelations = relations(tags, ({ one, many }) => ({
   organization: one(organizations, {

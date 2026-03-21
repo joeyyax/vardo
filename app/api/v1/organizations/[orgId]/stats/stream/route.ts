@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { projects } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
@@ -6,6 +7,8 @@ import { eq } from "drizzle-orm";
 import { fetchAllContainerMetrics } from "@/lib/metrics/cadvisor";
 import { getSystemDiskUsage, getSystemInfo, type DiskUsage, type SystemInfo } from "@/lib/docker/client";
 import { isCollectorRunning, startCollector } from "@/lib/metrics/collector";
+import { getLatestProjectDiskUsage } from "@/lib/metrics/store";
+import { createSSEResponse } from "@/lib/api/sse";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -32,100 +35,109 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       startCollector();
     }
 
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream({
-      start(controller) {
-        let stopped = false;
-        let tickCount = 0;
+    return createSSEResponse(request, async (sendEvent) => {
+      let stopped = false;
+      let tickCount = 0;
 
-        // Cache slow calls
-        let cachedDisk: DiskUsage | null = null;
-        let cachedSystem: SystemInfo | null = null;
+      // Cache slow calls
+      let cachedDisk: DiskUsage | null = null;
+      let cachedSystem: SystemInfo | null = null;
+      let cachedProjectDisk: Record<string, number> = {};
 
-        // Fetch slow data in background (don't block SSE ticks)
-        async function refreshSlowData() {
-          try { cachedDisk = await getSystemDiskUsage(); } catch { /* skip */ }
-          try { cachedSystem = await getSystemInfo(); } catch { /* skip */ }
-        }
-
-        // Start slow data fetch immediately but don't wait for it
-        refreshSlowData();
-
-        async function poll() {
-          if (stopped) return;
-
-          try {
-            // Fast path: just cAdvisor stats (~10ms)
-            const allMetrics = await fetchAllContainerMetrics();
-
-            const byProject: Record<string, typeof allMetrics> = {};
-            for (const m of allMetrics) {
-              const matched = orgProjects.find(
-                (p) => m.projectName === p.name || m.projectName.startsWith(`${p.name}-`)
-              );
-              if (!matched) continue;
-              if (!byProject[matched.id]) byProject[matched.id] = [];
-              byProject[matched.id].push(m);
+      // Fetch per-project disk from Redis (fast — just TS.GET per project)
+      async function refreshProjectDisk() {
+        try {
+          const diskEntries = await Promise.all(
+            orgProjects.map(async (p) => {
+              const size = await getLatestProjectDiskUsage(p.name);
+              return [p.id, size] as const;
+            })
+          );
+          const result: Record<string, number> = {};
+          for (const [id, size] of diskEntries) {
+            if (size !== null && size > 0) {
+              result[id] = size;
             }
+          }
+          cachedProjectDisk = result;
+        } catch { /* skip */ }
+      }
 
-            const payload = {
-              projects: orgProjects.map((p) => ({
-                ...p,
-                containers: (byProject[p.id] || []).map((m) => ({
-                  containerId: m.containerId,
-                  containerName: m.containerName,
-                  cpuPercent: m.cpuPercent,
-                  memoryUsage: m.memoryUsage,
-                  memoryLimit: m.memoryLimit,
-                  memoryPercent: m.memoryPercent,
-                  networkRx: m.networkRxBytes,
-                  networkTx: m.networkTxBytes,
-                })),
-              })),
-              disk: cachedDisk,
-              system: cachedSystem,
-              timestamp: new Date().toISOString(),
-            };
+      // Fetch slow Docker API data in background (don't block SSE ticks)
+      async function refreshSlowData() {
+        try { cachedDisk = await getSystemDiskUsage(); } catch { /* skip */ }
+        try { cachedSystem = await getSystemInfo(); } catch { /* skip */ }
+        await refreshProjectDisk();
+      }
 
-            controller.enqueue(
-              encoder.encode(`event: stats\ndata: ${JSON.stringify(payload)}\n\n`)
+      // Load per-project disk immediately (fast Redis reads), slow data in background
+      await refreshProjectDisk();
+      refreshSlowData();
+
+      request.signal.addEventListener("abort", () => {
+        stopped = true;
+      });
+
+      async function poll() {
+        if (stopped) return;
+
+        try {
+          // Fast path: just cAdvisor stats (~10ms)
+          const allMetrics = await fetchAllContainerMetrics();
+
+          const byProject: Record<string, typeof allMetrics> = {};
+          for (const m of allMetrics) {
+            const matched = orgProjects.find(
+              (p) => m.projectName === p.name || m.projectName.startsWith(`${p.name}-`)
             );
-
-            // Refresh slow data every 60 ticks (~5 min at 5s intervals)
-            tickCount++;
-            if (tickCount % 60 === 0) {
-              refreshSlowData(); // Fire and forget — don't await
-            }
-          } catch (err) {
-            console.error("[metrics] cAdvisor error:", (err as Error).message);
+            if (!matched) continue;
+            if (!byProject[matched.id]) byProject[matched.id] = [];
+            byProject[matched.id].push(m);
           }
 
-          if (!stopped) {
-            setTimeout(poll, 5000);
+          sendEvent("stats", {
+            projects: orgProjects.map((p) => ({
+              ...p,
+              diskUsage: cachedProjectDisk[p.id] || 0,
+              containers: (byProject[p.id] || []).map((m) => ({
+                containerId: m.containerId,
+                containerName: m.containerName,
+                cpuPercent: m.cpuPercent,
+                memoryUsage: m.memoryUsage,
+                memoryLimit: m.memoryLimit,
+                memoryPercent: m.memoryPercent,
+                networkRx: m.networkRxBytes,
+                networkTx: m.networkTxBytes,
+                diskUsage: m.diskUsage,
+              })),
+            })),
+            disk: cachedDisk,
+            system: cachedSystem,
+            timestamp: new Date().toISOString(),
+          });
+
+          // Refresh slow data every 60 ticks (~5 min at 5s intervals)
+          tickCount++;
+          if (tickCount % 60 === 0) {
+            refreshSlowData(); // Fire and forget — don't await
           }
+        } catch (err) {
+          console.error("[metrics] cAdvisor error:", (err as Error).message);
         }
 
-        poll();
+        if (!stopped) {
+          setTimeout(poll, 5000);
+        }
+      }
 
-        request.signal.addEventListener("abort", () => {
-          stopped = true;
-          try { controller.close(); } catch { /* already closed */ }
-        });
-      },
-    });
+      await poll();
 
-    return new Response(stream, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-      },
+      // Keep the handler alive until the client disconnects
+      await new Promise<void>((resolve) => {
+        request.signal.addEventListener("abort", () => resolve());
+      });
     });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return new Response("Unauthorized", { status: 401 });
-    }
-    console.error("Error streaming org stats:", error);
-    return new Response("Internal server error", { status: 500 });
+    return handleRouteError(error, "Error streaming org stats");
   }
 }

@@ -577,13 +577,121 @@ export function BackupManager({ orgId, projects }: Props) {
     );
   }
 
+  // Separate app-level (Host-managed) targets/jobs from user targets/jobs
+  const appLevelTargets = targets.filter((t) => t.isAppLevel);
+  const userTargets = targets.filter((t) => !t.isAppLevel);
+  const appLevelJobs = jobs.filter((j) => appLevelTargets.some((t) => t.id === j.target.id));
+  const userJobs = jobs.filter((j) => !appLevelTargets.some((t) => t.id === j.target.id));
+  const appLevelHistory = recentHistory.filter((h) =>
+    appLevelJobs.some((j) => j.id === h.job.id)
+  );
+  const userHistory = recentHistory.filter(
+    (h) => !appLevelJobs.some((j) => j.id === h.job.id)
+  );
+
   return (
     <div className="space-y-8">
+      {/* Host-managed backups (app-level) */}
+      {appLevelTargets.length > 0 && (
+        <section className="space-y-3">
+          <div>
+            <h2 className="text-lg font-medium">Automatic Backups</h2>
+            <p className="text-sm text-muted-foreground">
+              Your data is automatically backed up by Host. These backups are read-only.
+            </p>
+          </div>
+
+          {appLevelJobs.length > 0 && (
+            <div className="space-y-2">
+              {appLevelJobs.map((job) => {
+                const lastBackup = job.backups[0];
+                return (
+                  <div
+                    key={job.id}
+                    className="squircle flex items-center justify-between gap-4 rounded-lg border bg-card p-4"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Archive className="size-4 text-status-success shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium">{job.name}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {scheduleLabel(job.schedule)}
+                          {lastBackup && (
+                            <> &middot; Last: {new Date(lastBackup.startedAt).toLocaleDateString()}</>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {lastBackup && <StatusBadge status={lastBackup.status} />}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {appLevelHistory.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-sm font-medium text-muted-foreground">Recent automatic backups</h3>
+              <div className="divide-y rounded-lg border">
+                {appLevelHistory.slice(0, 5).map((backup) => (
+                  <div key={backup.id} className="flex items-center justify-between gap-4 px-4 py-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <StatusBadge status={backup.status} />
+                      <div className="min-w-0">
+                        <p className="text-sm">{backup.project.displayName}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(backup.startedAt).toLocaleString()}
+                          {backup.sizeBytes != null && <> &middot; {formatBytes(backup.sizeBytes)}</>}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        size="icon-xs"
+                        variant="ghost"
+                        title="Restore"
+                        disabled={restoringBackups.has(backup.id)}
+                        onClick={() => restoreBackup(backup.id)}
+                      >
+                        {restoringBackups.has(backup.id) ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          <RotateCcw className="size-3.5" />
+                        )}
+                      </Button>
+                      {backup.storagePath && (
+                        <Button size="icon-xs" variant="ghost" title="Download" asChild>
+                          <a href={`/api/v1/organizations/${orgId}/backups/history/${backup.id}/download`}>
+                            <Download className="size-3.5" />
+                          </a>
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* External / User Backups */}
+      {appLevelTargets.length > 0 && (
+        <div className="border-t pt-8">
+          <h2 className="text-lg font-medium mb-1">External Backups</h2>
+          <p className="text-sm text-muted-foreground mb-6">
+            Configure your own backup targets and schedules.
+          </p>
+        </div>
+      )}
+
       {/* Backup Targets */}
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-medium">Storage Targets</h2>
+            <h2 className="text-lg font-medium">{appLevelTargets.length > 0 ? "Your Storage Targets" : "Storage Targets"}</h2>
             <p className="text-sm text-muted-foreground">
               Where your backups are stored.
             </p>

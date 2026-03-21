@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { db } from "@/lib/db";
-import { projects, tags, groups } from "@/lib/db/schema";
+import { projects, tags } from "@/lib/db/schema";
 import { getCurrentOrg, getUserOrganizations } from "@/lib/auth/session";
 import { eq, desc, asc, sql } from "drizzle-orm";
 import { Plus } from "lucide-react";
@@ -20,7 +20,7 @@ export default async function ProjectsPage() {
   const orgId = orgData.organization.id;
   const organizations = await getUserOrganizations();
 
-  const [projectList, tagList, groupList] = await Promise.all([
+  const [projectList, tagList] = await Promise.all([
     db.query.projects.findMany({
       where: eq(projects.organizationId, orgId),
       orderBy: [asc(projects.sortOrder), desc(projects.createdAt)],
@@ -36,19 +36,28 @@ export default async function ProjectsPage() {
         projectTags: {
           with: { tag: true },
         },
-        projectGroups: {
-          with: { group: true },
+        parent: {
+          columns: { id: true, name: true, color: true },
         },
-        group: true,
+        children: {
+          columns: { id: true, name: true, displayName: true, status: true, imageName: true, gitUrl: true, deployType: true },
+          orderBy: (c, { asc }) => [asc(c.sortOrder)],
+          with: {
+            deployments: {
+              columns: { id: true, status: true, finishedAt: true },
+              orderBy: (d, { desc }) => [desc(d.startedAt)],
+              limit: 1,
+            },
+            domains: {
+              columns: { domain: true },
+            },
+          },
+        },
       },
     }),
     db.query.tags.findMany({
       where: eq(tags.organizationId, orgId),
       orderBy: [asc(tags.name)],
-    }),
-    db.query.groups.findMany({
-      where: eq(groups.organizationId, orgId),
-      orderBy: [asc(groups.name)],
     }),
   ]);
 
@@ -90,7 +99,6 @@ export default async function ProjectsPage() {
         <ProjectGrid
           projects={projectList}
           allTags={tagList}
-          allGroups={groupList}
           orgId={orgId}
         />
       )}

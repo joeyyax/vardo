@@ -1,22 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { projects, groups } from "@/lib/db/schema";
+import { projects } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { stopProject } from "@/lib/docker/deploy";
 import { recordActivity } from "@/lib/activity";
-
-/** Delete a group if it has no remaining projects. */
-async function cleanupEmptyGroup(groupId: string) {
-  const remaining = await db.query.projects.findFirst({
-    where: eq(projects.groupId, groupId),
-    columns: { id: true },
-  });
-  if (!remaining) {
-    await db.delete(groups).where(eq(groups.id, groupId));
-  }
-}
 
 type RouteParams = {
   params: Promise<{ orgId: string; projectId: string }>;
@@ -41,7 +31,8 @@ const updateProjectSchema = z.object({
     protocol: z.string().optional(),
     description: z.string().optional(),
   })).nullable().optional(),
-  groupId: z.string().nullable().optional(),
+  parentId: z.string().nullable().optional(),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   cloneStrategy: z.enum(["clone", "clone_data", "empty", "skip"]).optional(),
   dependsOn: z.array(z.string()).nullable().optional(),
 });
@@ -79,14 +70,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ project });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error fetching project:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error fetching project");
   }
 }
 
@@ -110,14 +94,27 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Check if groupId is changing so we can clean up the old group
-    let oldGroupId: string | null = null;
-    if ("groupId" in parsed.data) {
-      const existing = await db.query.projects.findFirst({
-        where: and(eq(projects.id, projectId), eq(projects.organizationId, orgId)),
-        columns: { groupId: true },
+    // Validate parentId changes — enforce single-level nesting
+    if (parsed.data.parentId) {
+      // Can't assign to a parent that is itself a child
+      const parent = await db.query.projects.findFirst({
+        where: and(eq(projects.id, parsed.data.parentId), eq(projects.organizationId, orgId)),
+        columns: { id: true, parentId: true },
       });
-      oldGroupId = existing?.groupId ?? null;
+      if (!parent) {
+        return NextResponse.json({ error: "Parent project not found" }, { status: 400 });
+      }
+      if (parent.parentId) {
+        return NextResponse.json({ error: "That project already has a parent" }, { status: 400 });
+      }
+      // Can't become a child if this project already has children (no nesting)
+      const hasChildren = await db.query.projects.findFirst({
+        where: eq(projects.parentId, projectId),
+        columns: { id: true },
+      });
+      if (hasChildren) {
+        return NextResponse.json({ error: "Parent projects cannot be nested" }, { status: 400 });
+      }
     }
 
     const [updated] = await db
@@ -132,11 +129,6 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    // Clean up old group if it's now empty
-    if (oldGroupId && oldGroupId !== updated.groupId) {
-      await cleanupEmptyGroup(oldGroupId);
-    }
-
     recordActivity({
       organizationId: orgId,
       action: "project.updated",
@@ -147,14 +139,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ project: updated });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error updating project:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error updating project");
   }
 }
 
@@ -178,7 +163,7 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     // Fetch project before deleting
     const project = await db.query.projects.findFirst({
       where: and(eq(projects.id, projectId), eq(projects.organizationId, orgId)),
-      columns: { id: true, name: true, groupId: true },
+      columns: { id: true, name: true },
     });
 
     if (!project) {
@@ -194,11 +179,6 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
       .delete(projects)
       .where(and(eq(projects.id, projectId), eq(projects.organizationId, orgId)));
 
-    // Clean up group if it's now empty
-    if (project.groupId) {
-      await cleanupEmptyGroup(project.groupId);
-    }
-
     recordActivity({
       organizationId: orgId,
       action: "project.deleted",
@@ -208,13 +188,6 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error deleting project:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error deleting project");
   }
 }

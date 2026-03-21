@@ -72,13 +72,13 @@ export async function createPreview(
   if (branchProjects.length === 0) return null;
 
   // Find the first project that belongs to a group
-  const groupedProject = branchProjects.find((p) => p.groupId);
-  if (!groupedProject || !groupedProject.groupId) {
+  const groupedProject = branchProjects.find((p) => p.parentId);
+  if (!groupedProject || !groupedProject.parentId) {
     // No group — can't create a group preview for standalone projects
     return null;
   }
 
-  const groupId = groupedProject.groupId;
+  const groupId = groupedProject.parentId;
   const organizationId = groupedProject.organizationId;
   const envName = `pr-${opts.prNumber}`;
   const ttlDays = opts.ttlDays ?? 7;
@@ -86,7 +86,7 @@ export async function createPreview(
   // Check if preview already exists
   const existing = await db.query.groupEnvironments.findFirst({
     where: and(
-      eq(groupEnvironments.groupId, groupId),
+      eq(groupEnvironments.parentProjectId, groupId),
       eq(groupEnvironments.name, envName)
     ),
   });
@@ -96,7 +96,7 @@ export async function createPreview(
     // Re-deploy the group in the existing environment
     try {
       await deployGroup({
-        groupId,
+        parentProjectId: groupId,
         organizationId,
         trigger: "webhook",
         groupEnvironmentId: existing.id,
@@ -114,7 +114,7 @@ export async function createPreview(
 
   // Create new preview environment
   const result = await createGroupEnvironment({
-    groupId,
+    parentProjectId: groupId,
     organizationId,
     name: envName,
     type: "preview",
@@ -127,7 +127,7 @@ export async function createPreview(
   let deployed = false;
   try {
     await deployGroup({
-      groupId,
+      parentProjectId: groupId,
       organizationId,
       trigger: "webhook",
       groupEnvironmentId: result.groupEnvironmentId,
@@ -170,15 +170,15 @@ export async function destroyPreview(
     where: eq(projects.gitUrl, gitUrl),
   });
 
-  const groupedProject = matchingProjects.find((p) => p.groupId);
-  if (!groupedProject || !groupedProject.groupId) return false;
+  const groupedProject = matchingProjects.find((p) => p.parentId);
+  if (!groupedProject || !groupedProject.parentId) return false;
 
   const envName = `pr-${prNumber}`;
 
   // Find the preview environment
   const groupEnv = await db.query.groupEnvironments.findFirst({
     where: and(
-      eq(groupEnvironments.groupId, groupedProject.groupId),
+      eq(groupEnvironments.parentProjectId, groupedProject.parentId),
       eq(groupEnvironments.name, envName)
     ),
   });
@@ -207,7 +207,7 @@ export async function cleanupExpiredPreviews(): Promise<number> {
   const expired = await db.query.groupEnvironments.findMany({
     where: eq(groupEnvironments.type, "preview"),
     with: {
-      group: {
+      parentProject: {
         columns: { organizationId: true },
       },
     },
@@ -217,7 +217,7 @@ export async function cleanupExpiredPreviews(): Promise<number> {
   for (const env of expired) {
     if (env.expiresAt && env.expiresAt < now) {
       try {
-        await destroyGroupEnvironment(env.id, env.group.organizationId);
+        await destroyGroupEnvironment(env.id, env.parentProject.organizationId);
         cleaned++;
         console.log(`[preview] Cleaned up expired preview: ${env.name}`);
       } catch (err) {

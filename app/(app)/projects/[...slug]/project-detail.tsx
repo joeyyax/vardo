@@ -9,7 +9,6 @@ import {
   Trash2,
   Loader2,
   Plus,
-  EyeOff,
   X,
   Rocket,
   RotateCcw,
@@ -24,6 +23,7 @@ import {
   Copy,
   Container,
   Info,
+  EllipsisVertical,
   Layers,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -68,15 +68,16 @@ const ProjectTerminal = dynamic(
 );
 import { EnvEditor } from "@/components/env-editor";
 import { VolumesPanel } from "@/components/volumes-panel";
-import { ProjectEnvironments } from "./project-environments";
 import { CronManager } from "./project-cron";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { isAdmin } from "@/lib/auth/permissions";
+import { BranchSelect } from "@/components/branch-select";
 
 type Deployment = {
   id: string;
@@ -86,6 +87,7 @@ type Deployment = {
   gitMessage: string | null;
   durationMs: number | null;
   log: string | null;
+  environmentId: string | null;
   startedAt: Date;
   finishedAt: Date | null;
   triggeredByUser: {
@@ -117,6 +119,7 @@ type Environment = {
   name: string;
   type: "production" | "staging" | "preview";
   domain: string | null;
+  gitBranch: string | null;
   isDefault: boolean | null;
   createdAt: Date;
 };
@@ -139,7 +142,8 @@ type Project = {
   restartPolicy: string | null;
   connectionInfo: { label: string; value: string; copyRef?: string }[] | null;
   exposedPorts: { internal: number; external?: number; description?: string }[] | null;
-  groupId: string | null;
+  parentId: string | null;
+  color: string | null;
   cloneStrategy: string | null;
   dependsOn: string[] | null;
   status: "active" | "stopped" | "error" | "deploying";
@@ -150,16 +154,20 @@ type Project = {
   envVars: EnvVar[];
   environments: Environment[];
   projectTags?: { tag: Tag }[];
-  group?: { id: string; name: string; color: string } | null;
+  parent?: { id: string; name: string; color: string | null } | null;
+  children?: {
+    id: string;
+    name: string;
+    displayName: string;
+    status: string;
+    imageName: string | null;
+    gitUrl: string | null;
+    deployType: string;
+    domains: { domain: string; isPrimary: boolean | null }[];
+  }[];
 };
 
 type Tag = {
-  id: string;
-  name: string;
-  color: string;
-};
-
-type Group = {
   id: string;
   name: string;
   color: string;
@@ -170,13 +178,26 @@ type ProjectDetailProps = {
   orgId: string;
   userRole: string;
   allTags?: Tag[];
-  allGroups?: Group[];
+  allParentProjects?: { id: string; name: string; color: string }[];
   allProjectNames?: string[];
   orgVarKeys?: string[];
-  groupSiblings?: { name: string; displayName: string; status: string }[];
+  siblings?: { name: string; displayName: string; status: string }[];
   initialTab?: string;
+  initialEnv?: string;
   initialSubView?: string;
 };
+
+function statusDotColor(status: string) {
+  return status === "active" ? "bg-status-success"
+    : status === "error" ? "bg-status-error"
+    : "bg-status-neutral";
+}
+
+function envTypeDotColor(type: string) {
+  return type === "production" ? "bg-status-success"
+    : type === "staging" ? "bg-status-warning"
+    : "bg-status-info";
+}
 
 function StatusBadge({ status }: { status: string }) {
   switch (status) {
@@ -495,6 +516,13 @@ function deployTypeLabel(deployType: string) {
   }
 }
 
+function buildProjectPath(projectName: string, environments: Environment[], envId: string | undefined, tab?: string) {
+  const env = environments.find((e) => e.id === envId);
+  const envSegment = env && env.type !== "production" ? `/${env.name}` : "";
+  const base = `/projects/${projectName}${envSegment}`;
+  return tab && tab !== "deployments" ? `${base}/${tab}` : base;
+}
+
 function formatUptime(date: Date): string {
   const ms = Date.now() - new Date(date).getTime();
   const s = Math.floor(ms / 1000) % 60;
@@ -548,12 +576,14 @@ function formatDuration(ms: number) {
   return `${minutes}m ${remaining}s`;
 }
 
-export function ProjectDetail({ project, orgId, userRole, allTags = [], allGroups = [], allProjectNames = [], orgVarKeys = [], groupSiblings = [], initialTab = "deployments", initialSubView }: ProjectDetailProps) {
+export function ProjectDetail({ project, orgId, userRole, allTags = [], allParentProjects = [], allProjectNames = [], orgVarKeys = [], siblings = [], initialTab = "deployments", initialEnv, initialSubView }: ProjectDetailProps) {
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteEnvOpen, setDeleteEnvOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [deletingEnv, setDeletingEnv] = useState(false);
 
   // Edit form state
   const [displayName, setDisplayName] = useState(project.displayName);
@@ -570,8 +600,73 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allGroup
   const [autoDeploy, setAutoDeploy] = useState(project.autoDeploy ?? false);
   const [gitBranch, setGitBranch] = useState(project.gitBranch || "");
   const [rootDirectory, setRootDirectory] = useState(project.rootDirectory || "");
-  const [editGroupId, setEditGroupId] = useState<string | null>(project.groupId ?? null);
-  const [newGroupName, setNewGroupName] = useState("");
+  const [editParentId, setEditParentId] = useState<string | null>(project.parentId ?? null);
+
+  // New environment form state
+  const [newEnvOpen, setNewEnvOpen] = useState(false);
+  const [newEnvName, setNewEnvName] = useState("");
+  const [newEnvType, setNewEnvType] = useState<"staging" | "preview">("staging");
+  const [newEnvCloneFrom, setNewEnvCloneFrom] = useState<string>("__production");
+  const [newEnvBranch, setNewEnvBranch] = useState("");
+  const [newEnvSaving, setNewEnvSaving] = useState(false);
+
+  async function handleCreateEnv() {
+    const name = newEnvName.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-");
+    if (!name) return;
+    setNewEnvSaving(true);
+    try {
+      const cloneFrom = newEnvCloneFrom === "__none" ? undefined
+        : newEnvCloneFrom === "__production" ? productionEnv?.id
+        : newEnvCloneFrom;
+      const res = await fetch(
+        `/api/v1/organizations/${orgId}/projects/${project.id}/environments`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name,
+            type: newEnvType,
+            cloneFrom,
+            gitBranch: newEnvBranch.trim() || undefined,
+          }),
+        }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const newEnvId = data.environment.id;
+        setSelectedEnvId(newEnvId);
+        setNewEnvOpen(false);
+        setNewEnvName("");
+        setNewEnvBranch("");
+        setNewEnvCloneFrom("__production");
+        router.refresh();
+
+        // Auto-deploy the new environment
+        toast.success(`Environment "${name}" created — deploying...`);
+        fetch(`/api/v1/organizations/${orgId}/projects/${project.id}/deploy`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ environmentId: newEnvId }),
+        }).catch(() => {
+          toast.error("Auto-deploy failed");
+        });
+      } else {
+        const data = await res.json();
+        if (data.error?.includes("already exists")) {
+          const existing = project.environments.find((e) => e.name === name);
+          if (existing) setSelectedEnvId(existing.id);
+          setNewEnvOpen(false);
+          toast.info("Environment already exists");
+        } else {
+          toast.error(data.error || "Failed to create environment");
+        }
+      }
+    } catch {
+      toast.error("Failed to create environment");
+    } finally {
+      setNewEnvSaving(false);
+    }
+  }
 
   // Domain state
   const [domainOpen, setDomainOpen] = useState(false);
@@ -609,10 +704,44 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allGroup
 
   const [deploying, setDeploying] = useState(false);
   const [showVarNames, setShowVarNames] = useState(false);
-  const [selectedEnvId, setSelectedEnvId] = useState<string | undefined>(undefined);
+  // Environment selection — persist via URL path segment (/projects/{slug}/{env}/{tab})
+  const productionEnv = project.environments.find((e) => e.type === "production");
+  const initialEnvId = (() => {
+    if (initialEnv) {
+      const match = project.environments.find((e) => e.name === initialEnv);
+      if (match) return match.id;
+    }
+    return productionEnv?.id;
+  })();
+  const [selectedEnvId, setSelectedEnvIdRaw] = useState<string | undefined>(initialEnvId);
+  const [activeTab, setActiveTabState] = useState(initialTab);
+
+  // Wrap setSelectedEnvId to also update URL path
+  const setSelectedEnvId = useCallback((envId: string | undefined) => {
+    setSelectedEnvIdRaw(envId);
+    window.history.replaceState({}, "", buildProjectPath(project.name, project.environments, envId, activeTab));
+  }, [project.environments, project.name, activeTab]);
+
+  const selectedEnv = project.environments.find((e) => e.id === selectedEnvId)
+    ?? productionEnv;
+  // If selectedEnvId doesn't match any environment, reset to production
+  useEffect(() => {
+    if (selectedEnvId && !project.environments.find((e) => e.id === selectedEnvId)) {
+      setSelectedEnvId(productionEnv?.id);
+    }
+  }, [selectedEnvId, project.environments, productionEnv?.id, setSelectedEnvId]);
+
+  const isProduction = !selectedEnv || selectedEnv.type === "production";
+  // Filter deployments by selected environment
+  // Legacy deploys (environmentId=null) only show under production
+  const filteredDeployments = selectedEnvId
+    ? project.deployments.filter((d) =>
+        d.environmentId === selectedEnvId ||
+        (isProduction && d.environmentId === null)
+      )
+    : project.deployments;
   const [viewingLogId, setViewingLogId] = useState<string | null>(null);
   const searchParams = useSearchParams();
-  const [activeTab, setActiveTabState] = useState(initialTab);
 
   // Check domain resolution status via server-side API
   const checkAllDomains = useCallback(async () => {
@@ -695,10 +824,8 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allGroup
 
   const setActiveTab = useCallback((tab: string) => {
     setActiveTabState(tab);
-    const basePath = `/projects/${project.name}`;
-    const path = tab === "deployments" ? basePath : `${basePath}/${tab}`;
-    window.history.replaceState({}, "", path);
-  }, [project.name]);
+    window.history.replaceState({}, "", buildProjectPath(project.name, project.environments, selectedEnvId, tab));
+  }, [project.name, project.environments, selectedEnvId]);
 
   // Tag management state
   const [tagPopoverOpen, setTagPopoverOpen] = useState(false);
@@ -760,11 +887,10 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allGroup
       }
       if (editImageName.trim()) body.imageName = editImageName.trim();
       body.restartPolicy = restartPolicy;
-      // Don't send __new as groupId — only real IDs or null
-      if (editGroupId && editGroupId !== "__new") {
-        body.groupId = editGroupId;
-      } else if (editGroupId !== "__new") {
-        body.groupId = null;
+      if (editParentId) {
+        body.parentId = editParentId;
+      } else {
+        body.parentId = null;
       }
 
       const res = await fetch(
@@ -815,6 +941,36 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allGroup
     }
   }
 
+  async function handleDeleteEnvironment() {
+    if (!selectedEnvId || isProduction) return;
+    setDeletingEnv(true);
+    try {
+      const res = await fetch(
+        `/api/v1/organizations/${orgId}/projects/${project.id}/environments`,
+        {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ environmentId: selectedEnvId }),
+        }
+      );
+
+      if (!res.ok) {
+        const data = await res.json();
+        toast.error(data.error || "Failed to delete environment");
+        return;
+      }
+
+      toast.success(`Environment "${selectedEnv?.name}" deleted`);
+      setSelectedEnvId(productionEnv?.id);
+      setDeleteEnvOpen(false);
+      router.refresh();
+    } catch {
+      toast.error("Failed to delete environment");
+    } finally {
+      setDeletingEnv(false);
+    }
+  }
+
   const [deployLog, setDeployLog] = useState<string[]>([]);
   const [deployStartTime, setDeployStartTime] = useState<number | null>(null);
   const [deployStages, setDeployStages] = useState<
@@ -855,7 +1011,12 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allGroup
     try {
       const res = await fetch(
         `/api/v1/organizations/${orgId}/projects/${project.id}/deploy`,
-        { method: "POST", signal: abort.signal }
+        {
+          method: "POST",
+          signal: abort.signal,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ environmentId: selectedEnvId }),
+        }
       );
 
       if (!res.body) {
@@ -1093,88 +1254,186 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allGroup
               Edit
             </Button>
             {canDelete && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="text-destructive hover:text-destructive"
-                onClick={() => setDeleteOpen(true)}
-              >
-                <Trash2 className="mr-1.5 size-4" />
-                Delete
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    size="icon-sm"
+                    variant="outline"
+                  >
+                    <EllipsisVertical className="size-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {/* Parent switcher */}
+                  {!project.parent && allParentProjects.length > 0 && (
+                    <>
+                      <DropdownMenuItem
+                        className="text-muted-foreground"
+                        onClick={() => setEditOpen(true)}
+                      >
+                        <Plus className="mr-2 size-3.5" />
+                        Assign parent
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                    </>
+                  )}
+                  {!isProduction && selectedEnv && (
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onClick={() => setDeleteEnvOpen(true)}
+                    >
+                      <X className="mr-2 size-4" />
+                      Delete {selectedEnv.name} environment
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={() => setDeleteOpen(true)}
+                  >
+                    <Trash2 className="mr-2 size-4" />
+                    Delete project
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
           </div>
         }
       >
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {project.displayName}
-          </h1>
-          {project.group && (
+        {project.parent ? (
+          <>
+            <Link
+              href={`/projects/${encodeURIComponent(project.parent.name)}`}
+              className="text-2xl font-semibold tracking-tight hover:opacity-80 transition-opacity"
+            >
+              {project.parent.name}
+            </Link>
+            <span className="text-muted-foreground/40 text-xl">›</span>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button
-                  className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors hover:opacity-80"
-                  style={{
-                    backgroundColor: `${project.group.color}15`,
-                    color: project.group.color,
-                  }}
-                >
-                  <Layers className="size-3" />
-                  {project.group.name}
-                  {groupSiblings.length > 0 && (
-                    <ChevronDown className="size-3 opacity-60" />
-                  )}
-                </button>
+                <Button variant="outline" size="sm" className="gap-1.5">
+                  <span className={`size-2 rounded-full ${statusDotColor(project.status)}`} />
+                  {project.displayName}
+                  <ChevronDown className="size-3.5 opacity-60" />
+                </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
-                {groupSiblings.map((sibling) => (
+                {/* Parent project */}
+                <DropdownMenuItem asChild>
+                  <Link href={`/projects/${project.parent!.name}`} className="flex items-center gap-2">
+                    <Layers className="mr-2 size-3.5 text-muted-foreground" />
+                    {project.parent!.name}
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                {/* Current project */}
+                <DropdownMenuItem disabled>
+                  <span className={`mr-2 size-2 rounded-full ${statusDotColor(project.status)}`} />
+                  {project.displayName}
+                  <Check className="ml-auto size-3.5" />
+                </DropdownMenuItem>
+                {/* Sibling projects */}
+                {siblings.map((sibling) => (
                   <DropdownMenuItem key={sibling.name} asChild>
                     <Link href={`/projects/${sibling.name}`} className="flex items-center gap-2">
-                      <span className={`size-2 rounded-full ${
-                        sibling.status === "active" ? "bg-status-success" :
-                        sibling.status === "error" ? "bg-status-error" :
-                        "bg-status-neutral"
-                      }`} />
+                      <span className={`mr-2 size-2 rounded-full ${statusDotColor(sibling.status)}`} />
                       {sibling.displayName}
                     </Link>
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
-          )}
-        </div>
+          </>
+        ) : project.children && project.children.length > 0 ? (
+          <>
+            <h1 className="text-2xl font-semibold tracking-tight">
+              {project.displayName}
+            </h1>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-1.5">
+                  <Layers className="size-3.5 opacity-60" />
+                  Projects
+                  <ChevronDown className="size-3.5 opacity-60" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                {project.children.map((child) => (
+                  <DropdownMenuItem key={child.id} asChild>
+                    <Link href={`/projects/${child.name}`} className="flex items-center gap-2">
+                      <span className={`mr-2 size-2 rounded-full ${statusDotColor(child.status)}`} />
+                      {child.displayName}
+                    </Link>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </>
+        ) : (
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {project.displayName}
+          </h1>
+        )}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" className="gap-1.5">
-              <span className="size-2 rounded-full bg-status-success" />
-              Production
-              <ChevronDown className="size-3.5 text-muted-foreground" />
+            <Button
+              variant="outline"
+              size="sm"
+              className={`gap-1.5 ${!isProduction ? (
+                selectedEnv?.type === "staging"
+                  ? "border-status-warning/40 bg-status-warning-muted text-status-warning"
+                  : "border-status-info/40 bg-status-info-muted text-status-info"
+              ) : ""}`}
+            >
+              <span className={`size-2 rounded-full ${envTypeDotColor(selectedEnv?.type ?? "production")}`} />
+              {selectedEnv?.name ?? "production"}
+              <ChevronDown className="size-3.5 opacity-60" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
-            <DropdownMenuItem>
-              <span className="mr-2 size-2 rounded-full bg-status-success" />
-              Production
-            </DropdownMenuItem>
             {project.environments.map((env) => (
-              <DropdownMenuItem key={env.id}>
-                <span className={`mr-2 size-2 rounded-full ${
-                  env.type === "staging" ? "bg-status-warning" : "bg-status-info"
-                }`} />
+              <DropdownMenuItem
+                key={env.id}
+                onClick={() => setSelectedEnvId(env.id)}
+              >
+                <span className={`mr-2 size-2 rounded-full ${envTypeDotColor(env.type)}`} />
                 {env.name}
+                {env.gitBranch && env.type !== "production" && (
+                  <span className="ml-1 text-xs text-muted-foreground font-mono">{env.gitBranch}</span>
+                )}
+                {env.id === selectedEnvId && <Check className="ml-auto size-3.5" />}
               </DropdownMenuItem>
             ))}
+            <DropdownMenuSeparator />
             <DropdownMenuItem
               className="text-muted-foreground"
-              onClick={() => setActiveTab("environments")}
+              onClick={() => {
+                setNewEnvCloneFrom(
+                  isProduction ? "__production" : (selectedEnvId ?? "__production")
+                );
+                setNewEnvOpen(true);
+              }}
             >
               <Plus className="mr-2 size-3.5" />
-              Add environment
+              New environment
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </PageToolbar>
+
+      {/* Environment context banner */}
+      {selectedEnv && !isProduction && (
+        <div className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm ${
+          selectedEnv.type === "staging"
+            ? "bg-status-warning-muted text-status-warning"
+            : "bg-status-info-muted text-status-info"
+        }`}>
+          <span className={`size-2 rounded-full ${envTypeDotColor(selectedEnv.type)}`} />
+          Viewing <span className="font-medium">{selectedEnv.name}</span> environment
+          {filteredDeployments.length === 0 && (
+            <span className="text-xs opacity-70 ml-1">— no deployments yet, deploy to get started</span>
+          )}
+        </div>
+      )}
 
       {/* Overview */}
       <div className="flex gap-5">
@@ -1184,6 +1443,8 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allGroup
             imageName: project.imageName,
             gitUrl: project.gitUrl,
             deployType: project.deployType,
+            name: project.name,
+            displayName: project.displayName,
           });
           return iconUrl ? (
             <img src={iconUrl} alt="" className="size-12 shrink-0 mt-0.5 opacity-60" />
@@ -1300,11 +1561,19 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allGroup
       {/* Tabbed sections */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList variant="line">
+          {project.children && project.children.length > 0 && (
+            <TabsTrigger value="projects">
+              Projects
+              <Badge variant="secondary" className="ml-1.5 text-xs">
+                {project.children.length}
+              </Badge>
+            </TabsTrigger>
+          )}
           <TabsTrigger value="deployments">
             Deployments
-            {project.deployments.length > 0 && (
+            {filteredDeployments.length > 0 && (
               <Badge variant="secondary" className="ml-1.5 text-xs">
-                {project.deployments.length}
+                {filteredDeployments.length}
               </Badge>
             )}
           </TabsTrigger>
@@ -1339,18 +1608,52 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allGroup
           <TabsTrigger value="metrics">
             Metrics
           </TabsTrigger>
-          <TabsTrigger value="environments">
-            Environments
-            {project.environments.length > 0 && (
-              <Badge variant="secondary" className="ml-1.5 text-xs">
-                {project.environments.length}
-              </Badge>
-            )}
-          </TabsTrigger>
         </TabsList>
 
+        {/* Child projects tab — only for parent projects */}
+        {project.children && project.children.length > 0 && (
+          <TabsContent value="projects" className="pt-4">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {project.children.map((child) => {
+                const childIcon = detectProjectIcon({
+                  imageName: child.imageName,
+                  gitUrl: child.gitUrl,
+                  deployType: child.deployType,
+                  name: child.name,
+                  displayName: child.displayName,
+                });
+                const domain = child.domains.find((d) => d.isPrimary) || child.domains[0];
+                return (
+                  <Link
+                    key={child.id}
+                    href={`/projects/${child.name}`}
+                    className="squircle flex gap-4 rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50"
+                  >
+                    {childIcon ? (
+                      <img src={childIcon} alt="" className="size-10 shrink-0 opacity-70" />
+                    ) : (
+                      <div className="size-10 shrink-0 rounded-md bg-muted/50" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <h3 className="text-sm font-semibold truncate">{child.displayName}</h3>
+                        <span className={`size-2 rounded-full shrink-0 ${statusDotColor(child.status)}`} />
+                      </div>
+                      {domain && (
+                        <p className="text-xs text-muted-foreground font-mono truncate mt-0.5">
+                          {domain.domain}
+                        </p>
+                      )}
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </TabsContent>
+        )}
+
         <TabsContent value="deployments" className="pt-4 space-y-4">
-          {project.deployments.length === 0 && !deploying && !serverRunningDeploy ? (
+          {filteredDeployments.length === 0 && !deploying && !serverRunningDeploy ? (
             <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
               <p className="text-sm text-muted-foreground">
                 No deployments yet.
@@ -1382,7 +1685,7 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allGroup
                 />
               )}
 
-              {project.deployments
+              {filteredDeployments
                 .filter((d) => d.status !== "queued" && d.status !== "running")
                 .map((deployment, idx) => {
                 const isActive = deployment.status === "success" && project.status === "active" && idx === 0;
@@ -1609,38 +1912,6 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allGroup
         )}
 
         <TabsContent value="variables" className="pt-4 space-y-4">
-          {project.environments.length > 0 && (
-            <div className="flex items-center gap-3">
-              <span className="text-xs text-muted-foreground">Environment:</span>
-              <Select
-                value={selectedEnvId ?? "all"}
-                onValueChange={(v) => setSelectedEnvId(v === "all" ? undefined : v)}
-              >
-                <SelectTrigger className="w-48 h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All environments</SelectItem>
-                  {project.environments.map((env) => (
-                    <SelectItem key={env.id} value={env.id}>
-                      <span className="flex items-center gap-2">
-                        <span
-                          className={`size-1.5 rounded-full ${
-                            env.type === "production"
-                              ? "bg-status-success"
-                              : env.type === "staging"
-                              ? "bg-status-warning"
-                              : "bg-status-info"
-                          }`}
-                        />
-                        {env.name}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
           <EnvEditor
             projectId={project.id}
             projectName={project.name}
@@ -1872,7 +2143,8 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allGroup
 
         <TabsContent value="logs" className="pt-4">
           <LogViewer
-            streamUrl={`/api/v1/organizations/${orgId}/projects/${project.id}/logs/stream`}
+            key={`logs-${selectedEnvId}`}
+            streamUrl={`/api/v1/organizations/${orgId}/projects/${project.id}/logs/stream${selectedEnv ? `?environment=${selectedEnv.name}` : ""}`}
           />
         </TabsContent>
 
@@ -1885,21 +2157,108 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allGroup
         </TabsContent>
 
         <TabsContent value="terminal" className="pt-4">
-          <ProjectTerminal projectId={project.id} orgId={orgId} />
+          <ProjectTerminal key={`terminal-${selectedEnvId}`} projectId={project.id} orgId={orgId} />
         </TabsContent>
 
         <TabsContent value="metrics" className="pt-4">
-          <ProjectMetrics orgId={orgId} projectId={project.id} />
+          <ProjectMetrics key={`metrics-${selectedEnvId}`} orgId={orgId} projectId={project.id} environmentName={selectedEnv?.name} />
         </TabsContent>
 
-        <TabsContent value="environments" className="pt-4">
-          <ProjectEnvironments
-            projectId={project.id}
-            orgId={orgId}
-            environments={project.environments}
-          />
-        </TabsContent>
       </Tabs>
+
+      {/* New Environment Bottom Sheet */}
+      <BottomSheet open={newEnvOpen} onOpenChange={setNewEnvOpen}>
+        <BottomSheetContent>
+          <BottomSheetHeader>
+            <BottomSheetTitle>New environment</BottomSheetTitle>
+            <BottomSheetDescription>
+              Create a new environment from a branch. Variables are cloned from the source environment.
+            </BottomSheetDescription>
+          </BottomSheetHeader>
+
+          <div className="flex-1 overflow-y-auto px-6 pb-6">
+            <div className="grid gap-5 py-4">
+              {/* Branch + Name */}
+              <div className="grid gap-4 sm:grid-cols-2">
+                {project.source === "git" ? (
+                  <div className="grid gap-2">
+                    <Label>Branch</Label>
+                    <BranchSelect
+                      value={newEnvBranch}
+                      onChange={(v) => {
+                        const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+                        setNewEnvBranch(v);
+                        if (!newEnvName || newEnvName === slugify(newEnvBranch)) {
+                          setNewEnvName(slugify(v));
+                        }
+                      }}
+                      projectId={project.id}
+                      orgId={orgId}
+                      excludeBranch={project.gitBranch || "main"}
+                    />
+                  </div>
+                ) : (
+                  <div className="grid gap-2">
+                    <Label>Name</Label>
+                    <Input
+                      placeholder="e.g. staging, qa, demo"
+                      value={newEnvName}
+                      onChange={(e) => setNewEnvName(e.target.value)}
+                    />
+                  </div>
+                )}
+                <div className="grid gap-2">
+                  <Label>Environment name</Label>
+                  <Input
+                    placeholder={project.source === "git" ? "Auto-generated from branch" : "e.g. staging, qa"}
+                    value={newEnvName}
+                    onChange={(e) => setNewEnvName(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Clone source */}
+              <div className="grid gap-2 sm:w-1/2">
+                <Label>Clone variables from</Label>
+                <Select value={newEnvCloneFrom} onValueChange={setNewEnvCloneFrom}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__production">Production</SelectItem>
+                    {project.environments
+                      .filter((e) => e.type !== "production")
+                      .map((e) => (
+                        <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>
+                      ))}
+                    <SelectItem value="__none">Empty (no variables)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+
+          <BottomSheetFooter>
+            <Button
+              variant="outline"
+              onClick={() => { setNewEnvOpen(false); setNewEnvName(""); setNewEnvBranch(""); setNewEnvCloneFrom("__production"); }}
+              disabled={newEnvSaving}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateEnv}
+              disabled={!newEnvName.trim() || newEnvSaving || (project.source === "git" && !newEnvBranch.trim())}
+            >
+              {newEnvSaving ? (
+                <><Loader2 className="mr-2 size-4 animate-spin" />Creating...</>
+              ) : (
+                "Create & Deploy"
+              )}
+            </Button>
+          </BottomSheetFooter>
+        </BottomSheetContent>
+      </BottomSheet>
 
       {/* Edit Bottom Sheet */}
       <BottomSheet open={editOpen} onOpenChange={setEditOpen}>
@@ -1952,11 +2311,12 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allGroup
               {project.source === "git" && (
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="grid gap-2">
-                    <Label htmlFor="edit-git-branch">Branch</Label>
-                    <Input
-                      id="edit-git-branch"
+                    <Label>Branch</Label>
+                    <BranchSelect
                       value={gitBranch}
-                      onChange={(e) => setGitBranch(e.target.value)}
+                      onChange={setGitBranch}
+                      projectId={project.id}
+                      orgId={orgId}
                     />
                   </div>
                   <div className="grid gap-2">
@@ -2027,86 +2387,56 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allGroup
                 </div>
               </div>
 
-              {/* Group */}
-              <div className="grid gap-2">
-                <Label>Group</Label>
-                <Select
-                  value={editGroupId === "__new" ? "__new" : (editGroupId ?? "__none")}
-                  onValueChange={(v) => {
-                    if (v === "__new") {
-                      setEditGroupId("__new");
-                      setNewGroupName("");
-                    } else {
-                      setEditGroupId(v === "__none" ? null : v);
-                    }
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="No group" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none">No group</SelectItem>
-                    {allGroups.map((g) => (
-                      <SelectItem key={g.id} value={g.id}>
-                        <span className="flex items-center gap-2">
-                          <span
-                            className="size-2 rounded-full"
-                            style={{ backgroundColor: g.color }}
-                          />
-                          {g.name}
-                        </span>
-                      </SelectItem>
-                    ))}
-                    <SelectItem value="__new">
-                      <span className="flex items-center gap-2">
-                        <Plus className="size-3.5" />
-                        New group
+              {/* Parent Project */}
+              {project.children && project.children.length > 0 ? (
+                <div className="grid gap-2">
+                  <Label>Parent Project</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Parent projects cannot be nested. Children:{" "}
+                    {project.children!.map((c, i) => (
+                      <span key={c.id}>
+                        {i > 0 && ", "}
+                        <Link
+                          href={`/projects/${c.name}`}
+                          className="text-primary hover:underline"
+                          onClick={() => setEditOpen(false)}
+                        >
+                          {c.displayName}
+                        </Link>
                       </span>
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-                {editGroupId === "__new" && (
-                  <div className="flex items-center gap-2">
-                    <Input
-                      placeholder="Group name"
-                      value={newGroupName}
-                      onChange={(e) => setNewGroupName(e.target.value)}
-                      className="flex-1"
-                      autoFocus
-                    />
-                    <Button
-                      size="sm"
-                      disabled={!newGroupName.trim()}
-                      onClick={async () => {
-                        try {
-                          const res = await fetch(`/api/v1/organizations/${orgId}/groups`, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ name: newGroupName.trim() }),
-                          });
-                          if (res.ok) {
-                            const data = await res.json();
-                            setEditGroupId(data.group.id);
-                            allGroups.push(data.group);
-                            setNewGroupName("");
-                            toast.success(`Group "${data.group.name}" created`);
-                          } else {
-                            const err = await res.json();
-                            toast.error(err.error || "Failed to create group");
-                          }
-                        } catch {
-                          toast.error("Failed to create group");
-                        }
-                      }}
-                    >
-                      Create
-                    </Button>
-                  </div>
-                )}
-                <p className="text-xs text-muted-foreground">
-                  Groups let you deploy related services together.
-                </p>
-              </div>
+                    ))}
+                  </p>
+                </div>
+              ) : (
+                <div className="grid gap-2">
+                  <Label>Parent Project</Label>
+                  <Select
+                    value={editParentId ?? "__none"}
+                    onValueChange={(v) => setEditParentId(v === "__none" ? null : v)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="None" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none">Standalone</SelectItem>
+                      {allParentProjects.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          <span className="flex items-center gap-2">
+                            <span
+                              className="size-2 rounded-full"
+                              style={{ backgroundColor: p.color }}
+                            />
+                            {p.name}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Child projects deploy together with their parent and share environments.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -2268,14 +2598,24 @@ export function ProjectDetail({ project, orgId, userRole, allTags = [], allGroup
         );
       })()}
 
-      {/* Delete Confirmation */}
+      {/* Delete Project Confirmation */}
       <ConfirmDeleteDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
         title="Delete project"
-        description={`Are you sure you want to delete "${project.displayName}"? This will remove all deployments, domains, and environment variables. This action cannot be undone.`}
+        description={`Are you sure you want to delete "${project.displayName}"? This will remove all environments, deployments, domains, and environment variables. This action cannot be undone.`}
         onConfirm={handleDelete}
         loading={deleting}
+      />
+
+      {/* Delete Environment Confirmation */}
+      <ConfirmDeleteDialog
+        open={deleteEnvOpen}
+        onOpenChange={setDeleteEnvOpen}
+        title={`Delete ${selectedEnv?.name} environment`}
+        description={`Are you sure you want to delete the "${selectedEnv?.name}" environment? This will remove its environment variables and deployments. The project itself will not be affected.`}
+        onConfirm={handleDeleteEnvironment}
+        loading={deletingEnv}
       />
     </div>
   );

@@ -150,7 +150,7 @@ export async function acceptTransfer(
     .update(projects)
     .set({
       organizationId: transfer.destinationOrgId,
-      groupId: null, // Remove from group (groups are org-scoped)
+      parentId: null, // Remove from parent (parent projects are org-scoped)
       updatedAt: new Date(),
     })
     .where(eq(projects.id, transfer.projectId));

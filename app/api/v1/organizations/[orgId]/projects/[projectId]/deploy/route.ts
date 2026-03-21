@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { projects } from "@/lib/db/schema";
+import { projects, environments } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { deployProject } from "@/lib/docker/deploy";
+import { deployGroup } from "@/lib/docker/deploy-group";
+import { createSSEResponse } from "@/lib/api/sse";
 
 type RouteParams = {
   params: Promise<{ orgId: string; projectId: string }>;
@@ -32,58 +35,79 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream({
-      start(controller) {
-        function sendEvent(event: string, data: unknown) {
-          try {
-            controller.enqueue(
-              encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
-            );
-          } catch { /* stream closed */ }
-        }
+    // Parse optional environmentId and groupEnvironmentId from body
+    let environmentId: string | undefined;
+    let groupEnvironmentId: string | undefined;
+    try {
+      const body = await request.json();
+      environmentId = body?.environmentId;
+      groupEnvironmentId = body?.groupEnvironmentId;
+    } catch {
+      // No body or invalid JSON — deploy to default (production)
+    }
 
-        deployProject({
-          projectId,
+    // Check if this project has children (is a parent/group project)
+    const firstChild = await db.query.projects.findFirst({
+      where: eq(projects.parentId, projectId),
+      columns: { id: true },
+    });
+
+    if (firstChild) {
+      // Parent project — deploy all children
+      return createSSEResponse(request, async (sendEvent) => {
+        const result = await deployGroup({
+          parentProjectId: projectId,
           organizationId: orgId,
           trigger: "manual",
           triggeredBy: session.user.id,
-          onLog: (line) => sendEvent("log", line),
-          onStage: (stg, status) => sendEvent("stage", { stage: stg, status }),
+          groupEnvironmentId,
+          onLog: (projectName, line) =>
+            sendEvent("log", { project: projectName, line }),
+          onStage: (projectName, stage, status) =>
+            sendEvent("stage", { project: projectName, stage, status }),
+          onTier: (tier, projectNames) =>
+            sendEvent("tier", { tier, projects: projectNames }),
           signal: request.signal,
-        }).then((result) => {
-          sendEvent("done", {
-            deploymentId: result.deploymentId,
-            success: result.success,
-            durationMs: result.durationMs,
-          });
-          try { controller.close(); } catch { /* already closed */ }
-        }).catch((err) => {
-          sendEvent("error", { message: err instanceof Error ? err.message : "Deploy failed" });
-          try { controller.close(); } catch { /* already closed */ }
         });
-
-        request.signal.addEventListener("abort", () => {
-          try { controller.close(); } catch { /* already closed */ }
+        sendEvent("done", {
+          success: result.success,
+          results: result.results,
+          totalDurationMs: result.totalDurationMs,
         });
-      },
-    });
+      });
+    }
 
-    return new Response(stream, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-      },
+    // Single project deploy
+    // Default to production environment
+    if (!environmentId) {
+      const defaultEnv = await db.query.environments.findFirst({
+        where: and(
+          eq(environments.projectId, projectId),
+          eq(environments.isDefault, true),
+        ),
+        columns: { id: true },
+      });
+      environmentId = defaultEnv?.id;
+    }
+
+    return createSSEResponse(request, async (sendEvent) => {
+      const result = await deployProject({
+        projectId,
+        organizationId: orgId,
+        trigger: "manual",
+        triggeredBy: session.user.id,
+        environmentId,
+        onLog: (line) => sendEvent("log", line),
+        onStage: (stg, status) => sendEvent("stage", { stage: stg, status }),
+        signal: request.signal,
+      });
+      sendEvent("done", {
+        deploymentId: result.deploymentId,
+        success: result.success,
+        durationMs: result.durationMs,
+      });
     });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error deploying project:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error deploying project");
   }
 }

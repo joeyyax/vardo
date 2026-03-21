@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apiTokens } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
@@ -47,14 +48,10 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       })),
     });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
     if (error instanceof Error && error.message === "No organization found") {
       return NextResponse.json({ error: "No organization found" }, { status: 404 });
     }
-    console.error("Error fetching tokens:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return handleRouteError(error, "Error fetching tokens");
   }
 }
 
@@ -91,11 +88,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // Return the raw token only once
     return NextResponse.json({ token: rawToken }, { status: 201 });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error creating token:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return handleRouteError(error, "Error creating token");
   }
 }
 
@@ -134,10 +127,6 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error deleting token:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return handleRouteError(error, "Error deleting token");
   }
 }

@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { projects } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
@@ -76,10 +77,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       },
     });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return new Response("Unauthorized", { status: 401 });
-    }
-    console.error("Error streaming events:", error);
-    return new Response("Internal server error", { status: 500 });
+    return handleRouteError(error, "Error streaming events");
   }
 }

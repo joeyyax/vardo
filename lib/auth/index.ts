@@ -65,6 +65,14 @@ export const auth = betterAuth({
     updateAge: 60 * 60 * 24, // Update session every 24 hours
   },
 
+  // Social login providers
+  socialProviders: {
+    github: {
+      clientId: process.env.GITHUB_CLIENT_ID!,
+      clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+    },
+  },
+
   // Account configuration
   account: {
     accountLinking: {

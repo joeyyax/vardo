@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { projects } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
@@ -31,7 +32,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const metrics = await fetchProjectMetrics(project.name);
+    const environment = _request.nextUrl.searchParams.get("environment") || undefined;
+    const metrics = await fetchProjectMetrics(project.name, environment);
 
     return NextResponse.json({
       containers: metrics.map((m) => ({
@@ -51,10 +53,6 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error fetching container stats:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return handleRouteError(error, "Error fetching container stats");
   }
 }

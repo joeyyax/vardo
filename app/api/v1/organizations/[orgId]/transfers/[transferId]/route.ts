@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { projectTransfers, memberships } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
@@ -139,19 +140,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ success: true, status: "rejected" });
     }
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
     if (
       error instanceof Error &&
       error.message === "Transfer not found or not pending"
     ) {
       return NextResponse.json({ error: error.message }, { status: 404 });
     }
-    console.error("Error responding to transfer:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
-    );
+    return handleRouteError(error, "Error responding to transfer");
   }
 }

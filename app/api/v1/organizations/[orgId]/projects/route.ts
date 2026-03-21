@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { projects, domains, organizations } from "@/lib/db/schema";
+import { projects, domains, organizations, environments } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { generateSubdomain } from "@/lib/domains/auto-domain";
@@ -50,7 +51,8 @@ const createProjectSchema = z
       value: z.string(),
       copyRef: z.string().optional(),
     })).optional(),
-    groupId: z.string().optional(),
+    parentId: z.string().optional(),
+    color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   })
   .refine(
     (data) => {
@@ -84,23 +86,15 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         projectTags: {
           with: { tag: true },
         },
-        projectGroups: {
-          with: { group: true },
-        },
+        parent: true,
+        children: { columns: { id: true } },
       },
       orderBy: [desc(projects.createdAt)],
     });
 
     return NextResponse.json({ projects: projectList });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error fetching projects:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error fetching projects");
   }
 }
 
@@ -150,6 +144,26 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const projectId = nanoid();
 
+    // Validate parentId — must exist in same org and not itself be a child
+    if (data.parentId) {
+      const parentProject = await db.query.projects.findFirst({
+        where: and(eq(projects.id, data.parentId), eq(projects.organizationId, orgId)),
+        columns: { id: true, parentId: true },
+      });
+      if (!parentProject) {
+        return NextResponse.json(
+          { error: "Parent project not found in this organization" },
+          { status: 400 }
+        );
+      }
+      if (parentProject.parentId) {
+        return NextResponse.json(
+          { error: "That project already has a parent" },
+          { status: 400 }
+        );
+      }
+    }
+
     const [project] = await db
       .insert(projects)
       .values({
@@ -169,7 +183,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         containerPort: data.containerPort,
         autoTraefikLabels: data.autoTraefikLabels,
         autoDeploy: data.autoDeploy,
-        groupId: data.groupId || null,
+        parentId: data.parentId || null,
+        color: data.color || undefined,
         persistentVolumes: data.persistentVolumes,
         exposedPorts: data.exposedPorts ? await (async () => {
           // Auto-allocate external ports for any that don't have one
@@ -186,6 +201,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         connectionInfo: data.connectionInfo,
       })
       .returning();
+
+    // Auto-create production environment
+    await db.insert(environments).values({
+      id: nanoid(),
+      projectId,
+      name: "production",
+      type: "production",
+      isDefault: true,
+    });
 
     // Auto-create domain if requested
     if (data.generateDomain) {
@@ -221,9 +245,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ project }, { status: 201 });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
     // Unique constraint violation (Postgres error code 23505)
     const pgCode = error instanceof Error
       ? ("code" in error ? (error as { code: string }).code : null) ??
@@ -235,10 +256,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         { status: 409 }
       );
     }
-    console.error("Error creating project:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error creating project");
   }
 }

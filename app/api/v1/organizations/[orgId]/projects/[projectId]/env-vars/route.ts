@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { envVars, projects } from "@/lib/db/schema";
-import { requireOrg } from "@/lib/auth/session";
+import { envVars } from "@/lib/db/schema";
 import { eq, and, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { parseEnvContent } from "@/lib/env/parse-env-content";
+import { verifyProjectAccess } from "@/lib/api/verify-access";
 
 type RouteParams = {
   params: Promise<{ orgId: string; projectId: string }>;
@@ -47,24 +48,6 @@ const bulkUpsertSchema = z
   .refine((data) => data.content !== undefined || data.vars !== undefined, {
     message: "Either 'content' or 'vars' must be provided",
   });
-
-async function verifyProjectAccess(orgId: string, projectId: string) {
-  const { organization } = await requireOrg();
-
-  if (organization.id !== orgId) {
-    return null;
-  }
-
-  const project = await db.query.projects.findFirst({
-    where: and(
-      eq(projects.id, projectId),
-      eq(projects.organizationId, orgId)
-    ),
-    columns: { id: true },
-  });
-
-  return project;
-}
 
 // GET /api/v1/organizations/[orgId]/projects/[projectId]/env-vars
 export async function GET(request: NextRequest, { params }: RouteParams) {
@@ -124,14 +107,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ envVars: vars });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error fetching env vars:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error fetching env vars");
   }
 }
 
@@ -174,9 +150,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ envVar: created }, { status: 201 });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
     if (
       error instanceof Error &&
       "code" in error &&
@@ -187,11 +160,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         { status: 409 }
       );
     }
-    console.error("Error creating env var:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error creating env var");
   }
 }
 
@@ -238,14 +207,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ envVar: updated });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error updating env var:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error updating env var");
   }
 }
 
@@ -285,14 +247,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error deleting env var:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error deleting env var");
   }
 }
 
@@ -394,13 +349,6 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ created, updated });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error bulk upserting env vars:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error bulk upserting env vars");
   }
 }

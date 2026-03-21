@@ -1,31 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { environments, projects } from "@/lib/db/schema";
-import { requireOrg } from "@/lib/auth/session";
+import { environments } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
+import { verifyProjectAccess } from "@/lib/api/verify-access";
 
 type RouteParams = {
   params: Promise<{ orgId: string; projectId: string; envId: string }>;
 };
-
-async function verifyProjectAccess(orgId: string, projectId: string) {
-  const { organization } = await requireOrg();
-
-  if (organization.id !== orgId) {
-    return null;
-  }
-
-  const project = await db.query.projects.findFirst({
-    where: and(
-      eq(projects.id, projectId),
-      eq(projects.organizationId, orgId)
-    ),
-    columns: { id: true },
-  });
-
-  return project;
-}
 
 const updateEnvironmentSchema = z.object({
   name: z
@@ -80,9 +63,6 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ environment: updated });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
     if (
       error instanceof Error &&
       "code" in error &&
@@ -93,11 +73,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         { status: 409 }
       );
     }
-    console.error("Error updating environment:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error updating environment");
   }
 }
 
@@ -154,13 +130,6 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error deleting environment:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error deleting environment");
   }
 }

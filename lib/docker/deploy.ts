@@ -119,6 +119,21 @@ export async function runDeployment(
 
     if (!project) throw new Error("Project not found");
 
+    // Resolve environment name + branch override for container/directory naming
+    let envName = "production";
+    let envBranchOverride: string | null = null;
+    if (opts.environmentId) {
+      const env = await db.query.environments.findFirst({
+        where: eq(environments.id, opts.environmentId),
+        columns: { name: true, gitBranch: true },
+      });
+      if (env) {
+        envName = env.name;
+        envBranchOverride = env.gitBranch;
+      }
+    }
+    log(`[deploy] Environment: ${envName}`);
+
     stage("clone", "running");
     log(`[deploy] Project: ${project.displayName} (${project.name})`);
     log(`[deploy] Source: ${project.source}, Type: ${project.deployType}`);
@@ -158,7 +173,9 @@ export async function runDeployment(
     let compose: ComposeFile;
     let builtLocally = false;
     let hostConfig: import("@/lib/config/host-config").HostConfig | null = null;
-    const projectDir = join(PROJECTS_DIR, project.name);
+    // Project-level dir holds the repo; env-level dir holds slots
+    const projectBaseDir = join(PROJECTS_DIR, project.name);
+    const projectDir = join(projectBaseDir, envName);
     await mkdir(projectDir, { recursive: true });
 
     if (project.deployType === "image" && project.imageName) {
@@ -180,8 +197,9 @@ export async function runDeployment(
       log(`[deploy] Generated compose for image: ${project.imageName}`);
     } else if (project.source === "git" && project.gitUrl) {
       // Git source — clone/pull repo with GitHub App auth if needed
-      const repoDir = join(projectDir, "repo");
-      const branch = project.gitBranch || "main";
+      // Repo lives at project level (shared across environments)
+      const repoDir = join(projectBaseDir, "repo");
+      const branch = envBranchOverride || project.gitBranch || "main";
 
       // Build authenticated clone URL for private repos
       let cloneUrl = project.gitUrl;
@@ -471,6 +489,7 @@ export async function runDeployment(
           "host.project": project.name,
           "host.project.id": project.id,
           "host.deployment.id": deploymentId,
+          "host.environment": envName,
           "host.managed": "true",
         },
       };
@@ -484,7 +503,7 @@ export async function runDeployment(
     } catch { /* no active slot yet */ }
 
     const newSlot = activeSlot === "blue" ? "green" : "blue";
-    const newProjectName = `${project.name}-${newSlot}`;
+    const newProjectName = `${project.name}-${envName}-${newSlot}`;
     const slotDir = join(projectDir, newSlot);
     await mkdir(slotDir, { recursive: true });
 
@@ -543,7 +562,7 @@ export async function runDeployment(
               id: true,
               name: true,
               displayName: true,
-              groupId: true,
+              parentId: true,
               containerPort: true,
               gitUrl: true,
               gitBranch: true,
@@ -575,9 +594,9 @@ export async function runDeployment(
           // groupEnvironmentId, try to resolve from the matching environment
           if (
             opts.groupEnvironmentId &&
-            refProject.groupId &&
-            project.groupId &&
-            refProject.groupId === project.groupId
+            refProject.parentId &&
+            project.parentId &&
+            refProject.parentId === project.parentId
           ) {
             // Find the environment on the referenced project that belongs
             // to the same group environment
@@ -692,7 +711,7 @@ export async function runDeployment(
     // Step 10: Tear down old slot
     if (activeSlot) {
       const oldSlotDir = join(projectDir, activeSlot);
-      const oldProjectName = `${project.name}-${activeSlot}`;
+      const oldProjectName = `${project.name}-${envName}-${activeSlot}`;
       const oldComposePath = join(oldSlotDir, "docker-compose.yml");
       try {
         await execAsync(
@@ -1119,32 +1138,71 @@ function sleep(ms: number): Promise<void> {
 // Stop / Restart
 // ---------------------------------------------------------------------------
 
-export async function stopProject(
-  projectId: string,
-  projectName: string
-): Promise<{ success: boolean; log: string }> {
-  const logs: string[] = [];
+async function stopSlotInDir(
+  dir: string,
+  projectPrefix: string,
+  logs: string[],
+): Promise<void> {
+  let activeSlot: string;
   try {
-    const projectDir = join(PROJECTS_DIR, projectName);
+    activeSlot = (await readFile(join(dir, ".active-slot"), "utf-8")).trim();
+  } catch {
+    activeSlot = "blue";
+  }
 
-    // Read active slot
-    let activeSlot: string;
-    try {
-      activeSlot = (await readFile(join(projectDir, ".active-slot"), "utf-8")).trim();
-    } catch {
-      activeSlot = "blue";
-    }
+  const slotDir = join(dir, activeSlot);
+  const composePath = join(slotDir, "docker-compose.yml");
+  const composeProject = `${projectPrefix}-${activeSlot}`;
 
-    const slotDir = join(projectDir, activeSlot);
-    const composePath = join(slotDir, "docker-compose.yml");
-    const composeProject = `${projectName}-${activeSlot}`;
-
+  try {
     const { stdout, stderr } = await execAsync(
       `docker compose -f "${composePath}" -p "${composeProject}" down`,
       { cwd: slotDir, timeout: 60000 }
     );
     if (stdout.trim()) logs.push(stdout.trim());
     if (stderr.trim()) logs.push(stderr.trim());
+  } catch (err) {
+    logs.push(`Warning: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+export async function stopProject(
+  projectId: string,
+  projectName: string,
+  environmentName?: string,
+): Promise<{ success: boolean; log: string }> {
+  const logs: string[] = [];
+  try {
+    if (environmentName) {
+      // Stop specific environment
+      const envDir = join(PROJECTS_DIR, projectName, environmentName);
+      await stopSlotInDir(envDir, `${projectName}-${environmentName}`, logs);
+    } else {
+      // Stop all environments — try env-aware layout first
+      const baseDir = join(PROJECTS_DIR, projectName);
+      try {
+        const { readdir } = await import("fs/promises");
+        const entries = await readdir(baseDir, { withFileTypes: true });
+        const envDirs = entries.filter((e) => e.isDirectory() && e.name !== "repo");
+        if (envDirs.length > 0) {
+          for (const entry of envDirs) {
+            // Skip blue/green slot dirs at project root (legacy layout)
+            if (entry.name === "blue" || entry.name === "green") {
+              await stopSlotInDir(baseDir, projectName, logs);
+              break;
+            }
+            const envDir = join(baseDir, entry.name);
+            await stopSlotInDir(envDir, `${projectName}-${entry.name}`, logs);
+          }
+        } else {
+          // Legacy: slot dirs directly under project
+          await stopSlotInDir(baseDir, projectName, logs);
+        }
+      } catch {
+        // Fallback to legacy layout
+        await stopSlotInDir(baseDir, projectName, logs);
+      }
+    }
 
     await db
       .update(projects)
@@ -1160,22 +1218,28 @@ export async function stopProject(
 
 export async function restartProject(
   projectId: string,
-  projectName: string
+  projectName: string,
+  environmentName?: string,
 ): Promise<{ success: boolean; log: string }> {
   const logs: string[] = [];
   try {
-    const projectDir = join(PROJECTS_DIR, projectName);
+    const dir = environmentName
+      ? join(PROJECTS_DIR, projectName, environmentName)
+      : join(PROJECTS_DIR, projectName);
+    const prefix = environmentName
+      ? `${projectName}-${environmentName}`
+      : projectName;
 
     let activeSlot: string;
     try {
-      activeSlot = (await readFile(join(projectDir, ".active-slot"), "utf-8")).trim();
+      activeSlot = (await readFile(join(dir, ".active-slot"), "utf-8")).trim();
     } catch {
       activeSlot = "blue";
     }
 
-    const slotDir = join(projectDir, activeSlot);
+    const slotDir = join(dir, activeSlot);
     const composePath = join(slotDir, "docker-compose.yml");
-    const composeProject = `${projectName}-${activeSlot}`;
+    const composeProject = `${prefix}-${activeSlot}`;
 
     const { stdout, stderr } = await execAsync(
       `docker compose -f "${composePath}" -p "${composeProject}" restart`,

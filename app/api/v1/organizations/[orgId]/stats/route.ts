@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { projects } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
@@ -36,8 +37,30 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       const fromMs = parseInt(from);
       const toMs = parseInt(to);
       const bucketMs = parseInt(bucket || "30000");
+      const perProject = searchParams.get("perProject") === "true";
 
-      const activeNames = orgProjects.filter((p) => p.status === "active").map((p) => p.name);
+      const activeProjects = orgProjects.filter((p) => p.status === "active");
+      const activeNames = activeProjects.map((p) => p.name);
+
+      if (perProject) {
+        // Per-project sparklines for all metrics (project grid cards)
+        const result: Record<string, { cpu: [number, number][]; memory: [number, number][]; networkRx: [number, number][]; networkTx: [number, number][]; disk: [number, number][] }> = {};
+
+        await Promise.allSettled(
+          activeProjects.map(async (p) => {
+            const [cpu, memory, networkRx, networkTx, disk] = await Promise.all([
+              queryMetrics(p.name, "cpu", fromMs, toMs, { type: "avg", bucketMs }),
+              queryMetrics(p.name, "memory", fromMs, toMs, { type: "avg", bucketMs }),
+              queryMetrics(p.name, "networkRx", fromMs, toMs, { type: "sum", bucketMs }),
+              queryMetrics(p.name, "networkTx", fromMs, toMs, { type: "sum", bucketMs }),
+              queryMetrics(p.name, "disk", fromMs, toMs, { type: "avg", bucketMs }),
+            ]);
+            result[p.id] = { cpu, memory, networkRx, networkTx, disk };
+          })
+        );
+
+        return NextResponse.json({ projects: result });
+      }
 
       // Aggregate across all projects
       const allCpu: Map<number, number> = new Map();
@@ -109,10 +132,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       });
     }
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error fetching org stats:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return handleRouteError(error, "Error fetching org stats");
   }
 }

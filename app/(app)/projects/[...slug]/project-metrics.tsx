@@ -34,6 +34,7 @@ type TimeSeriesPoint = {
 type ProjectMetricsProps = {
   orgId: string;
   projectId: string;
+  environmentName?: string;
 };
 
 const MAX_DATA_POINTS = 150; // ~5 minutes at 2s intervals
@@ -98,7 +99,7 @@ function ContainerTable({ containers }: { containers: ContainerStatsSnapshot[] }
   );
 }
 
-export function ProjectMetrics({ orgId, projectId }: ProjectMetricsProps) {
+export function ProjectMetrics({ orgId, projectId, environmentName }: ProjectMetricsProps) {
   const [data, setData] = useState<TimeSeriesPoint[]>([]);
   const [containers, setContainers] = useState<ContainerStatsSnapshot[]>([]);
   const [connected, setConnected] = useState(false);
@@ -219,7 +220,7 @@ export function ProjectMetrics({ orgId, projectId }: ProjectMetricsProps) {
   }, []);
 
   useEffect(() => {
-    const url = `/api/v1/organizations/${orgId}/projects/${projectId}/stats/stream`;
+    const url = `/api/v1/organizations/${orgId}/projects/${projectId}/stats/stream${environmentName ? `?environment=${environmentName}` : ""}`;
     const es = new EventSource(url);
     eventSourceRef.current = es;
 

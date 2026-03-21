@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { projects } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
@@ -6,6 +7,7 @@ import { eq, and } from "drizzle-orm";
 import { spawn } from "child_process";
 import { resolve } from "path";
 import { readFile } from "fs/promises";
+import { createSSEResponse } from "@/lib/api/sse";
 
 const PROJECTS_DIR = resolve(process.env.HOST_PROJECTS_DIR || "./.host/projects");
 
@@ -37,84 +39,68 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const searchParams = request.nextUrl.searchParams;
     const tail = searchParams.get("tail") || "200";
+    const environmentName = searchParams.get("environment") || "production";
 
-    // Find the active slot
-    const projectDir = resolve(PROJECTS_DIR, project.name);
+    // Find the active slot — check environment-aware layout first, fall back to legacy
+    let projectDir = resolve(PROJECTS_DIR, project.name, environmentName);
     let activeSlot = "blue";
     try {
       activeSlot = (await readFile(resolve(projectDir, ".active-slot"), "utf-8")).trim();
-    } catch { /* default to blue */ }
+    } catch {
+      // Fall back to legacy layout (no environment subdirectory)
+      projectDir = resolve(PROJECTS_DIR, project.name);
+      try {
+        activeSlot = (await readFile(resolve(projectDir, ".active-slot"), "utf-8")).trim();
+      } catch { /* default to blue */ }
+    }
 
     const slotDir = resolve(projectDir, activeSlot);
     const composePath = resolve(slotDir, "docker-compose.yml");
-    const composeProject = `${project.name}-${activeSlot}`;
+    // Use env-aware compose project name if environment directory exists
+    const envAware = projectDir.endsWith(environmentName);
+    const composeProject = envAware
+      ? `${project.name}-${environmentName}-${activeSlot}`
+      : `${project.name}-${activeSlot}`;
 
-    // Create SSE stream
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream({
-      start(controller) {
-        // Spawn docker compose logs -f
-        const proc = spawn("docker", [
-          "compose",
-          "-f", composePath,
-          "-p", composeProject,
-          "logs",
-          "-f",
-          "--tail", tail,
-          "--no-log-prefix",
-        ], { cwd: slotDir });
+    return createSSEResponse(request, async (sendEvent) => {
+      const proc = spawn("docker", [
+        "compose",
+        "-f", composePath,
+        "-p", composeProject,
+        "logs",
+        "-f",
+        "--tail", tail,
+        "--no-log-prefix",
+      ], { cwd: slotDir });
 
-        function send(data: string) {
-          try {
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
-          } catch {
-            proc.kill();
-          }
+      proc.stdout.on("data", (chunk: Buffer) => {
+        const lines = chunk.toString().split("\n");
+        for (const line of lines) {
+          if (line) sendEvent("log", line);
         }
+      });
 
-        proc.stdout.on("data", (chunk: Buffer) => {
-          const lines = chunk.toString().split("\n");
-          for (const line of lines) {
-            if (line) send(line);
-          }
-        });
+      proc.stderr.on("data", (chunk: Buffer) => {
+        const lines = chunk.toString().split("\n");
+        for (const line of lines) {
+          if (line) sendEvent("log", line);
+        }
+      });
 
-        proc.stderr.on("data", (chunk: Buffer) => {
-          const lines = chunk.toString().split("\n");
-          for (const line of lines) {
-            if (line) send(line);
-          }
-        });
+      proc.on("error", (err) => {
+        sendEvent("log", `[error] ${err.message}`);
+      });
 
-        proc.on("error", (err) => {
-          send(`[error] ${err.message}`);
-          controller.close();
-        });
+      request.signal.addEventListener("abort", () => {
+        proc.kill();
+      });
 
-        proc.on("close", () => {
-          try { controller.close(); } catch { /* already closed */ }
-        });
-
-        // Clean up when client disconnects
-        request.signal.addEventListener("abort", () => {
-          proc.kill();
-          try { controller.close(); } catch { /* already closed */ }
-        });
-      },
-    });
-
-    return new Response(stream, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-      },
+      // Keep the handler alive until the process exits
+      await new Promise<void>((resolve) => {
+        proc.on("close", () => resolve());
+      });
     });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return new Response("Unauthorized", { status: 401 });
-    }
-    console.error("Error streaming logs:", error);
-    return new Response("Internal server error", { status: 500 });
+    return handleRouteError(error, "Error streaming logs");
   }
 }

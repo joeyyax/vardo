@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { cronJobs, projects } from "@/lib/db/schema";
-import { requireOrg } from "@/lib/auth/session";
+import { cronJobs } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
+import { verifyProjectAccess } from "@/lib/api/verify-access";
 
 type RouteParams = {
   params: Promise<{ orgId: string; projectId: string }>;
@@ -31,24 +32,6 @@ const deleteCronSchema = z.object({
   id: z.string().min(1),
 });
 
-async function verifyProjectAccess(orgId: string, projectId: string) {
-  const { organization } = await requireOrg();
-
-  if (organization.id !== orgId) {
-    return null;
-  }
-
-  const project = await db.query.projects.findFirst({
-    where: and(
-      eq(projects.id, projectId),
-      eq(projects.organizationId, orgId)
-    ),
-    columns: { id: true },
-  });
-
-  return project;
-}
-
 // GET /api/v1/organizations/[orgId]/projects/[projectId]/cron
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
@@ -66,14 +49,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ cronJobs: jobs });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error listing cron jobs:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error listing cron jobs");
   }
 }
 
@@ -112,14 +88,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ cronJob: created }, { status: 201 });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error creating cron job:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error creating cron job");
   }
 }
 
@@ -157,14 +126,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ cronJob: updated });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error updating cron job:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error updating cron job");
   }
 }
 
@@ -204,13 +166,6 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error deleting cron job:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error deleting cron job");
   }
 }

@@ -9,12 +9,11 @@ import { db } from "@/lib/db";
 import {
   projects,
   envVars,
-  groups,
   environments,
   groupEnvironments,
   orgEnvVars,
 } from "@/lib/db/schema";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, inArray, or } from "drizzle-orm";
 import { extractExpressions, validateExpression } from "@/lib/env/resolve";
 import { deployProject, createDeployment, runDeployment } from "./deploy";
 
@@ -23,7 +22,7 @@ import { deployProject, createDeployment, runDeployment } from "./deploy";
 // ---------------------------------------------------------------------------
 
 type GroupDeployOpts = {
-  groupId: string;
+  parentProjectId: string;
   organizationId: string;
   trigger: "manual" | "webhook" | "api";
   triggeredBy?: string;
@@ -61,7 +60,7 @@ export type { GroupDeployOpts, GroupDeployResult };
 type ProjectNode = {
   id: string;
   name: string;
-  groupId: string | null;
+  parentId: string | null;
   dependsOn: string[];
   inferredDeps: string[];
 };
@@ -74,7 +73,7 @@ async function buildDependencyGraph(
   groupProjects: {
     id: string;
     name: string;
-    groupId: string | null;
+    parentId: string | null;
     dependsOn: string[] | null;
   }[],
   environmentId: string | null
@@ -82,28 +81,27 @@ async function buildDependencyGraph(
   const graph = new Map<string, ProjectNode>();
   const projectNames = new Set(groupProjects.map((p) => p.name));
 
-  for (const project of groupProjects) {
-    // Fetch all env vars for this project (base + environment overlay)
-    const vars = await db.query.envVars.findMany({
-      where: environmentId
-        ? and(
-            eq(envVars.projectId, project.id),
-            eq(envVars.environmentId, environmentId)
-          )
-        : and(eq(envVars.projectId, project.id), isNull(envVars.environmentId)),
-    });
+  // Batch-fetch all env vars for all projects in a single query (avoids N+1)
+  const allProjectIds = groupProjects.map((p) => p.id);
+  const allVars = await db.query.envVars.findMany({
+    where: and(
+      inArray(envVars.projectId, allProjectIds),
+      environmentId
+        ? or(eq(envVars.environmentId, environmentId), isNull(envVars.environmentId))
+        : isNull(envVars.environmentId)
+    ),
+  });
+  // Group by projectId
+  const varsByProject = new Map<string, typeof allVars>();
+  for (const v of allVars) {
+    const list = varsByProject.get(v.projectId) || [];
+    list.push(v);
+    varsByProject.set(v.projectId, list);
+  }
 
-    // Also fetch base vars if we have an environment
-    let allVarValues: string[] = vars.map((v) => v.value);
-    if (environmentId) {
-      const baseVars = await db.query.envVars.findMany({
-        where: and(
-          eq(envVars.projectId, project.id),
-          isNull(envVars.environmentId)
-        ),
-      });
-      allVarValues = [...allVarValues, ...baseVars.map((v) => v.value)];
-    }
+  for (const project of groupProjects) {
+    const projectVars = varsByProject.get(project.id) || [];
+    const allVarValues = projectVars.map((v) => v.value);
 
     // Infer dependencies from cross-project refs
     const inferredDeps = new Set<string>();
@@ -127,7 +125,7 @@ async function buildDependencyGraph(
     graph.set(project.name, {
       id: project.id,
       name: project.name,
-      groupId: project.groupId,
+      parentId: project.parentId,
       dependsOn: [...new Set([...inferredDeps, ...explicitDeps])],
       inferredDeps: [...inferredDeps],
     });
@@ -199,20 +197,20 @@ export async function deployGroup(
 ): Promise<GroupDeployResult> {
   const startTime = Date.now();
 
-  // Load group
-  const group = await db.query.groups.findFirst({
+  // Load parent project
+  const parentProject = await db.query.projects.findFirst({
     where: and(
-      eq(groups.id, opts.groupId),
-      eq(groups.organizationId, opts.organizationId)
+      eq(projects.id, opts.parentProjectId),
+      eq(projects.organizationId, opts.organizationId)
     ),
   });
 
-  if (!group) throw new Error("Group not found");
+  if (!parentProject) throw new Error("Parent project not found");
 
   // Load all projects in the group
   const groupProjects = await db.query.projects.findMany({
     where: and(
-      eq(projects.groupId, opts.groupId),
+      eq(projects.parentId, opts.parentProjectId),
       eq(projects.organizationId, opts.organizationId)
     ),
   });
@@ -243,7 +241,7 @@ export async function deployGroup(
     groupProjects.map((p) => ({
       id: p.id,
       name: p.name,
-      groupId: p.groupId,
+      parentId: p.parentId,
       dependsOn: p.dependsOn as string[] | null,
     })),
     firstEnvId
@@ -252,7 +250,7 @@ export async function deployGroup(
   // Sort into tiers
   const tiers = topologicalTierSort(graph);
 
-  opts.onLog?.("group", `[group] Deploying "${group.name}" — ${groupProjects.length} project(s), ${tiers.length} tier(s)`);
+  opts.onLog?.("group", `[group] Deploying "${parentProject.name}" — ${groupProjects.length} project(s), ${tiers.length} tier(s)`);
   for (let i = 0; i < tiers.length; i++) {
     opts.onLog?.("group", `[group] Tier ${i}: ${tiers[i].join(", ")}`);
   }
