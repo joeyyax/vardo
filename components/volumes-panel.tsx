@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import {
   Loader2,
   HardDrive,
@@ -39,10 +39,15 @@ import {
 import { volumeThreshold, type ThresholdLevel } from "@/lib/volumes/threshold";
 
 type Volume = {
+  id: string | null;
   name: string;
   mountPath: string;
   type: "named" | "anonymous" | "bind";
   persistent: boolean;
+  shared: boolean;
+  description: string | null;
+  maxSizeBytes: number | null;
+  warnAtPercent: number | null;
   source: string;
   sizeBytes: number | null;
 };
@@ -75,7 +80,6 @@ function toBytes(value: number, unit: "MB" | "GB"): number {
 function fromBytes(bytes: number): { value: number; unit: "MB" | "GB" } {
   if (bytes >= 1024 * 1024 * 1024) {
     const gb = bytes / (1024 * 1024 * 1024);
-    // Use GB if it's a clean number
     if (gb === Math.floor(gb) || gb >= 1) {
       return { value: parseFloat(gb.toFixed(1)), unit: "GB" };
     }
@@ -103,7 +107,7 @@ export function VolumesPanel({ appId, orgId }: Props) {
   const [newName, setNewName] = useState("");
   const [newMountPath, setNewMountPath] = useState("");
 
-  // Volume limit state
+  // Volume limit state (applied to all volumes for this app)
   const [limit, setLimit] = useState<VolumeLimit>(null);
   const [limitLoading, setLimitLoading] = useState(true);
   const [limitEditing, setLimitEditing] = useState(false);
@@ -156,10 +160,11 @@ export function VolumesPanel({ appId, orgId }: Props) {
     );
     setVolumes(updated);
 
-    // Save persistent volumes config
-    const persistent = updated
-      .filter((v) => v.persistent)
-      .map((v) => ({ name: v.name, mountPath: v.mountPath }));
+    const volumePayload = updated.map((v) => ({
+      name: v.name,
+      mountPath: v.mountPath,
+      persistent: v.persistent,
+    }));
 
     setSaving(true);
     try {
@@ -168,7 +173,7 @@ export function VolumesPanel({ appId, orgId }: Props) {
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ volumes: persistent }),
+          body: JSON.stringify({ volumes: volumePayload }),
         }
       );
       if (res.ok) {
@@ -188,21 +193,30 @@ export function VolumesPanel({ appId, orgId }: Props) {
   async function addVolume() {
     if (!newName.trim() || !newMountPath.trim()) return;
 
+    const sanitizedName = newName.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-");
+
     const newVol: Volume = {
-      name: newName.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-"),
+      id: null,
+      name: sanitizedName,
       mountPath: newMountPath.trim(),
       type: "named",
       persistent: true,
-      source: newName.trim(),
+      shared: false,
+      description: null,
+      maxSizeBytes: null,
+      warnAtPercent: null,
+      source: sanitizedName,
       sizeBytes: null,
     };
 
     const updated = [...volumes, newVol];
     setVolumes(updated);
 
-    const persistent = updated
-      .filter((v) => v.persistent)
-      .map((v) => ({ name: v.name, mountPath: v.mountPath }));
+    const volumePayload = updated.map((v) => ({
+      name: v.name,
+      mountPath: v.mountPath,
+      persistent: v.persistent,
+    }));
 
     setSaving(true);
     try {
@@ -211,7 +225,7 @@ export function VolumesPanel({ appId, orgId }: Props) {
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ volumes: persistent }),
+          body: JSON.stringify({ volumes: volumePayload }),
         }
       );
       if (res.ok) {
@@ -231,9 +245,11 @@ export function VolumesPanel({ appId, orgId }: Props) {
     const updated = volumes.filter((v) => v.name !== volumeName);
     setVolumes(updated);
 
-    const persistent = updated
-      .filter((v) => v.persistent)
-      .map((v) => ({ name: v.name, mountPath: v.mountPath }));
+    const volumePayload = updated.map((v) => ({
+      name: v.name,
+      mountPath: v.mountPath,
+      persistent: v.persistent,
+    }));
 
     try {
       await fetch(
@@ -241,7 +257,7 @@ export function VolumesPanel({ appId, orgId }: Props) {
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ volumes: persistent }),
+          body: JSON.stringify({ volumes: volumePayload }),
         }
       );
       toast.success("Volume removed");
@@ -471,7 +487,6 @@ export function VolumesPanel({ appId, orgId }: Props) {
                     <Select
                       value={limitUnit}
                       onValueChange={(val: "MB" | "GB") => {
-                        // Convert the current value when switching units
                         const current = parseFloat(limitSize);
                         if (current && !isNaN(current)) {
                           if (val === "GB" && limitUnit === "MB") {
