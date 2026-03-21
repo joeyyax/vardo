@@ -788,41 +788,97 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     setDeploying(true);
     setDeployStartTime(new Date(serverRunningDeploy.startedAt).getTime());
     setActiveTab("deployments");
-    setExpandedDeployLog(false);
+    setExpandedDeployLog(true);
 
-    let stopped = false;
-    async function poll() {
-      while (!stopped) {
-        await new Promise((r) => setTimeout(r, 3000));
-        if (stopped) break;
-        try {
-          const res = await fetch(
-            `/api/v1/organizations/${orgId}/apps/${app.id}`,
-          );
-          if (!res.ok) continue;
-          const { app: updated } = await res.json();
-          const dep = updated.deployments?.find((d: { id: string }) => d.id === serverRunningDeploy!.id);
-          if (dep?.log) {
-            setDeployLog(dep.log.split("\n"));
-          }
-          if (dep?.status === "success" || dep?.status === "failed") {
-            if (dep.status === "success") {
-              toast.success(`Deployed in ${dep.durationMs ? Math.round(dep.durationMs / 1000) + "s" : "—"}`);
-            } else {
-              toast.error("Deployment failed");
-            }
-            setViewingLogId(dep.id);
-            stopped = true;
-          }
-        } catch { /* retry */ }
-      }
+    // Connect to the deploy stream SSE endpoint for real-time logs
+    const streamUrl = `/api/v1/organizations/${orgId}/apps/${app.id}/deploy/stream`;
+    const es = new EventSource(streamUrl);
+    let finished = false;
+
+    es.addEventListener("log", (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.message) {
+          setDeployLog((prev) => [...prev, data.message]);
+        }
+      } catch { /* skip malformed */ }
+    });
+
+    es.addEventListener("stage", (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.stage && data.status) {
+          setDeployStages((prev) => ({ ...prev, [data.stage]: data.status }));
+        }
+      } catch { /* skip malformed */ }
+    });
+
+    es.addEventListener("done", (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        finished = true;
+        if (data.success) {
+          toast.success(`Deployed in ${data.durationMs ? Math.round(data.durationMs / 1000) + "s" : "---"}`);
+        } else {
+          toast.error("Deployment failed");
+        }
+        if (data.deploymentId) {
+          setViewingLogId(data.deploymentId);
+        }
+      } catch { /* skip malformed */ }
+      es.close();
       setDeploying(false);
       setDeployAbort(null);
       router.refresh();
-    }
+    });
 
-    poll();
-    return () => { stopped = true; };
+    es.addEventListener("timeout", () => {
+      es.close();
+      if (!finished) {
+        setDeploying(false);
+        setDeployAbort(null);
+        router.refresh();
+      }
+    });
+
+    es.onerror = () => {
+      // SSE connection failed -- fall back to polling
+      es.close();
+      if (finished) return;
+      let stopped = false;
+      async function poll() {
+        while (!stopped) {
+          await new Promise((r) => setTimeout(r, 3000));
+          if (stopped) break;
+          try {
+            const res = await fetch(
+              `/api/v1/organizations/${orgId}/apps/${app.id}`,
+            );
+            if (!res.ok) continue;
+            const { app: updated } = await res.json();
+            const dep = updated.deployments?.find((d: { id: string }) => d.id === serverRunningDeploy!.id);
+            if (dep?.log) {
+              setDeployLog(dep.log.split("\n"));
+            }
+            if (dep?.status === "success" || dep?.status === "failed") {
+              if (dep.status === "success") {
+                toast.success(`Deployed in ${dep.durationMs ? Math.round(dep.durationMs / 1000) + "s" : "---"}`);
+              } else {
+                toast.error("Deployment failed");
+              }
+              setViewingLogId(dep.id);
+              stopped = true;
+            }
+          } catch { /* retry */ }
+        }
+        setDeploying(false);
+        setDeployAbort(null);
+        router.refresh();
+      }
+      poll();
+    };
+
+    return () => { es.close(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverRunningDeploy?.id]);
 

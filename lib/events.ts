@@ -2,14 +2,16 @@ import Redis from "ioredis";
 
 const url = process.env.REDIS_URL || "redis://localhost:6379";
 
+// Shared publish client — reused across all publishEvent calls
+const globalForPub = globalThis as unknown as { redisPub: Redis | undefined };
+const publishClient = globalForPub.redisPub ?? new Redis(url, { maxRetriesPerRequest: 3, lazyConnect: true });
+if (process.env.NODE_ENV !== "production") {
+  globalForPub.redisPub = publishClient;
+}
+
 // Publish an event — use the shared redis client
 export async function publishEvent(channel: string, data: Record<string, unknown>) {
-  const pub = new Redis(url, { maxRetriesPerRequest: 3, lazyConnect: true });
-  try {
-    await pub.publish(channel, JSON.stringify(data));
-  } finally {
-    pub.disconnect();
-  }
+  await publishClient.publish(channel, JSON.stringify(data));
 }
 
 // Subscribe to a channel — returns a cleanup function
