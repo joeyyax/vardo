@@ -55,16 +55,18 @@ export function pushHistory(h: MetricsHistory, m: AppMetrics) {
 // ---------------------------------------------------------------------------
 
 export function Sparkline({ data, className }: { data: number[]; className?: string }) {
-  if (data.length < 2) return null;
+  if (data.length === 0) return null;
+  // Single point — duplicate it to draw a flat line
+  const plotData = data.length === 1 ? [data[0], data[0]] : data;
 
   // Scale so low values (~1%) are visible but don't fill the card,
   // while high values (~50%+) use most of the height.
   // Uses the data's own max but with a floor so it doesn't auto-scale tiny values to full height.
-  const dataMax = Math.max(...data, 0.1);
+  const dataMax = Math.max(...plotData, 0.1);
   const ceiling = Math.max(dataMax * 3, 10);
   const w = 64;
   const h = 20;
-  const points = data
+  const points = plotData
     .slice(-SPARKLINE_POINTS)
     .map((v, i, arr) => {
       const x = (i / (arr.length - 1)) * w;

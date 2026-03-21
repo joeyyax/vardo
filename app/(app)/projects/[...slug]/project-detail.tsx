@@ -159,7 +159,7 @@ function AppCard({
       {/* Background sparklines — crossfade on hover */}
       {(["cpu", "memory", "disk", "network"] as MetricKey[]).map((key) => {
         const data = history[key];
-        if (data.length < 2) return null;
+        if (data.length === 0) return null;
         return (
           <Sparkline
             key={key}

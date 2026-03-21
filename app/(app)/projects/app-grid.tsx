@@ -325,7 +325,7 @@ function ProjectCard({
       href={`/projects/${project.name}`}
       className="squircle relative flex flex-col rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50 overflow-hidden"
     >
-      {aggregatedCpu.length >= 2 && (
+      {aggregatedCpu.length >= 1 && (
         <Sparkline
           data={aggregatedCpu}
           className="absolute inset-0 w-full h-full text-foreground pointer-events-none"
@@ -433,7 +433,7 @@ function AppCard({
       {/* Background sparklines — crossfade on hover */}
       {(["cpu", "memory", "disk", "network"] as MetricKey[]).map((key) => {
         const data = history[key];
-        if (data.length < 2) return null;
+        if (data.length === 0) return null;
         return (
           <Sparkline
             key={key}
