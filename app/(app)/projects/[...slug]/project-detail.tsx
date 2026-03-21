@@ -182,7 +182,7 @@ function envTypeDotColor(type: string) {
 }
 
 function AppIcon({ app, color }: { app: ProjectApp; color: string }) {
-  const { icon, color: typeColor } = detectAppType(app, color);
+  const { icon, color: typeColor } = detectAppType(app);
 
   if (!icon) {
     return (
@@ -311,7 +311,7 @@ function AppCard({
   const router = useRouter();
   const lastDeploy = app.deployments[0];
   const gitSha = lastDeploy?.gitSha;
-  const { color: typeColor } = detectAppType(app, color);
+  const { color: typeColor } = detectAppType(app);
   const cpuData = history.cpu;
 
   // Source line: repo:branch + sha, or image name
@@ -680,7 +680,7 @@ export function ProjectDetail({
   initialTab: string;
 }) {
   const router = useRouter();
-  const color = project.color || "#6366f1";
+  const color = "#a1a1aa"; // neutral — project color is unused
   const { metrics, history } = useAppMetrics(orgId);
   const [activeTab, setActiveTab] = useState(initialTab);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -800,10 +800,6 @@ export function ProjectDetail({
         }
       >
         <div className="flex items-center gap-3">
-          <span
-            className="size-3 shrink-0 rounded-full"
-            style={{ backgroundColor: color }}
-          />
           <h1 className="text-2xl font-semibold tracking-tight">
             {project.displayName}
           </h1>

@@ -8,17 +8,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
-const PRESET_COLORS = [
-  "#6366f1", // indigo
-  "#ec4899", // pink
-  "#f59e0b", // amber
-  "#10b981", // emerald
-  "#3b82f6", // blue
-  "#8b5cf6", // violet
-  "#ef4444", // red
-  "#06b6d4", // cyan
-];
-
 function slugify(value: string) {
   return value
     .toLowerCase()
@@ -31,7 +20,6 @@ export function NewProjectForm({ orgId }: { orgId: string }) {
   const [displayName, setDisplayName] = useState("");
   const [slug, setSlug] = useState("");
   const [slugEdited, setSlugEdited] = useState(false);
-  const [color, setColor] = useState(PRESET_COLORS[0]);
   const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -66,7 +54,6 @@ export function NewProjectForm({ orgId }: { orgId: string }) {
           body: JSON.stringify({
             name: slug,
             displayName: displayName.trim(),
-            color,
             description: description.trim() || undefined,
           }),
         }
@@ -117,25 +104,6 @@ export function NewProjectForm({ orgId }: { orgId: string }) {
           </p>
         </div>
 
-        <div className="space-y-2">
-          <Label>Color</Label>
-          <div className="flex items-center gap-2">
-            {PRESET_COLORS.map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => setColor(c)}
-                className="size-8 rounded-full transition-all"
-                style={{
-                  backgroundColor: c,
-                  outline: color === c ? `2px solid ${c}` : "2px solid transparent",
-                  outlineOffset: "2px",
-                }}
-                aria-label={`Select color ${c}`}
-              />
-            ))}
-          </div>
-        </div>
 
         <div className="space-y-2">
           <Label htmlFor="description">

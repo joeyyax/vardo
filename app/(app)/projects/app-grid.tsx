@@ -3,7 +3,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { AlertTriangle, Globe } from "lucide-react";
+import { AlertTriangle, Globe, Plus } from "lucide-react";
 import {
   Popover,
   PopoverContent,
@@ -47,10 +47,18 @@ type AppWithRelations = {
   project: { id: string; name: string; displayName: string; color: string | null } | null;
 };
 
+type EmptyProject = {
+  id: string;
+  name: string;
+  displayName: string;
+  color: string | null;
+};
+
 type AppGridProps = {
   apps: AppWithRelations[];
   allTags: Tag[];
   orgId: string;
+  emptyProjects?: EmptyProject[];
 };
 
 
@@ -98,8 +106,7 @@ function getAppTypeInfo(app: { imageName: string | null; gitUrl: string | null; 
 // ---------------------------------------------------------------------------
 
 function AppIcon({ app }: { app: AppWithRelations }) {
-  const projectColor = app.project?.color || "#6366f1";
-  const { icon, color: typeColor } = getAppTypeInfo(app, projectColor);
+  const { icon, color: typeColor } = getAppTypeInfo(app);
 
   if (!icon) {
     return (
@@ -294,7 +301,7 @@ function ProjectCard({
   history: Map<string, MetricsHistory>;
   historyTick: number;
 }) {
-  const color = project.color || "#6366f1";
+  const color = "#a1a1aa"; // neutral zinc-400 — project color is unused
 
   // Aggregate status from all apps
   const allActive = projectApps.every((a) => a.status === "active");
@@ -376,22 +383,25 @@ function ProjectCard({
               <h3 className="text-base font-semibold truncate">{project.displayName}</h3>
               <ProjectEndpoints projectApps={projectApps} />
             </div>
-            <StatusIndicator
-              status={status}
-              finishedAt={allActive ? (() => {
-                // Latest deploy finish across all apps
-                let latest: Date | null = null;
-                for (const a of projectApps) {
-                  const f = a.deployments[0]?.finishedAt;
-                  if (f) {
-                    const d = new Date(f);
-                    if (!latest || d > latest) latest = d;
+            {projectApps.length > 0 ? (
+              <StatusIndicator
+                status={status}
+                finishedAt={allActive ? (() => {
+                  let latest: Date | null = null;
+                  for (const a of projectApps) {
+                    const f = a.deployments[0]?.finishedAt;
+                    if (f) {
+                      const d = new Date(f);
+                      if (!latest || d > latest) latest = d;
+                    }
                   }
-                }
-                return latest;
-              })() : undefined}
-              needsRedeploy={projectApps.some((a) => !!a.needsRedeploy)}
-            />
+                  return latest;
+                })() : undefined}
+                needsRedeploy={projectApps.some((a) => !!a.needsRedeploy)}
+              />
+            ) : (
+              <span className="text-xs text-muted-foreground">Empty</span>
+            )}
           </div>
           {/* Aggregated metrics */}
           {(() => {
@@ -414,8 +424,18 @@ function ProjectCard({
         </div>
       </div>
 
-      {/* App chips — colored by app type to match sparklines */}
+      {/* App chips */}
       <div className="relative flex flex-wrap gap-1.5 mt-3 pt-3 border-t">
+        {projectApps.length === 0 && (
+          <Link
+            href={`/apps/new?project=${project.id}`}
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center gap-1.5 rounded-full border border-dashed px-2.5 py-1 text-xs text-muted-foreground hover:bg-accent transition-colors cursor-pointer"
+          >
+            <Plus className="size-3" />
+            Add App
+          </Link>
+        )}
         {projectApps.map((a) => (
             <Link
               key={a.id}
@@ -530,6 +550,7 @@ export function AppGrid({
   apps,
   allTags,
   orgId,
+  emptyProjects = [],
 }: AppGridProps) {
   const router = useRouter();
   const [activeTagIds, setActiveTagIds] = useState<Set<string>>(new Set());
@@ -570,8 +591,15 @@ export function AppGrid({
       }
     }
 
+    // Include empty projects that have no apps
+    for (const ep of emptyProjects) {
+      if (!byProject.has(ep.id)) {
+        byProject.set(ep.id, { project: ep, apps: [] });
+      }
+    }
+
     return { projectCards: Array.from(byProject.values()), standaloneApps: standalone };
-  }, [filtered]);
+  }, [filtered, emptyProjects]);
 
   return (
     <div className="space-y-4">
