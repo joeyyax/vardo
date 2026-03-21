@@ -1,10 +1,98 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Rocket, AlertTriangle, Copy } from "lucide-react";
+import { Loader2, AlertTriangle, ClipboardCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
+import { EditorView } from "@codemirror/view";
+import { EditorState } from "@codemirror/state";
+import {
+  LanguageSupport,
+  StreamLanguage,
+  type StreamParser,
+} from "@codemirror/language";
+import { tags } from "@lezer/highlight";
+import { createTheme } from "@uiw/codemirror-themes";
+
+// ---------------------------------------------------------------------------
+// Clipboard toast helper
+// ---------------------------------------------------------------------------
+
+const clipboardIcon = <ClipboardCheck className="size-4" />;
+
+function copyToast(value: string) {
+  navigator.clipboard.writeText(value);
+  toast.success("Copied to clipboard", {
+    icon: clipboardIcon,
+    description: value,
+    classNames: { description: "font-mono" },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// .env language mode
+// ---------------------------------------------------------------------------
+
+const envParser: StreamParser<{ inValue: boolean }> = {
+  startState: () => ({ inValue: false }),
+  token(stream, state) {
+    // Start of line
+    if (stream.sol()) {
+      state.inValue = false;
+      // Comment
+      if (stream.match(/^#.*/)) return "comment";
+    }
+
+    // Key before =
+    if (!state.inValue) {
+      if (stream.match(/^[A-Za-z_][A-Za-z0-9_]*/)) return "propertyName";
+      if (stream.eat("=")) {
+        state.inValue = true;
+        return "operator";
+      }
+      stream.next();
+      return null;
+    }
+
+    // Value side — highlight ${...} refs
+    if (stream.match(/^\$\{[^}]*\}/)) return "variableName";
+    stream.next();
+    return "string";
+  },
+};
+
+const envLang = new LanguageSupport(StreamLanguage.define(envParser));
+
+// ---------------------------------------------------------------------------
+// CodeMirror theme (matches the dark zinc editor)
+// ---------------------------------------------------------------------------
+
+const envTheme = createTheme({
+  theme: "dark",
+  settings: {
+    background: "rgb(9 9 11)", // zinc-950
+    foreground: "rgb(228 228 231)", // zinc-200
+    caret: "rgb(161 161 170)", // zinc-400
+    selection: "rgba(63 63 70 / 0.5)", // zinc-700/50
+    selectionMatch: "rgba(63 63 70 / 0.3)",
+    lineHighlight: "rgba(39 39 42 / 0.5)", // zinc-800/50
+    gutterBackground: "transparent",
+    gutterForeground: "rgb(82 82 91)", // zinc-600
+  },
+  styles: [
+    { tag: tags.comment, color: "rgb(113 113 122)" }, // zinc-500
+    { tag: tags.propertyName, color: "rgb(251 191 36)" }, // amber-400
+    { tag: tags.operator, color: "rgb(113 113 122)" }, // zinc-500
+    { tag: tags.string, color: "rgb(228 228 231)" }, // zinc-200
+    { tag: tags.variableName, color: "rgb(34 211 238)" }, // cyan-400
+  ],
+});
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
 type EnvEditorProps = {
   appId: string;
@@ -15,30 +103,13 @@ type EnvEditorProps = {
   orgVarKeys?: string[];
   environmentId?: string;
 } | {
-  /** Standalone mode — no app, just editing content with onChange callback */
   standalone: true;
   initialContent?: string;
   onChange: (content: string) => void;
   allAppNames?: string[];
   orgVarKeys?: string[];
-  /** Hide the cross-app variable reference section below the editor */
   showReferences?: boolean;
 };
-
-type Suggestion = {
-  label: string;
-  detail: string;
-  insert: string;
-};
-
-const BUILTIN_VARS: Suggestion[] = [
-  { label: "${project.name}", detail: "Project slug", insert: "${project.name}" },
-  { label: "${project.displayName}", detail: "Project display name", insert: "${project.displayName}" },
-  { label: "${project.port}", detail: "Container port", insert: "${project.port}" },
-  { label: "${project.id}", detail: "Project ID", insert: "${project.id}" },
-  { label: "${org.name}", detail: "Organization name", insert: "${org.name}" },
-  { label: "${org.id}", detail: "Organization ID", insert: "${org.id}" },
-];
 
 const PASSWORD_KEYS = ["password", "secret", "_key", "jwt"];
 function isPasswordKey(key: string): boolean {
@@ -46,32 +117,76 @@ function isPasswordKey(key: string): boolean {
   return PASSWORD_KEYS.some((p) => lower.includes(p));
 }
 
+// ---------------------------------------------------------------------------
+// Editor extensions (stable reference)
+// ---------------------------------------------------------------------------
+
+const baseExtensions = [
+  envLang,
+  envTheme,
+  EditorView.lineWrapping,
+  EditorState.tabSize.of(2),
+];
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
 export function EnvEditor(props: EnvEditorProps) {
   const isStandalone = "standalone" in props && props.standalone;
   const appId = isStandalone ? "" : (props as Exclude<EnvEditorProps, { standalone: true }>).appId;
   const appName = isStandalone ? "" : (props as Exclude<EnvEditorProps, { standalone: true }>).appName;
   const orgId = isStandalone ? "" : (props as Exclude<EnvEditorProps, { standalone: true }>).orgId;
   const environmentId = isStandalone ? undefined : (props as Exclude<EnvEditorProps, { standalone: true }>).environmentId;
-  const allAppNames = props.allAppNames ?? [];
-  const orgVarKeys = props.orgVarKeys ?? [];
 
   const router = useRouter();
   const [content, setContentState] = useState(isStandalone ? (props.initialContent || "") : "");
   const [saving, setSaving] = useState(false);
-  const [deploying, setDeploying] = useState(false);
   const [loaded, setLoaded] = useState(isStandalone);
   const [modified, setModified] = useState(false);
   const [needsRedeploy, setNeedsRedeploy] = useState(false);
   const [passwordWarning, setPasswordWarning] = useState<string | null>(null);
   const [initialContent, setInitialContent] = useState(isStandalone ? (props.initialContent || "") : "");
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
-  const [selectedSuggestion, setSelectedSuggestion] = useState(0);
-  const [cursorPosition, setCursorPosition] = useState(0);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const suggestionsRef = useRef<HTMLDivElement>(null);
 
-  // Wrapper to also call onChange in standalone mode
+  // Copy chips state
+  const [hoveredLine, setHoveredLine] = useState<number>(-1);
+  const [selectedLineSet, setSelectedLineSet] = useState<Set<number>>(new Set());
+  const containerRef = useRef<HTMLDivElement>(null);
+  const cmRef = useRef<ReactCodeMirrorRef>(null);
+
+  // Track CodeMirror selection to detect multi-line selections
+  const updateSelectionFromView = useCallback(() => {
+    const view = cmRef.current?.view;
+    if (!view) return;
+    const { from, to } = view.state.selection.main;
+    if (from === to) {
+      setSelectedLineSet(new Set());
+      return;
+    }
+    const startLine = view.state.doc.lineAt(from).number - 1; // 0-indexed
+    const endLine = view.state.doc.lineAt(to).number - 1;
+    if (startLine === endLine) {
+      setSelectedLineSet(new Set());
+      return;
+    }
+    const lines = new Set<number>();
+    for (let i = startLine; i <= endLine; i++) lines.add(i);
+    setSelectedLineSet(lines);
+  }, []);
+
+  // Extensions with selection listener
+  const extensions = useMemo(
+    () => [
+      ...baseExtensions,
+      EditorView.updateListener.of((update) => {
+        if (update.selectionSet) {
+          updateSelectionFromView();
+        }
+      }),
+    ],
+    [updateSelectionFromView]
+  );
+
   function setContent(value: string) {
     setContentState(value);
     if (isStandalone) {
@@ -91,7 +206,7 @@ export function EnvEditor(props: EnvEditorProps) {
     }
   }, [isStandalone, isStandalone ? props.initialContent : null]);
 
-  // Load current env vars as editable content (skip in standalone mode)
+  // Load current env vars (skip in standalone mode)
   useEffect(() => {
     if (isStandalone) return;
     async function load() {
@@ -122,115 +237,15 @@ export function EnvEditor(props: EnvEditorProps) {
     load();
   }, [orgId, appId, environmentId, isStandalone]);
 
-  // Build suggestions based on current context
-  const buildSuggestions = useCallback(
-    (text: string, cursor: number) => {
-      // Find what's before the cursor on the current line
-      const beforeCursor = text.slice(0, cursor);
-      const currentLine = beforeCursor.split("\n").pop() || "";
-
-      // Check if we're inside a ${...} expression
-      const dollarIdx = currentLine.lastIndexOf("${");
-      if (dollarIdx !== -1 && !currentLine.slice(dollarIdx).includes("}")) {
-        const partial = currentLine.slice(dollarIdx + 2).toLowerCase();
-
-        const allSuggestions: Suggestion[] = [
-          ...BUILTIN_VARS,
-          // Self-references from current content
-          ...text
-            .split("\n")
-            .filter((line) => line.includes("=") && !line.startsWith("#"))
-            .map((line) => {
-              const key = line.split("=")[0].trim();
-              return {
-                label: `\${${key}}`,
-                detail: "This project",
-                insert: `\${${key}}`,
-              };
-            }),
-          // Org-level shared vars
-          ...orgVarKeys.map((key) => ({
-            label: `\${org.${key}}`,
-            detail: "Org variable",
-            insert: `\${org.${key}}`,
-          })),
-          // Cross-project references
-          ...allAppNames.map((name) => ({
-            label: `\${${name}.`,
-            detail: "Cross-project ref",
-            insert: `\${${name}.`,
-          })),
-        ];
-
-        const filtered = allSuggestions.filter((s) =>
-          s.label.toLowerCase().includes(partial)
-        );
-
-        setSuggestions(filtered);
-        setShowSuggestions(filtered.length > 0);
-        setSelectedSuggestion(0);
-        return;
-      }
-
-      // Check if we're at the start of a line (suggest common env var names)
-      if (currentLine === "" || /^[A-Z_]*$/.test(currentLine)) {
-        const commonKeys = [
-          "DATABASE_URL",
-          "REDIS_URL",
-          "SECRET_KEY",
-          "API_KEY",
-          "PORT",
-          "NODE_ENV",
-          "LOG_LEVEL",
-          "SMTP_HOST",
-          "SMTP_PORT",
-          "S3_BUCKET",
-          "AWS_ACCESS_KEY_ID",
-          "AWS_SECRET_ACCESS_KEY",
-        ];
-
-        const existing = new Set(
-          text
-            .split("\n")
-            .filter((l) => l.includes("="))
-            .map((l) => l.split("=")[0].trim())
-        );
-
-        const filtered = commonKeys
-          .filter((k) => !existing.has(k))
-          .filter((k) => k.toLowerCase().includes(currentLine.toLowerCase()))
-          .map((k) => ({
-            label: k,
-            detail: "Common variable",
-            insert: `${k}=`,
-          }));
-
-        if (filtered.length > 0 && currentLine.length > 0) {
-          setSuggestions(filtered);
-          setShowSuggestions(true);
-          setSelectedSuggestion(0);
-          return;
-        }
-      }
-
-      setShowSuggestions(false);
-    },
-    [allAppNames]
-  );
-
-  function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
-    const value = e.target.value;
+  function handleChange(value: string) {
     setContent(value);
     setModified(true);
-    setCursorPosition(e.target.selectionStart);
-    buildSuggestions(value, e.target.selectionStart);
 
     // Check for password changes on persistent services
     const changedLines = value.split("\n").filter((line) => {
       if (!line.includes("=") || line.startsWith("#")) return false;
       const key = line.split("=")[0].trim();
       if (!isPasswordKey(key)) return false;
-      // Check if this key's value changed from initial
       const initialLine = initialContent.split("\n").find((l) => l.startsWith(`${key}=`));
       return initialLine !== line;
     });
@@ -239,64 +254,6 @@ export function EnvEditor(props: EnvEditorProps) {
         ? `Changing ${changedLines.map((l) => l.split("=")[0]).join(", ")} won't update existing data in persistent volumes. You may need to manually update the service.`
         : null
     );
-  }
-
-  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (!showSuggestions) return;
-
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setSelectedSuggestion((prev) => Math.min(prev + 1, suggestions.length - 1));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setSelectedSuggestion((prev) => Math.max(prev - 1, 0));
-    } else if (e.key === "Tab" || e.key === "Enter") {
-      if (suggestions.length > 0) {
-        e.preventDefault();
-        applySuggestion(suggestions[selectedSuggestion]);
-      }
-    } else if (e.key === "Escape") {
-      setShowSuggestions(false);
-    }
-  }
-
-  function applySuggestion(suggestion: Suggestion) {
-    if (!textareaRef.current) return;
-
-    const textarea = textareaRef.current;
-    const beforeCursor = content.slice(0, cursorPosition);
-    const afterCursor = content.slice(cursorPosition);
-
-    // Find the start of what we're replacing
-    const currentLine = beforeCursor.split("\n").pop() || "";
-    const dollarIdx = currentLine.lastIndexOf("${");
-
-    let newContent: string;
-    let newCursorPos: number;
-
-    if (dollarIdx !== -1) {
-      // Replace from ${ to cursor
-      const lineStart = beforeCursor.length - currentLine.length;
-      const replaceStart = lineStart + dollarIdx;
-      newContent = content.slice(0, replaceStart) + suggestion.insert + afterCursor;
-      newCursorPos = replaceStart + suggestion.insert.length;
-    } else {
-      // Replace current line content
-      const lineStart = beforeCursor.length - currentLine.length;
-      newContent = content.slice(0, lineStart) + suggestion.insert + afterCursor;
-      newCursorPos = lineStart + suggestion.insert.length;
-    }
-
-    setContent(newContent);
-    setModified(true);
-    setShowSuggestions(false);
-
-    // Restore cursor position
-    requestAnimationFrame(() => {
-      textarea.selectionStart = newCursorPos;
-      textarea.selectionEnd = newCursorPos;
-      textarea.focus();
-    });
   }
 
   async function doSave(): Promise<boolean> {
@@ -310,13 +267,11 @@ export function EnvEditor(props: EnvEditorProps) {
           body: JSON.stringify({ content, environmentId }),
         }
       );
-
       if (!res.ok) {
         const data = await res.json();
         toast.error(data.error || "Failed to save");
         return false;
       }
-
       const data = await res.json();
       toast.success(`${data.created} added, ${data.updated} updated`);
       setModified(false);
@@ -333,58 +288,19 @@ export function EnvEditor(props: EnvEditorProps) {
   }
 
   async function handleSave() {
-    await doSave();
-  }
-
-  async function handleSaveAndDeploy() {
     const saved = await doSave();
-    if (!saved) return;
-
-    setDeploying(true);
-    toast.info("Deploying with updated variables...");
-    try {
-      const res = await fetch(
-        `/api/v1/organizations/${orgId}/apps/${appId}/deploy`,
-        { method: "POST" }
-      );
-      // Don't wait for full deploy — it streams
-      if (res.ok) {
-        setNeedsRedeploy(false);
-        router.refresh();
-      }
-    } catch {
-      toast.error("Deploy failed");
-    } finally {
-      setDeploying(false);
-    }
+    if (saved) router.refresh();
   }
 
-  // Syntax highlighting for the display overlay
-  function highlightContent(text: string): string {
-    return text
-      .split("\n")
-      .map((line) => {
-        if (line.startsWith("#")) {
-          return `<span class="text-zinc-500">${escapeHtml(line)}</span>`;
-        }
-
-        const eqIdx = line.indexOf("=");
-        if (eqIdx === -1) return `<span class="text-zinc-300">${escapeHtml(line)}</span>`;
-
-        const key = line.slice(0, eqIdx);
-        const value = line.slice(eqIdx + 1);
-
-        let highlightedValue = escapeHtml(value);
-
-        // Highlight ${...} expressions
-        highlightedValue = highlightedValue.replace(
-          /\$\{([^}]+)\}/g,
-          '<span class="text-cyan-400">${$1}</span>'
-        );
-
-        return `<span class="text-amber-400">${escapeHtml(key)}</span><span class="text-zinc-500">=</span><span class="text-zinc-200">${highlightedValue}</span>`;
-      })
-      .join("\n");
+  // Mouse tracking for copy chips
+  function handleMouseMove(e: React.MouseEvent) {
+    const view = cmRef.current?.view;
+    if (!view) return;
+    const rect = view.dom.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    const block = view.lineBlockAtHeight(y + view.scrollDOM.scrollTop);
+    const lineNum = view.state.doc.lineAt(block.from).number - 1; // 0-indexed
+    setHoveredLine(lineNum);
   }
 
   if (!loaded) {
@@ -395,28 +311,90 @@ export function EnvEditor(props: EnvEditorProps) {
     );
   }
 
+  // Compute copy chip data
+  const lines = content.split("\n");
+  const btnClass = "px-2 py-0.5 rounded border border-zinc-700 bg-zinc-800/80 text-[10px] font-mono text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 hover:bg-zinc-700 transition-colors";
+
+  function renderCopyChips() {
+    // Multi-line selection mode
+    if (selectedLineSet.size > 1) {
+      const indices = Array.from(selectedLineSet).sort((a, b) => a - b);
+      const selected = indices
+        .filter((i) => i < lines.length)
+        .map((i) => lines[i])
+        .filter((l) => l.includes("=") && !l.startsWith("#") && l.trim());
+      if (selected.length === 0) return null;
+
+      const keys = selected.map((l) => l.slice(0, l.indexOf("=")).trim());
+      const values = selected.map((l) => l.slice(l.indexOf("=") + 1));
+      const count = selected.length;
+
+      // Position at first selected line
+      const view = cmRef.current?.view;
+      if (!view) return null;
+      const firstLine = view.state.doc.line(indices[0] + 1);
+      const block = view.lineBlockAt(firstLine.from);
+      const top = block.top;
+
+      return (
+        <div
+          className="absolute right-3 flex items-center gap-1.5 h-6 pointer-events-auto z-10"
+          style={{ top }}
+        >
+          <span className="text-[10px] font-mono text-zinc-600">copy {count} vars</span>
+          <button type="button" className={btnClass} onClick={() => copyToast(keys.join("\n"))}>keys</button>
+          <button type="button" className={btnClass} onClick={() => copyToast(values.join("\n"))}>values</button>
+          <button type="button" className={btnClass} onClick={() => copyToast(selected.join("\n"))}>pairs</button>
+          {appName && (
+            <button type="button" className={btnClass} onClick={() => {
+              copyToast(keys.map((k) => `\${${appName}.${k}}`).join("\n"));
+            }}>$&#123;vars&#125;</button>
+          )}
+        </div>
+      );
+    }
+
+    // Single line hover mode
+    if (hoveredLine < 0 || hoveredLine >= lines.length) return null;
+    const line = lines[hoveredLine];
+    const eqIdx = line.indexOf("=");
+    if (!line.trim() || line.startsWith("#") || eqIdx === -1) return null;
+    const key = line.slice(0, eqIdx).trim();
+    const value = line.slice(eqIdx + 1);
+    const varRef = appName ? `\${${appName}.${key}}` : null;
+
+    // Get pixel position from CodeMirror
+    const view = cmRef.current?.view;
+    if (!view) return null;
+    const cmLine = view.state.doc.line(hoveredLine + 1);
+    const block = view.lineBlockAt(cmLine.from);
+    const top = block.top;
+
+    return (
+      <div
+        className="absolute right-3 flex items-center gap-1.5 h-6 pointer-events-auto z-10"
+        style={{ top }}
+      >
+        <span className="text-[10px] font-mono text-zinc-600">copy</span>
+        <button type="button" className={btnClass} onClick={() => copyToast(line)}>pair</button>
+        <button type="button" className={btnClass} onClick={() => copyToast(key)}>key</button>
+        <button type="button" className={btnClass} onClick={() => copyToast(value)}>value</button>
+        {varRef && (
+          <button type="button" className={btnClass} onClick={() => copyToast(varRef)}>$&#123;var&#125;</button>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-3">
-      {/* Redeploy needed banner */}
+      {/* Restart needed banner */}
       {!isStandalone && needsRedeploy && !modified && (
-        <div className="flex items-center justify-between rounded-lg border border-status-warning/30 bg-status-warning-muted px-4 py-3">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="size-4 text-status-warning shrink-0" />
-            <p className="text-sm text-status-warning">
-              Variables saved. Redeploy to apply changes.
-            </p>
-          </div>
-          <Button
-            size="sm"
-            disabled={deploying}
-            onClick={handleSaveAndDeploy}
-          >
-            {deploying ? (
-              <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
-            ) : (
-              <><Rocket className="mr-1.5 size-4" />Redeploy</>
-            )}
-          </Button>
+        <div className="flex items-center gap-2 rounded-lg border border-status-warning/30 bg-status-warning-muted px-4 py-3">
+          <AlertTriangle className="size-4 text-status-warning shrink-0" />
+          <p className="text-sm text-status-warning">
+            Variables saved. Restart the app to apply changes.
+          </p>
         </div>
       )}
 
@@ -430,147 +408,52 @@ export function EnvEditor(props: EnvEditorProps) {
 
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">
-          KEY=value format. Use <code className="bg-muted px-1 py-0.5 rounded">{"${ref}"}</code> for variable references. Press Tab for autocomplete.
+          KEY=value format. <kbd className="bg-muted px-1 py-0.5 rounded text-[10px]">Cmd+D</kbd> select next occurrence. <kbd className="bg-muted px-1 py-0.5 rounded text-[10px]">Alt+↑↓</kbd> move lines.
         </p>
         {!isStandalone && (
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleSave}
-              disabled={saving || deploying || !modified}
-            >
-              {saving ? (
-                <><Loader2 className="mr-1.5 size-4 animate-spin" />Saving...</>
-              ) : (
-                "Save"
-              )}
-            </Button>
-            <Button
-              size="sm"
-              onClick={handleSaveAndDeploy}
-              disabled={saving || deploying || !modified}
-            >
-              {deploying ? (
-                <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
-              ) : (
-                <><Rocket className="mr-1.5 size-4" />Save & Deploy</>
-              )}
-            </Button>
-          </div>
+          <Button
+            size="sm"
+            onClick={handleSave}
+            disabled={saving || !modified}
+          >
+            {saving ? (
+              <><Loader2 className="mr-1.5 size-4 animate-spin" />Saving...</>
+            ) : (
+              "Save"
+            )}
+          </Button>
         )}
       </div>
 
-      <div className="relative rounded-lg border bg-zinc-950 min-h-[400px]">
-        {/* Syntax highlighted layer */}
-        <div
-          className="absolute inset-0 p-4 font-mono text-sm leading-6 whitespace-pre-wrap overflow-auto pointer-events-none"
-          aria-hidden
-        >
-          {content ? (
-            <div dangerouslySetInnerHTML={{ __html: highlightContent(content) }} />
-          ) : isStandalone ? (
-            <span className="text-zinc-600">{"# Environment variables\nDATABASE_URL=postgres://localhost:5432/mydb\nREDIS_URL=redis://localhost:6379\n\n# Reference other projects\nDB_PASSWORD=${postgres.POSTGRES_PASSWORD}"}</span>
-          ) : null}
-        </div>
-
-        {/* Transparent textarea for input */}
-        <textarea
-          ref={textareaRef}
+      <div
+        ref={containerRef}
+        className="relative rounded-lg border bg-zinc-950 overflow-hidden"
+        onMouseMove={handleMouseMove}
+        onMouseLeave={() => setHoveredLine(-1)}
+      >
+        <CodeMirror
+          ref={cmRef}
           value={content}
           onChange={handleChange}
-          onKeyDown={handleKeyDown}
-          onClick={(e) => {
-            setCursorPosition(e.currentTarget.selectionStart);
-            setShowSuggestions(false);
+          extensions={extensions}
+          placeholder="# Environment variables&#10;DATABASE_URL=postgres://localhost:5432/mydb&#10;REDIS_URL=redis://localhost:6379"
+          basicSetup={{
+            lineNumbers: false,
+            foldGutter: false,
+            highlightActiveLine: true,
+            highlightSelectionMatches: true,
+            bracketMatching: false,
+            closeBrackets: false,
+            autocompletion: false,
+            indentOnInput: false,
           }}
-          className="relative w-full p-4 font-mono text-sm leading-6 text-transparent caret-zinc-400 bg-transparent resize-none focus:outline-none min-h-[400px] selection:bg-zinc-700/50"
-          spellCheck={false}
-          autoComplete="off"
-          autoCorrect="off"
-          autoCapitalize="off"
+          minHeight="400px"
+          className="[&_.cm-editor]:!bg-transparent [&_.cm-gutters]:!bg-transparent [&_.cm-gutters]:!border-0 [&_.cm-focused]:!outline-none [&_.cm-scroller]:!font-mono [&_.cm-content]:!py-0"
         />
 
-        {/* Autocomplete dropdown */}
-        {showSuggestions && suggestions.length > 0 && (
-          <div
-            ref={suggestionsRef}
-            className="absolute z-50 mt-1 w-80 rounded-lg border bg-popover p-1 shadow-lg"
-            style={{
-              left: "1rem",
-              bottom: "auto",
-            }}
-          >
-            {suggestions.slice(0, 8).map((s, i) => (
-              <button
-                key={s.label}
-                type="button"
-                className={`flex items-center justify-between w-full rounded-md px-3 py-1.5 text-sm ${
-                  i === selectedSuggestion
-                    ? "bg-accent text-accent-foreground"
-                    : "hover:bg-accent/50"
-                }`}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  applySuggestion(s);
-                }}
-                onMouseEnter={() => setSelectedSuggestion(i)}
-              >
-                <span className="font-mono text-xs">{s.label}</span>
-                <span className="text-xs text-muted-foreground">{s.detail}</span>
-              </button>
-            ))}
-          </div>
-        )}
+        {/* Copy chips overlay */}
+        {content && renderCopyChips()}
       </div>
-
-      {/* Variable references — hidden in standalone mode */}
-      {!isStandalone && (() => {
-        const keys = content
-          .split("\n")
-          .filter((l) => l.includes("=") && !l.startsWith("#"))
-          .map((l) => l.split("=")[0].trim())
-          .filter(Boolean);
-        if (keys.length === 0) return null;
-        return (
-          <div className="space-y-2">
-            <p className="text-xs text-muted-foreground">
-              Reference these variables from other projects:
-            </p>
-            <div className="grid gap-1">
-              {keys.map((key) => {
-                const ref = `\${${appName}.${key}}`;
-                return (
-                  <div
-                    key={key}
-                    className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-1.5 group"
-                  >
-                    <code className="text-xs font-mono text-muted-foreground">{ref}</code>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(ref);
-                        toast.success(`Copied ${ref}`);
-                      }}
-                      className="opacity-0 group-hover:opacity-100 p-1 rounded text-muted-foreground hover:text-foreground transition-all"
-                      title="Copy reference"
-                    >
-                      <Copy className="size-3" />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })()}
     </div>
   );
-}
-
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
 }

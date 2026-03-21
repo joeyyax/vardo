@@ -5,6 +5,9 @@ import { getCurrentOrg } from "@/lib/auth/session";
 import { eq, and, or } from "drizzle-orm";
 import { ProjectDetail } from "./project-detail";
 
+const VALID_TABS = ["apps", "deployments", "variables", "logs", "metrics"] as const;
+type ValidTab = (typeof VALID_TABS)[number];
+
 export default async function ProjectDetailPage({
   params,
 }: {
@@ -12,6 +15,23 @@ export default async function ProjectDetailPage({
 }) {
   const { slug } = await params;
   const projectSlug = slug[0];
+
+  // URL patterns:
+  //   /projects/{slug}
+  //   /projects/{slug}/{tab}
+  let tabSegment: string | undefined;
+
+  if (slug.length === 2) {
+    if (VALID_TABS.includes(slug[1] as ValidTab)) {
+      tabSegment = slug[1];
+    } else {
+      notFound();
+    }
+  } else if (slug.length > 2) {
+    notFound();
+  }
+
+  const tab: ValidTab | undefined = tabSegment as ValidTab | undefined;
 
   const orgData = await getCurrentOrg();
   if (!orgData) redirect("/login");
@@ -30,12 +50,24 @@ export default async function ProjectDetailPage({
             columns: {
               id: true,
               status: true,
+              trigger: true,
               gitSha: true,
+              gitMessage: true,
+              durationMs: true,
+              log: true,
               startedAt: true,
               finishedAt: true,
             },
             orderBy: (d: any, { desc }: any) => [desc(d.startedAt)],
-            limit: 1,
+            limit: 10,
+            with: {
+              triggeredByUser: {
+                columns: { id: true, name: true, image: true },
+              },
+            },
+          },
+          envVars: {
+            columns: { id: true, key: true, value: true, isSecret: true, createdAt: true, updatedAt: true },
           },
         },
       },
@@ -47,8 +79,9 @@ export default async function ProjectDetailPage({
 
   // Redirect ID-based URLs to clean slug
   if (projectSlug === project.id && projectSlug !== project.name) {
-    redirect(`/projects/${project.name}`);
+    const tabPath = tab ? `/${tab}` : "";
+    redirect(`/projects/${project.name}${tabPath}`);
   }
 
-  return <ProjectDetail project={project} orgId={orgId} />;
+  return <ProjectDetail project={project} orgId={orgId} initialTab={tab || "apps"} />;
 }

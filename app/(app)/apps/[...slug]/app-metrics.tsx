@@ -99,7 +99,10 @@ function ContainerTable({ containers }: { containers: ContainerStatsSnapshot[] }
   );
 }
 
+let metricsInstanceId = 0;
+
 export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
+  const [uid] = useState(() => `m${++metricsInstanceId}`);
   const [data, setData] = useState<TimeSeriesPoint[]>([]);
   const [containers, setContainers] = useState<ContainerStatsSnapshot[]>([]);
   const [connected, setConnected] = useState(false);
@@ -344,7 +347,7 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
         <ResponsiveContainer width="100%" height={200}>
           <AreaChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
             <defs>
-              <linearGradient id="cpuGradient" x1="0" y1="0" x2="0" y2="1">
+              <linearGradient id={`cpuGradient-${uid}`} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="oklch(0.65 0.19 255)" stopOpacity={0.3} />
                 <stop offset="95%" stopColor="oklch(0.65 0.19 255)" stopOpacity={0} />
               </linearGradient>
@@ -374,7 +377,7 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
               type="monotone"
               dataKey="cpuPercent"
               stroke="oklch(0.65 0.19 255)"
-              fill="url(#cpuGradient)"
+              fill={`url(#cpuGradient-${uid})`}
               strokeWidth={1.5}
               dot={false}
               isAnimationActive={false}
@@ -388,7 +391,7 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
         <ResponsiveContainer width="100%" height={200}>
           <AreaChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
             <defs>
-              <linearGradient id="memGradient" x1="0" y1="0" x2="0" y2="1">
+              <linearGradient id={`memGradient-${uid}`} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="oklch(0.72 0.17 150)" stopOpacity={0.3} />
                 <stop offset="95%" stopColor="oklch(0.72 0.17 150)" stopOpacity={0} />
               </linearGradient>
@@ -432,7 +435,7 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
               type="monotone"
               dataKey="memoryUsage"
               stroke="oklch(0.72 0.17 150)"
-              fill="url(#memGradient)"
+              fill={`url(#memGradient-${uid})`}
               strokeWidth={1.5}
               dot={false}
               isAnimationActive={false}
@@ -446,11 +449,11 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
         <ResponsiveContainer width="100%" height={200}>
           <AreaChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
             <defs>
-              <linearGradient id="rxGradient" x1="0" y1="0" x2="0" y2="1">
+              <linearGradient id={`rxGradient-${uid}`} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="oklch(0.70 0.15 200)" stopOpacity={0.3} />
                 <stop offset="95%" stopColor="oklch(0.70 0.15 200)" stopOpacity={0} />
               </linearGradient>
-              <linearGradient id="txGradient" x1="0" y1="0" x2="0" y2="1">
+              <linearGradient id={`txGradient-${uid}`} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="oklch(0.75 0.15 75)" stopOpacity={0.3} />
                 <stop offset="95%" stopColor="oklch(0.75 0.15 75)" stopOpacity={0} />
               </linearGradient>
@@ -483,7 +486,7 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
               type="monotone"
               dataKey="networkRxRate"
               stroke="oklch(0.70 0.15 200)"
-              fill="url(#rxGradient)"
+              fill={`url(#rxGradient-${uid})`}
               strokeWidth={1.5}
               dot={false}
               isAnimationActive={false}
@@ -493,7 +496,7 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
               type="monotone"
               dataKey="networkTxRate"
               stroke="oklch(0.75 0.15 75)"
-              fill="url(#txGradient)"
+              fill={`url(#txGradient-${uid})`}
               strokeWidth={1.5}
               dot={false}
               isAnimationActive={false}

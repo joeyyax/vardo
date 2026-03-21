@@ -54,45 +54,70 @@ export function pushHistory(h: MetricsHistory, m: AppMetrics) {
 // Sparkline — tiny SVG chart from an array of numbers
 // ---------------------------------------------------------------------------
 
-export function Sparkline({ data, className }: { data: number[]; className?: string }) {
+let sparkId = 0;
+
+// Build a smooth cubic bezier path through points (monotone spline like Recharts)
+function smoothPath(pts: [number, number][]): string {
+  if (pts.length < 2) return "";
+  if (pts.length === 2) return `M${pts[0][0]},${pts[0][1]}L${pts[1][0]},${pts[1][1]}`;
+
+  let d = `M${pts[0][0]},${pts[0][1]}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[Math.max(0, i - 1)];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[Math.min(pts.length - 1, i + 2)];
+    // Catmull-Rom to cubic bezier control points
+    const cp1x = p1[0] + (p2[0] - p0[0]) / 6;
+    const cp1y = p1[1] + (p2[1] - p0[1]) / 6;
+    const cp2x = p2[0] - (p3[0] - p1[0]) / 6;
+    const cp2y = p2[1] - (p3[1] - p1[1]) / 6;
+    d += `C${cp1x},${cp1y},${cp2x},${cp2y},${p2[0]},${p2[1]}`;
+  }
+  return d;
+}
+
+export function Sparkline({ data, className, style }: { data: number[]; className?: string; style?: React.CSSProperties }) {
+  const [id] = useState(() => `sparkFill-${++sparkId}`);
   if (data.length === 0) return null;
-  // Single point — duplicate it to draw a flat line
   const plotData = data.length === 1 ? [data[0], data[0]] : data;
 
-  // Scale so low values (~1%) are visible but don't fill the card,
-  // while high values (~50%+) use most of the height.
-  // Uses the data's own max but with a floor so it doesn't auto-scale tiny values to full height.
   const dataMax = Math.max(...plotData, 0.1);
   const ceiling = Math.max(dataMax * 3, 10);
   const w = 64;
   const h = 20;
-  const points = plotData
+  const pts: [number, number][] = plotData
     .slice(-SPARKLINE_POINTS)
-    .map((v, i, arr) => {
-      const x = (i / (arr.length - 1)) * w;
-      const y = h - (v / ceiling) * h;
-      return `${x},${y}`;
-    })
-    .join(" ");
+    .map((v, i, arr) => [
+      (i / (arr.length - 1)) * w,
+      h - (v / ceiling) * h,
+    ]);
 
-  // Build filled area path: line across top, then close along bottom
-  const fillPoints = `0,${h} ${points} ${w},${h}`;
+  const linePath = smoothPath(pts);
+  // Closed fill path: line curve + straight bottom edge
+  const fillPath = `${linePath}L${pts[pts.length - 1][0]},${h}L${pts[0][0]},${h}Z`;
 
   return (
     <svg
       viewBox={`0 0 ${w} ${h}`}
       className={className}
+      style={style}
       preserveAspectRatio="none"
     >
       <defs>
-        <linearGradient id="sparkFill" x1="0" y1="0" x2="0" y2="1">
+        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="currentColor" stopOpacity="0.12" />
-          <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
+          <stop offset="100%" stopColor="currentColor" stopOpacity="0.01" />
         </linearGradient>
       </defs>
-      <polygon
-        points={fillPoints}
-        fill="url(#sparkFill)"
+      <path d={fillPath} fill={`url(#${id})`} />
+      <path
+        d={linePath}
+        fill="none"
+        stroke="currentColor"
+        strokeOpacity="0.35"
+        strokeWidth="0.5"
+        vectorEffect="non-scaling-stroke"
       />
     </svg>
   );
@@ -105,22 +130,16 @@ export function Sparkline({ data, className }: { data: number[]; className?: str
 export function MetricChip({
   label,
   metric,
-  onHover,
   children,
 }: {
   label: string;
   metric: MetricKey;
-  onHover: (metric: MetricKey | null) => void;
   children: React.ReactNode;
 }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span
-          className="flex items-center gap-1 cursor-default"
-          onMouseEnter={() => onHover(metric)}
-          onMouseLeave={() => onHover(null)}
-        >
+        <span className="flex items-center gap-1 cursor-default" data-metric={metric}>
           {children}
         </span>
       </TooltipTrigger>
@@ -136,24 +155,34 @@ export function MetricsLine({
   metrics: AppMetrics;
   onHover: (metric: MetricKey | null) => void;
 }) {
+  function handleMove(e: React.MouseEvent) {
+    const target = (e.target as HTMLElement).closest("[data-metric]");
+    const metric = target?.getAttribute("data-metric") as MetricKey | null;
+    onHover(metric);
+  }
+
   return (
-    <span className="flex items-center gap-2.5 text-xs text-muted-foreground tabular-nums flex-wrap">
-      <MetricChip label="CPU" metric="cpu" onHover={onHover}>
+    <span
+      className="flex items-center gap-2.5 text-xs text-muted-foreground tabular-nums flex-wrap"
+      onMouseMove={handleMove}
+      onMouseLeave={() => onHover(null)}
+    >
+      <MetricChip label="CPU" metric="cpu">
         <Cpu className="size-3" />
         {metrics.cpuPercent.toFixed(1)}%
       </MetricChip>
-      <MetricChip label="Memory" metric="memory" onHover={onHover}>
+      <MetricChip label="Memory" metric="memory">
         <MemoryStick className="size-3" />
         {formatBytes(metrics.memoryUsage)}
       </MetricChip>
       {metrics.diskUsage > 0 && (
-        <MetricChip label="Storage" metric="disk" onHover={onHover}>
+        <MetricChip label="Storage" metric="disk">
           <HardDrive className="size-3" />
           {formatBytes(metrics.diskUsage)}
         </MetricChip>
       )}
       {(metrics.networkRx > 0 || metrics.networkTx > 0) && (
-        <MetricChip label={`\u2193 ${formatBytes(metrics.networkRx)} \u2191 ${formatBytes(metrics.networkTx)}`} metric="network" onHover={onHover}>
+        <MetricChip label={`\u2193 ${formatBytes(metrics.networkRx)} \u2191 ${formatBytes(metrics.networkTx)}`} metric="network">
           <Network className="size-3" />
           {formatBytes(metrics.networkRx + metrics.networkTx)}
         </MetricChip>

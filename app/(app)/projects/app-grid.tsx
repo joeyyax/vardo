@@ -3,7 +3,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Globe } from "lucide-react";
+import { AlertTriangle, Globe } from "lucide-react";
 import {
   Popover,
   PopoverContent,
@@ -14,7 +14,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { detectProjectIcon } from "@/lib/ui/project-icon";
+import { detectAppType } from "@/lib/ui/app-type";
 import {
   type AppMetrics,
   type MetricKey,
@@ -38,6 +38,7 @@ type AppWithRelations = {
   gitUrl: string | null;
   projectId: string | null;
   status: string;
+  needsRedeploy: boolean | null;
   createdAt: Date;
   updatedAt: Date;
   domains: { domain: string; isPrimary: boolean | null }[];
@@ -87,9 +88,9 @@ function Uptime({ since }: { since: Date }) {
   return <span className="tabular-nums">{text}</span>;
 }
 
-/** Get the icon for an app */
-function getAppIcon(app: { imageName: string | null; gitUrl: string | null; deployType: string; name: string; displayName: string }): string | null {
-  return detectProjectIcon(app);
+/** Get type info (icon + color) for an app */
+function getAppTypeInfo(app: { imageName: string | null; gitUrl: string | null; deployType: string; name: string; displayName: string }, fallbackColor?: string) {
+  return detectAppType(app, fallbackColor);
 }
 
 // ---------------------------------------------------------------------------
@@ -97,16 +98,16 @@ function getAppIcon(app: { imageName: string | null; gitUrl: string | null; depl
 // ---------------------------------------------------------------------------
 
 function AppIcon({ app }: { app: AppWithRelations }) {
-  const color = app.project?.color || "#6366f1";
-  const icon = getAppIcon(app);
+  const projectColor = app.project?.color || "#6366f1";
+  const { icon, color: typeColor } = getAppTypeInfo(app, projectColor);
 
   if (!icon) {
     return (
       <div
         className="size-12 shrink-0 rounded-md flex items-center justify-center"
-        style={{ backgroundColor: `${color}20` }}
+        style={{ backgroundColor: `${typeColor}20` }}
       >
-        <span className="size-3 rounded-full" style={{ backgroundColor: color }} />
+        <span className="size-3 rounded-full" style={{ backgroundColor: typeColor }} />
       </div>
     );
   }
@@ -114,7 +115,7 @@ function AppIcon({ app }: { app: AppWithRelations }) {
   return (
     <div
       className="size-12 shrink-0 rounded-md flex items-center justify-center"
-      style={{ backgroundColor: `${color}10` }}
+      style={{ backgroundColor: `${typeColor}10` }}
     >
       <img src={icon} alt="" className="size-8 opacity-70" />
     </div>
@@ -124,12 +125,22 @@ function AppIcon({ app }: { app: AppWithRelations }) {
 function StatusIndicator({
   status,
   finishedAt,
+  needsRedeploy,
 }: {
   status: "running" | "error" | "deploying" | "stopped";
   finishedAt?: Date | null;
+  needsRedeploy?: boolean;
 }) {
   switch (status) {
     case "running":
+      if (needsRedeploy) {
+        return (
+          <span className="flex items-center gap-1.5 text-sm text-status-warning shrink-0">
+            <AlertTriangle className="size-3.5" />
+            Restart
+          </span>
+        );
+      }
       return (
         <span className="flex items-center gap-1.5 text-sm text-status-success shrink-0">
           <span className="size-2 rounded-full bg-status-success animate-pulse" />
@@ -291,7 +302,7 @@ function ProjectCard({
   const anyDeploying = projectApps.some((a) => a.status === "deploying");
   const status = allActive ? "running" : anyError ? "error" : anyDeploying ? "deploying" : "stopped";
 
-  // Aggregate CPU for sparkline from all apps
+  // Aggregated CPU across all apps
   const aggregatedCpu = useMemo(() => {
     const maxLen = Math.max(...projectApps.map((a) => (history.get(a.id)?.cpu || []).length), 0);
     if (maxLen < 2) return [];
@@ -313,7 +324,7 @@ function ProjectCard({
     const seen = new Set<string>();
     const result: string[] = [];
     for (const a of projectApps) {
-      const icon = getAppIcon(a);
+      const icon = getAppTypeInfo(a).icon;
       if (icon && !seen.has(icon)) {
         seen.add(icon);
         result.push(icon);
@@ -333,10 +344,11 @@ function ProjectCard({
       onKeyDown={(e) => { if (e.key === "Enter") router.push(`/projects/${project.name}`); }}
       className="squircle relative flex flex-col rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50 overflow-hidden cursor-pointer"
     >
-      {aggregatedCpu.length >= 1 && (
+      {aggregatedCpu.length > 0 && (
         <Sparkline
           data={aggregatedCpu}
-          className="absolute inset-0 w-full h-full text-foreground pointer-events-none"
+          className="absolute inset-0 w-full h-full pointer-events-none"
+          style={{ color: "oklch(0.65 0.19 255)" }}
         />
       )}
 
@@ -378,6 +390,7 @@ function ProjectCard({
                 }
                 return latest;
               })() : undefined}
+              needsRedeploy={projectApps.some((a) => !!a.needsRedeploy)}
             />
           </div>
           {/* Aggregated metrics */}
@@ -401,18 +414,18 @@ function ProjectCard({
         </div>
       </div>
 
-      {/* App chips */}
+      {/* App chips — colored by app type to match sparklines */}
       <div className="relative flex flex-wrap gap-1.5 mt-3 pt-3 border-t">
         {projectApps.map((a) => (
-          <Link
-            key={a.id}
-            href={`/apps/${a.name}`}
-            onClick={(e) => e.stopPropagation()}
-            className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium bg-background hover:bg-accent transition-colors cursor-pointer"
-          >
-            <span className={`size-1.5 rounded-full ${statusDotColor(a.status)}`} />
-            {a.displayName}
-          </Link>
+            <Link
+              key={a.id}
+              href={`/apps/${a.name}`}
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex items-center gap-1.5 rounded-full border border-transparent px-2.5 py-1 text-xs font-medium bg-background hover:bg-accent transition-colors cursor-pointer"
+            >
+              <span className={`size-1.5 rounded-full ${statusDotColor(a.status)}`} />
+              {a.displayName}
+            </Link>
         ))}
       </div>
     </div>
@@ -429,29 +442,22 @@ function AppCard({
   history: MetricsHistory;
 }) {
   const lastDeploy = app.deployments[0];
-  const [hoveredMetric, setHoveredMetric] = useState<MetricKey | null>(null);
-
-  const activeMetric = hoveredMetric || "cpu";
+  const projectColor = app.project?.color || "#6366f1";
+  const { color: typeColor } = getAppTypeInfo(app, projectColor);
+  const cpuData = history.cpu;
 
   return (
     <Link
       href={`/apps/${app.name}`}
       className="squircle relative flex flex-col rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50 overflow-hidden cursor-pointer"
     >
-      {/* Background sparklines — crossfade on hover */}
-      {(["cpu", "memory", "disk", "network"] as MetricKey[]).map((key) => {
-        const data = history[key];
-        if (data.length === 0) return null;
-        return (
-          <Sparkline
-            key={key}
-            data={data}
-            className={`absolute inset-0 w-full h-full text-foreground pointer-events-none transition-opacity duration-300 ${
-              activeMetric === key ? "opacity-100" : "opacity-0"
-            }`}
-          />
-        );
-      })}
+      {cpuData.length > 0 && (
+        <Sparkline
+          data={cpuData}
+          className="absolute inset-0 w-full h-full pointer-events-none"
+          style={{ color: "oklch(0.65 0.19 255)" }}
+        />
+      )}
 
       <div className="relative flex gap-4">
         <AppIcon app={app} />
@@ -471,6 +477,7 @@ function AppCard({
                   : "stopped"
               }
               finishedAt={lastDeploy?.finishedAt}
+              needsRedeploy={!!app.needsRedeploy}
             />
           </div>
           {app.description && (
@@ -487,7 +494,7 @@ function AppCard({
                 app.deployType}
             </p>
           )}
-          {metrics && <MetricsLine metrics={metrics} onHover={setHoveredMetric} />}
+          {metrics && <MetricsLine metrics={metrics} onHover={() => {}} />}
           {app.appTags.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mt-2">
               {app.appTags.map(({ tag }) => (

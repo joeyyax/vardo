@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { envVars } from "@/lib/db/schema";
+import { envVars, apps } from "@/lib/db/schema";
 import { eq, and, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
@@ -344,6 +344,14 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         }
       }
     });
+
+    // Flag app as needing a redeploy to pick up the new vars
+    if (created > 0 || updated > 0) {
+      await db
+        .update(apps)
+        .set({ needsRedeploy: true, updatedAt: new Date() })
+        .where(eq(apps.id, appId));
+    }
 
     return NextResponse.json({ created, updated });
   } catch (error) {

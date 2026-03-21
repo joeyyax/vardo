@@ -853,7 +853,7 @@ export async function runDeployment(
     // Mark app as active
     await db
       .update(apps)
-      .set({ status: "active", updatedAt: new Date() })
+      .set({ status: "active", needsRedeploy: false, updatedAt: new Date() })
       .where(eq(apps.id, opts.appId));
 
     const durationMs = Date.now() - startTime;
@@ -1257,11 +1257,17 @@ export async function restartProject(
     const composeProject = `${prefix}-${activeSlot}`;
 
     const { stdout, stderr } = await execAsync(
-      `docker compose -f "${composePath}" -p "${composeProject}" restart`,
+      `docker compose -f "${composePath}" -p "${composeProject}" up -d --force-recreate`,
       { cwd: slotDir, timeout: 60000 }
     );
     if (stdout.trim()) logs.push(stdout.trim());
     if (stderr.trim()) logs.push(stderr.trim());
+
+    // Clear needsRedeploy flag since containers were recreated with fresh env
+    await db
+      .update(apps)
+      .set({ needsRedeploy: false, updatedAt: new Date() })
+      .where(eq(apps.id, appId));
 
     return { success: true, log: logs.join("\n") };
   } catch (err) {

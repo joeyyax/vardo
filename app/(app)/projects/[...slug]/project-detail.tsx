@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
+  AlertTriangle,
   Plus,
   Pencil,
   Rocket,
@@ -24,8 +25,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import {
-  type AppMetrics,
-  type MetricKey,
+  type AppMetrics as AppMetricsType,
   type MetricsHistory,
   EMPTY_HISTORY,
   Sparkline,
@@ -35,6 +35,8 @@ import {
 import { toast } from "sonner";
 import { PageToolbar } from "@/components/page-toolbar";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -53,7 +55,11 @@ import {
   BottomSheetTitle,
   BottomSheetDescription,
 } from "@/components/ui/bottom-sheet";
-import { detectProjectIcon } from "@/lib/ui/project-icon";
+import { detectAppType } from "@/lib/ui/app-type";
+import { LogViewer, DeploymentLog } from "@/components/log-viewer";
+import { EnvEditor } from "@/components/env-editor";
+import { AppMetrics } from "@/app/(app)/apps/[...slug]/app-metrics";
+import { ProjectMetrics } from "./project-metrics";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -65,25 +71,47 @@ type GroupEnvironment = {
   type: string;
 };
 
+type Deployment = {
+  id: string;
+  status: "queued" | "running" | "success" | "failed" | "cancelled";
+  trigger: "manual" | "webhook" | "api" | "rollback";
+  gitSha: string | null;
+  gitMessage: string | null;
+  durationMs: number | null;
+  log: string | null;
+  startedAt: Date;
+  finishedAt: Date | null;
+  triggeredByUser: {
+    id: string;
+    name: string | null;
+    image: string | null;
+  } | null;
+};
+
+type EnvVar = {
+  id: string;
+  key: string;
+  value: string;
+  isSecret: boolean | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
 type ProjectApp = {
   id: string;
   name: string;
   displayName: string;
   description: string | null;
   status: string;
+  needsRedeploy: boolean | null;
   imageName: string | null;
   gitUrl: string | null;
   gitBranch: string | null;
   deployType: string;
   source: string;
   domains: { domain: string; isPrimary: boolean | null }[];
-  deployments: {
-    id: string;
-    status: string;
-    gitSha: string | null;
-    startedAt: Date;
-    finishedAt: Date | null;
-  }[];
+  deployments: Deployment[];
+  envVars: EnvVar[];
 };
 
 type Project = {
@@ -99,16 +127,6 @@ type Project = {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function statusDotColor(status: string) {
-  return status === "active"
-    ? "bg-status-success"
-    : status === "error"
-      ? "bg-status-error"
-      : status === "deploying"
-        ? "bg-status-info"
-        : "bg-status-neutral";
-}
 
 function formatUptime(date: Date): string {
   const ms = Date.now() - new Date(date).getTime();
@@ -133,7 +151,15 @@ function Uptime({ since }: { since: Date }) {
   return <span className="tabular-nums">{text}</span>;
 }
 
-function StatusIndicator({ status, finishedAt }: { status: string; finishedAt?: Date | null }) {
+function StatusIndicator({ status, finishedAt, needsRedeploy }: { status: string; finishedAt?: Date | null; needsRedeploy?: boolean }) {
+  if (status === "active" && needsRedeploy) {
+    return (
+      <span className="flex items-center gap-1.5 text-sm text-status-warning shrink-0">
+        <AlertTriangle className="size-3.5" />
+        Restart
+      </span>
+    );
+  }
   if (status === "active") {
     return (
       <span className="flex items-center gap-1.5 text-sm text-status-success shrink-0">
@@ -156,17 +182,17 @@ function envTypeDotColor(type: string) {
 }
 
 function AppIcon({ app, color }: { app: ProjectApp; color: string }) {
-  const icon = detectProjectIcon(app);
+  const { icon, color: typeColor } = detectAppType(app, color);
 
   if (!icon) {
     return (
       <div
         className="size-10 shrink-0 rounded-md flex items-center justify-center"
-        style={{ backgroundColor: `${color}20` }}
+        style={{ backgroundColor: `${typeColor}20` }}
       >
         <span
           className="size-2.5 rounded-full"
-          style={{ backgroundColor: color }}
+          style={{ backgroundColor: typeColor }}
         />
       </div>
     );
@@ -175,11 +201,46 @@ function AppIcon({ app, color }: { app: ProjectApp; color: string }) {
   return (
     <div
       className="size-10 shrink-0 rounded-md flex items-center justify-center"
-      style={{ backgroundColor: `${color}10` }}
+      style={{ backgroundColor: `${typeColor}10` }}
     >
       <img src={icon} alt="" className="size-6 opacity-70" />
     </div>
   );
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  return `${m}m ${s % 60}s`;
+}
+
+function DeploymentStatusBadge({ status }: { status: Deployment["status"] }) {
+  switch (status) {
+    case "success":
+      return (
+        <Badge className="border-transparent bg-status-success-muted text-status-success">
+          Success
+        </Badge>
+      );
+    case "running":
+      return (
+        <Badge className="border-transparent bg-status-info-muted text-status-info animate-pulse">
+          Running
+        </Badge>
+      );
+    case "failed":
+      return (
+        <Badge className="border-transparent bg-status-error-muted text-status-error">
+          Failed
+        </Badge>
+      );
+    case "cancelled":
+      return <Badge variant="secondary">Cancelled</Badge>;
+    default:
+      return <Badge variant="secondary">Queued</Badge>;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -244,13 +305,14 @@ function AppCard({
 }: {
   app: ProjectApp;
   color: string;
-  metrics?: AppMetrics;
+  metrics?: AppMetricsType;
   history: MetricsHistory;
 }) {
-  const [hoveredMetric, setHoveredMetric] = useState<MetricKey | null>(null);
-  const activeMetric = hoveredMetric || "cpu";
+  const router = useRouter();
   const lastDeploy = app.deployments[0];
   const gitSha = lastDeploy?.gitSha;
+  const { color: typeColor } = detectAppType(app, color);
+  const cpuData = history.cpu;
 
   // Source line: repo:branch + sha, or image name
   const sourceLine = app.source === "git" && app.gitUrl
@@ -258,24 +320,20 @@ function AppCard({
     : app.imageName || app.deployType;
 
   return (
-    <Link
-      href={`/apps/${app.name}`}
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => router.push(`/apps/${app.name}`)}
+      onKeyDown={(e) => { if (e.key === "Enter") router.push(`/apps/${app.name}`); }}
       className="squircle relative flex flex-col rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50 overflow-hidden cursor-pointer"
     >
-      {/* Background sparklines — crossfade on hover */}
-      {(["cpu", "memory", "disk", "network"] as MetricKey[]).map((key) => {
-        const data = history[key];
-        if (data.length === 0) return null;
-        return (
-          <Sparkline
-            key={key}
-            data={data}
-            className={`absolute inset-0 w-full h-full text-foreground pointer-events-none transition-opacity duration-300 ${
-              activeMetric === key ? "opacity-100" : "opacity-0"
-            }`}
-          />
-        );
-      })}
+      {cpuData.length > 0 && (
+        <Sparkline
+          data={cpuData}
+          className="absolute inset-0 w-full h-full pointer-events-none"
+          style={{ color: "oklch(0.65 0.19 255)" }}
+        />
+      )}
 
       <div className="relative flex gap-3 w-full">
         <AppIcon app={app} color={color} />
@@ -287,7 +345,7 @@ function AppCard({
               </h3>
               <AppEndpoints app={app} />
             </div>
-            <StatusIndicator status={app.status} finishedAt={lastDeploy?.finishedAt} />
+            <StatusIndicator status={app.status} finishedAt={lastDeploy?.finishedAt} needsRedeploy={!!app.needsRedeploy} />
           </div>
           {app.description ? (
             <p className="text-xs text-muted-foreground truncate mt-0.5">
@@ -308,10 +366,303 @@ function AppCard({
               </code>
             )}
           </div>
-          {metrics && <MetricsLine metrics={metrics} onHover={setHoveredMetric} />}
+          {metrics && <MetricsLine metrics={metrics} onHover={() => {}} />}
         </div>
       </div>
-    </Link>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Deployments Tab (merged across apps)
+// ---------------------------------------------------------------------------
+
+function ProjectDeployments({ apps, color }: { apps: ProjectApp[]; color: string }) {
+  const [viewingLogId, setViewingLogId] = useState<string | null>(null);
+
+  // Merge all deployments with app info, sorted by startedAt desc
+  const allDeployments = apps
+    .flatMap((app) =>
+      app.deployments.map((d) => ({ ...d, app }))
+    )
+    .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
+
+  if (allDeployments.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
+        <p className="text-sm text-muted-foreground">
+          No deployments yet.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {allDeployments
+        .filter((d) => d.status !== "queued")
+        .map((deployment) => {
+          const isLive = deployment.status === "success" &&
+            deployment.app.status === "active" &&
+            deployment.app.deployments[0]?.id === deployment.id;
+
+          const bgColor = isLive
+            ? "bg-status-success-muted"
+            : deployment.status === "running"
+              ? "bg-status-info-muted"
+              : deployment.status === "failed"
+                ? "bg-status-error-muted"
+                : "bg-card";
+
+          return (
+            <div key={deployment.id} className={`squircle rounded-lg border ${bgColor} overflow-hidden`}>
+              <button
+                type="button"
+                onClick={() => setViewingLogId(viewingLogId === deployment.id ? null : deployment.id)}
+                className="flex items-center justify-between gap-4 p-4 w-full text-left hover:bg-accent/50 transition-colors"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  {isLive ? (
+                    <Badge className="border-transparent bg-status-success text-white shrink-0">
+                      <span className="mr-1.5 size-1.5 rounded-full bg-white animate-pulse" />
+                      Live
+                    </Badge>
+                  ) : (
+                    <DeploymentStatusBadge status={deployment.status} />
+                  )}
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="size-2 rounded-full shrink-0"
+                        style={{ backgroundColor: color }}
+                      />
+                      <p className="text-xs font-medium text-muted-foreground shrink-0">
+                        {deployment.app.displayName}
+                      </p>
+                      <p className="text-sm font-medium truncate">
+                        {deployment.gitMessage || (
+                          <span className="capitalize">{deployment.trigger}</span>
+                        )}
+                      </p>
+                      {deployment.gitSha && (
+                        <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded shrink-0">
+                          {deployment.gitSha.slice(0, 7)}
+                        </code>
+                      )}
+                    </div>
+                    <p className="text-xs text-foreground/60 mt-0.5">
+                      {(() => {
+                        const triggerLabel = {
+                          manual: "Manual deploy",
+                          webhook: "Auto deploy",
+                          api: "API deploy",
+                          rollback: "Rollback",
+                        }[deployment.trigger];
+                        const by = deployment.triggeredByUser?.name;
+                        return by ? `${triggerLabel} by ${by}` : triggerLabel;
+                      })()}
+                    </p>
+                    {deployment.status === "failed" && deployment.log && (() => {
+                      const lines = deployment.log.split("\n");
+                      const errorLine = [...lines].reverse().find(
+                        (l) => l.includes("ERROR") || l.includes("FATAL") || l.includes("failed") || l.includes("crashed")
+                      );
+                      if (!errorLine) return null;
+                      const cleaned = errorLine
+                        .replace(/^\[.*?\]\s*/, "")
+                        .replace(/x-access-token:[^\s@]+/g, "x-access-token:***")
+                        .replace(/ghs_[A-Za-z0-9]+/g, "***")
+                        .trim();
+                      return (
+                        <p className="text-xs text-status-error mt-1 truncate max-w-md" title={cleaned}>
+                          {cleaned}
+                        </p>
+                      );
+                    })()}
+                  </div>
+                </div>
+                <div className="flex items-center gap-4 text-xs text-foreground/50 shrink-0">
+                  {isLive && deployment.finishedAt && (
+                    <span className="text-status-success">
+                      <Uptime since={deployment.finishedAt} />
+                    </span>
+                  )}
+                  {deployment.durationMs != null && (
+                    <span>built in {formatDuration(deployment.durationMs)}</span>
+                  )}
+                  <span>
+                    {new Date(deployment.startedAt).toLocaleDateString()}
+                  </span>
+                  <ChevronDown className={`size-4 transition-transform ${viewingLogId === deployment.id ? "rotate-180" : ""}`} />
+                </div>
+              </button>
+              {viewingLogId === deployment.id && deployment.log && (
+                <DeploymentLog log={deployment.log} />
+              )}
+              {viewingLogId === deployment.id && !deployment.log && (
+                <div className="border-t p-4">
+                  <p className="text-xs text-muted-foreground">No log output for this deployment.</p>
+                </div>
+              )}
+            </div>
+          );
+        })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Variables Tab (per-app editors)
+// ---------------------------------------------------------------------------
+
+function ProjectVariables({ apps, orgId }: { apps: ProjectApp[]; orgId: string }) {
+  const [expandedApp, setExpandedApp] = useState<string | null>(
+    apps.length === 1 ? apps[0].id : null
+  );
+
+  if (apps.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
+        <p className="text-sm text-muted-foreground">No apps in this project.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {apps.map((app) => (
+        <div key={app.id} className="squircle rounded-lg border bg-card overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setExpandedApp(expandedApp === app.id ? null : app.id)}
+            className="flex items-center justify-between gap-3 p-4 w-full text-left hover:bg-accent/50 transition-colors"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <h3 className="text-sm font-medium">{app.displayName}</h3>
+              {app.envVars.length > 0 && (
+                <Badge variant="secondary" className="text-xs">
+                  {app.envVars.length}
+                </Badge>
+              )}
+            </div>
+            <ChevronDown className={`size-4 text-muted-foreground transition-transform ${expandedApp === app.id ? "rotate-180" : ""}`} />
+          </button>
+          {expandedApp === app.id && (
+            <div className="border-t p-4">
+              <EnvEditor
+                appId={app.id}
+                appName={app.name}
+                orgId={orgId}
+                initialVars={app.envVars}
+              />
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Logs Tab (per-app log streams)
+// ---------------------------------------------------------------------------
+
+function ProjectLogs({ apps, orgId }: { apps: ProjectApp[]; orgId: string }) {
+  const [selectedApp, setSelectedApp] = useState<string>(apps[0]?.id || "");
+
+  if (apps.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
+        <p className="text-sm text-muted-foreground">No apps in this project.</p>
+      </div>
+    );
+  }
+
+  const selected = apps.find((a) => a.id === selectedApp) || apps[0];
+
+  return (
+    <div className="space-y-3">
+      {apps.length > 1 && (
+        <div className="flex gap-1.5">
+          {apps.map((app) => (
+            <button
+              key={app.id}
+              type="button"
+              onClick={() => setSelectedApp(app.id)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                selectedApp === app.id
+                  ? "bg-foreground text-background"
+                  : "bg-muted text-muted-foreground hover:bg-accent"
+              }`}
+            >
+              {app.displayName}
+            </button>
+          ))}
+        </div>
+      )}
+      <LogViewer
+        key={`logs-${selected.id}`}
+        streamUrl={`/api/v1/organizations/${orgId}/apps/${selected.id}/logs/stream`}
+      />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Metrics Tab (combined + individual)
+// ---------------------------------------------------------------------------
+
+function ProjectMetricsTab({ apps, orgId }: { apps: ProjectApp[]; orgId: string }) {
+  const [selected, setSelected] = useState<string>("combined");
+
+  if (apps.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
+        <p className="text-sm text-muted-foreground">No apps in this project.</p>
+      </div>
+    );
+  }
+
+  if (apps.length === 1) {
+    return <AppMetrics orgId={orgId} appId={apps[0].id} />;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-1.5">
+        <button
+          type="button"
+          onClick={() => setSelected("combined")}
+          className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+            selected === "combined"
+              ? "bg-foreground text-background"
+              : "bg-muted text-muted-foreground hover:bg-accent"
+          }`}
+        >
+          Combined
+        </button>
+        {apps.map((app) => (
+          <button
+            key={app.id}
+            type="button"
+            onClick={() => setSelected(app.id)}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+              selected === app.id
+                ? "bg-foreground text-background"
+                : "bg-muted text-muted-foreground hover:bg-accent"
+            }`}
+          >
+            {app.displayName}
+          </button>
+        ))}
+      </div>
+
+      {selected === "combined" ? (
+        <ProjectMetrics orgId={orgId} apps={apps} />
+      ) : (
+        <AppMetrics key={`metrics-${selected}`} orgId={orgId} appId={selected} />
+      )}
+    </div>
   );
 }
 
@@ -322,13 +673,16 @@ function AppCard({
 export function ProjectDetail({
   project,
   orgId,
+  initialTab,
 }: {
   project: Project;
   orgId: string;
+  initialTab: string;
 }) {
   const router = useRouter();
   const color = project.color || "#6366f1";
   const { metrics, history } = useAppMetrics(orgId);
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [selectedEnv, setSelectedEnv] = useState<string>("production");
@@ -340,6 +694,18 @@ export function ProjectDetail({
     { name: "production", type: "production" },
     ...project.groupEnvironments.map((e) => ({ name: e.name, type: e.type })),
   ];
+
+  const handleTabChange = useCallback((tab: string) => {
+    setActiveTab(tab);
+    const path = tab === "apps"
+      ? `/projects/${project.name}`
+      : `/projects/${project.name}/${tab}`;
+    window.history.replaceState(null, "", path);
+  }, [project.name]);
+
+  // Count total deployments and env vars for badges
+  const totalDeployments = project.apps.reduce((sum, app) => sum + app.deployments.length, 0);
+  const totalVars = project.apps.reduce((sum, app) => sum + app.envVars.length, 0);
 
   async function handleDelete() {
     setDeleting(true);
@@ -480,31 +846,85 @@ export function ProjectDetail({
         <p className="text-muted-foreground">{project.description}</p>
       )}
 
-      {project.apps.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
-          <p className="text-sm text-muted-foreground">
-            No apps yet. Add your first app to this project.
-          </p>
-          <Button size="sm" asChild>
-            <Link href={`/apps/new?project=${project.id}`}>
-              <Plus className="mr-1.5 size-4" />
-              Add App
-            </Link>
-          </Button>
-        </div>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {project.apps.map((app) => (
-            <AppCard
-              key={app.id}
-              app={app}
-              color={color}
-              metrics={metrics.get(app.id)}
-              history={history.get(app.id) || EMPTY_HISTORY}
-            />
-          ))}
-        </div>
-      )}
+      {/* Tabbed sections */}
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
+        <TabsList variant="line">
+          <TabsTrigger value="apps">
+            Apps
+            {project.apps.length > 0 && (
+              <Badge variant="secondary" className="ml-1.5 text-xs">
+                {project.apps.length}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="deployments">
+            Deployments
+            {totalDeployments > 0 && (
+              <Badge variant="secondary" className="ml-1.5 text-xs">
+                {totalDeployments}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="variables">
+            Variables
+            {totalVars > 0 && (
+              <Badge variant="secondary" className="ml-1.5 text-xs">
+                {totalVars}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="logs">
+            Logs
+          </TabsTrigger>
+          <TabsTrigger value="metrics">
+            Metrics
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="apps" className="pt-4">
+          {project.apps.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
+              <p className="text-sm text-muted-foreground">
+                No apps yet. Add your first app to this project.
+              </p>
+              <Button size="sm" asChild>
+                <Link href={`/apps/new?project=${project.id}`}>
+                  <Plus className="mr-1.5 size-4" />
+                  Add App
+                </Link>
+              </Button>
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {project.apps.map((app) => (
+                <AppCard
+                  key={app.id}
+                  app={app}
+                  color={color}
+                  metrics={metrics.get(app.id)}
+                  history={history.get(app.id) || EMPTY_HISTORY}
+                />
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="deployments" className="pt-4">
+          <ProjectDeployments apps={project.apps} color={color} />
+        </TabsContent>
+
+        <TabsContent value="variables" className="pt-4">
+          <ProjectVariables apps={project.apps} orgId={orgId} />
+        </TabsContent>
+
+        <TabsContent value="logs" className="pt-4">
+          <ProjectLogs apps={project.apps} orgId={orgId} />
+        </TabsContent>
+
+        <TabsContent value="metrics" className="pt-4">
+          <ProjectMetricsTab apps={project.apps} orgId={orgId} />
+        </TabsContent>
+      </Tabs>
 
       {/* New environment sheet */}
       <BottomSheet open={newEnvOpen} onOpenChange={setNewEnvOpen}>
