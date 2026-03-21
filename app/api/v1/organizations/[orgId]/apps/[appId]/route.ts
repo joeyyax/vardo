@@ -31,6 +31,8 @@ const updateAppSchema = z.object({
     protocol: z.string().optional(),
     description: z.string().optional(),
   })).nullable().optional(),
+  cpuLimit: z.number().positive().max(64).nullable().optional(),
+  memoryLimit: z.number().int().min(64).max(65536).nullable().optional(),
   projectId: z.string().nullable().optional(),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   cloneStrategy: z.enum(["clone", "clone_data", "empty", "skip"]).optional(),
