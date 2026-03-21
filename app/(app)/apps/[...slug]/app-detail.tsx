@@ -359,7 +359,8 @@ function PortsManager({
       {ports.length === 0 && !adding ? (
         <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-8">
           <p className="text-sm text-muted-foreground">
-            No ports exposed. Container ports are only accessible within the Docker network.
+            No ports exposed to the host. Container ports are accessible within the Docker network by default.
+            Expose a port to access this service directly.
           </p>
         </div>
       ) : ports.length > 0 && (
@@ -1877,10 +1878,16 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
 
         <TabsContent value="deployments" className="pt-4 space-y-4">
           {filteredDeployments.length === 0 && !deploying && !serverRunningDeploy ? (
-            <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
-              <p className="text-sm text-muted-foreground">
-                No deployments yet.
-              </p>
+            <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
+              <Rocket className="size-8 text-muted-foreground/50" />
+              <div className="text-center space-y-1">
+                <p className="text-sm font-medium">Ready for your first deploy</p>
+                <p className="text-sm text-muted-foreground">
+                  {app.source === "git" && app.autoDeploy
+                    ? "Push to your connected repo to trigger an automatic deploy, or deploy manually."
+                    : "Hit the Deploy button above to get started."}
+                </p>
+              </div>
             </div>
           ) : (
             <div className="space-y-2">
@@ -2218,9 +2225,12 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
 
             {app.domains.length === 0 && !domainOpen ? (
               <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-8">
-                <p className="text-sm text-muted-foreground">
-                  No domains configured.
-                </p>
+                <Globe2 className="size-6 text-muted-foreground/50" />
+                <div className="text-center space-y-1">
+                  <p className="text-sm text-muted-foreground">
+                    Add a domain to make this app accessible over the web.
+                  </p>
+                </div>
               </div>
             ) : app.domains.length > 0 && (
               <div className="space-y-2">

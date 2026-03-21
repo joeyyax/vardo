@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import { Activity, Box, Cpu, HardDrive, MemoryStick, Network, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { AreaChart } from "@tremor/react";
 import type { CustomTooltipProps } from "@tremor/react";
 import { formatBytes, formatMemLimit, formatTime } from "@/lib/metrics/format";
@@ -518,9 +519,20 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
 
       {/* Project list with stats */}
       {displayApps.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
-          <Activity className="size-8 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">No apps yet.</p>
+        <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
+          <Activity className="size-8 text-muted-foreground/50" />
+          <div className="text-center space-y-1">
+            <p className="text-sm font-medium">Metrics will appear here</p>
+            <p className="text-sm text-muted-foreground">
+              Deploy your first app to see CPU, memory, network, and disk usage across your infrastructure.
+            </p>
+          </div>
+          <Button size="sm" asChild>
+            <Link href="/projects">
+              <Box className="mr-1.5 size-4" />
+              Go to Projects
+            </Link>
+          </Button>
         </div>
       ) : (
         <div className="squircle rounded-lg border bg-card overflow-x-auto">

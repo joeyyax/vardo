@@ -15,6 +15,9 @@ import {
   RotateCcw,
   Square,
   Layers,
+  Variable,
+  FileText,
+  Activity,
 } from "lucide-react";
 import {
   type AppMetrics as AppMetricsType,
@@ -424,10 +427,16 @@ function ProjectDeployments({ apps, color }: { apps: ProjectApp[]; color: string
 
   if (allDeployments.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
-        <p className="text-sm text-muted-foreground">
-          No deployments yet.
-        </p>
+      <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
+        <Rocket className="size-8 text-muted-foreground/50" />
+        <div className="text-center space-y-1">
+          <p className="text-sm font-medium">
+            Ready for your first deploy
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Deploy an app from the Apps tab, or push to a connected repo to trigger an automatic deploy.
+          </p>
+        </div>
       </div>
     );
   }
@@ -577,8 +586,12 @@ function ProjectVariables({ apps, orgId }: { apps: ProjectApp[]; orgId: string }
 
   if (apps.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
-        <p className="text-sm text-muted-foreground">No apps in this project.</p>
+      <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
+        <Variable className="size-8 text-muted-foreground/50" />
+        <div className="text-center space-y-1">
+          <p className="text-sm font-medium">No variables to show</p>
+          <p className="text-sm text-muted-foreground">Add an app to this project to manage its environment variables.</p>
+        </div>
       </div>
     );
   }
@@ -626,8 +639,12 @@ function ProjectLogs({ apps, orgId }: { apps: ProjectApp[]; orgId: string }) {
 
   if (apps.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
-        <p className="text-sm text-muted-foreground">No apps in this project.</p>
+      <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
+        <FileText className="size-8 text-muted-foreground/50" />
+        <div className="text-center space-y-1">
+          <p className="text-sm font-medium">No logs to show</p>
+          <p className="text-sm text-muted-foreground">Logs appear here once an app is running in this project.</p>
+        </div>
       </div>
     );
   }
@@ -671,8 +688,12 @@ function ProjectMetricsTab({ apps, orgId, projectId }: { apps: ProjectApp[]; org
 
   if (apps.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
-        <p className="text-sm text-muted-foreground">No apps in this project.</p>
+      <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
+        <Activity className="size-8 text-muted-foreground/50" />
+        <div className="text-center space-y-1">
+          <p className="text-sm font-medium">No metrics to show</p>
+          <p className="text-sm text-muted-foreground">Metrics appear here once an app is running in this project.</p>
+        </div>
       </div>
     );
   }
@@ -1107,10 +1128,15 @@ export function ProjectDetail({
 
         <TabsContent value="apps" className="pt-4">
           {topLevelApps.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
-              <p className="text-sm text-muted-foreground">
-                No apps yet. Add your first app to this project.
-              </p>
+            <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
+              <div className="text-center space-y-1">
+                <p className="text-sm font-medium">
+                  Add your first app
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Connect a Git repo, Docker image, or Compose file to start deploying.
+                </p>
+              </div>
               <Button size="sm" asChild>
                 <Link href={`/apps/new?project=${project.id}`}>
                   <Plus className="mr-1.5 size-4" />
