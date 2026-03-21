@@ -16,6 +16,7 @@ import { ChartCard } from "@/components/app-status";
 import { formatBytes, formatBytesRate, formatTime } from "@/lib/metrics/format";
 import { RANGE_MS, BUCKET_MS, chartTooltipStyle, chartTickStyle, CHART_COLORS, TIME_RANGES, type TimeRange } from "@/lib/metrics/constants";
 import type { ContainerStatsSnapshot } from "@/lib/metrics/types";
+import { useVisibilityKey } from "@/lib/hooks/use-visible";
 
 type AppInfo = {
   id: string;
@@ -45,6 +46,7 @@ export function ProjectMetrics({ orgId, projectId, apps }: ProjectMetricsProps) 
   const [data, setData] = useState<AggPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const prevNetworkRef = useRef<Map<string, { rx: number; tx: number; ts: number }>>(new Map());
+  const visKey = useVisibilityKey();
 
   // Load historical data from the project-level endpoint (single request)
   useEffect(() => {
@@ -84,7 +86,10 @@ export function ProjectMetrics({ orgId, projectId, apps }: ProjectMetricsProps) 
   }, [orgId, projectId, timeRange]);
 
   // Live SSE stream — single connection to project endpoint
+  // Disconnects when tab is hidden, reconnects when visible
   useEffect(() => {
+    if (typeof document !== "undefined" && document.hidden) return;
+
     const es = new EventSource(
       `/api/v1/organizations/${orgId}/projects/${projectId}/stats/stream`
     );
@@ -136,7 +141,7 @@ export function ProjectMetrics({ orgId, projectId, apps }: ProjectMetricsProps) 
 
     return () => es.close();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgId, projectId]);
+  }, [orgId, projectId, visKey]);
 
   if (loading && data.length === 0) {
     return (

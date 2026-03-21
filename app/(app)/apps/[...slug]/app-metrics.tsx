@@ -16,6 +16,7 @@ import { ChartCard } from "@/components/app-status";
 import { formatBytes, formatMemLimit, formatBytesRate, formatTime } from "@/lib/metrics/format";
 import { RANGE_MS, BUCKET_MS, chartTooltipStyle, chartTickStyle, CHART_COLORS, TIME_RANGES, type TimeRange } from "@/lib/metrics/constants";
 import type { ContainerStatsSnapshot } from "@/lib/metrics/types";
+import { useVisibilityKey } from "@/lib/hooks/use-visible";
 
 type TimeSeriesPoint = {
   time: string;
@@ -91,6 +92,7 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
   const prevNetworkRef = useRef<{ rx: number; tx: number } | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const [timeRange, setTimeRange] = useState<TimeRange>("1h");
+  const visKey = useVisibilityKey();
 
   // Load historical data
   useEffect(() => {
@@ -203,6 +205,8 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
   }, []);
 
   useEffect(() => {
+    if (typeof document !== "undefined" && document.hidden) return;
+
     const url = `/api/v1/organizations/${orgId}/apps/${appId}/stats/stream${environmentName ? `?environment=${environmentName}` : ""}`;
     const es = new EventSource(url);
     eventSourceRef.current = es;
@@ -230,7 +234,7 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
       es.close();
       eventSourceRef.current = null;
     };
-  }, [orgId, appId, handleStatsEvent]);
+  }, [orgId, appId, handleStatsEvent, visKey]);
 
   // Loading state — show if no history and not connected
   if (!historyLoaded && !connected && !error) {

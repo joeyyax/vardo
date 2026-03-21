@@ -15,6 +15,7 @@ import {
 import { formatBytes, formatMemLimit } from "@/lib/metrics/format";
 import { RANGE_MS, BUCKET_MS, chartTooltipStyle, type TimeRange } from "@/lib/metrics/constants";
 import type { ContainerStatsSnapshot, TimePoint } from "@/lib/metrics/types";
+import { useVisibilityKey } from "@/lib/hooks/use-visible";
 import type { SystemInfo, DiskUsage } from "@/lib/docker/client";
 
 type AppSummary = {
@@ -42,6 +43,7 @@ type OrgMetricsProps = {
 };
 
 export function OrgMetrics({ orgId, apps, initialSystem, initialAppStats, initialDisk, adminMode }: OrgMetricsProps) {
+  const visKey = useVisibilityKey();
   const [timeRange, setTimeRange] = useState<TimeRange>("1h");
   const [disk, setDisk] = useState<DiskUsage | null>(initialDisk ? {
     images: { count: 0, totalSize: initialDisk.images, reclaimable: 0 },
@@ -195,8 +197,10 @@ export function OrgMetrics({ orgId, apps, initialSystem, initialAppStats, initia
     loadHistory();
   }, [orgId, timeRange]);
 
-  // SSE stream — always running, appends live data to the chart
+  // SSE stream — disconnects when tab hidden, reconnects when visible
   useEffect(() => {
+    if (typeof document !== "undefined" && document.hidden) return;
+
     const streamUrl = adminMode
       ? `/api/v1/admin/stats/stream`
       : `/api/v1/organizations/${orgId}/stats/stream`;
@@ -270,7 +274,7 @@ export function OrgMetrics({ orgId, apps, initialSystem, initialAppStats, initia
 
     return () => es.close();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgId]);
+  }, [orgId, adminMode, visKey]);
 
   const allStats = Object.values(appStats);
   const anyLoading = allStats.some((s) => s.loading);
