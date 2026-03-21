@@ -242,11 +242,18 @@ export function CronManager({ appId, orgId }: Props) {
         </div>
 
         {jobs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
-            <Clock className="size-8 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">
-              No cron jobs configured. Add one to run commands or hit URLs on a schedule.
-            </p>
+          <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
+            <Clock className="size-8 text-muted-foreground/50" />
+            <div className="text-center space-y-1">
+              <p className="text-sm font-medium">No scheduled jobs</p>
+              <p className="text-sm text-muted-foreground">
+                Add a cron job to run commands or hit URLs on a recurring schedule.
+              </p>
+            </div>
+            <Button size="sm" onClick={openCreate}>
+              <Plus className="mr-1.5 size-4" />
+              Add Job
+            </Button>
           </div>
         ) : (
           <div className="space-y-2">
