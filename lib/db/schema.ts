@@ -690,6 +690,8 @@ export const volumes = pgTable(
     description: text("description"),
     maxSizeBytes: bigint("max_size_bytes", { mode: "number" }), // nullable = no limit
     warnAtPercent: integer("warn_at_percent").default(80),
+    ignorePatterns: jsonb("ignore_patterns").$type<string[]>(), // glob patterns to ignore in diff (e.g. "uploads/**")
+    driftCount: integer("drift_count").default(0), // unignored file drift after last deploy
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
