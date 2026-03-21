@@ -11,6 +11,7 @@
  */
 
 export type FeatureFlag =
+  | "ui"
   | "metrics"
   | "logs"
   | "terminal"
@@ -25,6 +26,11 @@ type FlagConfig = {
 };
 
 const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
+  ui: {
+    env: "FEATURE_UI",
+    label: "Web UI",
+    description: "Web dashboard for managing projects, apps, and deployments",
+  },
   metrics: {
     env: "FEATURE_METRICS",
     label: "Metrics",
