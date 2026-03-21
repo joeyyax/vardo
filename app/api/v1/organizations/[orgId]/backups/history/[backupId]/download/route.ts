@@ -3,6 +3,7 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { backups } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
+import { isFeatureEnabled } from "@/lib/config/features";
 import { eq } from "drizzle-orm";
 import { getBackupDownloadUrl, downloadBackupToTemp } from "@/lib/backup/engine";
 import { createReadStream } from "fs";
@@ -15,6 +16,9 @@ type RouteParams = {
 // GET /api/v1/organizations/[orgId]/backups/[backupId]/download
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
+    if (!isFeatureEnabled("backups")) {
+      return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
+    }
     const { orgId, backupId } = await params;
     const { organization } = await requireOrg();
 

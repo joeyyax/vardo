@@ -177,7 +177,7 @@ type AppDetailProps = {
   initialTab?: string;
   initialEnv?: string;
   initialSubView?: string;
-  featureFlags?: FeatureFlags;
+  featureFlags: FeatureFlags;
 };
 
 function statusDotColor(status: string) {

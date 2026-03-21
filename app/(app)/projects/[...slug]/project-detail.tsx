@@ -532,7 +532,7 @@ export function ProjectDetail({
   project: Project;
   orgId: string;
   initialTab: string;
-  featureFlags?: FeatureFlags;
+  featureFlags: FeatureFlags;
 }) {
   const router = useRouter();
   const color = "#a1a1aa"; // neutral — project color is unused
