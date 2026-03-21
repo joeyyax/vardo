@@ -1,26 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { user, apps } from "@/lib/db/schema";
-import { requireSession } from "@/lib/auth/session";
-import { eq } from "drizzle-orm";
+import { apps } from "@/lib/db/schema";
 import { fetchAllContainerMetrics } from "@/lib/metrics/cadvisor";
 import { queryAllPoints } from "@/lib/metrics/store";
 import { isMetricsEnabled } from "@/lib/metrics/config";
+import { requireAppAdmin } from "@/lib/auth/admin";
 
 // GET /api/v1/admin/stats
 // System-wide metrics: all containers across all orgs
 // Supports live snapshot or historical query via ?from=&to=
 export async function GET(request: NextRequest) {
   try {
-    const session = await requireSession();
-    const dbUser = await db.query.user.findFirst({
-      where: eq(user.id, session.user.id),
-      columns: { isAppAdmin: true },
-    });
-    if (!dbUser?.isAppAdmin) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    await requireAppAdmin();
 
     if (!isMetricsEnabled()) {
       return NextResponse.json({ series: {}, system: null, disk: null });
@@ -71,6 +63,9 @@ export async function GET(request: NextRequest) {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
+    if (error instanceof Error && error.message === "Forbidden") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
     return handleRouteError(error, "Error fetching admin stats");
   }
 }
