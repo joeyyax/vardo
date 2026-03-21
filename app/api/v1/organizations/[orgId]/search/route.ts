@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { apps, projects } from "@/lib/db/schema";
+import { apps, projects, envVars, orgEnvVars } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, asc, desc } from "drizzle-orm";
 
@@ -20,7 +20,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const [orgApps, orgProjects] = await Promise.all([
+    const [orgApps, orgProjects, sharedEnvVars] = await Promise.all([
       db.query.apps.findMany({
         where: eq(apps.organizationId, orgId),
         orderBy: [asc(apps.sortOrder), desc(apps.createdAt)],
@@ -36,11 +36,16 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         with: {
           project: { columns: { name: true, displayName: true } },
           domains: { columns: { domain: true } },
+          envVars: { columns: { key: true } },
         },
       }),
       db.query.projects.findMany({
         where: eq(projects.organizationId, orgId),
         columns: { id: true, name: true, displayName: true },
+      }),
+      db.query.orgEnvVars.findMany({
+        where: eq(orgEnvVars.organizationId, orgId),
+        columns: { key: true },
       }),
     ]);
 
@@ -55,8 +60,10 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         imageName: app.imageName,
         projectName: app.project?.displayName || null,
         domains: app.domains?.map((d) => d.domain) || [],
+        envKeys: app.envVars?.map((e) => e.key) || [],
       })),
       projects: orgProjects,
+      orgEnvKeys: sharedEnvVars.map((e) => e.key),
     });
   } catch (error) {
     return handleRouteError(error, "Error fetching search index");

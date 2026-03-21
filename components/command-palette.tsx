@@ -47,6 +47,7 @@ type SearchableApp = {
   imageName: string | null;
   projectName: string | null;
   domains: string[];
+  envKeys: string[];
 };
 
 type SearchableProject = {
@@ -60,6 +61,7 @@ export function CommandPalette({ orgId }: CommandPaletteProps) {
   const [search, setSearch] = useState("");
   const [apps, setApps] = useState<SearchableApp[]>([]);
   const [projects, setProjects] = useState<SearchableProject[]>([]);
+  const [orgEnvKeys, setOrgEnvKeys] = useState<string[]>([]);
   const [loaded, setLoaded] = useState(false);
   const router = useRouter();
 
@@ -95,6 +97,7 @@ export function CommandPalette({ orgId }: CommandPaletteProps) {
       .then((data) => {
         setApps(data.apps || []);
         setProjects(data.projects || []);
+        setOrgEnvKeys(data.orgEnvKeys || []);
         setLoaded(true);
       })
       .catch(() => {});
@@ -132,7 +135,7 @@ export function CommandPalette({ orgId }: CommandPaletteProps) {
                 {apps.map((app) => (
                   <CommandItem
                     key={app.id}
-                    value={`${app.displayName} ${app.name} ${app.projectName || ""} ${app.imageName || ""} ${app.domains.join(" ")}`}
+                    value={`${app.displayName} ${app.name} ${app.projectName || ""} ${app.imageName || ""} ${app.domains.join(" ")} ${app.envKeys.join(" ")}`}
                     onSelect={() => runCommand(() => router.push(`/apps/${app.name}`))}
                     className="gap-2"
                   >
@@ -158,6 +161,23 @@ export function CommandPalette({ orgId }: CommandPaletteProps) {
                   >
                     <FolderKanban className="size-4 shrink-0 text-muted-foreground" />
                     <span>{project.displayName}</span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+
+            {/* Org environment variables */}
+            {orgEnvKeys.length > 0 && (
+              <CommandGroup heading="Shared Variables">
+                {orgEnvKeys.map((key) => (
+                  <CommandItem
+                    key={key}
+                    value={`env variable ${key}`}
+                    onSelect={() => runCommand(() => router.push("/settings"))}
+                    className="gap-2"
+                  >
+                    <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">{key}</code>
+                    <span className="text-xs text-muted-foreground ml-auto">Org variable</span>
                   </CommandItem>
                 ))}
               </CommandGroup>
