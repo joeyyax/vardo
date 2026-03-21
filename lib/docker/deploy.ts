@@ -21,6 +21,7 @@ import {
 } from "./compose";
 import { ensureNetwork, detectExposedPorts, listContainers, inspectContainer } from "./client";
 import { assertSafeName, assertSafeBranch } from "./validate";
+import { DeployBlockedError } from "./errors";
 import { getInstallationToken } from "@/lib/github/app";
 import { githubAppInstallations, memberships } from "@/lib/db/schema";
 import { detectPreventiveFixes, detectCompatIssues, applyCompatFixes } from "./compat";
@@ -851,7 +852,11 @@ export async function runDeployment(
         where: eq(volumeLimits.appId, opts.appId),
       });
       if (limit) {
+        const { formatBytes } = await import("@/lib/metrics/format");
+        const warnThreshold = limit.warnAtPercent ?? 80;
         const runningContainers = await listContainers(app.name);
+        let overLimit = false;
+
         for (const c of runningContainers) {
           const info = await inspectContainer(c.id);
           for (const mount of info.mounts) {
@@ -865,16 +870,31 @@ export async function runDeployment(
                 );
                 const sizeBytes = parseInt(stdout.split("\t")[0]);
                 const percent = Math.round((sizeBytes / limit.maxSizeBytes) * 100);
-                if (percent >= (limit.warnAtPercent ?? 80)) {
-                  const { formatBytes } = await import("@/lib/metrics/format");
-                  log(`[deploy] WARNING: Volume ${mount.destination} is at ${percent}% of limit (${formatBytes(sizeBytes)} / ${formatBytes(limit.maxSizeBytes)})`);
+                // Strip compose project prefix for display (e.g. "redis-green_data" -> "data")
+                const displayName = volName.replace(/^[^_]*_/, "");
+
+                if (percent > 100) {
+                  log(`[deploy] Volume '${displayName}': ${formatBytes(sizeBytes)} / ${formatBytes(limit.maxSizeBytes)} (${percent}%) -- OVER LIMIT, deploy blocked`);
+                  overLimit = true;
+                } else if (percent >= warnThreshold) {
+                  log(`[deploy] WARNING: Volume '${displayName}': ${formatBytes(sizeBytes)} / ${formatBytes(limit.maxSizeBytes)} (${percent}%)`);
+                } else {
+                  log(`[deploy] Volume '${displayName}': ${formatBytes(sizeBytes)} / ${formatBytes(limit.maxSizeBytes)} (${percent}%)`);
                 }
               } catch { /* volume size check failed, non-fatal */ }
             }
           }
         }
+
+        if (overLimit) {
+          throw new DeployBlockedError("One or more volumes exceed the configured storage limit. Reduce volume usage or increase the limit in app settings.");
+        }
       }
-    } catch { /* volume limit check failed, non-fatal */ }
+    } catch (err) {
+      // Re-throw volume limit enforcement errors — they should fail the deploy
+      if (err instanceof DeployBlockedError) throw err;
+      // Other errors are non-fatal (e.g. Docker not available)
+    }
 
     // Sync cron jobs from template and/or host.toml
     try {
