@@ -40,9 +40,14 @@ export function AdminOrganizations() {
 
   if (orgs.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
-        <Building2 className="size-8 text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">No organizations yet.</p>
+      <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
+        <Building2 className="size-8 text-muted-foreground/50" />
+        <div className="text-center space-y-1">
+          <p className="text-sm font-medium">No organizations yet</p>
+          <p className="text-sm text-muted-foreground">
+            Organizations are created when users sign up. Once someone creates an account, their organization will appear here.
+          </p>
+        </div>
       </div>
     );
   }
