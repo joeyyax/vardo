@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useCallback } from "react";
 import Link from "next/link";
-import { useSearchParams, useRouter, usePathname } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Building2, Check, X } from "lucide-react";
 import type { FeatureFlagInfo } from "@/lib/config/features";
 import type { SystemHealth } from "@/lib/config/health";
@@ -45,6 +44,7 @@ type AppSummary = {
 };
 
 type AdminPanelProps = {
+  activeTab: string;
   stats: Stats;
   sparklines: Record<string, [number, number][]>;
   orgId: string;
@@ -67,6 +67,7 @@ function formatUptime(seconds: number): string {
 }
 
 export function AdminPanel({
+  activeTab,
   stats,
   sparklines,
   featureFlags,
@@ -78,21 +79,11 @@ export function AdminPanel({
   initialAppStats,
   initialDisk,
 }: AdminPanelProps) {
-  const searchParams = useSearchParams();
   const router = useRouter();
-  const pathname = usePathname();
-  const activeTab = searchParams.get("tab") || "overview";
 
-  const setActiveTab = useCallback((tab: string) => {
-    const params = new URLSearchParams(searchParams.toString());
-    if (tab === "overview") {
-      params.delete("tab");
-    } else {
-      params.set("tab", tab);
-    }
-    const query = params.toString();
-    router.replace(`${pathname}${query ? `?${query}` : ""}`, { scroll: false });
-  }, [searchParams, router, pathname]);
+  function setActiveTab(tab: string) {
+    router.push(tab === "overview" ? "/admin" : `/admin/${tab}`, { scroll: false });
+  }
 
   const statCards = [
     { label: "Users", value: stats.userCount, sparklineKey: "users", color: "oklch(0.65 0.18 290)" },

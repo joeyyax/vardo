@@ -4,14 +4,26 @@ import { user, apps, deployments, organizations, memberships } from "@/lib/db/sc
 import { loadTemplates } from "@/lib/templates/load";
 import { getSession, getCurrentOrg } from "@/lib/auth/session";
 import { eq, sql, asc, desc } from "drizzle-orm";
-import { AdminPanel } from "./admin-panel";
+import { AdminPanel } from "../admin-panel";
 import { getSystemInfo } from "@/lib/docker/client";
 import { fetchAllContainerMetrics, type ContainerMetrics } from "@/lib/metrics/cadvisor";
 import { getLatestDiskUsage } from "@/lib/metrics/store";
 import { getAllFeatureFlags } from "@/lib/config/features";
 import { getSystemHealth } from "@/lib/config/health";
 
-export default async function AdminPage() {
+const VALID_TABS = ["overview", "system", "organizations", "users", "maintenance", "metrics"] as const;
+type ValidTab = (typeof VALID_TABS)[number];
+
+type PageProps = {
+  params: Promise<{ slug?: string[] }>;
+};
+
+export default async function AdminPage({ params }: PageProps) {
+  const { slug } = await params;
+  const activeTab: ValidTab = (slug?.[0] && VALID_TABS.includes(slug[0] as ValidTab))
+    ? slug[0] as ValidTab
+    : "overview";
+
   const session = await getSession();
 
   if (!session?.user?.id) {
@@ -157,6 +169,7 @@ export default async function AdminPage() {
 
   return (
     <AdminPanel
+      activeTab={activeTab}
       stats={stats}
       sparklines={sparklines}
       featureFlags={featureFlags}
