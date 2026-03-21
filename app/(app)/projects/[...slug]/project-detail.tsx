@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -168,6 +168,7 @@ function AppCard({
   onHoverStart,
   onHoverEnd,
   childCount = 0,
+  statusOverride,
 }: {
   app: ProjectApp;
   color: string;
@@ -177,8 +178,10 @@ function AppCard({
   onHoverStart: () => void;
   onHoverEnd: () => void;
   childCount?: number;
+  statusOverride?: string;
 }) {
   const router = useRouter();
+  const effectiveStatus = statusOverride ?? app.status;
   const lastDeploy = app.deployments[0];
   const gitSha = lastDeploy?.gitSha;
   detectAppType(app);
@@ -229,7 +232,7 @@ function AppCard({
               </h3>
               <EndpointsPopover endpoints={app.domains.map((d) => ({ domain: d.domain }))} />
             </div>
-            <StatusIndicator status={app.status} finishedAt={lastDeploy?.finishedAt} needsRedeploy={!!app.needsRedeploy} />
+            <StatusIndicator status={effectiveStatus} finishedAt={lastDeploy?.finishedAt} needsRedeploy={!!app.needsRedeploy} />
           </div>
           {app.description ? (
             <p className="text-xs text-muted-foreground truncate mt-0.5">
@@ -767,6 +770,10 @@ export function ProjectDetail({
   const [newEnvName, setNewEnvName] = useState("");
   const [newEnvSaving, setNewEnvSaving] = useState(false);
   const [deploying, setDeploying] = useState(false);
+  // Per-app status overrides for real-time deploy tracking
+  const [appStatusOverrides, setAppStatusOverrides] = useState<Map<string, string>>(new Map());
+  const eventSourcesRef = useRef<EventSource[]>([]);
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [hoveredAppName, setHoveredAppName] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [editDisplayName, setEditDisplayName] = useState(project.displayName);
@@ -796,6 +803,124 @@ export function ProjectDetail({
     }
     return map;
   }, [topLevelApps]);
+
+  // Clean up SSE connections and poll timers on unmount
+  useEffect(() => {
+    return () => {
+      eventSourcesRef.current.forEach((es) => es.close());
+      eventSourcesRef.current = [];
+      if (pollTimerRef.current) {
+        clearInterval(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  // Subscribe to per-app SSE events for real-time deploy status updates.
+  // Sets all apps to "deploying", then listens for deploy:complete on each.
+  // Falls back to polling if SSE fails.
+  const subscribeToDeployEvents = useCallback(() => {
+    // Clean up any previous subscriptions
+    eventSourcesRef.current.forEach((es) => es.close());
+    eventSourcesRef.current = [];
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+
+    // Set all top-level apps to "deploying" status
+    const overrides = new Map<string, string>();
+    for (const app of topLevelApps) {
+      overrides.set(app.id, "deploying");
+    }
+    setAppStatusOverrides(new Map(overrides));
+
+    let completedCount = 0;
+    const totalApps = topLevelApps.length;
+
+    function handleAppComplete(appId: string, newStatus: string) {
+      overrides.set(appId, newStatus);
+      setAppStatusOverrides(new Map(overrides));
+      completedCount++;
+      if (completedCount >= totalApps) {
+        // All apps done -- clean up and refresh server data
+        eventSourcesRef.current.forEach((es) => es.close());
+        eventSourcesRef.current = [];
+        if (pollTimerRef.current) {
+          clearInterval(pollTimerRef.current);
+          pollTimerRef.current = null;
+        }
+        setDeploying(false);
+        setAppStatusOverrides(new Map());
+        router.refresh();
+      }
+    }
+
+    // Try SSE for each app
+    for (const app of topLevelApps) {
+      try {
+        const eventsUrl = `/api/v1/organizations/${orgId}/apps/${app.id}/events`;
+        const es = new EventSource(eventsUrl);
+        eventSourcesRef.current.push(es);
+
+        es.addEventListener("deploy:complete", (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            handleAppComplete(app.id, data.status || "active");
+          } catch {
+            handleAppComplete(app.id, "active");
+          }
+        });
+
+        es.onerror = () => {
+          es.close();
+        };
+      } catch {
+        // SSE not available for this app
+      }
+    }
+
+    // Fallback: poll the project API every 4 seconds
+    const POLL_DELAY = 5000;
+    const POLL_INTERVAL = 4000;
+    setTimeout(() => {
+      pollTimerRef.current = setInterval(async () => {
+        if (completedCount >= totalApps) return;
+        try {
+          const res = await fetch(
+            `/api/v1/organizations/${orgId}/projects/${project.id}`,
+          );
+          if (!res.ok) return;
+          const data = await res.json();
+          const updatedApps: ProjectApp[] = data.project?.apps ?? [];
+          for (const updated of updatedApps) {
+            if (updated.parentAppId) continue;
+            const current = overrides.get(updated.id);
+            if (current === "deploying" && updated.status !== "deploying") {
+              handleAppComplete(updated.id, updated.status);
+            }
+          }
+        } catch {
+          // Retry on next interval
+        }
+      }, POLL_INTERVAL);
+    }, POLL_DELAY);
+
+    // Safety timeout: if deploys haven't finished after 3 minutes, clean up
+    setTimeout(() => {
+      if (completedCount < totalApps) {
+        eventSourcesRef.current.forEach((es) => es.close());
+        eventSourcesRef.current = [];
+        if (pollTimerRef.current) {
+          clearInterval(pollTimerRef.current);
+          pollTimerRef.current = null;
+        }
+        setDeploying(false);
+        setAppStatusOverrides(new Map());
+        router.refresh();
+      }
+    }, 180000);
+  }, [topLevelApps, orgId, project.id, router]);
 
   // Compute highlight state for each app based on what's hovered
   const getHighlight = useCallback(
@@ -867,14 +992,15 @@ export function ProjectDetail({
       );
       if (res.ok) {
         toast.success("Deploying all apps...");
-        router.refresh();
+        // Subscribe to real-time deploy events for status transitions
+        subscribeToDeployEvents();
       } else {
         const data = await res.json().catch(() => ({}));
         toast.error(data.error || "Deploy failed");
+        setDeploying(false);
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Deploy failed");
-    } finally {
       setDeploying(false);
     }
   }
@@ -967,7 +1093,7 @@ export function ProjectDetail({
               const allActive = topLevelApps.every((a) => a.status === "active");
               const anyNeedsRedeploy = topLevelApps.some((a) => a.needsRedeploy);
 
-              if (allActive) {
+              if (allActive && !deploying) {
                 return (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -1159,6 +1285,7 @@ export function ProjectDetail({
                       onHoverStart={() => setHoveredAppName(app.name)}
                       onHoverEnd={() => setHoveredAppName(null)}
                       childCount={(app.childApps ?? []).length}
+                      statusOverride={appStatusOverrides.get(app.id)}
                     />
                     {(app.childApps ?? []).length > 0 && (
                       <ComposeServicesGrid parentApp={app} />
