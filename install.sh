@@ -324,6 +324,49 @@ if [ ! -f "$ENV_FILE" ]; then
     fi
   fi
 
+  # ── Backup storage ──────────────────────────────────────────────────────
+  echo ""
+  BACKUP_STORAGE_TYPE=""
+  BACKUP_STORAGE_BUCKET=""
+  BACKUP_STORAGE_REGION=""
+  BACKUP_STORAGE_ENDPOINT=""
+  BACKUP_STORAGE_ACCESS_KEY=""
+  BACKUP_STORAGE_SECRET_KEY=""
+
+  read -p "  Configure backup storage? (recommended) [Y/n] " ENABLE_BACKUPS
+  if [ "$ENABLE_BACKUPS" != "n" ] && [ "$ENABLE_BACKUPS" != "N" ]; then
+    echo ""
+    echo -e "  ${BOLD}Backup storage type:${RESET}"
+    echo "    1) S3 (AWS S3 or compatible)"
+    echo "    2) R2 (Cloudflare R2)"
+    echo "    3) B2 (Backblaze B2)"
+    read -p "  Choose [1-3]: " BACKUP_TYPE_CHOICE
+    case "$BACKUP_TYPE_CHOICE" in
+      1) BACKUP_STORAGE_TYPE="s3" ;;
+      2) BACKUP_STORAGE_TYPE="r2" ;;
+      3) BACKUP_STORAGE_TYPE="b2" ;;
+      *) BACKUP_STORAGE_TYPE="s3" ;;
+    esac
+
+    read -p "  Bucket name: " BACKUP_STORAGE_BUCKET
+    if [ "$BACKUP_STORAGE_TYPE" = "r2" ]; then
+      read -p "  R2 endpoint (e.g. https://<account-id>.r2.cloudflarestorage.com): " BACKUP_STORAGE_ENDPOINT
+      BACKUP_STORAGE_REGION="auto"
+    elif [ "$BACKUP_STORAGE_TYPE" = "b2" ]; then
+      read -p "  B2 endpoint (e.g. https://s3.us-west-004.backblazeb2.com): " BACKUP_STORAGE_ENDPOINT
+      read -p "  B2 region (e.g. us-west-004): " BACKUP_STORAGE_REGION
+    else
+      read -p "  Region (e.g. us-east-1): " BACKUP_STORAGE_REGION
+      read -p "  Custom endpoint (leave blank for AWS): " BACKUP_STORAGE_ENDPOINT
+    fi
+    read -p "  Access key: " BACKUP_STORAGE_ACCESS_KEY
+    read -sp "  Secret key: " BACKUP_STORAGE_SECRET_KEY
+    echo ""
+    log "Backup storage configured (${BACKUP_STORAGE_TYPE}://${BACKUP_STORAGE_BUCKET})"
+  else
+    warn "You can configure backup storage later in settings"
+  fi
+
   echo ""
 
   # Generate secrets
@@ -353,6 +396,14 @@ COMPOSE_PROFILES=$COMPOSE_PROFILES
 # Feature flags — set to "false" to hide disabled services from the UI
 FEATURE_METRICS=$FEATURE_METRICS
 FEATURE_LOGS=$FEATURE_LOGS
+
+# Backup storage (auto-creates Host-level backup target on startup)
+BACKUP_STORAGE_TYPE=$BACKUP_STORAGE_TYPE
+BACKUP_STORAGE_BUCKET=$BACKUP_STORAGE_BUCKET
+BACKUP_STORAGE_REGION=$BACKUP_STORAGE_REGION
+BACKUP_STORAGE_ENDPOINT=$BACKUP_STORAGE_ENDPOINT
+BACKUP_STORAGE_ACCESS_KEY=$BACKUP_STORAGE_ACCESS_KEY
+BACKUP_STORAGE_SECRET_KEY=$BACKUP_STORAGE_SECRET_KEY
 
 # GitHub App (optional — configure later in Settings)
 GITHUB_APP_ID=
