@@ -12,8 +12,21 @@ export function formatMemLimit(bytes: number): string {
   return formatBytes(bytes);
 }
 
+export function formatBytesShort(bytes: number): string {
+  if (bytes === 0) return "0";
+  const k = 1024;
+  const sizes = ["B", "K", "M", "G", "T"];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
+  const val = bytes / Math.pow(k, i);
+  return `${val < 10 ? val.toFixed(1) : Math.round(val)}${sizes[i]}`;
+}
+
 export function formatBytesRate(bytes: number): string {
   return `${formatBytes(bytes)}/s`;
+}
+
+export function formatBytesRateShort(bytes: number): string {
+  return `${formatBytesShort(bytes)}/s`;
 }
 
 export function formatTime(timestamp: number): string {
