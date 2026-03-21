@@ -120,6 +120,7 @@ export function ProjectMetrics({ orgId, projectId, apps }: ProjectMetricsProps) 
           categories={["memory"]}
           colors={[TREMOR_METRIC_COLORS.memory]}
           valueFormatter={(v) => formatBytes(v)}
+          yAxisWidth={65}
           showLegend={false}
           showAnimation={false}
           curveType="monotone"
@@ -137,6 +138,7 @@ export function ProjectMetrics({ orgId, projectId, apps }: ProjectMetricsProps) 
           categories={["networkRx", "networkTx"]}
           colors={[TREMOR_METRIC_COLORS.networkRx, TREMOR_METRIC_COLORS.networkTx]}
           valueFormatter={(v) => formatBytes(v)}
+          yAxisWidth={65}
           showLegend={false}
           showAnimation={false}
           curveType="monotone"
