@@ -26,6 +26,7 @@ import { volumeThreshold } from "@/lib/volumes/threshold";
 import { getInstallationToken } from "@/lib/github/app";
 import { githubAppInstallations, memberships } from "@/lib/db/schema";
 import { detectPreventiveFixes, detectCompatIssues, applyCompatFixes } from "./compat";
+import { syncComposeServices } from "./compose-sync";
 import { recordActivity } from "@/lib/activity";
 import {
   getDecryptedPrivateKey,
@@ -998,6 +999,26 @@ export async function runDeployment(
       log(`[deploy] Warning: cron sync — ${err instanceof Error ? err.message : err}`);
     }
 
+    // Sync compose decomposition: create/update child app records per service
+    if (app.deployType === "compose" && Object.keys(compose.services).length > 0) {
+      try {
+        const syncResult = await syncComposeServices({
+          parentAppId: opts.appId,
+          organizationId: opts.organizationId,
+          projectId: app.projectId,
+          compose,
+          parentAppName: app.name,
+          log,
+        });
+        const totalSync = syncResult.created.length + syncResult.updated.length + syncResult.removed.length;
+        if (totalSync > 0) {
+          log(`[deploy] Compose decomposition: ${syncResult.created.length} created, ${syncResult.updated.length} updated, ${syncResult.removed.length} removed`);
+        }
+      } catch (err) {
+        log(`[deploy] Warning: compose decomposition — ${err instanceof Error ? err.message : err}`);
+      }
+    }
+
     // Mark app as active
     await db
       .update(apps)
@@ -1349,6 +1370,12 @@ export async function stopProject(
       .update(apps)
       .set({ status: "stopped", updatedAt: new Date() })
       .where(eq(apps.id, appId));
+
+    // Cascade stop status to compose child services
+    await db
+      .update(apps)
+      .set({ status: "stopped", updatedAt: new Date() })
+      .where(eq(apps.parentAppId, appId));
 
     return { success: true, log: logs.join("\n") };
   } catch (err) {

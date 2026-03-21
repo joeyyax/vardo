@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -14,6 +14,7 @@ import {
   Loader2,
   RotateCcw,
   Square,
+  Layers,
 } from "lucide-react";
 import {
   type AppMetrics as AppMetricsType,
@@ -92,6 +93,20 @@ type EnvVar = {
   updatedAt: Date;
 };
 
+type ComposeChildApp = {
+  id: string;
+  name: string;
+  displayName: string;
+  composeService: string | null;
+  status: string;
+  containerName: string | null;
+  imageName: string | null;
+  dependsOn: string[] | null;
+  cpuLimit: number | null;
+  memoryLimit: number | null;
+  persistentVolumes: { name: string; mountPath: string }[] | null;
+};
+
 type ProjectApp = {
   id: string;
   name: string;
@@ -105,9 +120,13 @@ type ProjectApp = {
   deployType: string;
   source: string;
   dependsOn: string[] | null;
+  parentAppId: string | null;
+  composeService: string | null;
+  containerName: string | null;
   domains: { domain: string; isPrimary: boolean | null }[];
   deployments: Deployment[];
   envVars: EnvVar[];
+  childApps?: ComposeChildApp[];
 };
 
 type Project = {
@@ -145,6 +164,7 @@ function AppCard({
   highlight,
   onHoverStart,
   onHoverEnd,
+  childCount = 0,
 }: {
   app: ProjectApp;
   color: string;
@@ -153,6 +173,7 @@ function AppCard({
   highlight: DepHighlight;
   onHoverStart: () => void;
   onHoverEnd: () => void;
+  childCount?: number;
 }) {
   const router = useRouter();
   const lastDeploy = app.deployments[0];
@@ -227,6 +248,14 @@ function AppCard({
             )}
           </div>
           {metrics && <MetricsLine metrics={metrics} onHover={() => {}} />}
+          {childCount > 0 && (
+            <div className="flex items-center gap-1.5 mt-1">
+              <Layers className="size-3 text-muted-foreground/50" />
+              <span className="text-[10px] text-muted-foreground/50">
+                {childCount} service{childCount > 1 ? "s" : ""}
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -258,6 +287,124 @@ function AppCard({
           <span>depends on this</span>
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Compose Service Card (child service of a compose app)
+// ---------------------------------------------------------------------------
+
+function ComposeServiceCard({
+  service,
+  parentName,
+}: {
+  service: ComposeChildApp;
+  parentName: string;
+}) {
+  const statusColor =
+    service.status === "active"
+      ? "bg-status-success"
+      : service.status === "error"
+        ? "bg-status-error"
+        : "bg-status-neutral";
+
+  const deps = service.dependsOn ?? [];
+
+  return (
+    <div className="squircle relative flex flex-col rounded-lg border bg-card/60 p-3 transition-all duration-200 hover:bg-accent/50 overflow-hidden">
+      <div className="flex gap-3 w-full">
+        <div className="flex size-8 items-center justify-center rounded-md bg-muted">
+          <Layers className="size-4 text-muted-foreground" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <h3 className="text-sm font-semibold truncate">
+                {service.displayName}
+              </h3>
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-muted-foreground/20">
+                compose
+              </Badge>
+            </div>
+            <span className={`size-2 rounded-full shrink-0 ${statusColor}`} />
+          </div>
+          {service.imageName && (
+            <p className="text-xs text-muted-foreground/60 font-mono truncate mt-0.5">
+              {service.imageName}
+            </p>
+          )}
+          <div className="flex items-center gap-2 mt-1">
+            {service.cpuLimit && (
+              <span className="text-[10px] text-muted-foreground/50">
+                {service.cpuLimit} CPU
+              </span>
+            )}
+            {service.memoryLimit && (
+              <span className="text-[10px] text-muted-foreground/50">
+                {service.memoryLimit}MB
+              </span>
+            )}
+            {service.persistentVolumes && service.persistentVolumes.length > 0 && (
+              <span className="text-[10px] text-muted-foreground/50">
+                {service.persistentVolumes.length} vol{service.persistentVolumes.length > 1 ? "s" : ""}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {deps.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1 mt-2 pt-2 border-t border-border/50">
+          <span className="text-[10px] text-muted-foreground/60 mr-0.5">depends on</span>
+          {deps.map((dep) => (
+            <span
+              key={dep}
+              className="inline-flex items-center rounded-full bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 dark:text-blue-400"
+            >
+              {dep.replace(`${parentName}-`, "")}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Compose Services Section (expandable, nested under parent app card)
+// ---------------------------------------------------------------------------
+
+function ComposeServicesGrid({
+  parentApp,
+}: {
+  parentApp: ProjectApp;
+}) {
+  const children = parentApp.childApps ?? [];
+  if (children.length === 0) return null;
+
+  return (
+    <div className="col-span-full">
+      <div className="squircle rounded-lg border border-dashed border-muted-foreground/20 p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <Layers className="size-4 text-muted-foreground" />
+          <span className="text-xs font-medium text-muted-foreground">
+            {parentApp.displayName} Services
+          </span>
+          <Badge variant="secondary" className="text-[10px]">
+            {children.length}
+          </Badge>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {children.map((child) => (
+            <ComposeServiceCard
+              key={child.id}
+              service={child}
+              parentName={parentApp.name}
+            />
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -605,6 +752,12 @@ export function ProjectDetail({
   const [editDescription, setEditDescription] = useState(project.description || "");
   const [editSaving, setEditSaving] = useState(false);
 
+  // Filter out compose child apps — they render nested under their parent
+  const topLevelApps = useMemo(
+    () => project.apps.filter((a) => !a.parentAppId),
+    [project.apps]
+  );
+
   const environments = [
     { name: "production", type: "production" },
     ...project.groupEnvironments.map((e) => ({ name: e.name, type: e.type })),
@@ -613,7 +766,7 @@ export function ProjectDetail({
   // Build reverse dependency map: for each app name, which app names depend on it
   const dependentsMap = useMemo(() => {
     const map = new Map<string, Set<string>>();
-    for (const app of project.apps) {
+    for (const app of topLevelApps) {
       for (const dep of app.dependsOn ?? []) {
         const set = map.get(dep) || new Set();
         set.add(app.name);
@@ -621,14 +774,14 @@ export function ProjectDetail({
       }
     }
     return map;
-  }, [project.apps]);
+  }, [topLevelApps]);
 
   // Compute highlight state for each app based on what's hovered
   const getHighlight = useCallback(
     (appName: string): DepHighlight => {
       if (!hoveredAppName) return "none";
       if (appName === hoveredAppName) return "hovered";
-      const hoveredApp = project.apps.find((a) => a.name === hoveredAppName);
+      const hoveredApp = topLevelApps.find((a) => a.name === hoveredAppName);
       if (!hoveredApp) return "none";
       // Is this app a dependency of the hovered app?
       if ((hoveredApp.dependsOn ?? []).includes(appName)) return "dependency";
@@ -637,7 +790,7 @@ export function ProjectDetail({
       if (hoveredDependents?.has(appName)) return "dependent";
       return "none";
     },
-    [hoveredAppName, project.apps, dependentsMap]
+    [hoveredAppName, topLevelApps, dependentsMap]
   );
 
   const handleTabChange = useCallback((tab: string) => {
@@ -649,8 +802,8 @@ export function ProjectDetail({
   }, [project.name]);
 
   // Count total deployments and env vars for badges
-  const totalDeployments = project.apps.reduce((sum, app) => sum + app.deployments.length, 0);
-  const totalVars = project.apps.reduce((sum, app) => sum + app.envVars.length, 0);
+  const totalDeployments = topLevelApps.reduce((sum, app) => sum + app.deployments.length, 0);
+  const totalVars = topLevelApps.reduce((sum, app) => sum + app.envVars.length, 0);
 
   async function handleDelete() {
     setDeleting(true);
@@ -674,9 +827,9 @@ export function ProjectDetail({
   }
 
   async function handleDeployAll() {
-    if (project.apps.length === 0) return;
+    if (topLevelApps.length === 0) return;
     setDeploying(true);
-    const firstApp = project.apps[0];
+    const firstApp = topLevelApps[0];
     const groupEnvId = selectedEnv !== "production"
       ? project.groupEnvironments.find((e) => e.name === selectedEnv)?.id
       : undefined;
@@ -706,7 +859,7 @@ export function ProjectDetail({
   }
 
   async function handleRestartAll() {
-    for (const app of project.apps) {
+    for (const app of topLevelApps) {
       try {
         await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/restart`, { method: "POST" });
       } catch { /* continue */ }
@@ -716,7 +869,7 @@ export function ProjectDetail({
   }
 
   async function handleStopAll() {
-    for (const app of project.apps) {
+    for (const app of topLevelApps) {
       try {
         await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/stop`, { method: "POST" });
       } catch { /* continue */ }
@@ -789,9 +942,9 @@ export function ProjectDetail({
       <PageToolbar
         actions={
           <div className="flex items-center gap-2">
-            {project.apps.length > 0 && (() => {
-              const allActive = project.apps.every((a) => a.status === "active");
-              const anyNeedsRedeploy = project.apps.some((a) => a.needsRedeploy);
+            {topLevelApps.length > 0 && (() => {
+              const allActive = topLevelApps.every((a) => a.status === "active");
+              const anyNeedsRedeploy = topLevelApps.some((a) => a.needsRedeploy);
 
               if (allActive) {
                 return (
@@ -918,9 +1071,9 @@ export function ProjectDetail({
         <TabsList variant="line">
           <TabsTrigger value="apps">
             Apps
-            {project.apps.length > 0 && (
+            {topLevelApps.length > 0 && (
               <Badge variant="secondary" className="ml-1.5 text-xs">
-                {project.apps.length}
+                {topLevelApps.length}
               </Badge>
             )}
           </TabsTrigger>
@@ -953,7 +1106,7 @@ export function ProjectDetail({
         </TabsList>
 
         <TabsContent value="apps" className="pt-4">
-          {project.apps.length === 0 ? (
+          {topLevelApps.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
               <p className="text-sm text-muted-foreground">
                 No apps yet. Add your first app to this project.
@@ -967,39 +1120,46 @@ export function ProjectDetail({
             </div>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {project.apps.map((app) => (
-                <AppCard
-                  key={app.id}
-                  app={app}
-                  color={color}
-                  metrics={metrics.get(app.id)}
-                  history={history.get(app.id) || EMPTY_HISTORY}
-                  highlight={getHighlight(app.name)}
-                  onHoverStart={() => setHoveredAppName(app.name)}
-                  onHoverEnd={() => setHoveredAppName(null)}
-                />
-              ))}
+              {project.apps
+                .filter((app) => !app.parentAppId)
+                .map((app) => (
+                  <React.Fragment key={app.id}>
+                    <AppCard
+                      app={app}
+                      color={color}
+                      metrics={metrics.get(app.id)}
+                      history={history.get(app.id) || EMPTY_HISTORY}
+                      highlight={getHighlight(app.name)}
+                      onHoverStart={() => setHoveredAppName(app.name)}
+                      onHoverEnd={() => setHoveredAppName(null)}
+                      childCount={(app.childApps ?? []).length}
+                    />
+                    {(app.childApps ?? []).length > 0 && (
+                      <ComposeServicesGrid parentApp={app} />
+                    )}
+                  </React.Fragment>
+                ))}
             </div>
           )}
         </TabsContent>
 
         <TabsContent value="deployments" className="pt-4">
-          <ProjectDeployments apps={project.apps} color={color} />
+          <ProjectDeployments apps={topLevelApps} color={color} />
         </TabsContent>
 
         <TabsContent value="variables" className="pt-4">
-          <ProjectVariables apps={project.apps} orgId={orgId} />
+          <ProjectVariables apps={topLevelApps} orgId={orgId} />
         </TabsContent>
 
         {featureFlags?.logs !== false && (
           <TabsContent value="logs" className="pt-4">
-            <ProjectLogs apps={project.apps} orgId={orgId} />
+            <ProjectLogs apps={topLevelApps} orgId={orgId} />
           </TabsContent>
         )}
 
         {featureFlags?.metrics !== false && (
           <TabsContent value="metrics" className="pt-4">
-            <ProjectMetricsTab apps={project.apps} orgId={orgId} projectId={project.id} />
+            <ProjectMetricsTab apps={topLevelApps} orgId={orgId} projectId={project.id} />
           </TabsContent>
         )}
       </Tabs>
@@ -1086,8 +1246,8 @@ export function ProjectDetail({
         loading={deleting}
         title="Delete project"
         description={
-          project.apps.length > 0
-            ? `This will remove the project "${project.displayName}" but keep its ${project.apps.length} app(s). They will become unassigned.`
+          topLevelApps.length > 0
+            ? `This will remove the project "${project.displayName}" but keep its ${topLevelApps.length} app(s). They will become unassigned.`
             : `Delete the project "${project.displayName}"?`
         }
       />
