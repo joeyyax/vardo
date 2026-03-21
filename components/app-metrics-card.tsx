@@ -180,7 +180,10 @@ export function useAppMetrics(orgId: string) {
         const res = await fetch(
           `/api/v1/organizations/${orgId}/stats?from=${from}&to=${now}&bucket=60000&perProject=true&metric=cpu`
         );
-        if (!res.ok) return;
+        if (!res.ok) {
+          console.warn("[metrics] History API returned", res.status);
+          return;
+        }
         const data = await res.json();
         for (const [appId, series] of Object.entries(data.apps || {})) {
           const s = series as { cpu: [number, number][]; memory: [number, number][]; networkRx: [number, number][]; networkTx: [number, number][]; disk: [number, number][] };
@@ -199,7 +202,9 @@ export function useAppMetrics(orgId: string) {
           }
         }
         setHistoryTick((t) => t + 1);
-      } catch { /* history is optional */ }
+      } catch (err) {
+        console.warn("[metrics] History load failed:", err);
+      }
     }
     loadHistory();
   }, [orgId]);
