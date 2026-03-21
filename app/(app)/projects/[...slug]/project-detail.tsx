@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -104,6 +104,7 @@ type ProjectApp = {
   gitBranch: string | null;
   deployType: string;
   source: string;
+  dependsOn: string[] | null;
   domains: { domain: string; isPrimary: boolean | null }[];
   deployments: Deployment[];
   envVars: EnvVar[];
@@ -118,6 +119,12 @@ type Project = {
   apps: ProjectApp[];
   groupEnvironments: GroupEnvironment[];
 };
+
+// ---------------------------------------------------------------------------
+// Dependency highlight types
+// ---------------------------------------------------------------------------
+
+type DepHighlight = "none" | "hovered" | "dependency" | "dependent";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -135,16 +142,22 @@ function AppCard({
   color,
   metrics,
   history,
+  highlight,
+  onHoverStart,
+  onHoverEnd,
 }: {
   app: ProjectApp;
   color: string;
   metrics?: AppMetricsType;
   history: MetricsHistory;
+  highlight: DepHighlight;
+  onHoverStart: () => void;
+  onHoverEnd: () => void;
 }) {
   const router = useRouter();
   const lastDeploy = app.deployments[0];
   const gitSha = lastDeploy?.gitSha;
-  const { color: typeColor } = detectAppType(app);
+  detectAppType(app);
   const cpuData = history.cpu;
 
   // Source line: repo:branch + sha, or image name
@@ -152,13 +165,27 @@ function AppCard({
     ? `${app.gitUrl.replace("https://github.com/", "").replace(".git", "")}:${app.gitBranch || "main"}`
     : app.imageName || app.deployType;
 
+  const deps = app.dependsOn ?? [];
+
+  // Build highlight ring/border classes
+  const highlightClasses =
+    highlight === "hovered"
+      ? "ring-2 ring-foreground/20 border-foreground/30 scale-[1.01]"
+      : highlight === "dependency"
+        ? "ring-2 ring-blue-500/40 border-blue-500/50"
+        : highlight === "dependent"
+          ? "ring-2 ring-emerald-500/40 border-emerald-500/50"
+          : "";
+
   return (
     <div
       role="button"
       tabIndex={0}
       onClick={() => router.push(`/apps/${app.name}`)}
       onKeyDown={(e) => { if (e.key === "Enter") router.push(`/apps/${app.name}`); }}
-      className="squircle relative flex flex-col rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50 overflow-hidden cursor-pointer"
+      onMouseEnter={onHoverStart}
+      onMouseLeave={onHoverEnd}
+      className={`squircle relative flex flex-col rounded-lg border bg-card p-4 transition-all duration-200 hover:bg-accent/50 overflow-hidden cursor-pointer ${highlightClasses}`}
     >
       {cpuData.length > 0 && (
         <Sparkline
@@ -202,6 +229,35 @@ function AppCard({
           {metrics && <MetricsLine metrics={metrics} onHover={() => {}} />}
         </div>
       </div>
+
+      {/* Dependency badges */}
+      {deps.length > 0 && (
+        <div className="relative flex flex-wrap items-center gap-1 mt-2 pt-2 border-t border-border/50">
+          <span className="text-[10px] text-muted-foreground/60 mr-0.5">depends on</span>
+          {deps.map((dep) => (
+            <span
+              key={dep}
+              className="inline-flex items-center rounded-full bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 dark:text-blue-400"
+            >
+              {dep}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Direction indicator when highlighted via hover */}
+      {highlight === "dependency" && (
+        <div className="relative flex items-center gap-1 mt-1.5 text-[10px] text-blue-600 dark:text-blue-400">
+          <span>&larr;</span>
+          <span>depends on this</span>
+        </div>
+      )}
+      {highlight === "dependent" && (
+        <div className="relative flex items-center gap-1 mt-1.5 text-[10px] text-emerald-600 dark:text-emerald-400">
+          <span>&rarr;</span>
+          <span>depends on this</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -213,7 +269,6 @@ function AppCard({
 function ProjectDeployments({ apps, color }: { apps: ProjectApp[]; color: string }) {
   const [viewingLogId, setViewingLogId] = useState<string | null>(null);
 
-  // Merge all deployments with app info, sorted by startedAt desc
   const allDeployments = apps
     .flatMap((app) =>
       app.deployments.map((d) => ({ ...d, app }))
@@ -235,7 +290,6 @@ function ProjectDeployments({ apps, color }: { apps: ProjectApp[]; color: string
       {allDeployments
         .filter((d) => d.status !== "queued" && d.status !== "running")
         .map((deployment) => {
-          // Determine if this is the latest deployment for its app
           const isLatestForApp = deployment.app.deployments[0]?.id === deployment.id;
           const isLive = deployment.status === "success" &&
             deployment.app.status === "active" && isLatestForApp;
@@ -545,6 +599,7 @@ export function ProjectDetail({
   const [newEnvName, setNewEnvName] = useState("");
   const [newEnvSaving, setNewEnvSaving] = useState(false);
   const [deploying, setDeploying] = useState(false);
+  const [hoveredAppName, setHoveredAppName] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [editDisplayName, setEditDisplayName] = useState(project.displayName);
   const [editDescription, setEditDescription] = useState(project.description || "");
@@ -554,6 +609,36 @@ export function ProjectDetail({
     { name: "production", type: "production" },
     ...project.groupEnvironments.map((e) => ({ name: e.name, type: e.type })),
   ];
+
+  // Build reverse dependency map: for each app name, which app names depend on it
+  const dependentsMap = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const app of project.apps) {
+      for (const dep of app.dependsOn ?? []) {
+        const set = map.get(dep) || new Set();
+        set.add(app.name);
+        map.set(dep, set);
+      }
+    }
+    return map;
+  }, [project.apps]);
+
+  // Compute highlight state for each app based on what's hovered
+  const getHighlight = useCallback(
+    (appName: string): DepHighlight => {
+      if (!hoveredAppName) return "none";
+      if (appName === hoveredAppName) return "hovered";
+      const hoveredApp = project.apps.find((a) => a.name === hoveredAppName);
+      if (!hoveredApp) return "none";
+      // Is this app a dependency of the hovered app?
+      if ((hoveredApp.dependsOn ?? []).includes(appName)) return "dependency";
+      // Is this app a dependent of the hovered app? (it depends on the hovered one)
+      const hoveredDependents = dependentsMap.get(hoveredAppName);
+      if (hoveredDependents?.has(appName)) return "dependent";
+      return "none";
+    },
+    [hoveredAppName, project.apps, dependentsMap]
+  );
 
   const handleTabChange = useCallback((tab: string) => {
     setActiveTab(tab);
@@ -889,6 +974,9 @@ export function ProjectDetail({
                   color={color}
                   metrics={metrics.get(app.id)}
                   history={history.get(app.id) || EMPTY_HISTORY}
+                  highlight={getHighlight(app.name)}
+                  onHoverStart={() => setHoveredAppName(app.name)}
+                  onHoverEnd={() => setHoveredAppName(null)}
                 />
               ))}
             </div>
