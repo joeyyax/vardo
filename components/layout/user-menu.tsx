@@ -95,31 +95,13 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations }: Us
         align="end"
         className="min-w-56"
       >
-        {/* Profile info */}
+        {/* Profile */}
         <DropdownMenuLabel className="font-normal">
           <div className="flex flex-col gap-1">
             <p className="text-sm font-medium">{displayName}</p>
             <p className="text-xs text-muted-foreground">{email}</p>
           </div>
         </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-
-        <DropdownMenuItem
-          className="gap-2 cursor-pointer"
-          onClick={() => router.push("/user/settings/profile")}
-        >
-          <User className="size-4" />
-          Account settings
-        </DropdownMenuItem>
-        {isAdmin && (
-          <DropdownMenuItem
-            className="gap-2 cursor-pointer"
-            onClick={() => router.push("/admin/settings")}
-          >
-            <Shield className="size-4" />
-            Admin settings
-          </DropdownMenuItem>
-        )}
 
         {/* Organizations */}
         <DropdownMenuSeparator />
@@ -141,18 +123,37 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations }: Us
         ))}
         <DropdownMenuItem
           className="gap-2 cursor-pointer"
-          onClick={() => router.push("/settings")}
-        >
-          <Settings className="size-4" />
-          Settings
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          className="gap-2 cursor-pointer"
           onClick={() => router.push("/onboarding")}
         >
           <Plus className="size-4" />
           New organization
         </DropdownMenuItem>
+
+        {/* Settings */}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          className="gap-2 cursor-pointer"
+          onClick={() => router.push("/user/settings/profile")}
+        >
+          <User className="size-4" />
+          Account settings
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className="gap-2 cursor-pointer"
+          onClick={() => router.push("/settings")}
+        >
+          <Settings className="size-4" />
+          Org settings
+        </DropdownMenuItem>
+        {isAdmin && (
+          <DropdownMenuItem
+            className="gap-2 cursor-pointer"
+            onClick={() => router.push("/admin/settings")}
+          >
+            <Shield className="size-4" />
+            Admin settings
+          </DropdownMenuItem>
+        )}
 
         {/* Theme switcher */}
         <DropdownMenuSeparator />
