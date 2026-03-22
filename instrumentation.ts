@@ -50,6 +50,15 @@ export async function register() {
       console.error("[instrumentation] Failed to start backup scheduler:", err);
     }
 
+    console.log("[instrumentation] Starting system health monitor...");
+    try {
+      const { startSystemAlertMonitor } = await import("./lib/system-alerts/monitor");
+      startSystemAlertMonitor();
+      console.log("[instrumentation] System health monitor started");
+    } catch (err) {
+      console.error("[instrumentation] Failed to start system health monitor:", err);
+    }
+
     console.log("[instrumentation] Starting domain monitor...");
     try {
       setInterval(async () => {
