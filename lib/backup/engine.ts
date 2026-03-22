@@ -6,7 +6,7 @@ import {
 } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import { promisify } from "util";
 import { mkdir, rm } from "fs/promises";
 import { resolve, join } from "path";
@@ -14,7 +14,7 @@ import type { BackupStorage } from "./storage-port";
 import { createBackupStorage } from "./storage-factory";
 import { assertSafeName } from "@/lib/docker/validate";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 const BACKUPS_DIR = resolve(process.env.HOST_BACKUPS_DIR || "./.host/backups");
 
@@ -64,13 +64,14 @@ async function backupVolume(
   const archiveFile = "volume.tar.gz";
 
   try {
-    // Validate volume name before interpolating into shell command
+    // Validate volume name before use
     assertSafeName(dockerVolumeName);
 
     // Tar the volume contents using a temporary Alpine container
     logFn(`Archiving volume ${dockerVolumeName}`);
-    await execAsync(
-      `docker run --rm -v ${dockerVolumeName}:/data -v ${tmpDir}:/backup alpine tar czf /backup/${archiveFile} -C /data .`,
+    await execFileAsync(
+      "docker",
+      ["run", "--rm", "-v", `${dockerVolumeName}:/data`, "-v", `${tmpDir}:/backup`, "alpine", "tar", "czf", `/backup/${archiveFile}`, "-C", "/data", "."],
       { timeout: 600_000 }, // 10 minute timeout
     );
 
@@ -166,13 +167,13 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
       let dockerVolumeName: string;
       try {
         // Check if blue volume exists
-        await execAsync(`docker volume inspect ${blueVolume}`, {
+        await execFileAsync("docker", ["volume", "inspect", blueVolume], {
           timeout: 10_000,
         });
         dockerVolumeName = blueVolume;
       } catch {
         try {
-          await execAsync(`docker volume inspect ${greenVolume}`, {
+          await execFileAsync("docker", ["volume", "inspect", greenVolume], {
             timeout: 10_000,
           });
           dockerVolumeName = greenVolume;
@@ -348,20 +349,20 @@ export async function restoreBackup(
 
     let dockerVolumeName: string;
     try {
-      await execAsync(`docker volume inspect ${blueVolume}`, {
+      await execFileAsync("docker", ["volume", "inspect", blueVolume], {
         timeout: 10_000,
       });
       dockerVolumeName = blueVolume;
     } catch {
       try {
-        await execAsync(`docker volume inspect ${greenVolume}`, {
+        await execFileAsync("docker", ["volume", "inspect", greenVolume], {
           timeout: 10_000,
         });
         dockerVolumeName = greenVolume;
       } catch {
         // Create the blue volume if neither exists
         log(`Creating volume ${blueVolume}`);
-        await execAsync(`docker volume create ${blueVolume}`, {
+        await execFileAsync("docker", ["volume", "create", blueVolume], {
           timeout: 10_000,
         });
         dockerVolumeName = blueVolume;
@@ -370,8 +371,9 @@ export async function restoreBackup(
 
     // 3. Restore: clear and repopulate the volume
     log(`Restoring to volume ${dockerVolumeName}`);
-    await execAsync(
-      `docker run --rm -v ${dockerVolumeName}:/data -v ${tmpDir}:/backup alpine sh -c "rm -rf /data/* /data/.[!.]* 2>/dev/null; tar xzf /backup/volume.tar.gz -C /data"`,
+    await execFileAsync(
+      "docker",
+      ["run", "--rm", "-v", `${dockerVolumeName}:/data`, "-v", `${tmpDir}:/backup`, "alpine", "sh", "-c", "rm -rf /data/* /data/.[!.]* 2>/dev/null; tar xzf /backup/volume.tar.gz -C /data"],
       { timeout: 600_000 },
     );
     log("Restore complete");
