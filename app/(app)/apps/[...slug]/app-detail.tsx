@@ -80,6 +80,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { isAdmin } from "@/lib/auth/permissions";
 import { BranchSelect } from "@/components/branch-select";
+import { formatDuration } from "@/components/app-status";
 import type { FeatureFlags } from "@/lib/config/features";
 
 type Deployment = {
@@ -577,15 +578,6 @@ function Uptime({ since }: { since: Date }) {
   );
 }
 
-function formatDuration(ms: number) {
-  if (ms < 1000) return `${ms}ms`;
-  const seconds = Math.floor(ms / 1000);
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  const remaining = seconds % 60;
-  return `${minutes}m ${remaining}s`;
-}
-
 
 function DependencySelector({
   appId,
@@ -1004,7 +996,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         const data = JSON.parse(event.data);
         finished = true;
         if (data.success) {
-          toast.success(`Deployed in ${data.durationMs ? formatDuration(data.durationMs) : "---"}`);
+          toast.success(data.durationMs ? `Deployed in ${formatDuration(data.durationMs)}` : "Deployed");
           setDeployAnnouncement("Deployment succeeded.");
         } else {
           toast.error(data.error || "Deployment failed");
@@ -1050,7 +1042,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
             }
             if (dep?.status === "success" || dep?.status === "failed") {
               if (dep.status === "success") {
-                toast.success(`Deployed in ${dep.durationMs ? Math.round(dep.durationMs / 1000) + "s" : "---"}`);
+                toast.success(dep.durationMs ? `Deployed in ${formatDuration(dep.durationMs)}` : "Deployed");
               } else {
                 // Extract last error line from deploy log for the toast
                 const errorLine = dep.log

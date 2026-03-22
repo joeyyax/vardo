@@ -535,11 +535,14 @@ export function AppEnvironments({
 
       <ConfirmDeleteDialog
         open={!!promoteTarget}
-        onOpenChange={(open) => { if (!open) setPromoteTarget(null); }}
+        onOpenChange={(open) => {
+          if (!open) setPromoteTarget(null);
+        }}
         title="Promote to production"
-        description={`Copy ${promoteTarget?.name}'s variables to production? Existing production variables won't be overwritten.`}
+        description={`Copy ${promoteTarget?.name} variables to production? Existing production variables won't be overwritten.`}
         confirmLabel="Promote"
         loadingLabel="Promoting..."
+        variant="default"
         onConfirm={confirmPromote}
         loading={promoting}
       />
