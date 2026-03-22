@@ -737,6 +737,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteEnvOpen, setDeleteEnvOpen] = useState(false);
+  const [stopOpen, setStopOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deletingEnv, setDeletingEnv] = useState(false);
@@ -1210,6 +1211,17 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     }
   }
 
+  async function handleStop() {
+    try {
+      const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/stop`, { method: "POST" });
+      const data = await res.json();
+      data.success ? toast.success("Stopped") : toast.error(data.error || "Stop failed");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Stop failed");
+    }
+    router.refresh();
+  }
+
   async function handleDelete() {
     setDeleting(true);
     try {
@@ -1658,18 +1670,10 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                     <RotateCcw className="mr-2 size-4" />
                     Restart
                   </DropdownMenuItem>
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem
                     className="text-destructive focus:text-destructive"
-                    onClick={async () => {
-                      try {
-                        const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/stop`, { method: "POST" });
-                        const data = await res.json();
-                        data.success ? toast.success("Stopped") : toast.error(data.error || "Stop failed");
-                      } catch (err) {
-                        toast.error(err instanceof Error ? err.message : "Stop failed");
-                      }
-                      router.refresh();
-                    }}
+                    onClick={() => setStopOpen(true)}
                   >
                     <Square className="mr-2 size-4" />
                     Stop
@@ -3082,6 +3086,16 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           </BottomSheet>
         );
       })()}
+
+      {/* Stop Confirmation */}
+      <ConfirmDeleteDialog
+        open={stopOpen}
+        onOpenChange={setStopOpen}
+        title="Stop app"
+        description={`Stop "${app.displayName}"? The app will go offline until you redeploy or restart it.`}
+        onConfirm={handleStop}
+        confirmLabel="Stop"
+      />
 
       {/* Delete Project Confirmation */}
       <ConfirmDeleteDialog
