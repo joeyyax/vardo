@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { requireAdminAuth } from "@/lib/auth/admin";
 import { needsSetup } from "@/lib/setup";
 import { db } from "@/lib/db";
 import { systemSettings } from "@/lib/db/schema";
 import { getOptionalServicesConfig } from "@/lib/system-settings";
+
+const servicesSchema = z.object({
+  metrics: z.boolean(),
+  logs: z.boolean(),
+});
 
 export async function GET(request: NextRequest) {
   await requireAdminAuth(request);
@@ -23,9 +29,17 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { metrics, logs } = body;
+  const parsed = servicesSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
+      { status: 400 },
+    );
+  }
 
-  const config = JSON.stringify({ metrics: !!metrics, logs: !!logs });
+  const { metrics, logs } = parsed.data;
+
+  const config = JSON.stringify({ metrics, logs });
 
   await db
     .insert(systemSettings)
