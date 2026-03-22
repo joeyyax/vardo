@@ -1,3 +1,5 @@
+name: vardo
+
 # docker-compose.yml — Canonical, production-ready compose file.
 #
 # In production:  docker compose --env-file .env.prod up -d
