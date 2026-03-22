@@ -2,10 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminAuth } from "@/lib/auth/admin";
 import { needsSetup } from "@/lib/setup";
-import { db } from "@/lib/db";
-import { systemSettings } from "@/lib/db/schema";
-import { encryptSystem } from "@/lib/crypto/encrypt";
-import { getGitHubAppConfig } from "@/lib/system-settings";
+import { getGitHubAppConfig, setSystemSetting } from "@/lib/system-settings";
 import { maskSecret, isMasked } from "@/lib/mask-secrets";
 
 const githubSchema = z.object({
@@ -60,7 +57,7 @@ export async function POST(request: NextRequest) {
     return incoming ?? undefined;
   }
 
-  const config = encryptSystem(JSON.stringify({
+  await setSystemSetting("github_app", JSON.stringify({
     appId,
     appSlug,
     clientId,
@@ -68,14 +65,6 @@ export async function POST(request: NextRequest) {
     privateKey: resolveSecret(privateKey, existing?.privateKey),
     webhookSecret: resolveSecret(webhookSecret, existing?.webhookSecret),
   }));
-
-  await db
-    .insert(systemSettings)
-    .values({ key: "github_app", value: config })
-    .onConflictDoUpdate({
-      target: systemSettings.key,
-      set: { value: config, updatedAt: new Date() },
-    });
 
   return NextResponse.json({ ok: true });
 }

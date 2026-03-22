@@ -2,10 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminAuth } from "@/lib/auth/admin";
 import { needsSetup } from "@/lib/setup";
-import { db } from "@/lib/db";
-import { systemSettings } from "@/lib/db/schema";
-import { encryptSystem } from "@/lib/crypto/encrypt";
-import { getInstanceConfig } from "@/lib/system-settings";
+import { getInstanceConfig, setSystemSetting } from "@/lib/system-settings";
 
 const generalSchema = z.object({
   instanceName: z.string().min(1).max(100),
@@ -44,19 +41,11 @@ export async function POST(request: NextRequest) {
   // Only instanceName is editable; preserve baseDomain and serverIp from existing config
   const existing = await getInstanceConfig();
 
-  const config = encryptSystem(JSON.stringify({
+  await setSystemSetting("instance_config", JSON.stringify({
     instanceName: parsed.data.instanceName,
     baseDomain: existing.baseDomain,
     serverIp: existing.serverIp,
   }));
-
-  await db
-    .insert(systemSettings)
-    .values({ key: "instance_config", value: config })
-    .onConflictDoUpdate({
-      target: systemSettings.key,
-      set: { value: config, updatedAt: new Date() },
-    });
 
   return NextResponse.json({ ok: true });
 }
