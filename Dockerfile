@@ -30,11 +30,25 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/drizzle ./drizzle
-COPY --from=builder /app/scripts/migrate.mjs ./scripts/migrate.mjs
+# Create a non-root user for the Node process.
+# The docker group (GID 999) matches the conventional Docker socket GID on
+# Debian/Ubuntu hosts so the process can communicate with the mounted socket
+# without running as root. If the host's docker group uses a different GID,
+# override at runtime with: --group-add <host-docker-gid>
+RUN addgroup --system --gid 1001 nodejs && \
+    addgroup --system --gid 999 docker && \
+    adduser --system --uid 1001 --ingroup nodejs nextjs && \
+    adduser nextjs docker && \
+    mkdir -p /var/lib/host/projects && \
+    chown nextjs:nodejs /var/lib/host/projects
+
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
+COPY --from=builder --chown=nextjs:nodejs /app/drizzle ./drizzle
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/migrate.mjs ./scripts/migrate.mjs
+
+USER nextjs
 
 EXPOSE 3000
 ENV PORT=3000
