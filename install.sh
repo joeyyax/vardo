@@ -419,8 +419,8 @@ echo -e "    ${DIM}Stop:${RESET}         docker compose -f $HOST_DIR/$COMPOSE_FI
 echo ""
 
 # Update instructions
-echo -e "  ${BOLD}To update Host:${RESET}"
-echo -e "    cd $HOST_DIR && git pull && docker compose -f $COMPOSE_FILE --env-file .env.prod up -d --build"
+echo -e "  ${BOLD}To update Vardo:${RESET}"
+echo -e "    sudo bash $HOST_DIR/update.sh"
 echo ""
 
 # Backup recommendations

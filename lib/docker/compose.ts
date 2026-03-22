@@ -148,6 +148,15 @@ export function injectTraefikLabels(
     if (!isLocal) {
       labels[`traefik.http.routers.${projectName}.tls.certresolver`] = certResolver;
     }
+
+    // HTTP redirect router — catches port-80 traffic and sends it to HTTPS.
+    // The global Traefik redirect handles the Vardo app itself; user projects
+    // need their own per-router redirect so the correct Host rule matches.
+    labels[`traefik.http.routers.${projectName}-http.rule`] = `Host(\`${domain}\`)`;
+    labels[`traefik.http.routers.${projectName}-http.entrypoints`] = "web";
+    labels[`traefik.http.middlewares.${projectName}-https-redirect.redirectscheme.scheme`] = "https";
+    labels[`traefik.http.middlewares.${projectName}-https-redirect.redirectscheme.permanent`] = "true";
+    labels[`traefik.http.routers.${projectName}-http.middlewares`] = `${projectName}-https-redirect`;
   } else {
     // HTTP only — web entrypoint, no TLS
     labels[`traefik.http.routers.${projectName}.entrypoints`] = "web";
