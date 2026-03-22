@@ -51,7 +51,6 @@ type SearchableApp = {
   imageName: string | null;
   projectName: string | null;
   domains: string[];
-  envKeys: string[];
 };
 
 type SearchableProject = {
@@ -139,7 +138,7 @@ export function CommandPalette({ orgId }: CommandPaletteProps) {
                 {apps.map((app) => (
                   <CommandItem
                     key={app.id}
-                    value={`${app.displayName} ${app.name} ${app.projectName || ""} ${app.imageName || ""} ${app.domains.join(" ")} ${app.envKeys.join(" ")}`}
+                    value={`${app.displayName} ${app.name} ${app.projectName || ""} ${app.imageName || ""} ${app.domains.join(" ")}`}
                     onSelect={() => runCommand(() => router.push(`/apps/${app.name}`))}
                     className="gap-2"
                   >
