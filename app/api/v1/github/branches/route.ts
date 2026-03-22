@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Installation not found" }, { status: 404 });
     }
 
-    const octokit = getInstallationOctokit(installation.installationId);
+    const octokit = await getInstallationOctokit(installation.installationId);
     const [owner, repoName] = repo.split("/");
 
     if (!owner || !repoName) {

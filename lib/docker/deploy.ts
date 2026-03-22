@@ -652,9 +652,19 @@ export async function runDeployment(
       });
       const orgEnvVarMap: Record<string, string> = {};
       for (const v of orgVarRows) {
-        orgEnvVarMap[v.key] = v.isSecret
-          ? decryptOrFallback(v.value, opts.organizationId).content
-          : v.value;
+        if (v.isSecret) {
+          const { content, decryptFailed } = decryptOrFallback(v.value, opts.organizationId);
+          if (decryptFailed) {
+            // The value is encrypted but decryption failed — wrong key or corrupted data.
+            // Abort the deploy rather than silently injecting an empty credential.
+            throw new Error(
+              `[deploy] Failed to decrypt org env var '${v.key}' — wrong key or corrupted data. Deploy aborted.`
+            );
+          }
+          orgEnvVarMap[v.key] = content;
+        } else {
+          orgEnvVarMap[v.key] = v.value;
+        }
       }
 
       const primaryDomain = app.domains[0]?.domain ?? null;

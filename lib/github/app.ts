@@ -1,36 +1,41 @@
 import { Octokit } from "@octokit/rest";
 import { createAppAuth } from "@octokit/auth-app";
 import { createHmac, timingSafeEqual } from "crypto";
+import { getGitHubAppConfig } from "@/lib/system-settings";
 
-function getPrivateKey(): string {
-  const b64 = process.env.GITHUB_PRIVATE_KEY;
-  if (!b64) throw new Error("GITHUB_PRIVATE_KEY is not set");
-  return Buffer.from(b64, "base64").toString("utf-8");
+async function loadGitHubConfig() {
+  const config = await getGitHubAppConfig();
+  if (!config || !config.appId || !config.privateKey) {
+    throw new Error("GitHub App is not configured. Set GITHUB_APP_ID and GITHUB_PRIVATE_KEY env vars or complete the setup wizard.");
+  }
+  return config;
 }
 
-export function getAppOctokit() {
+export async function getAppOctokit() {
+  const config = await loadGitHubConfig();
   return new Octokit({
     authStrategy: createAppAuth,
     auth: {
-      appId: process.env.GITHUB_APP_ID!,
-      privateKey: getPrivateKey(),
+      appId: config.appId,
+      privateKey: config.privateKey,
     },
   });
 }
 
-export function getInstallationOctokit(installationId: number) {
+export async function getInstallationOctokit(installationId: number) {
+  const config = await loadGitHubConfig();
   return new Octokit({
     authStrategy: createAppAuth,
     auth: {
-      appId: process.env.GITHUB_APP_ID!,
-      privateKey: getPrivateKey(),
+      appId: config.appId,
+      privateKey: config.privateKey,
       installationId,
     },
   });
 }
 
 export async function getInstallationToken(installationId: number): Promise<string> {
-  const octokit = getAppOctokit();
+  const octokit = await getAppOctokit();
   const { data } = await octokit.rest.apps.createInstallationAccessToken({
     installation_id: installationId,
   });
@@ -38,7 +43,7 @@ export async function getInstallationToken(installationId: number): Promise<stri
 }
 
 export async function listInstallationRepos(installationId: number) {
-  const octokit = getInstallationOctokit(installationId);
+  const octokit = await getInstallationOctokit(installationId);
   const repos: Array<{
     id: number;
     name: string;
@@ -90,7 +95,7 @@ export async function createRepo(
   cloneUrl: string;
   defaultBranch: string;
 }> {
-  const octokit = getInstallationOctokit(installationId);
+  const octokit = await getInstallationOctokit(installationId);
 
   let data;
   if (opts.ownerType === "Organization") {
