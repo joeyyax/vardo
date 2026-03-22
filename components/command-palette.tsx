@@ -240,12 +240,12 @@ export function CommandPalette({ orgId }: CommandPaletteProps) {
                 <span>Settings</span>
               </CommandItem>
               <CommandItem
-                value="Profile Account"
-                onSelect={() => runCommand(() => router.push("/profile"))}
+                value="Profile Account Settings"
+                onSelect={() => runCommand(() => router.push("/user/settings/profile"))}
                 className="gap-2"
               >
                 <UserCircle className="size-4" />
-                <span>Profile</span>
+                <span>Account settings</span>
               </CommandItem>
             </CommandGroup>
 

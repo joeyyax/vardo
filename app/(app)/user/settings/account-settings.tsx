@@ -3,9 +3,6 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   Loader2,
-  Pencil,
-  Check,
-  X,
   Eye,
   EyeOff,
   Shield,
@@ -27,9 +24,8 @@ import { authClient, useSession } from "@/lib/auth/client";
 // Account Info
 // ---------------------------------------------------------------------------
 
-function AccountInfo() {
+export function AccountInfo() {
   const { data: sessionData, isPending } = useSession();
-  const [editingName, setEditingName] = useState(false);
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -48,7 +44,6 @@ function AccountInfo() {
         toast.error(error.message || "Failed to update name");
       } else {
         toast.success("Name updated");
-        setEditingName(false);
       }
     } catch {
       toast.error("Failed to update name");
@@ -93,18 +88,6 @@ function AccountInfo() {
           <Input value={sessionData?.user?.email || ""} disabled />
         </div>
       </div>
-
-      {/* Legacy card sections removed — name/email are now simple fields above */}
-      <div className="hidden">
-        <div className="flex items-center justify-between rounded-lg border bg-card p-4">
-          <div>
-            <p className="text-xs text-muted-foreground">Email</p>
-            <p className="text-sm font-medium mt-0.5">
-              {sessionData?.user?.email}
-            </p>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
@@ -113,7 +96,7 @@ function AccountInfo() {
 // Password Management
 // ---------------------------------------------------------------------------
 
-function PasswordManagement() {
+export function PasswordManagement() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -227,7 +210,7 @@ function PasswordManagement() {
 
         <Button type="submit" size="sm" disabled={saving}>
           {saving && <Loader2 className="mr-1.5 size-4 animate-spin" />}
-          Change Password
+          Change password
         </Button>
       </form>
     </div>
@@ -238,7 +221,7 @@ function PasswordManagement() {
 // Two-Factor Authentication
 // ---------------------------------------------------------------------------
 
-function TwoFactorAuth() {
+export function TwoFactorAuth() {
   const { data: sessionData } = useSession();
   const [enabling, setEnabling] = useState(false);
   const [totpUri, setTotpUri] = useState<string | null>(null);
@@ -258,8 +241,6 @@ function TwoFactorAuth() {
         password: "",
       });
       if (error) {
-        // If password is required, we need to prompt for it
-        // Better Auth's twoFactor.enable requires password
         toast.error(error.message || "Failed to enable 2FA");
         setEnabling(false);
         return;
@@ -324,7 +305,7 @@ function TwoFactorAuth() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-base font-semibold">Two-Factor Authentication</h2>
+        <h2 className="text-base font-semibold">Two-factor authentication</h2>
         <p className="text-sm text-muted-foreground mt-1">
           Add an extra layer of security to your account with TOTP.
         </p>
@@ -411,7 +392,7 @@ function TwoFactorAuth() {
             </div>
             {backupCodes && backupCodes.length > 0 && (
               <div className="mt-3 space-y-2">
-                <p className="text-sm font-medium">Backup Codes</p>
+                <p className="text-sm font-medium">Backup codes</p>
                 <p className="text-xs text-muted-foreground">
                   Save these codes in a safe place. You can use them to sign in
                   if you lose access to your authenticator app.
@@ -475,7 +456,7 @@ type SessionInfo = {
   expiresAt: Date;
 };
 
-function ActiveSessions() {
+export function ActiveSessions() {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [revoking, setRevoking] = useState<string | null>(null);
@@ -531,7 +512,7 @@ function ActiveSessions() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-base font-semibold">Active Sessions</h2>
+        <h2 className="text-base font-semibold">Active sessions</h2>
         <p className="text-sm text-muted-foreground mt-1">
           Manage your active sessions across devices.
         </p>
@@ -608,7 +589,7 @@ type ApiToken = {
   createdAt: string;
 };
 
-function ApiTokens({ orgId }: { orgId: string }) {
+export function ApiTokens({ orgId }: { orgId: string }) {
   const [tokens, setTokens] = useState<ApiToken[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -696,7 +677,7 @@ function ApiTokens({ orgId }: { orgId: string }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-base font-semibold">API Tokens</h2>
+          <h2 className="text-base font-semibold">API tokens</h2>
           <p className="text-sm text-muted-foreground mt-1">
             Manage API tokens for programmatic access.
           </p>
@@ -710,7 +691,7 @@ function ApiTokens({ orgId }: { orgId: string }) {
           }}
         >
           <Plus className="mr-1.5 size-4" />
-          New Token
+          New token
         </Button>
       </div>
 
@@ -805,21 +786,6 @@ function ApiTokens({ orgId }: { orgId: string }) {
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Main Export
-// ---------------------------------------------------------------------------
-
-export function AccountSettings({ orgId }: { orgId: string }) {
-  return (
-    <div className="space-y-8">
-      <AccountInfo />
-      <TwoFactorAuth />
-      <ActiveSessions />
-      <ApiTokens orgId={orgId} />
     </div>
   );
 }
