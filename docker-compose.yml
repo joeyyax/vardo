@@ -45,9 +45,19 @@ services:
       - host_projects:/var/lib/host/projects
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.host.rule=Host(`${HOST_DOMAIN}`)"
-      - "traefik.http.routers.host.entrypoints=websecure"
-      - "traefik.http.routers.host.tls.certresolver=le"
+      # HTTPS route (when DNS + certs are configured)
+      - "traefik.http.routers.host-secure.rule=Host(`${HOST_DOMAIN}`)"
+      - "traefik.http.routers.host-secure.entrypoints=websecure"
+      - "traefik.http.routers.host-secure.tls.certresolver=le"
+      # HTTP→HTTPS redirect for the domain only
+      - "traefik.http.routers.host-redirect.rule=Host(`${HOST_DOMAIN}`)"
+      - "traefik.http.routers.host-redirect.entrypoints=web"
+      - "traefik.http.routers.host-redirect.middlewares=https-redirect"
+      - "traefik.http.middlewares.https-redirect.redirectscheme.scheme=https"
+      # HTTP catch-all (works with IP, no DNS required for initial setup)
+      - "traefik.http.routers.host-http.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.host-http.entrypoints=web"
+      - "traefik.http.routers.host-http.priority=1"
       - "traefik.http.services.host.loadbalancer.server.port=3000"
     networks:
       - internal
@@ -134,8 +144,6 @@ services:
       - "--providers.docker.exposedbydefault=false"
       - "--providers.docker.network=host-network"
       - "--entrypoints.web.address=:80"
-      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
-      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
       - "--entrypoints.websecure.address=:443"
       - "--entrypoints.websecure.http.tls=true"
       - "--certificatesresolvers.le.acme.tlschallenge=true"
