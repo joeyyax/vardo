@@ -9,7 +9,7 @@
 
 import { db } from "@/lib/db";
 import { systemSettings } from "@/lib/db/schema";
-import { decryptSystemOrFallback } from "@/lib/crypto/encrypt";
+import { decryptSystemOrFallback, encryptSystem } from "@/lib/crypto/encrypt";
 import { eq } from "drizzle-orm";
 
 // Short-TTL in-memory cache for system settings. These change rarely (admin
@@ -54,7 +54,6 @@ export function invalidateSettingsCache(key?: string) {
  * Encrypts the value before writing.
  */
 export async function setSystemSetting(key: string, value: string) {
-  const { encryptSystem } = await import("@/lib/crypto/encrypt");
   const encrypted = encryptSystem(value);
   await db
     .insert(systemSettings)

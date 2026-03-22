@@ -2,10 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminAuth } from "@/lib/auth/admin";
 import { needsSetup } from "@/lib/setup";
-import { db } from "@/lib/db";
-import { systemSettings } from "@/lib/db/schema";
-import { encryptSystem } from "@/lib/crypto/encrypt";
-import { getAuthConfig, invalidateSettingsCache } from "@/lib/system-settings";
+import { getAuthConfig, setSystemSetting } from "@/lib/system-settings";
 
 const authSchema = z.object({
   registrationMode: z.enum(["closed", "open", "approval"]),
@@ -39,17 +36,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const config = encryptSystem(JSON.stringify(parsed.data));
-
-  await db
-    .insert(systemSettings)
-    .values({ key: "auth_config", value: config })
-    .onConflictDoUpdate({
-      target: systemSettings.key,
-      set: { value: config, updatedAt: new Date() },
-    });
-
-  invalidateSettingsCache();
+  await setSystemSetting("auth_config", JSON.stringify(parsed.data));
 
   return NextResponse.json({ ok: true });
 }

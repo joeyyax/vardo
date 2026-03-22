@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminAuth } from "@/lib/auth/admin";
-import { db } from "@/lib/db";
-import { systemSettings } from "@/lib/db/schema";
-import { encryptSystem } from "@/lib/crypto/encrypt";
-import { getFeatureFlagsConfig, invalidateSettingsCache } from "@/lib/system-settings";
+import { getFeatureFlagsConfig, setSystemSetting } from "@/lib/system-settings";
 import {
   type FeatureFlag,
   isFeatureEnabled,
@@ -75,17 +72,7 @@ export async function POST(request: NextRequest) {
   const existing = (await getFeatureFlagsConfig()) ?? {};
   const merged = { ...existing, ...parsed.data };
 
-  const config = encryptSystem(JSON.stringify(merged));
-
-  await db
-    .insert(systemSettings)
-    .values({ key: "feature_flags", value: config })
-    .onConflictDoUpdate({
-      target: systemSettings.key,
-      set: { value: config, updatedAt: new Date() },
-    });
-
-  invalidateSettingsCache();
+  await setSystemSetting("feature_flags", JSON.stringify(merged));
 
   return NextResponse.json({ ok: true });
 }

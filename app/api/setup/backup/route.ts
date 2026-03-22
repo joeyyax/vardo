@@ -2,10 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminAuth } from "@/lib/auth/admin";
 import { needsSetup } from "@/lib/setup";
-import { db } from "@/lib/db";
-import { systemSettings } from "@/lib/db/schema";
-import { encryptSystem } from "@/lib/crypto/encrypt";
-import { getBackupStorageConfig, invalidateSettingsCache } from "@/lib/system-settings";
+import { getBackupStorageConfig, setSystemSetting } from "@/lib/system-settings";
 import { maskSecret, isMasked } from "@/lib/mask-secrets";
 
 const backupSchema = z.object({
@@ -60,7 +57,7 @@ export async function POST(request: NextRequest) {
     return incoming ?? undefined;
   }
 
-  const config = encryptSystem(JSON.stringify({
+  await setSystemSetting("backup_storage", JSON.stringify({
     type,
     bucket,
     region,
@@ -68,16 +65,6 @@ export async function POST(request: NextRequest) {
     accessKey: resolveSecret(accessKey, existing?.accessKey),
     secretKey: resolveSecret(secretKey, existing?.secretKey),
   }));
-
-  await db
-    .insert(systemSettings)
-    .values({ key: "backup_storage", value: config })
-    .onConflictDoUpdate({
-      target: systemSettings.key,
-      set: { value: config, updatedAt: new Date() },
-    });
-
-  invalidateSettingsCache();
 
   return NextResponse.json({ ok: true });
 }
