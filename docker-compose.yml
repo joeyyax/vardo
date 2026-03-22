@@ -48,10 +48,10 @@ services:
     labels:
       - "traefik.enable=true"
       # HTTPS route
-      - "traefik.http.routers.host-secure.rule=Host(`${VARDO_DOMAIN}`)"
-      - "traefik.http.routers.host-secure.entrypoints=websecure"
-      - "traefik.http.routers.host-secure.tls.certresolver=le"
-      - "traefik.http.services.host.loadbalancer.server.port=3000"
+      - "traefik.http.routers.vardo.rule=Host(`${VARDO_DOMAIN}`)"
+      - "traefik.http.routers.vardo.entrypoints=websecure"
+      - "traefik.http.routers.vardo.tls.certresolver=le"
+      - "traefik.http.services.vardo.loadbalancer.server.port=3000"
     networks:
       - internal
       - vardo-network
