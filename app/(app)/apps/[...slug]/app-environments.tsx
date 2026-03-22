@@ -86,6 +86,9 @@ export function AppEnvironments({
   const [deleteTarget, setDeleteTarget] = useState<Environment | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  const [promoteTarget, setPromoteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [promoting, setPromoting] = useState(false);
+
   async function handleCreate() {
     if (!newName.trim()) return;
     setSaving(true);
@@ -206,8 +209,9 @@ export function AppEnvironments({
     }
   }
 
-  async function handlePromote(envId: string, envName: string) {
-    if (!confirm(`Promote "${envName}" to production? This will copy its environment variables to production.`)) return;
+  async function confirmPromote() {
+    if (!promoteTarget) return;
+    setPromoting(true);
     try {
       // Clone this environment's vars into production
       const prodEnv = allEnvironments.find((e) => e.type === "production");
@@ -217,7 +221,7 @@ export function AppEnvironments({
       }
 
       const res = await fetch(
-        `/api/v1/organizations/${orgId}/apps/${appId}/environments/${envId}/clone`,
+        `/api/v1/organizations/${orgId}/apps/${appId}/environments/${promoteTarget.id}/clone`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -234,10 +238,13 @@ export function AppEnvironments({
         return;
       }
 
-      toast.success(`Promoted "${envName}" variables to production`);
+      toast.success(`Promoted "${promoteTarget.name}" variables to production`);
+      setPromoteTarget(null);
       router.refresh();
     } catch {
       toast.error("Failed to promote environment");
+    } finally {
+      setPromoting(false);
     }
   }
 
@@ -431,7 +438,7 @@ export function AppEnvironments({
                           size="sm"
                           variant="ghost"
                           title="Promote to production"
-                          onClick={() => handlePromote(env.id, env.name)}
+                          onClick={() => setPromoteTarget({ id: env.id, name: env.name })}
                         >
                           <ArrowUp className="size-3.5" />
                         </Button>
@@ -524,6 +531,20 @@ export function AppEnvironments({
         description={`Are you sure you want to delete "${deleteTarget?.name}"? All environment-specific variables will be removed. This cannot be undone.`}
         onConfirm={handleDelete}
         loading={deleting}
+      />
+
+      <ConfirmDeleteDialog
+        open={!!promoteTarget}
+        onOpenChange={(open) => {
+          if (!open) setPromoteTarget(null);
+        }}
+        title="Promote to production"
+        description={`Copy ${promoteTarget?.name} variables to production? Existing production variables won't be overwritten.`}
+        confirmLabel="Promote"
+        loadingLabel="Promoting..."
+        variant="default"
+        onConfirm={confirmPromote}
+        loading={promoting}
       />
     </div>
   );

@@ -19,6 +19,8 @@ type ConfirmDeleteDialogProps = {
   onConfirm: () => void;
   loading?: boolean;
   confirmLabel?: string;
+  loadingLabel?: string;
+  variant?: "destructive" | "default";
 };
 
 function ConfirmDeleteDialog({
@@ -29,6 +31,8 @@ function ConfirmDeleteDialog({
   onConfirm,
   loading = false,
   confirmLabel = "Delete",
+  loadingLabel = "Deleting...",
+  variant = "destructive",
 }: ConfirmDeleteDialogProps) {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -44,9 +48,13 @@ function ConfirmDeleteDialog({
           <AlertDialogAction
             onClick={onConfirm}
             disabled={loading}
-            className="squircle bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            className={
+              variant === "destructive"
+                ? "squircle bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                : "squircle"
+            }
           >
-            {loading ? "Deleting..." : confirmLabel}
+            {loading ? loadingLabel : confirmLabel}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
