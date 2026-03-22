@@ -12,7 +12,6 @@ import { CHART_COLORS, chartTickStyle, type TimeRange } from "@/lib/metrics/cons
 import { useMetricsStream } from "@/lib/hooks/use-metrics-stream";
 import { Sparkline } from "@/components/app-metrics-card";
 import { MetricsTooltip } from "@/components/metrics-chart";
-import type { SystemInfo, DiskUsage } from "@/lib/docker/client";
 
 type AppSummary = {
   id: string;
@@ -95,10 +94,9 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
     timeRange,
   });
 
-  const disk = meta?.disk as DiskUsage | null | undefined;
-  const system = meta?.system as SystemInfo | null | undefined;
   const metaApps = meta?.apps as AppMeta[] | undefined;
   const streamProjectCount = meta?.projectCount as number | undefined;
+  const orgDiskTotal = meta?.orgDiskTotal as number | undefined;
 
   // Derive display apps from SSE meta when available, fall back to props
   const displayApps = useMemo(() => {
@@ -222,17 +220,6 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
         </div>
       </div>
 
-      {/* System info */}
-      {system && (
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-muted-foreground">
-          <span>{system.cpus} CPUs</span>
-          <span>{formatBytes(system.memoryTotal)} RAM</span>
-          <span>{system.os}</span>
-          <span>Docker {system.dockerVersion}</span>
-          <span>{system.images} images</span>
-        </div>
-      )}
-
       {/* Summary cards with sparklines */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         <div className="squircle relative rounded-lg border bg-card px-4 py-3 overflow-hidden">
@@ -268,11 +255,11 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
             <p className="text-xs text-muted-foreground">Disk</p>
           </div>
           <p className="relative text-2xl font-semibold tabular-nums mt-1">
-            {disk ? formatBytes(disk.total) : <Loader2 className="size-5 animate-spin text-muted-foreground" />}
+            {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : formatBytes(orgDiskTotal ?? 0)}
           </p>
-          {disk && (
+          {!loading && displayApps.length > 0 && (
             <p className="relative text-[10px] text-muted-foreground mt-0.5">
-              {formatBytes(disk.images.totalSize)} images · {formatBytes(disk.volumes.totalSize)} volumes
+              across {displayApps.length} app{displayApps.length !== 1 ? "s" : ""}
             </p>
           )}
         </div>
