@@ -7,8 +7,20 @@
 
 const EXPRESSION_RE = /\$\{([^}]+)\}/g;
 
-const BUILTIN_PROJECT_FIELDS = new Set(["name", "displayName", "port", "id"]);
-const BUILTIN_ORG_FIELDS = new Set(["name", "id"]);
+const BUILTIN_PROJECT_FIELDS = new Set([
+  "name",
+  "displayName",
+  "port",
+  "id",
+  "domain",
+  "url",
+  "host",
+  "internalHost",
+  "gitUrl",
+  "gitBranch",
+  "imageName",
+]);
+const BUILTIN_ORG_FIELDS = new Set(["name", "id", "baseDomain"]);
 
 // ---------------------------------------------------------------------------
 // Types
@@ -20,10 +32,15 @@ export type ResolveContext = {
     name: string;
     displayName: string;
     containerPort: number | null;
+    domain?: string | null;
+    gitUrl?: string | null;
+    gitBranch?: string | null;
+    imageName?: string | null;
   };
   org: {
     id: string;
     name: string;
+    baseDomain?: string | null;
   };
   /** Current project's env vars (key -> raw value, pre-resolution) */
   envVars: Record<string, string>;
@@ -157,6 +174,24 @@ async function resolveOneExpression(
         return context.project.containerPort?.toString() ?? null;
       case "id":
         return context.project.id;
+      case "domain":
+        return context.project.domain ?? null;
+      case "url":
+        return context.project.domain
+          ? `https://${context.project.domain}`
+          : null;
+      case "host":
+        // External hostname (same as domain)
+        return context.project.domain ?? null;
+      case "internalHost":
+        // Docker internal hostname — service name on the shared network
+        return context.project.name;
+      case "gitUrl":
+        return context.project.gitUrl ?? null;
+      case "gitBranch":
+        return context.project.gitBranch ?? null;
+      case "imageName":
+        return context.project.imageName ?? null;
       default:
         return null;
     }
@@ -169,6 +204,8 @@ async function resolveOneExpression(
         return context.org.name;
       case "id":
         return context.org.id;
+      case "baseDomain":
+        return context.org.baseDomain ?? null;
       default:
         // Check org-level shared env vars
         if (context.orgEnvVars && field in context.orgEnvVars) {

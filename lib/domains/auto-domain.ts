@@ -106,3 +106,26 @@ export function generateSubdomain(
   const { adjective, noun } = generateWordPair();
   return `${projectName}-${adjective}-${noun}.${base}`;
 }
+
+export function generateEnvironmentSubdomain(
+  projectName: string,
+  environmentName: string,
+  baseDomain?: string | null
+): string {
+  const base = getBaseDomain(baseDomain);
+  const sanitized = environmentName
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return `${projectName}-${sanitized}.${base}`;
+}
+
+export function generatePreviewSubdomain(
+  projectName: string,
+  prNumber: number,
+  baseDomain?: string | null
+): string {
+  const base = getBaseDomain(baseDomain);
+  return `${projectName}-pr-${prNumber}.${base}`;
+}

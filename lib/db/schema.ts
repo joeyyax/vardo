@@ -53,6 +53,18 @@ export const environmentTypeEnum = pgEnum("environment_type", [
   "preview",
 ]);
 
+export const cloneStrategyEnum = pgEnum("clone_strategy", [
+  "clone",
+  "clone_data",
+  "empty",
+  "skip",
+]);
+
+export const groupEnvironmentTypeEnum = pgEnum("group_environment_type", [
+  "staging",
+  "preview",
+]);
+
 // ---------------------------------------------------------------------------
 // Better Auth tables (snake_case columns, matching Scope's working schema)
 // ---------------------------------------------------------------------------
@@ -257,6 +269,11 @@ export const projects = pgTable(
     connectionInfo: jsonb("connection_info").$type<
       { label: string; value: string; copyRef?: string }[]
     >(),
+    groupId: text("group_id").references(() => groups.id, {
+      onDelete: "set null",
+    }),
+    cloneStrategy: cloneStrategyEnum("clone_strategy").default("clone"),
+    dependsOn: jsonb("depends_on").$type<string[]>(),
     sortOrder: integer("sort_order").default(0),
     templateName: text("template_name"),
     templateVersion: text("template_version"),
@@ -285,6 +302,10 @@ export const deployments = pgTable("deployment", {
   environmentId: text("environment_id").references(() => environments.id, {
     onDelete: "set null",
   }),
+  groupEnvironmentId: text("group_environment_id").references(
+    () => groupEnvironments.id,
+    { onDelete: "set null" }
+  ),
   triggeredBy: text("triggered_by").references(() => user.id, {
     onDelete: "set null",
   }),
@@ -312,7 +333,7 @@ export const envVars = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
-  (t) => [unique("env_var_project_key_uniq").on(t.projectId, t.key)]
+  (t) => [unique("env_var_project_key_env_uniq").on(t.projectId, t.key, t.environmentId)]
 );
 
 // ---------------------------------------------------------------------------
@@ -335,6 +356,29 @@ export const domains = pgTable("domain", {
 });
 
 // ---------------------------------------------------------------------------
+// Host: Group Environments (staging/preview environments spanning a group)
+// ---------------------------------------------------------------------------
+
+export const groupEnvironments = pgTable(
+  "group_environment",
+  {
+    id: text("id").primaryKey(),
+    groupId: text("group_id")
+      .notNull()
+      .references(() => groups.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    type: groupEnvironmentTypeEnum("type").notNull().default("staging"),
+    sourceEnvironment: text("source_environment").default("production"),
+    prNumber: integer("pr_number"),
+    prUrl: text("pr_url"),
+    createdBy: text("created_by").references(() => user.id),
+    expiresAt: timestamp("expires_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [unique("group_env_group_name_uniq").on(t.groupId, t.name)]
+);
+
+// ---------------------------------------------------------------------------
 // Host: Environments
 // ---------------------------------------------------------------------------
 
@@ -350,6 +394,10 @@ export const environments = pgTable(
     domain: text("domain"),
     isDefault: boolean("is_default").default(false),
     clonedFromId: text("cloned_from_id"),
+    groupEnvironmentId: text("group_environment_id").references(
+      () => groupEnvironments.id,
+      { onDelete: "cascade" }
+    ),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -384,7 +432,7 @@ export const activities = pgTable("activity", {
     .notNull()
     .references(() => organizations.id, { onDelete: "cascade" }),
   projectId: text("project_id").references(() => projects.id, {
-    onDelete: "cascade",
+    onDelete: "set null",
   }),
   userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
   action: text("action").notNull(),
@@ -462,23 +510,35 @@ export const projectTags = pgTable(
 export const backupTargetTypeEnum = pgEnum("backup_target_type", [
   "s3",
   "r2",
-  "local",
-  "tailscale",
+  "b2",
+  "ssh",
 ]);
 
 export const backupTargets = pgTable("backup_target", {
   id: text("id").primaryKey(),
-  organizationId: text("organization_id")
-    .notNull()
-    .references(() => organizations.id, { onDelete: "cascade" }),
+  organizationId: text("organization_id").references(() => organizations.id, {
+    onDelete: "cascade",
+  }),
   name: text("name").notNull(),
   type: backupTargetTypeEnum("type").notNull(),
   config: jsonb("config")
     .notNull()
     .$type<
-      | { bucket: string; region: string; endpoint?: string; accessKeyId: string; secretAccessKey: string }
-      | { path: string }
-      | { tailnet: string; node: string; path: string }
+      | {
+          bucket: string;
+          region: string;
+          endpoint?: string;
+          accessKeyId: string;
+          secretAccessKey: string;
+          prefix?: string;
+        }
+      | {
+          host: string;
+          port?: number;
+          username: string;
+          privateKey?: string;
+          path: string;
+        }
     >(),
   isDefault: boolean("is_default").default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -553,6 +613,7 @@ export const backups = pgTable("backup", {
     .notNull()
     .references(() => backupTargets.id, { onDelete: "cascade" }),
   status: backupStatusEnum("status").notNull().default("pending"),
+  volumeName: text("volume_name"),
   sizeBytes: bigint("size_bytes", { mode: "number" }),
   storagePath: text("storage_path"),
   log: text("log"),
@@ -665,6 +726,10 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
     fields: [projects.gitKeyId],
     references: [deployKeys.id],
   }),
+  group: one(groups, {
+    fields: [projects.groupId],
+    references: [groups.id],
+  }),
   deployments: many(deployments),
   envVars: many(envVars),
   domains: many(domains),
@@ -685,6 +750,10 @@ export const deploymentsRelations = relations(deployments, ({ one }) => ({
   environment: one(environments, {
     fields: [deployments.environmentId],
     references: [environments.id],
+  }),
+  groupEnvironment: one(groupEnvironments, {
+    fields: [deployments.groupEnvironmentId],
+    references: [groupEnvironments.id],
   }),
   triggeredByUser: one(user, {
     fields: [deployments.triggeredBy],
@@ -716,6 +785,10 @@ export const environmentsRelations = relations(
     project: one(projects, {
       fields: [environments.projectId],
       references: [projects.id],
+    }),
+    groupEnvironment: one(groupEnvironments, {
+      fields: [environments.groupEnvironmentId],
+      references: [groupEnvironments.id],
     }),
     envVars: many(envVars),
     deployments: many(deployments),
@@ -774,8 +847,26 @@ export const groupsRelations = relations(groups, ({ one, many }) => ({
     fields: [groups.parentId],
     references: [groups.id],
   }),
+  projects: many(projects),
   projectGroups: many(projectGroups),
+  groupEnvironments: many(groupEnvironments),
 }));
+
+export const groupEnvironmentsRelations = relations(
+  groupEnvironments,
+  ({ one, many }) => ({
+    group: one(groups, {
+      fields: [groupEnvironments.groupId],
+      references: [groups.id],
+    }),
+    createdByUser: one(user, {
+      fields: [groupEnvironments.createdBy],
+      references: [user.id],
+    }),
+    environments: many(environments),
+    deployments: many(deployments),
+  })
+);
 
 export const projectGroupsRelations = relations(projectGroups, ({ one }) => ({
   project: one(projects, {

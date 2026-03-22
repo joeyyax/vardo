@@ -452,3 +452,96 @@ export async function getContainerStats(containerId: string): Promise<ContainerS
 export async function getProjectContainers(projectName: string): Promise<ContainerInfo[]> {
   return listContainers(projectName);
 }
+
+// ---------------------------------------------------------------------------
+// System Disk Usage
+// ---------------------------------------------------------------------------
+
+export type DiskUsage = {
+  images: { count: number; totalSize: number; reclaimable: number };
+  containers: { count: number; totalSize: number };
+  volumes: { count: number; totalSize: number };
+  buildCache: { count: number; totalSize: number; reclaimable: number };
+  total: number;
+};
+
+export async function getSystemDiskUsage(): Promise<DiskUsage> {
+  const raw = await dockerRequest<{
+    Images: { Id: string; Size: number; SharedSize: number }[];
+    Containers: { Id: string; SizeRw: number; SizeRootFs: number }[];
+    Volumes: { Name: string; UsageData: { Size: number; RefCount: number } }[];
+    BuildCache: { ID: string; Size: number; InUse: boolean }[];
+  }>("GET", "/system/df");
+
+  const images = {
+    count: raw.Images?.length || 0,
+    totalSize: raw.Images?.reduce((s, i) => s + (i.Size || 0), 0) || 0,
+    reclaimable: raw.Images?.filter((i) => i.SharedSize === i.Size).reduce((s, i) => s + i.Size, 0) || 0,
+  };
+
+  const containers = {
+    count: raw.Containers?.length || 0,
+    totalSize: raw.Containers?.reduce((s, c) => s + (c.SizeRw || 0), 0) || 0,
+  };
+
+  const volumes = {
+    count: raw.Volumes?.length || 0,
+    totalSize: raw.Volumes?.reduce((s, v) => s + (v.UsageData?.Size || 0), 0) || 0,
+  };
+
+  const buildCache = {
+    count: raw.BuildCache?.length || 0,
+    totalSize: raw.BuildCache?.reduce((s, b) => s + (b.Size || 0), 0) || 0,
+    reclaimable: raw.BuildCache?.filter((b) => !b.InUse).reduce((s, b) => s + b.Size, 0) || 0,
+  };
+
+  return {
+    images,
+    containers,
+    volumes,
+    buildCache,
+    total: images.totalSize + containers.totalSize + volumes.totalSize + buildCache.totalSize,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// System Info
+// ---------------------------------------------------------------------------
+
+export type SystemInfo = {
+  cpus: number;
+  memoryTotal: number;
+  os: string;
+  kernel: string;
+  dockerVersion: string;
+  storageDriver: string;
+  images: number;
+  containers: number;
+  containersRunning: number;
+};
+
+export async function getSystemInfo(): Promise<SystemInfo> {
+  const raw = await dockerRequest<{
+    NCPU: number;
+    MemTotal: number;
+    OperatingSystem: string;
+    KernelVersion: string;
+    ServerVersion: string;
+    Driver: string;
+    Images: number;
+    Containers: number;
+    ContainersRunning: number;
+  }>("GET", "/info");
+
+  return {
+    cpus: raw.NCPU,
+    memoryTotal: raw.MemTotal,
+    os: raw.OperatingSystem,
+    kernel: raw.KernelVersion,
+    dockerVersion: raw.ServerVersion,
+    storageDriver: raw.Driver,
+    images: raw.Images,
+    containers: raw.Containers,
+    containersRunning: raw.ContainersRunning,
+  };
+}

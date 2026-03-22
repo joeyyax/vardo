@@ -89,6 +89,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const execId = await createExec(containerId, ["/bin/sh"]);
     const socket = await startExec(execId);
 
+    // No initial command — let the shell start naturally
+
     // Generate session ID
     const sessionId = crypto.randomUUID();
 

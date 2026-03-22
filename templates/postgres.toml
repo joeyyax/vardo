@@ -26,12 +26,6 @@ description = "Default database name"
 required = false
 defaultValue = "postgres"
 
-[[envVars]]
-key = "DATABASE_URL"
-description = "Connection string (auto-generated)"
-required = false
-defaultValue = "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${project.name}:5432/${POSTGRES_DB}"
-
 [[volumes]]
 name = "data"
 mountPath = "/var/lib/postgresql/data"
@@ -63,5 +57,4 @@ copyRef = "POSTGRES_DB"
 
 [[connectionInfo]]
 label = "Connection URL"
-value = "${DATABASE_URL}"
-copyRef = "DATABASE_URL"
+value = "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${project.name}:5432/${POSTGRES_DB}"

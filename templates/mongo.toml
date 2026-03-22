@@ -23,3 +23,26 @@ required = true
 name = "data"
 mountPath = "/data/db"
 description = "MongoDB data files"
+
+[[connectionInfo]]
+label = "Host"
+value = "${project.name}"
+copyRef = "HOST"
+
+[[connectionInfo]]
+label = "Port"
+value = "27017"
+
+[[connectionInfo]]
+label = "Username"
+value = "${MONGO_INITDB_ROOT_USERNAME}"
+copyRef = "MONGO_INITDB_ROOT_USERNAME"
+
+[[connectionInfo]]
+label = "Password"
+value = "${MONGO_INITDB_ROOT_PASSWORD}"
+copyRef = "MONGO_INITDB_ROOT_PASSWORD"
+
+[[connectionInfo]]
+label = "Connection URL"
+value = "mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@${project.name}:27017"

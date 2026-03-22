@@ -82,10 +82,18 @@ type Repo = {
   description: string | null;
 };
 
+type GroupOption = {
+  id: string;
+  name: string;
+  color: string;
+};
+
 type Props = {
   orgId: string;
   orgSlug: string;
   templates: Template[];
+  groups?: GroupOption[];
+  defaultGroupId?: string;
 };
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -122,7 +130,7 @@ function slugify(value: string) {
     .replace(/^-+|-+$/g, "");
 }
 
-export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
+export function NewProjectFlow({ orgId, orgSlug, templates, groups = [], defaultGroupId }: Props) {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
   const [slugEdited, setSlugEdited] = useState(false);
@@ -146,6 +154,7 @@ export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
   const [rootDirectory, setRootDirectory] = useState("");
   const [containerPort, setContainerPort] = useState("");
   const [autoDeploy, setAutoDeploy] = useState(true);
+  const [groupId, setGroupId] = useState<string | null>(defaultGroupId ?? null);
   const [persistData, setPersistData] = useState(true);
   const [templateVolumes, setTemplateVolumes] = useState<
     { name: string; mountPath: string; description: string }[]
@@ -331,6 +340,7 @@ export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
         displayName: displayName.trim(), name: name.trim(),
         description: description.trim() || undefined,
         source, deployType, autoTraefikLabels: true, autoDeploy, generateDomain,
+        groupId: groupId || undefined,
         persistentVolumes: persistData && templateVolumes.length > 0
           ? templateVolumes.map((v) => ({ name: v.name, mountPath: v.mountPath }))
           : undefined,
@@ -368,14 +378,12 @@ export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
         });
       }
 
-      // Navigate to project page — if autoDeploy, pass flag so it triggers deploy with full SSE streaming
       if (autoDeploy) {
-        toast.success("Project created — starting deploy...");
-        router.push(`/projects/${project.name}?deploy=1`);
+        toast.success("Project created — deploying...");
       } else {
         toast.success("Project created");
-        router.push(`/projects/${project.name}`);
       }
+      router.push(`/projects/${project.name}`);
     } catch { toast.error("Failed to create project"); }
     finally { setCreating(false); }
   }
@@ -826,6 +834,31 @@ export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
                 <Switch id="auto-deploy" checked={autoDeploy} onCheckedChange={setAutoDeploy} />
                 <Label htmlFor="auto-deploy">Auto Deploy</Label>
               </div>
+
+              {groups.length > 0 && (
+                <div className="grid gap-2">
+                  <Label>Group</Label>
+                  <Select
+                    value={groupId ?? "__none"}
+                    onValueChange={(v) => setGroupId(v === "__none" ? null : v)}
+                  >
+                    <SelectTrigger className="w-64">
+                      <SelectValue placeholder="No group" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none">No group</SelectItem>
+                      {groups.map((g) => (
+                        <SelectItem key={g.id} value={g.id}>
+                          <span className="flex items-center gap-2">
+                            <span className="size-2 rounded-full" style={{ backgroundColor: g.color }} />
+                            {g.name}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
 
               </>

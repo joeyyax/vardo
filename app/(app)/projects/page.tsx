@@ -39,6 +39,7 @@ export default async function ProjectsPage() {
         projectGroups: {
           with: { group: true },
         },
+        group: true,
       },
     }),
     db.query.tags.findMany({

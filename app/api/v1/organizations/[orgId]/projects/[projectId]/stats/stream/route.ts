@@ -3,14 +3,14 @@ import { db } from "@/lib/db";
 import { projects } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
-import { getProjectContainers, getContainerStats } from "@/lib/docker/client";
+import { fetchProjectMetrics } from "@/lib/metrics/cadvisor";
 
 type RouteParams = {
   params: Promise<{ orgId: string; projectId: string }>;
 };
 
 // GET /api/v1/organizations/[orgId]/projects/[projectId]/stats/stream
-// SSE stream that polls Docker stats every 2 seconds
+// SSE stream via cAdvisor, polls every 2 seconds
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, projectId } = await params;
@@ -36,33 +36,34 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const stream = new ReadableStream({
       start(controller) {
         let stopped = false;
+        let timer: ReturnType<typeof setTimeout> | null = null;
 
         async function poll() {
           if (stopped) return;
 
           try {
-            const containers = await getProjectContainers(project!.name);
-            const running = containers.filter((c) => c.state === "running");
+            const metrics = await fetchProjectMetrics(project!.name);
 
-            if (running.length === 0) {
-              controller.enqueue(
-                encoder.encode(`event: stats\ndata: ${JSON.stringify({ containers: [], timestamp: new Date().toISOString() })}\n\n`)
-              );
-            } else {
-              const stats = await Promise.allSettled(
-                running.map((c) => getContainerStats(c.id))
-              );
+            const payload = {
+              containers: metrics.map((m) => ({
+                containerId: m.containerId,
+                containerName: m.containerName,
+                cpuPercent: m.cpuPercent,
+                memoryUsage: m.memoryUsage,
+                memoryLimit: m.memoryLimit,
+                memoryPercent: m.memoryPercent,
+                networkRx: m.networkRxBytes,
+                networkTx: m.networkTxBytes,
+                diskUsage: m.diskUsage,
+                diskLimit: m.diskLimit,
+              })),
+              timestamp: new Date().toISOString(),
+            };
 
-              const resolved = stats
-                .filter((r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof getContainerStats>>> => r.status === "fulfilled")
-                .map((r) => r.value);
-
-              controller.enqueue(
-                encoder.encode(`event: stats\ndata: ${JSON.stringify({ containers: resolved, timestamp: new Date().toISOString() })}\n\n`)
-              );
-            }
+            controller.enqueue(
+              encoder.encode(`event: stats\ndata: ${JSON.stringify(payload)}\n\n`)
+            );
           } catch (err) {
-            // Send error but keep stream alive
             controller.enqueue(
               encoder.encode(`event: error\ndata: ${JSON.stringify({ message: err instanceof Error ? err.message : "Unknown error" })}\n\n`)
             );
@@ -73,12 +74,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           }
         }
 
-        let timer: ReturnType<typeof setTimeout> | null = null;
-
-        // Start polling immediately
         poll();
 
-        // Clean up on client disconnect
         request.signal.addEventListener("abort", () => {
           stopped = true;
           if (timer) clearTimeout(timer);

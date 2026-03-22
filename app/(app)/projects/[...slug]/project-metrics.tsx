@@ -11,20 +11,10 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from "recharts";
-import { Activity, Cpu, HardDrive, MemoryStick, Network, Loader2 } from "lucide-react";
-
-type ContainerStatsSnapshot = {
-  containerId: string;
-  containerName: string;
-  cpuPercent: number;
-  memoryUsage: number;
-  memoryLimit: number;
-  memoryPercent: number;
-  networkRx: number;
-  networkTx: number;
-  blockRead: number;
-  blockWrite: number;
-};
+import { Activity, Container, Cpu, HardDrive, MemoryStick, Network, Loader2 } from "lucide-react";
+import { formatBytes, formatMemLimit, formatBytesRate, formatTime } from "@/lib/metrics/format";
+import { RANGE_MS, BUCKET_MS, chartTooltipStyle, TIME_RANGES, type TimeRange } from "@/lib/metrics/constants";
+import type { ContainerStatsSnapshot } from "@/lib/metrics/types";
 
 type TimeSeriesPoint = {
   time: string;
@@ -48,26 +38,6 @@ type ProjectMetricsProps = {
 
 const MAX_DATA_POINTS = 150; // ~5 minutes at 2s intervals
 
-function formatBytes(bytes: number, decimals = 1): string {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(decimals))} ${sizes[i]}`;
-}
-
-function formatBytesRate(bytes: number): string {
-  return `${formatBytes(bytes)}/s`;
-}
-
-function formatTime(timestamp: number): string {
-  return new Date(timestamp).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-}
-
 function ChartCard({
   title,
   icon: Icon,
@@ -88,50 +58,104 @@ function ChartCard({
   );
 }
 
-function ContainerRow({ stats }: { stats: ContainerStatsSnapshot }) {
+function ContainerTable({ containers }: { containers: ContainerStatsSnapshot[] }) {
   return (
-    <div className="flex items-center justify-between gap-4 px-4 py-3">
-      <div className="flex items-center gap-3 min-w-0">
-        <span className="size-2 rounded-full bg-status-success shrink-0" />
-        <span className="text-sm font-mono truncate">{stats.containerName}</span>
+    <div className="squircle rounded-lg border bg-card overflow-x-auto">
+      <div className="flex items-center gap-2 px-4 py-3 border-b">
+        <Container className="size-4 text-muted-foreground" />
+        <h3 className="text-sm font-medium">Containers</h3>
       </div>
-      <div className="flex items-center gap-6 text-xs text-muted-foreground shrink-0">
-        <span className="tabular-nums w-16 text-right" title="CPU">
-          {stats.cpuPercent.toFixed(1)}% CPU
-        </span>
-        <span className="tabular-nums w-24 text-right" title="Memory">
-          {formatBytes(stats.memoryUsage)} / {formatBytes(stats.memoryLimit)}
-        </span>
-        <span className="tabular-nums w-20 text-right" title="Network RX">
-          {formatBytes(stats.networkRx)} rx
-        </span>
-        <span className="tabular-nums w-20 text-right" title="Network TX">
-          {formatBytes(stats.networkTx)} tx
-        </span>
-      </div>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b text-xs text-muted-foreground">
+            <th className="text-left font-normal px-4 py-2">Name</th>
+            <th className="text-right font-normal px-4 py-2">CPU</th>
+            <th className="text-right font-normal px-4 py-2">Memory</th>
+            <th className="text-right font-normal px-4 py-2">Limit</th>
+            <th className="text-right font-normal px-4 py-2">Net In</th>
+            <th className="text-right font-normal px-4 py-2">Net Out</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y">
+          {containers.map((c) => (
+            <tr key={c.containerId}>
+              <td className="px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <span className="size-2 rounded-full bg-status-success shrink-0" />
+                  <span className="font-mono truncate">{c.containerName}</span>
+                </div>
+              </td>
+              <td className="text-right px-4 py-3 tabular-nums text-muted-foreground">{c.cpuPercent.toFixed(1)}%</td>
+              <td className="text-right px-4 py-3 tabular-nums text-muted-foreground">{formatBytes(c.memoryUsage)}</td>
+              <td className="text-right px-4 py-3 tabular-nums text-muted-foreground">{formatMemLimit(c.memoryLimit)}</td>
+              <td className="text-right px-4 py-3 tabular-nums text-muted-foreground">{formatBytes(c.networkRx)}</td>
+              <td className="text-right px-4 py-3 tabular-nums text-muted-foreground">{formatBytes(c.networkTx)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
-
-const chartTooltipStyle = {
-  contentStyle: {
-    backgroundColor: "oklch(0.21 0.006 285.75)",
-    border: "1px solid oklch(0.30 0.006 285.75)",
-    borderRadius: "8px",
-    fontSize: "12px",
-    color: "oklch(0.87 0.006 285.75)",
-  },
-  itemStyle: { color: "oklch(0.87 0.006 285.75)" },
-  labelStyle: { color: "oklch(0.55 0.006 285.75)" },
-};
 
 export function ProjectMetrics({ orgId, projectId }: ProjectMetricsProps) {
   const [data, setData] = useState<TimeSeriesPoint[]>([]);
   const [containers, setContainers] = useState<ContainerStatsSnapshot[]>([]);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const prevNetworkRef = useRef<{ rx: number; tx: number } | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
+  const [timeRange, setTimeRange] = useState<TimeRange>("1h");
+
+  // Load historical data
+  useEffect(() => {
+    const now = Date.now();
+    const from = now - RANGE_MS[timeRange];
+    const bucket = BUCKET_MS[timeRange];
+
+    async function loadHistory() {
+      try {
+        const res = await fetch(
+          `/api/v1/organizations/${orgId}/projects/${projectId}/stats/history?from=${from}&to=${now}&bucket=${bucket}`
+        );
+        if (!res.ok) { setHistoryLoaded(true); return; }
+        const { series } = await res.json();
+
+        if (!series.cpu?.length) { setHistoryLoaded(true); return; }
+
+        // Convert time-series points to chart format
+        const historyPoints: TimeSeriesPoint[] = series.cpu.map(([ts, cpu]: [number, number], i: number) => {
+          const mem = series.memory[i] || [ts, 0];
+          const memLimit = series.memoryLimit[i] || [ts, 0];
+          const rx = series.networkRx[i] || [ts, 0];
+          const tx = series.networkTx[i] || [ts, 0];
+          const memUsage = mem[1];
+          const memLim = memLimit[1];
+          return {
+            time: formatTime(ts),
+            timestamp: ts,
+            cpuPercent: Math.round(cpu * 100) / 100,
+            memoryUsage: memUsage,
+            memoryLimit: memLim,
+            memoryPercent: memLim > 0 ? Math.round((memUsage / memLim) * 100 * 100) / 100 : 0,
+            networkRx: rx[1],
+            networkTx: tx[1],
+            networkRxRate: 0,
+            networkTxRate: 0,
+          };
+        });
+
+        setData(historyPoints);
+      } catch {
+        // History not available — that's fine, live data will populate
+      }
+      setHistoryLoaded(true);
+    }
+
+    loadHistory();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgId, projectId, timeRange]);
 
   const handleStatsEvent = useCallback((event: MessageEvent) => {
     try {
@@ -224,24 +248,24 @@ export function ProjectMetrics({ orgId, projectId }: ProjectMetricsProps) {
     };
   }, [orgId, projectId, handleStatsEvent]);
 
-  // Loading state
-  if (!connected && !error) {
+  // Loading state — show if no history and not connected
+  if (!historyLoaded && !connected && !error) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
         <Loader2 className="size-6 text-muted-foreground animate-spin" />
-        <p className="text-sm text-muted-foreground">Connecting to container metrics...</p>
+        <p className="text-sm text-muted-foreground">Loading metrics...</p>
       </div>
     );
   }
 
-  // No containers running
-  if (connected && containers.length === 0) {
+  // No containers running and no history
+  if (connected && containers.length === 0 && data.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
         <Activity className="size-8 text-muted-foreground" />
         <p className="text-sm text-muted-foreground">No running containers.</p>
         <p className="text-xs text-muted-foreground">
-          Deploy the project to see real-time resource metrics.
+          Deploy the project to see resource metrics.
         </p>
       </div>
     );
@@ -258,8 +282,34 @@ export function ProjectMetrics({ orgId, projectId }: ProjectMetricsProps) {
 
   const latestMemoryLimit = data.length > 0 ? data[data.length - 1].memoryLimit : 0;
 
+
   return (
     <div className="space-y-6">
+      {/* Time range + connection status */}
+      <div className="flex items-center justify-between">
+        <div className="inline-flex items-center gap-1 rounded-lg bg-muted p-1">
+          {TIME_RANGES.map((r) => (
+            <button
+              key={r.value}
+              onClick={() => setTimeRange(r.value)}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                timeRange === r.value
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={`size-2 rounded-full ${connected ? "bg-status-success" : "bg-status-neutral"}`} />
+          <span className="text-xs text-muted-foreground">
+            {connected ? "Live" : "Historical"}
+          </span>
+        </div>
+      </div>
+
       {/* Summary cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="squircle rounded-lg border bg-card px-4 py-3">
@@ -298,7 +348,7 @@ export function ProjectMetrics({ orgId, projectId }: ProjectMetricsProps) {
                 <stop offset="95%" stopColor="oklch(0.65 0.19 255)" stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.30 0.006 285.75)" />
+            <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.30 0.006 285.75 / 40%)" />
             <XAxis
               dataKey="time"
               tick={{ fontSize: 10, fill: "oklch(0.55 0.006 285.75)" }}
@@ -342,7 +392,7 @@ export function ProjectMetrics({ orgId, projectId }: ProjectMetricsProps) {
                 <stop offset="95%" stopColor="oklch(0.72 0.17 150)" stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.30 0.006 285.75)" />
+            <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.30 0.006 285.75 / 40%)" />
             <XAxis
               dataKey="time"
               tick={{ fontSize: 10, fill: "oklch(0.55 0.006 285.75)" }}
@@ -404,7 +454,7 @@ export function ProjectMetrics({ orgId, projectId }: ProjectMetricsProps) {
                 <stop offset="95%" stopColor="oklch(0.75 0.15 75)" stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.30 0.006 285.75)" />
+            <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.30 0.006 285.75 / 40%)" />
             <XAxis
               dataKey="time"
               tick={{ fontSize: 10, fill: "oklch(0.55 0.006 285.75)" }}
@@ -453,19 +503,9 @@ export function ProjectMetrics({ orgId, projectId }: ProjectMetricsProps) {
       </ChartCard>
 
       {/* Container list */}
-      <ChartCard title="Containers" icon={HardDrive}>
-        {containers.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-4 text-center">
-            No running containers.
-          </p>
-        ) : (
-          <div className="divide-y -mx-4 -mb-4">
-            {containers.map((c) => (
-              <ContainerRow key={c.containerId} stats={c} />
-            ))}
-          </div>
-        )}
-      </ChartCard>
+      {containers.length > 0 && (
+        <ContainerTable containers={containers} />
+      )}
     </div>
   );
 }

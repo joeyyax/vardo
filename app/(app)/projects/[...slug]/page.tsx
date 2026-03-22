@@ -1,11 +1,11 @@
 import { redirect, notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { projects, tags, orgEnvVars } from "@/lib/db/schema";
+import { projects, tags, groups, orgEnvVars } from "@/lib/db/schema";
 import { getCurrentOrg } from "@/lib/auth/session";
 import { eq, and, asc, or } from "drizzle-orm";
 import { ProjectDetail } from "./project-detail";
 
-const VALID_TABS = ["deployments", "variables", "networking", "logs", "volumes", "terminal", "metrics", "environments"] as const;
+const VALID_TABS = ["deployments", "connect", "variables", "networking", "logs", "volumes", "terminal", "metrics", "environments"] as const;
 type ValidTab = (typeof VALID_TABS)[number];
 
 type PageProps = {
@@ -57,10 +57,11 @@ export default async function ProjectDetailPage({ params }: PageProps) {
     projectTags: {
       with: { tag: true },
     },
+    group: true,
   } as const;
 
   // Look up by name (slug) or ID — supports clean URLs like /projects/redis
-  const [project, allTags, allProjects, orgVars] = await Promise.all([
+  const [project, allTags, allGroups, allProjects, orgVars] = await Promise.all([
     db.query.projects.findFirst({
       where: and(
         eq(projects.organizationId, orgId),
@@ -71,6 +72,10 @@ export default async function ProjectDetailPage({ params }: PageProps) {
     db.query.tags.findMany({
       where: eq(tags.organizationId, orgId),
       orderBy: [asc(tags.name)],
+    }),
+    db.query.groups.findMany({
+      where: eq(groups.organizationId, orgId),
+      orderBy: [asc(groups.name)],
     }),
     db.query.projects.findMany({
       where: eq(projects.organizationId, orgId),
@@ -92,14 +97,29 @@ export default async function ProjectDetailPage({ params }: PageProps) {
     redirect(`/projects/${project.name}${tabPath}`);
   }
 
+  // Load sibling projects if this project is in a group
+  let groupSiblings: { name: string; displayName: string; status: string }[] = [];
+  if (project.groupId) {
+    const siblings = await db.query.projects.findMany({
+      where: and(
+        eq(projects.organizationId, orgId),
+        eq(projects.groupId, project.groupId),
+      ),
+      columns: { name: true, displayName: true, status: true },
+    });
+    groupSiblings = siblings.filter((s) => s.name !== project.name);
+  }
+
   return (
     <ProjectDetail
       project={project}
       orgId={orgId}
       userRole={orgData.membership.role}
       allTags={allTags}
+      allGroups={allGroups}
       allProjectNames={allProjects.map((p) => p.name)}
       orgVarKeys={orgVars.map((v) => v.key)}
+      groupSiblings={groupSiblings}
       initialTab={tab || "deployments"}
       initialSubView={subSegment}
     />

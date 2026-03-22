@@ -13,22 +13,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useSession, signOut } from "@/lib/auth/client";
-
-function getInitials(name: string): string {
-  return name
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
-}
-
-type Organization = {
-  id: string;
-  name: string;
-  slug: string;
-  role: string;
-};
+import { getInitials } from "@/lib/utils";
+import type { Organization } from "@/lib/types";
 
 type UserMenuProps = {
   collapsed?: boolean;

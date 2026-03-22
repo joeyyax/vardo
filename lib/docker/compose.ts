@@ -16,6 +16,7 @@ export type ComposeService = {
   build?: string | { context: string; dockerfile?: string };
   ports?: string[];
   environment?: Record<string, string>;
+  env_file?: string[];
   volumes?: string[];
   labels?: Record<string, string>;
   networks?: string[];
@@ -57,8 +58,12 @@ export function generateComposeForImage(opts: {
       .map((p) => `${p.external}:${p.internal}${p.protocol ? `/${p.protocol}` : ""}`);
   }
 
+  // Env vars are written to .env file and loaded via env_file directive.
+  // Do NOT inline them in the compose environment block — Docker Compose
+  // interprets ${} as its own variable interpolation and chokes on our
+  // template expressions before we can resolve them.
   if (envVars && Object.keys(envVars).length > 0) {
-    service.environment = { ...envVars };
+    service.env_file = [".env"];
   }
 
   if (volumes && volumes.length > 0) {

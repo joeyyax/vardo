@@ -99,6 +99,61 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   }
 }
 
+// PATCH /api/v1/organizations/[orgId]/groups
+export async function PATCH(request: NextRequest, { params }: RouteParams) {
+  try {
+    const { orgId } = await params;
+    const { organization } = await requireOrg();
+
+    if (organization.id !== orgId) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const body = await request.json();
+    const { id, name, color } = body;
+
+    if (!id) {
+      return NextResponse.json({ error: "Group ID is required" }, { status: 400 });
+    }
+
+    const updates: Record<string, unknown> = {};
+    if (name?.trim()) updates.name = name.trim();
+    if (color) updates.color = color;
+
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
+    }
+
+    const [updated] = await db
+      .update(groups)
+      .set(updates)
+      .where(and(eq(groups.id, id), eq(groups.organizationId, orgId)))
+      .returning();
+
+    if (!updated) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    return NextResponse.json({ group: updated });
+  } catch (error) {
+    if (error instanceof Error && error.message === "Unauthorized") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      (error as { code: string }).code === "23505"
+    ) {
+      return NextResponse.json(
+        { error: "A group with this name already exists" },
+        { status: 409 }
+      );
+    }
+    console.error("Error updating group:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
 // DELETE /api/v1/organizations/[orgId]/groups
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {

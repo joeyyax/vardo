@@ -353,6 +353,8 @@ export function LogViewer({ streamUrl, maxLines = 1000 }: LogViewerProps) {
   const [lines, setLines] = useState<{ text: string; html: string; level: LogLevel }[]>([]);
   const [connected, setConnected] = useState(false);
   const [paused, setPaused] = useState(false);
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
 
   useEffect(() => {
     const es = new EventSource(streamUrl);
@@ -360,7 +362,7 @@ export function LogViewer({ streamUrl, maxLines = 1000 }: LogViewerProps) {
     es.onopen = () => setConnected(true);
 
     es.onmessage = (event) => {
-      if (paused) return;
+      if (pausedRef.current) return;
       try {
         const text = JSON.parse(event.data) as string;
         const html = highlightLine(text);
@@ -382,7 +384,8 @@ export function LogViewer({ streamUrl, maxLines = 1000 }: LogViewerProps) {
     return () => {
       es.close();
     };
-  }, [streamUrl, paused, maxLines]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [streamUrl, maxLines]);
 
   return (
     <div className="space-y-2">

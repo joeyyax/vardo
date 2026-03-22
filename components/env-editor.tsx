@@ -13,6 +13,7 @@ type EnvEditorProps = {
   initialVars: { key: string; isSecret: boolean | null }[];
   allProjectNames?: string[];
   orgVarKeys?: string[];
+  environmentId?: string;
 };
 
 type Suggestion = {
@@ -36,7 +37,7 @@ function isPasswordKey(key: string): boolean {
   return PASSWORD_KEYS.some((p) => lower.includes(p));
 }
 
-export function EnvEditor({ projectId, projectName, orgId, initialVars, allProjectNames = [], orgVarKeys = [] }: EnvEditorProps) {
+export function EnvEditor({ projectId, projectName, orgId, initialVars, allProjectNames = [], orgVarKeys = [], environmentId }: EnvEditorProps) {
   const router = useRouter();
   const [content, setContent] = useState("");
   const [saving, setSaving] = useState(false);
@@ -57,7 +58,10 @@ export function EnvEditor({ projectId, projectName, orgId, initialVars, allProje
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch(`/api/v1/organizations/${orgId}/projects/${projectId}/env-vars`);
+        const params = new URLSearchParams();
+        if (environmentId) params.set("environmentId", environmentId);
+        const qs = params.toString();
+        const res = await fetch(`/api/v1/organizations/${orgId}/projects/${projectId}/env-vars${qs ? `?${qs}` : ""}`);
         if (res.ok) {
           const data = await res.json();
           const vars = data.envVars || [];
@@ -67,6 +71,9 @@ export function EnvEditor({ projectId, projectName, orgId, initialVars, allProje
               .join("\n");
             setContent(c);
             setInitialContent(c);
+          } else {
+            setContent("");
+            setInitialContent("");
           }
         }
       } catch {
@@ -75,7 +82,7 @@ export function EnvEditor({ projectId, projectName, orgId, initialVars, allProje
       setLoaded(true);
     }
     load();
-  }, [orgId, projectId]);
+  }, [orgId, projectId, environmentId]);
 
   // Build suggestions based on current context
   const buildSuggestions = useCallback(
@@ -262,7 +269,7 @@ export function EnvEditor({ projectId, projectName, orgId, initialVars, allProje
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content }),
+          body: JSON.stringify({ content, environmentId }),
         }
       );
 

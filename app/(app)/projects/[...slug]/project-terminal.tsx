@@ -7,6 +7,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import { Loader2, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
 import {
   Select,
   SelectContent,
@@ -280,12 +281,20 @@ export function ProjectTerminal({ projectId, orgId }: ProjectTerminalProps) {
     };
   }, [sendResize]);
 
-  // Auto-connect when a container is selected
+  // Auto-connect when a container is selected and terminal div is mounted
+  const [termMounted, setTermMounted] = useState(false);
+  const termCallbackRef = useCallback((node: HTMLDivElement | null) => {
+    if (node) {
+      (terminalRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
+      setTermMounted(true);
+    }
+  }, []);
+
   useEffect(() => {
-    if (selectedContainer && !loadingContainers) {
+    if (selectedContainer && !loadingContainers && termMounted) {
       connect(selectedContainer);
     }
-  }, [selectedContainer, connect, loadingContainers]);
+  }, [selectedContainer, connect, loadingContainers, termMounted]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -389,10 +398,15 @@ export function ProjectTerminal({ projectId, orgId }: ProjectTerminalProps) {
         </div>
       )}
 
+      {/* Ephemeral notice */}
+      <Callout variant="warning">
+        Ephemeral session — filesystem changes will not persist unless written to a persistent volume.
+      </Callout>
+
       {/* Terminal */}
       <div className="rounded-lg border border-zinc-800 bg-zinc-950 overflow-hidden">
         <div
-          ref={terminalRef}
+          ref={termCallbackRef}
           className="p-2"
           style={{ minHeight: "400px" }}
         />
