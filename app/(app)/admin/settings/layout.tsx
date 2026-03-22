@@ -9,6 +9,7 @@ import { SettingsNav } from "@/components/settings-nav";
 const NAV_ITEMS = [
   { label: "General", href: "/admin/settings/general" },
   { label: "Email", href: "/admin/settings/email" },
+  { label: "Authentication", href: "/admin/settings/authentication" },
   { label: "Feature flags", href: "/admin/settings/feature-flags" },
   { label: "Backup storage", href: "/admin/settings/backup" },
   { label: "GitHub App", href: "/admin/settings/github" },

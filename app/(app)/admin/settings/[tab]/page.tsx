@@ -1,17 +1,19 @@
 import { notFound } from "next/navigation";
 import { GeneralSettings } from "../general-settings";
 import { EmailSettings } from "../email-settings";
+import { AuthSettings } from "../auth-settings";
 import { FeatureFlagsSettings } from "../feature-flags-settings";
 import { BackupSettings } from "../backup-settings";
 import { GitHubSettings } from "../github-settings";
 import { ServicesSettings } from "../services-settings";
 
-const VALID_TABS = ["general", "email", "feature-flags", "backup", "github", "services"] as const;
+const VALID_TABS = ["general", "email", "authentication", "feature-flags", "backup", "github", "services"] as const;
 type ValidTab = (typeof VALID_TABS)[number];
 
 const TAB_COMPONENTS: Record<ValidTab, React.ComponentType> = {
   "general": GeneralSettings,
   "email": EmailSettings,
+  "authentication": AuthSettings,
   "feature-flags": FeatureFlagsSettings,
   "backup": BackupSettings,
   "github": GitHubSettings,
