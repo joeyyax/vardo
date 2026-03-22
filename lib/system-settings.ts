@@ -26,6 +26,55 @@ async function getSystemSettingRaw(key: string): Promise<string | null> {
 }
 
 // ---------------------------------------------------------------------------
+// Instance config (general settings)
+// ---------------------------------------------------------------------------
+
+export type InstanceConfig = {
+  instanceName: string;
+  baseDomain: string;
+  serverIp: string;
+};
+
+/**
+ * Returns the instance configuration. Env vars take precedence; falls back
+ * to the setup-wizard row in system_settings.
+ */
+export async function getInstanceConfig(): Promise<InstanceConfig> {
+  // Env-var configured — no DB hit needed
+  const envName = process.env.NEXT_PUBLIC_APP_NAME;
+  const envDomain = process.env.HOST_BASE_DOMAIN;
+  const envIp = process.env.HOST_SERVER_IP;
+
+  if (envName || envDomain || envIp) {
+    const dbConfig = await getInstanceConfigFromDb();
+    return {
+      instanceName: envName ?? dbConfig?.instanceName ?? "Vardo",
+      baseDomain: envDomain ?? dbConfig?.baseDomain ?? "",
+      serverIp: envIp ?? dbConfig?.serverIp ?? "",
+    };
+  }
+
+  const dbConfig = await getInstanceConfigFromDb();
+  return {
+    instanceName: dbConfig?.instanceName ?? "Vardo",
+    baseDomain: dbConfig?.baseDomain ?? "",
+    serverIp: dbConfig?.serverIp ?? "",
+  };
+}
+
+async function getInstanceConfigFromDb(): Promise<InstanceConfig | null> {
+  const raw = await getSystemSettingRaw("instance_config");
+  if (!raw) return null;
+
+  try {
+    return JSON.parse(raw) as InstanceConfig;
+  } catch {
+    console.error("[system-settings] Failed to parse instance_config");
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // GitHub App
 // ---------------------------------------------------------------------------
 
