@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function TeamPage() {
-  redirect("/settings?tab=team");
+  redirect("/settings/team");
 }

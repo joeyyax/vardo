@@ -167,7 +167,7 @@ export function OrgSwitcher({ currentOrgId, organizations: initialOrganizations,
           <DropdownMenuSeparator />
           <DropdownMenuItem
             className="gap-2 cursor-pointer"
-            onClick={() => router.push("/settings")}
+            onClick={() => router.push("/settings/variables")}
           >
             <div className="flex size-5 items-center justify-center rounded-sm bg-muted">
               <Settings className="size-3" />
@@ -176,7 +176,7 @@ export function OrgSwitcher({ currentOrgId, organizations: initialOrganizations,
           </DropdownMenuItem>
           <DropdownMenuItem
             className="gap-2 cursor-pointer"
-            onClick={() => router.push("/team")}
+            onClick={() => router.push("/settings/team")}
           >
             <div className="flex size-5 items-center justify-center rounded-sm bg-muted">
               <Users className="size-3" />
