@@ -117,7 +117,7 @@ export async function resolveBackupTarget(organizationId: string) {
 
   if (anyOrgTarget) return anyOrgTarget;
 
-  // Fall back to Host-level target
+  // Fall back to system-level target
   const hostTarget = await db.query.backupTargets.findFirst({
     where: isNull(backupTargets.organizationId),
   });

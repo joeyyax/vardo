@@ -5,6 +5,7 @@ import { twoFactor, magicLink } from "better-auth/plugins";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import * as schema from "@/lib/db/schema";
+import { DEFAULT_APP_NAME } from "@/lib/system-settings";
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
@@ -36,7 +37,7 @@ export const auth = betterAuth({
 
     // Two-factor authentication (TOTP only, no SMS)
     twoFactor({
-      issuer: "Host",
+      issuer: "Vardo",
       // TOTP is enabled by default
       // Backup codes are enabled by default
     }),
@@ -52,7 +53,7 @@ export const auth = betterAuth({
         const { MagicLinkEmail } = await import("@/lib/email/templates/magic-link");
         await sendEmail({
           to: email,
-          subject: "Sign in to Host",
+          subject: `Sign in to ${DEFAULT_APP_NAME}`,
           template: MagicLinkEmail({ url, email }),
         });
       },
