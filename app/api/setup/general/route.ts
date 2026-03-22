@@ -5,7 +5,7 @@ import { needsSetup } from "@/lib/setup";
 import { db } from "@/lib/db";
 import { systemSettings } from "@/lib/db/schema";
 import { encryptSystem } from "@/lib/crypto/encrypt";
-import { getInstanceConfig } from "@/lib/system-settings";
+import { getInstanceConfig, invalidateSettingsCache } from "@/lib/system-settings";
 
 const generalSchema = z.object({
   instanceName: z.string().min(1).max(100),
@@ -57,6 +57,8 @@ export async function POST(request: NextRequest) {
       target: systemSettings.key,
       set: { value: config, updatedAt: new Date() },
     });
+
+  invalidateSettingsCache();
 
   return NextResponse.json({ ok: true });
 }

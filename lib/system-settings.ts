@@ -12,17 +12,58 @@ import { systemSettings } from "@/lib/db/schema";
 import { decryptSystemOrFallback } from "@/lib/crypto/encrypt";
 import { eq } from "drizzle-orm";
 
+// Short-TTL in-memory cache for system settings. These change rarely (admin
+// panel only), so a 30s cache eliminates repeated DB hits when multiple config
+// readers fan out within the same request or tick cycle.
+const CACHE_TTL_MS = 30_000;
+const cache = new Map<string, { value: string | null; expiresAt: number }>();
+
 /**
  * Read a system_settings row and decrypt its value.
- * Returns null if the row does not exist.
+ * Returns null if the row does not exist. Results are cached for 30s.
  */
 async function getSystemSettingRaw(key: string): Promise<string | null> {
+  const cached = cache.get(key);
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.value;
+  }
+
   const row = await db.query.systemSettings.findFirst({
     where: eq(systemSettings.key, key),
   });
-  if (!row) return null;
-  const { content } = decryptSystemOrFallback(row.value);
-  return content || null;
+  const value = row ? decryptSystemOrFallback(row.value).content || null : null;
+
+  cache.set(key, { value, expiresAt: Date.now() + CACHE_TTL_MS });
+  return value;
+}
+
+/**
+ * Invalidate the settings cache. Call after writing to system_settings
+ * so subsequent reads pick up the new values immediately.
+ */
+export function invalidateSettingsCache(key?: string) {
+  if (key) {
+    cache.delete(key);
+  } else {
+    cache.clear();
+  }
+}
+
+/**
+ * Upsert a system_settings row and invalidate the cache for that key.
+ * Encrypts the value before writing.
+ */
+export async function setSystemSetting(key: string, value: string) {
+  const { encryptSystem } = await import("@/lib/crypto/encrypt");
+  const encrypted = encryptSystem(value);
+  await db
+    .insert(systemSettings)
+    .values({ key, value: encrypted })
+    .onConflictDoUpdate({
+      target: systemSettings.key,
+      set: { value: encrypted, updatedAt: new Date() },
+    });
+  cache.delete(key);
 }
 
 // ---------------------------------------------------------------------------
