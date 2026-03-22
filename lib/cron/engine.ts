@@ -2,12 +2,12 @@ import { db } from "@/lib/db";
 import { cronJobs, cronJobRuns } from "@/lib/db/schema";
 import { and, eq, lt } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import { promisify } from "util";
 import { listContainers } from "@/lib/docker/client";
 import { shouldRunNow } from "./parse";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 /**
  * Run a command inside an app's container.
@@ -32,8 +32,11 @@ async function executeInContainer(
   }
 
   try {
-    const { stdout, stderr } = await execAsync(
-      `docker exec ${running.id} sh -c ${JSON.stringify(command)}`,
+    // Pass command as a discrete argument to sh -c to avoid shell metacharacter
+    // interpretation at the Node.js level. JSON.stringify is not shell quoting.
+    const { stdout, stderr } = await execFileAsync(
+      "docker",
+      ["exec", running.id, "sh", "-c", command],
       { timeout: 300_000 } // 5 minute timeout
     );
 

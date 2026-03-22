@@ -23,3 +23,19 @@ export function assertSafeBranch(branch: string): void {
     throw new Error(`Invalid branch name: ${branch}`);
   }
 }
+
+// Mount paths are absolute container paths — same safe character set as names
+// but with an optional leading slash and interior slashes allowed.
+const SAFE_MOUNT_PATH_RE = /^\/[a-zA-Z0-9._\-/]*$/;
+
+/**
+ * Assert that a container mount path is safe to interpolate into shell commands.
+ * Must be an absolute path containing only alphanumerics, dots, dashes,
+ * underscores, and forward slashes. Rejects metacharacters that could allow
+ * command injection (e.g. $, `, (, ), ;, |, &, spaces, quotes).
+ */
+export function assertSafeMountPath(mountPath: string): void {
+  if (!SAFE_MOUNT_PATH_RE.test(mountPath)) {
+    throw new Error(`Invalid mount path: ${mountPath}`);
+  }
+}

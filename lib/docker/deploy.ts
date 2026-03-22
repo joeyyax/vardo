@@ -6,7 +6,7 @@ import { eq, and, isNull } from "drizzle-orm";
 import { resolveAllEnvVars, type ResolveContext } from "@/lib/env/resolve";
 import { nanoid } from "nanoid";
 import { publishEvent, appChannel } from "@/lib/events";
-import { exec, spawn as nodeSpawn} from "child_process";
+import { execFile, spawn as nodeSpawn} from "child_process";
 import { promisify } from "util";
 import { mkdir, writeFile, readFile } from "fs/promises";
 import { join, resolve } from "path";
@@ -36,7 +36,7 @@ import {
   buildGitSshCommand,
 } from "@/lib/crypto/deploy-key";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 const PROJECTS_DIR = resolve(process.env.HOST_PROJECTS_DIR || "./.host/projects");
 const NETWORK_NAME = "host-network";
@@ -322,14 +322,13 @@ export async function runDeployment(
         const execOpts = { timeout: 60000, env: { ...process.env, ...gitEnv } };
         try {
           // Try pull first (faster if already cloned)
-          await execAsync(
-            `git -C "${repoDir}" remote set-url origin "${cloneUrl}" && git -C "${repoDir}" fetch origin "${branch}" && git -C "${repoDir}" reset --hard "origin/${branch}"`,
-            execOpts
-          );
+          await execFileAsync("git", ["-C", repoDir, "remote", "set-url", "origin", cloneUrl], execOpts);
+          await execFileAsync("git", ["-C", repoDir, "fetch", "origin", branch], execOpts);
+          await execFileAsync("git", ["-C", repoDir, "reset", "--hard", `origin/${branch}`], execOpts);
           log(`[deploy] Pulled latest from ${branch}`);
         } catch {
           // Fresh clone
-          await execAsync(`git clone --depth 1 --branch "${branch}" "${cloneUrl}" "${repoDir}"`, execOpts);
+          await execFileAsync("git", ["clone", "--depth", "1", "--branch", branch, cloneUrl, repoDir], execOpts);
           log(`[deploy] Cloned repo (${branch})`);
         }
       } finally {
@@ -341,8 +340,8 @@ export async function runDeployment(
 
       // Capture git SHA + commit message
       try {
-        const { stdout: sha } = await execAsync(`git -C "${repoDir}" rev-parse HEAD`, { timeout: 5000 });
-        const { stdout: msg } = await execAsync(`git -C "${repoDir}" log -1 --format=%s`, { timeout: 5000 });
+        const { stdout: sha } = await execFileAsync("git", ["-C", repoDir, "rev-parse", "HEAD"], { timeout: 5000 });
+        const { stdout: msg } = await execFileAsync("git", ["-C", repoDir, "log", "-1", "--format=%s"], { timeout: 5000 });
         const gitSha = sha.trim();
         const gitMessage = msg.trim();
         log(`[deploy] Commit: ${gitSha.slice(0, 7)} ${gitMessage}`);
@@ -771,8 +770,9 @@ export async function runDeployment(
     const pullPolicy = builtLocally ? "missing" : "always";
     log(`[deploy] Starting ${newSlot} slot...`);
     try {
-      const { stdout, stderr } = await execAsync(
-        `docker compose -f "${composePath}" -p "${newProjectName}" up -d --pull ${pullPolicy}`,
+      const { stdout, stderr } = await execFileAsync(
+        "docker",
+        ["compose", "-f", composePath, "-p", newProjectName, "up", "-d", "--pull", pullPolicy],
         { cwd: slotDir, timeout: 120000 }
       );
       if (stdout.trim()) logs.push(`[deploy][compose] ${stdout.trim()}`);
@@ -792,8 +792,9 @@ export async function runDeployment(
       // Grab container logs before tearing down
       log(`[deploy] Health check failed — fetching container logs...`);
       try {
-        const { stdout } = await execAsync(
-          `docker compose -f "${composePath}" -p "${newProjectName}" logs --tail 30`,
+        const { stdout } = await execFileAsync(
+          "docker",
+          ["compose", "-f", composePath, "-p", newProjectName, "logs", "--tail", "30"],
           { cwd: slotDir, timeout: 10000 }
         );
         if (stdout.trim()) {
@@ -804,8 +805,9 @@ export async function runDeployment(
       } catch { /* couldn't get logs */ }
 
       log(`[deploy] Tearing down ${newSlot}`);
-      await execAsync(
-        `docker compose -f "${composePath}" -p "${newProjectName}" down --remove-orphans`,
+      await execFileAsync(
+        "docker",
+        ["compose", "-f", composePath, "-p", newProjectName, "down", "--remove-orphans"],
         { cwd: slotDir, timeout: 30000 }
       ).catch(() => {});
       throw new Error(`${newSlot} slot did not become healthy — container may have crashed (see logs above)`);
@@ -825,8 +827,9 @@ export async function runDeployment(
       const oldProjectName = `${app.name}-${envName}-${activeSlot}`;
       const oldComposePath = join(oldSlotDir, "docker-compose.yml");
       try {
-        await execAsync(
-          `docker compose -f "${oldComposePath}" -p "${oldProjectName}" down --remove-orphans`,
+        await execFileAsync(
+          "docker",
+          ["compose", "-f", oldComposePath, "-p", oldProjectName, "down", "--remove-orphans"],
           { cwd: oldSlotDir, timeout: 30000 }
         );
         log(`[deploy] Old slot (${activeSlot}) removed`);
@@ -944,8 +947,9 @@ export async function runDeployment(
         if (volEntries.length > 0) {
           const results = await Promise.allSettled(
             volEntries.map(({ volName }) =>
-              execAsync(
-                `docker run --rm -v "${volName}:/data" alpine du -sb /data`,
+              execFileAsync(
+                "docker",
+                ["run", "--rm", "-v", `${volName}:/data`, "alpine", "du", "-sb", "/data"],
                 { timeout: 30000 }
               )
             )
@@ -1300,8 +1304,9 @@ async function waitForHealthy(
 
   while (Date.now() < deadline) {
     try {
-      const { stdout } = await execAsync(
-        `docker compose -f "${composePath}" -p "${projectName}" ps --format json`,
+      const { stdout } = await execFileAsync(
+        "docker",
+        ["compose", "-f", composePath, "-p", projectName, "ps", "--format", "json"],
         { cwd, timeout: 10000 }
       );
 
@@ -1398,8 +1403,9 @@ async function stopSlotInDir(
   const composeProject = `${projectPrefix}-${activeSlot}`;
 
   try {
-    const { stdout, stderr } = await execAsync(
-      `docker compose -f "${composePath}" -p "${composeProject}" down`,
+    const { stdout, stderr } = await execFileAsync(
+      "docker",
+      ["compose", "-f", composePath, "-p", composeProject, "down"],
       { cwd: slotDir, timeout: 60000 }
     );
     if (stdout.trim()) logs.push(stdout.trim());
@@ -1490,8 +1496,9 @@ export async function restartProject(
     const composePath = join(slotDir, "docker-compose.yml");
     const composeProject = `${prefix}-${activeSlot}`;
 
-    const { stdout, stderr } = await execAsync(
-      `docker compose -f "${composePath}" -p "${composeProject}" up -d --force-recreate`,
+    const { stdout, stderr } = await execFileAsync(
+      "docker",
+      ["compose", "-f", composePath, "-p", composeProject, "up", "-d", "--force-recreate"],
       { cwd: slotDir, timeout: 60000 }
     );
     if (stdout.trim()) logs.push(stdout.trim());
