@@ -86,7 +86,7 @@ export function AppEnvironments({
   const [deleteTarget, setDeleteTarget] = useState<Environment | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const [promoteTarget, setPromoteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [promoteTarget, setPromoteTarget] = useState<Environment | null>(null);
   const [promoting, setPromoting] = useState(false);
 
   async function handleCreate() {
@@ -437,8 +437,8 @@ export function AppEnvironments({
                         <Button
                           size="sm"
                           variant="ghost"
-                          aria-label="Promote to production"
-                          onClick={() => setPromoteTarget({ id: env.id, name: env.name })}
+                          title="Promote to production"
+                          onClick={() => setPromoteTarget(env)}
                         >
                           <ArrowUp className="size-3.5" />
                         </Button>
