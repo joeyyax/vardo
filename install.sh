@@ -291,11 +291,6 @@ if [ ! -f "$ENV_FILE" ]; then
     fi
   fi
 
-  # Optional services and backup storage are configured via the setup wizard
-  COMPOSE_PROFILES="production"
-  FEATURE_METRICS="false"
-  FEATURE_LOGS="false"
-
   echo ""
 
   # Generate secrets
@@ -309,6 +304,8 @@ if [ ! -f "$ENV_FILE" ]; then
   TRAEFIK_DASHBOARD_AUTH=$(printf 'admin:%s' "$(openssl passwd -apr1 "$TRAEFIK_DASH_PASS")" | sed 's/\$/\$\$/g')
 
   cat > "$ENV_FILE" <<EOF
+ENV=production
+COMPOSE_PROFILES=production
 VARDO_DOMAIN=$VARDO_DOMAIN
 VARDO_BASE_DOMAIN=$VARDO_BASE_DOMAIN
 DB_PASSWORD=$DB_PASSWORD
@@ -317,14 +314,6 @@ ENCRYPTION_MASTER_KEY=$ENCRYPTION_MASTER_KEY
 GITHUB_WEBHOOK_SECRET=$GITHUB_WEBHOOK_SECRET
 ACME_EMAIL=$ACME_EMAIL
 TRAEFIK_DASHBOARD_AUTH=$TRAEFIK_DASHBOARD_AUTH
-
-# Optional services — controls which Docker Compose profiles are active.
-# Add/remove profiles to enable/disable: logs (Loki + Promtail), metrics (cAdvisor)
-COMPOSE_PROFILES=$COMPOSE_PROFILES
-
-# Feature flags — set to "false" to hide disabled services from the UI
-FEATURE_METRICS=$FEATURE_METRICS
-FEATURE_LOGS=$FEATURE_LOGS
 
 # GitHub App (optional — configure in setup wizard or Settings)
 GITHUB_APP_ID=

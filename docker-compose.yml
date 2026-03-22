@@ -2,16 +2,14 @@ name: vardo
 
 # Single compose file for all environments.
 #
-#   Dev:   docker compose up -d
-#          Starts everything except the app container. Run with `pnpm dev`.
+#   Dev:   ENV=dev docker compose up -d
+#          Starts everything except the app container. Run the app with `pnpm dev`.
 #
 #   Prod:  docker compose up -d
-#          install.sh sets COMPOSE_PROFILES=production in .env, which
-#          also starts the app container.
+#          ENV defaults to "production" — all services start, ACME enabled.
 
 services:
   host:
-    profiles: [production]
     build:
       context: .
       args:
@@ -19,6 +17,8 @@ services:
         NEXT_PUBLIC_APP_URL: https://${VARDO_DOMAIN:-localhost}
         NEXT_PUBLIC_PLAUSIBLE_DOMAIN: ${NEXT_PUBLIC_PLAUSIBLE_DOMAIN:-}
         NEXT_PUBLIC_PLAUSIBLE_SRC: ${NEXT_PUBLIC_PLAUSIBLE_SRC:-}
+    profiles:
+      - production
     restart: unless-stopped
     depends_on:
       postgres:
@@ -105,7 +105,7 @@ services:
       - "--certificatesresolvers.le.acme.tlschallenge=true"
       - "--certificatesresolvers.le.acme.email=${ACME_EMAIL:-}"
       - "--certificatesresolvers.le.acme.storage=/letsencrypt/acme.json"
-      - "--log.level=${TRAEFIK_LOG_LEVEL:-INFO}"
+      - "--log.level=${TRAEFIK_LOG_LEVEL:-WARN}"
     ports:
       - "80:80"
       - "443:443"
@@ -116,7 +116,6 @@ services:
       - vardo-network
 
   cadvisor:
-    profiles: [metrics]
     image: gcr.io/cadvisor/cadvisor:latest
     restart: unless-stopped
     privileged: true
@@ -132,7 +131,6 @@ services:
       - vardo-network
 
   loki:
-    profiles: [logs]
     image: grafana/loki:3.4
     restart: unless-stopped
     command: -config.file=/etc/loki/loki.yml
@@ -147,7 +145,6 @@ services:
     mem_limit: 512m
 
   promtail:
-    profiles: [logs]
     image: grafana/promtail:3.4
     restart: unless-stopped
     command: -config.file=/etc/promtail/promtail.yml
