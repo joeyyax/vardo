@@ -118,22 +118,9 @@ apt-get install -y -qq unattended-upgrades > /dev/null 2>&1
 dpkg-reconfigure -f noninteractive unattended-upgrades > /dev/null 2>&1
 log "Unattended security updates enabled"
 
-# ── Firewall ──────────────────────────────────────────────────────────────────
-
-if ! command -v ufw &> /dev/null; then
-  log "Installing ufw..."
-  apt-get install -y -qq ufw > /dev/null 2>&1
-fi
-
-log "Configuring firewall..."
-ufw allow 22/tcp > /dev/null 2>&1
-ufw allow 80/tcp > /dev/null 2>&1
-ufw allow 443/tcp > /dev/null 2>&1
-ufw --force enable > /dev/null 2>&1
-log "Firewall enabled (ports 22, 80, 443)"
-# NOTE: Docker publishes ports directly via iptables and bypasses ufw by default.
-# This is a known Docker behavior. To restrict container-published ports, use
-# Docker's built-in --ip flag or network policies rather than ufw rules.
+# NOTE: Firewall configuration is left to the user. Docker publishes ports
+# directly via iptables and bypasses ufw by default, so ufw rules alone
+# don't provide meaningful container isolation.
 
 # ── Dependencies ──────────────────────────────────────────────────────────────
 
