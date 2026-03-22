@@ -17,6 +17,7 @@ import {
 import { useSession, signOut } from "@/lib/auth/client";
 import { getInitials } from "@/lib/utils";
 import { toast } from "sonner";
+import { switchOrganization } from "@/lib/organizations/switch";
 import type { Organization } from "@/lib/types";
 
 type UserMenuProps = {
@@ -46,20 +47,12 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations }: Us
 
   const handleSwitchOrg = async (orgId: string) => {
     if (orgId === currentOrg?.id) return;
-    try {
-      const res = await fetch("/api/v1/organizations/switch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ organizationId: orgId }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to switch organization");
-      }
+    const result = await switchOrganization(orgId);
+    if (result.ok) {
       router.push("/projects");
       router.refresh();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to switch organization");
+    } else {
+      toast.error(result.error);
     }
   };
 

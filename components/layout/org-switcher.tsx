@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronsUpDown, Plus, Building2, Check, Loader2, Settings, Users } from "lucide-react";
 import { toast } from "sonner";
+import { switchOrganization } from "@/lib/organizations/switch";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -70,22 +71,12 @@ export function OrgSwitcher({ currentOrgId, organizations: initialOrganizations,
     if (orgId === currentOrg?.id) return;
 
     setSwitching(true);
-    try {
-      const res = await fetch("/api/v1/organizations/switch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ organizationId: orgId }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to switch organization");
-      }
-
+    const result = await switchOrganization(orgId);
+    if (result.ok) {
       router.push("/projects");
       router.refresh();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to switch organization");
+    } else {
+      toast.error(result.error);
       setSwitching(false);
     }
   };
@@ -109,11 +100,10 @@ export function OrgSwitcher({ currentOrgId, organizations: initialOrganizations,
       const data = await res.json();
 
       // Switch to the new org via API
-      await fetch("/api/v1/organizations/switch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ organizationId: data.organization.id }),
-      });
+      const switchResult = await switchOrganization(data.organization.id);
+      if (!switchResult.ok) {
+        throw new Error(switchResult.error);
+      }
 
       setShowCreateDialog(false);
       setNewOrgName("");
