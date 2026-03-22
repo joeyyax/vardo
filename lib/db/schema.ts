@@ -1236,3 +1236,13 @@ export const appTransfersRelations = relations(
 );
 
 export const notificationChannelsRelations = relations(notificationChannels, ({ one }) => ({ organization: one(organizations, { fields: [notificationChannels.organizationId], references: [organizations.id] }) }));
+
+// ---------------------------------------------------------------------------
+// System settings (key-value store for setup wizard + global config)
+// ---------------------------------------------------------------------------
+
+export const systemSettings = pgTable("system_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
