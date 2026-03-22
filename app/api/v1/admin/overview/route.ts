@@ -28,7 +28,7 @@ export async function GET() {
 
     // Health checks run in parallel but don't block the response shape
     // Resource checks (docker system df) are slow (~3s), service checks are fast
-    const { resources, services } = await getSystemHealth();
+    const { resources, services, runtime } = await getSystemHealth();
 
     return NextResponse.json({
       stats: {
@@ -40,6 +40,7 @@ export async function GET() {
       sparklines,
       resources,
       services,
+      runtime,
     });
   } catch (error) {
     if (error instanceof Error && error.message === "Forbidden") {

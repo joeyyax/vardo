@@ -7,37 +7,20 @@ import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
-type ServiceStatus = {
-  name: string;
-  description: string;
-  status: "healthy" | "unhealthy" | "unconfigured";
-  latencyMs?: number;
-};
-
 export function InfrastructureSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [metrics, setMetrics] = useState(false);
   const [logs, setLogs] = useState(false);
-  const [services, setServices] = useState<ServiceStatus[]>([]);
 
   useEffect(() => {
     (async () => {
       try {
-        const [servicesRes, healthRes] = await Promise.all([
-          fetch("/api/setup/services"),
-          fetch("/api/v1/admin/health"),
-        ]);
-
-        if (servicesRes.ok) {
-          const data = await servicesRes.json();
+        const res = await fetch("/api/setup/services");
+        if (res.ok) {
+          const data = await res.json();
           setMetrics(!!data.metrics);
           setLogs(!!data.logs);
-        }
-
-        if (healthRes.ok) {
-          const data = await healthRes.json();
-          if (data.services) setServices(data.services);
         }
       } catch {
         // defaults
@@ -116,60 +99,6 @@ export function InfrastructureSettings() {
           Save
         </Button>
       </form>
-
-      {/* System status */}
-      <div className="space-y-3">
-        <p className="text-sm font-medium">System status</p>
-        <div className="rounded-lg border overflow-hidden divide-y">
-          {services.length > 0 ? (
-            services.map((svc) => (
-              <div key={svc.name} className="flex items-center justify-between gap-4 px-4 py-2.5">
-                <div className="flex items-center gap-3 min-w-0">
-                  <span
-                    className={`size-2 rounded-full shrink-0 ${
-                      svc.status === "healthy"
-                        ? "bg-status-success"
-                        : svc.status === "unhealthy"
-                          ? "bg-status-error"
-                          : "bg-status-neutral"
-                    }`}
-                  />
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium">{svc.name}</p>
-                    <p className="text-xs text-muted-foreground">{svc.description}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  {svc.latencyMs !== undefined && svc.status === "healthy" && (
-                    <span className="text-xs tabular-nums text-muted-foreground">
-                      {svc.latencyMs}ms
-                    </span>
-                  )}
-                  <span
-                    className={`text-xs font-medium ${
-                      svc.status === "healthy"
-                        ? "text-status-success"
-                        : svc.status === "unhealthy"
-                          ? "text-status-error"
-                          : "text-muted-foreground"
-                    }`}
-                  >
-                    {svc.status === "healthy"
-                      ? "Healthy"
-                      : svc.status === "unhealthy"
-                        ? "Unhealthy"
-                        : "Not configured"}
-                  </span>
-                </div>
-              </div>
-            ))
-          ) : (
-            <div className="px-4 py-3 text-sm text-muted-foreground">
-              Unable to load service status.
-            </div>
-          )}
-        </div>
-      </div>
     </div>
   );
 }

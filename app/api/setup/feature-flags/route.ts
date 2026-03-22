@@ -24,7 +24,16 @@ const ADMIN_FLAGS: FeatureFlag[] = [
   "passwordAuth",
 ];
 
-const flagsSchema = z.record(z.string(), z.boolean());
+/** Only accept known feature flag keys (excluding "ui" kill switch). */
+const flagsSchema = z.object({
+  metrics: z.boolean().optional(),
+  logs: z.boolean().optional(),
+  terminal: z.boolean().optional(),
+  environments: z.boolean().optional(),
+  backups: z.boolean().optional(),
+  cron: z.boolean().optional(),
+  passwordAuth: z.boolean().optional(),
+}).strict();
 
 export async function GET(request: NextRequest) {
   await requireAdminAuth(request);

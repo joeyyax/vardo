@@ -7,6 +7,7 @@ import { PageToolbar } from "@/components/page-toolbar";
 import { SettingsNav } from "@/components/settings-nav";
 
 const NAV_ITEMS = [
+  { label: "Overview", href: "/admin/settings/overview" },
   { label: "General", href: "/admin/settings/general" },
   { label: "Email", href: "/admin/settings/email" },
   { label: "Authentication", href: "/admin/settings/authentication" },

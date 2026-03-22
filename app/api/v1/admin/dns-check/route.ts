@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { resolve4 } from "dns/promises";
-import { requireAppAdmin } from "@/lib/auth/admin";
+import { requireAdminAuth } from "@/lib/auth/admin";
 import { handleRouteError } from "@/lib/api/error-response";
 
 type DnsCheck = {
@@ -10,9 +10,9 @@ type DnsCheck = {
   matches: boolean;
 };
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    await requireAppAdmin();
+    await requireAdminAuth(request);
 
     const serverIp = process.env.HOST_SERVER_IP ?? "";
     const baseDomain = process.env.HOST_BASE_DOMAIN ?? "";
@@ -36,6 +36,9 @@ export async function GET() {
 
     return NextResponse.json({ checks, serverIp });
   } catch (error) {
+    if (error instanceof Error && error.message === "Unauthorized") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     if (error instanceof Error && error.message === "Forbidden") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminAuth } from "@/lib/auth/admin";
+import { needsSetup } from "@/lib/setup";
 import { db } from "@/lib/db";
 import { systemSettings } from "@/lib/db/schema";
 import { encryptSystem } from "@/lib/crypto/encrypt";
@@ -24,7 +25,10 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  await requireAdminAuth(request);
+  const setup = await needsSetup();
+  if (!setup) {
+    await requireAdminAuth(request);
+  }
 
   const body = await request.json();
   const parsed = authSchema.safeParse(body);
