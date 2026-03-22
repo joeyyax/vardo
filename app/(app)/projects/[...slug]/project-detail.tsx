@@ -779,6 +779,7 @@ export function ProjectDetail({
   const [editDisplayName, setEditDisplayName] = useState(project.displayName);
   const [editDescription, setEditDescription] = useState(project.description || "");
   const [editSaving, setEditSaving] = useState(false);
+  const [stopAllOpen, setStopAllOpen] = useState(false);
 
   // Filter out compose child apps — they render nested under their parent
   const topLevelApps = useMemo(
@@ -1118,9 +1119,10 @@ export function ProjectDetail({
                         <RotateCcw className="mr-2 size-4" />
                         Restart All
                       </DropdownMenuItem>
+                      <DropdownMenuSeparator />
                       <DropdownMenuItem
                         className="text-destructive focus:text-destructive"
-                        onClick={handleStopAll}
+                        onClick={() => setStopAllOpen(true)}
                       >
                         <Square className="mr-2 size-4" />
                         Stop All
@@ -1403,6 +1405,16 @@ export function ProjectDetail({
             ? `This will remove the project "${project.displayName}" but keep its ${topLevelApps.length} app(s). They will become unassigned.`
             : `Delete the project "${project.displayName}"?`
         }
+      />
+
+      {/* Stop All confirmation */}
+      <ConfirmDeleteDialog
+        open={stopAllOpen}
+        onOpenChange={setStopAllOpen}
+        onConfirm={handleStopAll}
+        title="Stop all apps"
+        description={`This will stop all ${topLevelApps.length} running app${topLevelApps.length === 1 ? "" : "s"} in "${project.displayName}". You can restart them at any time.`}
+        confirmLabel="Stop All"
       />
     </div>
   );
