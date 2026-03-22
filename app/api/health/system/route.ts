@@ -1,16 +1,19 @@
 import { NextResponse } from "next/server";
 import { getSystemHealth } from "@/lib/config/health";
+import { requireAppAdmin } from "@/lib/auth/admin";
+import { handleRouteError } from "@/lib/api/error-response";
 
 // GET /api/health/system — full system health for the dashboard UI
 export async function GET() {
   try {
+    await requireAppAdmin();
+
     const health = await getSystemHealth();
     return NextResponse.json(health);
-  } catch (err) {
-    console.error("[health/system] Error:", err);
-    return NextResponse.json(
-      { error: "Failed to retrieve system health" },
-      { status: 500 },
-    );
+  } catch (error) {
+    if (error instanceof Error && error.message === "Forbidden") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    return handleRouteError(error, "Error fetching system health");
   }
 }
