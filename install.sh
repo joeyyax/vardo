@@ -408,8 +408,8 @@ fi
 
 # ── Start ──────────────────────────────────────────────────────────────────────
 
-log "Building Host..."
-docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" build --quiet
+log "Building Vardo (this may take a few minutes)..."
+docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" build
 
 log "Starting Host..."
 docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d
