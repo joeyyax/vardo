@@ -1,5 +1,6 @@
 "use client";
 
+import { type ReactNode } from "react";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -21,6 +22,10 @@ type ConfirmDeleteDialogProps = {
   confirmLabel?: string;
   loadingLabel?: string;
   variant?: "destructive" | "default";
+  /** Optional content rendered between the description and footer (e.g. a checkbox). */
+  children?: ReactNode;
+  /** When true the confirm button is disabled regardless of loading state. */
+  confirmDisabled?: boolean;
 };
 
 function ConfirmDeleteDialog({
@@ -33,6 +38,8 @@ function ConfirmDeleteDialog({
   confirmLabel = "Delete",
   loadingLabel = "Deleting...",
   variant = "destructive",
+  children,
+  confirmDisabled = false,
 }: ConfirmDeleteDialogProps) {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -41,6 +48,7 @@ function ConfirmDeleteDialog({
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
+        {children && <div className="px-0 pb-2">{children}</div>}
         <AlertDialogFooter>
           <AlertDialogCancel className="squircle" disabled={loading}>
             Cancel
@@ -50,7 +58,7 @@ function ConfirmDeleteDialog({
             variant={variant}
             className="squircle"
             onClick={onConfirm}
-            disabled={loading}
+            disabled={loading || confirmDisabled}
           >
             {loading ? loadingLabel : confirmLabel}
           </Button>

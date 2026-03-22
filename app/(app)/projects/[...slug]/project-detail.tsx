@@ -40,6 +40,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -762,6 +763,7 @@ export function ProjectDetail({
   const [activeTab, setActiveTab] = useState(initialTab);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [deleteOrphanAcknowledged, setDeleteOrphanAcknowledged] = useState(false);
   const [selectedEnv, setSelectedEnv] = useState<string>("production");
   const [newEnvOpen, setNewEnvOpen] = useState(false);
   const [newEnvName, setNewEnvName] = useState("");
@@ -1393,16 +1395,33 @@ export function ProjectDetail({
       {/* Delete confirmation */}
       <ConfirmDeleteDialog
         open={deleteOpen}
-        onOpenChange={setDeleteOpen}
+        onOpenChange={(open) => {
+          setDeleteOpen(open);
+          if (!open) setDeleteOrphanAcknowledged(false);
+        }}
         onConfirm={handleDelete}
         loading={deleting}
         title="Delete project"
         description={
           topLevelApps.length > 0
-            ? `This will remove the project "${project.displayName}" but keep its ${topLevelApps.length} app(s). They will become unassigned.`
-            : `Delete the project "${project.displayName}"?`
+            ? `Deleting "${project.displayName}" will not stop or delete its ${topLevelApps.length} app${topLevelApps.length === 1 ? "" : "s"}. They'll remain running but will no longer be grouped together. You can reassign them to another project from each app's settings.`
+            : `Delete the project "${project.displayName}"? This action cannot be undone.`
         }
-      />
+        confirmDisabled={topLevelApps.length > 0 && !deleteOrphanAcknowledged}
+      >
+        {topLevelApps.length > 0 && (
+          <label className="flex items-start gap-3 cursor-pointer select-none">
+            <Checkbox
+              checked={deleteOrphanAcknowledged}
+              onCheckedChange={(checked) => setDeleteOrphanAcknowledged(checked === true)}
+              className="mt-0.5"
+            />
+            <span className="text-sm text-muted-foreground">
+              I understand the {topLevelApps.length === 1 ? "app" : `${topLevelApps.length} apps`} will become unassigned
+            </span>
+          </label>
+        )}
+      </ConfirmDeleteDialog>
 
       {/* Stop All confirmation */}
       <ConfirmDeleteDialog

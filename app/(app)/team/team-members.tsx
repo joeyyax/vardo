@@ -63,7 +63,7 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"member" | "admin">("member");
   const [inviting, setInviting] = useState(false);
-  const [removeTarget, setRemoveTarget] = useState<{ id: string; name: string | null } | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<Member | null>(null);
   const [removing, setRemoving] = useState(false);
 
   const canManage = isAdmin(currentRole);
@@ -264,7 +264,7 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
                         <DropdownMenuItem
                           className="gap-2 cursor-pointer"
                           variant="destructive"
-                          onClick={() => setRemoveTarget({ id: member.id, name: member.name })}
+                          onClick={() => setRemoveTarget(member)}
                         >
                           <UserMinus className="size-4" />
                           Remove
@@ -283,7 +283,7 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
         open={!!removeTarget}
         onOpenChange={(open) => { if (!open) setRemoveTarget(null); }}
         title="Remove member"
-        description={`Remove ${removeTarget?.name || "this member"} from ${orgName}? They'll lose access immediately.`}
+        description={`Remove ${removeTarget?.name || removeTarget?.email || "this member"} from ${orgName}? They'll lose access immediately.`}
         confirmLabel="Remove"
         loadingLabel="Removing..."
         onConfirm={confirmRemove}
