@@ -39,14 +39,18 @@ export default function CreateOrgPage() {
 
       if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error || "Failed to create organization");
+        toast.error("Couldn't create organization", {
+          description: data.error || "Check your input and try again",
+        });
         return;
       }
 
       toast.success("Organization created");
       router.push("/projects");
     } catch {
-      toast.error("Something went wrong");
+      toast.error("Couldn't create organization", {
+        description: "Check your connection and try again",
+      });
     } finally {
       setLoading(false);
     }
