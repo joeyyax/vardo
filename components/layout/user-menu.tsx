@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import { LogOut, User, ChevronsUpDown, Loader2, Settings, Shield, Building2, Check, Plus, Sun, Moon, Monitor } from "lucide-react";
+import { LogOut, ChevronsUpDown, Loader2, Settings, Shield, Building2, Check, Plus, Sun, Moon, Monitor } from "lucide-react";
 import { useAdmin } from "@/lib/hooks/use-admin";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -97,16 +97,32 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations }: Us
       >
         {/* Profile */}
         <DropdownMenuLabel className="font-normal">
-          <div className="flex flex-col gap-1">
-            <p className="text-sm font-medium">{displayName}</p>
-            <p className="text-xs text-muted-foreground">{email}</p>
+          <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-1">
+              <p className="text-sm font-medium">{displayName}</p>
+              <p className="text-xs text-muted-foreground">{email}</p>
+            </div>
+            <button
+              onClick={() => router.push("/user/settings/profile")}
+              className="rounded-md p-1 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+              aria-label="Account settings"
+            >
+              <Settings className="size-3.5" />
+            </button>
           </div>
         </DropdownMenuLabel>
 
         {/* Organizations */}
         <DropdownMenuSeparator />
-        <DropdownMenuLabel className="text-xs text-muted-foreground">
-          Organizations
+        <DropdownMenuLabel className="flex items-center justify-between">
+          <span className="text-xs text-muted-foreground">Organizations</span>
+          <button
+            onClick={() => router.push("/settings")}
+            className="rounded-md p-1 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            aria-label="Organization settings"
+          >
+            <Settings className="size-3.5" />
+          </button>
         </DropdownMenuLabel>
         {organizations?.map((org) => (
           <DropdownMenuItem
@@ -129,30 +145,18 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations }: Us
           New organization
         </DropdownMenuItem>
 
-        {/* Settings */}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          className="gap-2 cursor-pointer"
-          onClick={() => router.push("/user/settings/profile")}
-        >
-          <User className="size-4" />
-          Account settings
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          className="gap-2 cursor-pointer"
-          onClick={() => router.push("/settings")}
-        >
-          <Settings className="size-4" />
-          Org settings
-        </DropdownMenuItem>
+        {/* Admin */}
         {isAdmin && (
-          <DropdownMenuItem
-            className="gap-2 cursor-pointer"
-            onClick={() => router.push("/admin/settings")}
-          >
-            <Shield className="size-4" />
-            Admin settings
-          </DropdownMenuItem>
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="gap-2 cursor-pointer"
+              onClick={() => router.push("/admin/settings")}
+            >
+              <Shield className="size-4" />
+              Admin settings
+            </DropdownMenuItem>
+          </>
         )}
 
         {/* Theme switcher */}
