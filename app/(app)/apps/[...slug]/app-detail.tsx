@@ -345,8 +345,8 @@ function PortsManager({
             />
           </div>
           <div className="grid gap-1.5">
-            <label htmlFor="port-host" className="text-xs text-muted-foreground">Host Port</label>
-            <div id="port-host" className="flex h-9 items-center rounded-md border bg-muted/50 px-3 text-sm font-mono text-muted-foreground">
+            <span className="text-xs text-muted-foreground">Host Port</span>
+            <div className="flex h-9 items-center rounded-md border bg-muted/50 px-3 text-sm font-mono text-muted-foreground">
               Auto
             </div>
           </div>
@@ -1277,6 +1277,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
   const [deployAnnouncement, setDeployAnnouncement] = useState("");
 
   async function handleDeploy() {
+    setDeployAnnouncement("");
     setDeploying(true);
     setActiveTab("deployments");
     setDeployLog([]);
@@ -2074,6 +2075,10 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         </TabsList>
 
         <TabsContent value="deployments" className="pt-4 space-y-4">
+          {/* Visually-hidden live region for deploy outcome announcements — always mounted so screen readers register it */}
+          <span className="sr-only" aria-live="assertive" aria-atomic="true">
+            {deployAnnouncement}
+          </span>
           {filteredDeployments.length === 0 && !deploying && !serverRunningDeploy ? (
             <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
               <Rocket className="size-8 text-muted-foreground/50" />
@@ -2088,10 +2093,6 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
             </div>
           ) : (
             <div className="space-y-2">
-              {/* Visually-hidden live region for deploy outcome announcements */}
-              <span className="sr-only" aria-live="assertive" aria-atomic="true">
-                {deployAnnouncement}
-              </span>
               {/* In-progress deployment (client-side SSE stream) */}
               {deploying && (
                 <InProgressDeployCard
