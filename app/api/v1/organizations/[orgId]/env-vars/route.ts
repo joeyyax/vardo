@@ -7,6 +7,7 @@ import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { parseEnvContent } from "@/lib/env/parse-env-content";
+import { encrypt, decryptOrFallback } from "@/lib/crypto/encrypt";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -44,10 +45,10 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       where: eq(orgEnvVars.organizationId, orgId),
     });
 
-    // Mask secret values
+    // Decrypt and mask secret values
     const safe = vars.map((v) => ({
       ...v,
-      value: v.isSecret ? "••••••••" : v.value,
+      value: v.isSecret ? "••••••••" : decryptOrFallback(v.value, orgId).content,
     }));
 
     return NextResponse.json({ envVars: safe });
@@ -71,11 +72,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
     }
 
+    const valueToStore = parsed.data.isSecret
+      ? encrypt(parsed.data.value, orgId)
+      : parsed.data.value;
+
     const [created] = await db.insert(orgEnvVars).values({
       id: nanoid(),
       organizationId: orgId,
       key: parsed.data.key,
-      value: parsed.data.value,
+      value: valueToStore,
       description: parsed.data.description,
       isSecret: parsed.data.isSecret,
     }).returning();
@@ -126,13 +131,14 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     await db.transaction(async (tx) => {
       for (const v of varsToUpsert) {
+        const valueToStore = v.isSecret ? encrypt(v.value, orgId) : v.value;
         const existingId = existingByKey.get(v.key);
         if (existingId) {
-          await tx.update(orgEnvVars).set({ value: v.value, updatedAt: new Date() })
+          await tx.update(orgEnvVars).set({ value: valueToStore, updatedAt: new Date() })
             .where(and(eq(orgEnvVars.id, existingId), eq(orgEnvVars.organizationId, orgId)));
           updated++;
         } else {
-          await tx.insert(orgEnvVars).values({ id: nanoid(), organizationId: orgId, key: v.key, value: v.value, isSecret: v.isSecret });
+          await tx.insert(orgEnvVars).values({ id: nanoid(), organizationId: orgId, key: v.key, value: valueToStore, isSecret: v.isSecret });
           created++;
         }
       }

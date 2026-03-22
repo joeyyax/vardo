@@ -651,7 +651,11 @@ export async function runDeployment(
         where: eq(orgEnvVars.organizationId, opts.organizationId),
       });
       const orgEnvVarMap: Record<string, string> = {};
-      for (const v of orgVarRows) orgEnvVarMap[v.key] = v.value;
+      for (const v of orgVarRows) {
+        orgEnvVarMap[v.key] = v.isSecret
+          ? decryptOrFallback(v.value, opts.organizationId).content
+          : v.value;
+      }
 
       const primaryDomain = app.domains[0]?.domain ?? null;
 

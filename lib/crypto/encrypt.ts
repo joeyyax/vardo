@@ -109,3 +109,73 @@ export function decryptOrFallback(
     return { content: "", wasEncrypted: false };
   }
 }
+
+// ---------------------------------------------------------------------------
+// System-level encryption (not org-scoped)
+// Used for systemSettings rows that contain secrets (backup creds, GitHub
+// App private key, email API tokens). Uses a fixed "system" scope so that
+// the derived key is deterministic but separate from all org keys.
+// ---------------------------------------------------------------------------
+
+const SYSTEM_SCOPE = "host-system-settings";
+
+function deriveSystemKey(): Buffer {
+  const master = getMasterKey();
+  return Buffer.from(hkdfSync("sha256", master, SYSTEM_SCOPE, "host-system-encryption", 32));
+}
+
+/**
+ * Encrypt a plaintext string at the system level (not org-scoped).
+ * Returns iv:ciphertext:authTag (hex-encoded), same format as encrypt().
+ */
+export function encryptSystem(plaintext: string): string {
+  const key = deriveSystemKey();
+  const iv = randomBytes(IV_LENGTH);
+  const cipher = createCipheriv(ALGORITHM, key, iv, { authTagLength: TAG_LENGTH });
+
+  let encrypted = cipher.update(plaintext, "utf8", "hex");
+  encrypted += cipher.final("hex");
+  const tag = cipher.getAuthTag().toString("hex");
+
+  return `${iv.toString("hex")}:${encrypted}:${tag}`;
+}
+
+/**
+ * Decrypt a value encrypted with encryptSystem().
+ */
+export function decryptSystem(encrypted: string): string {
+  const parts = encrypted.split(":");
+  if (parts.length !== 3) {
+    throw new Error("Invalid encrypted value format — expected iv:ciphertext:tag");
+  }
+
+  const [ivHex, ciphertext, tagHex] = parts;
+  const key = deriveSystemKey();
+  const iv = Buffer.from(ivHex, "hex");
+  const tag = Buffer.from(tagHex, "hex");
+
+  const decipher = createDecipheriv(ALGORITHM, key, iv, { authTagLength: TAG_LENGTH });
+  decipher.setAuthTag(tag);
+
+  let decrypted = decipher.update(ciphertext, "hex", "utf8");
+  decrypted += decipher.final("utf8");
+
+  return decrypted;
+}
+
+/**
+ * Try to decrypt a system setting, falling back to plaintext for
+ * rows written before encryption was added.
+ */
+export function decryptSystemOrFallback(value: string): { content: string; wasEncrypted: boolean } {
+  if (!isEncrypted(value)) {
+    return { content: value, wasEncrypted: false };
+  }
+
+  try {
+    return { content: decryptSystem(value), wasEncrypted: true };
+  } catch {
+    console.error("[crypto] System setting decryption failed — wrong key or corrupted data");
+    return { content: "", wasEncrypted: false };
+  }
+}
