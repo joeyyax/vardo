@@ -79,6 +79,26 @@ function DiskTooltip(props: { active?: boolean; payload?: Array<{ dataKey?: stri
 }
 
 export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsProps) {
+  if (!adminMode && apps.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
+        <Activity className="size-8 text-muted-foreground/50" />
+        <div className="text-center space-y-1">
+          <p className="text-sm font-medium">No apps deployed yet</p>
+          <p className="text-sm text-muted-foreground">
+            Deploy an app to start seeing CPU, memory, network, and disk metrics.
+          </p>
+        </div>
+        <Button size="sm" asChild>
+          <Link href="/projects">
+            <Box className="mr-1.5 size-4" />
+            Go to projects
+          </Link>
+        </Button>
+      </div>
+    );
+  }
+
   const [timeRange, setTimeRange] = useState<TimeRange>("1h");
 
   const historyUrl = adminMode
