@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { label: "Backup storage", href: "/admin/settings/backup" },
   { label: "GitHub App", href: "/admin/settings/github" },
   { label: "Infrastructure", href: "/admin/settings/infrastructure" },
+  { label: "Domain & SSL", href: "/admin/settings/domain" },
 ];
 
 export default async function AdminSettingsLayout({
