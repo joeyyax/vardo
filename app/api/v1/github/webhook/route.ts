@@ -18,11 +18,17 @@ export async function POST(request: NextRequest) {
     const event = request.headers.get("x-github-event");
     const signature = request.headers.get("x-hub-signature-256");
 
-    // Verify webhook signature — mandatory
-    const secret = process.env.GITHUB_WEBHOOK_SECRET || process.env.BETTER_AUTH_SECRET;
+    // Verify webhook signature — mandatory.
+    // GITHUB_WEBHOOK_SECRET must be set explicitly — no fallback to other secrets.
+    // Sharing the auth secret with the webhook endpoint breaks secret isolation and
+    // allows a compromised webhook secret to become a compromised auth secret.
+    const secret = process.env.GITHUB_WEBHOOK_SECRET;
     if (!secret) {
-      console.error("[webhook] No webhook secret configured");
-      return NextResponse.json({ error: "Webhook not configured" }, { status: 500 });
+      console.error("[webhook] GITHUB_WEBHOOK_SECRET is not set — webhook endpoint is disabled");
+      return NextResponse.json(
+        { error: "Webhook not configured: GITHUB_WEBHOOK_SECRET is required" },
+        { status: 500 }
+      );
     }
     if (!signature) {
       console.error("[webhook] Missing signature header");
@@ -195,7 +201,6 @@ async function postPreviewComment(
   previewDomains: { appName: string; domain: string }[]
 ): Promise<void> {
   const { getInstallationToken } = await import("@/lib/github/app");
-  const { githubAppInstallations, memberships } = await import("@/lib/db/schema");
 
   // Find a GitHub installation token for this repo
   // Look through all users' installations to find one with access
