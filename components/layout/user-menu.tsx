@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useSession, signOut } from "@/lib/auth/client";
 import { getInitials } from "@/lib/utils";
+import { toast } from "sonner";
 import type { Organization } from "@/lib/types";
 
 type UserMenuProps = {
@@ -43,10 +44,23 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations }: Us
     });
   };
 
-  const handleSwitchOrg = (orgId: string) => {
+  const handleSwitchOrg = async (orgId: string) => {
     if (orgId === currentOrg?.id) return;
-    document.cookie = `time_current_org=${orgId};path=/;max-age=${60 * 60 * 24 * 365}`;
-    window.location.reload();
+    try {
+      const res = await fetch("/api/v1/organizations/switch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ organizationId: orgId }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to switch organization");
+      }
+      router.push("/projects");
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to switch organization");
+    }
   };
 
   if (isPending) {
