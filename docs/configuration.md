@@ -2,10 +2,9 @@
 
 ## Environment Variables
 
-Vardo uses two environment files:
+Vardo uses a single environment file:
 
-- **`.env`** -- Non-secret development defaults, committed to the repository.
-- **`.env.prod`** (production) or **`.env.local`** (development) -- Secret overrides, never committed.
+- **`.env`** -- Machine-specific configuration, never committed. Both development and production use the same filename with different values.
 
 ### Core Variables
 
@@ -277,4 +276,4 @@ The development environment uses `docker-compose.override.yml` to customize the 
 - Loki is exposed on port `3100`.
 - Traefik runs with an insecure dashboard on port `8080` (no TLS, no BasicAuth).
 
-In production, the base `docker-compose.yml` is used directly with `--env-file .env.prod`. All services communicate over internal Docker networks and only Traefik exposes ports 80 and 443 to the host.
+In production, the base `docker-compose.yml` is used directly. Docker Compose reads `.env` automatically from the working directory. All services communicate over internal Docker networks and only Traefik exposes ports 80 and 443 to the host.

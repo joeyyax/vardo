@@ -14,7 +14,7 @@ RESET="\033[0m"
 
 HOST_DIR="${1:-/opt/vardo}"
 COMPOSE_FILE="docker-compose.yml"
-ENV_FILE=".env.prod"
+ENV_FILE=".env"
 AUTO_YES=false
 PREVIOUS_COMMIT=""
 
@@ -151,7 +151,7 @@ BACKUP_FILE="$BACKUP_DIR/pre-update-${BACKUP_TIMESTAMP}.sql"
 mkdir -p "$BACKUP_DIR"
 
 log "Dumping PostgreSQL database..."
-if docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec -T postgres pg_dump -U host host > "$BACKUP_FILE" 2>/dev/null; then
+if docker compose -f "$COMPOSE_FILE" exec -T postgres pg_dump -U host host > "$BACKUP_FILE" 2>/dev/null; then
   BACKUP_SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
   log "Backup saved: $BACKUP_FILE ($BACKUP_SIZE)"
 else
@@ -189,13 +189,13 @@ echo -e "${RESET}"
 
 step "Rebuilding containers"
 
-# COMPOSE_PROFILES from .env.prod controls which optional services start.
-# Docker Compose reads it automatically from the --env-file.
+# COMPOSE_PROFILES from .env controls which optional services start.
+# Docker Compose reads .env automatically from the working directory.
 log "Building images (this may take a few minutes)..."
-docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" build --quiet
+docker compose -f "$COMPOSE_FILE" build --quiet
 
 log "Restarting services..."
-docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d
+docker compose -f "$COMPOSE_FILE" up -d
 
 # ── Wait for healthy ─────────────────────────────────────────────────────────
 
@@ -205,7 +205,7 @@ TIMEOUT=90
 INTERVAL=3
 ELAPSED=0
 while [ $ELAPSED -lt $TIMEOUT ]; do
-  if docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec -T host curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
+  if docker compose -f "$COMPOSE_FILE" exec -T host curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
     log "Host is healthy"
     break
   fi
@@ -218,7 +218,7 @@ echo ""
 if [ $ELAPSED -ge $TIMEOUT ]; then
   warn "Health check timed out after ${TIMEOUT}s"
   warn "The application may still be starting. Check logs with:"
-  warn "  docker compose -f $COMPOSE_FILE --env-file $ENV_FILE logs -f host"
+  warn "  docker compose -f $COMPOSE_FILE logs -f host"
 fi
 
 # ── Post-update verification ─────────────────────────────────────────────────
@@ -230,8 +230,8 @@ info "Version: ${BOLD}$NEW_VERSION${RESET}"
 
 echo ""
 info "Container status:"
-docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null \
-  || docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" ps
+docker compose -f "$COMPOSE_FILE" ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null \
+  || docker compose -f "$COMPOSE_FILE" ps
 
 # ── Done ─────────────────────────────────────────────────────────────────────
 
@@ -254,11 +254,11 @@ echo -e "${DIM}  If something went wrong, rollback with:${RESET}"
 echo ""
 echo -e "${DIM}    cd $HOST_DIR${RESET}"
 echo -e "${DIM}    git checkout $PREVIOUS_COMMIT${RESET}"
-echo -e "${DIM}    docker compose -f $COMPOSE_FILE --env-file $ENV_FILE build${RESET}"
-echo -e "${DIM}    docker compose -f $COMPOSE_FILE --env-file $ENV_FILE up -d${RESET}"
+echo -e "${DIM}    docker compose -f $COMPOSE_FILE build${RESET}"
+echo -e "${DIM}    docker compose -f $COMPOSE_FILE up -d${RESET}"
 if [ -n "$BACKUP_FILE" ]; then
   echo ""
   echo -e "${DIM}  To restore the database:${RESET}"
-  echo -e "${DIM}    cat $BACKUP_FILE | docker compose -f $COMPOSE_FILE --env-file $ENV_FILE exec -T postgres psql -U host host${RESET}"
+  echo -e "${DIM}    cat $BACKUP_FILE | docker compose -f $COMPOSE_FILE exec -T postgres psql -U host host${RESET}"
 fi
 echo ""

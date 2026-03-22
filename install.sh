@@ -241,7 +241,7 @@ fi
 
 # ── Configure ──────────────────────────────────────────────────────────────────
 
-ENV_FILE="$HOST_DIR/.env.prod"
+ENV_FILE="$HOST_DIR/.env"
 
 if [ ! -f "$ENV_FILE" ]; then
   log "Creating configuration..."
@@ -347,10 +347,10 @@ log "Ensuring shared Docker network exists..."
 docker network create vardo-network 2>/dev/null || true
 
 log "Building Vardo (this may take a few minutes)..."
-docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" build
+docker compose -f "$COMPOSE_FILE" build
 
 log "Starting Vardo..."
-docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d
+docker compose -f "$COMPOSE_FILE" up -d
 
 # ── Wait for healthy ───────────────────────────────────────────────────────────
 
@@ -359,7 +359,7 @@ TIMEOUT=60
 INTERVAL=2
 ELAPSED=0
 while [ $ELAPSED -lt $TIMEOUT ]; do
-  if docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec -T host curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
+  if docker compose -f "$COMPOSE_FILE" exec -T host curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
     log "Host is healthy"
     break
   fi
@@ -375,7 +375,7 @@ fi
 
 # Seed templates
 log "Seeding templates..."
-docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec -T host node -e "
+docker compose -f "$COMPOSE_FILE" exec -T host node -e "
   fetch('http://localhost:3000/api/v1/templates/seed', { method: 'POST' })
     .then(r => r.json())
     .then(d => console.log('Templates:', d))
@@ -416,9 +416,9 @@ echo ""
 
 # Useful commands
 echo -e "  ${BOLD}Useful commands:${RESET}"
-echo -e "    ${DIM}View logs:${RESET}    docker compose -f $HOST_DIR/$COMPOSE_FILE --env-file $HOST_DIR/.env.prod logs -f"
-echo -e "    ${DIM}Restart:${RESET}      docker compose -f $HOST_DIR/$COMPOSE_FILE --env-file $HOST_DIR/.env.prod restart"
-echo -e "    ${DIM}Stop:${RESET}         docker compose -f $HOST_DIR/$COMPOSE_FILE --env-file $HOST_DIR/.env.prod down"
+echo -e "    ${DIM}View logs:${RESET}    cd $HOST_DIR && docker compose logs -f"
+echo -e "    ${DIM}Restart:${RESET}      cd $HOST_DIR && docker compose restart"
+echo -e "    ${DIM}Stop:${RESET}         cd $HOST_DIR && docker compose down"
 echo ""
 
 # Update instructions
@@ -428,7 +428,7 @@ echo ""
 
 # Backup recommendations
 echo -e "  ${BOLD}Backup recommendations:${RESET}"
-echo -e "    ${DIM}- Back up $HOST_DIR/.env.prod (contains secrets)${RESET}"
+echo -e "    ${DIM}- Back up $HOST_DIR/.env (contains secrets)${RESET}"
 echo -e "    ${DIM}- Back up PostgreSQL data: docker compose -f $HOST_DIR/$COMPOSE_FILE exec -T postgres pg_dumpall -U host > backup.sql${RESET}"
 echo -e "    ${DIM}- Consider automated daily backups with cron${RESET}"
 echo ""

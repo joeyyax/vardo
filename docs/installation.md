@@ -33,9 +33,9 @@ The install script performs the following steps, in order:
 5. **Docker** -- Installs Docker and the Compose plugin if not already present, then configures log rotation (10 MB x 3 files per container).
 6. **Git** -- Installs git if needed.
 7. **Clone** -- Clones the Vardo repository to `/opt/vardo` (or pulls latest if already installed).
-8. **Configuration** -- Prompts for domain, base domain, and ACME email. Generates random secrets for the database password, auth secret, encryption master key, webhook secret, and Traefik dashboard credentials. Writes everything to `/opt/vardo/.env.prod` with `chmod 600`.
+8. **Configuration** -- Prompts for domain, base domain, and ACME email. Generates random secrets for the database password, auth secret, encryption master key, webhook secret, and Traefik dashboard credentials. Writes everything to `/opt/vardo/.env` with `chmod 600`.
 9. **DNS validation** -- Detects the server's public IP and checks whether the dashboard domain resolves to it. Warns if DNS is not yet configured but allows continuing.
-10. **Build and start** -- Runs `docker compose build` and `docker compose up -d` using the production compose file with the generated `.env.prod`.
+10. **Build and start** -- Runs `docker compose build` and `docker compose up -d` using the production compose file with the generated `.env`.
 11. **Health check** -- Waits up to 60 seconds for the app to respond on `/api/health`.
 12. **Template seeding** -- Seeds the built-in service templates (PostgreSQL, Redis, MySQL, etc.) via an internal API call.
 
@@ -62,11 +62,11 @@ git clone --depth 1 https://github.com/joeyyax/vardo.git /opt/vardo
 cd /opt/vardo
 
 # Copy and edit the environment file
-cp .env.example .env.prod
-# Edit .env.prod with your values -- see Configuration docs for details
+cp .env.example .env
+# Edit .env with your values -- see Configuration docs for details
 
 # Build and start
-docker compose --env-file .env.prod up -d
+docker compose up -d
 ```
 
 The production Docker Compose stack includes these services:
@@ -94,24 +94,24 @@ After installation completes:
 
 ```bash
 # View logs
-docker compose -f /opt/vardo/docker-compose.yml --env-file /opt/vardo/.env.prod logs -f
+cd /opt/vardo && docker compose logs -f
 
 # Restart
-docker compose -f /opt/vardo/docker-compose.yml --env-file /opt/vardo/.env.prod restart
+cd /opt/vardo && docker compose restart
 
 # Stop
-docker compose -f /opt/vardo/docker-compose.yml --env-file /opt/vardo/.env.prod down
+cd /opt/vardo && docker compose down
 
 # Update
-cd /opt/vardo && git pull && docker compose -f docker-compose.yml --env-file .env.prod up -d --build
+cd /opt/vardo && git pull && docker compose up -d --build
 ```
 
 ### Backups
 
 Back up these items regularly:
 
-- **`.env.prod`** -- Contains all secrets (database password, auth secret, encryption key).
-- **PostgreSQL data** -- `docker compose -f /opt/vardo/docker-compose.yml exec -T postgres pg_dumpall -U host > backup.sql`
+- **`.env`** -- Contains all secrets (database password, auth secret, encryption key).
+- **PostgreSQL data** -- `cd /opt/vardo && docker compose exec -T postgres pg_dumpall -U host > backup.sql`
 - **Docker volumes** -- The `host_projects` volume contains deployment data.
 
 Migrations run automatically on app startup via `drizzle-kit migrate`. There is no need to run migrations manually after updates.
