@@ -104,20 +104,12 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations }: Us
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
 
-        {/* Settings links */}
         <DropdownMenuItem
           className="gap-2 cursor-pointer"
           onClick={() => router.push("/user/settings/profile")}
         >
           <User className="size-4" />
           Account settings
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          className="gap-2 cursor-pointer"
-          onClick={() => router.push("/settings")}
-        >
-          <Settings className="size-4" />
-          Org settings
         </DropdownMenuItem>
         {isAdmin && (
           <DropdownMenuItem
@@ -129,7 +121,7 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations }: Us
           </DropdownMenuItem>
         )}
 
-        {/* Org switcher */}
+        {/* Organizations */}
         <DropdownMenuSeparator />
         <DropdownMenuLabel className="text-xs text-muted-foreground">
           Organizations
@@ -147,6 +139,13 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations }: Us
             )}
           </DropdownMenuItem>
         ))}
+        <DropdownMenuItem
+          className="gap-2 cursor-pointer"
+          onClick={() => router.push("/settings")}
+        >
+          <Settings className="size-4" />
+          Settings
+        </DropdownMenuItem>
         <DropdownMenuItem
           className="gap-2 cursor-pointer"
           onClick={() => router.push("/onboarding")}
