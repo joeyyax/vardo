@@ -177,17 +177,24 @@ export const organizations = pgTable("organization", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-export const memberships = pgTable("membership", {
-  id: text("id").primaryKey(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
-  organizationId: text("organization_id")
-    .notNull()
-    .references(() => organizations.id, { onDelete: "cascade" }),
-  role: text("role").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+export const memberships = pgTable(
+  "membership",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    role: text("role").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("membership_user_id_idx").on(t.userId),
+    index("membership_org_id_idx").on(t.organizationId),
+  ]
+);
 
 // ---------------------------------------------------------------------------
 // Host: Organization Environment Variables (shared across apps)
@@ -488,19 +495,26 @@ export const environments = pgTable(
 // Host: API Tokens
 // ---------------------------------------------------------------------------
 
-export const apiTokens = pgTable("api_token", {
-  id: text("id").primaryKey(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
-  organizationId: text("organization_id")
-    .notNull()
-    .references(() => organizations.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  tokenHash: text("token_hash").notNull(),
-  lastUsedAt: timestamp("last_used_at"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+export const apiTokens = pgTable(
+  "api_token",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    tokenHash: text("token_hash").notNull(),
+    lastUsedAt: timestamp("last_used_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("api_token_hash_idx").on(t.tokenHash),
+    index("api_token_user_org_idx").on(t.userId, t.organizationId),
+  ]
+);
 
 // ---------------------------------------------------------------------------
 // Host: Activities (audit trail)
