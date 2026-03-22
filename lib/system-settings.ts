@@ -11,8 +11,8 @@ import { systemSettings } from "@/lib/db/schema";
 import { decryptSystemOrFallback, encryptSystem } from "@/lib/crypto/encrypt";
 import { eq } from "drizzle-orm";
 
-/** Default app name used across the UI, emails, and metadata when not configured. */
-export const DEFAULT_APP_NAME = "Vardo";
+import { DEFAULT_APP_NAME } from "@/lib/constants";
+export { DEFAULT_APP_NAME };
 
 // Short-TTL in-memory cache for system settings. These change rarely (admin
 // panel only), so a 30s cache eliminates repeated DB + decrypt calls when
