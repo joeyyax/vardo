@@ -141,7 +141,7 @@ Every deployment in Host uses a blue-green strategy to minimize downtime:
 2. **Prepare** -- The compose file and resolved `.env` file are written to the new slot's directory.
 3. **Start new slot** -- `docker compose up` starts the new containers. Traefik labels are applied so Traefik discovers the service on the Docker network.
 4. **Health check** -- Host waits for the new containers to become healthy. If the health check fails, the new slot is torn down and the deployment is marked as failed. Container logs from the failed slot are captured for debugging.
-5. **Route traffic** -- Traefik automatically routes traffic to the new containers once they are healthy and connected to the `host-network` Docker network.
+5. **Route traffic** -- Traefik automatically routes traffic to the new containers once they are healthy and connected to the `vardo-network` Docker network.
 6. **Tear down old slot** -- The previous slot's containers are stopped and removed.
 7. **Record active slot** -- The `.active-slot` file is updated to reflect the new active slot.
 8. **Domain health checks** -- HTTP health checks run against all configured domains to verify external reachability.

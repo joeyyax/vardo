@@ -3,7 +3,7 @@
 # - Removes the host service (run `pnpm dev` instead)
 # - Exposes service ports to localhost for direct access
 # - Disables TLS / ACME (uses insecure Traefik dashboard)
-# - Attaches all services to host-network so localhost can reach them
+# - Attaches all services to vardo-network so localhost can reach them
 #
 # All optional profiles (logs, metrics) are activated in .env via COMPOSE_PROFILES
 # so that `docker compose up` in dev starts everything by default.
@@ -22,40 +22,40 @@ services:
       - "5433:5432"
     networks:
       - internal
-      - host-network
+      - vardo-network
 
   redis:
     ports:
       - "6379:6379"
     networks:
       - internal
-      - host-network
+      - vardo-network
 
   cadvisor:
     ports:
       - "8081:8080"
     networks:
       - internal
-      - host-network
+      - vardo-network
 
   loki:
     ports:
       - "3100:3100"
     networks:
       - internal
-      - host-network
+      - vardo-network
 
   promtail:
     networks:
       - internal
-      - host-network
+      - vardo-network
 
   traefik:
     command:
       - "--api.insecure=true"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
-      - "--providers.docker.network=host-network"
+      - "--providers.docker.network=vardo-network"
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
       - "--entrypoints.websecure.http.tls=true"
