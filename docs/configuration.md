@@ -2,10 +2,9 @@
 
 ## Environment Variables
 
-Vardo uses two environment files:
+Vardo uses one environment file:
 
-- **`.env`** -- Non-secret development defaults, committed to the repository.
-- **`.env.prod`** (production) or **`.env.local`** (development) -- Secret overrides, never committed.
+- **`.env`** -- All config for your environment. Gitignored, never committed. Copy from `.env.example`.
 
 ### Core Variables
 
