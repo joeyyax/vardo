@@ -96,11 +96,15 @@ if [ "$TOTAL_RAM_MB" -gt 0 ] && [ "$TOTAL_RAM_MB" -lt 4096 ]; then
     fallocate -l 2G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none
     chmod 600 /swapfile
     mkswap /swapfile > /dev/null
-    swapon /swapfile
-    if ! grep -q '/swapfile' /etc/fstab 2>/dev/null; then
-      echo '/swapfile none swap sw 0 0' >> /etc/fstab
+    if swapon /swapfile 2>/dev/null; then
+      if ! grep -q '/swapfile' /etc/fstab 2>/dev/null; then
+        echo '/swapfile none swap sw 0 0' >> /etc/fstab
+      fi
+      log "Swap enabled: 2GB"
+    else
+      rm -f /swapfile
+      warn "Could not enable swap (ZFS or container — not fatal)"
     fi
-    log "Swap enabled: 2GB"
   else
     log "Swap already active: $(swapon --show --noheadings --raw | awk '{sum+=$3} END {printf "%.0fMB", sum/1024/1024}')"
   fi
