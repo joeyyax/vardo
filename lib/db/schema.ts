@@ -910,6 +910,7 @@ export const organizationsRelations = relations(organizations, ({ many }) => ({
   outgoingTransfers: many(appTransfers, { relationName: "sourceOrg" }),
   incomingTransfers: many(appTransfers, { relationName: "destinationOrg" }),
   notificationChannels: many(notificationChannels),
+  invitations: many(invitations),
 }));
 
 export const membershipsRelations = relations(memberships, ({ one }) => ({
@@ -1236,6 +1237,50 @@ export const appTransfersRelations = relations(
 );
 
 export const notificationChannelsRelations = relations(notificationChannels, ({ one }) => ({ organization: one(organizations, { fields: [notificationChannels.organizationId], references: [organizations.id] }) }));
+
+// ---------------------------------------------------------------------------
+// Host: Invitations
+// ---------------------------------------------------------------------------
+
+export const invitationScopeEnum = pgEnum("invitation_scope", [
+  "platform",
+  "org",
+  "project",
+]);
+
+export const invitationStatusEnum = pgEnum("invitation_status", [
+  "pending",
+  "accepted",
+  "expired",
+  "revoked",
+]);
+
+export const invitations = pgTable(
+  "invitation",
+  {
+    id: text("id").primaryKey(),
+    email: text("email").notNull(),
+    scope: invitationScopeEnum("scope").notNull(),
+    targetId: text("target_id"), // orgId for org scope, projectId for project scope, null for platform
+    role: text("role").notNull(), // "owner", "admin", "member"
+    status: invitationStatusEnum("status").notNull().default("pending"),
+    token: text("token").notNull().unique(),
+    invitedBy: text("invited_by").references(() => user.id, { onDelete: "set null" }),
+    expiresAt: timestamp("expires_at").notNull(),
+    acceptedAt: timestamp("accepted_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("invitation_target_scope_status_idx").on(t.targetId, t.scope, t.status),
+  ],
+);
+
+export const invitationsRelations = relations(invitations, ({ one }) => ({
+  inviter: one(user, {
+    fields: [invitations.invitedBy],
+    references: [user.id],
+  }),
+}));
 
 // ---------------------------------------------------------------------------
 // System settings (key-value store for setup wizard + global config)

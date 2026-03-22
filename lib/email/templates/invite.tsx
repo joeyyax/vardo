@@ -16,10 +16,10 @@ export function InviteEmail({
 }: InviteEmailProps) {
   const heading = orgName
     ? `You've been invited to ${orgName}`
-    : "You've been invited to Host";
+    : "You've been invited to Vardo";
 
   const description = inviterName
-    ? `${inviterName} invited you to join ${orgName ? `**${orgName}** on ` : ""}Host.`
+    ? `${inviterName} invited you to join ${orgName ? `${orgName} on ` : ""}Vardo.`
     : `An account has been created for ${email}. Sign in using a magic link — just enter your email on the login page and check your inbox.`;
 
   return (
