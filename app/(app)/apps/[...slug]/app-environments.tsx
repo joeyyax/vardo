@@ -537,8 +537,9 @@ export function AppEnvironments({
         open={!!promoteTarget}
         onOpenChange={(open) => { if (!open) setPromoteTarget(null); }}
         title="Promote to production"
-        description={`This will copy ${promoteTarget?.name}'s environment variables to production. Existing production variables won't be overwritten.`}
+        description={`Copy ${promoteTarget?.name}'s variables to production? Existing production variables won't be overwritten.`}
         confirmLabel="Promote"
+        loadingLabel="Promoting..."
         onConfirm={confirmPromote}
         loading={promoting}
       />

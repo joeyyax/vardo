@@ -19,6 +19,7 @@ type ConfirmDeleteDialogProps = {
   onConfirm: () => void;
   loading?: boolean;
   confirmLabel?: string;
+  loadingLabel?: string;
 };
 
 function ConfirmDeleteDialog({
@@ -29,6 +30,7 @@ function ConfirmDeleteDialog({
   onConfirm,
   loading = false,
   confirmLabel = "Delete",
+  loadingLabel = "Deleting...",
 }: ConfirmDeleteDialogProps) {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -46,7 +48,7 @@ function ConfirmDeleteDialog({
             disabled={loading}
             className="squircle bg-destructive text-destructive-foreground hover:bg-destructive/90"
           >
-            {loading ? "Deleting..." : confirmLabel}
+            {loading ? loadingLabel : confirmLabel}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

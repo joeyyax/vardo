@@ -351,6 +351,7 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
         title="Remove member"
         description={`Remove ${removeTarget?.name || "this member"} from ${orgName}? They'll lose access immediately.`}
         confirmLabel="Remove"
+        loadingLabel="Removing..."
         loading={removing}
         onConfirm={confirmRemove}
       />
