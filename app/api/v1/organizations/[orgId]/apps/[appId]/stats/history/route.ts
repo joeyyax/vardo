@@ -5,6 +5,7 @@ import { apps } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { queryMetrics } from "@/lib/metrics/store";
+import { isMetricsEnabled } from "@/lib/metrics/config";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -19,6 +20,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     if (organization.id !== orgId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    if (!isMetricsEnabled()) {
+      return NextResponse.json({ series: {} });
     }
 
     const app = await db.query.apps.findFirst({

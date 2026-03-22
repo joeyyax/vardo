@@ -8,6 +8,7 @@ import { spawn } from "child_process";
 import { resolve } from "path";
 import { readFile } from "fs/promises";
 import { createSSEResponse } from "@/lib/api/sse";
+import { isLokiAvailable, queryRange, tailLogs, buildLogQLQuery } from "@/lib/loki/client";
 
 const PROJECTS_DIR = resolve(process.env.HOST_PROJECTS_DIR || "./.host/projects");
 
@@ -40,29 +41,67 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const searchParams = request.nextUrl.searchParams;
     const tail = searchParams.get("tail") || "200";
     const environmentName = searchParams.get("environment") || "production";
+    const search = searchParams.get("search") || undefined;
+    const service = searchParams.get("service") || undefined;
 
-    // Find the active slot — check environment-aware layout first, fall back to legacy
-    let appDir = resolve(PROJECTS_DIR, app.name, environmentName);
-    let activeSlot = "blue";
-    try {
-      activeSlot = (await readFile(resolve(appDir, ".active-slot"), "utf-8")).trim();
-    } catch {
-      // Fall back to legacy layout (no environment subdirectory)
-      appDir = resolve(PROJECTS_DIR, app.name);
-      try {
-        activeSlot = (await readFile(resolve(appDir, ".active-slot"), "utf-8")).trim();
-      } catch { /* default to blue */ }
+    // Use Loki if available, otherwise fall back to Docker compose logs
+    if (await isLokiAvailable()) {
+      const query = buildLogQLQuery({
+        project: app.name,
+        environment: environmentName,
+        service,
+        search,
+      });
+
+      return createSSEResponse(request, async (sendEvent) => {
+        // Backfill recent history so the viewer has content immediately
+        try {
+          const tailCount = parseInt(tail);
+          const start = String((Date.now() - 3600_000) * 1_000_000);
+          const history = await queryRange({
+            query,
+            start,
+            limit: tailCount,
+            direction: "backward",
+          });
+          history.reverse();
+          for (const entry of history) {
+            sendEvent("log", entry.line);
+          }
+        } catch {
+          // History unavailable — continue to live tail
+        }
+
+        // Live tail via WebSocket
+        const tailStart = String(Date.now() * 1_000_000);
+        await tailLogs(
+          { query, start: tailStart, delayFor: 2 },
+          (entry) => sendEvent("log", entry.line),
+          request.signal,
+        );
+      });
     }
 
-    const slotDir = resolve(appDir, activeSlot);
-    const composePath = resolve(slotDir, "docker-compose.yml");
-    // Use env-aware compose project name if environment directory exists
-    const envAware = appDir.endsWith(environmentName);
-    const composeProject = envAware
-      ? `${app.name}-${environmentName}-${activeSlot}`
-      : `${app.name}-${activeSlot}`;
-
+    // Docker compose logs fallback
     return createSSEResponse(request, async (sendEvent) => {
+      let appDir = resolve(PROJECTS_DIR, app.name, environmentName);
+      let activeSlot = "blue";
+      try {
+        activeSlot = (await readFile(resolve(appDir, ".active-slot"), "utf-8")).trim();
+      } catch {
+        appDir = resolve(PROJECTS_DIR, app.name);
+        try {
+          activeSlot = (await readFile(resolve(appDir, ".active-slot"), "utf-8")).trim();
+        } catch { /* default to blue */ }
+      }
+
+      const slotDir = resolve(appDir, activeSlot);
+      const composePath = resolve(slotDir, "docker-compose.yml");
+      const envAware = appDir.endsWith(environmentName);
+      const composeProject = envAware
+        ? `${app.name}-${environmentName}-${activeSlot}`
+        : `${app.name}-${activeSlot}`;
+
       const proc = spawn("docker", [
         "compose",
         "-f", composePath,
@@ -95,7 +134,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         proc.kill();
       });
 
-      // Keep the handler alive until the process exits
       await new Promise<void>((resolve) => {
         proc.on("close", () => resolve());
       });

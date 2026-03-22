@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
+  AlertTriangle,
   ArrowLeft,
   Pencil,
   Trash2,
@@ -59,7 +60,7 @@ import {
 } from "@/components/ui/select";
 import { LogViewer, DeploymentLog, TerminalOutput, highlightLogLine, detectLogLevel } from "@/components/log-viewer";
 import dynamic from "next/dynamic";
-import { detectProjectIcon } from "@/lib/ui/project-icon";
+import { detectAppType } from "@/lib/ui/app-type";
 import { AppMetrics } from "./app-metrics";
 
 const AppTerminal = dynamic(
@@ -146,6 +147,7 @@ type App = {
   cloneStrategy: string | null;
   dependsOn: string[] | null;
   status: "active" | "stopped" | "error" | "deploying";
+  needsRedeploy: boolean | null;
   createdAt: Date;
   updatedAt: Date;
   deployments: Deployment[];
@@ -1232,10 +1234,17 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
             {app.status === "active" ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button size="sm" className="bg-status-success-muted text-status-success hover:bg-status-success/20">
-                    <span className="mr-1.5 size-2 rounded-full bg-status-success animate-pulse" />
-                    Running
-                    {(() => {
+                  <Button size="sm" className={app.needsRedeploy
+                    ? "bg-status-warning-muted text-status-warning hover:bg-status-warning/20"
+                    : "bg-status-success-muted text-status-success hover:bg-status-success/20"
+                  }>
+                    {app.needsRedeploy ? (
+                      <AlertTriangle className="mr-1.5 size-3.5" />
+                    ) : (
+                      <span className="mr-1.5 size-2 rounded-full bg-status-success animate-pulse" />
+                    )}
+                    {app.needsRedeploy ? "Restart Needed" : "Running"}
+                    {!app.needsRedeploy && (() => {
                       const lastDeploy = app.deployments.find((d) => d.status === "success");
                       return lastDeploy ? (
                         <Uptime since={lastDeploy.finishedAt || lastDeploy.startedAt} />
@@ -1471,7 +1480,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
       <div className="flex gap-5">
         {/* Project icon */}
         {(() => {
-          const iconUrl = detectProjectIcon({
+          const { icon: iconUrl } = detectAppType({
             imageName: app.imageName,
             gitUrl: app.gitUrl,
             deployType: app.deployType,
@@ -1916,10 +1925,8 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
             appId={app.id}
             appName={app.name}
             orgId={orgId}
-            initialVars={app.envVars}
             allAppNames={allAppNames}
             orgVarKeys={orgVarKeys}
-            environmentId={selectedEnvId}
           />
         </TabsContent>
 

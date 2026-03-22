@@ -23,11 +23,9 @@ export const auth = betterAuth({
     level: "debug",
   },
 
-  // Email + password authentication (invite only — no public registration)
-  // Sign-up is allowed only when no users exist (initial setup), then locks down
+  // Password auth disabled — use magic link, passkey, or OAuth
   emailAndPassword: {
-    enabled: true,
-    disableSignUp: true,
+    enabled: false,
   },
 
   plugins: [

@@ -10,10 +10,9 @@ import {
 
 type InviteEmailProps = {
   email: string;
-  tempPassword: string;
 };
 
-export function InviteEmail({ email, tempPassword }: InviteEmailProps) {
+export function InviteEmail({ email }: InviteEmailProps) {
   return (
     <Html>
       <Head />
@@ -22,11 +21,10 @@ export function InviteEmail({ email, tempPassword }: InviteEmailProps) {
         <Container style={container}>
           <Heading style={h1}>You've been invited to Host</Heading>
           <Text style={text}>
-            An account has been created for <strong>{email}</strong>. Sign in
-            with the temporary password below, then change it in your profile
-            settings.
+            An account has been created for <strong>{email}</strong>. You can
+            sign in using a magic link — just enter your email on the login page
+            and check your inbox.
           </Text>
-          <Text style={codeBlock}>{tempPassword}</Text>
           <Text style={meta}>
             If you didn't expect this invitation, you can safely ignore this
             email.
@@ -42,13 +40,3 @@ const container = { maxWidth: "480px", margin: "40px auto", padding: "24px" };
 const h1 = { color: "#fafafa", fontSize: "20px", fontWeight: "600" as const, margin: "0 0 16px" };
 const text = { color: "#a1a1aa", fontSize: "14px", lineHeight: "24px" };
 const meta = { color: "#71717a", fontSize: "12px", lineHeight: "20px", marginTop: "24px" };
-const codeBlock = {
-  backgroundColor: "#27272a",
-  color: "#fafafa",
-  padding: "12px 16px",
-  borderRadius: "8px",
-  fontFamily: "monospace",
-  fontSize: "16px",
-  letterSpacing: "1px",
-  textAlign: "center" as const,
-};

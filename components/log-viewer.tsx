@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { Loader2, Pause, Play, ArrowDown, X, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useVisibilityKey } from "@/lib/hooks/use-visible";
 
 type LogLine = {
   id: number;
@@ -346,22 +347,53 @@ export function DeploymentLog({ log, maxHeight = "max-h-96" }: StaticLogProps) {
 
 type LogViewerProps = {
   streamUrl: string;
+  historyUrl?: string;
   maxLines?: number;
 };
 
-export function LogViewer({ streamUrl, maxLines = 1000 }: LogViewerProps) {
+export function LogViewer({ streamUrl, historyUrl, maxLines = 1000 }: LogViewerProps) {
   const [lines, setLines] = useState<{ text: string; html: string; level: LogLevel }[]>([]);
   const [connected, setConnected] = useState(false);
+  const [timedOut, setTimedOut] = useState(false);
   const [paused, setPaused] = useState(false);
+  const [manualReconnect, setManualReconnect] = useState(0);
   const pausedRef = useRef(paused);
   pausedRef.current = paused;
+  const visKey = useVisibilityKey();
 
   useEffect(() => {
+    // Don't connect if tab is hidden
+    if (typeof document !== "undefined" && document.hidden) return;
+
+    // The SSE stream now backfills history automatically when Loki is available,
+    // but if a separate historyUrl is provided, pre-load from it for instant content
+    if (historyUrl) {
+      fetch(historyUrl)
+        .then((res) => res.json())
+        .then((data: { logs?: string }) => {
+          if (!data.logs) return;
+          const initial = data.logs
+            .split("\n")
+            .filter(Boolean)
+            .map((text: string) => ({
+              text,
+              html: highlightLine(text),
+              level: detectLevel(text),
+            }));
+          if (initial.length > 0) {
+            setLines(initial.slice(-maxLines));
+          }
+        })
+        .catch(() => {
+          // History unavailable — stream will provide content
+        });
+    }
+
     const es = new EventSource(streamUrl);
 
     es.onopen = () => setConnected(true);
 
-    es.onmessage = (event) => {
+    function handleLogEvent(event: MessageEvent) {
       if (pausedRef.current) return;
       try {
         const text = JSON.parse(event.data) as string;
@@ -375,27 +407,49 @@ export function LogViewer({ streamUrl, maxLines = 1000 }: LogViewerProps) {
       } catch {
         // Skip malformed messages
       }
-    };
+    }
+
+    // Listen for both named "log" events and unnamed events
+    es.addEventListener("log", handleLogEvent);
+    es.onmessage = handleLogEvent;
+
+    // Handle stream timeout — show resume button
+    es.addEventListener("timeout", () => {
+      setConnected(false);
+      setTimedOut(true);
+      es.close();
+    });
 
     es.onerror = () => {
       setConnected(false);
     };
 
     return () => {
+      es.removeEventListener("log", handleLogEvent);
       es.close();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [streamUrl, maxLines]);
+  }, [streamUrl, historyUrl, maxLines, visKey, manualReconnect]);
 
   return (
     <div className="space-y-2">
       {/* Stream toolbar */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className={`size-2 rounded-full ${connected ? "bg-status-success" : "bg-status-error"}`} />
+          <span className={`size-2 rounded-full ${connected ? "bg-status-success" : timedOut ? "bg-status-warning" : "bg-status-error"}`} />
           <span className="text-xs text-muted-foreground">
-            {connected ? "Streaming" : "Disconnected"}
+            {connected ? "Streaming" : timedOut ? "Paused" : "Disconnected"}
           </span>
+          {timedOut && (
+            <Button
+              size="xs"
+              variant="ghost"
+              onClick={() => { setTimedOut(false); setManualReconnect((k) => k + 1); }}
+            >
+              <Play className="size-3 mr-1" />
+              Resume
+            </Button>
+          )}
         </div>
         <div className="flex items-center gap-1">
           <Button

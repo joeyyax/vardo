@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { user, account } from "@/lib/db/schema";
+import { user } from "@/lib/db/schema";
 import { requireSession } from "@/lib/auth/session";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { randomBytes, createHash } from "crypto";
+import { createHash } from "crypto";
 
 // Hash password with bcrypt-compatible approach via Better Auth's internal method
 // Since Better Auth uses its own password hashing, we'll use the auth API to create users
@@ -62,7 +62,7 @@ export async function GET() {
 }
 
 // POST /api/v1/admin/users
-// Invite a user by creating their account with a temporary password
+// Invite a user — creates account, sends magic link for first login
 export async function POST(request: NextRequest) {
   try {
     await requireAppAdmin();
@@ -89,105 +89,47 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate a temporary password
-    const tempPassword = randomBytes(12).toString("base64url");
+    // Create user directly — no password (users sign in via magic link or passkey)
+    const userId = nanoid();
 
-    // Create user via Better Auth's server-side API
-    // This handles password hashing internally
+    await db.insert(user).values({
+      id: userId,
+      email: normalizedEmail,
+      name: name || normalizedEmail.split("@")[0],
+      emailVerified: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    // Send invitation with magic link
+    let emailSent = false;
     try {
-      const newUser = await auth.api.signUpEmail({
-        body: {
+      const { sendEmail } = await import("@/lib/email/send");
+      const { InviteEmail } = await import("@/lib/email/templates/invite");
+      await sendEmail({
+        to: normalizedEmail,
+        subject: "You've been invited to Host",
+        template: InviteEmail({ email: normalizedEmail }),
+      });
+      emailSent = true;
+    } catch (emailError) {
+      console.log("[admin] Email sending skipped or failed:", emailError);
+    }
+
+    return NextResponse.json(
+      {
+        user: {
+          id: userId,
           email: normalizedEmail,
-          password: tempPassword,
           name: name || normalizedEmail.split("@")[0],
         },
-      });
-
-      // Try to send an invitation email
-      try {
-        const { sendEmail } = await import("@/lib/email/send");
-        const { InviteEmail } = await import("@/lib/email/templates/invite");
-        await sendEmail({
-          to: normalizedEmail,
-          subject: "You've been invited to Host",
-          template: InviteEmail({
-            email: normalizedEmail,
-            tempPassword,
-          }),
-        });
-      } catch (emailError) {
-        console.log("[admin] Email sending skipped or failed:", emailError);
-        // Email sending is optional -- return the temp password in the response
-      }
-
-      return NextResponse.json(
-        {
-          user: {
-            id: newUser.user?.id,
-            email: normalizedEmail,
-            name: name || normalizedEmail.split("@")[0],
-          },
-          tempPassword,
-        },
-        { status: 201 }
-      );
-    } catch (signupError: unknown) {
-      // Better Auth's signUpEmail may reject because disableSignUp is true.
-      // Fall back to direct database insertion.
-      const userId = nanoid();
-      const accountId = nanoid();
-
-      // Hash the password using the same approach Better Auth uses (bcrypt via Web Crypto)
-      const { hashPassword } = await import("better-auth/crypto");
-      const hashedPassword = await hashPassword(tempPassword);
-
-      await db.insert(user).values({
-        id: userId,
-        email: normalizedEmail,
-        name: name || normalizedEmail.split("@")[0],
-        emailVerified: false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-
-      await db.insert(account).values({
-        id: accountId,
-        accountId: userId,
-        providerId: "credential",
-        userId,
-        password: hashedPassword,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-
-      // Try to send invitation email
-      try {
-        const { sendEmail } = await import("@/lib/email/send");
-        const { InviteEmail } = await import("@/lib/email/templates/invite");
-        await sendEmail({
-          to: normalizedEmail,
-          subject: "You've been invited to Host",
-          template: InviteEmail({
-            email: normalizedEmail,
-            tempPassword,
-          }),
-        });
-      } catch (emailError) {
-        console.log("[admin] Email sending skipped or failed:", emailError);
-      }
-
-      return NextResponse.json(
-        {
-          user: {
-            id: userId,
-            email: normalizedEmail,
-            name: name || normalizedEmail.split("@")[0],
-          },
-          tempPassword,
-        },
-        { status: 201 }
-      );
-    }
+        emailSent,
+        message: emailSent
+          ? "Invitation email sent. User can sign in via magic link."
+          : "User created. Share the login URL — they can sign in via magic link.",
+      },
+      { status: 201 }
+    );
   } catch (error) {
     if (error instanceof Error && error.message === "Forbidden") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });

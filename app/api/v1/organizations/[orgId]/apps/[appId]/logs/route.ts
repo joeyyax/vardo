@@ -5,6 +5,7 @@ import { apps } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { listContainers, getContainerLogs } from "@/lib/docker/client";
+import { isLokiAvailable, queryRange, buildLogQLQuery } from "@/lib/loki/client";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -34,8 +35,51 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const searchParams = request.nextUrl.searchParams;
     const tail = parseInt(searchParams.get("tail") || "200");
+    const since = searchParams.get("since") || "1h";
+    const search = searchParams.get("search") || undefined;
+    const service = searchParams.get("service") || undefined;
+    const environment = searchParams.get("environment") || undefined;
 
-    // Find containers for this app
+    // Use Loki if available
+    if (await isLokiAvailable()) {
+      const query = buildLogQLQuery({
+        project: app.name,
+        environment,
+        service,
+        search,
+      });
+
+      const start = relativeToTimestamp(since);
+
+      const entries = await queryRange({
+        query,
+        start,
+        limit: tail,
+        direction: "backward",
+      });
+
+      // Reverse so oldest is first
+      entries.reverse();
+
+      const containers = await listContainers(app.name).catch(() => []);
+
+      return NextResponse.json({
+        logs: entries.map((e) => e.line).join("\n"),
+        entries: entries.map((e) => ({
+          timestamp: e.timestamp,
+          line: e.line,
+          labels: e.labels,
+        })),
+        containers: containers.map((c) => ({
+          id: c.id,
+          name: c.name,
+          state: c.state,
+          image: c.image,
+        })),
+      });
+    }
+
+    // Docker direct fallback
     const containers = await listContainers(app.name);
 
     if (containers.length === 0) {
@@ -45,7 +89,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       });
     }
 
-    // Fetch logs from all containers
     const allLogs: string[] = [];
     for (const container of containers) {
       try {
@@ -72,4 +115,18 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   } catch (error) {
     return handleRouteError(error, "Error fetching logs");
   }
+}
+
+function relativeToTimestamp(duration: string): string {
+  const match = duration.match(/^(\d+)(s|m|h|d)$/);
+  if (!match) {
+    return String((Date.now() - 3600_000) * 1_000_000);
+  }
+
+  const value = parseInt(match[1]);
+  const unit = match[2];
+  const ms: Record<string, number> = { s: 1000, m: 60_000, h: 3600_000, d: 86400_000 };
+
+  const ago = Date.now() - value * ms[unit];
+  return String(ago * 1_000_000);
 }

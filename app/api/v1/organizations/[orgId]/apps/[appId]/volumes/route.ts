@@ -5,6 +5,14 @@ import { apps } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { listContainers, inspectContainer } from "@/lib/docker/client";
+import { z } from "zod";
+
+const volumeSchema = z.object({
+  name: z.string().min(1).regex(/^[a-zA-Z0-9._-]+$/, "Invalid volume name"),
+  mountPath: z.string().min(1)
+    .refine((p) => p.startsWith("/"), "Mount path must be absolute")
+    .refine((p) => !p.includes(".."), "Mount path must not contain '..'"),
+});
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -96,7 +104,11 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
 
     const body = await request.json();
-    const volumes = body.volumes as { name: string; mountPath: string }[];
+    const parsed = z.array(volumeSchema).safeParse(body.volumes);
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
+    }
+    const volumes = parsed.data;
 
     const [updated] = await db
       .update(apps)

@@ -405,7 +405,35 @@ export function validateCompose(compose: ComposeFile): {
         }
       }
     }
+
+    // Check for host bind mounts (paths starting with / or ./)
+    if (svc.volumes) {
+      for (const vol of svc.volumes) {
+        if (vol.startsWith("/") || vol.startsWith("./") || vol.startsWith("../")) {
+          errors.push(
+            `Service "${name}" uses host bind mount "${vol}" — only named volumes are allowed`,
+          );
+        }
+      }
+    }
   }
 
   return { valid: errors.length === 0, errors };
+}
+
+/**
+ * Strip host bind mounts from compose, keeping only named volumes.
+ * Used when allowUnsafeCompose is false.
+ */
+export function sanitizeCompose(compose: ComposeFile): ComposeFile {
+  const sanitized = { ...compose, services: { ...compose.services } };
+  for (const [name, svc] of Object.entries(sanitized.services)) {
+    if (svc.volumes) {
+      const safe = svc.volumes.filter(
+        (v) => !v.startsWith("/") && !v.startsWith("./") && !v.startsWith("../")
+      );
+      sanitized.services[name] = { ...svc, volumes: safe };
+    }
+  }
+  return sanitized;
 }

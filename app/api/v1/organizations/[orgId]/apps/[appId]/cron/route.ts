@@ -6,6 +6,8 @@ import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { verifyAppAccess } from "@/lib/api/verify-access";
+import { requireOrg } from "@/lib/auth/session";
+import { isAdmin } from "@/lib/auth/permissions";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -57,6 +59,10 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
+    const { membership } = await requireOrg();
+    if (!isAdmin(membership.role)) {
+      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    }
     const app = await verifyAppAccess(orgId, appId);
 
     if (!app) {

@@ -817,7 +817,6 @@ export function AccountSettings({ orgId }: { orgId: string }) {
   return (
     <div className="space-y-8">
       <AccountInfo />
-      <PasswordManagement />
       <TwoFactorAuth />
       <ActiveSessions />
       <ApiTokens orgId={orgId} />

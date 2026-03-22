@@ -1,6 +1,15 @@
 export async function register() {
   // Only run on the server, not during build
   if (process.env.NEXT_RUNTIME === "nodejs") {
+    // Check encryption key
+    const { checkEncryptionKey } = await import("./lib/crypto/encrypt");
+    const keyCheck = checkEncryptionKey();
+    if (!keyCheck.ok) {
+      console.warn(`[instrumentation] ⚠️  ${keyCheck.error}`);
+    } else {
+      console.log("[instrumentation] Encryption key configured");
+    }
+
     console.log("[instrumentation] Starting metrics collector...");
     try {
       const { startCollector } = await import("./lib/metrics/collector");
