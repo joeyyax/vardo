@@ -7,6 +7,12 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
 type FlagState = {
   flag: string;
@@ -102,9 +108,11 @@ export function FeatureFlagsSettings() {
           if (groupFlags.length === 0) return null;
 
           return (
-            <div key={group.title} className="space-y-3">
-              <p className="text-sm font-medium text-muted-foreground">{group.title}</p>
-              <div className="space-y-2">
+            <Card key={group.title} className="squircle rounded-lg">
+              <CardHeader>
+                <CardTitle className="text-sm">{group.title}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
                 {groupFlags.map((f) => (
                   <div key={f.flag} className="flex items-center justify-between rounded-lg border p-4">
                     <div className="space-y-0.5">
@@ -129,8 +137,8 @@ export function FeatureFlagsSettings() {
                     />
                   </div>
                 ))}
-              </div>
-            </div>
+              </CardContent>
+            </Card>
           );
         })}
 

@@ -12,6 +12,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Check, X, Loader2 } from "lucide-react";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { useSystemSetting } from "./use-system-setting";
 
 type AuthMethodStatus = {
@@ -80,53 +87,63 @@ export function AuthSettings() {
         </p>
       </div>
 
-    <form onSubmit={handleSubmit} className="space-y-6">
-      <div className="space-y-2">
-        <Label htmlFor="sys-registration-mode">Registration mode</Label>
-        <Select value={registrationMode} onValueChange={setRegistrationMode}>
-          <SelectTrigger id="sys-registration-mode" aria-label="Registration mode">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="closed">Closed (invite only)</SelectItem>
-            <SelectItem value="open">Open (anyone can register)</SelectItem>
-            <SelectItem value="approval">Approval (requires admin approval)</SelectItem>
-          </SelectContent>
-        </Select>
-        <p className="text-xs text-muted-foreground">
-          {registrationMode === "closed" && "New users can only be added by an admin."}
-          {registrationMode === "open" && "Anyone with the link can create an account."}
-          {registrationMode === "approval" && "New signups are held for admin approval before access is granted."}
-        </p>
-      </div>
+    <Card className="squircle rounded-lg">
+      <CardHeader>
+        <CardTitle className="text-sm">Settings</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="max-w-md space-y-2">
+            <Label htmlFor="sys-registration-mode">Registration mode</Label>
+            <Select value={registrationMode} onValueChange={setRegistrationMode}>
+              <SelectTrigger id="sys-registration-mode" aria-label="Registration mode">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="closed">Closed (invite only)</SelectItem>
+                <SelectItem value="open">Open (anyone can register)</SelectItem>
+                <SelectItem value="approval">Approval (requires admin approval)</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              {registrationMode === "closed" && "New users can only be added by an admin."}
+              {registrationMode === "open" && "Anyone with the link can create an account."}
+              {registrationMode === "approval" && "New signups are held for admin approval before access is granted."}
+            </p>
+          </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="sys-session-duration">Session duration (days)</Label>
-        <Input
-          id="sys-session-duration"
-          type="number"
-          min={1}
-          max={365}
-          value={sessionDurationDays}
-          onChange={(e) => setSessionDurationDays(e.target.value)}
-          required
-        />
-        <p className="text-xs text-muted-foreground">
-          How long a user stays logged in before needing to re-authenticate.
-        </p>
-      </div>
+          <div className="max-w-md space-y-2">
+            <Label htmlFor="sys-session-duration">Session duration (days)</Label>
+            <Input
+              id="sys-session-duration"
+              type="number"
+              min={1}
+              max={365}
+              value={sessionDurationDays}
+              onChange={(e) => setSessionDurationDays(e.target.value)}
+              required
+            />
+            <p className="text-xs text-muted-foreground">
+              How long a user stays logged in before needing to re-authenticate.
+            </p>
+          </div>
 
-      <Button type="submit" className="squircle" disabled={saving} aria-label="Save authentication settings">
-        {saving && <Loader2 className="size-4 animate-spin" />}
-        Save
-      </Button>
+          <Button type="submit" className="squircle" disabled={saving} aria-label="Save authentication settings">
+            {saving && <Loader2 className="size-4 animate-spin" />}
+            Save
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
 
-      {/* Read-only auth method status */}
-      <div className="space-y-3 pt-2">
-        <p className="text-sm font-medium">Authentication methods</p>
-        <p className="text-xs text-muted-foreground">
+    <Card className="squircle rounded-lg">
+      <CardHeader>
+        <CardTitle className="text-sm">Authentication methods</CardTitle>
+        <CardDescription>
           Configured methods are determined by environment variables and provider setup.
-        </p>
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
         {authMethods ? (
           <div className="flex flex-wrap gap-2">
             {([
@@ -154,8 +171,8 @@ export function AuthSettings() {
             ))}
           </div>
         )}
-      </div>
-    </form>
+      </CardContent>
+    </Card>
     </div>
   );
 }

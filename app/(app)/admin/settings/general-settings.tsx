@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
 import { useSystemSetting } from "./use-system-setting";
 
 export function GeneralSettings() {
@@ -45,26 +46,30 @@ export function GeneralSettings() {
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="sys-instance-name">Instance name</Label>
-          <Input
-            id="sys-instance-name"
-            value={instanceName}
-            onChange={(e) => setInstanceName(e.target.value)}
-            placeholder="Vardo"
-            required
-          />
-          <p className="text-xs text-muted-foreground">
-            Displayed in the browser tab and system emails.
-          </p>
-        </div>
+      <Card className="squircle rounded-lg">
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="max-w-md space-y-2">
+              <Label htmlFor="sys-instance-name">Instance name</Label>
+              <Input
+                id="sys-instance-name"
+                value={instanceName}
+                onChange={(e) => setInstanceName(e.target.value)}
+                placeholder="Vardo"
+                required
+              />
+              <p className="text-xs text-muted-foreground">
+                Displayed in the browser tab and system emails.
+              </p>
+            </div>
 
-        <Button type="submit" className="squircle" disabled={saving} aria-label="Save general settings">
-          {saving && <Loader2 className="size-4 animate-spin" />}
-          Save
-        </Button>
-      </form>
+            <Button type="submit" className="squircle" disabled={saving} aria-label="Save general settings">
+              {saving && <Loader2 className="size-4 animate-spin" />}
+              Save
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -3,6 +3,12 @@
 import { useState, useEffect } from "react";
 import { Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
 type ServiceStatus = {
   name: string;
@@ -180,97 +186,111 @@ export function OverviewSettings() {
           { label: "Deployments", value: data.stats.deploymentCount },
           { label: "Templates", value: data.stats.templateCount },
         ].map((stat) => (
-          <div key={stat.label} className="rounded-lg border p-4 space-y-1">
-            <p className="text-xs text-muted-foreground">{stat.label}</p>
-            <p className="text-2xl font-semibold tabular-nums">{stat.value}</p>
-          </div>
+          <Card key={stat.label} className="squircle rounded-lg">
+            <CardContent className="space-y-1">
+              <p className="text-xs text-muted-foreground">{stat.label}</p>
+              <p className="text-2xl font-semibold tabular-nums">{stat.value}</p>
+            </CardContent>
+          </Card>
         ))}
       </div>
 
       {/* Service health */}
-      <div className="space-y-3">
-        <p className="text-sm font-medium">Service health</p>
-        <div className="rounded-lg border overflow-hidden divide-y">
-          {data.services.length > 0 ? (
-            data.services.map((svc) => (
-              <div key={svc.name} className="flex items-center justify-between gap-4 px-4 py-2.5">
-                <div className="flex items-center gap-3 min-w-0">
-                  <StatusDot status={svc.status} />
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium">{svc.name}</p>
-                    <p className="text-xs text-muted-foreground">{svc.description}</p>
+      <Card className="squircle rounded-lg">
+        <CardHeader>
+          <CardTitle className="text-sm">Service health</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="divide-y -mx-6">
+            {data.services.length > 0 ? (
+              data.services.map((svc) => (
+                <div key={svc.name} className="flex items-center justify-between gap-4 px-6 py-2.5">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <StatusDot status={svc.status} />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium">{svc.name}</p>
+                      <p className="text-xs text-muted-foreground">{svc.description}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {svc.latencyMs !== undefined && svc.status === "healthy" && (
+                      <span className="text-xs tabular-nums text-muted-foreground">
+                        {svc.latencyMs}ms
+                      </span>
+                    )}
+                    <StatusLabel status={svc.status} />
                   </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  {svc.latencyMs !== undefined && svc.status === "healthy" && (
-                    <span className="text-xs tabular-nums text-muted-foreground">
-                      {svc.latencyMs}ms
-                    </span>
-                  )}
-                  <StatusLabel status={svc.status} />
-                </div>
+              ))
+            ) : (
+              <div className="px-6 py-3 text-sm text-muted-foreground">
+                Unable to load service status.
               </div>
-            ))
-          ) : (
-            <div className="px-4 py-3 text-sm text-muted-foreground">
-              Unable to load service status.
-            </div>
-          )}
-        </div>
-      </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Resource usage */}
       {data.resources.length > 0 && (
-        <div className="space-y-3">
-          <p className="text-sm font-medium">Resource usage</p>
-          <div className="rounded-lg border overflow-hidden divide-y">
-            {data.resources.map((res) => (
-              <div key={res.name} className="flex items-center justify-between gap-4 px-4 py-2.5">
-                <div className="flex items-center gap-3 min-w-0">
-                  <StatusDot status={res.status} />
-                  <p className="text-sm font-medium">{res.name}</p>
+        <Card className="squircle rounded-lg">
+          <CardHeader>
+            <CardTitle className="text-sm">Resource usage</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="divide-y -mx-6">
+              {data.resources.map((res) => (
+                <div key={res.name} className="flex items-center justify-between gap-4 px-6 py-2.5">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <StatusDot status={res.status} />
+                    <p className="text-sm font-medium">{res.name}</p>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span className="text-xs text-muted-foreground tabular-nums">
+                      {res.unit === "bytes"
+                        ? `${formatBytes(res.current)} / ${formatBytes(res.total)}`
+                        : `${res.current}${res.unit} / ${res.total}${res.unit}`}
+                    </span>
+                    <span className="text-xs font-medium tabular-nums w-12 text-right">
+                      {res.percent}%
+                    </span>
+                    <StatusLabel status={res.status} />
+                  </div>
                 </div>
-                <div className="flex items-center gap-3 shrink-0">
-                  <span className="text-xs text-muted-foreground tabular-nums">
-                    {res.unit === "bytes"
-                      ? `${formatBytes(res.current)} / ${formatBytes(res.total)}`
-                      : `${res.current}${res.unit} / ${res.total}${res.unit}`}
-                  </span>
-                  <span className="text-xs font-medium tabular-nums w-12 text-right">
-                    {res.percent}%
-                  </span>
-                  <StatusLabel status={res.status} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* Runtime info */}
       {data.runtime && (
-        <div className="space-y-3">
-          <p className="text-sm font-medium">Runtime</p>
-          <div className="rounded-lg border overflow-hidden divide-y">
-            {[
-              { label: "Node.js", value: data.runtime.nodeVersion },
-              { label: "Next.js", value: `v${data.runtime.nextVersion}` },
-              { label: "Platform", value: `${data.runtime.platform} / ${data.runtime.arch}` },
-              { label: "Uptime", value: formatUptime(data.runtime.uptime) },
-              { label: "Memory (RSS)", value: formatBytes(data.runtime.memoryUsage) },
-              {
-                label: "Heap",
-                value: `${formatBytes(data.runtime.memoryHeapUsed)} / ${formatBytes(data.runtime.memoryHeapTotal)}`,
-              },
-              { label: "PID", value: String(data.runtime.pid) },
-            ].map((item) => (
-              <div key={item.label} className="flex items-center justify-between px-4 py-2.5">
-                <p className="text-sm text-muted-foreground">{item.label}</p>
-                <p className="text-sm font-medium tabular-nums">{item.value}</p>
-              </div>
-            ))}
-          </div>
-        </div>
+        <Card className="squircle rounded-lg">
+          <CardHeader>
+            <CardTitle className="text-sm">Runtime</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+              {[
+                { label: "Node.js", value: data.runtime.nodeVersion },
+                { label: "Next.js", value: `v${data.runtime.nextVersion}` },
+                { label: "Platform", value: `${data.runtime.platform} / ${data.runtime.arch}` },
+                { label: "Uptime", value: formatUptime(data.runtime.uptime) },
+                { label: "Memory (RSS)", value: formatBytes(data.runtime.memoryUsage) },
+                {
+                  label: "Heap",
+                  value: `${formatBytes(data.runtime.memoryHeapUsed)} / ${formatBytes(data.runtime.memoryHeapTotal)}`,
+                },
+                { label: "PID", value: String(data.runtime.pid) },
+              ].map((item) => (
+                <div key={item.label} className="flex items-center justify-between py-1.5">
+                  <p className="text-sm text-muted-foreground">{item.label}</p>
+                  <p className="text-sm font-medium tabular-nums">{item.value}</p>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   );
