@@ -6,7 +6,14 @@ export type NotificationEventType =
   | "cron-failed"
   | "volume-drift"
   | "disk-write-alert"
-  | "auto-rollback";
+  | "auto-rollback"
+  | "invitation-sent"
+  | "invitation-accepted"
+  | "system-alert-service"
+  | "system-alert-disk"
+  | "system-alert-restart"
+  | "system-alert-cert"
+  | "system-alert-update";
 
 export type NotificationEvent = {
   type: NotificationEventType;
