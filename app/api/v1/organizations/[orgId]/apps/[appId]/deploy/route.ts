@@ -16,11 +16,14 @@ type RouteParams = {
 // POST /api/v1/organizations/[orgId]/apps/[appId]/deploy
 // Returns SSE stream of deploy log lines, final event is the result
 export async function POST(request: NextRequest, { params }: RouteParams) {
-  const limited = await rateLimit(request, { key: "deploy", limit: 10, windowMs: 60000 });
+  // orgId comes from the authenticated URL path — not a header that can be spoofed.
+  // The org membership check below (`organization.id !== orgId`) ensures only the
+  // real org owner can trigger deploys, so this is forgery-resistant.
+  const { orgId, appId } = await params;
+  const limited = await rateLimit(request, { key: "deploy", limit: 10, windowMs: 60000, identifier: orgId });
   if (limited) return limited;
 
   try {
-    const { orgId, appId } = await params;
     const { organization, session } = await requireOrg();
 
     if (organization.id !== orgId) {

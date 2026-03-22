@@ -39,17 +39,23 @@ end
  *
  * Falls back to allowing the request if Redis is unavailable, so a Redis outage
  * does not take down the API.
+ *
+ * @param identifier - For authenticated routes, pass a forgery-resistant identifier
+ *   (e.g. `${userId}:${orgId}`) to prevent IP spoofing bypasses. For unauthenticated
+ *   routes the IP is the only available signal — note that x-forwarded-for can be
+ *   spoofed if the app is not running behind a trusted proxy that overwrites the header.
  */
 export async function rateLimit(
   request: NextRequest,
-  opts: { key?: string; limit: number; windowMs: number }
+  opts: { key?: string; limit: number; windowMs: number; identifier?: string }
 ): Promise<NextResponse | null> {
-  const ip =
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    request.headers.get("x-real-ip") ||
+  const rateLimitId =
+    opts.identifier ??
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    request.headers.get("x-real-ip") ??
     "unknown";
 
-  const key = `rl:${opts.key ? `${opts.key}:` : ""}${ip}`;
+  const key = `rl:${opts.key ? `${opts.key}:` : ""}${rateLimitId}`;
   const now = Date.now();
   const ttlSeconds = Math.ceil(opts.windowMs / 1000);
 
