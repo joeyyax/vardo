@@ -1,17 +1,25 @@
 import { notFound } from "next/navigation";
+import { OverviewSettings } from "../overview-settings";
+import { GeneralSettings } from "../general-settings";
 import { EmailSettings } from "../email-settings";
+import { AuthSettings } from "../auth-settings";
+import { FeatureFlagsSettings } from "../feature-flags-settings";
 import { BackupSettings } from "../backup-settings";
 import { GitHubSettings } from "../github-settings";
-import { ServicesSettings } from "../services-settings";
+import { DomainSettings } from "../domain-settings";
 
-const VALID_TABS = ["email", "backup", "github", "services"] as const;
+const VALID_TABS = ["overview", "general", "email", "authentication", "feature-flags", "backup", "github", "domain"] as const;
 type ValidTab = (typeof VALID_TABS)[number];
 
 const TAB_COMPONENTS: Record<ValidTab, React.ComponentType> = {
-  email: EmailSettings,
-  backup: BackupSettings,
-  github: GitHubSettings,
-  services: ServicesSettings,
+  "overview": OverviewSettings,
+  "general": GeneralSettings,
+  "email": EmailSettings,
+  "authentication": AuthSettings,
+  "feature-flags": FeatureFlagsSettings,
+  "backup": BackupSettings,
+  "github": GitHubSettings,
+  "domain": DomainSettings,
 };
 
 export default async function AdminSettingsTabPage({

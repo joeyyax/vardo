@@ -7,10 +7,14 @@ import { PageToolbar } from "@/components/page-toolbar";
 import { SettingsNav } from "@/components/settings-nav";
 
 const NAV_ITEMS = [
+  { label: "Overview", href: "/admin/settings/overview" },
+  { label: "General", href: "/admin/settings/general" },
   { label: "Email", href: "/admin/settings/email" },
+  { label: "Authentication", href: "/admin/settings/authentication" },
+  { label: "Feature flags", href: "/admin/settings/feature-flags" },
   { label: "Backup storage", href: "/admin/settings/backup" },
   { label: "GitHub App", href: "/admin/settings/github" },
-  { label: "Services", href: "/admin/settings/services" },
+{ label: "Domain & SSL", href: "/admin/settings/domain" },
 ];
 
 export default async function AdminSettingsLayout({

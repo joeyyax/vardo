@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2 } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
 import { MASK_SENTINEL } from "@/lib/mask-secrets";
 import { useSystemSetting } from "./use-system-setting";
 
@@ -82,70 +83,103 @@ export function GitHubSettings() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4 max-w-lg">
-      {configured && (
-        <p className="text-xs text-muted-foreground">
-          GitHub App is configured. Edit fields below to update.
+    <div className="space-y-6">
+      <div className="space-y-1">
+        <h2 className="text-lg font-medium">GitHub App</h2>
+        <p className="text-sm text-muted-foreground">
+          Connect a GitHub App to enable repository imports and deploy keys.
         </p>
-      )}
-
-      <div className="grid grid-cols-2 gap-2">
-        <div className="space-y-2">
-          <Label htmlFor="sys-appId">App ID</Label>
-          <Input
-            id="sys-appId"
-            value={appId}
-            onChange={(e) => setAppId(e.target.value)}
-            required
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="sys-appSlug">App slug</Label>
-          <Input
-            id="sys-appSlug"
-            value={appSlug}
-            onChange={(e) => setAppSlug(e.target.value)}
-            required
-          />
-        </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
-        <div className="space-y-2">
-          <Label htmlFor="sys-ghClientId">Client ID</Label>
-          <Input
-            id="sys-ghClientId"
-            value={clientId}
-            onChange={(e) => setClientId(e.target.value)}
-            required
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="sys-ghClientSecret">Client secret</Label>
-          {isMaskedValue(clientSecret) && !editingClientSecret ? (
-            <div className="flex gap-2">
+    <Card className="squircle rounded-lg">
+      <CardContent>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {configured && (
+            <p className="text-xs text-muted-foreground">
+              GitHub App is configured. Edit fields below to update.
+            </p>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-w-md">
+            <div className="space-y-2">
+              <Label htmlFor="sys-appId">App ID</Label>
               <Input
-                id="sys-ghClientSecret"
-                value={toDisplay(clientSecret)}
-                disabled
-                className="font-mono"
+                id="sys-appId"
+                value={appId}
+                onChange={(e) => setAppId(e.target.value)}
+                required
               />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="squircle shrink-0"
-                aria-label="Edit client secret"
-                onClick={() => {
-                  setEditingClientSecret(true);
-                  setClientSecret("");
-                }}
-              >
-                Edit
-              </Button>
             </div>
-          ) : editingClientSecret ? (
-            <div className="flex gap-2">
+            <div className="space-y-2">
+              <Label htmlFor="sys-appSlug">App slug</Label>
+              <Input
+                id="sys-appSlug"
+                value={appSlug}
+                onChange={(e) => setAppSlug(e.target.value)}
+                required
+              />
+            </div>
+          </div>
+
+          <div className="max-w-md space-y-2">
+            <Label htmlFor="sys-ghClientId">Client ID</Label>
+            <Input
+              id="sys-ghClientId"
+              value={clientId}
+              onChange={(e) => setClientId(e.target.value)}
+              required
+            />
+          </div>
+
+          <div className="max-w-md space-y-2">
+            <Label htmlFor="sys-ghClientSecret">Client secret</Label>
+            {isMaskedValue(clientSecret) && !editingClientSecret ? (
+              <div className="flex gap-2">
+                <Input
+                  id="sys-ghClientSecret"
+                  value={toDisplay(clientSecret)}
+                  disabled
+                  className="font-mono"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="squircle shrink-0"
+                  aria-label="Edit client secret"
+                  onClick={() => {
+                    setEditingClientSecret(true);
+                    setClientSecret("");
+                  }}
+                >
+                  Edit
+                </Button>
+              </div>
+            ) : editingClientSecret ? (
+              <div className="flex gap-2">
+                <Input
+                  id="sys-ghClientSecret"
+                  type="password"
+                  value={clientSecret}
+                  onChange={(e) => setClientSecret(e.target.value)}
+                  autoComplete="current-password"
+                  required
+                  autoFocus
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="squircle shrink-0"
+                  onClick={() => {
+                    setEditingClientSecret(false);
+                    setClientSecret(maskedClientSecret.current);
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            ) : (
               <Input
                 id="sys-ghClientSecret"
                 type="password"
@@ -153,156 +187,135 @@ export function GitHubSettings() {
                 onChange={(e) => setClientSecret(e.target.value)}
                 autoComplete="current-password"
                 required
-                autoFocus
               />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="squircle shrink-0"
-                onClick={() => {
-                  setEditingClientSecret(false);
-                  setClientSecret(maskedClientSecret.current);
-                }}
-              >
-                Cancel
-              </Button>
-            </div>
-          ) : (
-            <Input
-              id="sys-ghClientSecret"
-              type="password"
-              value={clientSecret}
-              onChange={(e) => setClientSecret(e.target.value)}
-              autoComplete="current-password"
-              required
-            />
-          )}
-        </div>
-      </div>
+            )}
+          </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="sys-privateKey">Private key (PEM)</Label>
-        {isMaskedValue(privateKey) && !editingPrivateKey ? (
-          <div className="flex gap-2">
-            <Input
-              id="sys-privateKey"
-              value={toDisplay(privateKey)}
-              disabled
-              className="font-mono"
-            />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="squircle shrink-0"
-              aria-label="Edit private key"
-              onClick={() => {
-                setEditingPrivateKey(true);
-                setPrivateKey("");
-              }}
-            >
-              Edit
-            </Button>
+          <div className="space-y-2">
+            <Label htmlFor="sys-privateKey">Private key (PEM)</Label>
+            {isMaskedValue(privateKey) && !editingPrivateKey ? (
+              <div className="flex gap-2">
+                <Input
+                  id="sys-privateKey"
+                  value={toDisplay(privateKey)}
+                  disabled
+                  className="font-mono"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="squircle shrink-0"
+                  aria-label="Edit private key"
+                  onClick={() => {
+                    setEditingPrivateKey(true);
+                    setPrivateKey("");
+                  }}
+                >
+                  Edit
+                </Button>
+              </div>
+            ) : editingPrivateKey ? (
+              <div className="flex gap-2 items-start">
+                <Textarea
+                  id="sys-privateKey"
+                  value={privateKey}
+                  onChange={(e) => setPrivateKey(e.target.value)}
+                  placeholder="-----BEGIN RSA PRIVATE KEY-----"
+                  required
+                  autoFocus
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="squircle shrink-0"
+                  onClick={() => {
+                    setEditingPrivateKey(false);
+                    setPrivateKey(maskedPrivateKey.current);
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            ) : (
+              <Textarea
+                id="sys-privateKey"
+                value={privateKey}
+                onChange={(e) => setPrivateKey(e.target.value)}
+                placeholder="-----BEGIN RSA PRIVATE KEY-----"
+                required
+              />
+            )}
           </div>
-        ) : editingPrivateKey ? (
-          <div className="flex gap-2 items-start">
-            <Textarea
-              id="sys-privateKey"
-              value={privateKey}
-              onChange={(e) => setPrivateKey(e.target.value)}
-              placeholder="-----BEGIN RSA PRIVATE KEY-----"
-              required
-              autoFocus
-            />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="squircle shrink-0"
-              onClick={() => {
-                setEditingPrivateKey(false);
-                setPrivateKey(maskedPrivateKey.current);
-              }}
-            >
-              Cancel
-            </Button>
-          </div>
-        ) : (
-          <Textarea
-            id="sys-privateKey"
-            value={privateKey}
-            onChange={(e) => setPrivateKey(e.target.value)}
-            placeholder="-----BEGIN RSA PRIVATE KEY-----"
-            required
-          />
-        )}
-      </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="sys-webhookSecret">Webhook secret</Label>
-        {isMaskedValue(webhookSecret) && !editingWebhookSecret ? (
-          <div className="flex gap-2">
-            <Input
-              id="sys-webhookSecret"
-              value={toDisplay(webhookSecret)}
-              disabled
-              className="font-mono"
-            />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="squircle shrink-0"
-              aria-label="Edit webhook secret"
-              onClick={() => {
-                setEditingWebhookSecret(true);
-                setWebhookSecret("");
-              }}
-            >
-              Edit
-            </Button>
+          <div className="max-w-md space-y-2">
+            <Label htmlFor="sys-webhookSecret">Webhook secret</Label>
+            {isMaskedValue(webhookSecret) && !editingWebhookSecret ? (
+              <div className="flex gap-2">
+                <Input
+                  id="sys-webhookSecret"
+                  value={toDisplay(webhookSecret)}
+                  disabled
+                  className="font-mono"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="squircle shrink-0"
+                  aria-label="Edit webhook secret"
+                  onClick={() => {
+                    setEditingWebhookSecret(true);
+                    setWebhookSecret("");
+                  }}
+                >
+                  Edit
+                </Button>
+              </div>
+            ) : editingWebhookSecret ? (
+              <div className="flex gap-2">
+                <Input
+                  id="sys-webhookSecret"
+                  type="password"
+                  value={webhookSecret}
+                  onChange={(e) => setWebhookSecret(e.target.value)}
+                  autoComplete="current-password"
+                  required
+                  autoFocus
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="squircle shrink-0"
+                  onClick={() => {
+                    setEditingWebhookSecret(false);
+                    setWebhookSecret(maskedWebhookSecret.current);
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            ) : (
+              <Input
+                id="sys-webhookSecret"
+                type="password"
+                value={webhookSecret}
+                onChange={(e) => setWebhookSecret(e.target.value)}
+                autoComplete="current-password"
+                required
+              />
+            )}
           </div>
-        ) : editingWebhookSecret ? (
-          <div className="flex gap-2">
-            <Input
-              id="sys-webhookSecret"
-              type="password"
-              value={webhookSecret}
-              onChange={(e) => setWebhookSecret(e.target.value)}
-              autoComplete="current-password"
-              required
-              autoFocus
-            />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="squircle shrink-0"
-              onClick={() => {
-                setEditingWebhookSecret(false);
-                setWebhookSecret(maskedWebhookSecret.current);
-              }}
-            >
-              Cancel
-            </Button>
-          </div>
-        ) : (
-          <Input
-            id="sys-webhookSecret"
-            type="password"
-            value={webhookSecret}
-            onChange={(e) => setWebhookSecret(e.target.value)}
-            autoComplete="current-password"
-            required
-          />
-        )}
-      </div>
 
-      <Button type="submit" className="squircle" disabled={saving} aria-label="Save GitHub App settings">
-        {saving && <Loader2 className="size-4 animate-spin" />}
-        Save
-      </Button>
-    </form>
+          <Button type="submit" className="squircle" disabled={saving} aria-label="Save GitHub App settings">
+            {saving && <Loader2 className="size-4 animate-spin" />}
+            Save
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
+    </div>
   );
 }

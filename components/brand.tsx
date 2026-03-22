@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/dist/client/link";
+import Link from "next/link";
 import { Container } from "lucide-react";
 
 
