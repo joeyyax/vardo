@@ -1,7 +1,8 @@
 FROM node:22-alpine AS base
 
-# Enable corepack — pnpm version is pinned via packageManager in package.json
-RUN corepack enable
+# Install pnpm at build time so it's cached in the image
+COPY package.json /tmp/package.json
+RUN corepack enable && corepack install --global
 
 # Dependencies
 FROM base AS deps
@@ -29,14 +30,12 @@ ENV NEXT_PUBLIC_PLAUSIBLE_SRC=$NEXT_PUBLIC_PLAUSIBLE_SRC
 RUN pnpm build
 
 # Production
-FROM base AS runner
+FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # Copy everything needed to run
-COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/pnpm-lock.yaml ./pnpm-lock.yaml
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next ./.next
@@ -50,5 +49,5 @@ EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-# Custom migration runner applies each migration individually, then starts Next.js
-CMD ["sh", "-c", "node scripts/migrate.mjs && npx next start"]
+# Migrate then start — no pnpm/npx needed at runtime
+CMD ["sh", "-c", "node scripts/migrate.mjs && node_modules/.bin/next start"]
