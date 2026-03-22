@@ -259,10 +259,16 @@ ENV_FILE="$HOST_DIR/.env.prod"
 if [ ! -f "$ENV_FILE" ]; then
   log "Creating configuration..."
 
-  # Prompt for required values
-  read -p "  Domain for Vardo dashboard (e.g. host.example.com): " HOST_DOMAIN < /dev/tty
-  read -p "  Base domain for projects (e.g. example.com): " HOST_BASE_DOMAIN < /dev/tty
-  read -p "  Email for Let's Encrypt: " ACME_EMAIL < /dev/tty
+  # Prompt for required values (skip if already set via env vars)
+  if [ -z "$HOST_DOMAIN" ]; then
+    read -p "  Domain for Vardo dashboard (e.g. host.example.com): " HOST_DOMAIN < /dev/tty
+  fi
+  if [ -z "$HOST_BASE_DOMAIN" ]; then
+    read -p "  Base domain for projects (e.g. example.com): " HOST_BASE_DOMAIN < /dev/tty
+  fi
+  if [ -z "$ACME_EMAIL" ]; then
+    read -p "  Email for Let's Encrypt: " ACME_EMAIL < /dev/tty
+  fi
 
   # ── DNS validation (informational only — never blocks install) ────────────
   SERVER_IP=$(curl -sf --max-time 5 https://api.ipify.org 2>/dev/null || echo "")
