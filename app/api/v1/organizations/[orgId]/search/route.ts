@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { apps, projects, envVars, orgEnvVars } from "@/lib/db/schema";
+import { apps, projects, orgEnvVars } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, asc, desc } from "drizzle-orm";
 
@@ -10,7 +10,8 @@ type RouteParams = {
 };
 
 // GET /api/v1/organizations/[orgId]/search
-// Returns a lightweight index of all searchable entities for the command palette
+// Returns a lightweight index of all searchable entities for the command palette.
+// Cached for 30s to avoid re-querying on every Cmd+K open.
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
@@ -36,7 +37,6 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         with: {
           project: { columns: { name: true, displayName: true } },
           domains: { columns: { domain: true } },
-          envVars: { columns: { key: true } },
         },
       }),
       db.query.projects.findMany({
@@ -49,7 +49,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       }),
     ]);
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       apps: orgApps.map((app) => ({
         id: app.id,
         name: app.name,
@@ -60,11 +60,13 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         imageName: app.imageName,
         projectName: app.project?.displayName || null,
         domains: app.domains?.map((d) => d.domain) || [],
-        envKeys: app.envVars?.map((e) => e.key) || [],
       })),
       projects: orgProjects,
       orgEnvKeys: sharedEnvVars.map((e) => e.key),
     });
+
+    response.headers.set("Cache-Control", "private, max-age=30");
+    return response;
   } catch (error) {
     return handleRouteError(error, "Error fetching search index");
   }
