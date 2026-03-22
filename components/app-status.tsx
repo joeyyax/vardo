@@ -130,10 +130,43 @@ export function formatDuration(ms: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// DeploymentStatusBadge
+// StatusBadge — app-level status (active / deploying / error / stopped)
 // ---------------------------------------------------------------------------
 
 import { Badge } from "@/components/ui/badge";
+
+export function StatusBadge({ status }: { status: string }) {
+  switch (status) {
+    case "active":
+      return (
+        <Badge className="border-transparent bg-status-success-muted text-status-success">
+          Active
+        </Badge>
+      );
+    case "deploying":
+      return (
+        <Badge className="border-transparent bg-status-info-muted text-status-info animate-pulse">
+          Deploying
+        </Badge>
+      );
+    case "error":
+      return (
+        <Badge className="border-transparent bg-status-error-muted text-status-error">
+          Crashed
+        </Badge>
+      );
+    default:
+      return (
+        <Badge className="border-transparent bg-status-neutral-muted text-status-neutral">
+          Stopped
+        </Badge>
+      );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// DeploymentStatusBadge
+// ---------------------------------------------------------------------------
 
 export function DeploymentStatusBadge({ status }: { status: "queued" | "running" | "success" | "failed" | "cancelled" | "rolled_back" }) {
   switch (status) {
