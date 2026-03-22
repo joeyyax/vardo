@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
-import { deployments, projects, envVars } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { deployments, projects, envVars, orgEnvVars, organizations, environments } from "@/lib/db/schema";
+import { eq, and, isNull } from "drizzle-orm";
+import { resolveAllEnvVars, type ResolveContext } from "@/lib/env/resolve";
 import { nanoid } from "nanoid";
 import { publishEvent, projectChannel } from "@/lib/events";
 import { exec, spawn as nodeSpawn} from "child_process";
@@ -15,10 +16,11 @@ import {
   composeToYaml,
   type ComposeFile,
 } from "./compose";
-import { ensureNetwork, detectExposedPorts } from "./client";
+import { ensureNetwork, detectExposedPorts, listContainers, inspectContainer } from "./client";
 import { getInstallationToken } from "@/lib/github/app";
 import { githubAppInstallations, memberships } from "@/lib/db/schema";
 import { detectPreventiveFixes, detectCompatIssues, applyCompatFixes } from "./compat";
+import { recordActivity } from "@/lib/activity";
 
 const execAsync = promisify(exec);
 
@@ -35,6 +37,7 @@ type DeployOpts = {
   trigger: "manual" | "webhook" | "api" | "rollback";
   triggeredBy?: string;
   environmentId?: string;
+  groupEnvironmentId?: string;
   onLog?: (line: string) => void;
   onStage?: (stage: DeployStage, status: "running" | "success" | "failed" | "skipped") => void;
   signal?: AbortSignal;
@@ -59,6 +62,7 @@ export async function createDeployment(opts: DeployOpts): Promise<string> {
       triggeredBy: opts.triggeredBy,
       status: "queued",
       environmentId: opts.environmentId,
+      groupEnvironmentId: opts.groupEnvironmentId,
     })
     .returning({ id: deployments.id });
 
@@ -94,6 +98,14 @@ export async function runDeployment(
       .set({ status: "running" })
       .where(eq(deployments.id, deploymentId));
 
+    recordActivity({
+      organizationId: opts.organizationId,
+      action: "deployment.started",
+      projectId: opts.projectId,
+      userId: opts.triggeredBy,
+      metadata: { deploymentId, trigger: opts.trigger },
+    }).catch(() => {});
+
     log(`[deploy] Starting deployment ${deploymentId}`);
 
     // Fetch project
@@ -111,19 +123,36 @@ export async function runDeployment(
     log(`[deploy] Project: ${project.displayName} (${project.name})`);
     log(`[deploy] Source: ${project.source}, Type: ${project.deployType}`);
 
-    // Fetch env vars
-    const projectEnvVars = await db.query.envVars.findMany({
-      where: eq(envVars.projectId, opts.projectId),
+    // Fetch env vars with environment layering:
+    // 1. Base vars (environmentId IS NULL)
+    // 2. Environment-specific vars overlay on top
+    const baseVars = await db.query.envVars.findMany({
+      where: and(
+        eq(envVars.projectId, opts.projectId),
+        isNull(envVars.environmentId),
+      ),
     });
     const envMap: Record<string, string> = {};
-    for (const v of projectEnvVars) envMap[v.key] = v.value;
+    for (const v of baseVars) envMap[v.key] = v.value;
+
+    if (opts.environmentId) {
+      const envSpecificVars = await db.query.envVars.findMany({
+        where: and(
+          eq(envVars.projectId, opts.projectId),
+          eq(envVars.environmentId, opts.environmentId),
+        ),
+      });
+      for (const v of envSpecificVars) envMap[v.key] = v.value;
+    }
+
+    const totalEnvVarCount = Object.keys(envMap).length;
 
     // Ensure PORT is set for Nixpacks-built apps
     if (project.containerPort && !envMap.PORT) {
       envMap.PORT = String(project.containerPort);
     }
 
-    log(`[deploy] ${projectEnvVars.length} env var(s), ${project.domains.length} domain(s)`);
+    log(`[deploy] ${totalEnvVarCount} env var(s), ${project.domains.length} domain(s)`);
 
     // Step 1: Generate or fetch compose file
     let compose: ComposeFile;
@@ -413,17 +442,134 @@ export async function runDeployment(
     const composePath = join(slotDir, "docker-compose.yml");
     await writeFile(composePath, composeToYaml(compose), "utf-8");
 
-    // Write .env — resolve template expressions first
+    // Write .env — resolve template expressions using the full resolution engine
     if (Object.keys(envMap).length > 0) {
-      // Resolve ${VAR} self-references and ${project.name} built-ins
-      const resolved: Record<string, string> = {};
-      for (const [k, v] of Object.entries(envMap)) {
-        resolved[k] = v
-          .replace(/\$\{project\.name\}/g, project.name)
-          .replace(/\$\{project\.port\}/g, String(project.containerPort || ""))
-          .replace(/\$\{project\.id\}/g, project.id)
-          .replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_m, ref) => envMap[ref] ?? `\${${ref}}`);
-      }
+      // Load org for resolve context
+      const org = await db.query.organizations.findFirst({
+        where: eq(organizations.id, opts.organizationId),
+        columns: { id: true, name: true, baseDomain: true },
+      });
+
+      // Load org-level shared env vars
+      const orgVarRows = await db.query.orgEnvVars.findMany({
+        where: eq(orgEnvVars.organizationId, opts.organizationId),
+      });
+      const orgEnvVarMap: Record<string, string> = {};
+      for (const v of orgVarRows) orgEnvVarMap[v.key] = v.value;
+
+      const primaryDomain = project.domains[0]?.domain ?? null;
+
+      const resolveCtx: ResolveContext = {
+        project: {
+          id: project.id,
+          name: project.name,
+          displayName: project.displayName,
+          containerPort: project.containerPort,
+          domain: primaryDomain,
+          gitUrl: project.gitUrl,
+          gitBranch: project.gitBranch,
+          imageName: project.imageName,
+        },
+        org: {
+          id: opts.organizationId,
+          name: org?.name ?? "",
+          baseDomain: org?.baseDomain ?? null,
+        },
+        envVars: envMap,
+        orgEnvVars: orgEnvVarMap,
+        resolveExternalVar: async (projectName: string, varKey: string) => {
+          // Find the referenced project in the same org
+          const refProject = await db.query.projects.findFirst({
+            where: and(
+              eq(projects.organizationId, opts.organizationId),
+              eq(projects.name, projectName),
+            ),
+            columns: {
+              id: true,
+              name: true,
+              displayName: true,
+              groupId: true,
+              containerPort: true,
+              gitUrl: true,
+              gitBranch: true,
+              imageName: true,
+            },
+            with: { domains: { columns: { domain: true }, limit: 1 } },
+          });
+          if (!refProject) return null;
+
+          // Check built-in project fields first
+          const builtinFields: Record<string, string | null> = {
+            name: refProject.name,
+            displayName: refProject.displayName,
+            port: refProject.containerPort?.toString() ?? null,
+            id: refProject.id,
+            domain: refProject.domains[0]?.domain ?? null,
+            url: refProject.domains[0]?.domain
+              ? `https://${refProject.domains[0].domain}`
+              : null,
+            host: refProject.domains[0]?.domain ?? null,
+            internalHost: refProject.name,
+            gitUrl: refProject.gitUrl,
+            gitBranch: refProject.gitBranch,
+            imageName: refProject.imageName,
+          };
+          if (varKey in builtinFields) return builtinFields[varKey];
+
+          // If the referenced project is in the same group AND we have a
+          // groupEnvironmentId, try to resolve from the matching environment
+          if (
+            opts.groupEnvironmentId &&
+            refProject.groupId &&
+            project.groupId &&
+            refProject.groupId === project.groupId
+          ) {
+            // Find the environment on the referenced project that belongs
+            // to the same group environment
+            const refEnv = await db.query.environments.findFirst({
+              where: and(
+                eq(environments.projectId, refProject.id),
+                eq(environments.groupEnvironmentId, opts.groupEnvironmentId),
+              ),
+              columns: { id: true },
+            });
+
+            if (refEnv) {
+              // Load base + environment-specific, environment overrides base
+              const refBase = await db.query.envVars.findMany({
+                where: and(
+                  eq(envVars.projectId, refProject.id),
+                  isNull(envVars.environmentId),
+                ),
+              });
+              const refMap: Record<string, string> = {};
+              for (const v of refBase) refMap[v.key] = v.value;
+
+              const refEnvVars = await db.query.envVars.findMany({
+                where: and(
+                  eq(envVars.projectId, refProject.id),
+                  eq(envVars.environmentId, refEnv.id),
+                ),
+              });
+              for (const v of refEnvVars) refMap[v.key] = v.value;
+
+              if (varKey in refMap) return refMap[varKey];
+            }
+          }
+
+          // Fall back to the referenced project's base vars (environmentId IS NULL)
+          const refVar = await db.query.envVars.findFirst({
+            where: and(
+              eq(envVars.projectId, refProject.id),
+              eq(envVars.key, varKey),
+              isNull(envVars.environmentId),
+            ),
+          });
+          return refVar?.value ?? null;
+        },
+      };
+
+      const resolved = await resolveAllEnvVars(envMap, resolveCtx);
       const envContent = Object.entries(resolved).map(([k, v]) => `${k}=${v}`).join("\n");
       await writeFile(join(slotDir, ".env"), envContent, "utf-8");
     }
@@ -516,6 +662,45 @@ export async function runDeployment(
     }
 
     stage("done", "success");
+    // Auto-detect persistent volumes from running containers
+    try {
+      const runningContainers = await listContainers(project.name);
+      const detectedVolumes: { name: string; mountPath: string }[] = [];
+      const seen = new Set<string>();
+
+      for (const c of runningContainers) {
+        const info = await inspectContainer(c.id);
+        for (const mount of info.mounts) {
+          if (mount.type === "volume" && !seen.has(mount.destination)) {
+            seen.add(mount.destination);
+            // Extract volume name from source path (last segment)
+            const parts = mount.source.split("/");
+            const rawName = parts[parts.length - 1];
+            // Strip compose project prefix (e.g. "redis-green_data" → "data")
+            const name = rawName.replace(/^[^_]*_/, "");
+            detectedVolumes.push({ name, mountPath: mount.destination });
+          }
+        }
+      }
+
+      if (detectedVolumes.length > 0) {
+        const existing = (project.persistentVolumes as { name: string; mountPath: string }[] | null) ?? [];
+        const existingPaths = new Set(existing.map((v) => v.mountPath));
+        const newVolumes = detectedVolumes.filter((v) => !existingPaths.has(v.mountPath));
+
+        if (newVolumes.length > 0) {
+          const merged = [...existing, ...newVolumes];
+          await db
+            .update(projects)
+            .set({ persistentVolumes: merged })
+            .where(eq(projects.id, opts.projectId));
+          log(`[deploy] Detected ${newVolumes.length} volume(s): ${newVolumes.map((v) => v.mountPath).join(", ")}`);
+        }
+      }
+    } catch {
+      // Volume detection is best-effort
+    }
+
     // Mark project as active
     await db
       .update(projects)
@@ -535,6 +720,13 @@ export async function runDeployment(
       deploymentId,
       success: true,
       durationMs,
+    }).catch(() => {});
+
+    recordActivity({
+      organizationId: opts.organizationId,
+      action: "deployment.succeeded",
+      projectId: opts.projectId,
+      metadata: { deploymentId, durationMs },
     }).catch(() => {});
 
     // Send success notification (non-blocking)
@@ -563,6 +755,13 @@ export async function runDeployment(
       deploymentId,
       success: false,
       durationMs,
+    }).catch(() => {});
+
+    recordActivity({
+      organizationId: opts.organizationId,
+      action: "deployment.failed",
+      projectId: opts.projectId,
+      metadata: { deploymentId, error: message },
     }).catch(() => {});
 
     // Send failure notification (non-blocking) — project may not be fetched yet

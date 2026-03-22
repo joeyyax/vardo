@@ -33,3 +33,36 @@ required = false
 name = "data"
 mountPath = "/var/lib/mysql"
 description = "MariaDB data files"
+
+[[connectionInfo]]
+label = "Host"
+value = "${project.name}"
+copyRef = "HOST"
+
+[[connectionInfo]]
+label = "Port"
+value = "3306"
+
+[[connectionInfo]]
+label = "Root Password"
+value = "${MARIADB_ROOT_PASSWORD}"
+copyRef = "MARIADB_ROOT_PASSWORD"
+
+[[connectionInfo]]
+label = "User"
+value = "${MARIADB_USER}"
+copyRef = "MARIADB_USER"
+
+[[connectionInfo]]
+label = "Password"
+value = "${MARIADB_PASSWORD}"
+copyRef = "MARIADB_PASSWORD"
+
+[[connectionInfo]]
+label = "Database"
+value = "${MARIADB_DATABASE}"
+copyRef = "MARIADB_DATABASE"
+
+[[connectionInfo]]
+label = "Connection URL"
+value = "mysql://${MARIADB_USER}:${MARIADB_PASSWORD}@${project.name}:3306/${MARIADB_DATABASE}"

@@ -13,13 +13,7 @@ import {
 import { SidebarNav } from "./sidebar-nav";
 import { OrgSwitcher } from "./org-switcher";
 import { UserMenu } from "./user-menu";
-
-type Organization = {
-  id: string;
-  name: string;
-  slug: string;
-  role: string;
-};
+import type { Organization } from "@/lib/types";
 
 type MobileSidebarProps = {
   currentOrgId?: string;

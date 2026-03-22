@@ -1,10 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { projects } from "@/lib/db/schema";
+import { projects, groups } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { stopProject } from "@/lib/docker/deploy";
+import { recordActivity } from "@/lib/activity";
+
+/** Delete a group if it has no remaining projects. */
+async function cleanupEmptyGroup(groupId: string) {
+  const remaining = await db.query.projects.findFirst({
+    where: eq(projects.groupId, groupId),
+    columns: { id: true },
+  });
+  if (!remaining) {
+    await db.delete(groups).where(eq(groups.id, groupId));
+  }
+}
 
 type RouteParams = {
   params: Promise<{ orgId: string; projectId: string }>;
@@ -29,6 +41,9 @@ const updateProjectSchema = z.object({
     protocol: z.string().optional(),
     description: z.string().optional(),
   })).nullable().optional(),
+  groupId: z.string().nullable().optional(),
+  cloneStrategy: z.enum(["clone", "clone_data", "empty", "skip"]).optional(),
+  dependsOn: z.array(z.string()).nullable().optional(),
 });
 
 // GET /api/v1/organizations/[orgId]/projects/[projectId]
@@ -79,7 +94,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, projectId } = await params;
-    const { organization } = await requireOrg();
+    const { organization, session } = await requireOrg();
 
     if (organization.id !== orgId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -95,6 +110,16 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    // Check if groupId is changing so we can clean up the old group
+    let oldGroupId: string | null = null;
+    if ("groupId" in parsed.data) {
+      const existing = await db.query.projects.findFirst({
+        where: and(eq(projects.id, projectId), eq(projects.organizationId, orgId)),
+        columns: { groupId: true },
+      });
+      oldGroupId = existing?.groupId ?? null;
+    }
+
     const [updated] = await db
       .update(projects)
       .set({ ...parsed.data, updatedAt: new Date() })
@@ -106,6 +131,19 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     if (!updated) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+
+    // Clean up old group if it's now empty
+    if (oldGroupId && oldGroupId !== updated.groupId) {
+      await cleanupEmptyGroup(oldGroupId);
+    }
+
+    recordActivity({
+      organizationId: orgId,
+      action: "project.updated",
+      projectId,
+      userId: session.user.id,
+      metadata: { changes: Object.keys(parsed.data) },
+    });
 
     return NextResponse.json({ project: updated });
   } catch (error) {
@@ -124,7 +162,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, projectId } = await params;
-    const { organization, membership } = await requireOrg();
+    const { organization, membership, session } = await requireOrg();
 
     if (organization.id !== orgId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -137,10 +175,10 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Fetch project name before deleting
+    // Fetch project before deleting
     const project = await db.query.projects.findFirst({
       where: and(eq(projects.id, projectId), eq(projects.organizationId, orgId)),
-      columns: { id: true, name: true },
+      columns: { id: true, name: true, groupId: true },
     });
 
     if (!project) {
@@ -155,6 +193,18 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     await db
       .delete(projects)
       .where(and(eq(projects.id, projectId), eq(projects.organizationId, orgId)));
+
+    // Clean up group if it's now empty
+    if (project.groupId) {
+      await cleanupEmptyGroup(project.groupId);
+    }
+
+    recordActivity({
+      organizationId: orgId,
+      action: "project.deleted",
+      userId: session.user.id,
+      metadata: { name: project.name },
+    });
 
     return NextResponse.json({ success: true });
   } catch (error) {
