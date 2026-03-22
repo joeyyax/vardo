@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { useSystemSetting } from "./use-system-setting";
-import { DEFAULT_APP_NAME } from "@/lib/system-settings";
+import { DEFAULT_APP_NAME } from "@/lib/constants";
 
 export function GeneralSettings() {
   const [instanceName, setInstanceName] = useState(DEFAULT_APP_NAME);

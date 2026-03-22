@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Loader2, Mail, KeyRound } from "lucide-react";
-import { DEFAULT_APP_NAME } from "@/lib/system-settings";
+import { DEFAULT_APP_NAME } from "@/lib/constants";
 import {
   Card,
   CardContent,
