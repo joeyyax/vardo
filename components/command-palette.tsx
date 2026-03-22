@@ -177,7 +177,7 @@ export function CommandPalette({ orgId }: CommandPaletteProps) {
                   <CommandItem
                     key={key}
                     value={`env variable ${key}`}
-                    onSelect={() => runCommand(() => router.push("/org/settings/variables"))}
+                    onSelect={() => runCommand(() => router.push("/settings/variables"))}
                     className="gap-2"
                   >
                     <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">{key}</code>
@@ -225,7 +225,7 @@ export function CommandPalette({ orgId }: CommandPaletteProps) {
               </CommandItem>
               <CommandItem
                 value="Team Members"
-                onSelect={() => runCommand(() => router.push("/org/settings/team"))}
+                onSelect={() => runCommand(() => router.push("/settings/team"))}
                 className="gap-2"
               >
                 <Users className="size-4" />
@@ -233,7 +233,7 @@ export function CommandPalette({ orgId }: CommandPaletteProps) {
               </CommandItem>
               <CommandItem
                 value="Settings Organization"
-                onSelect={() => runCommand(() => router.push("/org/settings"))}
+                onSelect={() => runCommand(() => router.push("/settings"))}
                 className="gap-2"
               >
                 <Settings className="size-4" />
