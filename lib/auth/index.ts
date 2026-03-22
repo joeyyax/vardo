@@ -59,6 +59,18 @@ export const auth = betterAuth({
     }),
   ],
 
+  // Expose isAppAdmin on the session user object so callers don't need
+  // a separate DB query. This field is already in the user table schema.
+  user: {
+    additionalFields: {
+      isAppAdmin: {
+        type: "boolean",
+        defaultValue: false,
+        input: false,
+      },
+    },
+  },
+
   // Session configuration
   session: {
     // Sessions stored in database via Drizzle adapter

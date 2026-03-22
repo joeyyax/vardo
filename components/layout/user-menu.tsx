@@ -3,7 +3,6 @@
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { LogOut, ChevronsUpDown, Loader2, Settings, Shield, Building2, Check, Plus, Sun, Moon, Monitor } from "lucide-react";
-import { useAdmin } from "@/lib/hooks/use-admin";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -28,10 +27,10 @@ type UserMenuProps = {
 };
 
 export function UserMenu({ collapsed, compact, currentOrgId, organizations }: UserMenuProps) {
-  const isAdmin = useAdmin();
   const router = useRouter();
   const { theme, setTheme } = useTheme();
   const { data: session, isPending } = useSession();
+  const isAdmin = !!session?.user?.isAppAdmin;
 
   const currentOrg = organizations?.find((o) => o.id === currentOrgId) || organizations?.[0];
 
