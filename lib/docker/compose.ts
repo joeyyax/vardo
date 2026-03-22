@@ -189,7 +189,7 @@ export function injectTraefikLabels(
  */
 export function injectNetwork(
   compose: ComposeFile,
-  networkName: string = "host-network",
+  networkName: string = "vardo-network",
 ): ComposeFile {
   const updatedServices: Record<string, ComposeService> = {};
   for (const [key, svc] of Object.entries(compose.services)) {
