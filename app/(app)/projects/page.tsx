@@ -98,7 +98,7 @@ export default async function ProjectsPage() {
           <Button asChild>
             <Link href="/projects/new">
               <Plus className="mr-1.5 size-4" />
-              New Project
+              New project
             </Link>
           </Button>
         </div>
