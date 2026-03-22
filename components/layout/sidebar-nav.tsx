@@ -50,6 +50,7 @@ export function SidebarNav({ collapsed }: SidebarNavProps) {
               <TooltipTrigger asChild>
                 <Link
                   href={item.href}
+                  aria-current={isActive ? "page" : undefined}
                   className={cn(
                     "flex items-center rounded-lg py-2.5 text-sm font-medium transition-colors",
                     "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",

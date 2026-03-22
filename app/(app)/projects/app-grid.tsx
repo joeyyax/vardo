@@ -224,8 +224,11 @@ function ProjectCard({
               onClick={(e) => e.stopPropagation()}
               className="inline-flex items-center gap-1.5 rounded-full border border-transparent px-2.5 py-1 text-xs font-medium bg-background hover:bg-accent transition-colors cursor-pointer"
             >
-              <span className={`size-1.5 rounded-full ${statusDotColor(a.status)}`} />
+              <span aria-hidden="true" className={`size-1.5 rounded-full ${statusDotColor(a.status)}`} />
               {a.displayName}
+              <span className="sr-only">
+                {a.status === "active" ? ", Running" : a.status === "error" ? ", Crashed" : a.status === "deploying" ? ", Deploying" : ", Stopped"}
+              </span>
             </Link>
         ))}
       </div>
