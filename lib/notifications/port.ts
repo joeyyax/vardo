@@ -8,7 +8,12 @@ export type NotificationEventType =
   | "disk-write-alert"
   | "auto-rollback"
   | "invitation-sent"
-  | "invitation-accepted";
+  | "invitation-accepted"
+  | "system-alert-service"
+  | "system-alert-disk"
+  | "system-alert-restart"
+  | "system-alert-cert"
+  | "system-alert-update";
 
 export type NotificationEvent = {
   type: NotificationEventType;
