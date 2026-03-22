@@ -26,14 +26,14 @@ export async function GET(request: NextRequest) {
 
   if (!installationId || !state) {
     console.error("[GitHub Callback] Missing installation_id or state");
-    return NextResponse.redirect(`${baseUrl}/profile?github=error`);
+    return NextResponse.redirect(`${baseUrl}/user/settings/connections?github=error`);
   }
 
   // Verify HMAC state
   const stateData = verifyInstallationState(state);
   if (!stateData) {
     console.error("[GitHub Callback] Invalid or expired state");
-    return NextResponse.redirect(`${baseUrl}/profile?github=error`);
+    return NextResponse.redirect(`${baseUrl}/user/settings/connections?github=error`);
   }
 
   // Verify the session matches the state
@@ -42,17 +42,17 @@ export async function GET(request: NextRequest) {
     const session = await requireSession();
     if (session.user.id !== stateData.userId) {
       console.error("[GitHub Callback] Session user mismatch");
-      return NextResponse.redirect(`${baseUrl}/profile?github=error`);
+      return NextResponse.redirect(`${baseUrl}/user/settings/connections?github=error`);
     }
     userId = session.user.id;
   } catch {
     console.error("[GitHub Callback] Not authenticated");
-    return NextResponse.redirect(`${baseUrl}/profile?github=error`);
+    return NextResponse.redirect(`${baseUrl}/user/settings/connections?github=error`);
   }
 
   // Handle "request" action (org admin approval needed)
   if (setupAction === "request") {
-    return NextResponse.redirect(`${baseUrl}/profile?github=pending`);
+    return NextResponse.redirect(`${baseUrl}/user/settings/connections?github=pending`);
   }
 
   try {
@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
     const account = installation.account;
     if (!account) {
       console.error("[GitHub Callback] No account on installation");
-      return NextResponse.redirect(`${baseUrl}/profile?github=error`);
+      return NextResponse.redirect(`${baseUrl}/user/settings/connections?github=error`);
     }
 
     // Extract account info — handle both User/Org and Enterprise account types
@@ -103,9 +103,9 @@ export async function GET(request: NextRequest) {
       `[GitHub Callback] Saved installation ${installationId} for user ${userId} (${accountLogin})`
     );
 
-    return NextResponse.redirect(`${baseUrl}/profile?github=connected`);
+    return NextResponse.redirect(`${baseUrl}/user/settings/connections?github=connected`);
   } catch (error) {
     console.error("[GitHub Callback] Error:", error);
-    return NextResponse.redirect(`${baseUrl}/profile?github=error`);
+    return NextResponse.redirect(`${baseUrl}/user/settings/connections?github=error`);
   }
 }
