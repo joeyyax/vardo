@@ -118,7 +118,7 @@ export function NewProjectForm({ orgId }: { orgId: string }) {
 
       <div className="flex items-center gap-3">
         <Button type="submit" disabled={submitting || !slug.trim()} className="squircle">
-          {submitting ? "Creating..." : "Create Project"}
+          {submitting ? "Creating..." : "Create project"}
         </Button>
         <Button
           type="button"

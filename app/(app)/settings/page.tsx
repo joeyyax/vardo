@@ -84,7 +84,7 @@ export default async function SettingsPage({
 
       <Tabs defaultValue={tab || "variables"}>
         <TabsList variant="line">
-          <TabsTrigger value="variables">Shared Variables</TabsTrigger>
+          <TabsTrigger value="variables">Shared variables</TabsTrigger>
           <TabsTrigger value="domains">Domains</TabsTrigger>
           <TabsTrigger value="notifications">Notifications</TabsTrigger>
           <TabsTrigger value="team">Team</TabsTrigger>

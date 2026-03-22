@@ -1004,7 +1004,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         const data = JSON.parse(event.data);
         finished = true;
         if (data.success) {
-          toast.success(`Deployed in ${data.durationMs ? Math.round(data.durationMs / 1000) + "s" : "---"}`);
+          toast.success(`Deployed in ${data.durationMs ? formatDuration(data.durationMs) : "---"}`);
           setDeployAnnouncement("Deployment succeeded.");
         } else {
           toast.error(data.error || "Deployment failed");
@@ -1362,7 +1362,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
             } else if (eventType === "done") {
               const result = data as { deploymentId: string; success: boolean; durationMs: number; error?: string };
               if (result.success) {
-                toast.success(`Deployed in ${result.durationMs}ms`);
+                toast.success(`Deployed in ${formatDuration(result.durationMs)}`);
                 setDeployAnnouncement("Deployment succeeded.");
               } else {
                 toast.error(result.error || "Deployment failed");

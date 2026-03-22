@@ -24,6 +24,7 @@ import {
   BottomSheetHeader,
   BottomSheetTitle,
 } from "@/components/ui/bottom-sheet";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { isAdmin } from "@/lib/auth/permissions";
 import { OrgSwitcher } from "@/components/layout/org-switcher";
 import { getInitials } from "@/lib/utils";
@@ -62,6 +63,8 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"member" | "admin">("member");
   const [inviting, setInviting] = useState(false);
+  const [removeTarget, setRemoveTarget] = useState<{ id: string; name: string | null } | null>(null);
+  const [removing, setRemoving] = useState(false);
 
   const canManage = isAdmin(currentRole);
 
@@ -119,11 +122,12 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
     }
   }
 
-  async function handleRemove(userId: string, name: string | null) {
-    if (!confirm(`Remove ${name || "this member"} from ${orgName}?`)) return;
+  async function confirmRemove() {
+    if (!removeTarget) return;
+    setRemoving(true);
 
     try {
-      const res = await fetch(`/api/v1/organizations/${orgId}/members/${userId}`, {
+      const res = await fetch(`/api/v1/organizations/${orgId}/members/${removeTarget.id}`, {
         method: "DELETE",
       });
 
@@ -135,9 +139,12 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
       }
 
       toast.success("Member removed");
-      setMembers((prev) => prev.filter((m) => m.id !== userId));
+      setMembers((prev) => prev.filter((m) => m.id !== removeTarget.id));
+      setRemoveTarget(null);
     } catch {
       toast.error("Failed to remove member");
+    } finally {
+      setRemoving(false);
     }
   }
 
@@ -158,7 +165,7 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
             {canManage && (
               <Button size="sm" onClick={() => setInviteOpen(true)}>
                 <Plus className="mr-1.5 size-4" />
-                Add Member
+                Add member
               </Button>
             )}
           </div>
@@ -168,7 +175,7 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
               canManage && (
                 <Button onClick={() => setInviteOpen(true)}>
                   <Plus className="mr-1.5 size-4" />
-                  Add Member
+                  Add member
                 </Button>
               )
             }
@@ -242,7 +249,7 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
                             onClick={() => handleChangeRole(member.id, "admin")}
                           >
                             <Shield className="size-4" />
-                            Make Admin
+                            Make admin
                           </DropdownMenuItem>
                         ) : (
                           <DropdownMenuItem
@@ -250,14 +257,14 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
                             onClick={() => handleChangeRole(member.id, "member")}
                           >
                             <Shield className="size-4" />
-                            Make Member
+                            Make member
                           </DropdownMenuItem>
                         )}
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
                           className="gap-2 cursor-pointer"
                           variant="destructive"
-                          onClick={() => handleRemove(member.id, member.name)}
+                          onClick={() => setRemoveTarget({ id: member.id, name: member.name })}
                         >
                           <UserMinus className="size-4" />
                           Remove
@@ -332,11 +339,21 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
               Cancel
             </Button>
             <Button onClick={handleInvite} disabled={inviting || !inviteEmail.trim()}>
-              {inviting ? "Adding..." : "Add Member"}
+              {inviting ? "Adding..." : "Add member"}
             </Button>
           </BottomSheetFooter>
         </BottomSheetContent>
       </BottomSheet>
+
+      <ConfirmDeleteDialog
+        open={!!removeTarget}
+        onOpenChange={(open) => { if (!open) setRemoveTarget(null); }}
+        title="Remove member"
+        description={`Remove ${removeTarget?.name || "this member"} from ${orgName}? They'll lose access immediately.`}
+        confirmLabel="Remove"
+        loading={removing}
+        onConfirm={confirmRemove}
+      />
     </>
   );
 }
