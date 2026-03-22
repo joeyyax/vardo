@@ -60,18 +60,18 @@ export default async function ProjectsPage() {
       <PageToolbar
         actions={
           <div className="flex items-center gap-3">
-            <Button asChild>
+            <Button variant="outline" asChild>
               <Link href="/projects/new">
                 <Plus className="mr-1.5 size-4" />
                 New project
               </Link>
             </Button>
-            <Link
-              href="/apps/new"
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              New app
-            </Link>
+            <Button asChild>
+              <Link href="/apps/new">
+                <Plus className="mr-1.5 size-4" />
+                Deploy app
+              </Link>
+            </Button>
           </div>
         }
       >
@@ -92,15 +92,22 @@ export default async function ProjectsPage() {
               Deploy your first app
             </p>
             <p className="text-sm text-muted-foreground">
-              Create a project and add apps from a Git repo, Docker image, or Compose file.
+              Apps are deployed from a Git repo, Docker image, or Compose file. Projects are optional groups that help you organize related apps.
             </p>
           </div>
-          <Button asChild>
-            <Link href="/projects/new">
-              <Plus className="mr-1.5 size-4" />
-              New project
-            </Link>
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button asChild>
+              <Link href="/apps/new">
+                <Plus className="mr-1.5 size-4" />
+                Deploy app
+              </Link>
+            </Button>
+            <Button variant="outline" asChild>
+              <Link href="/projects/new">
+                New project
+              </Link>
+            </Button>
+          </div>
         </div>
       ) : (
         <AppGrid

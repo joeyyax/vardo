@@ -1197,6 +1197,15 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         body.projectId = null;
       }
 
+      // Detect whether any redeploy-required fields changed
+      const redeployFieldChanged = (
+        (body.gitBranch !== undefined && body.gitBranch !== (app.gitBranch || "")) ||
+        (body.imageName !== undefined && body.imageName !== (app.imageName || "")) ||
+        (body.containerPort !== app.containerPort) ||
+        (body.restartPolicy !== (app.restartPolicy || "unless-stopped")) ||
+        (body.rootDirectory !== (app.rootDirectory || null))
+      );
+
       const res = await fetch(
         `/api/v1/organizations/${orgId}/apps/${app.id}`,
         {
@@ -1212,8 +1221,20 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         return;
       }
 
-      toast.success("App updated");
       setEditOpen(false);
+
+      if (redeployFieldChanged) {
+        toast.success("Saved — redeploy to apply changes", {
+          action: {
+            label: "Redeploy now",
+            onClick: handleDeploy,
+          },
+          duration: 8000,
+        });
+      } else {
+        toast.success("App updated");
+      }
+
       router.refresh();
     } catch {
       toast.error("Failed to save");
@@ -2796,6 +2817,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                     onChange={(e) => setEditImageName(e.target.value)}
                     className="font-mono"
                   />
+                  <p className="text-xs text-muted-foreground">Requires a redeploy to take effect.</p>
                 </div>
               )}
 
@@ -2810,6 +2832,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                       appId={app.id}
                       orgId={orgId}
                     />
+                    <p className="text-xs text-muted-foreground">Requires a redeploy to take effect.</p>
                   </div>
                   <div className="grid gap-2">
                     <Label htmlFor="edit-root-directory">Root Directory</Label>
@@ -2819,6 +2842,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                       value={rootDirectory}
                       onChange={(e) => setRootDirectory(e.target.value)}
                     />
+                    <p className="text-xs text-muted-foreground">Requires a redeploy to take effect.</p>
                   </div>
                 </div>
               )}
@@ -2849,6 +2873,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                     />
                   )}
                 </div>
+                <p className="text-xs text-muted-foreground">Requires a redeploy to take effect.</p>
               </div>
 
               {/* Restart policy */}
@@ -2865,6 +2890,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                     <SelectItem value="no">Never</SelectItem>
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground">Requires a redeploy to take effect.</p>
               </div>
 
               {/* Resource Limits */}
