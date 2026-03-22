@@ -1,6 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Settings } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageToolbar } from "@/components/page-toolbar";
 import { DockerPrune, UserManagement } from "./admin-actions";
@@ -23,7 +26,16 @@ export function AdminPanel({ activeTab, orgId }: AdminPanelProps) {
 
   return (
     <div className="space-y-6">
-      <PageToolbar>
+      <PageToolbar
+        actions={
+          <Button variant="outline" size="sm" className="squircle gap-2" asChild>
+            <Link href="/admin/settings">
+              <Settings className="size-4" />
+              System settings
+            </Link>
+          </Button>
+        }
+      >
         <h1 className="text-2xl font-semibold tracking-tight">Admin</h1>
       </PageToolbar>
 
