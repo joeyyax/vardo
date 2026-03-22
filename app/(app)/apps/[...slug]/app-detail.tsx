@@ -80,7 +80,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { isAdmin } from "@/lib/auth/permissions";
 import { BranchSelect } from "@/components/branch-select";
-import { formatDuration } from "@/components/app-status";
+import { formatDuration, StatusBadge, DeploymentStatusBadge } from "@/components/app-status";
 import type { FeatureFlags } from "@/lib/config/features";
 
 type Deployment = {
@@ -201,67 +201,6 @@ function envTypeDotColor(type: string) {
     : "bg-status-info";
 }
 
-function StatusBadge({ status }: { status: string }) {
-  switch (status) {
-    case "active":
-      return (
-        <Badge className="border-transparent bg-status-success-muted text-status-success">
-          Active
-        </Badge>
-      );
-    case "deploying":
-      return (
-        <Badge className="border-transparent bg-status-info-muted text-status-info animate-pulse">
-          Deploying
-        </Badge>
-      );
-    case "error":
-      return (
-        <Badge className="border-transparent bg-status-error-muted text-status-error">
-          Crashed
-        </Badge>
-      );
-    default:
-      return (
-        <Badge className="border-transparent bg-status-neutral-muted text-status-neutral">
-          Stopped
-        </Badge>
-      );
-  }
-}
-
-function DeploymentStatusBadge({ status }: { status: Deployment["status"] }) {
-  switch (status) {
-    case "success":
-      return (
-        <Badge className="border-transparent bg-status-success-muted text-status-success">
-          Success
-        </Badge>
-      );
-    case "running":
-      return (
-        <Badge className="border-transparent bg-status-info-muted text-status-info animate-pulse">
-          Running
-        </Badge>
-      );
-    case "failed":
-      return (
-        <Badge className="border-transparent bg-status-error-muted text-status-error">
-          Failed
-        </Badge>
-      );
-    case "cancelled":
-      return <Badge variant="secondary">Cancelled</Badge>;
-    case "rolled_back":
-      return (
-        <Badge className="border-transparent bg-status-warning-muted text-status-warning">
-          Rolled Back
-        </Badge>
-      );
-    default:
-      return <Badge variant="secondary">Queued</Badge>;
-  }
-}
 
 function PortsManager({
   ports: initialPorts,
