@@ -10,7 +10,7 @@ import { rateLimit } from "@/lib/api/rate-limit";
 
 // POST /api/v1/github/webhook — GitHub App webhook receiver
 export async function POST(request: NextRequest) {
-  const limited = rateLimit(request, { key: "webhook", limit: 30, windowMs: 60000 });
+  const limited = await rateLimit(request, { key: "webhook", limit: 30, windowMs: 60000 });
   if (limited) return limited;
 
   try {

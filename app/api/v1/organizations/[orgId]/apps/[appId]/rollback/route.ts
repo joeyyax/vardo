@@ -18,7 +18,7 @@ type RouteParams = {
 // Body: { deploymentId: string, includeEnvVars?: boolean }
 // Returns SSE stream of deploy log lines (same as normal deploy)
 export async function POST(request: NextRequest, { params }: RouteParams) {
-  const limited = rateLimit(request, { key: "deploy", limit: 10, windowMs: 60000 });
+  const limited = await rateLimit(request, { key: "deploy", limit: 10, windowMs: 60000 });
   if (limited) return limited;
 
   try {

@@ -16,7 +16,7 @@ type RouteParams = {
 // POST /api/v1/organizations/[orgId]/apps/[appId]/deploy
 // Returns SSE stream of deploy log lines, final event is the result
 export async function POST(request: NextRequest, { params }: RouteParams) {
-  const limited = rateLimit(request, { key: "deploy", limit: 10, windowMs: 60000 });
+  const limited = await rateLimit(request, { key: "deploy", limit: 10, windowMs: 60000 });
   if (limited) return limited;
 
   try {

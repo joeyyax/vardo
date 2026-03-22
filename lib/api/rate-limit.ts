@@ -1,43 +1,81 @@
 import { NextRequest, NextResponse } from "next/server";
+import { redis } from "@/lib/redis";
 
-type RateLimitEntry = {
-  count: number;
-  resetAt: number;
-};
+// Lua script: sliding window using a sorted set of request timestamps.
+// Arguments: key, now (ms), windowMs, limit, ttlSeconds
+// Returns: current request count after incrementing (integer)
+const SLIDING_WINDOW_SCRIPT = `
+local key = KEYS[1]
+local now = tonumber(ARGV[1])
+local window = tonumber(ARGV[2])
+local limit = tonumber(ARGV[3])
+local ttl = tonumber(ARGV[4])
+local cutoff = now - window
 
-const store = new Map<string, RateLimitEntry>();
+-- Remove timestamps outside the window
+redis.call("ZREMRANGEBYSCORE", key, "-inf", cutoff)
 
-// Clean up expired entries every 60s
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of store) {
-    if (entry.resetAt <= now) store.delete(key);
-  }
-}, 60000);
+-- Count requests in current window
+local count = redis.call("ZCARD", key)
+
+if count < limit then
+  -- Add the current request with score = timestamp (unique member = timestamp + random suffix)
+  redis.call("ZADD", key, now, now .. "-" .. math.random(1, 1000000))
+  redis.call("EXPIRE", key, ttl)
+  return count + 1
+else
+  return count + 1
+end
+`.trim();
 
 /**
- * Simple in-memory rate limiter.
- * Returns null if allowed, or a 429 NextResponse if rate-limited.
+ * Redis-backed sliding window rate limiter.
+ * Returns null if the request is allowed, or a 429 NextResponse if rate-limited.
+ *
+ * Falls back to allowing the request if Redis is unavailable, so a Redis outage
+ * does not take down the API.
  */
-export function rateLimit(
+export async function rateLimit(
   request: NextRequest,
   opts: { key?: string; limit: number; windowMs: number }
-): NextResponse | null {
-  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
-    || request.headers.get("x-real-ip")
-    || "unknown";
-  const key = opts.key ? `${opts.key}:${ip}` : ip;
-  const now = Date.now();
+): Promise<NextResponse | null> {
+  const ip =
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    request.headers.get("x-real-ip") ||
+    "unknown";
 
-  const entry = store.get(key);
-  if (!entry || entry.resetAt <= now) {
-    store.set(key, { count: 1, resetAt: now + opts.windowMs });
+  const key = `rl:${opts.key ? `${opts.key}:` : ""}${ip}`;
+  const now = Date.now();
+  const ttlSeconds = Math.ceil(opts.windowMs / 1000);
+
+  let count: number;
+  try {
+    const result = await redis.eval(
+      SLIDING_WINDOW_SCRIPT,
+      1,
+      key,
+      String(now),
+      String(opts.windowMs),
+      String(opts.limit),
+      String(ttlSeconds)
+    );
+    count = Number(result);
+  } catch (err) {
+    // Redis unavailable — fail open so a Redis outage doesn't block the API
+    console.error("[rate-limit] Redis error, failing open:", err);
     return null;
   }
 
-  entry.count++;
-  if (entry.count > opts.limit) {
-    const retryAfter = Math.ceil((entry.resetAt - now) / 1000);
+  if (count > opts.limit) {
+    // Estimate retry-after: fetch TTL of the sorted set
+    let retryAfter = Math.ceil(opts.windowMs / 1000);
+    try {
+      const pttl = await redis.pttl(key);
+      if (pttl > 0) retryAfter = Math.ceil(pttl / 1000);
+    } catch {
+      // Best-effort
+    }
+
     return NextResponse.json(
       { error: "Too many requests" },
       {
