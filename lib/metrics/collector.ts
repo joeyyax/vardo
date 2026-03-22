@@ -157,9 +157,6 @@ async function collect() {
   }
 }
 
-// Collect immediately on start
-collect();
-
 export function stopCollector() {
   if (timeout) {
     clearTimeout(timeout);
