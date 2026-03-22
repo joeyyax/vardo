@@ -1,0 +1,102 @@
+services:
+  host:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql://host:${DB_PASSWORD}@postgres:5432/host
+      REDIS_URL: redis://redis:6379
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+      NEXT_PUBLIC_BETTER_AUTH_URL: https://${HOST_DOMAIN}
+      NEXT_PUBLIC_APP_URL: https://${HOST_DOMAIN}
+      HOST_BASE_DOMAIN: ${HOST_BASE_DOMAIN}
+      HOST_PROJECTS_DIR: /var/lib/host/projects
+      GITHUB_APP_ID: ${GITHUB_APP_ID}
+      GITHUB_APP_SLUG: ${GITHUB_APP_SLUG}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET}
+      GITHUB_PRIVATE_KEY: ${GITHUB_PRIVATE_KEY}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - host_projects:/var/lib/host/projects
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.host.rule=Host(`${HOST_DOMAIN}`)"
+      - "traefik.http.routers.host.entrypoints=websecure"
+      - "traefik.http.routers.host.tls.certresolver=le"
+      - "traefik.http.services.host.loadbalancer.server.port=3000"
+    networks:
+      - internal
+      - host-network
+
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: host
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: host
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U host"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - internal
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    networks:
+      - internal
+
+  traefik:
+    image: traefik:v3
+    restart: unless-stopped
+    command:
+      - "--api.dashboard=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=host-network"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.le.acme.tlschallenge=true"
+      - "--certificatesresolvers.le.acme.email=${ACME_EMAIL}"
+      - "--certificatesresolvers.le.acme.storage=/letsencrypt/acme.json"
+      - "--log.level=WARN"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - letsencrypt:/letsencrypt
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.${HOST_BASE_DOMAIN}`)"
+      - "traefik.http.routers.traefik.entrypoints=websecure"
+      - "traefik.http.routers.traefik.tls.certresolver=le"
+      - "traefik.http.routers.traefik.service=api@internal"
+    networks:
+      - host-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  host_projects:
+  letsencrypt:
+
+networks:
+  internal:
+  host-network:
+    name: host-network
+    driver: bridge
