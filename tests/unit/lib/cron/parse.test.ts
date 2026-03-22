@@ -57,6 +57,26 @@ describe("shouldRunNow", () => {
     const midHour = new Date(2026, 2, 21, 10, 30, 0);
     expect(shouldRunNow("@hourly", topOfHour)).toBe(true);
     expect(shouldRunNow("@hourly", midHour)).toBe(false);
+    // @weekly = 0 0 * * 0 (Sunday midnight)
+    const sundayMidnight = new Date(2026, 2, 22, 0, 0, 0); // March 22, 2026 is Sunday
+    const saturdayMidnight = new Date(2026, 2, 21, 0, 0, 0); // Saturday
+    expect(shouldRunNow("@weekly", sundayMidnight)).toBe(true);
+    expect(shouldRunNow("@weekly", saturdayMidnight)).toBe(false);
+    // @monthly = 0 0 1 * * (1st of month midnight)
+    const firstOfMonth = new Date(2026, 2, 1, 0, 0, 0); // March 1, 2026
+    const secondOfMonth = new Date(2026, 2, 2, 0, 0, 0); // March 2, 2026
+    expect(shouldRunNow("@monthly", firstOfMonth)).toBe(true);
+    expect(shouldRunNow("@monthly", secondOfMonth)).toBe(false);
+  });
+
+  it("rejects out-of-range values", () => {
+    const now = new Date(2026, 2, 21, 10, 30, 0);
+    expect(shouldRunNow("99 * * * *", now)).toBe(false);
+  });
+
+  it("rejects garbage string input", () => {
+    const now = new Date(2026, 2, 21, 10, 30, 0);
+    expect(shouldRunNow("not a cron", now)).toBe(false);
   });
 
   it("matches step ranges (N-M/N)", () => {
