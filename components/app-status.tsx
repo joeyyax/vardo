@@ -59,14 +59,14 @@ export function StatusIndicator({
   if (isRunning) {
     return (
       <span className="flex items-center gap-1.5 text-sm text-status-success shrink-0">
-        <span className="size-2 rounded-full bg-status-success animate-pulse" />
+        <span aria-hidden="true" className="size-2 rounded-full bg-status-success animate-pulse" />
         {finishedAt ? <Uptime since={finishedAt} /> : "Running"}
       </span>
     );
   }
   if (status === "error") return (
     <span className="flex items-center gap-1.5 text-sm text-status-error shrink-0">
-      <span className="size-2 rounded-full bg-status-error" />
+      <span aria-hidden="true" className="size-2 rounded-full bg-status-error" />
       Crashed
     </span>
   );

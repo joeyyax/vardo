@@ -452,8 +452,8 @@ export function LogViewer({ streamUrl, historyUrl, maxLines = 1000 }: LogViewerP
       {/* Stream toolbar */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className={`size-2 rounded-full ${connected ? "bg-status-success" : timedOut ? "bg-status-warning" : "bg-status-error"}`} />
-          <span className="text-xs text-muted-foreground">
+          <span aria-hidden="true" className={`size-2 rounded-full ${connected ? "bg-status-success" : timedOut ? "bg-status-warning" : "bg-status-error"}`} />
+          <span className="text-xs text-muted-foreground" aria-live="polite" aria-atomic="true">
             {connected ? "Streaming" : timedOut ? "Paused" : lines.length > 0 ? "Reconnecting..." : "Disconnected"}
           </span>
           {logSource && (
