@@ -1,14 +1,15 @@
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { memberships } from "@/lib/db/schema";
+import { memberships, invitations } from "@/lib/db/schema";
 import { getSession, getCurrentOrg, getUserOrganizations } from "@/lib/auth/session";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { OrgEnvVarsEditor } from "./org-env-vars";
 import { OrgSwitcher } from "@/components/layout/org-switcher";
 import { TeamMembers } from "@/app/(app)/team/team-members";
 import { OrgDomainEditor } from "./org-domain-editor";
 import { NotificationChannelsEditor } from "./notification-channels";
+import { InvitationsPanel } from "./invitations";
 
 export default async function SettingsPage({
   searchParams,
@@ -44,6 +45,31 @@ export default async function SettingsPage({
     joinedAt: m.createdAt.toISOString(),
   }));
 
+  const orgInvitations = await db.query.invitations.findMany({
+    where: and(
+      eq(invitations.scope, "org"),
+      eq(invitations.targetId, orgId),
+    ),
+    with: {
+      inviter: {
+        columns: { id: true, name: true, email: true },
+      },
+    },
+    orderBy: (t, { desc }) => [desc(t.createdAt)],
+  });
+
+  const invitationList = orgInvitations.map((inv) => ({
+    id: inv.id,
+    email: inv.email,
+    role: inv.role,
+    status: inv.status as "pending" | "accepted" | "expired",
+    createdAt: inv.createdAt.toISOString(),
+    expiresAt: inv.expiresAt.toISOString(),
+    inviter: inv.inviter
+      ? { id: inv.inviter.id, name: inv.inviter.name, email: inv.inviter.email }
+      : null,
+  }));
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
@@ -61,6 +87,7 @@ export default async function SettingsPage({
           <TabsTrigger value="domains">Domains</TabsTrigger>
           <TabsTrigger value="notifications">Notifications</TabsTrigger>
           <TabsTrigger value="team">Team</TabsTrigger>
+          <TabsTrigger value="invitations">Invitations</TabsTrigger>
         </TabsList>
 
         <TabsContent value="variables" className="pt-4">
@@ -89,6 +116,15 @@ export default async function SettingsPage({
             currentUserId={session.user.id}
             organizations={organizations}
             embedded
+          />
+        </TabsContent>
+
+        <TabsContent value="invitations" className="pt-4">
+          <InvitationsPanel
+            orgId={orgId}
+            orgName={orgData.organization.name}
+            currentRole={orgData.membership.role}
+            invitations={invitationList}
           />
         </TabsContent>
       </Tabs>
