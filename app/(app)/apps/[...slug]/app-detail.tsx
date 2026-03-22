@@ -1845,11 +1845,17 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           .replace(/x-access-token:[^\s@]+/g, "x-access-token:***")
           .replace(/ghs_[A-Za-z0-9]+/g, "***")
           .trim();
+        const errorMessage = cleaned || "App crashed — check the deploy log for details";
         return (
-          <div className="flex items-center gap-2 rounded-lg bg-status-error-muted px-4 py-2.5 text-sm text-status-error">
-            <X className="size-4 shrink-0" />
-            <span className="truncate">{cleaned || "App crashed — check the deploy log for details"}</span>
-            <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-start gap-2 rounded-lg bg-status-error-muted px-4 py-2.5 text-sm text-status-error">
+            <X className="size-4 shrink-0 mt-0.5" />
+            <span
+              className="flex-1 line-clamp-3 break-words font-mono text-xs leading-relaxed"
+              title={errorMessage}
+            >
+              {errorMessage}
+            </span>
+            <div className="flex items-center gap-2 shrink-0 mt-0.5">
               {failedDeploy && (
                 <button
                   type="button"
