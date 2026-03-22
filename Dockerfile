@@ -1,7 +1,7 @@
 FROM node:22-alpine AS base
 
-# Install pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# Enable corepack — pnpm version is pinned via packageManager in package.json
+RUN corepack enable
 
 # Dependencies
 FROM base AS deps
