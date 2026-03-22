@@ -37,8 +37,12 @@ function getMasterKey(): Buffer {
   // Accept hex (64 chars) or base64 (44 chars) encoded 32-byte keys
   if (key.length === 64) return Buffer.from(key, "hex");
   if (key.length === 44) return Buffer.from(key, "base64");
-  // Raw string — hash it to 32 bytes via HKDF
-  return Buffer.from(hkdfSync("sha256", key, "host-master-key", "master", 32));
+  // Raw string — hash it to 32 bytes via HKDF.
+  // Salt is kept as "" (empty) to preserve backward compatibility with any
+  // existing deployments using a raw-string master key. Changing this salt
+  // would silently derive a different key and break all previously encrypted
+  // data. Hex/base64 keys (the recommended path) bypass HKDF entirely.
+  return Buffer.from(hkdfSync("sha256", key, "", "master", 32));
 }
 
 function deriveOrgKey(orgId: string): Buffer {
@@ -216,8 +220,13 @@ export function decryptSystem(encrypted: string): string {
 /**
  * Try to decrypt a system setting, falling back to plaintext for
  * rows written before encryption was added.
+ * Returns { content, wasEncrypted, decryptFailed } so callers can distinguish:
+ *   - wasEncrypted=false, decryptFailed=false → plaintext (unmigrated row)
+ *   - wasEncrypted=true,  decryptFailed=false → successfully decrypted
+ *   - wasEncrypted=true,  decryptFailed=true  → recognised as encrypted but
+ *     decryption failed (wrong key / corrupted data); content is empty
  */
-export function decryptSystemOrFallback(value: string): { content: string; wasEncrypted: boolean } {
+export function decryptSystemOrFallback(value: string): { content: string; wasEncrypted: boolean; decryptFailed?: boolean } {
   if (!isEncrypted(value)) {
     return { content: value, wasEncrypted: false };
   }
@@ -226,6 +235,6 @@ export function decryptSystemOrFallback(value: string): { content: string; wasEn
     return { content: decryptSystem(value), wasEncrypted: true };
   } catch {
     console.error("[crypto] System setting decryption failed — wrong key or corrupted data");
-    return { content: "", wasEncrypted: false };
+    return { content: "", wasEncrypted: true, decryptFailed: true };
   }
 }
