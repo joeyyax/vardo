@@ -4,12 +4,14 @@ import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq } from "drizzle-orm";
-import { getSystemDiskUsage, getSystemInfo, type DiskUsage, type SystemInfo } from "@/lib/docker/client";
+import { getSystemInfo, type DiskUsage, type SystemInfo } from "@/lib/docker/client";
 import { isCollectorRunning, startCollector } from "@/lib/metrics/collector";
-import { getLatestProjectDiskUsage } from "@/lib/metrics/store";
+import { getLatestProjectDiskUsage, getLatestDiskUsage } from "@/lib/metrics/store";
 import { createSSEResponse } from "@/lib/api/sse";
 import { isMetricsEnabled } from "@/lib/metrics/config";
+import { isFeatureEnabled } from "@/lib/config/features";
 import { subscribe } from "@/lib/metrics/broadcast";
+import { aggregateContainers, containerToPoint } from "@/lib/metrics/aggregate";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -18,6 +20,13 @@ type RouteParams = {
 // GET /api/v1/organizations/[orgId]/stats/stream
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
+    if (!isFeatureEnabled("metrics")) {
+      return new Response(JSON.stringify({ error: "Feature not enabled" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     const { orgId } = await params;
     const { organization } = await requireOrg();
 
@@ -31,8 +40,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const orgApps = await db.query.apps.findMany({
       where: eq(apps.organizationId, orgId),
-      columns: { id: true, name: true, displayName: true, status: true },
+      columns: { id: true, name: true, displayName: true, status: true, projectId: true },
     });
+    const projectCount = new Set(orgApps.map((a) => a.projectId).filter(Boolean)).size;
 
     if (!isCollectorRunning()) {
       startCollector();
@@ -63,7 +73,18 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       }
 
       async function refreshSlowData() {
-        try { cachedDisk = await getSystemDiskUsage(); } catch { /* skip */ }
+        try {
+          const d = await getLatestDiskUsage();
+          if (d) {
+            cachedDisk = {
+              images: { count: 0, totalSize: d.images, reclaimable: 0 },
+              containers: { count: 0, totalSize: 0 },
+              volumes: { count: 0, totalSize: d.volumes },
+              buildCache: { count: 0, totalSize: d.buildCache, reclaimable: 0 },
+              total: d.total,
+            };
+          }
+        } catch { /* skip */ }
         try { cachedSystem = await getSystemInfo(); } catch { /* skip */ }
         await refreshAppDisk();
       }
@@ -82,25 +103,20 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           byApp[matched.id].push(m);
         }
 
-        sendEvent("stats", {
+        const allOrgContainers = Object.values(byApp).flat();
+        const diskTotal = cachedDisk?.total ?? 0;
+        const point = aggregateContainers(allOrgContainers, diskTotal);
+
+        sendEvent("point", {
+          ...point,
+          projectCount,
           apps: orgApps.map((p) => ({
             ...p,
             diskUsage: cachedAppDisk[p.id] || 0,
-            containers: (byApp[p.id] || []).map((m) => ({
-              containerId: m.containerId,
-              containerName: m.containerName,
-              cpuPercent: m.cpuPercent,
-              memoryUsage: m.memoryUsage,
-              memoryLimit: m.memoryLimit,
-              memoryPercent: m.memoryPercent,
-              networkRx: m.networkRxBytes,
-              networkTx: m.networkTxBytes,
-              diskUsage: m.diskUsage,
-            })),
+            containers: (byApp[p.id] || []).map(containerToPoint),
           })),
           disk: cachedDisk,
           system: cachedSystem,
-          timestamp: new Date().toISOString(),
         });
 
         tickCount++;

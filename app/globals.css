@@ -148,6 +148,13 @@
   --status-info-muted: oklch(0.45 0.14 240 / 10%);
   --status-neutral: oklch(0.45 0.01 260);
   --status-neutral-muted: oklch(0.45 0.01 260 / 10%);
+  /* Metric chart colors */
+  --metric-cpu: oklch(0.65 0.19 255);
+  --metric-memory: oklch(0.72 0.17 150);
+  --metric-network-rx: oklch(0.70 0.15 200);
+  --metric-network-tx: oklch(0.75 0.15 75);
+  --metric-memory-limit: oklch(0.65 0.22 25);
+  --metric-disk: oklch(0.65 0.1 30);
 }
 
 .dark {
@@ -193,6 +200,13 @@
   --status-info-muted: oklch(0.7 0.12 240 / 12%);
   --status-neutral: oklch(0.45 0.005 260);
   --status-neutral-muted: oklch(0.45 0.005 260 / 12%);
+  /* Metric chart colors */
+  --metric-cpu: oklch(0.65 0.19 255);
+  --metric-memory: oklch(0.72 0.17 150);
+  --metric-network-rx: oklch(0.70 0.15 200);
+  --metric-network-tx: oklch(0.75 0.15 75);
+  --metric-memory-limit: oklch(0.65 0.22 25);
+  --metric-disk: oklch(0.65 0.1 30);
 }
 
 @layer base {

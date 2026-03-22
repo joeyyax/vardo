@@ -1,45 +1,109 @@
+# docker-compose.yml — Canonical, production-ready compose file.
+#
+# In production:  docker compose --env-file .env.prod up -d
+# In development: docker compose up -d
+#   (Docker Compose auto-merges docker-compose.override.yml when present)
+
 services:
+  host:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_BETTER_AUTH_URL: https://${HOST_DOMAIN}
+        NEXT_PUBLIC_APP_URL: https://${HOST_DOMAIN}
+        NEXT_PUBLIC_PLAUSIBLE_DOMAIN: ${NEXT_PUBLIC_PLAUSIBLE_DOMAIN:-}
+        NEXT_PUBLIC_PLAUSIBLE_SRC: ${NEXT_PUBLIC_PLAUSIBLE_SRC:-}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://host:${DB_PASSWORD}@postgres:5432/host
+      REDIS_URL: redis://redis:6379
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+      NEXT_PUBLIC_BETTER_AUTH_URL: https://${HOST_DOMAIN}
+      NEXT_PUBLIC_APP_URL: https://${HOST_DOMAIN}
+      HOST_BASE_DOMAIN: ${HOST_BASE_DOMAIN}
+      HOST_PROJECTS_DIR: /var/lib/host/projects
+      CADVISOR_URL: http://cadvisor:8080
+      LOKI_URL: http://loki:3100
+      GITHUB_APP_ID: ${GITHUB_APP_ID}
+      GITHUB_APP_SLUG: ${GITHUB_APP_SLUG}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET}
+      GITHUB_PRIVATE_KEY: ${GITHUB_PRIVATE_KEY}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - host_projects:/var/lib/host/projects
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.host.rule=Host(`${HOST_DOMAIN}`)"
+      - "traefik.http.routers.host.entrypoints=websecure"
+      - "traefik.http.routers.host.tls.certresolver=le"
+      - "traefik.http.services.host.loadbalancer.server.port=3000"
+    networks:
+      - internal
+      - host-network
+
   postgres:
     image: postgres:17
     restart: unless-stopped
     environment:
       POSTGRES_USER: host
-      POSTGRES_PASSWORD: host
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: host
-    ports:
-      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U host"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - internal
 
   redis:
     image: redis/redis-stack-server:latest
     restart: unless-stopped
-    ports:
-      - "6379:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - internal
 
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:latest
     restart: unless-stopped
-    ports:
-      - "8081:8080"
+    privileged: true
     volumes:
       - /:/rootfs:ro
       - /var/run:/var/run:ro
       - /sys:/sys:ro
       - /var/lib/docker/:/var/lib/docker:ro
-    privileged: true
+    networks:
+      - internal
 
   loki:
     image: grafana/loki:3.4
     restart: unless-stopped
     command: -config.file=/etc/loki/loki.yml
-    ports:
-      - "3100:3100"
     volumes:
       - ./config/loki.yml:/etc/loki/loki.yml:ro
       - loki_data:/loki
+    networks:
+      - internal
     mem_limit: 512m
 
   promtail:
@@ -52,13 +116,17 @@ services:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
     depends_on:
       - loki
+    networks:
+      - internal
     mem_limit: 128m
 
   traefik:
     image: traefik:v3
     restart: unless-stopped
     command:
-      - "--api.insecure=true"
+      # The dashboard is exposed via Traefik labels below with TLS and
+      # BasicAuth protection (TRAEFIK_DASHBOARD_AUTH env var).
+      - "--api.dashboard=true"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--providers.docker.network=host-network"
@@ -67,21 +135,36 @@ services:
       - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
       - "--entrypoints.websecure.address=:443"
       - "--entrypoints.websecure.http.tls=true"
-      - "--log.level=INFO"
+      - "--certificatesresolvers.le.acme.tlschallenge=true"
+      - "--certificatesresolvers.le.acme.email=${ACME_EMAIL}"
+      - "--certificatesresolvers.le.acme.storage=/letsencrypt/acme.json"
+      - "--log.level=WARN"
     ports:
       - "80:80"
       - "443:443"
-      - "8080:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - letsencrypt:/letsencrypt
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.${HOST_BASE_DOMAIN}`)"
+      - "traefik.http.routers.traefik.entrypoints=websecure"
+      - "traefik.http.routers.traefik.tls.certresolver=le"
+      - "traefik.http.routers.traefik.service=api@internal"
+      - "traefik.http.middlewares.traefik-auth.basicauth.users=${TRAEFIK_DASHBOARD_AUTH}"
+      - "traefik.http.routers.traefik.middlewares=traefik-auth"
     networks:
       - host-network
 
 volumes:
   postgres_data:
   redis_data:
+  host_projects:
+  letsencrypt:
   loki_data:
 
 networks:
+  internal:
   host-network:
-    external: true
+    name: host-network
+    driver: bridge

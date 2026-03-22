@@ -1,21 +1,15 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
-import { Activity, Cpu, HardDrive, MemoryStick, Network, Loader2 } from "lucide-react";
-import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
-import { formatBytes, formatMemLimit } from "@/lib/metrics/format";
-import { RANGE_MS, BUCKET_MS, chartTooltipStyle, type TimeRange } from "@/lib/metrics/constants";
-import type { ContainerStatsSnapshot, TimePoint } from "@/lib/metrics/types";
-import { useVisibilityKey } from "@/lib/hooks/use-visible";
+import { Activity, Box, Cpu, HardDrive, MemoryStick, Network, Loader2 } from "lucide-react";
+import { AreaChart } from "@tremor/react";
+import type { CustomTooltipProps } from "@tremor/react";
+import { formatBytes, formatMemLimit, formatTime } from "@/lib/metrics/format";
+import { CHART_COLORS, type TimeRange } from "@/lib/metrics/constants";
+import { useMetricsStream } from "@/lib/hooks/use-metrics-stream";
+import { Sparkline } from "@/components/app-metrics-card";
+import { TREMOR_METRIC_COLORS, MetricsTooltip } from "@/components/metrics-chart";
 import type { SystemInfo, DiskUsage } from "@/lib/docker/client";
 
 type AppSummary = {
@@ -25,282 +19,155 @@ type AppSummary = {
   status: string;
 };
 
-type AppStats = {
-  app: AppSummary;
-  containers: ContainerStatsSnapshot[];
-  loading: boolean;
-  error: string | null;
-};
-
 type OrgMetricsProps = {
   orgId: string;
   apps: AppSummary[];
-  initialSystem?: SystemInfo | null;
-  initialAppStats?: { id: string; name: string; displayName: string; status: string; containers: ContainerStatsSnapshot[] }[];
-  initialDisk?: { total: number; images: number; volumes: number; buildCache: number } | null;
+  projectCount?: number;
   /** When true, uses admin system-wide endpoints instead of org-scoped ones */
   adminMode?: boolean;
 };
 
-export function OrgMetrics({ orgId, apps, initialSystem, initialAppStats, initialDisk, adminMode }: OrgMetricsProps) {
-  const visKey = useVisibilityKey();
-  const [timeRange, setTimeRange] = useState<TimeRange>("1h");
-  const [disk, setDisk] = useState<DiskUsage | null>(initialDisk ? {
-    images: { count: 0, totalSize: initialDisk.images, reclaimable: 0 },
-    containers: { count: 0, totalSize: 0 },
-    volumes: { count: 0, totalSize: initialDisk.volumes },
-    buildCache: { count: 0, totalSize: initialDisk.buildCache, reclaimable: 0 },
-    total: initialDisk.total,
-  } : null);
-  const [system, setSystem] = useState<SystemInfo | null>(initialSystem || null);
-  const timeRangeRef = useRef(timeRange);
-  timeRangeRef.current = timeRange;
+type AppMeta = {
+  id: string;
+  name: string;
+  displayName: string;
+  status: string;
+  containers: { cpuPercent: number; memoryUsage: number; memoryLimit: number; networkRx: number; networkTx: number }[];
+};
 
-  // Stable chart domain — only updates when timeRange changes, not every tick
-  const [chartDomain, setChartDomain] = useState<[number, number]>(() => {
-    const now = Date.now();
-    return [now - RANGE_MS[timeRange], now];
+/* ── Stable tooltip components (outside render to avoid re-creation) ── */
+
+function CpuTooltip(props: CustomTooltipProps) {
+  return (
+    <MetricsTooltip
+      {...props}
+      valueFormatter={(v: number) => `${v.toFixed(1)}%`}
+      categoryLabels={{ cpu: "CPU" }}
+    />
+  );
+}
+
+function MemTooltip(props: CustomTooltipProps) {
+  return (
+    <MetricsTooltip
+      {...props}
+      valueFormatter={(v: number) => formatBytes(v)}
+      categoryLabels={{ memory: "Memory" }}
+    />
+  );
+}
+
+function NetTooltip(props: CustomTooltipProps) {
+  return (
+    <MetricsTooltip
+      {...props}
+      valueFormatter={(v: number) => formatBytes(v)}
+      categoryLabels={{ networkRx: "\u2193 Received", networkTx: "\u2191 Sent" }}
+    />
+  );
+}
+
+function DiskTooltip(props: CustomTooltipProps) {
+  return (
+    <MetricsTooltip
+      {...props}
+      valueFormatter={(v: number) => formatBytes(v)}
+      categoryLabels={{ diskTotal: "Total" }}
+    />
+  );
+}
+
+export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsProps) {
+  const [timeRange, setTimeRange] = useState<TimeRange>("1h");
+
+  const historyUrl = adminMode
+    ? `/api/v1/admin/stats`
+    : `/api/v1/organizations/${orgId}/stats`;
+  const streamUrl = adminMode
+    ? `/api/v1/admin/stats/stream`
+    : `/api/v1/organizations/${orgId}/stats/stream`;
+
+  const { points, meta, connected, loading } = useMetricsStream({
+    historyUrl,
+    streamUrl,
+    timeRange,
   });
 
-  // Update domain when time range changes, and slowly advance the right edge every 30s
-  useEffect(() => {
-    const now = Date.now();
-    setChartDomain([now - RANGE_MS[timeRange], now]);
+  const disk = meta?.disk as DiskUsage | null | undefined;
+  const system = meta?.system as SystemInfo | null | undefined;
+  const metaApps = meta?.apps as AppMeta[] | undefined;
+  const streamProjectCount = meta?.projectCount as number | undefined;
 
-    // Advance right edge every 30s so the chart slowly scrolls
-    const interval = setInterval(() => {
-      const n = Date.now();
-      setChartDomain([n - RANGE_MS[timeRange], n]);
-    }, 30000);
-    return () => clearInterval(interval);
-  }, [timeRange]);
-  const [appStats, setAppStats] = useState<Record<string, AppStats>>(() => {
-    const initial: Record<string, AppStats> = {};
-    for (const p of apps) {
-      const preloaded = initialAppStats?.find((ip) => ip.id === p.id);
-      initial[p.id] = {
-        app: p,
-        containers: preloaded?.containers || [],
-        loading: !preloaded,
-        error: null,
+  // Derive display apps from SSE meta when available, fall back to props
+  const displayApps = useMemo(() => {
+    if (metaApps && metaApps.length > 0) {
+      return metaApps.map((a) => ({
+        id: a.id,
+        name: a.name,
+        displayName: a.displayName,
+        status: a.status,
+      }));
+    }
+    return apps;
+  }, [metaApps, apps]);
+
+  // Build per-app stats lookup from SSE apps data
+  const appStats = useMemo(() => {
+    const map: Record<string, AppMeta> = {};
+    if (metaApps) {
+      for (const a of metaApps) {
+        map[a.id] = a;
+      }
+    }
+    return map;
+  }, [metaApps]);
+
+  // Totals from latest point or from meta apps containers
+  const totals = useMemo(() => {
+    if (metaApps && metaApps.length > 0) {
+      const allContainers = metaApps.flatMap((a) => a.containers);
+      return {
+        cpu: allContainers.reduce((s, c) => s + c.cpuPercent, 0),
+        memory: allContainers.reduce((s, c) => s + c.memoryUsage, 0),
+        networkRx: allContainers.reduce((s, c) => s + c.networkRx, 0),
+        networkTx: allContainers.reduce((s, c) => s + c.networkTx, 0),
+        containers: allContainers.length,
       };
     }
-    return initial;
-  });
-  const [timeSeries, setTimeSeries] = useState<TimePoint[]>(() => {
-    // Seed with initial data if available
-    if (initialAppStats?.length) {
-      const allC = initialAppStats.flatMap((p) => p.containers);
-      const now = Date.now();
-      return [{
-        time: new Date(now).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
-        timestamp: now,
-        cpu: Math.round(allC.reduce((s, c) => s + c.cpuPercent, 0) * 100) / 100,
-        memory: allC.reduce((s, c) => s + c.memoryUsage, 0),
-        networkRx: allC.reduce((s, c) => s + c.networkRx, 0),
-        networkTx: allC.reduce((s, c) => s + c.networkTx, 0),
-        diskTotal: 0,
-      }];
+    // Fall back to latest point
+    const latest = points[points.length - 1];
+    if (latest) {
+      return {
+        cpu: latest.cpu,
+        memory: latest.memory,
+        networkRx: latest.networkRx,
+        networkTx: latest.networkTx,
+        containers: 0,
+      };
     }
-    return [];
-  });
-  const diskRef = useRef(disk);
-  diskRef.current = disk;
-  const systemRef = useRef(system);
-  systemRef.current = system;
+    return { cpu: 0, memory: 0, networkRx: 0, networkTx: 0, containers: 0 };
+  }, [metaApps, points]);
 
-  // Load history when switching periods
-  useEffect(() => {
-    const now = Date.now();
-    const from = now - RANGE_MS[timeRange];
-
-    async function loadHistory() {
-      try {
-        const res = await fetch(
-          adminMode
-            ? `/api/v1/admin/stats?from=${from}&to=${now}&bucket=${BUCKET_MS[timeRange]}`
-            : `/api/v1/organizations/${orgId}/stats?from=${from}&to=${now}&bucket=${BUCKET_MS[timeRange]}`,
-          { signal: AbortSignal.timeout(5000) }
-        );
-        if (!res.ok) {
-          // No history — seed with empty start point so chart shows full range
-          setTimeSeries([{
-            time: new Date(from).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-            timestamp: from,
-            cpu: 0, memory: 0, networkRx: 0, networkTx: 0, diskTotal: initialDisk?.total || 0,
-          }]);
-          return;
-        }
-        const { series } = await res.json();
-
-        // Seed start point at range start
-        const startPoint: TimePoint = {
-          time: new Date(from).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          timestamp: from,
-          cpu: 0, memory: 0, networkRx: 0, networkTx: 0, diskTotal: initialDisk?.total || 0,
-        };
-
-        if (!series?.cpu?.length) {
-          setTimeSeries([startPoint]);
-          return;
-        }
-
-        // Build disk lookup by nearest timestamp
-        const diskMap = new Map<number, number>();
-        if (series.disk) {
-          for (const [ts, val] of series.disk as [number, number][]) {
-            diskMap.set(ts, val);
-          }
-        }
-        // Find nearest disk value for a given timestamp
-        const nearestDisk = (ts: number): number => {
-          if (diskMap.has(ts)) return diskMap.get(ts)!;
-          let best = initialDisk?.total || 0;
-          let bestDist = Infinity;
-          for (const [dts, dval] of diskMap) {
-            const dist = Math.abs(dts - ts);
-            if (dist < bestDist) { bestDist = dist; best = dval; }
-          }
-          return best;
-        };
-
-        const points: TimePoint[] = series.cpu.map(([ts, cpu]: [number, number], i: number) => {
-          const mem = series.memory?.[i] || [ts, 0];
-          const rx = series.networkRx?.[i] || [ts, 0];
-          const tx = series.networkTx?.[i] || [ts, 0];
-          return {
-            time: new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
-            timestamp: ts,
-            cpu: Math.round(cpu * 100) / 100,
-            memory: mem[1],
-            networkRx: rx[1],
-            networkTx: tx[1],
-            diskTotal: nearestDisk(ts),
-          };
-        });
-
-        // Prepend start point if history doesn't cover full range
-        if (points[0]?.timestamp > from + 60000) {
-          points.unshift(startPoint);
-        }
-        setTimeSeries(points);
-      } catch {
-        // Seed with empty start point
-        setTimeSeries([{
-          time: new Date(from).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          timestamp: from,
-          cpu: 0, memory: 0, networkRx: 0, networkTx: 0, diskTotal: initialDisk?.total || 0,
-        }]);
-      }
+  const statusCounts = useMemo(() => {
+    const counts = { active: 0, stopped: 0, error: 0, deploying: 0 };
+    for (const app of displayApps) {
+      if (app.status in counts) counts[app.status as keyof typeof counts]++;
     }
+    return counts;
+  }, [displayApps]);
 
-    loadHistory();
-  }, [orgId, timeRange]);
-
-  // SSE stream — disconnects when tab hidden, reconnects when visible
-  useEffect(() => {
-    if (typeof document !== "undefined" && document.hidden) return;
-
-    const streamUrl = adminMode
-      ? `/api/v1/admin/stats/stream`
-      : `/api/v1/organizations/${orgId}/stats/stream`;
-    const es = new EventSource(streamUrl);
-
-    es.addEventListener("stats", (event) => {
-      try {
-        const payload = JSON.parse(event.data) as {
-          apps: { id: string; name: string; displayName: string; status: string; containers: ContainerStatsSnapshot[] }[];
-          disk: DiskUsage | null;
-          system: SystemInfo | null;
-          timestamp: string;
-        };
-
-        if (payload.disk && JSON.stringify(payload.disk) !== JSON.stringify(diskRef.current)) setDisk(payload.disk);
-        if (payload.system && JSON.stringify(payload.system) !== JSON.stringify(systemRef.current)) setSystem(payload.system);
-
-        // Update per-app stats
-        setAppStats((prev) => {
-          const next = { ...prev };
-          for (const p of payload.apps) {
-            next[p.id] = {
-              app: { id: p.id, name: p.name, displayName: p.displayName, status: p.status },
-              containers: p.containers,
-              loading: false,
-              error: null,
-            };
-          }
-          return next;
-        });
-
-        // Add time-series point
-        const now = new Date(payload.timestamp).getTime();
-        const allContainers = payload.apps.flatMap((p) => p.containers);
-        const totalCpuNow = allContainers.reduce((s, c) => s + c.cpuPercent, 0);
-        const totalMemNow = allContainers.reduce((s, c) => s + c.memoryUsage, 0);
-        const totalRxNow = allContainers.reduce((s, c) => s + c.networkRx, 0);
-        const totalTxNow = allContainers.reduce((s, c) => s + c.networkTx, 0);
-        const cutoff = now - RANGE_MS[timeRangeRef.current];
-
-        setTimeSeries((prev) => {
-          const next = [...prev, {
-            time: new Date(now).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
-            timestamp: now,
-            cpu: Math.round(totalCpuNow * 100) / 100,
-            memory: totalMemNow,
-            networkRx: totalRxNow,
-            networkTx: totalTxNow,
-            diskTotal: payload.disk?.total || 0,
-          }];
-          // Trim data older than the selected time range
-          return next.filter((p) => p.timestamp >= cutoff);
-        });
-      } catch {
-        // Ignore parse errors
-      }
-    });
-
-    es.onerror = () => {
-      // Mark all as not loading so spinners stop
-      setAppStats((prev) => {
-        const next = { ...prev };
-        for (const key of Object.keys(next)) {
-          if (next[key].loading) {
-            next[key] = { ...next[key], loading: false, error: "Connection lost" };
-          }
-        }
-        return next;
-      });
-    };
-
-    return () => es.close();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgId, adminMode, visKey]);
-
-  const allStats = Object.values(appStats);
-  const anyLoading = allStats.some((s) => s.loading);
-
-  // Totals across all apps
-  const totalCpu = allStats.reduce(
-    (sum, ps) => sum + ps.containers.reduce((s, c) => s + c.cpuPercent, 0),
-    0
+  // Memoized chart data
+  const chartPoints = useMemo(
+    () => points.map((p) => ({ ...p, time: formatTime(p.timestamp) })),
+    [points],
   );
-  const totalMemory = allStats.reduce(
-    (sum, ps) => sum + ps.containers.reduce((s, c) => s + c.memoryUsage, 0),
-    0
-  );
-  const totalNetworkRx = allStats.reduce(
-    (sum, ps) => sum + ps.containers.reduce((s, c) => s + c.networkRx, 0),
-    0
-  );
-  const totalNetworkTx = allStats.reduce(
-    (sum, ps) => sum + ps.containers.reduce((s, c) => s + c.networkTx, 0),
-    0
-  );
-  const totalContainers = allStats.reduce(
-    (sum, ps) => sum + ps.containers.length,
-    0
-  );
-  const activeApps = apps.filter((p) => p.status === "active").length;
+
+  // Memoized sparkline data arrays
+  const cpuSparkData = useMemo(() => points.map((p) => p.cpu), [points]);
+  const memSparkData = useMemo(() => points.map((p) => p.memory), [points]);
+  const diskSparkData = useMemo(() => points.map((p) => p.diskTotal), [points]);
+  const netRxSparkData = useMemo(() => points.map((p) => p.networkRx), [points]);
+  const netTxSparkData = useMemo(() => points.map((p) => p.networkTx), [points]);
 
   return (
     <div className="space-y-6">
@@ -322,7 +189,7 @@ export function OrgMetrics({ orgId, apps, initialSystem, initialAppStats, initia
           ))}
         </div>
         <div className="flex items-center gap-2">
-          <span className={`size-2 rounded-full ${anyLoading ? "bg-status-neutral animate-pulse" : "bg-status-success"}`} />
+          <span className={`size-2 rounded-full ${loading ? "bg-status-neutral animate-pulse" : connected ? "bg-status-success" : "bg-status-neutral"}`} />
           <span className="text-xs text-muted-foreground">Live</span>
         </div>
       </div>
@@ -338,63 +205,105 @@ export function OrgMetrics({ orgId, apps, initialSystem, initialAppStats, initia
         </div>
       )}
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <div className="squircle rounded-lg border bg-card px-4 py-3">
-          <p className="text-xs text-muted-foreground">CPU</p>
-          <p className="text-2xl font-semibold tabular-nums mt-1">
-            {anyLoading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : `${totalCpu.toFixed(1)}%`}
+      {/* Summary cards with sparklines */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+        <div className="squircle relative rounded-lg border bg-card px-4 py-3 overflow-hidden">
+          {points.length > 1 && (
+            <Sparkline data={cpuSparkData} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.cpu }} />
+          )}
+          <div className="relative flex items-center gap-2">
+            <Cpu className="size-4 text-muted-foreground shrink-0" />
+            <p className="text-xs text-muted-foreground">CPU</p>
+          </div>
+          <p className="relative text-2xl font-semibold tabular-nums mt-1">
+            {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : `${totals.cpu.toFixed(1)}%`}
           </p>
         </div>
-        <div className="squircle rounded-lg border bg-card px-4 py-3">
-          <p className="text-xs text-muted-foreground">Memory</p>
-          <p className="text-2xl font-semibold tabular-nums mt-1">
-            {anyLoading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : formatBytes(totalMemory)}
+        <div className="squircle relative rounded-lg border bg-card px-4 py-3 overflow-hidden">
+          {points.length > 1 && (
+            <Sparkline data={memSparkData} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.memory }} />
+          )}
+          <div className="relative flex items-center gap-2">
+            <MemoryStick className="size-4 text-muted-foreground shrink-0" />
+            <p className="text-xs text-muted-foreground">Memory</p>
+          </div>
+          <p className="relative text-2xl font-semibold tabular-nums mt-1">
+            {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : formatBytes(totals.memory)}
           </p>
         </div>
-        <div className="squircle rounded-lg border bg-card px-4 py-3">
-          <p className="text-xs text-muted-foreground">Disk</p>
-          <p className="text-2xl font-semibold tabular-nums mt-1">
+        <div className="squircle relative rounded-lg border bg-card px-4 py-3 overflow-hidden">
+          {points.length > 1 && (
+            <Sparkline data={diskSparkData} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.disk }} />
+          )}
+          <div className="relative flex items-center gap-2">
+            <HardDrive className="size-4 text-muted-foreground shrink-0" />
+            <p className="text-xs text-muted-foreground">Disk</p>
+          </div>
+          <p className="relative text-2xl font-semibold tabular-nums mt-1">
             {disk ? formatBytes(disk.total) : <Loader2 className="size-5 animate-spin text-muted-foreground" />}
           </p>
           {disk && (
-            <p className="text-[10px] text-muted-foreground mt-0.5">
+            <p className="relative text-[10px] text-muted-foreground mt-0.5">
               {formatBytes(disk.images.totalSize)} images · {formatBytes(disk.volumes.totalSize)} volumes
             </p>
           )}
         </div>
-        <div className="squircle rounded-lg border bg-card px-4 py-3">
-          <p className="text-xs text-muted-foreground">Bandwidth</p>
-          <p className="text-2xl font-semibold tabular-nums mt-1">
-            {anyLoading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : formatBytes(totalNetworkRx + totalNetworkTx)}
+        <div className="squircle relative rounded-lg border bg-card px-4 py-3 overflow-hidden">
+          {points.length > 1 && (<>
+            <Sparkline data={netRxSparkData} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.networkRx }} />
+            <Sparkline data={netTxSparkData} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.networkTx }} />
+          </>)}
+          <div className="relative flex items-center gap-2">
+            <Network className="size-4 text-muted-foreground shrink-0" />
+            <p className="text-xs text-muted-foreground">Bandwidth</p>
+          </div>
+          <p className="relative text-2xl font-semibold tabular-nums mt-1">
+            {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : formatBytes(totals.networkRx + totals.networkTx)}
           </p>
+          {!loading && (
+            <p className="relative text-[10px] text-muted-foreground mt-0.5">
+              ↓ {formatBytes(totals.networkRx)} · ↑ {formatBytes(totals.networkTx)}
+            </p>
+          )}
         </div>
         <div className="squircle rounded-lg border bg-card px-4 py-3">
-          <p className="text-xs text-muted-foreground">Apps</p>
-          <p className="text-2xl font-semibold tabular-nums mt-1">{activeApps}</p>
-        </div>
-        <div className="squircle rounded-lg border bg-card px-4 py-3">
-          <p className="text-xs text-muted-foreground">Containers</p>
+          <div className="flex items-center gap-2">
+            <Box className="size-4 text-muted-foreground shrink-0" />
+            <p className="text-xs text-muted-foreground">Containers</p>
+          </div>
           <p className="text-2xl font-semibold tabular-nums mt-1">
-            {anyLoading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : totalContainers}
+            {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : totals.containers}
           </p>
+          <div className="flex flex-wrap items-center gap-2 mt-1">
+            {statusCounts.active > 0 && (
+              <span className="inline-flex items-center gap-1 text-[10px] text-status-success">
+                <span className="size-1.5 rounded-full bg-status-success" />
+                {statusCounts.active} running
+              </span>
+            )}
+            {statusCounts.error > 0 && (
+              <span className="inline-flex items-center gap-1 text-[10px] text-status-error">
+                <span className="size-1.5 rounded-full bg-status-error" />
+                {statusCounts.error} crashed
+              </span>
+            )}
+            {statusCounts.stopped > 0 && (
+              <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+                <span className="size-1.5 rounded-full bg-status-neutral" />
+                {statusCounts.stopped} stopped
+              </span>
+            )}
+            {statusCounts.deploying > 0 && (
+              <span className="inline-flex items-center gap-1 text-[10px] text-status-info">
+                <span className="size-1.5 rounded-full bg-status-info animate-pulse" />
+                {statusCounts.deploying} deploying
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Aggregate charts */}
-      {(() => {
-        const formatTick = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-        const xAxisProps = {
-          dataKey: "timestamp" as const,
-          type: "number" as const,
-          domain: chartDomain as [number, number],
-          tick: { fontSize: 10, fill: "oklch(0.5 0.005 260)" },
-          tickLine: false,
-          axisLine: false,
-          tickFormatter: formatTick,
-          scale: "time" as const,
-        };
-        return (
       <div className="grid md:grid-cols-2 gap-4">
           <div className="squircle rounded-lg border bg-card overflow-hidden">
             <div className="flex items-center gap-2 px-4 py-3 border-b">
@@ -402,15 +311,18 @@ export function OrgMetrics({ orgId, apps, initialSystem, initialAppStats, initia
               <h3 className="text-sm font-medium">CPU</h3>
             </div>
             <div className="p-4">
-              <ResponsiveContainer width="100%" height={180}>
-                <AreaChart data={timeSeries}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.005 260 / 40%)" />
-                  <XAxis {...xAxisProps} />
-                  <YAxis tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v}%`} />
-                  <Tooltip {...chartTooltipStyle} formatter={(v: number) => [`${v.toFixed(1)}%`, "CPU"]} />
-                  <Area type="monotone" dataKey="cpu" stroke="oklch(0.7 0.12 240)" fill="oklch(0.7 0.12 240 / 15%)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
-                </AreaChart>
-              </ResponsiveContainer>
+              <AreaChart
+                className="h-[180px]"
+                data={chartPoints}
+                index="time"
+                categories={["cpu"]}
+                colors={[TREMOR_METRIC_COLORS.cpu]}
+                valueFormatter={(v) => `${v.toFixed(1)}%`}
+                showLegend={false}
+                showAnimation={false}
+                curveType="monotone"
+                customTooltip={CpuTooltip}
+              />
             </div>
           </div>
           <div className="squircle rounded-lg border bg-card overflow-hidden">
@@ -419,15 +331,18 @@ export function OrgMetrics({ orgId, apps, initialSystem, initialAppStats, initia
               <h3 className="text-sm font-medium">Memory</h3>
             </div>
             <div className="p-4">
-              <ResponsiveContainer width="100%" height={180}>
-                <AreaChart data={timeSeries}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.005 260 / 40%)" />
-                  <XAxis {...xAxisProps} />
-                  <YAxis tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} tickFormatter={(v) => formatBytes(v)} />
-                  <Tooltip {...chartTooltipStyle} formatter={(v: number) => [formatBytes(v), "Memory"]} />
-                  <Area type="monotone" dataKey="memory" stroke="oklch(0.7 0.12 155)" fill="oklch(0.7 0.12 155 / 15%)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
-                </AreaChart>
-              </ResponsiveContainer>
+              <AreaChart
+                className="h-[180px]"
+                data={chartPoints}
+                index="time"
+                categories={["memory"]}
+                colors={[TREMOR_METRIC_COLORS.memory]}
+                valueFormatter={(v) => formatBytes(v)}
+                showLegend={false}
+                showAnimation={false}
+                curveType="monotone"
+                customTooltip={MemTooltip}
+              />
             </div>
           </div>
           <div className="squircle rounded-lg border bg-card overflow-hidden">
@@ -436,16 +351,18 @@ export function OrgMetrics({ orgId, apps, initialSystem, initialAppStats, initia
               <h3 className="text-sm font-medium">Network</h3>
             </div>
             <div className="p-4">
-              <ResponsiveContainer width="100%" height={180}>
-                <AreaChart data={timeSeries}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.005 260 / 40%)" />
-                  <XAxis {...xAxisProps} />
-                  <YAxis tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} tickFormatter={(v) => formatBytes(v)} />
-                  <Tooltip {...chartTooltipStyle} formatter={(v: number, name: string) => [formatBytes(v), name === "networkRx" ? "↓ Received" : "↑ Sent"]} />
-                  <Area type="monotone" dataKey="networkRx" stroke="oklch(0.7 0.12 240)" fill="oklch(0.7 0.12 240 / 10%)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
-                  <Area type="monotone" dataKey="networkTx" stroke="oklch(0.65 0.1 30)" fill="oklch(0.65 0.1 30 / 10%)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
-                </AreaChart>
-              </ResponsiveContainer>
+              <AreaChart
+                className="h-[180px]"
+                data={chartPoints}
+                index="time"
+                categories={["networkRx", "networkTx"]}
+                colors={[TREMOR_METRIC_COLORS.networkRx, TREMOR_METRIC_COLORS.networkTx]}
+                valueFormatter={(v) => formatBytes(v)}
+                showLegend={false}
+                showAnimation={false}
+                curveType="monotone"
+                customTooltip={NetTooltip}
+              />
             </div>
           </div>
           <div className="squircle rounded-lg border bg-card overflow-hidden">
@@ -454,23 +371,153 @@ export function OrgMetrics({ orgId, apps, initialSystem, initialAppStats, initia
               <h3 className="text-sm font-medium">Disk Usage</h3>
             </div>
             <div className="p-4">
-              <ResponsiveContainer width="100%" height={180}>
-                <AreaChart data={timeSeries}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.005 260 / 40%)" />
-                  <XAxis {...xAxisProps} />
-                  <YAxis tick={{ fontSize: 10, fill: "oklch(0.5 0.005 260)" }} tickLine={false} axisLine={false} tickFormatter={(v) => formatBytes(v)} />
-                  <Tooltip {...chartTooltipStyle} formatter={(v: number) => [formatBytes(v), "Total"]} />
-                  <Area type="monotone" dataKey="diskTotal" stroke="oklch(0.65 0.1 30)" fill="oklch(0.65 0.1 30 / 15%)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
-                </AreaChart>
-              </ResponsiveContainer>
+              <AreaChart
+                className="h-[180px]"
+                data={chartPoints}
+                index="time"
+                categories={["diskTotal"]}
+                colors={[TREMOR_METRIC_COLORS.diskTotal]}
+                valueFormatter={(v) => formatBytes(v)}
+                showLegend={false}
+                showAnimation={false}
+                curveType="monotone"
+                customTooltip={DiskTooltip}
+              />
             </div>
           </div>
       </div>
+
+      {/* Infrastructure overview — half donuts on top, tables below */}
+      {(() => {
+        const MAX_SLICES = 8;
+        const appColors = [
+          CHART_COLORS.cpu, CHART_COLORS.memory, CHART_COLORS.networkRx, CHART_COLORS.networkTx,
+          "oklch(0.65 0.16 335)", "oklch(0.68 0.16 175)", "oklch(0.65 0.18 290)", "oklch(0.67 0.17 120)",
+        ];
+
+        // Status donut
+        const statusSlices = [
+          { label: "Running", value: statusCounts.active, color: "var(--color-status-success, #22c55e)" },
+          { label: "Deploying", value: statusCounts.deploying, color: "var(--color-status-info, #3b82f6)" },
+          { label: "Crashed", value: statusCounts.error, color: "var(--color-status-error, #ef4444)" },
+          { label: "Stopped", value: statusCounts.stopped, color: "oklch(0.5 0 0 / 30%)" },
+        ].filter((s) => s.value > 0);
+
+        // Per-app resource data
+        const allActive = displayApps
+          .filter((a) => a.status === "active")
+          .map((a) => {
+            const ps = appStats[a.id];
+            const containers = ps?.containers || [];
+            return {
+              name: a.displayName,
+              cpu: containers.reduce((s, c) => s + c.cpuPercent, 0),
+              memory: containers.reduce((s, c) => s + c.memoryUsage, 0),
+              network: containers.reduce((s, c) => s + c.networkRx + c.networkTx, 0),
+            };
+          })
+          .filter((a) => a.memory > 0);
+
+        function topN(items: typeof allActive, key: "cpu" | "memory" | "network") {
+          const sorted = [...items].sort((a, b) => b[key] - a[key]);
+          if (sorted.length <= MAX_SLICES) return sorted;
+          const top = sorted.slice(0, MAX_SLICES - 1);
+          const rest = sorted.slice(MAX_SLICES - 1);
+          top.push({
+            name: `${rest.length} others`,
+            cpu: rest.reduce((s, a) => s + a.cpu, 0),
+            memory: rest.reduce((s, a) => s + a.memory, 0),
+            network: rest.reduce((s, a) => s + a.network, 0),
+          });
+          return top;
+        }
+
+        const memApps = topN(allActive, "memory");
+        const cpuApps = topN(allActive, "cpu");
+        const netApps = topN(allActive, "network");
+
+        type Slice = { label: string; value: number; color: string; detail?: string };
+
+        function HalfDonut({ title, subtitle, slices, centerLabel, centerSub }: {
+          title: string; subtitle?: string; slices: Slice[]; centerLabel: string; centerSub?: string;
+        }) {
+          const total = slices.reduce((s, sl) => s + sl.value, 0) || 1;
+          return (
+            <div className="squircle rounded-lg border bg-card overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-2 border-b">
+                <h3 className="text-sm font-medium">{title}</h3>
+                {subtitle && <span className="text-[10px] text-muted-foreground">{subtitle}</span>}
+              </div>
+              <div className="flex justify-center pt-4 pb-2">
+                <svg viewBox="0 0 120 68" className="w-28">
+                  {(() => {
+                    const r = 48, cx = 60, cy = 58;
+                    let a = Math.PI;
+                    return slices.map((sl) => {
+                      const ang = (sl.value / total) * Math.PI;
+                      const x1 = cx + r * Math.cos(a), y1 = cy + r * Math.sin(a);
+                      a += ang;
+                      const x2 = cx + r * Math.cos(a), y2 = cy + r * Math.sin(a);
+                      return (
+                        <path key={sl.label} d={`M${cx} ${cy}L${x1} ${y1}A${r} ${r} 0 ${ang > Math.PI ? 1 : 0} 1 ${x2} ${y2}Z`}
+                          fill={sl.color} opacity={0.85} />
+                      );
+                    });
+                  })()}
+                  <text x="60" y="52" textAnchor="middle" fill="currentColor" fontSize="16" fontWeight="600">{centerLabel}</text>
+                  {centerSub && <text x="60" y="63" textAnchor="middle" fill="currentColor" opacity={0.5} fontSize="8">{centerSub}</text>}
+                </svg>
+              </div>
+              <div className="px-4 pb-3 space-y-1">
+                {slices.map((sl) => (
+                  <div key={sl.label} className="flex items-center justify-between py-0.5">
+                    <span className="inline-flex items-center gap-1.5 text-xs truncate">
+                      <span className="size-2 rounded-full shrink-0" style={{ backgroundColor: sl.color }} />
+                      {sl.label}
+                    </span>
+                    <span className="text-xs tabular-nums text-muted-foreground shrink-0 ml-2">
+                      {sl.detail ?? sl.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <HalfDonut
+              title="Status"
+              subtitle={`${streamProjectCount ?? projectCount ?? 0} projects`}
+              slices={statusSlices}
+              centerLabel={String(displayApps.length)}
+              centerSub="apps"
+            />
+            <HalfDonut
+              title="CPU"
+              subtitle="by app"
+              slices={cpuApps.map((a, i) => ({ label: a.name, value: a.cpu, color: appColors[i % appColors.length], detail: `${a.cpu.toFixed(1)}%` }))}
+              centerLabel={`${totals.cpu.toFixed(1)}%`}
+            />
+            <HalfDonut
+              title="Memory"
+              subtitle="by app"
+              slices={memApps.map((a, i) => ({ label: a.name, value: a.memory, color: appColors[i % appColors.length], detail: formatBytes(a.memory) }))}
+              centerLabel={formatBytes(totals.memory)}
+            />
+            <HalfDonut
+              title="Network"
+              subtitle="by app"
+              slices={netApps.map((a, i) => ({ label: a.name, value: a.network, color: appColors[i % appColors.length], detail: formatBytes(a.network) }))}
+              centerLabel={formatBytes(totals.networkRx + totals.networkTx)}
+            />
+          </div>
         );
       })()}
 
       {/* Project list with stats */}
-      {apps.length === 0 ? (
+      {displayApps.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
           <Activity className="size-8 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">No apps yet.</p>
@@ -487,7 +534,7 @@ export function OrgMetrics({ orgId, apps, initialSystem, initialAppStats, initia
             <span className="text-right">Containers</span>
           </div>
           <div className="divide-y">
-            {apps.map((a) => {
+            {displayApps.map((a) => {
               const ps = appStats[a.id];
               const cpu = ps?.containers.reduce((s, c) => s + c.cpuPercent, 0) ?? 0;
               const mem = ps?.containers.reduce((s, c) => s + c.memoryUsage, 0) ?? 0;
@@ -497,7 +544,7 @@ export function OrgMetrics({ orgId, apps, initialSystem, initialAppStats, initia
 
               const containerCount = ps?.containers.length ?? 0;
               const isActive = a.status === "active";
-              const loading = ps?.loading;
+              const rowLoading = loading && !ps;
 
               return (
                 <Link
@@ -516,21 +563,21 @@ export function OrgMetrics({ orgId, apps, initialSystem, initialAppStats, initia
                     </span>
                   </div>
                   <span className="text-xs text-right tabular-nums text-muted-foreground">
-                    {loading ? <Loader2 className="size-3 animate-spin ml-auto" /> : isActive ? `${cpu.toFixed(1)}%` : "-"}
+                    {rowLoading ? <Loader2 className="size-3 animate-spin ml-auto" /> : isActive ? `${cpu.toFixed(1)}%` : "-"}
                   </span>
                   <span className="text-xs text-right tabular-nums text-muted-foreground">
-                    {loading ? <Loader2 className="size-3 animate-spin ml-auto" /> : isActive && mem > 0 ? formatBytes(mem) : "-"}
+                    {rowLoading ? <Loader2 className="size-3 animate-spin ml-auto" /> : isActive && mem > 0 ? formatBytes(mem) : "-"}
                   </span>
                   <span className="text-xs text-right tabular-nums text-muted-foreground">
-                    {loading ? <Loader2 className="size-3 animate-spin ml-auto" /> : isActive && (netRx > 0 || netTx > 0) ? (
+                    {rowLoading ? <Loader2 className="size-3 animate-spin ml-auto" /> : isActive && (netRx > 0 || netTx > 0) ? (
                       <>{formatBytes(netRx)} / {formatBytes(netTx)}</>
                     ) : "-"}
                   </span>
                   <span className="text-xs text-right tabular-nums text-muted-foreground">
-                    {loading ? <Loader2 className="size-3 animate-spin ml-auto" /> : isActive && memLimit > 0 ? formatMemLimit(memLimit) : "-"}
+                    {rowLoading ? <Loader2 className="size-3 animate-spin ml-auto" /> : isActive && memLimit > 0 ? formatMemLimit(memLimit) : "-"}
                   </span>
                   <span className="text-xs text-right tabular-nums text-muted-foreground">
-                    {loading ? <Loader2 className="size-3 animate-spin ml-auto" /> : isActive ? containerCount : "-"}
+                    {rowLoading ? <Loader2 className="size-3 animate-spin ml-auto" /> : isActive ? containerCount : "-"}
                   </span>
                 </Link>
               );

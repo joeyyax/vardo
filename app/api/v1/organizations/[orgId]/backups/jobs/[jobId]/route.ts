@@ -5,6 +5,7 @@ import { backupJobs, backupJobApps } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
+import { isFeatureEnabled } from "@/lib/config/features";
 
 type RouteParams = {
   params: Promise<{ orgId: string; jobId: string }>;
@@ -27,6 +28,10 @@ const updateJobSchema = z.object({
 // GET /api/v1/organizations/[orgId]/backups/[jobId]
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
+    if (!isFeatureEnabled("backups")) {
+      return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
+    }
+
     const { orgId, jobId } = await params;
     const { organization } = await requireOrg();
 
@@ -68,6 +73,9 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 // PATCH /api/v1/organizations/[orgId]/backups/[jobId]
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
+    if (!isFeatureEnabled("backups")) {
+      return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
+    }
     const { orgId, jobId } = await params;
     const { organization } = await requireOrg();
 
@@ -126,6 +134,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 // DELETE /api/v1/organizations/[orgId]/backups/[jobId]
 export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   try {
+    if (!isFeatureEnabled("backups")) {
+      return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
+    }
     const { orgId, jobId } = await params;
     const { organization, membership } = await requireOrg();
 

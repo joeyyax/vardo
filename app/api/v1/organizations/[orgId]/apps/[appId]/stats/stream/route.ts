@@ -6,7 +6,9 @@ import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { createSSEResponse } from "@/lib/api/sse";
 import { isMetricsEnabled } from "@/lib/metrics/config";
+import { isFeatureEnabled } from "@/lib/config/features";
 import { subscribe } from "@/lib/metrics/broadcast";
+import { aggregateContainers, containerToPoint } from "@/lib/metrics/aggregate";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -15,6 +17,13 @@ type RouteParams = {
 // GET /api/v1/organizations/[orgId]/apps/[appId]/stats/stream
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
+    if (!isFeatureEnabled("metrics")) {
+      return new Response(JSON.stringify({ error: "Feature not enabled" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     const { orgId, appId } = await params;
     const { organization } = await requireOrg();
 
@@ -54,20 +63,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           );
         }
 
-        sendEvent("stats", {
-          containers: containers.map((m) => ({
-            containerId: m.containerId,
-            containerName: m.containerName,
-            cpuPercent: m.cpuPercent,
-            memoryUsage: m.memoryUsage,
-            memoryLimit: m.memoryLimit,
-            memoryPercent: m.memoryPercent,
-            networkRx: m.networkRxBytes,
-            networkTx: m.networkTxBytes,
-            diskUsage: m.diskUsage,
-            diskLimit: m.diskLimit,
-          })),
-          timestamp: new Date().toISOString(),
+        const point = aggregateContainers(containers);
+        sendEvent("point", {
+          ...point,
+          containers: containers.map(containerToPoint),
         });
       });
 
