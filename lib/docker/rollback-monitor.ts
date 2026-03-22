@@ -9,7 +9,7 @@ import { publishEvent, appChannel } from "@/lib/events";
 import { recordActivity } from "@/lib/activity";
 
 const execFileAsync = promisify(execFile);
-const PROJECTS_DIR = resolve(process.env.HOST_PROJECTS_DIR || "./.host/projects");
+const PROJECTS_DIR = resolve(process.env.VARDO_PROJECTS_DIR || "./.host/projects");
 const POLL_INTERVAL_MS = 5000;
 
 /** In-memory set of app IDs currently being monitored. Prevents concurrent monitors. */
