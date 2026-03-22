@@ -39,16 +39,47 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     });
 
     const encoder = new TextEncoder();
+
+    // Subscribe before constructing the stream so that a cap error is caught
+    // by the outer try/catch and returned as a 503 instead of leaving the
+    // client connected to a stream that never delivers events.
+    let unsubscribe: () => void;
+    try {
+      unsubscribe = subscribe(appChannel(appId), (data) => {
+        const event = data.event as string;
+        if (event === "deploy:log") {
+          send("log", { deploymentId: data.deploymentId, message: data.message });
+        } else if (event === "deploy:stage") {
+          send("stage", { deploymentId: data.deploymentId, stage: data.stage, status: data.status });
+        } else if (event === "deploy:complete") {
+          send("done", { deploymentId: data.deploymentId, success: data.success, durationMs: data.durationMs, status: data.status });
+        }
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Subscriber cap reached";
+      return new Response(JSON.stringify({ error: msg }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // `send` and `controller` are assigned synchronously inside ReadableStream.start
+    // before any Redis messages can arrive (async), so the closure above is safe.
+    let controller!: ReadableStreamDefaultController;
+    let send!: (event: string, data: unknown) => void;
+
     const stream = new ReadableStream({
-      start(controller) {
-        function send(event: string, data: unknown) {
+      start(ctrl) {
+        controller = ctrl;
+
+        send = (event: string, data: unknown) => {
           try {
             if (controller.desiredSize !== null && controller.desiredSize <= 0) return;
             controller.enqueue(
               encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`),
             );
           } catch { /* client disconnected */ }
-        }
+        };
 
         if (runningDeploy) {
           send("backfill-start", { deploymentId: runningDeploy.id });
@@ -64,17 +95,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           try { controller.enqueue(encoder.encode(": keepalive\n\n")); }
           catch { clearInterval(keepalive); }
         }, 30000);
-
-        const unsubscribe = subscribe(appChannel(appId), (data) => {
-          const event = data.event as string;
-          if (event === "deploy:log") {
-            send("log", { deploymentId: data.deploymentId, message: data.message });
-          } else if (event === "deploy:stage") {
-            send("stage", { deploymentId: data.deploymentId, stage: data.stage, status: data.status });
-          } else if (event === "deploy:complete") {
-            send("done", { deploymentId: data.deploymentId, success: data.success, durationMs: data.durationMs, status: data.status });
-          }
-        });
 
         // Re-check after subscription is live to close the backfill race:
         // if deploy finished between the initial query and subscribe(), we'd
