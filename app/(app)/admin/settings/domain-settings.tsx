@@ -117,7 +117,7 @@ export function DomainSettings() {
               className="bg-muted"
             />
             <p className="text-xs text-muted-foreground">
-              Set at install time via the HOST_DOMAIN environment variable.
+              Set at install time via the VARDO_DOMAIN environment variable.
             </p>
           </div>
 

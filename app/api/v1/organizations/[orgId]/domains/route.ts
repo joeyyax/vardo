@@ -11,7 +11,7 @@ type RouteParams = {
   params: Promise<{ orgId: string }>;
 };
 
-const DEFAULT_DOMAIN = process.env.HOST_BASE_DOMAIN || "localhost";
+const DEFAULT_DOMAIN = process.env.VARDO_BASE_DOMAIN || "localhost";
 
 const addSchema = z.object({
   domain: z

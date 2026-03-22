@@ -1,3 +1,5 @@
+name: vardo
+
 # docker-compose.yml — Canonical, production-ready compose file.
 #
 # In production:  docker compose --env-file .env.prod up -d
@@ -9,8 +11,8 @@ services:
     build:
       context: .
       args:
-        NEXT_PUBLIC_BETTER_AUTH_URL: https://${HOST_DOMAIN}
-        NEXT_PUBLIC_APP_URL: https://${HOST_DOMAIN}
+        NEXT_PUBLIC_BETTER_AUTH_URL: https://${VARDO_DOMAIN}
+        NEXT_PUBLIC_APP_URL: https://${VARDO_DOMAIN}
         NEXT_PUBLIC_PLAUSIBLE_DOMAIN: ${NEXT_PUBLIC_PLAUSIBLE_DOMAIN:-}
         NEXT_PUBLIC_PLAUSIBLE_SRC: ${NEXT_PUBLIC_PLAUSIBLE_SRC:-}
     restart: unless-stopped
@@ -23,10 +25,10 @@ services:
       DATABASE_URL: postgresql://host:${DB_PASSWORD}@postgres:5432/host
       REDIS_URL: redis://redis:6379
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
-      NEXT_PUBLIC_BETTER_AUTH_URL: https://${HOST_DOMAIN}
-      NEXT_PUBLIC_APP_URL: https://${HOST_DOMAIN}
-      HOST_BASE_DOMAIN: ${HOST_BASE_DOMAIN}
-      HOST_PROJECTS_DIR: /var/lib/host/projects
+      NEXT_PUBLIC_BETTER_AUTH_URL: https://${VARDO_DOMAIN}
+      NEXT_PUBLIC_APP_URL: https://${VARDO_DOMAIN}
+      VARDO_BASE_DOMAIN: ${VARDO_BASE_DOMAIN}
+      VARDO_PROJECTS_DIR: /var/lib/host/projects
       CADVISOR_URL: http://cadvisor:8080
       LOKI_URL: http://loki:3100
       GITHUB_APP_ID: ${GITHUB_APP_ID}
@@ -46,10 +48,10 @@ services:
     labels:
       - "traefik.enable=true"
       # HTTPS route
-      - "traefik.http.routers.host-secure.rule=Host(`${HOST_DOMAIN}`)"
-      - "traefik.http.routers.host-secure.entrypoints=websecure"
-      - "traefik.http.routers.host-secure.tls.certresolver=le"
-      - "traefik.http.services.host.loadbalancer.server.port=3000"
+      - "traefik.http.routers.vardo.rule=Host(`${VARDO_DOMAIN}`)"
+      - "traefik.http.routers.vardo.entrypoints=websecure"
+      - "traefik.http.routers.vardo.tls.certresolver=le"
+      - "traefik.http.services.vardo.loadbalancer.server.port=3000"
     networks:
       - internal
       - vardo-network
@@ -152,7 +154,7 @@ services:
       - letsencrypt:/letsencrypt
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.traefik.rule=Host(`traefik.${HOST_BASE_DOMAIN}`)"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.${VARDO_BASE_DOMAIN}`)"
       - "traefik.http.routers.traefik.entrypoints=websecure"
       - "traefik.http.routers.traefik.tls.certresolver=le"
       - "traefik.http.routers.traefik.service=api@internal"

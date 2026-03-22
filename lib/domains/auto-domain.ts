@@ -1,4 +1,4 @@
-export const DEFAULT_BASE_DOMAIN = process.env.HOST_BASE_DOMAIN || "example.org";
+export const DEFAULT_BASE_DOMAIN = process.env.VARDO_BASE_DOMAIN || "example.org";
 
 const ADJECTIVES = [
   "spicy",
