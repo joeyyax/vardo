@@ -221,9 +221,16 @@ export function CronManager({ appId, orgId }: Props) {
       if (res.ok) {
         toast.success(enabled ? "Cron job enabled" : "Cron job paused");
         fetchJobs();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error("Couldn't update cron job", {
+          description: err.error,
+        });
       }
     } catch {
-      toast.error("Couldn't update cron job");
+      toast.error("Couldn't update cron job", {
+        description: "Check your connection and try again",
+      });
     }
   }
 

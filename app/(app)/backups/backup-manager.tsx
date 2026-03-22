@@ -520,9 +520,16 @@ export function BackupManager({ orgId, apps }: Props) {
       if (res.ok) {
         toast.success(enabled ? "Backup job enabled" : "Backup job paused");
         fetchData();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error("Couldn't update backup job", {
+          description: err.error,
+        });
       }
     } catch {
-      toast.error("Couldn't update backup job");
+      toast.error("Couldn't update backup job", {
+        description: "Check your connection and try again",
+      });
     }
   }
 
