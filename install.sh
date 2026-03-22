@@ -250,17 +250,14 @@ if [ ! -f "$ENV_FILE" ]; then
   read -p "  Base domain for projects (e.g. example.com): " HOST_BASE_DOMAIN < /dev/tty
   read -p "  Email for Let's Encrypt: " ACME_EMAIL < /dev/tty
 
-  # ── DNS validation ────────────────────────────────────────────────────────
-  log "Validating DNS for $HOST_DOMAIN..."
-
-  # Install dig if not available
-  if ! command -v dig &> /dev/null; then
-    apt-get install -y -qq dnsutils > /dev/null 2>&1 || true
-  fi
-
+  # ── DNS validation (informational only — never blocks install) ────────────
   SERVER_IP=$(curl -sf --max-time 5 https://api.ipify.org 2>/dev/null || echo "")
   if [ -n "$SERVER_IP" ]; then
     log "Server public IP: $SERVER_IP"
+
+    if ! command -v dig &> /dev/null; then
+      apt-get install -y -qq dnsutils > /dev/null 2>&1 || true
+    fi
 
     if command -v dig &> /dev/null; then
       DOMAIN_IP=$(dig +short "$HOST_DOMAIN" 2>/dev/null | head -1)
@@ -270,36 +267,21 @@ if [ ! -f "$ENV_FILE" ]; then
       DOMAIN_IP=""
     fi
 
-    if [ -n "$DOMAIN_IP" ]; then
-      if [ "$DOMAIN_IP" = "$SERVER_IP" ]; then
-        log "DNS verified: $HOST_DOMAIN -> $SERVER_IP"
-        DNS_OK=true
-      else
-        warn "DNS mismatch: $HOST_DOMAIN resolves to $DOMAIN_IP but this server is $SERVER_IP"
-        echo ""
-        echo -e "  ${BOLD}Required DNS records:${RESET}"
-        echo -e "    A   ${HOST_DOMAIN}           -> ${SERVER_IP}"
-        echo -e "    A   *.${HOST_BASE_DOMAIN}    -> ${SERVER_IP}"
-        echo ""
-        read -p "  Continue anyway? (y/N): " DNS_CONTINUE < /dev/tty
-        if [ "$DNS_CONTINUE" != "y" ] && [ "$DNS_CONTINUE" != "Y" ]; then
-          error "Aborted — configure DNS and re-run the installer"
-        fi
-      fi
+    if [ -n "$DOMAIN_IP" ] && [ "$DOMAIN_IP" = "$SERVER_IP" ]; then
+      log "DNS verified: $HOST_DOMAIN -> $SERVER_IP"
+      DNS_OK=true
     else
-      warn "Could not resolve $HOST_DOMAIN — DNS may not be configured yet"
+      if [ -n "$DOMAIN_IP" ]; then
+        warn "DNS mismatch: $HOST_DOMAIN resolves to $DOMAIN_IP (this server is $SERVER_IP)"
+      else
+        warn "Could not resolve $HOST_DOMAIN — configure DNS when ready"
+      fi
       echo ""
-      echo -e "  ${BOLD}Required DNS records:${RESET}"
+      echo -e "  ${DIM}Point these DNS records to this server:${RESET}"
       echo -e "    A   ${HOST_DOMAIN}           -> ${SERVER_IP}"
       echo -e "    A   *.${HOST_BASE_DOMAIN}    -> ${SERVER_IP}"
       echo ""
-      read -p "  Continue anyway? (y/N): " DNS_CONTINUE < /dev/tty
-      if [ "$DNS_CONTINUE" != "y" ] && [ "$DNS_CONTINUE" != "Y" ]; then
-        error "Aborted — configure DNS and re-run the installer"
-      fi
     fi
-  else
-    warn "Could not determine server IP — skipping DNS validation"
   fi
 
   # ── Optional services ─────────────────────────────────────────────────────
