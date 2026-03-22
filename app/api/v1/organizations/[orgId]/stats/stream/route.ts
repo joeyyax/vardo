@@ -4,9 +4,8 @@ import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq } from "drizzle-orm";
-import { getSystemInfo, type DiskUsage, type SystemInfo } from "@/lib/docker/client";
 import { isCollectorRunning, startCollector } from "@/lib/metrics/collector";
-import { getLatestProjectDiskUsage, getLatestDiskUsage } from "@/lib/metrics/store";
+import { getLatestProjectDiskUsage } from "@/lib/metrics/store";
 import { createSSEResponse } from "@/lib/api/sse";
 import { isMetricsEnabled } from "@/lib/metrics/config";
 import { isFeatureEnabled } from "@/lib/config/features";
@@ -51,9 +50,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     return createSSEResponse(request, async (sendEvent) => {
       let tickCount = 0;
 
-      // Slow data cache
-      let cachedDisk: DiskUsage | null = null;
-      let cachedSystem: SystemInfo | null = null;
+      // Slow data cache — org-scoped (per-app disk only, no system-wide stats)
       let cachedAppDisk: Record<string, number> = {};
 
       async function refreshAppDisk() {
@@ -72,25 +69,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         } catch { /* skip */ }
       }
 
-      async function refreshSlowData() {
-        try {
-          const d = await getLatestDiskUsage();
-          if (d) {
-            cachedDisk = {
-              images: { count: 0, totalSize: d.images, reclaimable: 0 },
-              containers: { count: 0, totalSize: 0 },
-              volumes: { count: 0, totalSize: d.volumes },
-              buildCache: { count: 0, totalSize: d.buildCache, reclaimable: 0 },
-              total: d.total,
-            };
-          }
-        } catch { /* skip */ }
-        try { cachedSystem = await getSystemInfo(); } catch { /* skip */ }
-        await refreshAppDisk();
-      }
-
-      // Start slow data fetch in background
-      refreshSlowData();
+      // Start app disk fetch in background
+      refreshAppDisk();
 
       const unsubscribe = subscribe((allMetrics) => {
         const byApp: Record<string, typeof allMetrics> = {};
@@ -104,24 +84,23 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         }
 
         const allOrgContainers = Object.values(byApp).flat();
-        const diskTotal = cachedDisk?.total ?? 0;
-        const point = aggregateContainers(allOrgContainers, diskTotal);
+        const orgDiskTotal = Object.values(cachedAppDisk).reduce((s, v) => s + v, 0);
+        const point = aggregateContainers(allOrgContainers, orgDiskTotal);
 
         sendEvent("point", {
           ...point,
           projectCount,
+          orgDiskTotal,
           apps: orgApps.map((p) => ({
             ...p,
             diskUsage: cachedAppDisk[p.id] || 0,
             containers: (byApp[p.id] || []).map(containerToPoint),
           })),
-          disk: cachedDisk,
-          system: cachedSystem,
         });
 
         tickCount++;
         if (tickCount % 60 === 0) {
-          refreshSlowData();
+          refreshAppDisk();
         }
       });
 
