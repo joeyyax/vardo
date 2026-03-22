@@ -1,47 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  shouldRunNow,
-  matchesCronField,
-  isSameMinute,
-} from "@/lib/cron/parse";
-
-describe("matchesCronField", () => {
-  it("matches wildcard", () => {
-    expect(matchesCronField(0, "*")).toBe(true);
-    expect(matchesCronField(59, "*")).toBe(true);
-  });
-
-  it("matches exact value", () => {
-    expect(matchesCronField(5, "5")).toBe(true);
-    expect(matchesCronField(5, "6")).toBe(false);
-  });
-
-  it("matches step values (*/N)", () => {
-    expect(matchesCronField(0, "*/5")).toBe(true);
-    expect(matchesCronField(15, "*/5")).toBe(true);
-    expect(matchesCronField(3, "*/5")).toBe(false);
-  });
-
-  it("matches ranges (N-M)", () => {
-    expect(matchesCronField(3, "1-5")).toBe(true);
-    expect(matchesCronField(1, "1-5")).toBe(true);
-    expect(matchesCronField(5, "1-5")).toBe(true);
-    expect(matchesCronField(6, "1-5")).toBe(false);
-  });
-
-  it("matches comma-separated values", () => {
-    expect(matchesCronField(1, "1,3,5")).toBe(true);
-    expect(matchesCronField(3, "1,3,5")).toBe(true);
-    expect(matchesCronField(2, "1,3,5")).toBe(false);
-  });
-
-  it("matches mixed comma and range", () => {
-    expect(matchesCronField(2, "1-3,7,10-12")).toBe(true);
-    expect(matchesCronField(7, "1-3,7,10-12")).toBe(true);
-    expect(matchesCronField(11, "1-3,7,10-12")).toBe(true);
-    expect(matchesCronField(5, "1-3,7,10-12")).toBe(false);
-  });
-});
+import { shouldRunNow, isSameMinute } from "@/lib/cron/parse";
 
 describe("shouldRunNow", () => {
   it("matches every-minute schedule", () => {
@@ -67,10 +25,47 @@ describe("shouldRunNow", () => {
     expect(shouldRunNow("", now)).toBe(false);
   });
 
-  it("matches step minutes", () => {
+  it("matches step minutes (*/N)", () => {
     const now = new Date(2026, 2, 21, 10, 15, 0);
     expect(shouldRunNow("*/15 * * * *", now)).toBe(true);
     expect(shouldRunNow("*/10 * * * *", now)).toBe(false);
+  });
+
+  it("matches comma-separated values", () => {
+    const at1 = new Date(2026, 2, 21, 10, 1, 0);
+    const at3 = new Date(2026, 2, 21, 10, 3, 0);
+    const at2 = new Date(2026, 2, 21, 10, 2, 0);
+    expect(shouldRunNow("1,3,5 * * * *", at1)).toBe(true);
+    expect(shouldRunNow("1,3,5 * * * *", at3)).toBe(true);
+    expect(shouldRunNow("1,3,5 * * * *", at2)).toBe(false);
+  });
+
+  it("matches ranges (N-M)", () => {
+    const at3 = new Date(2026, 2, 21, 10, 3, 0);
+    const at6 = new Date(2026, 2, 21, 10, 6, 0);
+    expect(shouldRunNow("1-5 * * * *", at3)).toBe(true);
+    expect(shouldRunNow("1-5 * * * *", at6)).toBe(false);
+  });
+
+  it("matches named shorthands", () => {
+    const midnight = new Date(2026, 2, 21, 0, 0, 0);
+    const noon = new Date(2026, 2, 21, 12, 0, 0);
+    expect(shouldRunNow("@daily", midnight)).toBe(true);
+    expect(shouldRunNow("@daily", noon)).toBe(false);
+    expect(shouldRunNow("@midnight", midnight)).toBe(true);
+    const topOfHour = new Date(2026, 2, 21, 10, 0, 0);
+    const midHour = new Date(2026, 2, 21, 10, 30, 0);
+    expect(shouldRunNow("@hourly", topOfHour)).toBe(true);
+    expect(shouldRunNow("@hourly", midHour)).toBe(false);
+  });
+
+  it("matches step ranges (N-M/N)", () => {
+    const at1 = new Date(2026, 2, 21, 10, 1, 0);
+    const at3 = new Date(2026, 2, 21, 10, 3, 0);
+    const at2 = new Date(2026, 2, 21, 10, 2, 0);
+    expect(shouldRunNow("1-5/2 * * * *", at1)).toBe(true);
+    expect(shouldRunNow("1-5/2 * * * *", at3)).toBe(true);
+    expect(shouldRunNow("1-5/2 * * * *", at2)).toBe(false);
   });
 });
 
