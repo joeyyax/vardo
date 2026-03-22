@@ -56,7 +56,7 @@ export async function DELETE(request: NextRequest) {
 
     // Attempt to remove from GitHub (best-effort)
     try {
-      const octokit = getAppOctokit();
+      const octokit = await getAppOctokit();
       await octokit.rest.apps.deleteInstallation({
         installation_id: installation.installationId,
       });

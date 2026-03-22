@@ -5,6 +5,7 @@ import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { deployProject } from "@/lib/docker/deploy";
 import { createPreview, destroyPreview } from "@/lib/docker/preview";
+import { getGitHubAppConfig } from "@/lib/system-settings";
 
 import { rateLimit } from "@/lib/api/rate-limit";
 
@@ -19,10 +20,10 @@ export async function POST(request: NextRequest) {
     const signature = request.headers.get("x-hub-signature-256");
 
     // Verify webhook signature — mandatory.
-    // GITHUB_WEBHOOK_SECRET must be set explicitly — no fallback to other secrets.
-    // Sharing the auth secret with the webhook endpoint breaks secret isolation and
-    // allows a compromised webhook secret to become a compromised auth secret.
-    const secret = process.env.GITHUB_WEBHOOK_SECRET;
+    // Prefer DB config (setup-wizard deployments), then GITHUB_WEBHOOK_SECRET env var.
+    // No fallback to BETTER_AUTH_SECRET — secret isolation must be maintained.
+    const githubConfig = await getGitHubAppConfig();
+    const secret = githubConfig?.webhookSecret || process.env.GITHUB_WEBHOOK_SECRET;
     if (!secret) {
       console.error("[webhook] GITHUB_WEBHOOK_SECRET is not set — webhook endpoint is disabled");
       return NextResponse.json(

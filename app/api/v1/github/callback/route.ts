@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
 
   try {
     // Fetch installation details from GitHub
-    const octokit = getAppOctokit();
+    const octokit = await getAppOctokit();
     const { data: installation } = await octokit.rest.apps.getInstallation({
       installation_id: parseInt(installationId, 10),
     });
