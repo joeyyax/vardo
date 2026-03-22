@@ -237,7 +237,7 @@ export function CommandPalette({ orgId }: CommandPaletteProps) {
               </CommandItem>
               <CommandItem
                 value="Profile Account"
-                onSelect={() => runCommand(() => router.push("/profile"))}
+                onSelect={() => runCommand(() => router.push("/profile/account"))}
                 className="gap-2"
               >
                 <UserCircle className="size-4" />

@@ -102,7 +102,7 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations }: Us
         <DropdownMenuSeparator />
         <DropdownMenuItem
           className="gap-2 cursor-pointer"
-          onClick={() => router.push("/profile")}
+          onClick={() => router.push("/profile/account")}
         >
           <User className="size-4" />
           Profile

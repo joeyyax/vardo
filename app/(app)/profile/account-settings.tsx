@@ -27,7 +27,7 @@ import { authClient, useSession } from "@/lib/auth/client";
 // Account Info
 // ---------------------------------------------------------------------------
 
-function AccountInfo() {
+export function AccountInfo() {
   const { data: sessionData, isPending } = useSession();
   const [editingName, setEditingName] = useState(false);
   const [name, setName] = useState("");
@@ -113,7 +113,7 @@ function AccountInfo() {
 // Password Management
 // ---------------------------------------------------------------------------
 
-function PasswordManagement() {
+export function PasswordManagement() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -238,7 +238,7 @@ function PasswordManagement() {
 // Two-Factor Authentication
 // ---------------------------------------------------------------------------
 
-function TwoFactorAuth() {
+export function TwoFactorAuth() {
   const { data: sessionData } = useSession();
   const [enabling, setEnabling] = useState(false);
   const [totpUri, setTotpUri] = useState<string | null>(null);
@@ -475,7 +475,7 @@ type SessionInfo = {
   expiresAt: Date;
 };
 
-function ActiveSessions() {
+export function ActiveSessions() {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [revoking, setRevoking] = useState<string | null>(null);
@@ -608,7 +608,7 @@ type ApiToken = {
   createdAt: string;
 };
 
-function ApiTokens({ orgId }: { orgId: string }) {
+export function ApiTokens({ orgId }: { orgId: string }) {
   const [tokens, setTokens] = useState<ApiToken[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
