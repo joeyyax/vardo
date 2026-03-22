@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronsUpDown, Plus, Building2, Check, Loader2, Settings, Users } from "lucide-react";
+import { toast } from "sonner";
+import { switchOrganization } from "@/lib/organizations/switch";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -69,14 +71,12 @@ export function OrgSwitcher({ currentOrgId, organizations: initialOrganizations,
     if (orgId === currentOrg?.id) return;
 
     setSwitching(true);
-    try {
-      // Set the cookie via API or directly
-      document.cookie = `time_current_org=${orgId};path=/;max-age=${60 * 60 * 24 * 365}`;
-      // Refresh to apply the change
+    const result = await switchOrganization(orgId);
+    if (result.ok) {
+      router.push("/projects");
       router.refresh();
-      window.location.reload();
-    } catch (err) {
-      console.error("Failed to switch org:", err);
+    } else {
+      toast.error(result.error);
       setSwitching(false);
     }
   };
@@ -92,16 +92,25 @@ export function OrgSwitcher({ currentOrgId, organizations: initialOrganizations,
         body: JSON.stringify({ name: newOrgName.trim() }),
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        // Switch to the new org
-        document.cookie = `time_current_org=${data.organization.id};path=/;max-age=${60 * 60 * 24 * 365}`;
-        setShowCreateDialog(false);
-        setNewOrgName("");
-        window.location.reload();
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to create organization");
       }
+
+      const data = await res.json();
+
+      // Switch to the new org via API
+      const switchResult = await switchOrganization(data.organization.id);
+      if (!switchResult.ok) {
+        throw new Error(switchResult.error);
+      }
+
+      setShowCreateDialog(false);
+      setNewOrgName("");
+      router.push("/projects");
+      router.refresh();
     } catch (err) {
-      console.error("Failed to create organization:", err);
+      toast.error(err instanceof Error ? err.message : "Failed to create organization");
     } finally {
       setCreating(false);
     }
