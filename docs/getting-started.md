@@ -54,7 +54,7 @@ Templates automatically configure persistent volumes, connection info, and sensi
 
 ## Deploying from GitHub
 
-To deploy from a GitHub repository, you first need a GitHub App connected to Host. If you did not set this up during onboarding, go to **Settings** and configure the GitHub App credentials.
+To deploy from a GitHub repository, you first need a GitHub App connected to Vardo. If you did not set this up during onboarding, go to **Settings** and configure the GitHub App credentials.
 
 1. Go to your project and click **New App**.
 2. Choose **Git** as the source.

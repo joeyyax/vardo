@@ -64,7 +64,7 @@ export function EmailLayout({
           {children}
           <Hr style={{ borderColor: "#eeeeee", margin: "32px 0 24px" }} />
           <Text style={{ color: "#b0b0b0", fontSize: "12px", margin: "0" }}>
-            Sent by Host
+            Sent by Vardo
           </Text>
         </Container>
       </Body>

@@ -223,7 +223,7 @@ async function postPreviewComment(
       (d) => `| ${d.appName} | https://${d.domain} |`
     ),
     "",
-    "_Deployed by [Host](https://github.com/joeyyax/host)_",
+    "_Deployed by [Host](https://github.com/joeyyax/vardo)_",
   ];
 
   const response = await fetch(

@@ -230,7 +230,7 @@ if [ -d "$HOST_DIR" ]; then
   git pull --quiet
 else
   log "Installing Host to $HOST_DIR..."
-  git clone --depth 1 https://github.com/joeyyax/host.git "$HOST_DIR"
+  git clone --depth 1 https://github.com/joeyyax/vardo.git "$HOST_DIR"
   cd "$HOST_DIR"
 fi
 

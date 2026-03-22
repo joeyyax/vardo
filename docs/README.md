@@ -1,6 +1,6 @@
 # Host Documentation
 
-Host is a self-hosted PaaS for managing Docker Compose deployments. Deploy anything with Docker -- from a GitHub repo, a Docker image, or a Compose file -- with automatic TLS, blue-green deployments, and a web dashboard.
+Vardo is a self-hosted PaaS for managing Docker Compose deployments. Deploy anything with Docker -- from a GitHub repo, a Docker image, or a Compose file -- with automatic TLS, blue-green deployments, and a web dashboard.
 
 ## Guides
 
