@@ -69,12 +69,17 @@ export async function register() {
         .catch((err) => console.error("[instrumentation] Failed to start digest scheduler:", err)),
 
       Promise.resolve().then(() => {
+        let ticking = false;
         setInterval(async () => {
+          if (ticking) return;
+          ticking = true;
           try {
             const { checkAllDomains } = await import("./lib/domains/monitor");
             await checkAllDomains();
           } catch (err) {
             console.error("[domain-monitor] Error:", err);
+          } finally {
+            ticking = false;
           }
         }, 5 * 60 * 1000);
         console.log("[instrumentation] Domain monitor started (every 5 minutes)");
