@@ -12,7 +12,7 @@ RED="\033[31m"
 CYAN="\033[36m"
 RESET="\033[0m"
 
-HOST_DIR="${1:-/opt/host}"
+HOST_DIR="${1:-/opt/vardo}"
 COMPOSE_FILE="docker-compose.yml"
 ENV_FILE=".env.prod"
 AUTO_YES=false
@@ -25,7 +25,7 @@ for arg in "$@"; do
     --help|-h)
       echo "Usage: update.sh [HOST_DIR] [--yes]"
       echo ""
-      echo "  HOST_DIR   Path to Host installation (default: /opt/host)"
+      echo "  HOST_DIR   Path to Vardo installation (default: /opt/vardo)"
       echo "  --yes, -y  Skip confirmation prompts"
       echo "  --help, -h Show this help"
       exit 0
