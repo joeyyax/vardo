@@ -12,8 +12,6 @@ import {
 
 /** Flags exposed in the admin UI (skip "ui" — it's a hard kill switch). */
 const ADMIN_FLAGS: FeatureFlag[] = [
-  "metrics",
-  "logs",
   "terminal",
   "environments",
   "backups",
@@ -23,8 +21,6 @@ const ADMIN_FLAGS: FeatureFlag[] = [
 
 /** Only accept known feature flag keys (excluding "ui" kill switch). */
 const flagsSchema = z.object({
-  metrics: z.boolean().optional(),
-  logs: z.boolean().optional(),
   terminal: z.boolean().optional(),
   environments: z.boolean().optional(),
   backups: z.boolean().optional(),

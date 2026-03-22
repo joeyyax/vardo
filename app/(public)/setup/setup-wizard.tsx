@@ -22,7 +22,6 @@ import {
   User,
   Mail,
   HardDrive,
-  Gauge,
   Github,
   Globe,
   Rocket,
@@ -49,12 +48,6 @@ const STEPS = [
     label: "Backup storage",
     description: "S3, R2, or B2 for volume backups",
     icon: HardDrive,
-  },
-  {
-    id: "services",
-    label: "Optional services",
-    description: "Metrics and log collection",
-    icon: Gauge,
   },
   {
     id: "github",
@@ -255,20 +248,6 @@ export function SetupWizard() {
                 }}
                 onSkip={() => {
                   markComplete("backup");
-                  goNext();
-                }}
-              />
-            )}
-            {currentStep === "services" && (
-              <ServicesStep
-                loading={loading}
-                setLoading={setLoading}
-                onComplete={() => {
-                  markComplete("services");
-                  goNext();
-                }}
-                onSkip={() => {
-                  markComplete("services");
                   goNext();
                 }}
               />
@@ -700,78 +679,8 @@ function BackupStep({
 // Step 4: Optional Services
 // ---------------------------------------------------------------------------
 
-function ServicesStep({
-  loading,
-  setLoading,
-  onComplete,
-  onSkip,
-}: {
-  loading: boolean;
-  setLoading: (v: boolean) => void;
-  onComplete: () => void;
-  onSkip: () => void;
-}) {
-  const [metrics, setMetrics] = useState(false);
-  const [logs, setLogs] = useState(false);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      const res = await fetch("/api/setup/services", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ metrics, logs }),
-      });
-      if (!res.ok) throw new Error("Failed to save");
-      toast.success("Services configuration saved");
-      onComplete();
-    } catch {
-      toast.error("Failed to save services config");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="flex items-center justify-between rounded-lg border p-4">
-        <div className="space-y-0.5">
-          <div className="text-sm font-medium">Container metrics</div>
-          <div className="text-xs text-muted-foreground">
-            cAdvisor — CPU, memory, network stats per container
-          </div>
-        </div>
-        <Switch checked={metrics} onCheckedChange={setMetrics} />
-      </div>
-      <div className="flex items-center justify-between rounded-lg border p-4">
-        <div className="space-y-0.5">
-          <div className="text-sm font-medium">Persistent logs</div>
-          <div className="text-xs text-muted-foreground">
-            Loki + Promtail — searchable container logs
-          </div>
-        </div>
-        <Switch checked={logs} onCheckedChange={setLogs} />
-      </div>
-      <div className="flex gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          className="squircle flex-1"
-          onClick={onSkip}
-        >
-          Skip
-        </Button>
-        <Button type="submit" className="squircle flex-1" disabled={loading}>
-          {loading ? <Loader2 className="size-4 animate-spin" /> : "Save"}
-        </Button>
-      </div>
-    </form>
-  );
-}
-
 // ---------------------------------------------------------------------------
-// Step 5: GitHub App
+// Step 4: GitHub App
 // ---------------------------------------------------------------------------
 
 function GithubStep({
