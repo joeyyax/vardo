@@ -1,5 +1,3 @@
-BEGIN;
-
 -- 1. Create new enums
 CREATE TYPE "public"."clone_strategy" AS ENUM('clone', 'clone_data', 'empty', 'skip');
 CREATE TYPE "public"."group_environment_type" AS ENUM('staging', 'preview');
@@ -34,4 +32,3 @@ ALTER TABLE "deployment" ADD COLUMN "group_environment_id" TEXT REFERENCES "grou
 ALTER TABLE "env_var" DROP CONSTRAINT "env_var_project_key_uniq";
 ALTER TABLE "env_var" ADD CONSTRAINT "env_var_project_key_env_uniq" UNIQUE("project_id", "key", "environment_id");
 
-COMMIT;
