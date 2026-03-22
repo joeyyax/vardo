@@ -106,23 +106,23 @@ export function SetupWizard() {
 
   return (
     <div className="flex min-h-dvh items-center justify-center p-6 md:p-12">
-      <div className="grid w-full max-w-4xl gap-12 md:grid-cols-[320px_1fr]">
-        {/* Left column — branding, intro, steps */}
-        <div className="space-y-8">
-          {/* Branding */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2.5">
-              <Container className="size-6" />
-              <span className="text-xl font-bold tracking-tight">Vardo</span>
-            </div>
-            <p className="text-sm text-muted-foreground leading-relaxed">
-              Welcome to your self-hosted PaaS. This wizard walks you through
-              the essentials. Everything after account creation is optional and
-              can be configured later in Settings.
-            </p>
+      <div className="w-full max-w-4xl space-y-10">
+        {/* Header — full width above both columns */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2.5">
+            <Container className="size-6" />
+            <span className="text-xl font-bold tracking-tight">Vardo</span>
           </div>
+          <p className="text-sm text-muted-foreground leading-relaxed max-w-lg">
+            Welcome to your self-hosted PaaS. This wizard walks you through
+            the essentials. Everything after account creation is optional and
+            can be configured later in Settings.
+          </p>
+        </div>
 
-          {/* Step list */}
+        {/* Two-column layout */}
+        <div className="grid gap-12 md:grid-cols-[280px_1fr]">
+          {/* Left column — steps */}
           <nav className="space-y-1">
             {STEPS.map((step, i) => {
               const Icon = step.icon;
@@ -173,10 +173,8 @@ export function SetupWizard() {
               );
             })}
           </nav>
-        </div>
 
-        {/* Right column — current step form */}
-        <div className="flex items-start pt-0 md:pt-12">
+          {/* Right column — current step form */}
           <div className="w-full space-y-6">
             {currentStep === "account" && (
               <AccountStep
