@@ -197,8 +197,9 @@ export function CronManager({ appId, orgId }: Props) {
         setDeleteId(null);
         fetchJobs();
       } else {
+        const err = await res.json().catch(() => ({}));
         toast.error("Couldn't delete cron job", {
-          description: "Try again",
+          description: err.error || "Try again",
         });
       }
     } catch {
