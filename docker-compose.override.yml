@@ -1,12 +1,15 @@
-# docker-compose.override.yml — Dev overrides (auto-merged by `docker compose up`).
+# docker-compose.override.yml — Dev overrides.
 #
-# - Removes the host service (run `pnpm dev` instead)
-# - Exposes service ports to localhost for direct access
-# - Disables TLS / ACME (uses insecure Traefik dashboard)
-# - Attaches all services to vardo-network so localhost can reach them
+# Docker Compose automatically merges this file on top of docker-compose.yml
+# whenever it exists in the same directory. This is a built-in Docker
+# convention — no flags needed, just `docker compose up -d`.
 #
-# All optional profiles (logs, metrics) are activated in .env via COMPOSE_PROFILES
-# so that `docker compose up` in dev starts everything by default.
+# This file only exists in the dev checkout, not on production servers.
+# It does the following:
+#   - Disables the app container (run `pnpm dev` instead)
+#   - Exposes service ports to localhost (postgres:5433, redis:6379, etc.)
+#   - Disables TLS (uses insecure Traefik dashboard)
+#   - Attaches services to vardo-network so your local dev server can reach them
 
 services:
   # Disable the host app in dev — use `pnpm dev` instead.

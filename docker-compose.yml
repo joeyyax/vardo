@@ -1,10 +1,16 @@
 name: vardo
 
-# docker-compose.yml — Canonical, production-ready compose file.
+# docker-compose.yml — Production stack.
 #
-# In production:  docker compose up -d
-# In development: docker compose up -d
-#   (Docker Compose auto-merges docker-compose.override.yml when present)
+# TWO FILES, ONE COMMAND:
+#   This file defines the full production stack. In development, Docker
+#   Compose automatically merges docker-compose.override.yml on top of
+#   this file — that's a built-in Docker convention. The override file
+#   disables the app container (you run `pnpm dev` instead), exposes
+#   service ports to localhost, and turns off TLS.
+#
+#   Same command everywhere:  docker compose up -d
+#   Production gets this file alone. Dev gets this + override merged.
 
 services:
   host:
