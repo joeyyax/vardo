@@ -1,10 +1,9 @@
 // ---------------------------------------------------------------------------
 // System settings helpers
 //
-// Reads system_settings rows from the database and decrypts them with
-// decryptSystemOrFallback(). Callers should always prefer environment
-// variables when set (so Docker / .env deployments keep working as before),
-// and fall back to the DB-stored config written by the setup wizard.
+// Read order: DB system_settings → env var → hardcoded default.
+// Once a setting is saved via the UI, the DB value takes precedence
+// permanently. Env vars act as seed/default for Docker/.env deployments.
 // ---------------------------------------------------------------------------
 
 import { db } from "@/lib/db";
@@ -13,8 +12,8 @@ import { decryptSystemOrFallback, encryptSystem } from "@/lib/crypto/encrypt";
 import { eq } from "drizzle-orm";
 
 // Short-TTL in-memory cache for system settings. These change rarely (admin
-// panel only), so a 30s cache eliminates repeated DB hits when multiple config
-// readers fan out within the same request or tick cycle.
+// panel only), so a 30s cache eliminates repeated DB + decrypt calls when
+// multiple config readers fan out within the same request or tick cycle.
 const CACHE_TTL_MS = 30_000;
 const cache = new Map<string, { value: string | null; expiresAt: number }>();
 
@@ -66,6 +65,19 @@ export async function setSystemSetting(key: string, value: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Helper: parse JSON from DB, return null on failure
+// ---------------------------------------------------------------------------
+
+function parseJson<T>(raw: string, label: string): T | null {
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    console.error(`[system-settings] Failed to parse ${label}`);
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Instance config (general settings)
 // ---------------------------------------------------------------------------
 
@@ -75,43 +87,18 @@ export type InstanceConfig = {
   serverIp: string;
 };
 
-/**
- * Returns the instance configuration. Env vars take precedence; falls back
- * to the setup-wizard row in system_settings.
- */
 export async function getInstanceConfig(): Promise<InstanceConfig> {
-  // Env-var configured — no DB hit needed
-  const envName = process.env.NEXT_PUBLIC_APP_NAME;
-  const envDomain = process.env.HOST_BASE_DOMAIN;
-  const envIp = process.env.HOST_SERVER_IP;
+  const dbConfig = await getSystemSettingRaw("instance_config")
+    .then((raw) => raw ? parseJson<InstanceConfig>(raw, "instance_config") : null);
 
-  if (envName || envDomain || envIp) {
-    const dbConfig = await getInstanceConfigFromDb();
-    return {
-      instanceName: envName ?? dbConfig?.instanceName ?? "Vardo",
-      baseDomain: envDomain ?? dbConfig?.baseDomain ?? "",
-      serverIp: envIp ?? dbConfig?.serverIp ?? "",
-    };
-  }
+  if (dbConfig) return dbConfig;
 
-  const dbConfig = await getInstanceConfigFromDb();
+  // Env var fallback
   return {
-    instanceName: dbConfig?.instanceName ?? "Vardo",
-    baseDomain: dbConfig?.baseDomain ?? "",
-    serverIp: dbConfig?.serverIp ?? "",
+    instanceName: process.env.NEXT_PUBLIC_APP_NAME ?? "Vardo",
+    baseDomain: process.env.HOST_BASE_DOMAIN ?? "",
+    serverIp: process.env.HOST_SERVER_IP ?? "",
   };
-}
-
-async function getInstanceConfigFromDb(): Promise<InstanceConfig | null> {
-  const raw = await getSystemSettingRaw("instance_config");
-  if (!raw) return null;
-
-  try {
-    return JSON.parse(raw) as InstanceConfig;
-  } catch {
-    console.error("[system-settings] Failed to parse instance_config");
-    return null;
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -127,12 +114,13 @@ export type GitHubAppConfig = {
   webhookSecret: string;
 };
 
-/**
- * Returns the GitHub App configuration. Env vars take precedence; falls back
- * to the setup-wizard row in system_settings.
- */
 export async function getGitHubAppConfig(): Promise<GitHubAppConfig | null> {
-  // If the core env vars are set, use them directly (no DB hit needed)
+  const dbConfig = await getSystemSettingRaw("github_app")
+    .then((raw) => raw ? parseJson<GitHubAppConfig>(raw, "github_app") : null);
+
+  if (dbConfig) return dbConfig;
+
+  // Env var fallback
   if (process.env.GITHUB_APP_ID && process.env.GITHUB_PRIVATE_KEY) {
     return {
       appId: process.env.GITHUB_APP_ID,
@@ -144,15 +132,7 @@ export async function getGitHubAppConfig(): Promise<GitHubAppConfig | null> {
     };
   }
 
-  const raw = await getSystemSettingRaw("github_app");
-  if (!raw) return null;
-
-  try {
-    return JSON.parse(raw) as GitHubAppConfig;
-  } catch {
-    console.error("[system-settings] Failed to parse github_app config");
-    return null;
-  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -170,30 +150,44 @@ export type EmailProviderConfig = {
   fromName?: string;
 };
 
-/**
- * Returns the email provider configuration. Env vars take precedence; falls
- * back to the setup-wizard row in system_settings.
- */
 export async function getEmailProviderConfig(): Promise<EmailProviderConfig | null> {
-  // Env-var configured — no DB hit needed
+  const dbConfig = await getSystemSettingRaw("email_provider")
+    .then((raw) => raw ? parseJson<EmailProviderConfig>(raw, "email_provider") : null);
+
+  if (dbConfig) return dbConfig;
+
+  // Env var fallback — detect provider from available keys
+  if (process.env.RESEND_API_KEY) {
+    return {
+      provider: "resend",
+      apiKey: process.env.RESEND_API_KEY,
+      fromEmail: process.env.EMAIL_FROM,
+      fromName: process.env.EMAIL_FROM_NAME,
+    };
+  }
+
   if (process.env.MAILPACE_API_TOKEN) {
     return {
       provider: "mailpace",
       apiKey: process.env.MAILPACE_API_TOKEN,
       fromEmail: process.env.EMAIL_FROM,
-      fromName: undefined,
+      fromName: process.env.EMAIL_FROM_NAME,
     };
   }
 
-  const raw = await getSystemSettingRaw("email_provider");
-  if (!raw) return null;
-
-  try {
-    return JSON.parse(raw) as EmailProviderConfig;
-  } catch {
-    console.error("[system-settings] Failed to parse email_provider config");
-    return null;
+  if (process.env.SMTP_HOST) {
+    return {
+      provider: "smtp",
+      smtpHost: process.env.SMTP_HOST,
+      smtpPort: process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : undefined,
+      smtpUser: process.env.SMTP_USER,
+      smtpPass: process.env.SMTP_PASS,
+      fromEmail: process.env.EMAIL_FROM,
+      fromName: process.env.EMAIL_FROM_NAME,
+    };
   }
+
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -209,20 +203,26 @@ export type BackupStorageConfig = {
   secretKey?: string;
 };
 
-/**
- * Returns the backup storage configuration from the setup-wizard row in
- * system_settings. (No env-var equivalent exists for backup storage.)
- */
 export async function getBackupStorageConfig(): Promise<BackupStorageConfig | null> {
-  const raw = await getSystemSettingRaw("backup_storage");
-  if (!raw) return null;
+  const dbConfig = await getSystemSettingRaw("backup_storage")
+    .then((raw) => raw ? parseJson<BackupStorageConfig>(raw, "backup_storage") : null);
 
-  try {
-    return JSON.parse(raw) as BackupStorageConfig;
-  } catch {
-    console.error("[system-settings] Failed to parse backup_storage config");
-    return null;
+  if (dbConfig) return dbConfig;
+
+  // Env var fallback
+  const storageType = process.env.BACKUP_STORAGE_TYPE as BackupStorageConfig["type"] | undefined;
+  if (storageType && process.env.BACKUP_STORAGE_BUCKET) {
+    return {
+      type: storageType,
+      bucket: process.env.BACKUP_STORAGE_BUCKET,
+      region: process.env.BACKUP_STORAGE_REGION,
+      endpoint: process.env.BACKUP_STORAGE_ENDPOINT,
+      accessKey: process.env.BACKUP_STORAGE_ACCESS_KEY,
+      secretKey: process.env.BACKUP_STORAGE_SECRET_KEY,
+    };
   }
+
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -234,41 +234,27 @@ export type OptionalServicesConfig = {
   logs: boolean;
 };
 
-/**
- * Returns the optional services configuration from the setup-wizard row in
- * system_settings. Defaults to both disabled if not configured.
- */
 export async function getOptionalServicesConfig(): Promise<OptionalServicesConfig> {
-  const raw = await getSystemSettingRaw("optional_services");
-  if (!raw) return { metrics: false, logs: false };
+  const dbConfig = await getSystemSettingRaw("optional_services")
+    .then((raw) => raw ? parseJson<OptionalServicesConfig>(raw, "optional_services") : null);
 
-  try {
-    const parsed = JSON.parse(raw);
-    return { metrics: !!parsed.metrics, logs: !!parsed.logs };
-  } catch {
-    console.error("[system-settings] Failed to parse optional_services config");
-    return { metrics: false, logs: false };
-  }
+  if (dbConfig) return { metrics: !!dbConfig.metrics, logs: !!dbConfig.logs };
+
+  // Env var fallback
+  return {
+    metrics: process.env.FEATURE_METRICS === "true",
+    logs: process.env.FEATURE_LOGS === "true",
+  };
 }
 
 // ---------------------------------------------------------------------------
 // Feature flags (DB-stored overrides)
 // ---------------------------------------------------------------------------
 
-/**
- * Returns feature flag overrides stored in the database, or null if none
- * have been configured. Keys are FeatureFlag names, values are booleans.
- */
 export async function getFeatureFlagsConfig(): Promise<Record<string, boolean> | null> {
   const raw = await getSystemSettingRaw("feature_flags");
   if (!raw) return null;
-
-  try {
-    return JSON.parse(raw) as Record<string, boolean>;
-  } catch {
-    console.error("[system-settings] Failed to parse feature_flags config");
-    return null;
-  }
+  return parseJson<Record<string, boolean>>(raw, "feature_flags");
 }
 
 // ---------------------------------------------------------------------------
@@ -280,22 +266,14 @@ export type AuthConfig = {
   sessionDurationDays: number;
 };
 
-/**
- * Returns the authentication configuration. Falls back to sensible defaults
- * (closed registration, 7-day sessions) if not configured.
- */
+// No env var fallback — auth config is security-sensitive (registration mode,
+// session duration) and should only be set explicitly via the admin UI.
 export async function getAuthConfig(): Promise<AuthConfig> {
-  const raw = await getSystemSettingRaw("auth_config");
-  if (!raw) return { registrationMode: "closed", sessionDurationDays: 7 };
+  const dbConfig = await getSystemSettingRaw("auth_config")
+    .then((raw) => raw ? parseJson<Partial<AuthConfig>>(raw, "auth_config") : null);
 
-  try {
-    const parsed = JSON.parse(raw) as Partial<AuthConfig>;
-    return {
-      registrationMode: parsed.registrationMode ?? "closed",
-      sessionDurationDays: parsed.sessionDurationDays ?? 7,
-    };
-  } catch {
-    console.error("[system-settings] Failed to parse auth_config");
-    return { registrationMode: "closed", sessionDurationDays: 7 };
-  }
+  return {
+    registrationMode: dbConfig?.registrationMode ?? "closed",
+    sessionDurationDays: dbConfig?.sessionDurationDays ?? 7,
+  };
 }
