@@ -131,23 +131,19 @@ export function OrgSwitcher({ currentOrgId, organizations: initialOrganizations,
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
-            variant="ghost"
-            className={`w-full px-2 py-1.5 h-auto ${collapsed ? "justify-center" : "justify-start gap-2"}`}
+            variant="outline"
+            size="sm"
+            className="h-auto px-3 py-1.5 gap-1.5 font-medium"
             disabled={switching}
           >
-            <div className="flex size-6 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground">
-              {switching ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <Building2 className="size-3.5" />
-              )}
-            </div>
-            {!collapsed && (
+            {switching ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
               <>
-                <span className="flex-1 truncate text-left text-sm font-medium">
+                <span className="truncate text-sm">
                   {currentOrg?.name || "Select organization"}
                 </span>
-                <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
+                <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" />
               </>
             )}
           </Button>

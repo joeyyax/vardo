@@ -2,11 +2,12 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { projects, tags, groups } from "@/lib/db/schema";
-import { getCurrentOrg } from "@/lib/auth/session";
-import { eq, desc, asc } from "drizzle-orm";
+import { getCurrentOrg, getUserOrganizations } from "@/lib/auth/session";
+import { eq, desc, asc, sql } from "drizzle-orm";
 import { Plus } from "lucide-react";
 import { PageToolbar } from "@/components/page-toolbar";
 import { Button } from "@/components/ui/button";
+import { OrgSwitcher } from "@/components/layout/org-switcher";
 import { ProjectGrid } from "./project-grid";
 
 export default async function ProjectsPage() {
@@ -17,11 +18,12 @@ export default async function ProjectsPage() {
   }
 
   const orgId = orgData.organization.id;
+  const organizations = await getUserOrganizations();
 
   const [projectList, tagList, groupList] = await Promise.all([
     db.query.projects.findMany({
       where: eq(projects.organizationId, orgId),
-      orderBy: [desc(projects.createdAt)],
+      orderBy: [asc(projects.sortOrder), desc(projects.createdAt)],
       with: {
         domains: {
           columns: { domain: true, isPrimary: true },
@@ -53,7 +55,7 @@ export default async function ProjectsPage() {
     <div className="space-y-6">
       <PageToolbar
         actions={
-          <Button size="sm" asChild>
+          <Button asChild>
             <Link href="/projects/new">
               <Plus className="mr-1.5 size-4" />
               New Project
@@ -61,7 +63,14 @@ export default async function ProjectsPage() {
           </Button>
         }
       >
-        <h1 className="text-xl font-semibold tracking-tight">Projects</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
+          <OrgSwitcher
+            currentOrgId={orgId}
+            organizations={organizations}
+            collapsed={false}
+          />
+        </div>
       </PageToolbar>
 
       {projectList.length === 0 ? (
@@ -81,6 +90,7 @@ export default async function ProjectsPage() {
           projects={projectList}
           allTags={tagList}
           allGroups={groupList}
+          orgId={orgId}
         />
       )}
     </div>

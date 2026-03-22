@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { memberships } from "@/lib/db/schema";
+import { memberships, user } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
-import { eq } from "drizzle-orm";
+import { requireAdmin } from "@/lib/auth/permissions";
+import { eq, and } from "drizzle-orm";
+import { nanoid } from "nanoid";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -45,6 +47,86 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "No organization found" }, { status: 404 });
     }
     console.error("Error fetching members:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+// POST /api/v1/organizations/[orgId]/members
+// Add a member by email (user must already have an account)
+export async function POST(request: NextRequest, { params }: RouteParams) {
+  try {
+    const { orgId } = await params;
+    const { organization, membership } = await requireOrg();
+
+    if (organization.id !== orgId) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    requireAdmin(membership.role);
+
+    const body = await request.json();
+    const { email, role = "member" } = body;
+
+    if (!email || typeof email !== "string") {
+      return NextResponse.json({ error: "Email is required" }, { status: 400 });
+    }
+
+    if (role !== "admin" && role !== "member") {
+      return NextResponse.json({ error: "Role must be 'admin' or 'member'" }, { status: 400 });
+    }
+
+    // Find the user by email
+    const targetUser = await db.query.user.findFirst({
+      where: eq(user.email, email.trim().toLowerCase()),
+      columns: { id: true, name: true, email: true },
+    });
+
+    if (!targetUser) {
+      return NextResponse.json(
+        { error: "No user found with that email. They need to create an account first." },
+        { status: 404 }
+      );
+    }
+
+    // Check if already a member
+    const existing = await db.query.memberships.findFirst({
+      where: and(
+        eq(memberships.organizationId, orgId),
+        eq(memberships.userId, targetUser.id)
+      ),
+    });
+
+    if (existing) {
+      return NextResponse.json(
+        { error: "This user is already a member of this organization" },
+        { status: 409 }
+      );
+    }
+
+    // Create membership
+    await db.insert(memberships).values({
+      id: nanoid(),
+      userId: targetUser.id,
+      organizationId: orgId,
+      role,
+    });
+
+    return NextResponse.json({
+      member: {
+        id: targetUser.id,
+        name: targetUser.name,
+        email: targetUser.email,
+        role,
+      },
+    }, { status: 201 });
+  } catch (error) {
+    if (error instanceof Error && error.message === "Unauthorized") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (error instanceof Error && error.message === "Forbidden") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    console.error("Error adding member:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

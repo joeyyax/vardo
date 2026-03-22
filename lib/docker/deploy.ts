@@ -2,7 +2,8 @@ import { db } from "@/lib/db";
 import { deployments, projects, envVars } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { exec, spawn as nodeSpawn } from "child_process";
+import { publishEvent, projectChannel } from "@/lib/events";
+import { exec, spawn as nodeSpawn} from "child_process";
 import { promisify } from "util";
 import { mkdir, writeFile, readFile } from "fs/promises";
 import { join, resolve } from "path";
@@ -135,14 +136,17 @@ export async function runDeployment(
       stage("clone", "skipped");
       stage("build", "running");
       const volumes = (project.persistentVolumes as { name: string; mountPath: string }[] | null) ?? undefined;
+      const exposedPorts = (project.exposedPorts as { internal: number; external?: number; protocol?: string }[] | null) ?? undefined;
       compose = generateComposeForImage({
         projectName: project.name,
         imageName: project.imageName,
         containerPort: project.containerPort ?? undefined,
         envVars: envMap,
         volumes,
+        exposedPorts,
       });
       if (volumes?.length) log(`[deploy] ${volumes.length} persistent volume(s)`);
+      if (exposedPorts?.length) log(`[deploy] ${exposedPorts.length} exposed port(s)`);
       log(`[deploy] Generated compose for image: ${project.imageName}`);
     } else if (project.source === "git" && project.gitUrl) {
       // Git source — clone/pull repo with GitHub App auth if needed
@@ -213,8 +217,36 @@ export async function runDeployment(
           .where(eq(deployments.id, deploymentId));
       } catch { /* not critical */ }
 
+      // Read host.toml config if present
+      const { readHostConfig, applyHostConfig } = await import("@/lib/config/host-config");
+      const hostConfig = await readHostConfig(repoDir);
+      if (hostConfig) {
+        const applied = applyHostConfig(hostConfig);
+        log(`[deploy] Found host.toml`);
+        // Apply config-as-code settings
+        if (applied.containerPort) {
+          envMap.PORT = String(applied.containerPort);
+          log(`[deploy] host.toml: port ${applied.containerPort}`);
+        }
+        if (applied.envVars) {
+          for (const { key, value } of applied.envVars) {
+            if (!(key in envMap)) {
+              envMap[key] = value;
+            }
+          }
+          log(`[deploy] host.toml: ${applied.envVars.length} env var(s)`);
+        }
+        if (applied.persistentVolumes) {
+          log(`[deploy] host.toml: ${applied.persistentVolumes.length} volume(s)`);
+        }
+      }
+
       // Find compose file
-      const root = project.rootDirectory ? join(repoDir, project.rootDirectory) : repoDir;
+      const root = project.rootDirectory
+        ? join(repoDir, project.rootDirectory)
+        : hostConfig?.project?.rootDirectory
+        ? join(repoDir, hostConfig.project.rootDirectory)
+        : repoDir;
       const composeFilePath = project.composeFilePath || "docker-compose.yml";
       const composeCandidates = [
         composeFilePath,
@@ -292,6 +324,7 @@ export async function runDeployment(
           containerPort: project.containerPort ?? undefined,
           envVars: envMap,
           volumes: (project.persistentVolumes as { name: string; mountPath: string }[] | null) ?? undefined,
+          exposedPorts: (project.exposedPorts as { internal: number; external?: number; protocol?: string }[] | null) ?? undefined,
         });
       }
     } else if (project.composeContent) {
@@ -380,9 +413,18 @@ export async function runDeployment(
     const composePath = join(slotDir, "docker-compose.yml");
     await writeFile(composePath, composeToYaml(compose), "utf-8");
 
-    // Write .env
+    // Write .env — resolve template expressions first
     if (Object.keys(envMap).length > 0) {
-      const envContent = Object.entries(envMap).map(([k, v]) => `${k}=${v}`).join("\n");
+      // Resolve ${VAR} self-references and ${project.name} built-ins
+      const resolved: Record<string, string> = {};
+      for (const [k, v] of Object.entries(envMap)) {
+        resolved[k] = v
+          .replace(/\$\{project\.name\}/g, project.name)
+          .replace(/\$\{project\.port\}/g, String(project.containerPort || ""))
+          .replace(/\$\{project\.id\}/g, project.id)
+          .replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_m, ref) => envMap[ref] ?? `\${${ref}}`);
+      }
+      const envContent = Object.entries(resolved).map(([k, v]) => `${k}=${v}`).join("\n");
       await writeFile(join(slotDir, ".env"), envContent, "utf-8");
     }
 
@@ -486,6 +528,15 @@ export async function runDeployment(
       .set({ status: "success", log: logLines.join("\n"), durationMs, finishedAt: new Date() })
       .where(eq(deployments.id, deploymentId));
 
+    // Publish event for real-time UI updates
+    publishEvent(projectChannel(opts.projectId), {
+      event: "deploy:complete",
+      status: "active",
+      deploymentId,
+      success: true,
+      durationMs,
+    }).catch(() => {});
+
     // Send success notification (non-blocking)
     sendDeployNotification(project, deploymentId, true, durationMs).catch(() => {});
 
@@ -504,6 +555,15 @@ export async function runDeployment(
       .update(projects)
       .set({ status: "error", updatedAt: new Date() })
       .where(eq(projects.id, opts.projectId));
+
+    // Publish event for real-time UI updates
+    publishEvent(projectChannel(opts.projectId), {
+      event: "deploy:complete",
+      status: "error",
+      deploymentId,
+      success: false,
+      durationMs,
+    }).catch(() => {});
 
     // Send failure notification (non-blocking) — project may not be fetched yet
     sendDeployNotification(

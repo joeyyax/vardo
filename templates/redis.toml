@@ -1,0 +1,39 @@
+version = "1"
+name = "redis"
+displayName = "Redis"
+description = "In-memory data store for caching and messaging"
+icon = "https://cdn.simpleicons.org/redis/FF4438"
+category = "cache"
+source = "direct"
+deployType = "image"
+imageName = "redis:7-alpine"
+defaultPort = 6379
+
+[[envVars]]
+key = "REDIS_PASSWORD"
+description = "Optional password"
+required = false
+
+[[volumes]]
+name = "data"
+mountPath = "/data"
+description = "Redis data"
+
+[[connectionInfo]]
+label = "Host"
+value = "${project.name}"
+copyRef = "HOST"
+
+[[connectionInfo]]
+label = "Port"
+value = "6379"
+
+[[connectionInfo]]
+label = "Password"
+value = "${REDIS_PASSWORD}"
+copyRef = "REDIS_PASSWORD"
+
+[[connectionInfo]]
+label = "Connection URL"
+value = "redis://:${REDIS_PASSWORD}@${project.name}:6379"
+copyRef = "REDIS_URL"

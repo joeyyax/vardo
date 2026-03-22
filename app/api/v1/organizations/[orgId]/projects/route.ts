@@ -6,6 +6,7 @@ import { desc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { generateSubdomain } from "@/lib/domains/auto-domain";
+import { allocatePorts } from "@/lib/docker/ports";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -31,6 +32,21 @@ const createProjectSchema = z
     autoTraefikLabels: z.boolean().default(false),
     autoDeploy: z.boolean().default(false),
     generateDomain: z.boolean().default(true),
+    persistentVolumes: z.array(z.object({
+      name: z.string(),
+      mountPath: z.string(),
+    })).optional(),
+    exposedPorts: z.array(z.object({
+      internal: z.number(),
+      external: z.number().optional(),
+      protocol: z.string().optional(),
+      description: z.string().optional(),
+    })).optional(),
+    connectionInfo: z.array(z.object({
+      label: z.string(),
+      value: z.string(),
+      copyRef: z.string().optional(),
+    })).optional(),
   })
   .refine(
     (data) => {
@@ -133,6 +149,20 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         containerPort: data.containerPort,
         autoTraefikLabels: data.autoTraefikLabels,
         autoDeploy: data.autoDeploy,
+        persistentVolumes: data.persistentVolumes,
+        exposedPorts: data.exposedPorts ? await (async () => {
+          // Auto-allocate external ports for any that don't have one
+          const needAllocation = data.exposedPorts!.filter((p) => !p.external);
+          if (needAllocation.length > 0) {
+            const allocated = await allocatePorts(needAllocation.length);
+            let i = 0;
+            return data.exposedPorts!.map((p) =>
+              p.external ? p : { ...p, external: allocated[i++] }
+            );
+          }
+          return data.exposedPorts;
+        })() : undefined,
+        connectionInfo: data.connectionInfo,
       })
       .returning();
 

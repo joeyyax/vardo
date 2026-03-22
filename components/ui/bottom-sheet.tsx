@@ -94,7 +94,8 @@ function BottomSheetContent({
           "bg-background squircle rounded-t-3xl fixed bottom-0 left-1/2 -translate-x-1/2 z-50 flex w-full container flex-col shadow-lg",
           "data-[state=open]:animate-in data-[state=closed]:animate-out",
           "data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom",
-          "data-[state=closed]:duration-300 data-[state=open]:duration-500",
+          "data-[state=closed]:duration-[--duration-fast] data-[state=open]:duration-[--duration-normal]",
+          "ease-[--ease-out-expo]",
           sizeClasses[size],
           className
         )}
