@@ -99,8 +99,8 @@ export async function getInstanceConfig(): Promise<InstanceConfig> {
   // Env var fallback
   return {
     instanceName: process.env.NEXT_PUBLIC_APP_NAME ?? DEFAULT_APP_NAME,
-    baseDomain: process.env.HOST_BASE_DOMAIN ?? "",
-    serverIp: process.env.HOST_SERVER_IP ?? "",
+    baseDomain: process.env.VARDO_BASE_DOMAIN ?? "",
+    serverIp: process.env.VARDO_SERVER_IP ?? "",
   };
 }
 

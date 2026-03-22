@@ -14,9 +14,9 @@ export async function GET(request: NextRequest) {
   try {
     await requireAdminAuth(request);
 
-    const serverIp = process.env.HOST_SERVER_IP ?? "";
-    const baseDomain = process.env.HOST_BASE_DOMAIN ?? "";
-    const hostDomain = process.env.HOST_DOMAIN ?? "";
+    const serverIp = process.env.VARDO_SERVER_IP ?? "";
+    const baseDomain = process.env.VARDO_BASE_DOMAIN ?? "";
+    const hostDomain = process.env.VARDO_DOMAIN ?? "";
 
     const domains = [hostDomain, baseDomain].filter(Boolean);
     // Deduplicate

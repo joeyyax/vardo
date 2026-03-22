@@ -2,7 +2,7 @@
 
 ## Environment Variables
 
-Host uses two environment files:
+Vardo uses two environment files:
 
 - **`.env`** -- Non-secret development defaults, committed to the repository.
 - **`.env.prod`** (production) or **`.env.local`** (development) -- Secret overrides, never committed.
@@ -21,10 +21,10 @@ Host uses two environment files:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `HOST_DOMAIN` | Dashboard domain (production only) | -- |
-| `HOST_BASE_DOMAIN` | Base domain for auto-generated app subdomains | `localhost` |
-| `HOST_EXPOSE_PORTS` | Enable direct port exposure for apps | `true` (dev) |
-| `HOST_PROJECTS_DIR` | Directory for deployment data inside the container | `/var/lib/host/projects` |
+| `VARDO_DOMAIN` | Dashboard domain (production only) | -- |
+| `VARDO_BASE_DOMAIN` | Base domain for auto-generated app subdomains | `localhost` |
+| `VARDO_EXPOSE_PORTS` | Enable direct port exposure for apps | `true` (dev) |
+| `VARDO_PROJECTS_DIR` | Directory for deployment data inside the container | `/var/lib/host/projects` |
 
 ### Encryption
 

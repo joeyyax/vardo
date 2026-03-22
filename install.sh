@@ -247,11 +247,11 @@ if [ ! -f "$ENV_FILE" ]; then
   log "Creating configuration..."
 
   # Prompt for required values (skip if already set via env vars)
-  if [ -z "$HOST_DOMAIN" ]; then
-    read -p "  Domain for Vardo dashboard (e.g. host.example.com): " HOST_DOMAIN < /dev/tty
+  if [ -z "$VARDO_DOMAIN" ]; then
+    read -p "  Domain for Vardo dashboard (e.g. host.example.com): " VARDO_DOMAIN < /dev/tty
   fi
-  if [ -z "$HOST_BASE_DOMAIN" ]; then
-    read -p "  Base domain for projects (e.g. example.com): " HOST_BASE_DOMAIN < /dev/tty
+  if [ -z "$VARDO_BASE_DOMAIN" ]; then
+    read -p "  Base domain for projects (e.g. example.com): " VARDO_BASE_DOMAIN < /dev/tty
   fi
   if [ -z "$ACME_EMAIL" ]; then
     read -p "  Email for Let's Encrypt: " ACME_EMAIL < /dev/tty
@@ -267,26 +267,26 @@ if [ ! -f "$ENV_FILE" ]; then
     fi
 
     if command -v dig &> /dev/null; then
-      DOMAIN_IP=$(dig +short "$HOST_DOMAIN" 2>/dev/null | head -1)
+      DOMAIN_IP=$(dig +short "$VARDO_DOMAIN" 2>/dev/null | head -1)
     elif command -v host &> /dev/null; then
-      DOMAIN_IP=$(host "$HOST_DOMAIN" 2>/dev/null | awk '/has address/ {print $4; exit}')
+      DOMAIN_IP=$(host "$VARDO_DOMAIN" 2>/dev/null | awk '/has address/ {print $4; exit}')
     else
       DOMAIN_IP=""
     fi
 
     if [ -n "$DOMAIN_IP" ] && [ "$DOMAIN_IP" = "$SERVER_IP" ]; then
-      log "DNS verified: $HOST_DOMAIN -> $SERVER_IP"
+      log "DNS verified: $VARDO_DOMAIN -> $SERVER_IP"
       DNS_OK=true
     else
       if [ -n "$DOMAIN_IP" ]; then
-        warn "DNS mismatch: $HOST_DOMAIN resolves to $DOMAIN_IP (this server is $SERVER_IP)"
+        warn "DNS mismatch: $VARDO_DOMAIN resolves to $DOMAIN_IP (this server is $SERVER_IP)"
       else
-        warn "Could not resolve $HOST_DOMAIN — configure DNS when ready"
+        warn "Could not resolve $VARDO_DOMAIN — configure DNS when ready"
       fi
       echo ""
       echo -e "  ${DIM}Point these DNS records to this server:${RESET}"
-      echo -e "    A   ${HOST_DOMAIN}           -> ${SERVER_IP}"
-      echo -e "    A   *.${HOST_BASE_DOMAIN}    -> ${SERVER_IP}"
+      echo -e "    A   ${VARDO_DOMAIN}           -> ${SERVER_IP}"
+      echo -e "    A   *.${VARDO_BASE_DOMAIN}    -> ${SERVER_IP}"
       echo ""
     fi
   fi
@@ -309,8 +309,8 @@ if [ ! -f "$ENV_FILE" ]; then
   TRAEFIK_DASHBOARD_AUTH=$(printf 'admin:%s' "$(openssl passwd -apr1 "$TRAEFIK_DASH_PASS")" | sed 's/\$/\$\$/g')
 
   cat > "$ENV_FILE" <<EOF
-HOST_DOMAIN=$HOST_DOMAIN
-HOST_BASE_DOMAIN=$HOST_BASE_DOMAIN
+VARDO_DOMAIN=$VARDO_DOMAIN
+VARDO_BASE_DOMAIN=$VARDO_BASE_DOMAIN
 DB_PASSWORD=$DB_PASSWORD
 BETTER_AUTH_SECRET=$AUTH_SECRET
 ENCRYPTION_MASTER_KEY=$ENCRYPTION_MASTER_KEY
@@ -389,8 +389,8 @@ echo -e "${GREEN}${BOLD}  ======================================${RESET}"
 echo -e "${GREEN}${BOLD}  Host is running!${RESET}"
 echo -e "${GREEN}${BOLD}  ======================================${RESET}"
 echo ""
-echo -e "  ${BOLD}Dashboard:${RESET}  https://${HOST_DOMAIN:-localhost}"
-echo -e "  ${BOLD}Traefik:${RESET}    https://traefik.${HOST_BASE_DOMAIN:-localhost}"
+echo -e "  ${BOLD}Dashboard:${RESET}  https://${VARDO_DOMAIN:-localhost}"
+echo -e "  ${BOLD}Traefik:${RESET}    https://traefik.${VARDO_BASE_DOMAIN:-localhost}"
 if [ -n "$TRAEFIK_DASH_PASS" ]; then
   echo -e "  ${BOLD}Traefik login:${RESET} admin / ${TRAEFIK_DASH_PASS}"
 fi
@@ -399,8 +399,8 @@ echo ""
 # DNS records reminder
 if [ "$DNS_OK" != true ] && [ -n "$SERVER_IP" ]; then
   echo -e "  ${YELLOW}${BOLD}DNS Records (required):${RESET}"
-  echo -e "    A   ${HOST_DOMAIN:-<your-domain>}           -> ${SERVER_IP}"
-  echo -e "    A   *.${HOST_BASE_DOMAIN:-<your-base-domain>}    -> ${SERVER_IP}"
+  echo -e "    A   ${VARDO_DOMAIN:-<your-domain>}           -> ${SERVER_IP}"
+  echo -e "    A   *.${VARDO_BASE_DOMAIN:-<your-base-domain>}    -> ${SERVER_IP}"
   echo ""
 fi
 
@@ -409,7 +409,7 @@ echo -e "  ${BOLD}Getting started:${RESET}"
 if [ -n "$SERVER_IP" ]; then
   echo -e "    1. Visit ${BOLD}http://${SERVER_IP}${RESET} to complete setup (works before DNS)"
 else
-  echo -e "    1. Visit ${BOLD}https://${HOST_DOMAIN:-localhost}${RESET} to complete setup"
+  echo -e "    1. Visit ${BOLD}https://${VARDO_DOMAIN:-localhost}${RESET} to complete setup"
 fi
 echo -e "    2. The setup wizard will walk you through account creation, email, backups, and more"
 echo ""
