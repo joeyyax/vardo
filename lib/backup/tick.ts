@@ -2,7 +2,8 @@ import { db } from "@/lib/db";
 import { backupJobs, backups } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { runBackup } from "./engine";
-import { shouldRunNow, isSameMinute } from "@/lib/cron/parse";
+import { shouldRunNow } from "@/lib/cron/parse";
+import { acquireLock } from "@/lib/redis-lock";
 
 // ---------------------------------------------------------------------------
 // Public tick
@@ -24,10 +25,10 @@ export async function tickBackupJobs(): Promise<void> {
       // Check if this job should run now based on its cron schedule
       if (!shouldRunNow(job.schedule, now)) continue;
 
-      // Avoid running the same job twice in the same minute
-      if (job.lastRunAt && isSameMinute(new Date(job.lastRunAt), now)) {
-        continue;
-      }
+      // Acquire a distributed lock for this job+minute to prevent double-fire
+      const minuteTs = Math.floor(now.getTime() / 60_000);
+      const locked = await acquireLock(`lock:backup:${job.id}:${minuteTs}`, 61_000);
+      if (!locked) continue;
 
       // Check if this job already has a backup in "running" state (still in progress)
       const runningBackup = await db.query.backups.findFirst({
