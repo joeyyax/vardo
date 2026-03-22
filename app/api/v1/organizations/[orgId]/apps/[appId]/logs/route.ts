@@ -6,8 +6,6 @@ import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { listContainers, getContainerLogs } from "@/lib/docker/client";
 import { isLokiAvailable, queryRange, buildLogQLQuery } from "@/lib/loki/client";
-import { isFeatureEnabled } from "@/lib/config/features";
-
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
 };
@@ -15,10 +13,6 @@ type RouteParams = {
 // GET /api/v1/organizations/[orgId]/apps/[appId]/logs
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    if (!isFeatureEnabled("logs")) {
-      return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
-    }
-
     const { orgId, appId } = await params;
     const { organization } = await requireOrg();
 

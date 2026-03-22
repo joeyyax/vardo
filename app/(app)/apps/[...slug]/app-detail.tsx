@@ -2030,11 +2030,9 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           <TabsTrigger value="networking">
             Networking
           </TabsTrigger>
-          {featureFlags?.logs !== false && (
-            <TabsTrigger value="logs">
-              Logs
-            </TabsTrigger>
-          )}
+          <TabsTrigger value="logs">
+            Logs
+          </TabsTrigger>
           <TabsTrigger value="volumes">
             Volumes
           </TabsTrigger>
@@ -2048,11 +2046,9 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
               Terminal
             </TabsTrigger>
           )}
-          {featureFlags?.metrics !== false && (
-            <TabsTrigger value="metrics">
-              Metrics
-            </TabsTrigger>
-          )}
+          <TabsTrigger value="metrics">
+            Metrics
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="deployments" className="pt-4 space-y-4">
@@ -2585,14 +2581,12 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           />
         </TabsContent>
 
-        {featureFlags?.logs !== false && (
-          <TabsContent value="logs" className="pt-4">
-            <LogViewer
-              key={`logs-${selectedEnvId}`}
-              streamUrl={`/api/v1/organizations/${orgId}/apps/${app.id}/logs/stream${selectedEnv ? `?environment=${selectedEnv.name}` : ""}`}
-            />
-          </TabsContent>
-        )}
+        <TabsContent value="logs" className="pt-4">
+          <LogViewer
+            key={`logs-${selectedEnvId}`}
+            streamUrl={`/api/v1/organizations/${orgId}/apps/${app.id}/logs/stream${selectedEnv ? `?environment=${selectedEnv.name}` : ""}`}
+          />
+        </TabsContent>
 
         <TabsContent value="volumes" className="pt-4">
           <VolumesPanel appId={app.id} orgId={orgId} />
@@ -2610,11 +2604,9 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           </TabsContent>
         )}
 
-        {featureFlags?.metrics !== false && (
-          <TabsContent value="metrics" className="pt-4">
-            <AppMetrics key={`metrics-${selectedEnvId}`} orgId={orgId} appId={app.id} environmentName={selectedEnv?.name} />
-          </TabsContent>
-        )}
+        <TabsContent value="metrics" className="pt-4">
+          <AppMetrics key={`metrics-${selectedEnvId}`} orgId={orgId} appId={app.id} environmentName={selectedEnv?.name} />
+        </TabsContent>
 
       </Tabs>
 
