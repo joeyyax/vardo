@@ -30,6 +30,10 @@ import {
   Wrench,
   BarChart3,
   UserCircle,
+  Mail,
+  HardDrive,
+  GitBranch,
+  Blocks,
 } from "lucide-react";
 import { AppIcon } from "@/components/app-status";
 
@@ -270,6 +274,38 @@ export function CommandPalette({ orgId }: CommandPaletteProps) {
               >
                 <Wrench className="size-4" />
                 <span>Maintenance</span>
+              </CommandItem>
+              <CommandItem
+                value="Admin Settings System Email SMTP"
+                onSelect={() => runCommand(() => router.push("/admin/settings/email"))}
+                className="gap-2"
+              >
+                <Mail className="size-4" />
+                <span>Admin settings: Email</span>
+              </CommandItem>
+              <CommandItem
+                value="Admin Settings Backup Storage S3 R2"
+                onSelect={() => runCommand(() => router.push("/admin/settings/backup"))}
+                className="gap-2"
+              >
+                <HardDrive className="size-4" />
+                <span>Admin settings: Backup</span>
+              </CommandItem>
+              <CommandItem
+                value="Admin Settings GitHub App Integration"
+                onSelect={() => runCommand(() => router.push("/admin/settings/github"))}
+                className="gap-2"
+              >
+                <GitBranch className="size-4" />
+                <span>Admin settings: GitHub App</span>
+              </CommandItem>
+              <CommandItem
+                value="Admin Settings Services Metrics Logs"
+                onSelect={() => runCommand(() => router.push("/admin/settings/services"))}
+                className="gap-2"
+              >
+                <Blocks className="size-4" />
+                <span>Admin settings: Services</span>
               </CommandItem>
             </CommandGroup>
           </CommandList>
