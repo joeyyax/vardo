@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const octokit = getInstallationOctokit(installation.installationId);
+    const octokit = await getInstallationOctokit(installation.installationId);
     const [owner, repoName] = repo.split("/");
 
     if (!owner || !repoName) {
