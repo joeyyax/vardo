@@ -37,22 +37,24 @@ async function migrate() {
   let migrated = 0;
   let skipped = 0;
 
-  for (const row of rows) {
-    if (isEncrypted(row.value)) {
-      console.log(`  [skip] ${row.key} — already encrypted`);
-      skipped++;
-      continue;
+  await db.transaction(async (tx) => {
+    for (const row of rows) {
+      if (isEncrypted(row.value)) {
+        console.log(`  [skip] ${row.key} — already encrypted`);
+        skipped++;
+        continue;
+      }
+
+      const encrypted = encryptSystem(row.value);
+      await tx
+        .update(systemSettings)
+        .set({ value: encrypted, updatedAt: new Date() })
+        .where(eq(systemSettings.key, row.key));
+
+      console.log(`  [migrated] ${row.key}`);
+      migrated++;
     }
-
-    const encrypted = encryptSystem(row.value);
-    await db
-      .update(systemSettings)
-      .set({ value: encrypted, updatedAt: new Date() })
-      .where(eq(systemSettings.key, row.key));
-
-    console.log(`  [migrated] ${row.key}`);
-    migrated++;
-  }
+  });
 
   console.log(`\nDone: ${migrated} migrated, ${skipped} skipped`);
 }
