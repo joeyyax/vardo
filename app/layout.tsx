@@ -17,10 +17,20 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Host",
-    template: "%s — Host",
+    default: "Vardo",
+    template: "%s — Vardo",
   },
   description: "Self-hosted PaaS for managing Docker Compose deployments.",
+  openGraph: {
+    type: "website",
+    title: "Vardo",
+    description: "Self-hosted PaaS for managing Docker Compose deployments.",
+  },
+  twitter: {
+    card: "summary",
+    title: "Vardo",
+    description: "Self-hosted PaaS for managing Docker Compose deployments.",
+  },
 };
 
 export default function RootLayout({
