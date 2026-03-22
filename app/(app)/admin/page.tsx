@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { user, projects, deployments, templates } from "@/lib/db/schema";
+import { user, apps, deployments, templates } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth/session";
 import { eq, sql } from "drizzle-orm";
 import { AdminActions } from "./admin-actions";
@@ -25,12 +25,12 @@ export default async function AdminPage() {
   // Gather stats
   const [
     [{ userCount }],
-    [{ projectCount }],
+    [{ appCount }],
     [{ deploymentCount }],
     [{ templateCount }],
   ] = await Promise.all([
     db.select({ userCount: sql<number>`count(*)` }).from(user),
-    db.select({ projectCount: sql<number>`count(*)` }).from(projects),
+    db.select({ appCount: sql<number>`count(*)` }).from(apps),
     db.select({ deploymentCount: sql<number>`count(*)` }).from(deployments),
     db.select({ templateCount: sql<number>`count(*)` }).from(templates),
   ]);
@@ -48,7 +48,7 @@ export default async function AdminPage() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
           { label: "Users", value: Number(userCount) },
-          { label: "Projects", value: Number(projectCount) },
+          { label: "Apps", value: Number(appCount) },
           { label: "Deployments", value: Number(deploymentCount) },
           { label: "Templates", value: Number(templateCount) },
         ].map((stat) => (

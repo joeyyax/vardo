@@ -141,12 +141,21 @@ export async function fetchAllContainerMetrics(): Promise<ContainerMetrics[]> {
  * Fetch metrics for containers belonging to a specific project.
  */
 export async function fetchProjectMetrics(
-  projectName: string
+  projectName: string,
+  environmentName?: string,
 ): Promise<ContainerMetrics[]> {
   const all = await fetchAllContainerMetrics();
-  return all.filter(
+  // Container names follow: {project}-{env}-{slot}-{service}-{n}
+  // Match by project name prefix, then optionally filter by environment
+  const projectContainers = all.filter(
     (m) =>
       m.projectName === projectName ||
       m.projectName.startsWith(`${projectName}-`)
+  );
+  if (!environmentName) return projectContainers;
+  // Filter to containers whose compose project matches {project}-{env}-*
+  const envPrefix = `${projectName}-${environmentName}-`;
+  return projectContainers.filter(
+    (m) => m.containerName.startsWith(envPrefix) || m.projectName.startsWith(envPrefix)
   );
 }

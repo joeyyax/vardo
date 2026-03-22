@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { tags } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
@@ -33,14 +34,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ tags: tagList });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error fetching tags:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error fetching tags");
   }
 }
 
@@ -76,9 +70,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ tag }, { status: 201 });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
     if (
       error instanceof Error &&
       "code" in error &&
@@ -89,10 +80,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         { status: 409 }
       );
     }
-    console.error("Error creating tag:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error creating tag");
   }
 }

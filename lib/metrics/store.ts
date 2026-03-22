@@ -182,6 +182,35 @@ export async function getLatestDiskUsage(): Promise<{
   }
 }
 
+/**
+ * Store per-project disk usage.
+ */
+export async function storeProjectDisk(
+  projectName: string,
+  timestamp: number,
+  sizeBytes: number
+) {
+  const key = tsKey(projectName, "disk");
+  await ensureTimeSeries(key, { project: projectName, metric: "disk" });
+  await tsRedis.call("TS.ADD", key, timestamp.toString(), sizeBytes.toString());
+}
+
+/**
+ * Get the latest disk usage for a specific project from Redis (no Docker call).
+ */
+export async function getLatestProjectDiskUsage(
+  projectName: string
+): Promise<number | null> {
+  try {
+    const key = tsKey(projectName, "disk");
+    const result = (await tsRedis.call("TS.GET", key)) as [string, string] | null;
+    if (!result) return null;
+    return parseFloat(result[1]);
+  } catch {
+    return null;
+  }
+}
+
 export type TimeSeriesPoint = [number, number]; // [timestamp, value]
 
 /**
@@ -190,7 +219,7 @@ export type TimeSeriesPoint = [number, number]; // [timestamp, value]
  */
 export async function queryMetrics(
   projectName: string,
-  metric: "cpu" | "memory" | "memoryLimit" | "networkRx" | "networkTx",
+  metric: "cpu" | "memory" | "memoryLimit" | "networkRx" | "networkTx" | "disk",
   fromMs: number,
   toMs: number,
   aggregation?: { type: "avg" | "max" | "min" | "sum"; bucketMs: number }

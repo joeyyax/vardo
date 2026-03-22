@@ -1,0 +1,106 @@
+import { NextRequest } from "next/server";
+import { handleRouteError } from "@/lib/api/error-response";
+import { db } from "@/lib/db";
+import { apps } from "@/lib/db/schema";
+import { requireOrg } from "@/lib/auth/session";
+import { eq, and } from "drizzle-orm";
+import { spawn } from "child_process";
+import { resolve } from "path";
+import { readFile } from "fs/promises";
+import { createSSEResponse } from "@/lib/api/sse";
+
+const PROJECTS_DIR = resolve(process.env.HOST_PROJECTS_DIR || "./.host/projects");
+
+type RouteParams = {
+  params: Promise<{ orgId: string; appId: string }>;
+};
+
+// GET /api/v1/organizations/[orgId]/apps/[appId]/logs/stream
+export async function GET(request: NextRequest, { params }: RouteParams) {
+  try {
+    const { orgId, appId } = await params;
+    const { organization } = await requireOrg();
+
+    if (organization.id !== orgId) {
+      return new Response("Forbidden", { status: 403 });
+    }
+
+    const app = await db.query.apps.findFirst({
+      where: and(
+        eq(apps.id, appId),
+        eq(apps.organizationId, orgId)
+      ),
+      columns: { id: true, name: true },
+    });
+
+    if (!app) {
+      return new Response("Not found", { status: 404 });
+    }
+
+    const searchParams = request.nextUrl.searchParams;
+    const tail = searchParams.get("tail") || "200";
+    const environmentName = searchParams.get("environment") || "production";
+
+    // Find the active slot — check environment-aware layout first, fall back to legacy
+    let appDir = resolve(PROJECTS_DIR, app.name, environmentName);
+    let activeSlot = "blue";
+    try {
+      activeSlot = (await readFile(resolve(appDir, ".active-slot"), "utf-8")).trim();
+    } catch {
+      // Fall back to legacy layout (no environment subdirectory)
+      appDir = resolve(PROJECTS_DIR, app.name);
+      try {
+        activeSlot = (await readFile(resolve(appDir, ".active-slot"), "utf-8")).trim();
+      } catch { /* default to blue */ }
+    }
+
+    const slotDir = resolve(appDir, activeSlot);
+    const composePath = resolve(slotDir, "docker-compose.yml");
+    // Use env-aware compose project name if environment directory exists
+    const envAware = appDir.endsWith(environmentName);
+    const composeProject = envAware
+      ? `${app.name}-${environmentName}-${activeSlot}`
+      : `${app.name}-${activeSlot}`;
+
+    return createSSEResponse(request, async (sendEvent) => {
+      const proc = spawn("docker", [
+        "compose",
+        "-f", composePath,
+        "-p", composeProject,
+        "logs",
+        "-f",
+        "--tail", tail,
+        "--no-log-prefix",
+      ], { cwd: slotDir });
+
+      proc.stdout.on("data", (chunk: Buffer) => {
+        const lines = chunk.toString().split("\n");
+        for (const line of lines) {
+          if (line) sendEvent("log", line);
+        }
+      });
+
+      proc.stderr.on("data", (chunk: Buffer) => {
+        const lines = chunk.toString().split("\n");
+        for (const line of lines) {
+          if (line) sendEvent("log", line);
+        }
+      });
+
+      proc.on("error", (err) => {
+        sendEvent("log", `[error] ${err.message}`);
+      });
+
+      request.signal.addEventListener("abort", () => {
+        proc.kill();
+      });
+
+      // Keep the handler alive until the process exits
+      await new Promise<void>((resolve) => {
+        proc.on("close", () => resolve());
+      });
+    });
+  } catch (error) {
+    return handleRouteError(error, "Error streaming logs");
+  }
+}

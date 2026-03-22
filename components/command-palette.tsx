@@ -79,7 +79,7 @@ export function CommandPalette({ orgId }: CommandPaletteProps) {
                   className="gap-2"
                 >
                   <FolderKanban className="size-4" />
-                  <span>Projects</span>
+                  <span>Dashboard</span>
                 </CommandItem>
                 <CommandItem
                   onSelect={() => runCommand(() => router.push("/settings"))}

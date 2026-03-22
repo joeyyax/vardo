@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { projects } from "@/lib/db/schema";
+import { apps } from "@/lib/db/schema";
 import { getCurrentOrg } from "@/lib/auth/session";
 import { eq, asc, desc } from "drizzle-orm";
 import { PageToolbar } from "@/components/page-toolbar";
@@ -18,11 +18,11 @@ export default async function MetricsPage() {
 
   const orgId = orgData.organization.id;
 
-  // Fetch projects + fast initial data in parallel
-  const [projectList, systemInfo, initialMetrics, cachedDisk] = await Promise.all([
-    db.query.projects.findMany({
-      where: eq(projects.organizationId, orgId),
-      orderBy: [asc(projects.sortOrder), desc(projects.createdAt)],
+  // Fetch apps + fast initial data in parallel
+  const [appList, systemInfo, initialMetrics, cachedDisk] = await Promise.all([
+    db.query.apps.findMany({
+      where: eq(apps.organizationId, orgId),
+      orderBy: [asc(apps.sortOrder), desc(apps.createdAt)],
       columns: { id: true, name: true, displayName: true, status: true },
     }),
     getSystemInfo().catch(() => null),
@@ -30,20 +30,20 @@ export default async function MetricsPage() {
     getLatestDiskUsage().catch(() => null),
   ]);
 
-  // Pre-aggregate initial stats per project
+  // Pre-aggregate initial stats per app
   const initialStats: Record<string, ContainerMetrics[]> = {};
   for (const m of initialMetrics) {
-    const matched = projectList.find(
-      (p) => m.projectName === p.name || m.projectName.startsWith(`${p.name}-`)
+    const matched = appList.find(
+      (a) => m.projectName === a.name || m.projectName.startsWith(`${a.name}-`)
     );
     if (!matched) continue;
     if (!initialStats[matched.id]) initialStats[matched.id] = [];
     initialStats[matched.id].push(m);
   }
 
-  const initialProjectStats = projectList.map((p) => ({
-    ...p,
-    containers: (initialStats[p.id] || []).map((m) => ({
+  const initialAppStats = appList.map((a) => ({
+    ...a,
+    containers: (initialStats[a.id] || []).map((m) => ({
       containerId: m.containerId,
       containerName: m.containerName,
       cpuPercent: m.cpuPercent,
@@ -65,9 +65,9 @@ export default async function MetricsPage() {
 
       <OrgMetrics
         orgId={orgId}
-        projects={projectList}
+        apps={appList}
         initialSystem={systemInfo}
-        initialProjectStats={initialProjectStats}
+        initialAppStats={initialAppStats}
         initialDisk={cachedDisk}
       />
     </div>

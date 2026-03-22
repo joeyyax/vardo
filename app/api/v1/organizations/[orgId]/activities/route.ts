@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { activities } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
@@ -19,15 +20,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const searchParams = request.nextUrl.searchParams;
-    const projectId = searchParams.get("projectId");
+    const appId = searchParams.get("appId");
     const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 100);
     const offset = parseInt(searchParams.get("offset") || "0");
 
     // Build conditions
     const conditions = [eq(activities.organizationId, orgId)];
 
-    if (projectId) {
-      conditions.push(eq(activities.projectId, projectId));
+    if (appId) {
+      conditions.push(eq(activities.appId, appId));
     }
 
     const activityList = await db.query.activities.findMany({
@@ -36,7 +37,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         user: {
           columns: { id: true, name: true, email: true, image: true },
         },
-        project: {
+        app: {
           columns: { id: true, name: true },
         },
       },
@@ -61,10 +62,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       },
     });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error fetching activities:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return handleRouteError(error, "Error fetching activities");
   }
 }

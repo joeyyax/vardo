@@ -23,9 +23,11 @@ export const auth = betterAuth({
     level: "debug",
   },
 
-  // Email + password authentication
+  // Email + password authentication (invite only — no public registration)
+  // Sign-up is allowed only when no users exist (initial setup), then locks down
   emailAndPassword: {
     enabled: true,
+    disableSignUp: true,
   },
 
   plugins: [
@@ -62,6 +64,14 @@ export const auth = betterAuth({
     // Sessions stored in database via Drizzle adapter
     expiresIn: 60 * 60 * 24 * 7, // 7 days
     updateAge: 60 * 60 * 24, // Update session every 24 hours
+  },
+
+  // Social login providers
+  socialProviders: {
+    github: {
+      clientId: process.env.GITHUB_CLIENT_ID!,
+      clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+    },
   },
 
   // Account configuration

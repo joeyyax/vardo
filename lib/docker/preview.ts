@@ -2,12 +2,12 @@
 // PR preview lifecycle
 //
 // Creates and destroys preview environments for GitHub pull requests.
-// A preview clones the entire group's environment so the PR gets a
+// A preview clones the entire project's environment so the PR gets a
 // fully functional stack.
 // ---------------------------------------------------------------------------
 
 import { db } from "@/lib/db";
-import { projects, groupEnvironments } from "@/lib/db/schema";
+import { apps, groupEnvironments } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import {
   createGroupEnvironment,
@@ -36,7 +36,7 @@ type CreatePreviewOpts = {
 
 type PreviewResult = {
   groupEnvironmentId: string;
-  domains: { projectName: string; domain: string }[];
+  domains: { appName: string; domain: string }[];
   deployed: boolean;
 };
 
@@ -49,9 +49,9 @@ export type { CreatePreviewOpts, PreviewResult };
 /**
  * Create a preview environment for a PR.
  *
- * 1. Find project(s) matching the repo + branch
- * 2. If project is in a group, clone the entire group as a preview
- * 3. Deploy the preview group
+ * 1. Find app(s) matching the repo + branch
+ * 2. If app is in a project, clone the entire project as a preview
+ * 3. Deploy the preview project
  * 4. Return preview URLs
  */
 export async function createPreview(
@@ -59,44 +59,44 @@ export async function createPreview(
 ): Promise<PreviewResult | null> {
   const gitUrl = `https://github.com/${opts.repoFullName}.git`;
 
-  // Find projects matching this repo
-  const matchingProjects = await db.query.projects.findMany({
-    where: eq(projects.gitUrl, gitUrl),
+  // Find apps matching this repo
+  const matchingApps = await db.query.apps.findMany({
+    where: eq(apps.gitUrl, gitUrl),
   });
 
   // Filter to matching branch
-  const branchProjects = matchingProjects.filter(
-    (p) => (p.gitBranch || "main") === opts.branch
+  const branchApps = matchingApps.filter(
+    (a) => (a.gitBranch || "main") === opts.branch
   );
 
-  if (branchProjects.length === 0) return null;
+  if (branchApps.length === 0) return null;
 
-  // Find the first project that belongs to a group
-  const groupedProject = branchProjects.find((p) => p.groupId);
-  if (!groupedProject || !groupedProject.groupId) {
-    // No group — can't create a group preview for standalone projects
+  // Find the first app that belongs to a project
+  const groupedApp = branchApps.find((a) => a.projectId);
+  if (!groupedApp || !groupedApp.projectId) {
+    // No project — can't create a group preview for standalone apps
     return null;
   }
 
-  const groupId = groupedProject.groupId;
-  const organizationId = groupedProject.organizationId;
+  const projectId = groupedApp.projectId;
+  const organizationId = groupedApp.organizationId;
   const envName = `pr-${opts.prNumber}`;
   const ttlDays = opts.ttlDays ?? 7;
 
   // Check if preview already exists
   const existing = await db.query.groupEnvironments.findFirst({
     where: and(
-      eq(groupEnvironments.groupId, groupId),
+      eq(groupEnvironments.projectId, projectId),
       eq(groupEnvironments.name, envName)
     ),
   });
 
   if (existing) {
     // Preview already exists — could be a push to an existing PR
-    // Re-deploy the group in the existing environment
+    // Re-deploy the project in the existing environment
     try {
       await deployGroup({
-        groupId,
+        projectId,
         organizationId,
         trigger: "webhook",
         groupEnvironmentId: existing.id,
@@ -114,7 +114,7 @@ export async function createPreview(
 
   // Create new preview environment
   const result = await createGroupEnvironment({
-    groupId,
+    projectId,
     organizationId,
     name: envName,
     type: "preview",
@@ -127,7 +127,7 @@ export async function createPreview(
   let deployed = false;
   try {
     await deployGroup({
-      groupId,
+      projectId,
       organizationId,
       trigger: "webhook",
       groupEnvironmentId: result.groupEnvironmentId,
@@ -141,7 +141,7 @@ export async function createPreview(
   const domains = result.projectEnvironments
     .filter((pe) => pe.domain)
     .map((pe) => ({
-      projectName: pe.projectName,
+      appName: pe.appName,
       domain: pe.domain!,
     }));
 
@@ -165,20 +165,20 @@ export async function destroyPreview(
 ): Promise<boolean> {
   const gitUrl = `https://github.com/${repoFullName}.git`;
 
-  // Find projects matching this repo
-  const matchingProjects = await db.query.projects.findMany({
-    where: eq(projects.gitUrl, gitUrl),
+  // Find apps matching this repo
+  const matchingApps = await db.query.apps.findMany({
+    where: eq(apps.gitUrl, gitUrl),
   });
 
-  const groupedProject = matchingProjects.find((p) => p.groupId);
-  if (!groupedProject || !groupedProject.groupId) return false;
+  const groupedApp = matchingApps.find((a) => a.projectId);
+  if (!groupedApp || !groupedApp.projectId) return false;
 
   const envName = `pr-${prNumber}`;
 
   // Find the preview environment
   const groupEnv = await db.query.groupEnvironments.findFirst({
     where: and(
-      eq(groupEnvironments.groupId, groupedProject.groupId),
+      eq(groupEnvironments.projectId, groupedApp.projectId),
       eq(groupEnvironments.name, envName)
     ),
   });
@@ -187,7 +187,7 @@ export async function destroyPreview(
 
   await destroyGroupEnvironment(
     groupEnv.id,
-    groupedProject.organizationId
+    groupedApp.organizationId
   );
 
   return true;
@@ -207,7 +207,7 @@ export async function cleanupExpiredPreviews(): Promise<number> {
   const expired = await db.query.groupEnvironments.findMany({
     where: eq(groupEnvironments.type, "preview"),
     with: {
-      group: {
+      project: {
         columns: { organizationId: true },
       },
     },
@@ -217,7 +217,7 @@ export async function cleanupExpiredPreviews(): Promise<number> {
   for (const env of expired) {
     if (env.expiresAt && env.expiresAt < now) {
       try {
-        await destroyGroupEnvironment(env.id, env.group.organizationId);
+        await destroyGroupEnvironment(env.id, env.project.organizationId);
         cleaned++;
         console.log(`[preview] Cleaned up expired preview: ${env.name}`);
       } catch (err) {

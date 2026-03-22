@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { memberships } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
@@ -63,17 +64,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       member: { id: updated.userId, role: updated.role },
     });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
     if (error instanceof Error && error.message === "Forbidden") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-    console.error("Error updating member role:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error updating member role");
   }
 }
 
@@ -124,16 +118,9 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
     if (error instanceof Error && error.message === "Forbidden") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-    console.error("Error removing member:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error removing member");
   }
 }

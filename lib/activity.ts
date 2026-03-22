@@ -5,7 +5,7 @@ import { nanoid } from "nanoid";
 type RecordActivityOpts = {
   organizationId: string;
   action: string;
-  projectId?: string;
+  appId?: string;
   userId?: string;
   metadata?: Record<string, unknown>;
 };
@@ -15,7 +15,7 @@ export async function recordActivity(opts: RecordActivityOpts): Promise<void> {
     id: nanoid(),
     organizationId: opts.organizationId,
     action: opts.action,
-    projectId: opts.projectId ?? null,
+    appId: opts.appId ?? null,
     userId: opts.userId ?? null,
     metadata: opts.metadata ?? null,
   });

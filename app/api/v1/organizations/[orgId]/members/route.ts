@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { memberships, user } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
@@ -40,14 +41,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ members });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
     if (error instanceof Error && error.message === "No organization found") {
       return NextResponse.json({ error: "No organization found" }, { status: 404 });
     }
-    console.error("Error fetching members:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return handleRouteError(error, "Error fetching members");
   }
 }
 
@@ -120,13 +117,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       },
     }, { status: 201 });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
     if (error instanceof Error && error.message === "Forbidden") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-    console.error("Error adding member:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return handleRouteError(error, "Error adding member");
   }
 }

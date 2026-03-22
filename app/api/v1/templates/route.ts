@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { handleRouteError } from "@/lib/api/error-response";
 import { requireSession } from "@/lib/auth/session";
 import { loadTemplates } from "@/lib/templates/load";
 
@@ -9,9 +10,6 @@ export async function GET(_request: NextRequest) {
     const templates = await loadTemplates();
     return NextResponse.json({ templates });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return handleRouteError(error);
   }
 }

@@ -17,15 +17,15 @@ import { RANGE_MS, BUCKET_MS, chartTooltipStyle, type TimeRange } from "@/lib/me
 import type { ContainerStatsSnapshot, TimePoint } from "@/lib/metrics/types";
 import type { SystemInfo, DiskUsage } from "@/lib/docker/client";
 
-type ProjectSummary = {
+type AppSummary = {
   id: string;
   name: string;
   displayName: string;
   status: string;
 };
 
-type ProjectStats = {
-  project: ProjectSummary;
+type AppStats = {
+  app: AppSummary;
   containers: ContainerStatsSnapshot[];
   loading: boolean;
   error: string | null;
@@ -33,13 +33,13 @@ type ProjectStats = {
 
 type OrgMetricsProps = {
   orgId: string;
-  projects: ProjectSummary[];
+  apps: AppSummary[];
   initialSystem?: SystemInfo | null;
-  initialProjectStats?: { id: string; name: string; displayName: string; status: string; containers: ContainerStatsSnapshot[] }[];
+  initialAppStats?: { id: string; name: string; displayName: string; status: string; containers: ContainerStatsSnapshot[] }[];
   initialDisk?: { total: number; images: number; volumes: number; buildCache: number } | null;
 };
 
-export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats, initialDisk }: OrgMetricsProps) {
+export function OrgMetrics({ orgId, apps, initialSystem, initialAppStats, initialDisk }: OrgMetricsProps) {
   const [timeRange, setTimeRange] = useState<TimeRange>("1h");
   const [disk, setDisk] = useState<DiskUsage | null>(initialDisk ? {
     images: { count: 0, totalSize: initialDisk.images, reclaimable: 0 },
@@ -70,12 +70,12 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
     }, 30000);
     return () => clearInterval(interval);
   }, [timeRange]);
-  const [projectStats, setProjectStats] = useState<Record<string, ProjectStats>>(() => {
-    const initial: Record<string, ProjectStats> = {};
-    for (const p of projects) {
-      const preloaded = initialProjectStats?.find((ip) => ip.id === p.id);
+  const [appStats, setAppStats] = useState<Record<string, AppStats>>(() => {
+    const initial: Record<string, AppStats> = {};
+    for (const p of apps) {
+      const preloaded = initialAppStats?.find((ip) => ip.id === p.id);
       initial[p.id] = {
-        project: p,
+        app: p,
         containers: preloaded?.containers || [],
         loading: !preloaded,
         error: null,
@@ -85,8 +85,8 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
   });
   const [timeSeries, setTimeSeries] = useState<TimePoint[]>(() => {
     // Seed with initial data if available
-    if (initialProjectStats?.length) {
-      const allC = initialProjectStats.flatMap((p) => p.containers);
+    if (initialAppStats?.length) {
+      const allC = initialAppStats.flatMap((p) => p.containers);
       const now = Date.now();
       return [{
         time: new Date(now).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
@@ -198,7 +198,7 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
     es.addEventListener("stats", (event) => {
       try {
         const payload = JSON.parse(event.data) as {
-          projects: { id: string; name: string; displayName: string; status: string; containers: ContainerStatsSnapshot[] }[];
+          apps: { id: string; name: string; displayName: string; status: string; containers: ContainerStatsSnapshot[] }[];
           disk: DiskUsage | null;
           system: SystemInfo | null;
           timestamp: string;
@@ -207,12 +207,12 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
         if (payload.disk && JSON.stringify(payload.disk) !== JSON.stringify(diskRef.current)) setDisk(payload.disk);
         if (payload.system && JSON.stringify(payload.system) !== JSON.stringify(systemRef.current)) setSystem(payload.system);
 
-        // Update per-project stats
-        setProjectStats((prev) => {
+        // Update per-app stats
+        setAppStats((prev) => {
           const next = { ...prev };
-          for (const p of payload.projects) {
+          for (const p of payload.apps) {
             next[p.id] = {
-              project: { id: p.id, name: p.name, displayName: p.displayName, status: p.status },
+              app: { id: p.id, name: p.name, displayName: p.displayName, status: p.status },
               containers: p.containers,
               loading: false,
               error: null,
@@ -223,7 +223,7 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
 
         // Add time-series point
         const now = new Date(payload.timestamp).getTime();
-        const allContainers = payload.projects.flatMap((p) => p.containers);
+        const allContainers = payload.apps.flatMap((p) => p.containers);
         const totalCpuNow = allContainers.reduce((s, c) => s + c.cpuPercent, 0);
         const totalMemNow = allContainers.reduce((s, c) => s + c.memoryUsage, 0);
         const totalRxNow = allContainers.reduce((s, c) => s + c.networkRx, 0);
@@ -250,7 +250,7 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
 
     es.onerror = () => {
       // Mark all as not loading so spinners stop
-      setProjectStats((prev) => {
+      setAppStats((prev) => {
         const next = { ...prev };
         for (const key of Object.keys(next)) {
           if (next[key].loading) {
@@ -265,10 +265,10 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId]);
 
-  const allStats = Object.values(projectStats);
+  const allStats = Object.values(appStats);
   const anyLoading = allStats.some((s) => s.loading);
 
-  // Totals across all projects
+  // Totals across all apps
   const totalCpu = allStats.reduce(
     (sum, ps) => sum + ps.containers.reduce((s, c) => s + c.cpuPercent, 0),
     0
@@ -289,7 +289,7 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
     (sum, ps) => sum + ps.containers.length,
     0
   );
-  const activeProjects = projects.filter((p) => p.status === "active").length;
+  const activeApps = apps.filter((p) => p.status === "active").length;
 
   return (
     <div className="space-y-6">
@@ -359,8 +359,8 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
           </p>
         </div>
         <div className="squircle rounded-lg border bg-card px-4 py-3">
-          <p className="text-xs text-muted-foreground">Projects</p>
-          <p className="text-2xl font-semibold tabular-nums mt-1">{activeProjects}</p>
+          <p className="text-xs text-muted-foreground">Apps</p>
+          <p className="text-2xl font-semibold tabular-nums mt-1">{activeApps}</p>
         </div>
         <div className="squircle rounded-lg border bg-card px-4 py-3">
           <p className="text-xs text-muted-foreground">Containers</p>
@@ -459,10 +459,10 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
       })()}
 
       {/* Project list with stats */}
-      {projects.length === 0 ? (
+      {apps.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
           <Activity className="size-8 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">No projects yet.</p>
+          <p className="text-sm text-muted-foreground">No apps yet.</p>
         </div>
       ) : (
         <div className="squircle rounded-lg border bg-card overflow-x-auto">
@@ -476,8 +476,8 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
             <span className="text-right">Containers</span>
           </div>
           <div className="divide-y">
-            {projects.map((project) => {
-              const ps = projectStats[project.id];
+            {apps.map((a) => {
+              const ps = appStats[a.id];
               const cpu = ps?.containers.reduce((s, c) => s + c.cpuPercent, 0) ?? 0;
               const mem = ps?.containers.reduce((s, c) => s + c.memoryUsage, 0) ?? 0;
               const memLimit = Math.max(0, ...(ps?.containers.map((c) => c.memoryLimit) ?? [0]));
@@ -485,13 +485,13 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
               const netTx = ps?.containers.reduce((s, c) => s + c.networkTx, 0) ?? 0;
 
               const containerCount = ps?.containers.length ?? 0;
-              const isActive = project.status === "active";
+              const isActive = a.status === "active";
               const loading = ps?.loading;
 
               return (
                 <Link
-                  key={project.id}
-                  href={`/projects/${project.name}/metrics`}
+                  key={a.id}
+                  href={`/apps/${a.name}/metrics`}
                   className="grid grid-cols-[1fr_70px_90px_100px_80px_80px] gap-3 px-4 py-3 hover:bg-accent/50 transition-colors items-center whitespace-nowrap min-w-[700px]"
                 >
                   <div className="flex items-center gap-3 min-w-0">
@@ -501,7 +501,7 @@ export function OrgMetrics({ orgId, projects, initialSystem, initialProjectStats
                       }`}
                     />
                     <span className="text-sm font-medium truncate">
-                      {project.displayName}
+                      {a.displayName}
                     </span>
                   </div>
                   <span className="text-xs text-right tabular-nums text-muted-foreground">

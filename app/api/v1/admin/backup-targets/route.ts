@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { backupTargets, user } from "@/lib/db/schema";
 import { requireSession } from "@/lib/auth/session";
@@ -75,17 +76,10 @@ export async function GET() {
 
     return NextResponse.json({ targets });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
     if (error instanceof Error && error.message === "Forbidden") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-    console.error("Error fetching admin backup targets:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
-    );
+    return handleRouteError(error, "Error fetching admin backup targets");
   }
 }
 
@@ -120,16 +114,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ target }, { status: 201 });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
     if (error instanceof Error && error.message === "Forbidden") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-    console.error("Error creating admin backup target:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
-    );
+    return handleRouteError(error, "Error creating admin backup target");
   }
 }

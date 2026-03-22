@@ -34,8 +34,10 @@ export function detectProjectIcon(opts: {
   imageName?: string | null;
   gitUrl?: string | null;
   deployType?: string | null;
+  name?: string | null;
+  displayName?: string | null;
 }): string | null {
-  const haystack = [opts.imageName, opts.gitUrl, opts.deployType]
+  const haystack = [opts.imageName, opts.gitUrl, opts.deployType, opts.name, opts.displayName]
     .filter(Boolean)
     .join(" ");
 

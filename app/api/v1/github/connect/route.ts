@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { handleRouteError } from "@/lib/api/error-response";
 import { requireSession } from "@/lib/auth/session";
 import { createInstallationState } from "@/lib/github/app";
 
@@ -20,13 +21,6 @@ export async function GET() {
 
     return NextResponse.json({ url });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error generating GitHub connect URL:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error generating GitHub connect URL");
   }
 }

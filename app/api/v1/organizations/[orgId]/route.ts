@@ -71,6 +71,18 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       updates.name = body.name.trim();
     }
 
+    if (body.baseDomain !== undefined) {
+      if (body.baseDomain === null || body.baseDomain === "") {
+        updates.baseDomain = null;
+      } else if (typeof body.baseDomain === "string") {
+        const domain = body.baseDomain.trim().toLowerCase();
+        if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(domain)) {
+          return NextResponse.json({ error: "Invalid domain format" }, { status: 400 });
+        }
+        updates.baseDomain = domain;
+      }
+    }
+
     if (Object.keys(updates).length === 0) {
       return NextResponse.json({ error: "No valid updates provided" }, { status: 400 });
     }

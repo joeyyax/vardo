@@ -29,6 +29,9 @@ export type Template = {
   defaultConnectionInfo:
     | { label: string; value: string; copyRef?: string }[]
     | null;
+  defaultCronJobs:
+    | { name: string; schedule: string; command: string }[]
+    | null;
   isBuiltIn: boolean;
 };
 
@@ -70,6 +73,7 @@ export async function loadTemplates(): Promise<Template[]> {
         defaultEnvVars: (raw.envVars as Template["defaultEnvVars"]) ?? null,
         defaultVolumes: (raw.volumes as Template["defaultVolumes"]) ?? null,
         defaultConnectionInfo: (raw.connectionInfo as Template["defaultConnectionInfo"]) ?? null,
+        defaultCronJobs: (raw.cronJobs as Template["defaultCronJobs"]) ?? null,
         isBuiltIn: true,
       });
     } catch (err) {

@@ -69,6 +69,58 @@ export async function listInstallationRepos(installationId: number) {
   return repos;
 }
 
+/**
+ * Create a new repository via a GitHub App installation.
+ * If the installation is on a user account, creates a user repo.
+ * If on an org, creates an org repo.
+ */
+export async function createRepo(
+  installationId: number,
+  opts: {
+    name: string;
+    description?: string;
+    isPrivate?: boolean;
+    owner: string;
+    ownerType: "User" | "Organization";
+  }
+): Promise<{
+  id: number;
+  fullName: string;
+  htmlUrl: string;
+  cloneUrl: string;
+  defaultBranch: string;
+}> {
+  const octokit = getInstallationOctokit(installationId);
+
+  let data;
+  if (opts.ownerType === "Organization") {
+    const res = await octokit.rest.repos.createInOrg({
+      org: opts.owner,
+      name: opts.name,
+      description: opts.description,
+      private: opts.isPrivate ?? true,
+      auto_init: true,
+    });
+    data = res.data;
+  } else {
+    const res = await octokit.rest.repos.createForAuthenticatedUser({
+      name: opts.name,
+      description: opts.description,
+      private: opts.isPrivate ?? true,
+      auto_init: true,
+    });
+    data = res.data;
+  }
+
+  return {
+    id: data.id,
+    fullName: data.full_name,
+    htmlUrl: data.html_url,
+    cloneUrl: data.clone_url,
+    defaultBranch: data.default_branch,
+  };
+}
+
 // HMAC-signed state for CSRF protection during GitHub App installation flow
 
 const STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes
