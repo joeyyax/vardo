@@ -432,8 +432,6 @@ echo ""
 
 # Security notes
 echo -e "  ${BOLD}Security notes:${RESET}"
-echo -e "    ${DIM}- UFW firewall is active (ports 22, 80, 443)${RESET}"
 echo -e "    ${DIM}- Unattended security updates are enabled${RESET}"
 echo -e "    ${DIM}- Docker log rotation is configured (10MB x 3 files per container)${RESET}"
-echo -e "    ${DIM}- Docker bypasses UFW by default — use Docker network policies for container isolation${RESET}"
 echo ""
