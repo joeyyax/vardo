@@ -5,36 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1770831814538,
-      "tag": "0000_pink_selene",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1770947913288,
-      "tag": "0001_part-b-intake-emails",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1771021187991,
-      "tag": "0002_warm_tana_nile",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1771052806813,
-      "tag": "0003_loud_the_fallen",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1774022400000,
-      "tag": "0004_groups_environments",
+      "when": 1774148668798,
+      "tag": "0000_init",
       "breakpoints": true
     }
   ]

@@ -37,10 +37,22 @@ try {
     if (appliedHashes.has(entry.tag)) continue;
 
     const filePath = `./drizzle/${entry.tag}.sql`;
-    const migration = readFileSync(filePath, "utf-8");
+    const raw = readFileSync(filePath, "utf-8");
 
-    console.log(`[migrate] Applying ${entry.tag}...`);
-    await sql.unsafe(migration);
+    // Drizzle uses "--> statement-breakpoint" to delimit statements
+    const statements = raw
+      .split("--> statement-breakpoint")
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    console.log(
+      `[migrate] Applying ${entry.tag} (${statements.length} statements)...`,
+    );
+
+    for (const stmt of statements) {
+      await sql.unsafe(stmt);
+    }
+
     await sql`INSERT INTO __drizzle_migrations (hash, created_at) VALUES (${entry.tag}, ${Date.now()})`;
     count++;
   }
