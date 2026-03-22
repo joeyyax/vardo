@@ -1,7 +1,8 @@
 import { db } from "@/lib/db";
 import { domainChecks } from "@/lib/db/schema";
-import { eq, desc, lt, and } from "drizzle-orm";
+import { desc, sql, inArray } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import pLimit from "p-limit";
 
 const MAX_CONCURRENCY = 5;
 
@@ -35,46 +36,34 @@ export async function checkAllDomains(): Promise<DomainCheckResult[]> {
 
   if (eligible.length === 0) return [];
 
-  // Query previous check state for all domains in one go (for state transition detection)
-  const prevChecks = await db.query.domainChecks.findMany({
-    orderBy: [desc(domainChecks.checkedAt)],
-  });
-  const prevByDomain = new Map<string, typeof prevChecks[0]>();
-  for (const check of prevChecks) {
-    if (!prevByDomain.has(check.domainId)) {
-      prevByDomain.set(check.domainId, check);
-    }
-  }
+  // Query the most recent check per eligible domain for state transition detection.
+  // Uses DISTINCT ON to avoid fetching the entire table.
+  const domainIds = eligible.map((d) => d.id);
+  const prevChecks = await db
+    .select({
+      domainId: domainChecks.domainId,
+      reachable: domainChecks.reachable,
+    })
+    .from(domainChecks)
+    .where(inArray(domainChecks.domainId, domainIds))
+    .orderBy(domainChecks.domainId, desc(domainChecks.checkedAt))
+    .then((rows) => {
+      // Deduplicate to first (most recent) per domain
+      const map = new Map<string, { reachable: boolean }>();
+      for (const row of rows) {
+        if (!map.has(row.domainId)) {
+          map.set(row.domainId, { reachable: row.reachable });
+        }
+      }
+      return map;
+    });
 
-  // Semaphore for concurrency limiting
-  let running = 0;
-  let resolveSlot: (() => void) | null = null;
-
-  async function acquireSlot() {
-    while (running >= MAX_CONCURRENCY) {
-      await new Promise<void>((r) => { resolveSlot = r; });
-    }
-    running++;
-  }
-
-  function releaseSlot() {
-    running--;
-    if (resolveSlot) {
-      const r = resolveSlot;
-      resolveSlot = null;
-      r();
-    }
-  }
+  const limit = pLimit(MAX_CONCURRENCY);
 
   const results = await Promise.allSettled(
-    eligible.map(async (d) => {
-      await acquireSlot();
-      try {
-        return await probeDomain(d, prevByDomain.get(d.id));
-      } finally {
-        releaseSlot();
-      }
-    }),
+    eligible.map((d) =>
+      limit(() => probeDomain(d, prevChecks.get(d.id))),
+    ),
   );
 
   const checks: DomainCheckResult[] = [];
@@ -82,26 +71,19 @@ export async function checkAllDomains(): Promise<DomainCheckResult[]> {
     if (r.status === "fulfilled") checks.push(r.value);
   }
 
-  // Batch prune old checks — delete anything beyond the 100 most recent per domain
+  // Prune old checks — single statement deletes rows beyond 100 most recent per domain
   try {
-    for (const d of eligible) {
-      const cutoff = await db.query.domainChecks.findFirst({
-        where: eq(domainChecks.domainId, d.id),
-        orderBy: [desc(domainChecks.checkedAt)],
-        columns: { checkedAt: true },
-        offset: 99,
-      });
-      if (cutoff?.checkedAt) {
-        await db
-          .delete(domainChecks)
-          .where(
-            and(
-              eq(domainChecks.domainId, d.id),
-              lt(domainChecks.checkedAt, cutoff.checkedAt),
-            ),
-          );
-      }
-    }
+    await db.execute(sql`
+      DELETE FROM "domain_check"
+      WHERE id IN (
+        SELECT id FROM (
+          SELECT id, ROW_NUMBER() OVER (PARTITION BY domain_id ORDER BY checked_at DESC) AS rn
+          FROM "domain_check"
+          WHERE domain_id IN (${sql.join(domainIds.map((id) => sql`${id}`), sql`, `)})
+        ) ranked
+        WHERE rn > 100
+      )
+    `);
   } catch {
     // Pruning is best-effort
   }
