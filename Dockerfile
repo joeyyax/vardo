@@ -34,21 +34,22 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# Copy everything needed to run
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/pnpm-lock.yaml ./pnpm-lock.yaml
+COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/public ./public
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
-
-# Migrations — lightweight runner + SQL files (no drizzle-kit needed)
+COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/drizzle ./drizzle
-COPY --from=builder /app/scripts/migrate.mjs ./scripts/migrate.mjs
-COPY --from=deps /app/node_modules/postgres ./node_modules/postgres
+COPY --from=builder /app/drizzle.config.ts ./
+COPY --from=builder /app/lib/db/schema.ts ./lib/db/schema.ts
 
 # Run as root — this container manages Docker via the mounted socket,
 # which is a root-equivalent privilege regardless of the in-container user.
-# A non-root user just creates permission issues without any security benefit.
 
 EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-CMD ["sh", "-c", "node scripts/migrate.mjs && node server.js"]
+# drizzle-kit migrate runs before next start (defined in package.json "start" script)
+CMD ["pnpm", "start"]
