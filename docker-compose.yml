@@ -49,12 +49,7 @@ services:
       - "traefik.http.routers.host-secure.rule=Host(`${HOST_DOMAIN}`)"
       - "traefik.http.routers.host-secure.entrypoints=websecure"
       - "traefik.http.routers.host-secure.tls.certresolver=le"
-      # HTTP→HTTPS redirect for the domain only
-      - "traefik.http.routers.host-redirect.rule=Host(`${HOST_DOMAIN}`)"
-      - "traefik.http.routers.host-redirect.entrypoints=web"
-      - "traefik.http.routers.host-redirect.middlewares=https-redirect"
-      - "traefik.http.middlewares.https-redirect.redirectscheme.scheme=https"
-      # HTTP catch-all (works with IP, no DNS required for initial setup)
+      # HTTP catch-all (works with IP or domain, no TLS required for setup)
       - "traefik.http.routers.host-http.rule=PathPrefix(`/`)"
       - "traefik.http.routers.host-http.entrypoints=web"
       - "traefik.http.routers.host-http.priority=1"
