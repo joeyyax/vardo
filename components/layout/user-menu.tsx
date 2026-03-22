@@ -135,14 +135,14 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations }: Us
         ))}
         <DropdownMenuItem
           className="gap-2 cursor-pointer"
-          onClick={() => router.push("/settings")}
+          onClick={() => router.push("/org/settings")}
         >
           <Settings className="size-4" />
           Settings
         </DropdownMenuItem>
         <DropdownMenuItem
           className="gap-2 cursor-pointer"
-          onClick={() => router.push("/team")}
+          onClick={() => router.push("/org/settings/team")}
         >
           <Users className="size-4" />
           Team
