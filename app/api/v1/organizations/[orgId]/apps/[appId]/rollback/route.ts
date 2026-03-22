@@ -18,11 +18,14 @@ type RouteParams = {
 // Body: { deploymentId: string, includeEnvVars?: boolean }
 // Returns SSE stream of deploy log lines (same as normal deploy)
 export async function POST(request: NextRequest, { params }: RouteParams) {
-  const limited = rateLimit(request, { key: "deploy", limit: 10, windowMs: 60000 });
+  // orgId comes from the authenticated URL path — not a header that can be spoofed.
+  // The org membership check below (`organization.id !== orgId`) ensures only the
+  // real org owner can trigger rollbacks, so this is forgery-resistant.
+  const { orgId, appId } = await params;
+  const limited = await rateLimit(request, { key: "deploy", limit: 10, windowMs: 60000, identifier: orgId });
   if (limited) return limited;
 
   try {
-    const { orgId, appId } = await params;
     const { organization, session } = await requireOrg();
 
     if (organization.id !== orgId) {
