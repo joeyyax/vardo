@@ -14,7 +14,7 @@ RESET="\033[0m"
 
 HOST_DIR="${1:-/opt/vardo}"
 COMPOSE_FILE="docker-compose.yml"
-ENV_FILE=".env.prod"
+ENV_FILE=".env"
 AUTO_YES=false
 PREVIOUS_COMMIT=""
 
@@ -98,6 +98,37 @@ log "Installation found at $HOST_DIR"
 log "Docker: $(docker --version | head -1)"
 log "Compose: $(docker compose version | head -1)"
 
+# Migrate .env.prod → .env if needed (pre-v2 installations)
+if [ -f ".env.prod" ] && [ ! -f ".env" ]; then
+  log "Migrating .env.prod → .env"
+  mv .env.prod .env
+elif [ -f ".env.prod" ] && [ -f ".env" ]; then
+  warn ".env.prod and .env both exist — using .env, remove .env.prod manually"
+fi
+
+# Migrate HOST_* → VARDO_* env vars if needed
+if [ -f ".env" ] && grep -q "^HOST_" .env 2>/dev/null; then
+  log "Renaming HOST_* env vars to VARDO_*"
+  sed -i 's/^HOST_DOMAIN=/VARDO_DOMAIN=/' .env
+  sed -i 's/^HOST_BASE_DOMAIN=/VARDO_BASE_DOMAIN=/' .env
+  sed -i 's/^HOST_SERVER_IP=/VARDO_SERVER_IP=/' .env
+  sed -i 's/^HOST_PROJECTS_DIR=/VARDO_PROJECTS_DIR=/' .env
+  sed -i 's/^HOST_EXPOSE_PORTS=/VARDO_EXPOSE_PORTS=/' .env
+fi
+
+# Ensure COMPOSE_PROFILES includes production
+if [ -f ".env" ] && ! grep -q "^COMPOSE_PROFILES=.*production" .env 2>/dev/null; then
+  if grep -q "^COMPOSE_PROFILES=" .env; then
+    sed -i 's/^COMPOSE_PROFILES=\(.*\)/COMPOSE_PROFILES=production,\1/' .env
+  else
+    echo "COMPOSE_PROFILES=production" >> .env
+  fi
+  log "Added 'production' to COMPOSE_PROFILES"
+fi
+
+# Ensure vardo-network exists
+docker network create vardo-network 2>/dev/null || true
+
 # ── Pre-update checks ───────────────────────────────────────────────────────
 
 step "Checking for updates"
@@ -151,7 +182,7 @@ BACKUP_FILE="$BACKUP_DIR/pre-update-${BACKUP_TIMESTAMP}.sql"
 mkdir -p "$BACKUP_DIR"
 
 log "Dumping PostgreSQL database..."
-if docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec -T postgres pg_dump -U host host > "$BACKUP_FILE" 2>/dev/null; then
+if docker compose -f "$COMPOSE_FILE" exec -T postgres pg_dump -U host host > "$BACKUP_FILE" 2>/dev/null; then
   BACKUP_SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
   log "Backup saved: $BACKUP_FILE ($BACKUP_SIZE)"
 else
@@ -189,13 +220,12 @@ echo -e "${RESET}"
 
 step "Rebuilding containers"
 
-# COMPOSE_PROFILES from .env.prod controls which optional services start.
-# Docker Compose reads it automatically from the --env-file.
+# COMPOSE_PROFILES from .env controls which services start.
 log "Building images (this may take a few minutes)..."
-docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" build --quiet
+docker compose -f "$COMPOSE_FILE" build --quiet
 
 log "Restarting services..."
-docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d
+docker compose -f "$COMPOSE_FILE" up -d
 
 # ── Wait for healthy ─────────────────────────────────────────────────────────
 
@@ -205,7 +235,7 @@ TIMEOUT=90
 INTERVAL=3
 ELAPSED=0
 while [ $ELAPSED -lt $TIMEOUT ]; do
-  if docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec -T host curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
+  if docker compose -f "$COMPOSE_FILE" exec -T host curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
     log "Host is healthy"
     break
   fi
@@ -230,8 +260,8 @@ info "Version: ${BOLD}$NEW_VERSION${RESET}"
 
 echo ""
 info "Container status:"
-docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null \
-  || docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" ps
+docker compose -f "$COMPOSE_FILE" ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null \
+  || docker compose -f "$COMPOSE_FILE" ps
 
 # ── Done ─────────────────────────────────────────────────────────────────────
 
