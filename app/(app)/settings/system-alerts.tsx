@@ -78,8 +78,10 @@ export function SystemAlertsPanel() {
   const [healthData, setHealthData] = useState<HealthData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    setError(null);
     try {
       const [alertsRes, healthRes] = await Promise.all([
         fetch("/api/v1/system/alerts"),
@@ -88,13 +90,19 @@ export function SystemAlertsPanel() {
 
       if (alertsRes.ok) {
         setAlertsData(await alertsRes.json());
+      } else {
+        setError(`Failed to load alerts (${alertsRes.status})`);
       }
+
       if (healthRes.ok) {
         const data = await healthRes.json();
         setHealthData({ services: data.services ?? [], resources: data.resources ?? [] });
+      } else {
+        // Preserve the first error; only set if not already set
+        setError((prev) => prev ?? `Failed to load system health (${healthRes.status})`);
       }
-    } catch {
-      // best-effort
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load system status");
     }
     setLoading(false);
   }, []);
@@ -113,6 +121,14 @@ export function SystemAlertsPanel() {
     return (
       <div className="text-sm text-muted-foreground animate-pulse">
         Loading system status...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+        <span className="font-medium">Error:</span> {error}
       </div>
     );
   }
@@ -208,7 +224,7 @@ export function SystemAlertsPanel() {
                             ? "bg-yellow-500"
                             : "bg-green-500"
                       }`}
-                      style={{ width: `${Math.min(resource.percent, 100)}%` }}
+                      style={{ width: `${Math.max(0, Math.min(resource.percent, 100))}%` }}
                     />
                   </div>
                   <StatusBadge status={resource.status} />
@@ -238,8 +254,8 @@ export function SystemAlertsPanel() {
             </div>
           ) : (
             <div className="rounded-lg border divide-y">
-              {alertsData.active.map((alert, i) => (
-                <div key={i} className="flex items-center justify-between px-4 py-3">
+              {alertsData.active.map((alert) => (
+                <div key={`${alert.type}:${alert.key}`} className="flex items-center justify-between px-4 py-3">
                   <div className="flex items-center gap-2.5">
                     <AlertTriangle className="h-4 w-4 text-yellow-500 shrink-0" />
                     <div>
@@ -273,9 +289,9 @@ export function SystemAlertsPanel() {
             Recent Alert History
           </h4>
           <div className="rounded-lg border divide-y">
-            {alertsData.history.slice(0, 10).map((alert, i) => (
+            {alertsData.history.slice(0, 10).map((alert) => (
               <div
-                key={i}
+                key={`${alert.type}:${alert.key}`}
                 className="flex items-center justify-between px-4 py-2.5"
               >
                 <div>
