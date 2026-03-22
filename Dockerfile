@@ -38,14 +38,9 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 
-# Drizzle migrations — copy config, migration files, and drizzle-kit binary
+# Migrations — lightweight runner + SQL files (no drizzle-kit needed)
 COPY --from=builder /app/drizzle ./drizzle
-COPY --from=builder /app/drizzle.config.ts ./
-COPY --from=builder /app/lib/db/schema.ts ./lib/db/schema.ts
-COPY --from=builder /app/node_modules/drizzle-kit ./node_modules/drizzle-kit
-COPY --from=builder /app/node_modules/drizzle-orm ./node_modules/drizzle-orm
-COPY --from=builder /app/node_modules/.bin/drizzle-kit ./node_modules/.bin/drizzle-kit
-COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/scripts/migrate.mjs ./scripts/migrate.mjs
 
 # Run as root — this container manages Docker via the mounted socket,
 # which is a root-equivalent privilege regardless of the in-container user.
@@ -55,4 +50,4 @@ EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-CMD ["sh", "-c", "npx drizzle-kit migrate && node server.js"]
+CMD ["sh", "-c", "node scripts/migrate.mjs && node server.js"]
