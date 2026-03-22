@@ -135,3 +135,29 @@ export async function getBackupStorageConfig(): Promise<BackupStorageConfig | nu
     return null;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Optional services
+// ---------------------------------------------------------------------------
+
+export type OptionalServicesConfig = {
+  metrics: boolean;
+  logs: boolean;
+};
+
+/**
+ * Returns the optional services configuration from the setup-wizard row in
+ * system_settings. Defaults to both disabled if not configured.
+ */
+export async function getOptionalServicesConfig(): Promise<OptionalServicesConfig> {
+  const raw = await getSystemSettingRaw("optional_services");
+  if (!raw) return { metrics: false, logs: false };
+
+  try {
+    const parsed = JSON.parse(raw);
+    return { metrics: !!parsed.metrics, logs: !!parsed.logs };
+  } catch {
+    console.error("[system-settings] Failed to parse optional_services config");
+    return { metrics: false, logs: false };
+  }
+}
