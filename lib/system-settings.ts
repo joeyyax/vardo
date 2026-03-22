@@ -78,12 +78,6 @@ function parseJson<T>(raw: string, label: string): T | null {
 }
 
 // ---------------------------------------------------------------------------
-// Setting source helper (for debugging / admin UI)
-// ---------------------------------------------------------------------------
-
-export type SettingSource = "db" | "env" | "default";
-
-// ---------------------------------------------------------------------------
 // Instance config (general settings)
 // ---------------------------------------------------------------------------
 
@@ -97,10 +91,13 @@ export async function getInstanceConfig(): Promise<InstanceConfig> {
   const dbConfig = await getSystemSettingRaw("instance_config")
     .then((raw) => raw ? parseJson<InstanceConfig>(raw, "instance_config") : null);
 
+  if (dbConfig) return dbConfig;
+
+  // Env var fallback
   return {
-    instanceName: dbConfig?.instanceName ?? process.env.NEXT_PUBLIC_APP_NAME ?? "Vardo",
-    baseDomain: dbConfig?.baseDomain ?? process.env.HOST_BASE_DOMAIN ?? "",
-    serverIp: dbConfig?.serverIp ?? process.env.HOST_SERVER_IP ?? "",
+    instanceName: process.env.NEXT_PUBLIC_APP_NAME ?? "Vardo",
+    baseDomain: process.env.HOST_BASE_DOMAIN ?? "",
+    serverIp: process.env.HOST_SERVER_IP ?? "",
   };
 }
 
@@ -269,6 +266,8 @@ export type AuthConfig = {
   sessionDurationDays: number;
 };
 
+// No env var fallback — auth config is security-sensitive (registration mode,
+// session duration) and should only be set explicitly via the admin UI.
 export async function getAuthConfig(): Promise<AuthConfig> {
   const dbConfig = await getSystemSettingRaw("auth_config")
     .then((raw) => raw ? parseJson<Partial<AuthConfig>>(raw, "auth_config") : null);
