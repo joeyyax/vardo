@@ -290,7 +290,6 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
         loading={removing}
       />
 
-
       {/* Add member sheet */}
       <BottomSheet open={inviteOpen} onOpenChange={setInviteOpen}>
         <BottomSheetContent>

@@ -437,6 +437,7 @@ export function AppEnvironments({
                         <Button
                           size="sm"
                           variant="ghost"
+                          aria-label="Promote to production"
                           title="Promote to production"
                           onClick={() => setPromoteTarget(env)}
                         >
