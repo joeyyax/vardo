@@ -2,7 +2,7 @@ import { getSystemHealth } from "@/lib/config/health";
 import { notify } from "@/lib/notifications/dispatch";
 import { shouldFire, markFired } from "./state";
 import { db } from "@/lib/db";
-import { organizations, systemSettings } from "@/lib/db/schema";
+import { systemSettings } from "@/lib/db/schema";
 import { execSync } from "child_process";
 
 // ---------------------------------------------------------------------------
@@ -22,8 +22,13 @@ async function getAllOrgIds(): Promise<string[]> {
 
 async function notifyAll(event: Parameters<typeof notify>[1]): Promise<void> {
   const orgIds = await getAllOrgIds();
-  for (const orgId of orgIds) {
-    notify(orgId, event);
+  const results = await Promise.allSettled(
+    orgIds.map((orgId) => notify(orgId, event)),
+  );
+  for (const result of results) {
+    if (result.status === "rejected") {
+      console.error("[system-alerts] notifyAll error:", result.reason);
+    }
   }
 }
 
@@ -33,10 +38,8 @@ async function notifyAll(event: Parameters<typeof notify>[1]): Promise<void> {
 
 const previousServiceStatus = new Map<string, "healthy" | "unhealthy" | "unconfigured">();
 
-async function checkServiceAlerts(): Promise<void> {
+async function checkServiceAlerts(health: Awaited<ReturnType<typeof getSystemHealth>>): Promise<void> {
   try {
-    const health = await getSystemHealth();
-
     for (const service of health.services) {
       const prev = previousServiceStatus.get(service.name);
       previousServiceStatus.set(service.name, service.status);
@@ -64,14 +67,13 @@ async function checkServiceAlerts(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Disk space — alert at 85%, 90%, 95% thresholds
+// Disk space — alert at 95%, 90%, 85% thresholds (highest severity first)
 // ---------------------------------------------------------------------------
 
-const DISK_THRESHOLDS = [85, 90, 95];
+const DISK_THRESHOLDS = [95, 90, 85];
 
-async function checkDiskAlerts(): Promise<void> {
+async function checkDiskAlerts(health: Awaited<ReturnType<typeof getSystemHealth>>): Promise<void> {
   try {
-    const health = await getSystemHealth();
     const disk = health.resources.find((r) => r.name === "Disk");
     if (!disk) return;
 
@@ -107,6 +109,9 @@ async function checkDiskAlerts(): Promise<void> {
 // Host restart detection
 // ---------------------------------------------------------------------------
 
+// Process-level flag: only evaluate once per process lifetime to prevent
+// hot-reload false positives. process.uptime() resets on Next.js hot reload,
+// which would otherwise re-trigger the alert on every dev restart.
 let startupCheckDone = false;
 
 async function checkHostRestart(): Promise<void> {
@@ -115,7 +120,9 @@ async function checkHostRestart(): Promise<void> {
 
   try {
     const uptimeSeconds = process.uptime();
-    if (uptimeSeconds >= 120) return;
+    // Use a 5-minute guard to avoid false positives from slow cold starts
+    // or environments where the process may take time to initialize.
+    if (uptimeSeconds >= 300) return;
 
     // Check if we've tracked a previous uptime — if no record, this is truly
     // the first startup; skip alert
@@ -192,7 +199,6 @@ async function checkCertAlerts(): Promise<void> {
       // Extract domain from rule like `Host(`example.com`)`
       const hostMatch = router.rule?.match(/Host\(`([^`]+)`\)/);
       if (!hostMatch) continue;
-      const domain = hostMatch[1];
 
       // Fetch cert info
       try {
@@ -301,13 +307,22 @@ async function checkUpdateAlert(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export async function tickSystemAlerts(): Promise<void> {
-  await Promise.allSettled([
-    checkHostRestart(),
-    checkServiceAlerts(),
-    checkDiskAlerts(),
-    checkCertAlerts(),
-    checkUpdateAlert(),
-  ]);
+  // Fetch health once and share the result across checks that need it.
+  // This avoids duplicate getSystemHealth() calls per tick.
+  let health: Awaited<ReturnType<typeof getSystemHealth>> | null = null;
+  try {
+    health = await getSystemHealth();
+  } catch (err) {
+    console.error("[system-alerts] Health fetch error:", err);
+  }
+
+  const checks: Promise<void>[] = [checkHostRestart(), checkCertAlerts(), checkUpdateAlert()];
+
+  if (health) {
+    checks.push(checkServiceAlerts(health), checkDiskAlerts(health));
+  }
+
+  await Promise.allSettled(checks);
 }
 
 // ---------------------------------------------------------------------------
@@ -341,3 +356,20 @@ export function stopSystemAlertMonitor(): void {
     console.log("[system-alerts] Monitor stopped");
   }
 }
+
+// ---------------------------------------------------------------------------
+// Process shutdown hook
+// ---------------------------------------------------------------------------
+
+// Wire cleanup on process exit so the monitor is always stopped cleanly.
+// This covers SIGTERM (Docker stop, systemd), SIGINT (Ctrl-C), and normal exit.
+// Note: SIGUSR2 is not handled here — if you use it for hot reloads (e.g.
+// nodemon) call stopSystemAlertMonitor() in your reload handler manually.
+function onShutdown(signal: string) {
+  console.log(`[system-alerts] Received ${signal} — stopping monitor`);
+  stopSystemAlertMonitor();
+}
+
+process.once("SIGTERM", () => onShutdown("SIGTERM"));
+process.once("SIGINT", () => onShutdown("SIGINT"));
+process.once("exit", () => stopSystemAlertMonitor());
