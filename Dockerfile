@@ -41,6 +41,7 @@ COPY --from=builder /app/.next/static ./.next/static
 # Migrations — lightweight runner + SQL files (no drizzle-kit needed)
 COPY --from=builder /app/drizzle ./drizzle
 COPY --from=builder /app/scripts/migrate.mjs ./scripts/migrate.mjs
+COPY --from=deps /app/node_modules/postgres ./node_modules/postgres
 
 # Run as root — this container manages Docker via the mounted socket,
 # which is a root-equivalent privilege regardless of the in-container user.
