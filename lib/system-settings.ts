@@ -26,6 +26,55 @@ async function getSystemSettingRaw(key: string): Promise<string | null> {
 }
 
 // ---------------------------------------------------------------------------
+// Instance config (general settings)
+// ---------------------------------------------------------------------------
+
+export type InstanceConfig = {
+  instanceName: string;
+  baseDomain: string;
+  serverIp: string;
+};
+
+/**
+ * Returns the instance configuration. Env vars take precedence; falls back
+ * to the setup-wizard row in system_settings.
+ */
+export async function getInstanceConfig(): Promise<InstanceConfig> {
+  // Env-var configured — no DB hit needed
+  const envName = process.env.NEXT_PUBLIC_APP_NAME;
+  const envDomain = process.env.HOST_BASE_DOMAIN;
+  const envIp = process.env.HOST_SERVER_IP;
+
+  if (envName || envDomain || envIp) {
+    const dbConfig = await getInstanceConfigFromDb();
+    return {
+      instanceName: envName ?? dbConfig?.instanceName ?? "Vardo",
+      baseDomain: envDomain ?? dbConfig?.baseDomain ?? "",
+      serverIp: envIp ?? dbConfig?.serverIp ?? "",
+    };
+  }
+
+  const dbConfig = await getInstanceConfigFromDb();
+  return {
+    instanceName: dbConfig?.instanceName ?? "Vardo",
+    baseDomain: dbConfig?.baseDomain ?? "",
+    serverIp: dbConfig?.serverIp ?? "",
+  };
+}
+
+async function getInstanceConfigFromDb(): Promise<InstanceConfig | null> {
+  const raw = await getSystemSettingRaw("instance_config");
+  if (!raw) return null;
+
+  try {
+    return JSON.parse(raw) as InstanceConfig;
+  } catch {
+    console.error("[system-settings] Failed to parse instance_config");
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // GitHub App
 // ---------------------------------------------------------------------------
 
@@ -159,5 +208,54 @@ export async function getOptionalServicesConfig(): Promise<OptionalServicesConfi
   } catch {
     console.error("[system-settings] Failed to parse optional_services config");
     return { metrics: false, logs: false };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Feature flags (DB-stored overrides)
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns feature flag overrides stored in the database, or null if none
+ * have been configured. Keys are FeatureFlag names, values are booleans.
+ */
+export async function getFeatureFlagsConfig(): Promise<Record<string, boolean> | null> {
+  const raw = await getSystemSettingRaw("feature_flags");
+  if (!raw) return null;
+
+  try {
+    return JSON.parse(raw) as Record<string, boolean>;
+  } catch {
+    console.error("[system-settings] Failed to parse feature_flags config");
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Authentication config
+// ---------------------------------------------------------------------------
+
+export type AuthConfig = {
+  registrationMode: "closed" | "open" | "approval";
+  sessionDurationDays: number;
+};
+
+/**
+ * Returns the authentication configuration. Falls back to sensible defaults
+ * (closed registration, 7-day sessions) if not configured.
+ */
+export async function getAuthConfig(): Promise<AuthConfig> {
+  const raw = await getSystemSettingRaw("auth_config");
+  if (!raw) return { registrationMode: "closed", sessionDurationDays: 7 };
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<AuthConfig>;
+    return {
+      registrationMode: parsed.registrationMode ?? "closed",
+      sessionDurationDays: parsed.sessionDurationDays ?? 7,
+    };
+  } catch {
+    console.error("[system-settings] Failed to parse auth_config");
+    return { registrationMode: "closed", sessionDurationDays: 7 };
   }
 }
