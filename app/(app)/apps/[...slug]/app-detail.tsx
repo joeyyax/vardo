@@ -2123,6 +2123,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                       running: "bg-status-info-muted",
                       queued: "bg-status-neutral-muted",
                       cancelled: "bg-status-neutral-muted",
+                      rolled_back: "bg-status-warning-muted",
                     }[deployment.status] || "bg-card";
 
                 return (

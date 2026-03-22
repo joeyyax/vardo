@@ -347,7 +347,7 @@ export const apps = pgTable(
     rollbackGracePeriod: integer("rollback_grace_period").default(60), // Seconds to monitor after deploy
     envContent: text("env_content"), // Encrypted env file blob (AES-256-GCM)
     // Compose decomposition: child service records point to parent compose app
-    parentAppId: text("parent_app_id").references(() => apps.id, { onDelete: "cascade" }),
+    parentAppId: text("parent_app_id"),
     composeService: text("compose_service"), // service name from compose YAML
     containerName: text("container_name"), // computed: {projectName}-{serviceName}-1
     createdAt: timestamp("created_at").defaultNow().notNull(),

@@ -135,7 +135,7 @@ export function formatDuration(ms: number): string {
 
 import { Badge } from "@/components/ui/badge";
 
-export function DeploymentStatusBadge({ status }: { status: "queued" | "running" | "success" | "failed" | "cancelled" }) {
+export function DeploymentStatusBadge({ status }: { status: "queued" | "running" | "success" | "failed" | "cancelled" | "rolled_back" }) {
   switch (status) {
     case "success":
       return <Badge className="border-transparent bg-status-success-muted text-status-success">Success</Badge>;
@@ -143,6 +143,8 @@ export function DeploymentStatusBadge({ status }: { status: "queued" | "running"
       return <Badge className="border-transparent bg-status-info-muted text-status-info animate-pulse">Running</Badge>;
     case "failed":
       return <Badge className="border-transparent bg-status-error-muted text-status-error">Failed</Badge>;
+    case "rolled_back":
+      return <Badge className="border-transparent bg-status-warning-muted text-status-warning">Rolled back</Badge>;
     case "cancelled":
       return <Badge variant="secondary">Cancelled</Badge>;
     default:
