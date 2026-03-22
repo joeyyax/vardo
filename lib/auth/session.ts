@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { headers, cookies } from "next/headers";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -10,18 +11,18 @@ const CURRENT_ORG_COOKIE = "host_current_org";
  * Get the current session on the server.
  * Returns null if not authenticated.
  */
-export async function getSession() {
+export const getSession = cache(async () => {
   return auth.api.getSession({
     headers: await headers(),
   });
-}
+});
 
 /**
  * Get the current user's organization.
  * Checks for a stored org preference cookie first,
  * then falls back to the user's first organization.
  */
-export async function getCurrentOrg() {
+export const getCurrentOrg = cache(async () => {
   const session = await getSession();
 
   if (!session?.user?.id) {
@@ -74,7 +75,7 @@ export async function getCurrentOrg() {
       role: membership.role,
     },
   };
-}
+});
 
 /**
  * Require a session - throws if not authenticated.
@@ -112,7 +113,7 @@ export async function requireOrg() {
  * Get all organizations the current user has access to.
  * Returns an empty array if not authenticated.
  */
-export async function getUserOrganizations() {
+export const getUserOrganizations = cache(async () => {
   const session = await getSession();
 
   if (!session?.user?.id) {
@@ -132,4 +133,4 @@ export async function getUserOrganizations() {
     slug: m.organization.slug,
     role: m.role,
   }));
-}
+});
