@@ -170,10 +170,14 @@ export function CronManager({ appId, orgId }: Props) {
         fetchJobs();
       } else {
         const err = await res.json();
-        toast.error(err.error || "Failed to save");
+        toast.error("Couldn't save cron job", {
+          description: err.error || "Check the schedule expression",
+        });
       }
     } catch {
-      toast.error("Failed to save");
+      toast.error("Couldn't save cron job", {
+        description: "Check your connection and try again",
+      });
     } finally {
       setSaving(false);
     }
@@ -193,10 +197,15 @@ export function CronManager({ appId, orgId }: Props) {
         setDeleteId(null);
         fetchJobs();
       } else {
-        toast.error("Failed to delete");
+        const err = await res.json().catch(() => ({}));
+        toast.error("Couldn't delete cron job", {
+          description: err.error,
+        });
       }
     } catch {
-      toast.error("Failed to delete");
+      toast.error("Couldn't delete cron job", {
+        description: "Check your connection and try again",
+      });
     } finally {
       setDeleting(false);
     }
@@ -212,9 +221,16 @@ export function CronManager({ appId, orgId }: Props) {
       if (res.ok) {
         toast.success(enabled ? "Cron job enabled" : "Cron job paused");
         fetchJobs();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error("Couldn't update cron job", {
+          description: err.error,
+        });
       }
     } catch {
-      toast.error("Failed to update");
+      toast.error("Couldn't update cron job", {
+        description: "Check your connection and try again",
+      });
     }
   }
 
