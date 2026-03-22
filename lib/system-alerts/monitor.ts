@@ -322,11 +322,18 @@ export function startSystemAlertMonitor(): void {
   if (interval) return;
 
   // Load persisted alert state from DB before the first tick so rate-limit
-  // windows survive process restarts.
+  // windows survive process restarts. Defer the initial tick by 10s to let
+  // the process stabilize before firing network calls (git ls-remote, etc.).
   loadAlertState()
-    .then(() => tickSystemAlerts())
+    .then(() => {
+      setTimeout(() => {
+        tickSystemAlerts().catch((err) => {
+          console.error("[system-alerts] Initial tick error:", err);
+        });
+      }, 10_000);
+    })
     .catch((err) => {
-      console.error("[system-alerts] Initial tick error:", err);
+      console.error("[system-alerts] Failed to load alert state:", err);
     });
 
   console.log("[system-alerts] Monitor started (60s interval)");
