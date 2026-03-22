@@ -15,8 +15,18 @@ type RouteParams = {
 
 const DESTRUCTIVE_THRESHOLD = 10;
 
+// Safe path: relative, no traversal, no shell metacharacters.
+const safePathSchema = z
+  .string()
+  .min(1)
+  .refine((p) => !p.startsWith("/"), { message: "Path must be relative" })
+  .refine((p) => !p.includes(".."), { message: "Path must not contain '..'" })
+  .refine((p) => !/[;&|`$()<>\n\r\0]/.test(p), {
+    message: "Path contains unsafe characters",
+  });
+
 const syncSchema = z.object({
-  paths: z.array(z.string().min(1)).min(1).max(1000),
+  paths: z.array(safePathSchema).min(1).max(1000),
   confirm: z.boolean().optional(),
 });
 
