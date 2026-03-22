@@ -362,6 +362,7 @@ export const apps = pgTable(
   },
   (t) => [
     unique("app_org_name_uniq").on(t.organizationId, t.name),
+    index("app_org_id_idx").on(t.organizationId),
     index("app_parent_app_id_idx").on(t.parentAppId),
   ]
 );
@@ -397,7 +398,11 @@ export const deployments = pgTable("deployment", {
   rollbackFromId: text("rollback_from_id"), // If this deploy was a rollback, points to source deployment
   startedAt: timestamp("started_at").defaultNow().notNull(),
   finishedAt: timestamp("finished_at"),
-});
+},
+  (t) => [
+    index("deployment_app_id_idx").on(t.appId),
+  ]
+);
 
 // ---------------------------------------------------------------------------
 // Host: Environment Variables
@@ -439,7 +444,11 @@ export const domains = pgTable("domain", {
   isPrimary: boolean("is_primary").default(false),
   sslEnabled: boolean("ssl_enabled").default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+},
+  (t) => [
+    index("domain_app_id_idx").on(t.appId),
+  ]
+);
 
 // ---------------------------------------------------------------------------
 // Host: Group Environments (staging/preview environments spanning a group)

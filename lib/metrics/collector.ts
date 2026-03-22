@@ -133,15 +133,19 @@ async function collect() {
       const templateList = await loadTemplates().catch(() => []);
       await storeBusinessMetric("templates", ts, templateList.length);
 
-      // Per-org business metrics
+      // Per-org business metrics — LEFT JOIN aggregations instead of correlated subqueries
       const orgCounts = await db.execute(sql`
         SELECT
           o.id AS org_id,
-          (SELECT COUNT(*) FROM "app" a WHERE a.organization_id = o.id)::text AS apps,
-          (SELECT COUNT(*) FROM "deployment" d JOIN "app" a ON d.app_id = a.id WHERE a.organization_id = o.id)::text AS deployments,
-          (SELECT COUNT(*) FROM "domain" dm JOIN "app" a ON dm.app_id = a.id WHERE a.organization_id = o.id)::text AS domains,
-          (SELECT COUNT(*) FROM "membership" m WHERE m.organization_id = o.id)::text AS members
+          COALESCE(ac.cnt, 0)::text AS apps,
+          COALESCE(dc.cnt, 0)::text AS deployments,
+          COALESCE(dmc.cnt, 0)::text AS domains,
+          COALESCE(mc.cnt, 0)::text AS members
         FROM "organization" o
+        LEFT JOIN (SELECT organization_id, COUNT(*) AS cnt FROM "app" GROUP BY 1) ac ON ac.organization_id = o.id
+        LEFT JOIN (SELECT a.organization_id, COUNT(*) AS cnt FROM "deployment" d JOIN "app" a ON d.app_id = a.id GROUP BY 1) dc ON dc.organization_id = o.id
+        LEFT JOIN (SELECT a.organization_id, COUNT(*) AS cnt FROM "domain" dm JOIN "app" a ON dm.app_id = a.id GROUP BY 1) dmc ON dmc.organization_id = o.id
+        LEFT JOIN (SELECT organization_id, COUNT(*) AS cnt FROM "membership" GROUP BY 1) mc ON mc.organization_id = o.id
       `);
       await Promise.allSettled(
         (orgCounts as unknown as { org_id: string; apps: string; deployments: string; domains: string; members: string }[]).flatMap((row) => [
