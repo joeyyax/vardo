@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { signUp } from "@/lib/auth/client";
+import { DEFAULT_APP_NAME } from "@/lib/system-settings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -411,7 +412,7 @@ function EmailStep({
   const [smtpPass, setSmtpPass] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [fromEmail, setFromEmail] = useState("");
-  const [fromName, setFromName] = useState("Vardo");
+  const [fromName, setFromName] = useState(DEFAULT_APP_NAME);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

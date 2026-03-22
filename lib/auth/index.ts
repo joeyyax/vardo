@@ -36,7 +36,7 @@ export const auth = betterAuth({
 
     // Two-factor authentication (TOTP only, no SMS)
     twoFactor({
-      issuer: "Host",
+      issuer: "Vardo",
       // TOTP is enabled by default
       // Backup codes are enabled by default
     }),
@@ -52,7 +52,7 @@ export const auth = betterAuth({
         const { MagicLinkEmail } = await import("@/lib/email/templates/magic-link");
         await sendEmail({
           to: email,
-          subject: "Sign in to Host",
+          subject: "Sign in",
           template: MagicLinkEmail({ url, email }),
         });
       },

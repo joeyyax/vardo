@@ -91,7 +91,7 @@ export async function POST(request: NextRequest) {
       const { InviteEmail } = await import("@/lib/email/templates/invite");
       await sendEmail({
         to: normalizedEmail,
-        subject: "You've been invited to Host",
+        subject: "You've been invited",
         template: InviteEmail({ email: normalizedEmail }),
       });
       emailSent = true;

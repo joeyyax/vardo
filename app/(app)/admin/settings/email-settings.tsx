@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
+import { DEFAULT_APP_NAME } from "@/lib/system-settings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -36,7 +37,7 @@ export function EmailSettings() {
   const [smtpPass, setSmtpPass] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [fromEmail, setFromEmail] = useState("");
-  const [fromName, setFromName] = useState("Vardo");
+  const [fromName, setFromName] = useState(DEFAULT_APP_NAME);
 
   const [editingSmtpPass, setEditingSmtpPass] = useState(false);
   const [editingApiKey, setEditingApiKey] = useState(false);
@@ -58,7 +59,7 @@ export function EmailSettings() {
       maskedSmtpPass.current = pass;
       maskedApiKey.current = key;
       setFromEmail((data.fromEmail as string) || "");
-      setFromName((data.fromName as string) || "Vardo");
+      setFromName((data.fromName as string) || DEFAULT_APP_NAME);
       setEditingSmtpPass(false);
       setEditingApiKey(false);
     },

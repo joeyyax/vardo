@@ -38,11 +38,11 @@ export function InviteAcceptClient({
 
   const heading = orgName
     ? `You've been invited to ${orgName}`
-    : "You've been invited to Host";
+    : "You've been invited";
 
   const description = inviterName
-    ? `${inviterName} invited you to join ${orgName ? orgName : "Host"}.`
-    : `You've been invited to join ${orgName ? orgName : "Host"}.`;
+    ? `${inviterName} invited you to join ${orgName ? orgName : "the platform"}.`
+    : `You've been invited to join ${orgName ? orgName : "the platform"}.`;
 
   async function handleAccept() {
     setAccepting(true);

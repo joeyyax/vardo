@@ -15,20 +15,22 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const appName = process.env.NEXT_PUBLIC_APP_NAME || "Vardo";
+
 export const metadata: Metadata = {
   title: {
-    default: "Vardo",
-    template: "%s — Vardo",
+    default: appName,
+    template: `%s — ${appName}`,
   },
   description: "Self-hosted PaaS for managing Docker Compose deployments.",
   openGraph: {
     type: "website",
-    title: "Vardo",
+    title: appName,
     description: "Self-hosted PaaS for managing Docker Compose deployments.",
   },
   twitter: {
     card: "summary",
-    title: "Vardo",
+    title: appName,
     description: "Self-hosted PaaS for managing Docker Compose deployments.",
   },
 };
