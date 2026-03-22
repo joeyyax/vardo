@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# Host — Self-hosted PaaS
+# Vardo — Self-hosted PaaS
 # Install with: curl -fsSL https://get.host.joeyyax.dev | bash
 
 BOLD="\033[1m"
@@ -11,7 +11,7 @@ YELLOW="\033[33m"
 RED="\033[31m"
 RESET="\033[0m"
 
-HOST_DIR="/opt/host"
+HOST_DIR="/opt/vardo"
 COMPOSE_FILE="docker-compose.yml"
 DNS_OK=false
 
@@ -22,8 +22,11 @@ error() { echo -e "${RED}▸${RESET} $1"; exit 1; }
 # ── Preflight checks ──────────────────────────────────────────────────────────
 
 echo ""
-echo -e "${BOLD}  Host — Self-hosted PaaS${RESET}"
-echo -e "${DIM}  Deploy anything with Docker Compose${RESET}"
+echo -e "${BOLD}         __   ___${RESET}"
+echo -e "${BOLD}  \\  / /  \\ |__/ |  \\  /\\ ${RESET}"
+echo -e "${BOLD}   \\/  \\__/ |  \\ |__/ /~~\\ ${RESET}"
+echo ""
+echo -e "${DIM}  Deploy everything. Own everything.${RESET}"
 echo ""
 
 # Root check
@@ -229,7 +232,7 @@ if [ -d "$HOST_DIR" ]; then
   fi
   git pull --quiet
 else
-  log "Installing Host to $HOST_DIR..."
+  log "Installing Vardo to $HOST_DIR..."
   git clone --depth 1 https://github.com/joeyyax/vardo.git "$HOST_DIR"
   cd "$HOST_DIR"
 fi
@@ -242,9 +245,9 @@ if [ ! -f "$ENV_FILE" ]; then
   log "Creating configuration..."
 
   # Prompt for required values
-  read -p "  Domain for Host dashboard (e.g. host.example.com): " HOST_DOMAIN
-  read -p "  Base domain for projects (e.g. example.com): " HOST_BASE_DOMAIN
-  read -p "  Email for Let's Encrypt: " ACME_EMAIL
+  read -p "  Domain for Vardo dashboard (e.g. host.example.com): " HOST_DOMAIN < /dev/tty
+  read -p "  Base domain for projects (e.g. example.com): " HOST_BASE_DOMAIN < /dev/tty
+  read -p "  Email for Let's Encrypt: " ACME_EMAIL < /dev/tty
 
   # ── DNS validation ────────────────────────────────────────────────────────
   log "Validating DNS for $HOST_DOMAIN..."
@@ -277,7 +280,7 @@ if [ ! -f "$ENV_FILE" ]; then
         echo -e "    A   ${HOST_DOMAIN}           -> ${SERVER_IP}"
         echo -e "    A   *.${HOST_BASE_DOMAIN}    -> ${SERVER_IP}"
         echo ""
-        read -p "  Continue anyway? (y/N): " DNS_CONTINUE
+        read -p "  Continue anyway? (y/N): " DNS_CONTINUE < /dev/tty
         if [ "$DNS_CONTINUE" != "y" ] && [ "$DNS_CONTINUE" != "Y" ]; then
           error "Aborted — configure DNS and re-run the installer"
         fi
@@ -289,7 +292,7 @@ if [ ! -f "$ENV_FILE" ]; then
       echo -e "    A   ${HOST_DOMAIN}           -> ${SERVER_IP}"
       echo -e "    A   *.${HOST_BASE_DOMAIN}    -> ${SERVER_IP}"
       echo ""
-      read -p "  Continue anyway? (y/N): " DNS_CONTINUE
+      read -p "  Continue anyway? (y/N): " DNS_CONTINUE < /dev/tty
       if [ "$DNS_CONTINUE" != "y" ] && [ "$DNS_CONTINUE" != "Y" ]; then
         error "Aborted — configure DNS and re-run the installer"
       fi
@@ -306,14 +309,14 @@ if [ ! -f "$ENV_FILE" ]; then
   FEATURE_METRICS="true"
   FEATURE_LOGS="true"
 
-  read -p "  Enable container metrics? (requires cAdvisor) [Y/n] " ENABLE_METRICS
+  read -p "  Enable container metrics? (requires cAdvisor) [Y/n] " ENABLE_METRICS < /dev/tty
   if [ "$ENABLE_METRICS" = "n" ] || [ "$ENABLE_METRICS" = "N" ]; then
     FEATURE_METRICS="false"
   else
     COMPOSE_PROFILES="metrics"
   fi
 
-  read -p "  Enable persistent logs? (requires Loki + Promtail) [Y/n] " ENABLE_LOGS
+  read -p "  Enable persistent logs? (requires Loki + Promtail) [Y/n] " ENABLE_LOGS < /dev/tty
   if [ "$ENABLE_LOGS" = "n" ] || [ "$ENABLE_LOGS" = "N" ]; then
     FEATURE_LOGS="false"
   else
@@ -333,14 +336,14 @@ if [ ! -f "$ENV_FILE" ]; then
   BACKUP_STORAGE_ACCESS_KEY=""
   BACKUP_STORAGE_SECRET_KEY=""
 
-  read -p "  Configure backup storage? (recommended) [Y/n] " ENABLE_BACKUPS
+  read -p "  Configure backup storage? (recommended) [Y/n] " ENABLE_BACKUPS < /dev/tty
   if [ "$ENABLE_BACKUPS" != "n" ] && [ "$ENABLE_BACKUPS" != "N" ]; then
     echo ""
     echo -e "  ${BOLD}Backup storage type:${RESET}"
     echo "    1) S3 (AWS S3 or compatible)"
     echo "    2) R2 (Cloudflare R2)"
     echo "    3) B2 (Backblaze B2)"
-    read -p "  Choose [1-3]: " BACKUP_TYPE_CHOICE
+    read -p "  Choose [1-3]: " BACKUP_TYPE_CHOICE < /dev/tty
     case "$BACKUP_TYPE_CHOICE" in
       1) BACKUP_STORAGE_TYPE="s3" ;;
       2) BACKUP_STORAGE_TYPE="r2" ;;
@@ -348,19 +351,19 @@ if [ ! -f "$ENV_FILE" ]; then
       *) BACKUP_STORAGE_TYPE="s3" ;;
     esac
 
-    read -p "  Bucket name: " BACKUP_STORAGE_BUCKET
+    read -p "  Bucket name: " BACKUP_STORAGE_BUCKET < /dev/tty
     if [ "$BACKUP_STORAGE_TYPE" = "r2" ]; then
-      read -p "  R2 endpoint (e.g. https://<account-id>.r2.cloudflarestorage.com): " BACKUP_STORAGE_ENDPOINT
+      read -p "  R2 endpoint (e.g. https://<account-id>.r2.cloudflarestorage.com): " BACKUP_STORAGE_ENDPOINT < /dev/tty
       BACKUP_STORAGE_REGION="auto"
     elif [ "$BACKUP_STORAGE_TYPE" = "b2" ]; then
-      read -p "  B2 endpoint (e.g. https://s3.us-west-004.backblazeb2.com): " BACKUP_STORAGE_ENDPOINT
-      read -p "  B2 region (e.g. us-west-004): " BACKUP_STORAGE_REGION
+      read -p "  B2 endpoint (e.g. https://s3.us-west-004.backblazeb2.com): " BACKUP_STORAGE_ENDPOINT < /dev/tty
+      read -p "  B2 region (e.g. us-west-004): " BACKUP_STORAGE_REGION < /dev/tty
     else
-      read -p "  Region (e.g. us-east-1): " BACKUP_STORAGE_REGION
-      read -p "  Custom endpoint (leave blank for AWS): " BACKUP_STORAGE_ENDPOINT
+      read -p "  Region (e.g. us-east-1): " BACKUP_STORAGE_REGION < /dev/tty
+      read -p "  Custom endpoint (leave blank for AWS): " BACKUP_STORAGE_ENDPOINT < /dev/tty
     fi
-    read -p "  Access key: " BACKUP_STORAGE_ACCESS_KEY
-    read -sp "  Secret key: " BACKUP_STORAGE_SECRET_KEY
+    read -p "  Access key: " BACKUP_STORAGE_ACCESS_KEY < /dev/tty
+    read -sp "  Secret key: " BACKUP_STORAGE_SECRET_KEY < /dev/tty
     echo ""
     log "Backup storage configured (${BACKUP_STORAGE_TYPE}://${BACKUP_STORAGE_BUCKET})"
   else
