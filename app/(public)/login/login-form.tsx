@@ -134,7 +134,10 @@ function LoginForm() {
     <Card className="w-full max-w-md squircle rounded-2xl">
       <CardContent className="space-y-4 pt-6">
         {error && (
-          <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-lg">
+          <div
+            role="alert"
+            className="p-3 text-sm text-destructive bg-destructive/10 rounded-lg"
+          >
             {error}
           </div>
         )}
