@@ -347,7 +347,7 @@ function PortsManager({
           </div>
           <div className="grid gap-1.5">
             <span className="text-xs text-muted-foreground">Host Port</span>
-            <div className="flex h-9 items-center rounded-md border bg-muted/50 px-3 text-sm font-mono text-muted-foreground">
+            <div className="flex h-9 items-center rounded-md border bg-muted/50 px-3 text-sm font-mono text-muted-foreground" aria-label="Host port: auto-assigned">
               Auto
             </div>
           </div>
