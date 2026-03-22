@@ -334,8 +334,9 @@ function PortsManager({
       {adding && (
         <div className="flex items-end gap-3 rounded-lg border bg-card p-4">
           <div className="grid gap-1.5">
-            <label className="text-xs text-muted-foreground">Container Port</label>
+            <label htmlFor="port-container" className="text-xs text-muted-foreground">Container Port</label>
             <input
+              id="port-container"
               type="number"
               placeholder="8080"
               value={newInternal}
@@ -344,14 +345,15 @@ function PortsManager({
             />
           </div>
           <div className="grid gap-1.5">
-            <label className="text-xs text-muted-foreground">Host Port</label>
+            <span className="text-xs text-muted-foreground">Host Port</span>
             <div className="flex h-9 items-center rounded-md border bg-muted/50 px-3 text-sm font-mono text-muted-foreground">
               Auto
             </div>
           </div>
           <div className="grid gap-1.5 flex-1">
-            <label className="text-xs text-muted-foreground">Label <span className="text-muted-foreground/60">(optional)</span></label>
+            <label htmlFor="port-label" className="text-xs text-muted-foreground">Label <span className="text-muted-foreground/60">(optional)</span></label>
             <input
+              id="port-label"
               placeholder="e.g. HTTP, Database"
               value={newDescription}
               onChange={(e) => setNewDescription(e.target.value)}
@@ -1003,8 +1005,10 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         finished = true;
         if (data.success) {
           toast.success(`Deployed in ${data.durationMs ? Math.round(data.durationMs / 1000) + "s" : "---"}`);
+          setDeployAnnouncement("Deployment succeeded.");
         } else {
           toast.error(data.error || "Deployment failed");
+          setDeployAnnouncement(`Deployment failed. ${data.error || ""}`);
         }
         if (data.deploymentId) {
           setViewingLogId(data.deploymentId);
@@ -1282,8 +1286,10 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
   >({});
   const [expandedDeployLog, setExpandedDeployLog] = useState(false);
   const [deployAbort, setDeployAbort] = useState<AbortController | null>(null);
+  const [deployAnnouncement, setDeployAnnouncement] = useState("");
 
   async function handleDeploy() {
+    setDeployAnnouncement("");
     setDeploying(true);
     setActiveTab("deployments");
     setDeployLog([]);
@@ -1357,8 +1363,10 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
               const result = data as { deploymentId: string; success: boolean; durationMs: number; error?: string };
               if (result.success) {
                 toast.success(`Deployed in ${result.durationMs}ms`);
+                setDeployAnnouncement("Deployment succeeded.");
               } else {
                 toast.error(result.error || "Deployment failed");
+                setDeployAnnouncement(`Deployment failed. ${result.error || ""}`);
               }
               if (result.deploymentId) {
                 setViewingLogId(result.deploymentId);
@@ -1625,6 +1633,10 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
 
   return (
     <div className="space-y-6">
+      {/* Visually-hidden live region for deploy outcome announcements — always in the DOM so screen readers register it before any state changes fire */}
+      <span className="sr-only" aria-live="assertive" aria-atomic="true">
+        {deployAnnouncement}
+      </span>
       <PageToolbar
         actions={
           <div className="flex items-center gap-2">
