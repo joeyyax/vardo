@@ -4,6 +4,7 @@ export type ContainerMetrics = {
   containerId: string;
   containerName: string;
   projectName: string;
+  organizationId: string | null;
   cpuPercent: number;
   memoryUsage: number;
   memoryLimit: number;
@@ -75,12 +76,14 @@ export async function fetchAllContainerMetrics(): Promise<ContainerMetrics[]> {
     const spec = specsData[key];
     if (!spec) continue;
 
-    // Get project name from labels
+    // Get project name and org from labels
     const projectName =
       spec.labels?.["host.project"] ||
       spec.labels?.["com.docker.compose.project"] ||
       "";
     if (!projectName) continue;
+
+    const organizationId = spec.labels?.["host.organization"] || null;
 
     const prev = statEntries[statEntries.length - 2];
     const curr = statEntries[statEntries.length - 1];
@@ -122,6 +125,7 @@ export async function fetchAllContainerMetrics(): Promise<ContainerMetrics[]> {
       containerId,
       containerName,
       projectName,
+      organizationId,
       cpuPercent: Math.round(cpuPercent * 100) / 100,
       memoryUsage,
       memoryLimit,

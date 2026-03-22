@@ -3,18 +3,11 @@
 import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Globe } from "lucide-react";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { detectProjectIcon } from "@/lib/ui/project-icon";
+import { Plus } from "lucide-react";
+import { EndpointsPopover } from "@/components/endpoints-popover";
+import { detectAppType } from "@/lib/ui/app-type";
+import { statusDotColor } from "@/lib/ui/status-colors";
+import { StatusIndicator, AppIcon } from "@/components/app-status";
 import {
   type AppMetrics,
   type MetricKey,
@@ -38,6 +31,7 @@ type AppWithRelations = {
   gitUrl: string | null;
   projectId: string | null;
   status: string;
+  needsRedeploy: boolean | null;
   createdAt: Date;
   updatedAt: Date;
   domains: { domain: string; isPrimary: boolean | null }[];
@@ -46,10 +40,18 @@ type AppWithRelations = {
   project: { id: string; name: string; displayName: string; color: string | null } | null;
 };
 
+type EmptyProject = {
+  id: string;
+  name: string;
+  displayName: string;
+  color: string | null;
+};
+
 type AppGridProps = {
   apps: AppWithRelations[];
   allTags: Tag[];
   orgId: string;
+  emptyProjects?: EmptyProject[];
 };
 
 
@@ -57,153 +59,10 @@ type AppGridProps = {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function statusDotColor(status: string) {
-  return status === "active" ? "bg-status-success"
-    : status === "error" ? "bg-status-error"
-    : status === "deploying" ? "bg-status-info"
-    : "bg-status-neutral";
-}
-
-function formatUptime(date: Date): string {
-  const ms = Date.now() - new Date(date).getTime();
-  const s = Math.floor(ms / 1000) % 60;
-  const m = Math.floor(ms / 60000) % 60;
-  const h = Math.floor(ms / 3600000) % 24;
-  const d = Math.floor(ms / 86400000);
-  if (d > 0) return `${d}d ${h}h`;
-  if (h > 0) return `${h}h ${m}m`;
-  if (m > 0) return `${m}m ${s}s`;
-  return `${s}s`;
-}
-
-function Uptime({ since }: { since: Date }) {
-  const [text, setText] = useState<string | null>(null);
-  useEffect(() => {
-    setText(formatUptime(since));
-    const interval = setInterval(() => setText(formatUptime(since)), 1000);
-    return () => clearInterval(interval);
-  }, [since]);
-  if (!text) return null;
-  return <span className="tabular-nums">{text}</span>;
-}
-
-/** Get the icon for an app */
-function getAppIcon(app: { imageName: string | null; gitUrl: string | null; deployType: string; name: string; displayName: string }): string | null {
-  return detectProjectIcon(app);
-}
 
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
-
-function AppIcon({ app }: { app: AppWithRelations }) {
-  const color = app.project?.color || "#6366f1";
-  const icon = getAppIcon(app);
-
-  if (!icon) {
-    return (
-      <div
-        className="size-12 shrink-0 rounded-md flex items-center justify-center"
-        style={{ backgroundColor: `${color}20` }}
-      >
-        <span className="size-3 rounded-full" style={{ backgroundColor: color }} />
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className="size-12 shrink-0 rounded-md flex items-center justify-center"
-      style={{ backgroundColor: `${color}10` }}
-    >
-      <img src={icon} alt="" className="size-8 opacity-70" />
-    </div>
-  );
-}
-
-function StatusIndicator({
-  status,
-  finishedAt,
-}: {
-  status: "running" | "error" | "deploying" | "stopped";
-  finishedAt?: Date | null;
-}) {
-  switch (status) {
-    case "running":
-      return (
-        <span className="flex items-center gap-1.5 text-sm text-status-success shrink-0">
-          <span className="size-2 rounded-full bg-status-success animate-pulse" />
-          {finishedAt ? <Uptime since={finishedAt} /> : "Running"}
-        </span>
-      );
-    case "error":
-      return <span className="text-sm text-status-error shrink-0">Error</span>;
-    case "deploying":
-      return <span className="text-sm text-status-info animate-pulse shrink-0">Deploying</span>;
-    default:
-      return <span className="text-sm text-status-neutral shrink-0">Stopped</span>;
-  }
-}
-
-
-function EndpointsPopover({ app }: { app: AppWithRelations }) {
-  const endpoints: { label: string; domain: string }[] = [];
-
-  for (const d of app.domains) {
-    endpoints.push({ label: app.displayName, domain: d.domain });
-  }
-
-  if (endpoints.length === 0) return null;
-
-  if (endpoints.length === 1) {
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <a
-            href={`https://${endpoints[0].domain}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="shrink-0 text-muted-foreground/40 hover:text-muted-foreground transition-colors"
-          >
-            <Globe className="size-3.5" />
-          </a>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">{endpoints[0].domain}</TooltipContent>
-      </Tooltip>
-    );
-  }
-
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          onClick={(e) => e.preventDefault()}
-          className="shrink-0 text-muted-foreground/40 hover:text-muted-foreground transition-colors"
-        >
-          <Globe className="size-3.5" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-64 p-2" onClick={(e) => e.stopPropagation()}>
-        <div className="space-y-0.5">
-          {endpoints.map((ep) => (
-            <a
-              key={ep.domain}
-              href={`https://${ep.domain}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-between gap-2 rounded-md px-3 py-2 text-sm hover:bg-accent transition-colors"
-            >
-              <span className="truncate text-muted-foreground">{ep.label}</span>
-              <span className="truncate font-mono text-xs text-foreground">{ep.domain}</span>
-            </a>
-          ))}
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
 
 
 // ---------------------------------------------------------------------------
@@ -215,13 +74,15 @@ function ProjectCard({
   projectApps,
   metrics,
   history,
+  historyTick,
 }: {
   project: NonNullable<AppWithRelations["project"]>;
   projectApps: AppWithRelations[];
   metrics: Map<string, AppMetrics>;
   history: Map<string, MetricsHistory>;
+  historyTick: number;
 }) {
-  const color = project.color || "#6366f1";
+  const color = "#a1a1aa"; // neutral zinc-400 — project color is unused
 
   // Aggregate status from all apps
   const allActive = projectApps.every((a) => a.status === "active");
@@ -229,7 +90,7 @@ function ProjectCard({
   const anyDeploying = projectApps.some((a) => a.status === "deploying");
   const status = allActive ? "running" : anyError ? "error" : anyDeploying ? "deploying" : "stopped";
 
-  // Aggregate CPU for sparkline from all apps
+  // Aggregated CPU across all apps
   const aggregatedCpu = useMemo(() => {
     const maxLen = Math.max(...projectApps.map((a) => (history.get(a.id)?.cpu || []).length), 0);
     if (maxLen < 2) return [];
@@ -243,14 +104,15 @@ function ProjectCard({
       result.push(sum);
     }
     return result;
-  }, [projectApps, history]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectApps, historyTick]);
 
   // Collect unique icons
   const icons = useMemo(() => {
     const seen = new Set<string>();
     const result: string[] = [];
     for (const a of projectApps) {
-      const icon = getAppIcon(a);
+      const icon = detectAppType(a).icon;
       if (icon && !seen.has(icon)) {
         seen.add(icon);
         result.push(icon);
@@ -260,15 +122,21 @@ function ProjectCard({
     return result;
   }, [projectApps]);
 
+  const router = useRouter();
+
   return (
-    <Link
-      href={`/projects/${project.name}`}
-      className="squircle relative flex flex-col rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50 overflow-hidden"
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => router.push(`/projects/${project.name}`)}
+      onKeyDown={(e) => { if (e.key === "Enter") router.push(`/projects/${project.name}`); }}
+      className="squircle relative flex flex-col rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50 overflow-hidden cursor-pointer"
     >
-      {aggregatedCpu.length >= 2 && (
+      {aggregatedCpu.length > 0 && (
         <Sparkline
           data={aggregatedCpu}
-          className="absolute inset-0 w-full h-full text-foreground pointer-events-none"
+          className="absolute inset-0 w-full h-full pointer-events-none"
+          style={{ color: "oklch(0.65 0.19 255)" }}
         />
       )}
 
@@ -292,30 +160,76 @@ function ProjectCard({
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2">
-            <h3 className="text-base font-semibold truncate">{project.displayName}</h3>
-            <StatusIndicator status={status} />
+            <div className="flex items-center gap-2 min-w-0">
+              <h3 className="text-base font-semibold truncate">{project.displayName}</h3>
+              <EndpointsPopover endpoints={projectApps.flatMap((a) => a.domains.map((d) => ({ label: a.displayName, domain: d.domain })))} />
+            </div>
+            {projectApps.length > 0 ? (
+              <StatusIndicator
+                status={status}
+                finishedAt={allActive ? (() => {
+                  let latest: Date | null = null;
+                  for (const a of projectApps) {
+                    const f = a.deployments[0]?.finishedAt;
+                    if (f) {
+                      const d = new Date(f);
+                      if (!latest || d > latest) latest = d;
+                    }
+                  }
+                  return latest;
+                })() : undefined}
+                needsRedeploy={projectApps.some((a) => !!a.needsRedeploy)}
+              />
+            ) : (
+              <span className="text-xs text-muted-foreground">Empty</span>
+            )}
           </div>
-          {project.displayName !== project.name && (
-            <p className="text-sm text-muted-foreground/40 mt-0.5 truncate">{project.name}</p>
-          )}
+          {/* Aggregated metrics */}
+          {(() => {
+            const agg: AppMetrics = { cpuPercent: 0, memoryUsage: 0, memoryLimit: 0, diskUsage: 0, networkRx: 0, networkTx: 0 };
+            for (const a of projectApps) {
+              const m = metrics.get(a.id);
+              if (m) {
+                agg.cpuPercent += m.cpuPercent;
+                agg.memoryUsage += m.memoryUsage;
+                agg.memoryLimit = Math.max(agg.memoryLimit, m.memoryLimit);
+                agg.diskUsage += m.diskUsage;
+                agg.networkRx += m.networkRx;
+                agg.networkTx += m.networkTx;
+              }
+            }
+            return (agg.cpuPercent > 0 || agg.memoryUsage > 0)
+              ? <MetricsLine metrics={agg} onHover={() => {}} />
+              : null;
+          })()}
         </div>
       </div>
 
       {/* App chips */}
       <div className="relative flex flex-wrap gap-1.5 mt-3 pt-3 border-t">
-        {projectApps.map((a) => (
+        {projectApps.length === 0 && (
           <Link
-            key={a.id}
-            href={`/apps/${a.name}`}
+            href={`/apps/new?project=${project.id}`}
             onClick={(e) => e.stopPropagation()}
-            className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium bg-background hover:bg-accent transition-colors"
+            className="inline-flex items-center gap-1.5 rounded-full border border-dashed px-2.5 py-1 text-xs text-muted-foreground hover:bg-accent transition-colors cursor-pointer"
           >
-            <span className={`size-1.5 rounded-full ${statusDotColor(a.status)}`} />
-            {a.displayName}
+            <Plus className="size-3" />
+            Add App
           </Link>
+        )}
+        {projectApps.map((a) => (
+            <Link
+              key={a.id}
+              href={`/apps/${a.name}`}
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex items-center gap-1.5 rounded-full border border-transparent px-2.5 py-1 text-xs font-medium bg-background hover:bg-accent transition-colors cursor-pointer"
+            >
+              <span className={`size-1.5 rounded-full ${statusDotColor(a.status)}`} />
+              {a.displayName}
+            </Link>
         ))}
       </div>
-    </Link>
+    </div>
   );
 }
 
@@ -329,48 +243,37 @@ function AppCard({
   history: MetricsHistory;
 }) {
   const lastDeploy = app.deployments[0];
-  const [hoveredMetric, setHoveredMetric] = useState<MetricKey | null>(null);
-
-  const activeMetric = hoveredMetric || "cpu";
+  const projectColor = app.project?.color || "#6366f1";
+  const { color: typeColor } = detectAppType(app);
+  const cpuData = history.cpu;
 
   return (
     <Link
       href={`/apps/${app.name}`}
-      className="squircle relative flex flex-col rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50 overflow-hidden"
+      className="squircle relative flex flex-col rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50 overflow-hidden cursor-pointer"
     >
-      {/* Background sparklines — crossfade on hover */}
-      {(["cpu", "memory", "disk", "network"] as MetricKey[]).map((key) => {
-        const data = history[key];
-        if (data.length < 2) return null;
-        return (
-          <Sparkline
-            key={key}
-            data={data}
-            className={`absolute inset-0 w-full h-full text-foreground pointer-events-none transition-opacity duration-300 ${
-              activeMetric === key ? "opacity-100" : "opacity-0"
-            }`}
-          />
-        );
-      })}
+      {cpuData.length > 0 && (
+        <Sparkline
+          data={cpuData}
+          className="absolute inset-0 w-full h-full pointer-events-none"
+          style={{ color: "oklch(0.65 0.19 255)" }}
+        />
+      )}
 
       <div className="relative flex gap-4">
-        <AppIcon app={app} />
+        <AppIcon app={app} size="lg" />
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
               <h3 className="text-base font-semibold truncate">
                 {app.displayName}
               </h3>
-              <EndpointsPopover app={app} />
+              <EndpointsPopover endpoints={app.domains.map((d) => ({ domain: d.domain }))} />
             </div>
             <StatusIndicator
-              status={
-                app.status === "active" ? "running"
-                  : app.status === "error" ? "error"
-                  : app.status === "deploying" ? "deploying"
-                  : "stopped"
-              }
+              status={app.status}
               finishedAt={lastDeploy?.finishedAt}
+              needsRedeploy={!!app.needsRedeploy}
             />
           </div>
           {app.description && (
@@ -387,7 +290,7 @@ function AppCard({
                 app.deployType}
             </p>
           )}
-          {metrics && <MetricsLine metrics={metrics} onHover={setHoveredMetric} />}
+          {metrics && <MetricsLine metrics={metrics} onHover={() => {}} />}
           {app.appTags.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mt-2">
               {app.appTags.map(({ tag }) => (
@@ -423,13 +326,16 @@ export function AppGrid({
   apps,
   allTags,
   orgId,
+  emptyProjects = [],
 }: AppGridProps) {
   const router = useRouter();
   const [activeTagIds, setActiveTagIds] = useState<Set<string>>(new Set());
-  const { metrics, history } = useAppMetrics(orgId);
+  const { metrics, history, historyTick } = useAppMetrics(orgId);
 
   useEffect(() => {
-    const interval = setInterval(() => router.refresh(), 10000);
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") router.refresh();
+    }, 30000);
     return () => clearInterval(interval);
   }, [router]);
 
@@ -463,8 +369,15 @@ export function AppGrid({
       }
     }
 
+    // Include empty projects that have no apps
+    for (const ep of emptyProjects) {
+      if (!byProject.has(ep.id)) {
+        byProject.set(ep.id, { project: ep, apps: [] });
+      }
+    }
+
     return { projectCards: Array.from(byProject.values()), standaloneApps: standalone };
-  }, [filtered]);
+  }, [filtered, emptyProjects]);
 
   return (
     <div className="space-y-4">
@@ -521,6 +434,7 @@ export function AppGrid({
             projectApps={projectApps}
             metrics={metrics}
             history={history}
+            historyTick={historyTick}
           />
         ))}
         {standaloneApps.map((app) => (

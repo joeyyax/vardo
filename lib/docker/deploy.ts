@@ -1,5 +1,7 @@
 import { db } from "@/lib/db";
-import { deployments, apps, envVars, orgEnvVars, organizations, environments, volumeLimits } from "@/lib/db/schema";
+import { deployments, apps, orgEnvVars, organizations, environments, volumeLimits } from "@/lib/db/schema";
+import { encrypt, decryptOrFallback } from "@/lib/crypto/encrypt";
+import { parseEnvToMap } from "@/lib/env/parse-env";
 import { eq, and, isNull } from "drizzle-orm";
 import { resolveAllEnvVars, type ResolveContext } from "@/lib/env/resolve";
 import { nanoid } from "nanoid";
@@ -26,6 +28,20 @@ const execAsync = promisify(exec);
 
 const PROJECTS_DIR = resolve(process.env.HOST_PROJECTS_DIR || "./.host/projects");
 const NETWORK_NAME = "host-network";
+
+// Validate shell-unsafe strings before interpolation into commands
+const SAFE_BRANCH_RE = /^[a-zA-Z0-9._\-/]+$/;
+function assertSafeBranch(branch: string): void {
+  if (!SAFE_BRANCH_RE.test(branch)) {
+    throw new Error(`Invalid branch name: ${branch}`);
+  }
+}
+const SAFE_NAME_RE = /^[a-zA-Z0-9._\-]+$/;
+function assertSafeName(name: string): void {
+  if (!SAFE_NAME_RE.test(name)) {
+    throw new Error(`Invalid name: ${name}`);
+  }
+}
 const HEALTH_CHECK_TIMEOUT_MS = 60000;
 const HEALTH_CHECK_INTERVAL_MS = 2000;
 
@@ -153,26 +169,23 @@ export async function runDeployment(
     log(`[deploy] App: ${app.displayName} (${app.name})`);
     log(`[deploy] Source: ${app.source}, Type: ${app.deployType}`);
 
-    // Fetch env vars with environment layering:
-    // 1. Base vars (environmentId IS NULL)
-    // 2. Environment-specific vars overlay on top
-    const baseVars = await db.query.envVars.findMany({
-      where: and(
-        eq(envVars.appId, opts.appId),
-        isNull(envVars.environmentId),
-      ),
-    });
+    // Load env vars from encrypted blob (gracefully handles unmigrated plaintext)
     const envMap: Record<string, string> = {};
-    for (const v of baseVars) envMap[v.key] = v.value;
-
-    if (opts.environmentId) {
-      const envSpecificVars = await db.query.envVars.findMany({
-        where: and(
-          eq(envVars.appId, opts.appId),
-          eq(envVars.environmentId, opts.environmentId),
-        ),
-      });
-      for (const v of envSpecificVars) envMap[v.key] = v.value;
+    if (app.envContent) {
+      const { content: envText, wasEncrypted } = decryptOrFallback(app.envContent, app.organizationId);
+      if (envText) {
+        Object.assign(envMap, parseEnvToMap(envText));
+        if (!wasEncrypted) {
+          log("[deploy] Warning: env vars were not encrypted — auto-encrypting");
+          try {
+            await db.update(apps)
+              .set({ envContent: encrypt(envText, app.organizationId) })
+              .where(eq(apps.id, app.id));
+          } catch { /* best-effort */ }
+        }
+      } else if (!wasEncrypted) {
+        log("[deploy] Warning: failed to decrypt env vars — check ENCRYPTION_MASTER_KEY");
+      }
     }
 
     const totalEnvVarCount = Object.keys(envMap).length;
@@ -215,6 +228,7 @@ export async function runDeployment(
       // Repo lives at app level (shared across environments)
       const repoDir = join(appBaseDir, "repo");
       const branch = envBranchOverride || app.gitBranch || "main";
+      assertSafeBranch(branch);
 
       // Build authenticated clone URL for private repos
       let cloneUrl = app.gitUrl;
@@ -257,13 +271,13 @@ export async function runDeployment(
       try {
         // Try pull first (faster if already cloned)
         await execAsync(
-          `git -C "${repoDir}" remote set-url origin "${cloneUrl}" && git -C "${repoDir}" fetch origin ${branch} && git -C "${repoDir}" reset --hard origin/${branch}`,
+          `git -C "${repoDir}" remote set-url origin "${cloneUrl}" && git -C "${repoDir}" fetch origin "${branch}" && git -C "${repoDir}" reset --hard "origin/${branch}"`,
           { timeout: 60000 }
         );
         log(`[deploy] Pulled latest from ${branch}`);
       } catch {
         // Fresh clone
-        await execAsync(`git clone --depth 1 --branch ${branch} "${cloneUrl}" "${repoDir}"`, { timeout: 60000 });
+        await execAsync(`git clone --depth 1 --branch "${branch}" "${cloneUrl}" "${repoDir}"`, { timeout: 60000 });
         log(`[deploy] Cloned repo (${branch})`);
       }
 
@@ -503,6 +517,7 @@ export async function runDeployment(
           ...svc.labels,
           "host.project": app.name,
           "host.project.id": app.id,
+          "host.organization": opts.organizationId,
           "host.deployment.id": deploymentId,
           "host.environment": envName,
           "host.managed": "true",
@@ -577,11 +592,13 @@ export async function runDeployment(
               id: true,
               name: true,
               displayName: true,
+              organizationId: true,
               projectId: true,
               containerPort: true,
               gitUrl: true,
               gitBranch: true,
               imageName: true,
+              envContent: true,
             },
             with: { domains: { columns: { domain: true }, limit: 1 } },
           });
@@ -624,42 +641,28 @@ export async function runDeployment(
             });
 
             if (refEnv) {
-              // Load base + environment-specific, environment overrides base
-              const refBase = await db.query.envVars.findMany({
-                where: and(
-                  eq(envVars.appId, refApp.id),
-                  isNull(envVars.environmentId),
-                ),
-              });
-              const refMap: Record<string, string> = {};
-              for (const v of refBase) refMap[v.key] = v.value;
-
-              const refEnvVars = await db.query.envVars.findMany({
-                where: and(
-                  eq(envVars.appId, refApp.id),
-                  eq(envVars.environmentId, refEnv.id),
-                ),
-              });
-              for (const v of refEnvVars) refMap[v.key] = v.value;
-
-              if (varKey in refMap) return refMap[varKey];
+              // Environment-specific resolution would go here
+              // For now, fall through to base env content
             }
           }
 
-          // Fall back to the referenced app's base vars (environmentId IS NULL)
-          const refVar = await db.query.envVars.findFirst({
-            where: and(
-              eq(envVars.appId, refApp.id),
-              eq(envVars.key, varKey),
-              isNull(envVars.environmentId),
-            ),
-          });
-          return refVar?.value ?? null;
+          // Decrypt the referenced app's env content and look up the key
+          if (!refApp.envContent) return null;
+          const { content: refText } = decryptOrFallback(refApp.envContent, refApp.organizationId);
+          if (!refText) return null;
+          const refMap = parseEnvToMap(refText);
+          return refMap[varKey] ?? null;
         },
       };
 
       const resolved = await resolveAllEnvVars(envMap, resolveCtx);
-      const envContent = Object.entries(resolved).map(([k, v]) => `${k}=${v}`).join("\n");
+      const envContent = Object.entries(resolved).map(([k, v]) => {
+        // Quote values containing newlines, quotes, spaces, $, or # to prevent injection
+        if (/[\n\r"' $#\\]/.test(v)) {
+          return `${k}="${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n").replace(/\r/g, "\\r")}"`;
+        }
+        return `${k}=${v}`;
+      }).join("\n");
       await writeFile(join(slotDir, ".env"), envContent, "utf-8");
     }
 
@@ -802,9 +805,10 @@ export async function runDeployment(
           for (const mount of info.mounts) {
             if (mount.type === "volume") {
               try {
-                const volName = mount.source.split("/").pop();
+                const volName = mount.source.split("/").pop() || "";
+                assertSafeName(volName);
                 const { stdout } = await execAsync(
-                  `docker run --rm -v ${volName}:/data alpine du -sb /data`,
+                  `docker run --rm -v "${volName}:/data" alpine du -sb /data`,
                   { timeout: 30000 }
                 );
                 const sizeBytes = parseInt(stdout.split("\t")[0]);
@@ -853,7 +857,7 @@ export async function runDeployment(
     // Mark app as active
     await db
       .update(apps)
-      .set({ status: "active", updatedAt: new Date() })
+      .set({ status: "active", needsRedeploy: false, updatedAt: new Date() })
       .where(eq(apps.id, opts.appId));
 
     const durationMs = Date.now() - startTime;
@@ -1257,11 +1261,17 @@ export async function restartProject(
     const composeProject = `${prefix}-${activeSlot}`;
 
     const { stdout, stderr } = await execAsync(
-      `docker compose -f "${composePath}" -p "${composeProject}" restart`,
+      `docker compose -f "${composePath}" -p "${composeProject}" up -d --force-recreate`,
       { cwd: slotDir, timeout: 60000 }
     );
     if (stdout.trim()) logs.push(stdout.trim());
     if (stderr.trim()) logs.push(stderr.trim());
+
+    // Clear needsRedeploy flag since containers were recreated with fresh env
+    await db
+      .update(apps)
+      .set({ needsRedeploy: false, updatedAt: new Date() })
+      .where(eq(apps.id, appId));
 
     return { success: true, log: logs.join("\n") };
   } catch (err) {

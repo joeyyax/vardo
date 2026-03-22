@@ -24,6 +24,18 @@ export const TIME_RANGES: { label: string; value: TimeRange }[] = [
   { label: "7d", value: "7d" },
 ];
 
+export const CHART_COLORS = {
+  cpu: "oklch(0.65 0.19 255)",
+  memory: "oklch(0.72 0.17 150)",
+  networkRx: "oklch(0.70 0.15 200)",
+  networkTx: "oklch(0.75 0.15 75)",
+  memoryLimit: "oklch(0.65 0.22 25)",
+  grid: "oklch(0.30 0.006 285.75 / 40%)",
+  tick: "oklch(0.55 0.006 285.75)",
+};
+
+export const chartTickStyle = { fontSize: 10, fill: CHART_COLORS.tick };
+
 export const chartTooltipStyle = {
   contentStyle: {
     backgroundColor: "oklch(0.14 0.005 260)",

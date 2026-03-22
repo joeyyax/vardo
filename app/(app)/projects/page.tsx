@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { db } from "@/lib/db";
-import { apps, tags } from "@/lib/db/schema";
+import { apps, projects, tags } from "@/lib/db/schema";
 import { getCurrentOrg, getUserOrganizations } from "@/lib/auth/session";
 import { eq, desc, asc, sql } from "drizzle-orm";
 import { Plus } from "lucide-react";
@@ -20,7 +20,7 @@ export default async function ProjectsPage() {
   const orgId = orgData.organization.id;
   const organizations = await getUserOrganizations();
 
-  const [appList, tagList] = await Promise.all([
+  const [appList, tagList, projectList] = await Promise.all([
     db.query.apps.findMany({
       where: eq(apps.organizationId, orgId),
       orderBy: [asc(apps.sortOrder), desc(apps.createdAt)],
@@ -45,7 +45,15 @@ export default async function ProjectsPage() {
       where: eq(tags.organizationId, orgId),
       orderBy: [asc(tags.name)],
     }),
+    db.query.projects.findMany({
+      where: eq(projects.organizationId, orgId),
+      columns: { id: true, name: true, displayName: true, color: true },
+    }),
   ]);
+
+  // Projects that have no apps assigned
+  const projectIdsWithApps = new Set(appList.map((a) => a.projectId).filter(Boolean));
+  const emptyProjects = projectList.filter((p) => !projectIdsWithApps.has(p.id));
 
   return (
     <div className="space-y-6">
@@ -69,7 +77,7 @@ export default async function ProjectsPage() {
         </div>
       </PageToolbar>
 
-      {appList.length === 0 ? (
+      {appList.length === 0 && emptyProjects.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
           <p className="text-sm text-muted-foreground">
             No projects yet. Create your first project to get started.
@@ -86,6 +94,7 @@ export default async function ProjectsPage() {
           apps={appList}
           allTags={tagList}
           orgId={orgId}
+          emptyProjects={emptyProjects}
         />
       )}
     </div>

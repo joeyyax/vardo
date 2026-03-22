@@ -119,20 +119,12 @@ type SourceOption = (typeof SOURCE_OPTIONS)[number]["id"];
 
 function generatePassword(length = 24): string {
   const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  return Array.from({ length }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+  const bytes = crypto.getRandomValues(new Uint8Array(length));
+  return Array.from(bytes, (b) => chars[b % chars.length]).join("");
 }
 
-function isPasswordField(key: string): boolean {
-  const lower = key.toLowerCase();
-  return lower.includes("password") || lower.includes("secret") || lower.includes("_key") || lower === "app_keys" || lower.includes("jwt");
-}
-
-function slugify(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
+import { isSecretKey } from "@/lib/env/is-secret-key";
+import { slugify } from "@/lib/ui/slugify";
 
 export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], defaultParentId, defaultProjectId, defaultName, defaultImage, defaultTemplate }: Props) {
   const router = useRouter();
@@ -305,7 +297,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], default
 
         if (!value) {
           // Smart auto-fill
-          if (isPasswordField(ev.key)) {
+          if (isSecretKey(ev.key)) {
             value = generatePassword();
           } else {
             const lower = ev.key.toLowerCase();
@@ -454,7 +446,13 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], default
         });
       }
 
+      // Trigger deploy via API so the app detail page can pick up the SSE stream
       if (autoDeploy) {
+        fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/deploy`, {
+          method: "POST",
+        }).catch(() => {
+          // Deploy started server-side — client will see it on the detail page
+        });
         toast.success("App created — deploying...");
       } else {
         toast.success("App created");

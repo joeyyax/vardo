@@ -43,23 +43,29 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       const activeAppNames = activeApps.map((p) => p.name);
 
       if (perProject) {
-        // Per-project sparklines for all metrics (project grid cards)
-        const result: Record<string, { cpu: [number, number][]; memory: [number, number][]; networkRx: [number, number][]; networkTx: [number, number][]; disk: [number, number][] }> = {};
+        const metricFilter = searchParams.get("metric");
+        const result: Record<string, Record<string, [number, number][]>> = {};
 
         await Promise.allSettled(
           activeApps.map(async (p) => {
-            const [cpu, memory, networkRx, networkTx, disk] = await Promise.all([
-              queryMetrics(p.name, "cpu", fromMs, toMs, { type: "avg", bucketMs }),
-              queryMetrics(p.name, "memory", fromMs, toMs, { type: "avg", bucketMs }),
-              queryMetrics(p.name, "networkRx", fromMs, toMs, { type: "sum", bucketMs }),
-              queryMetrics(p.name, "networkTx", fromMs, toMs, { type: "sum", bucketMs }),
-              queryMetrics(p.name, "disk", fromMs, toMs, { type: "avg", bucketMs }),
-            ]);
-            result[p.id] = { cpu, memory, networkRx, networkTx, disk };
+            if (metricFilter === "cpu") {
+              // Fast path: only fetch CPU for sparklines
+              const cpu = await queryMetrics(p.name, "cpu", fromMs, toMs, { type: "avg", bucketMs });
+              result[p.id] = { cpu };
+            } else {
+              const [cpu, memory, networkRx, networkTx, disk] = await Promise.all([
+                queryMetrics(p.name, "cpu", fromMs, toMs, { type: "avg", bucketMs }),
+                queryMetrics(p.name, "memory", fromMs, toMs, { type: "avg", bucketMs }),
+                queryMetrics(p.name, "networkRx", fromMs, toMs, { type: "sum", bucketMs }),
+                queryMetrics(p.name, "networkTx", fromMs, toMs, { type: "sum", bucketMs }),
+                queryMetrics(p.name, "disk", fromMs, toMs, { type: "avg", bucketMs }),
+              ]);
+              result[p.id] = { cpu, memory, networkRx, networkTx, disk };
+            }
           })
         );
 
-        return NextResponse.json({ projects: result });
+        return NextResponse.json({ apps: result });
       }
 
       // Aggregate across all projects
