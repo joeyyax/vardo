@@ -178,7 +178,7 @@ export function SetupWizard() {
                   key={step.id}
                   onClick={() => canClick && goTo(step.id)}
                   aria-current={isActive ? "step" : undefined}
-                  aria-disabled={!canClick}
+                  disabled={!canClick}
                   aria-label={`${step.label}${isDone ? " (completed)" : ""}`}
                   className={`flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${
                     isActive

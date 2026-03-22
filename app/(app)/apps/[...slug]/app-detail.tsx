@@ -347,7 +347,7 @@ function PortsManager({
           </div>
           <div className="grid gap-1.5">
             <span className="text-xs text-muted-foreground">Host Port</span>
-            <div className="flex h-9 items-center rounded-md border bg-muted/50 px-3 text-sm font-mono text-muted-foreground" aria-label="Host port: auto-assigned">
+            <div className="flex h-9 items-center rounded-md border bg-muted/50 px-3 text-sm font-mono text-muted-foreground" role="status" aria-label="Host port: auto-assigned">
               Auto
             </div>
           </div>
@@ -441,13 +441,15 @@ function InProgressDeployCard({
   const runningStage = stageKeys.find((s) => stages[s] === "running");
   const anyFailed = stageKeys.some((s) => stages[s] === "failed");
   const allDone = hasStages && stageKeys.filter((s) => stages[s]).every((s) => stages[s] === "success" || stages[s] === "skipped");
+  // Only announce once a stage has actually transitioned — empty string on
+  // initial mount so the assertive live region doesn't interrupt immediately.
   const liveAnnouncement = anyFailed
     ? `Deployment failed at ${stageLabels[stageKeys.find((s) => stages[s] === "failed")!] ?? "unknown"} stage`
     : allDone
       ? "Deployment completed successfully"
       : runningStage
         ? `Deploying: ${stageLabels[runningStage]} in progress`
-        : "Deployment in progress";
+        : "";
 
   return (
     <div className="squircle rounded-lg border bg-status-info-muted overflow-hidden">
