@@ -71,10 +71,39 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
 };
 
 /**
- * Check if a feature is enabled. Defaults to true.
+ * Check if a feature is enabled (synchronous, env-var only). Defaults to true.
  */
 export function isFeatureEnabled(flag: FeatureFlag): boolean {
   return process.env[FLAG_CONFIG[flag].env] !== "false";
+}
+
+/**
+ * Check if a feature is enabled with DB fallback.
+ * Resolution: env var > DB override > default (true).
+ */
+export async function isFeatureEnabledAsync(flag: FeatureFlag): Promise<boolean> {
+  const envVal = process.env[FLAG_CONFIG[flag].env];
+  if (envVal !== undefined) return envVal !== "false";
+
+  const { getFeatureFlagsConfig } = await import("@/lib/system-settings");
+  const dbFlags = await getFeatureFlagsConfig();
+  if (dbFlags && flag in dbFlags) return dbFlags[flag];
+
+  return true; // default enabled
+}
+
+/**
+ * Whether a flag's value is forced by an environment variable.
+ */
+export function isEnvOverridden(flag: FeatureFlag): boolean {
+  return process.env[FLAG_CONFIG[flag].env] !== undefined;
+}
+
+/**
+ * Get the flag config metadata (label, description) for a flag.
+ */
+export function getFlagConfig(flag: FeatureFlag): FlagConfig {
+  return FLAG_CONFIG[flag];
 }
 
 /**
