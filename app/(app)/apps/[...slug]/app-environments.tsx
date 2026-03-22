@@ -281,7 +281,7 @@ export function AppEnvironments({
           }}
         >
           <Plus className="mr-1.5 size-4" />
-          Add Environment
+          Add environment
         </Button>
       </div>
 
