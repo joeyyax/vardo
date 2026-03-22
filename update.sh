@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Host — Self-hosted PaaS
+# Vardo — Self-hosted PaaS
 # Update script for existing installations
 
 BOLD="\033[1m"
@@ -48,7 +48,7 @@ step()  { echo -e "\n${BOLD}── $1 ──${RESET}"; }
 # ── Header ───────────────────────────────────────────────────────────────────
 
 echo ""
-echo -e "${BOLD}  Host — Update${RESET}"
+echo -e "${BOLD}  Vardo — Update${RESET}"
 echo -e "${DIM}  Self-hosted PaaS update script${RESET}"
 echo ""
 
