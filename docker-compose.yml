@@ -93,7 +93,6 @@ services:
     image: traefik:v3
     restart: unless-stopped
     command:
-      - "--api.insecure=true"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--providers.docker.network=vardo-network"
@@ -104,21 +103,15 @@ services:
       - "--entrypoints.websecure.address=:443"
       - "--entrypoints.websecure.http.tls=true"
       - "--certificatesresolvers.le.acme.tlschallenge=true"
-      - "--certificatesresolvers.le.acme.email=${ACME_EMAIL:-noop@localhost}"
+      - "--certificatesresolvers.le.acme.email=${ACME_EMAIL:-}"
       - "--certificatesresolvers.le.acme.storage=/letsencrypt/acme.json"
       - "--log.level=${TRAEFIK_LOG_LEVEL:-INFO}"
     ports:
       - "80:80"
       - "443:443"
-      - "8080:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - letsencrypt:/letsencrypt
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.traefik.rule=Host(`traefik.${VARDO_BASE_DOMAIN:-localhost}`)"
-      - "traefik.http.routers.traefik.entrypoints=websecure"
-      - "traefik.http.routers.traefik.service=api@internal"
     networks:
       - vardo-network
 

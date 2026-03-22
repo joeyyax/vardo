@@ -117,9 +117,9 @@ if [ -f ".env" ] && grep -q "^HOST_" .env 2>/dev/null; then
 fi
 
 # Ensure COMPOSE_PROFILES includes production
-if [ -f ".env" ] && ! grep -q "production" .env 2>/dev/null; then
+if [ -f ".env" ] && ! grep -q "^COMPOSE_PROFILES=.*production" .env 2>/dev/null; then
   if grep -q "^COMPOSE_PROFILES=" .env; then
-    sed -i 's/^COMPOSE_PROFILES=/COMPOSE_PROFILES=production,/' .env
+    sed -i 's/^COMPOSE_PROFILES=\(.*\)/COMPOSE_PROFILES=production,\1/' .env
   else
     echo "COMPOSE_PROFILES=production" >> .env
   fi
@@ -220,8 +220,7 @@ echo -e "${RESET}"
 
 step "Rebuilding containers"
 
-# COMPOSE_PROFILES from .env.prod controls which optional services start.
-# Docker Compose reads it automatically from the --env-file.
+# COMPOSE_PROFILES from .env controls which services start.
 log "Building images (this may take a few minutes)..."
 docker compose -f "$COMPOSE_FILE" build --quiet
 
