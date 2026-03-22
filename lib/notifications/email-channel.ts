@@ -10,6 +10,7 @@ import { DiskWriteAlertEmail } from "@/lib/email/templates/disk-write-alert";
 import { VolumeDriftEmail } from "@/lib/email/templates/volume-drift";
 import { AutoRollbackEmail } from "@/lib/email/templates/auto-rollback";
 import { SystemAlertEmail } from "@/lib/email/templates/system-alert";
+import { WeeklyDigestEmail } from "@/lib/email/templates/weekly-digest";
 
 type EmailConfig = { recipients: string[] };
 
@@ -152,6 +153,32 @@ export class EmailNotificationChannel implements NotificationChannel {
           message: event.message,
           details: m as Record<string, string>,
           dashboardUrl: appUrl,
+        });
+
+      case "weekly-digest":
+        return WeeklyDigestEmail({
+          orgName: m.orgName || "Your Organization",
+          weekLabel: m.weekLabel || "",
+          deploys: {
+            total: parseInt(m.deploysTotal || "0"),
+            succeeded: parseInt(m.deploysSucceeded || "0"),
+            failed: parseInt(m.deploysFailed || "0"),
+          },
+          backups: {
+            total: parseInt(m.backupsTotal || "0"),
+            succeeded: parseInt(m.backupsSucceeded || "0"),
+            failed: parseInt(m.backupsFailed || "0"),
+          },
+          cron: {
+            totalFailures: parseInt(m.cronFailures || "0"),
+            affectedJobs: m.cronAffectedJobs ? JSON.parse(m.cronAffectedJobs) : [],
+          },
+          alerts: {
+            diskWriteAlerts: parseInt(m.diskWriteAlerts || "0"),
+            volumeDrifts: parseInt(m.volumeDrifts || "0"),
+          },
+          projects: m.projects ? JSON.parse(m.projects) : [],
+          dashboardUrl,
         });
 
       default:
