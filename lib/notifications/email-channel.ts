@@ -9,6 +9,7 @@ import { CronFailedEmail } from "@/lib/email/templates/cron-failed";
 import { DiskWriteAlertEmail } from "@/lib/email/templates/disk-write-alert";
 import { VolumeDriftEmail } from "@/lib/email/templates/volume-drift";
 import { AutoRollbackEmail } from "@/lib/email/templates/auto-rollback";
+import { SystemAlertEmail } from "@/lib/email/templates/system-alert";
 
 type EmailConfig = { recipients: string[] };
 
@@ -138,6 +139,19 @@ export class EmailNotificationChannel implements NotificationChannel {
           fromDeploymentId: m.fromDeploymentId || "",
           toDeploymentId: m.toDeploymentId || "",
           dashboardUrl,
+        });
+
+      case "system-alert-service":
+      case "system-alert-disk":
+      case "system-alert-restart":
+      case "system-alert-cert":
+      case "system-alert-update":
+        return SystemAlertEmail({
+          alertType: event.type,
+          title: event.title,
+          message: event.message,
+          details: m as Record<string, string>,
+          dashboardUrl: appUrl,
         });
 
       default:
