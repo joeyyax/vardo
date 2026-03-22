@@ -205,11 +205,8 @@ function AppCard({
           : "";
 
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={() => router.push(`/apps/${app.name}`)}
-      onKeyDown={(e) => { if (e.key === "Enter") router.push(`/apps/${app.name}`); }}
+    <Link
+      href={`/apps/${app.name}`}
       onMouseEnter={onHoverStart}
       onMouseLeave={onHoverEnd}
       className={`squircle relative flex flex-col rounded-lg border bg-card p-4 transition-all duration-200 hover:bg-accent/50 overflow-hidden cursor-pointer ${highlightClasses}`}
@@ -293,7 +290,7 @@ function AppCard({
           <span>depends on this</span>
         </div>
       )}
-    </div>
+    </Link>
   );
 }
 
