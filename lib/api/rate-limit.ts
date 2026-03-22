@@ -4,6 +4,9 @@ import { redis } from "@/lib/redis";
 // Lua script: sliding window using a sorted set of request timestamps.
 // Arguments: key, now (ms), windowMs, limit, ttlSeconds
 // Returns: current request count after incrementing (integer)
+//
+// Member uniqueness: redis.call("TIME") returns {seconds, microseconds},
+// giving microsecond resolution — no collision risk under burst traffic.
 const SLIDING_WINDOW_SCRIPT = `
 local key = KEYS[1]
 local now = tonumber(ARGV[1])
@@ -19,8 +22,10 @@ redis.call("ZREMRANGEBYSCORE", key, "-inf", cutoff)
 local count = redis.call("ZCARD", key)
 
 if count < limit then
-  -- Add the current request with score = timestamp (unique member = timestamp + random suffix)
-  redis.call("ZADD", key, now, now .. "-" .. math.random(1, 1000000))
+  -- Unique member: microsecond-resolution Redis server time eliminates collision risk
+  local t = redis.call("TIME")
+  local member = t[1] .. "-" .. t[2]
+  redis.call("ZADD", key, now, member)
   redis.call("EXPIRE", key, ttl)
   return count + 1
 else
@@ -67,11 +72,19 @@ export async function rateLimit(
   }
 
   if (count > opts.limit) {
-    // Estimate retry-after: fetch TTL of the sorted set
+    // Accurate retry-after: time until the oldest request drops out of the window.
+    // pttl reflects key-expiry (which resets on every allowed write) and is always
+    // the full window size, not the actual wait. Instead, fetch the oldest entry's
+    // score (its insertion timestamp in ms) and compute when it will age out.
     let retryAfter = Math.ceil(opts.windowMs / 1000);
     try {
-      const pttl = await redis.pttl(key);
-      if (pttl > 0) retryAfter = Math.ceil(pttl / 1000);
+      const oldest = await redis.zrange(key, 0, 0, "WITHSCORES");
+      // oldest = [member, score] when entries exist
+      if (oldest.length >= 2) {
+        const oldestMs = Number(oldest[1]);
+        const msUntilClear = oldestMs + opts.windowMs - now;
+        if (msUntilClear > 0) retryAfter = Math.ceil(msUntilClear / 1000);
+      }
     } catch {
       // Best-effort
     }
