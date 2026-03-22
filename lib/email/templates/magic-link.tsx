@@ -15,7 +15,6 @@ export function MagicLinkEmail({ url, email }: MagicLinkProps) {
         expires in 15 minutes.
       </Text>
       <CTA href={url}>Sign in &rarr;</CTA>
-
       <Text style={{ ...styles.muted, margin: "24px 0 0" }}>
         If you didn&apos;t request this, you can safely ignore this email.
       </Text>
