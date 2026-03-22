@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { invitations, organizations } from "@/lib/db/schema";
@@ -9,6 +10,44 @@ import { acceptInvitation } from "./actions";
 type Props = {
   params: Promise<{ token: string }>;
 };
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { token } = await params;
+
+  const invitation = await db.query.invitations.findFirst({
+    where: eq(invitations.token, token),
+    columns: { targetId: true, scope: true },
+  });
+
+  if (!invitation) {
+    return { title: "Invalid invitation" };
+  }
+
+  let orgName: string | undefined;
+  if (invitation.scope === "org" && invitation.targetId) {
+    const org = await db.query.organizations.findFirst({
+      where: eq(organizations.id, invitation.targetId),
+      columns: { name: true },
+    });
+    orgName = org?.name;
+  }
+
+  const title = orgName
+    ? `You've been invited to ${orgName}`
+    : "You've been invited";
+  const description = orgName
+    ? `Accept your invitation to join ${orgName} on Vardo.`
+    : "Accept your invitation to join a team on Vardo.";
+
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+    },
+  };
+}
 
 export default async function InvitePage({ params }: Props) {
   const { token } = await params;
