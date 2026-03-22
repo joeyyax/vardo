@@ -53,14 +53,16 @@ export function NewProjectForm({ orgId }: { orgId: string }) {
         }
       );
 
+      const data = await res.json();
+
       if (!res.ok) {
-        const data = await res.json();
         toast.error(data.error || "Failed to create project");
         return;
       }
 
       toast.success("Project created");
-      router.push(`/projects/${slug}`);
+      router.refresh();
+      router.push(`/projects/${data.project.name}`);
     } catch {
       toast.error("Failed to create project");
     } finally {

@@ -9,6 +9,7 @@ import { resolve } from "path";
 import { readFile } from "fs/promises";
 import { createSSEResponse } from "@/lib/api/sse";
 import { isLokiAvailable, queryRange, tailLogs, buildLogQLQuery } from "@/lib/loki/client";
+import { isFeatureEnabled } from "@/lib/config/features";
 
 const PROJECTS_DIR = resolve(process.env.HOST_PROJECTS_DIR || "./.host/projects");
 
@@ -19,6 +20,13 @@ type RouteParams = {
 // GET /api/v1/organizations/[orgId]/apps/[appId]/logs/stream
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
+    if (!isFeatureEnabled("logs")) {
+      return new Response(JSON.stringify({ error: "Feature not enabled" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     const { orgId, appId } = await params;
     const { organization } = await requireOrg();
 

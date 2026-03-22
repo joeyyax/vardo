@@ -6,6 +6,7 @@ import {
   getLatestBusinessMetric,
   type BusinessMetricName,
 } from "@/lib/metrics/store";
+import { isFeatureEnabled } from "@/lib/config/features";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -29,6 +30,10 @@ const VALID_METRICS: BusinessMetricName[] = [
 //   bucket: aggregation bucket in ms (default: 300000 = 5min)
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
+    if (!isFeatureEnabled("metrics")) {
+      return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
+    }
+
     const { orgId } = await params;
     const { organization } = await requireOrg();
 

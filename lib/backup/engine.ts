@@ -9,54 +9,10 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import { mkdir, rm } from "fs/promises";
 import { resolve, join } from "path";
-import {
-  createStorageClient,
-  uploadBackup,
-  downloadBackup,
-  getDownloadUrl as storageGetDownloadUrl,
-  type StorageConfig,
-} from "./storage";
-import {
-  uploadViaSsh,
-  downloadViaSsh,
-  type SshConfig,
-} from "./storage-ssh";
+import type { BackupStorage } from "./storage-port";
+import { createBackupStorage } from "./storage-factory";
 
 const execAsync = promisify(exec);
-
-// ---------------------------------------------------------------------------
-// Transport abstraction
-// ---------------------------------------------------------------------------
-
-type TargetConfig = StorageConfig | SshConfig;
-
-function isSshConfig(config: TargetConfig): config is SshConfig {
-  return "host" in config && "path" in config && !("bucket" in config);
-}
-
-async function uploadToTarget(
-  config: TargetConfig,
-  key: string,
-  filePath: string,
-): Promise<{ sizeBytes: number }> {
-  if (isSshConfig(config)) {
-    return uploadViaSsh(config, key, filePath);
-  }
-  const client = createStorageClient(config);
-  return uploadBackup(client, config, key, filePath);
-}
-
-async function downloadFromTarget(
-  config: TargetConfig,
-  key: string,
-  destPath: string,
-): Promise<void> {
-  if (isSshConfig(config)) {
-    return downloadViaSsh(config, key, destPath);
-  }
-  const client = createStorageClient(config);
-  return downloadBackup(client, config, key, destPath);
-}
 
 const BACKUPS_DIR = resolve(process.env.HOST_BACKUPS_DIR || "./.host/backups");
 
@@ -92,13 +48,13 @@ async function ensureDir(dir: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 /**
- * Create a tar.gz of a Docker volume and upload it to S3-compatible storage.
+ * Create a tar.gz of a Docker volume and upload it to the storage target.
  * Returns the storage key and size.
  */
 async function backupVolume(
   dockerVolumeName: string,
   storageKey: string,
-  config: TargetConfig,
+  storage: BackupStorage,
   logFn: (msg: string) => void,
 ): Promise<{ sizeBytes: number }> {
   const tmpDir = join(BACKUPS_DIR, `.tmp-${nanoid(8)}`);
@@ -113,10 +69,9 @@ async function backupVolume(
       { timeout: 600_000 }, // 10 minute timeout
     );
 
-    // Upload via the appropriate transport
+    // Upload via the storage adapter
     logFn(`Uploading to ${storageKey}`);
-    const { sizeBytes } = await uploadToTarget(
-      config,
+    const { sizeBytes } = await storage.upload(
       storageKey,
       join(tmpDir, archiveFile),
     );
@@ -165,7 +120,7 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
     throw new Error(`Backup job not found: ${jobId}`);
   }
 
-  const config = job.target.config;
+  const storage = createBackupStorage(job.target);
   const ts = timestamp();
   await ensureDir(BACKUPS_DIR);
 
@@ -258,7 +213,7 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
         const { sizeBytes } = await backupVolume(
           dockerVolumeName,
           storageKey,
-          config,
+          storage,
           log,
         );
 
@@ -324,7 +279,7 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
 }
 
 /**
- * Restore a backup by downloading the archive from S3 and repopulating
+ * Restore a backup by downloading the archive from storage and repopulating
  * the Docker volume.
  */
 export async function restoreBackup(
@@ -350,7 +305,7 @@ export async function restoreBackup(
     throw new Error("Backup has no volume name");
   }
 
-  const config = backup.target.config;
+  const storage = createBackupStorage(backup.target);
   const logLines: string[] = [];
   const log = (msg: string) => {
     logLines.push(`[${new Date().toISOString()}] ${msg}`);
@@ -363,7 +318,7 @@ export async function restoreBackup(
   try {
     // 1. Download archive from storage
     log(`Downloading backup from ${backup.storagePath}`);
-    await downloadFromTarget(config, backup.storagePath, archivePath);
+    await storage.download(backup.storagePath, archivePath);
     log("Download complete");
 
     // 2. Determine the Docker volume name (try blue first, then green)
@@ -415,8 +370,9 @@ export async function restoreBackup(
 }
 
 /**
- * Generate a pre-signed download URL for a backup archive (S3 targets),
- * or return null for SSH targets (must be streamed through the server).
+ * Generate a pre-signed download URL for a backup archive.
+ * Returns null if the storage backend doesn't support direct URLs
+ * (e.g. SSH targets), in which case the caller should stream through the server.
  */
 export async function getBackupDownloadUrl(
   backupId: string,
@@ -434,15 +390,14 @@ export async function getBackupDownloadUrl(
     throw new Error("Backup has no storage path");
   }
 
-  const config = backup.target.config;
+  const storage = createBackupStorage(backup.target);
 
-  // SSH targets don't support pre-signed URLs
-  if (isSshConfig(config)) {
+  // If the adapter doesn't implement getDownloadUrl, return null
+  if (!storage.getDownloadUrl) {
     return null;
   }
 
-  const client = createStorageClient(config);
-  return storageGetDownloadUrl(client, config, backup.storagePath, 3600);
+  return storage.getDownloadUrl(backup.storagePath, 3600);
 }
 
 /**
@@ -464,6 +419,7 @@ export async function downloadBackupToTemp(
   await ensureDir(tmpDir);
   const destPath = join(tmpDir, "backup.tar.gz");
 
-  await downloadFromTarget(backup.target.config, backup.storagePath, destPath);
+  const storage = createBackupStorage(backup.target);
+  await storage.download(backup.storagePath, destPath);
   return destPath;
 }

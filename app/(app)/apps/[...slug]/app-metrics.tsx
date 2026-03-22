@@ -1,37 +1,15 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useId } from "react";
-import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  ReferenceLine,
-} from "recharts";
-import { Activity, Container, Cpu, HardDrive, MemoryStick, Network, Loader2 } from "lucide-react";
+import { useState, useMemo } from "react";
+import { AreaChart } from "@tremor/react";
+import type { CustomTooltipProps } from "@tremor/react";
+import { Activity, Container, Cpu, MemoryStick, Network, Loader2 } from "lucide-react";
 import { ChartCard } from "@/components/app-status";
 import { formatBytes, formatMemLimit, formatBytesRate, formatTime } from "@/lib/metrics/format";
-import { RANGE_MS, BUCKET_MS, chartTooltipStyle, chartTickStyle, CHART_COLORS, TIME_RANGES, type TimeRange } from "@/lib/metrics/constants";
-import type { ContainerStatsSnapshot } from "@/lib/metrics/types";
-import { useVisibilityKey } from "@/lib/hooks/use-visible";
-
-type TimeSeriesPoint = {
-  time: string;
-  timestamp: number;
-  // Aggregate across containers
-  cpuPercent: number;
-  memoryUsage: number;
-  memoryLimit: number;
-  memoryPercent: number;
-  networkRx: number;
-  networkTx: number;
-  // Per-tick deltas for network rate
-  networkRxRate: number;
-  networkTxRate: number;
-};
+import { CHART_COLORS, TIME_RANGES, type TimeRange } from "@/lib/metrics/constants";
+import { TREMOR_METRIC_COLORS, MetricsTooltip } from "@/components/metrics-chart";
+import type { ContainerPoint } from "@/lib/metrics/types";
+import { useMetricsStream } from "@/lib/hooks/use-metrics-stream";
 
 type AppMetricsProps = {
   orgId: string;
@@ -39,10 +17,51 @@ type AppMetricsProps = {
   environmentName?: string;
 };
 
-const MAX_DATA_POINTS = 150; // ~5 minutes at 2s intervals
+type ChartPoint = {
+  time: string;
+  timestamp: number;
+  cpu: number;
+  memory: number;
+  memoryLimit: number;
+  networkRx: number;
+  networkTx: number;
+  networkRxRate: number;
+  networkTxRate: number;
+};
 
+/* ── Stable tooltip components (outside render to avoid re-creation) ── */
 
-function ContainerTable({ containers }: { containers: ContainerStatsSnapshot[] }) {
+function CpuTooltip(props: CustomTooltipProps) {
+  return (
+    <MetricsTooltip
+      {...props}
+      valueFormatter={(v) => `${v.toFixed(2)}%`}
+      categoryLabels={{ cpu: "CPU" }}
+    />
+  );
+}
+
+function MemTooltip(props: CustomTooltipProps) {
+  return (
+    <MetricsTooltip
+      {...props}
+      valueFormatter={(v) => formatBytes(v)}
+      categoryLabels={{ memory: "Memory" }}
+    />
+  );
+}
+
+function NetTooltip(props: CustomTooltipProps) {
+  return (
+    <MetricsTooltip
+      {...props}
+      valueFormatter={(v) => formatBytesRate(v)}
+      categoryLabels={{ networkRxRate: "RX", networkTxRate: "TX" }}
+    />
+  );
+}
+
+function ContainerTable({ containers }: { containers: ContainerPoint[] }) {
   return (
     <div className="squircle rounded-lg border bg-card overflow-x-auto">
       <div className="flex items-center gap-2 px-4 py-3 border-b">
@@ -83,161 +102,47 @@ function ContainerTable({ containers }: { containers: ContainerStatsSnapshot[] }
 }
 
 export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
-  const uid = useId();
-  const [data, setData] = useState<TimeSeriesPoint[]>([]);
-  const [containers, setContainers] = useState<ContainerStatsSnapshot[]>([]);
-  const [connected, setConnected] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [historyLoaded, setHistoryLoaded] = useState(false);
-  const prevNetworkRef = useRef<{ rx: number; tx: number } | null>(null);
-  const eventSourceRef = useRef<EventSource | null>(null);
   const [timeRange, setTimeRange] = useState<TimeRange>("1h");
-  const visKey = useVisibilityKey();
 
-  // Load historical data
-  useEffect(() => {
-    const now = Date.now();
-    const from = now - RANGE_MS[timeRange];
-    const bucket = BUCKET_MS[timeRange];
+  const { points, containers, connected, loading } = useMetricsStream({
+    historyUrl: `/api/v1/organizations/${orgId}/apps/${appId}/stats/history`,
+    streamUrl: `/api/v1/organizations/${orgId}/apps/${appId}/stats/stream${environmentName ? "?environment=" + environmentName : ""}`,
+    timeRange,
+  });
 
-    async function loadHistory() {
-      try {
-        const res = await fetch(
-          `/api/v1/organizations/${orgId}/apps/${appId}/stats/history?from=${from}&to=${now}&bucket=${bucket}`
-        );
-        if (!res.ok) { setHistoryLoaded(true); return; }
-        const { series } = await res.json();
-
-        if (!series.cpu?.length) { setHistoryLoaded(true); return; }
-
-        // Convert time-series points to chart format
-        const historyPoints: TimeSeriesPoint[] = series.cpu.map(([ts, cpu]: [number, number], i: number) => {
-          const mem = series.memory[i] || [ts, 0];
-          const memLimit = series.memoryLimit[i] || [ts, 0];
-          const rx = series.networkRx[i] || [ts, 0];
-          const tx = series.networkTx[i] || [ts, 0];
-          const memUsage = mem[1];
-          const memLim = memLimit[1];
-          return {
-            time: formatTime(ts),
-            timestamp: ts,
-            cpuPercent: Math.round(cpu * 100) / 100,
-            memoryUsage: memUsage,
-            memoryLimit: memLim,
-            memoryPercent: memLim > 0 ? Math.round((memUsage / memLim) * 100 * 100) / 100 : 0,
-            networkRx: rx[1],
-            networkTx: tx[1],
-            networkRxRate: 0,
-            networkTxRate: 0,
-          };
-        });
-
-        setData(historyPoints);
-      } catch {
-        // History not available — that's fine, live data will populate
-      }
-      setHistoryLoaded(true);
-    }
-
-    loadHistory();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgId, appId, timeRange]);
-
-  const handleStatsEvent = useCallback((event: MessageEvent) => {
-    try {
-      const payload = JSON.parse(event.data) as {
-        containers: ContainerStatsSnapshot[];
-        timestamp: string;
-      };
-
-      setContainers(payload.containers);
-      setConnected((prev) => prev ? prev : true);
-      setError((prev) => prev === null ? prev : null);
-
-      if (payload.containers.length === 0) return;
-
-      // Aggregate across all containers
-      const totals = payload.containers.reduce(
-        (acc, c) => ({
-          cpuPercent: acc.cpuPercent + c.cpuPercent,
-          memoryUsage: acc.memoryUsage + c.memoryUsage,
-          memoryLimit: acc.memoryLimit + c.memoryLimit,
-          memoryPercent: acc.memoryPercent + c.memoryPercent,
-          networkRx: acc.networkRx + c.networkRx,
-          networkTx: acc.networkTx + c.networkTx,
-        }),
-        { cpuPercent: 0, memoryUsage: 0, memoryLimit: 0, memoryPercent: 0, networkRx: 0, networkTx: 0 }
-      );
-
-      // Calculate network rates from cumulative counters
+  // Map MetricsPoint[] to chart-friendly shape with network rates
+  const chartData = useMemo<ChartPoint[]>(() => {
+    return points.map((p, i) => {
       let networkRxRate = 0;
       let networkTxRate = 0;
-      if (prevNetworkRef.current) {
-        const rxDelta = totals.networkRx - prevNetworkRef.current.rx;
-        const txDelta = totals.networkTx - prevNetworkRef.current.tx;
-        // 2 second intervals
-        networkRxRate = Math.max(0, rxDelta / 2);
-        networkTxRate = Math.max(0, txDelta / 2);
-      }
-      prevNetworkRef.current = { rx: totals.networkRx, tx: totals.networkTx };
 
-      const ts = new Date(payload.timestamp).getTime();
-      const point: TimeSeriesPoint = {
-        time: formatTime(ts),
-        timestamp: ts,
-        cpuPercent: Math.round(totals.cpuPercent * 100) / 100,
-        memoryUsage: totals.memoryUsage,
-        memoryLimit: totals.memoryLimit,
-        memoryPercent: Math.round(totals.memoryPercent * 100) / 100,
-        networkRx: totals.networkRx,
-        networkTx: totals.networkTx,
+      if (i > 0) {
+        const prev = points[i - 1];
+        const dtSec = (p.timestamp - prev.timestamp) / 1000;
+        if (dtSec > 0) {
+          const rxDelta = p.networkRx - prev.networkRx;
+          const txDelta = p.networkTx - prev.networkTx;
+          networkRxRate = Math.max(0, rxDelta / dtSec);
+          networkTxRate = Math.max(0, txDelta / dtSec);
+        }
+      }
+
+      return {
+        time: formatTime(p.timestamp),
+        timestamp: p.timestamp,
+        cpu: Math.round(p.cpu * 100) / 100,
+        memory: p.memory,
+        memoryLimit: p.memoryLimit,
+        networkRx: p.networkRx,
+        networkTx: p.networkTx,
         networkRxRate,
         networkTxRate,
       };
-
-      setData((prev) => {
-        const next = [...prev, point];
-        return next.length > MAX_DATA_POINTS ? next.slice(-MAX_DATA_POINTS) : next;
-      });
-    } catch {
-      // Ignore parse errors
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof document !== "undefined" && document.hidden) return;
-
-    const url = `/api/v1/organizations/${orgId}/apps/${appId}/stats/stream${environmentName ? `?environment=${environmentName}` : ""}`;
-    const es = new EventSource(url);
-    eventSourceRef.current = es;
-
-    es.addEventListener("stats", handleStatsEvent);
-
-    es.addEventListener("error", (event) => {
-      // EventSource "error" event on SSE means either actual error or reconnection
-      const data = (event as MessageEvent).data;
-      if (data) {
-        try {
-          const parsed = JSON.parse(data);
-          setError(parsed.message || "Connection error");
-        } catch {
-          setError("Connection lost, reconnecting...");
-        }
-      }
     });
+  }, [points]);
 
-    es.onerror = () => {
-      setConnected(false);
-    };
-
-    return () => {
-      es.close();
-      eventSourceRef.current = null;
-    };
-  }, [orgId, appId, handleStatsEvent, visKey]);
-
-  // Loading state — show if no history and not connected
-  if (!historyLoaded && !connected && !error) {
+  // Loading state -- show if still loading history and not connected
+  if (loading && !connected) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
         <Loader2 className="size-6 text-muted-foreground animate-spin" />
@@ -247,7 +152,7 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
   }
 
   // No containers running and no history
-  if (connected && containers.length === 0 && data.length === 0) {
+  if (connected && containers.length === 0 && chartData.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
         <Activity className="size-8 text-muted-foreground" />
@@ -259,16 +164,7 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
     );
   }
 
-  // Error state
-  if (error && containers.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
-        <p className="text-sm text-muted-foreground">{error}</p>
-      </div>
-    );
-  }
-
-  const latestMemoryLimit = data.length > 0 ? data[data.length - 1].memoryLimit : 0;
+  const latestMemoryLimit = chartData.length > 0 ? chartData[chartData.length - 1].memoryLimit : 0;
 
 
   return (
@@ -328,166 +224,62 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
 
       {/* CPU Chart */}
       <ChartCard title="CPU Usage" icon={Cpu}>
-        <ResponsiveContainer width="100%" height={200}>
-          <AreaChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
-            <defs>
-              <linearGradient id={`cpuGradient-${uid}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={CHART_COLORS.cpu} stopOpacity={0.3} />
-                <stop offset="95%" stopColor={CHART_COLORS.cpu} stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
-            <XAxis
-              dataKey="time"
-              tick={chartTickStyle}
-              tickLine={false}
-              axisLine={false}
-              interval="preserveStartEnd"
-              minTickGap={60}
-            />
-            <YAxis
-              tick={chartTickStyle}
-              tickLine={false}
-              axisLine={false}
-              tickFormatter={(v) => `${v}%`}
-              domain={[0, "auto"]}
-              width={45}
-            />
-            <Tooltip
-              {...chartTooltipStyle}
-              formatter={(value: number) => [`${value.toFixed(2)}%`, "CPU"]}
-            />
-            <Area
-              type="monotone"
-              dataKey="cpuPercent"
-              stroke={CHART_COLORS.cpu}
-              fill={`url(#cpuGradient-${uid})`}
-              strokeWidth={1.5}
-              dot={false}
-              isAnimationActive={false}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
+        <AreaChart
+          className="h-[200px]"
+          data={chartData}
+          index="time"
+          categories={["cpu"]}
+          colors={[TREMOR_METRIC_COLORS.cpu]}
+          valueFormatter={(v) => `${v.toFixed(2)}%`}
+          showLegend={false}
+          showAnimation={false}
+          curveType="monotone"
+          autoMinValue={false}
+          minValue={0}
+          customTooltip={CpuTooltip}
+        />
       </ChartCard>
 
       {/* Memory Chart */}
       <ChartCard title="Memory Usage" icon={MemoryStick}>
-        <ResponsiveContainer width="100%" height={200}>
-          <AreaChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
-            <defs>
-              <linearGradient id={`memGradient-${uid}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={CHART_COLORS.memory} stopOpacity={0.3} />
-                <stop offset="95%" stopColor={CHART_COLORS.memory} stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
-            <XAxis
-              dataKey="time"
-              tick={chartTickStyle}
-              tickLine={false}
-              axisLine={false}
-              interval="preserveStartEnd"
-              minTickGap={60}
-            />
-            <YAxis
-              tick={chartTickStyle}
-              tickLine={false}
-              axisLine={false}
-              tickFormatter={(v) => formatBytes(v, 0)}
-              domain={[0, "auto"]}
-              width={60}
-            />
-            <Tooltip
-              {...chartTooltipStyle}
-              formatter={(value: number) => [formatBytes(value), "Memory"]}
-            />
-            {latestMemoryLimit > 0 && (
-              <ReferenceLine
-                y={latestMemoryLimit}
-                stroke={CHART_COLORS.memoryLimit}
-                strokeDasharray="4 4"
-                strokeWidth={1}
-                label={{
-                  value: `Limit: ${formatBytes(latestMemoryLimit, 0)}`,
-                  position: "insideTopRight",
-                  fill: CHART_COLORS.memoryLimit,
-                  fontSize: 10,
-                }}
-              />
-            )}
-            <Area
-              type="monotone"
-              dataKey="memoryUsage"
-              stroke={CHART_COLORS.memory}
-              fill={`url(#memGradient-${uid})`}
-              strokeWidth={1.5}
-              dot={false}
-              isAnimationActive={false}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
+        {latestMemoryLimit > 0 && (
+          <p className="text-[10px] text-muted-foreground mb-1" style={{ color: CHART_COLORS.memoryLimit }}>
+            Limit: {formatBytes(latestMemoryLimit, 0)}
+          </p>
+        )}
+        <AreaChart
+          className="h-[200px]"
+          data={chartData}
+          index="time"
+          categories={["memory"]}
+          colors={[TREMOR_METRIC_COLORS.memory]}
+          valueFormatter={(v) => formatBytes(v)}
+          showLegend={false}
+          showAnimation={false}
+          curveType="monotone"
+          autoMinValue={false}
+          minValue={0}
+          maxValue={latestMemoryLimit > 0 ? latestMemoryLimit * 1.1 : undefined}
+          customTooltip={MemTooltip}
+        />
       </ChartCard>
 
       {/* Network I/O Chart */}
       <ChartCard title="Network I/O" icon={Network}>
-        <ResponsiveContainer width="100%" height={200}>
-          <AreaChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
-            <defs>
-              <linearGradient id={`rxGradient-${uid}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={CHART_COLORS.networkRx} stopOpacity={0.3} />
-                <stop offset="95%" stopColor={CHART_COLORS.networkRx} stopOpacity={0} />
-              </linearGradient>
-              <linearGradient id={`txGradient-${uid}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={CHART_COLORS.networkTx} stopOpacity={0.3} />
-                <stop offset="95%" stopColor={CHART_COLORS.networkTx} stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
-            <XAxis
-              dataKey="time"
-              tick={chartTickStyle}
-              tickLine={false}
-              axisLine={false}
-              interval="preserveStartEnd"
-              minTickGap={60}
-            />
-            <YAxis
-              tick={chartTickStyle}
-              tickLine={false}
-              axisLine={false}
-              tickFormatter={(v) => formatBytesRate(v)}
-              domain={[0, "auto"]}
-              width={70}
-            />
-            <Tooltip
-              {...chartTooltipStyle}
-              formatter={(value: number, name: string) => [
-                formatBytesRate(value),
-                name === "networkRxRate" ? "RX" : "TX",
-              ]}
-            />
-            <Area
-              type="monotone"
-              dataKey="networkRxRate"
-              stroke={CHART_COLORS.networkRx}
-              fill={`url(#rxGradient-${uid})`}
-              strokeWidth={1.5}
-              dot={false}
-              isAnimationActive={false}
-              name="networkRxRate"
-            />
-            <Area
-              type="monotone"
-              dataKey="networkTxRate"
-              stroke={CHART_COLORS.networkTx}
-              fill={`url(#txGradient-${uid})`}
-              strokeWidth={1.5}
-              dot={false}
-              isAnimationActive={false}
-              name="networkTxRate"
-            />
-          </AreaChart>
-        </ResponsiveContainer>
+        <AreaChart
+          className="h-[200px]"
+          data={chartData}
+          index="time"
+          categories={["networkRxRate", "networkTxRate"]}
+          colors={[TREMOR_METRIC_COLORS.networkRxRate, TREMOR_METRIC_COLORS.networkTxRate]}
+          valueFormatter={(v) => formatBytesRate(v)}
+          showLegend={false}
+          showAnimation={false}
+          curveType="monotone"
+          autoMinValue={false}
+          minValue={0}
+          customTooltip={NetTooltip}
+        />
       </ChartCard>
 
       {/* Container list */}

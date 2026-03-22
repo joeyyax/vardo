@@ -6,6 +6,7 @@ import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { listContainers } from "@/lib/docker/client";
 import { createExec, startExec, resizeExec } from "@/lib/docker/exec";
+import { isFeatureEnabled } from "@/lib/config/features";
 import net from "node:net";
 
 // ---------------------------------------------------------------------------
@@ -43,6 +44,13 @@ type RouteParams = {
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
+    if (!isFeatureEnabled("terminal")) {
+      return new Response(JSON.stringify({ error: "Feature not enabled" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     const { orgId, appId } = await params;
     const { organization } = await requireOrg();
 
@@ -191,6 +199,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
+    if (!isFeatureEnabled("terminal")) {
+      return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
+    }
+
     const { orgId } = await params;
     const { organization } = await requireOrg();
 

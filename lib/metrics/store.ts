@@ -1,4 +1,6 @@
 import Redis from "ioredis";
+import { seriesToPoints } from "./aggregate";
+import type { MetricsPoint } from "./types";
 
 const url = process.env.REDIS_URL || "redis://localhost:6379";
 
@@ -421,4 +423,76 @@ export async function queryOrgBusinessMetric(
   } catch {
     return [];
   }
+}
+
+// ---------------------------------------------------------------------------
+// Unified MetricsPoint[] query helpers
+// ---------------------------------------------------------------------------
+
+/** Query historical metrics for a project, returns unified MetricsPoint[] */
+export async function queryMetricsPoints(
+  projectName: string,
+  fromMs: number,
+  toMs: number,
+  bucketMs: number,
+): Promise<MetricsPoint[]> {
+  const [cpu, memory, memoryLimit, networkRx, networkTx] = await Promise.all([
+    queryMetrics(projectName, "cpu", fromMs, toMs, { type: "avg", bucketMs }),
+    queryMetrics(projectName, "memory", fromMs, toMs, { type: "avg", bucketMs }),
+    queryMetrics(projectName, "memoryLimit", fromMs, toMs, {
+      type: "max",
+      bucketMs,
+    }),
+    queryMetrics(projectName, "networkRx", fromMs, toMs, {
+      type: "sum",
+      bucketMs,
+    }),
+    queryMetrics(projectName, "networkTx", fromMs, toMs, {
+      type: "sum",
+      bucketMs,
+    }),
+  ]);
+  return seriesToPoints({ cpu, memory, memoryLimit, networkRx, networkTx });
+}
+
+/** Query historical metrics for an org, returns unified MetricsPoint[] */
+export async function queryByOrgPoints(
+  orgId: string,
+  fromMs: number,
+  toMs: number,
+  bucketMs: number,
+): Promise<MetricsPoint[]> {
+  const [cpu, memory, memoryLimit, networkRx, networkTx] = await Promise.all([
+    queryByOrg(orgId, "cpu", fromMs, toMs, { type: "avg", bucketMs }),
+    queryByOrg(orgId, "memory", fromMs, toMs, { type: "avg", bucketMs }),
+    queryByOrg(orgId, "memoryLimit", fromMs, toMs, { type: "max", bucketMs }),
+    queryByOrg(orgId, "networkRx", fromMs, toMs, { type: "sum", bucketMs }),
+    queryByOrg(orgId, "networkTx", fromMs, toMs, { type: "sum", bucketMs }),
+  ]);
+  return seriesToPoints({ cpu, memory, memoryLimit, networkRx, networkTx });
+}
+
+/** Query historical metrics system-wide, returns unified MetricsPoint[] */
+export async function queryAllPoints(
+  fromMs: number,
+  toMs: number,
+  bucketMs: number,
+): Promise<MetricsPoint[]> {
+  const [cpu, memory, memoryLimit, networkRx, networkTx, disk] =
+    await Promise.all([
+      queryAll("cpu", fromMs, toMs, { type: "avg", bucketMs }),
+      queryAll("memory", fromMs, toMs, { type: "avg", bucketMs }),
+      queryAll("memoryLimit", fromMs, toMs, { type: "max", bucketMs }),
+      queryAll("networkRx", fromMs, toMs, { type: "sum", bucketMs }),
+      queryAll("networkTx", fromMs, toMs, { type: "sum", bucketMs }),
+      queryDiskHistory(fromMs, toMs, bucketMs),
+    ]);
+  return seriesToPoints({
+    cpu,
+    memory,
+    memoryLimit,
+    networkRx,
+    networkTx,
+    disk,
+  });
 }

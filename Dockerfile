@@ -14,6 +14,18 @@ FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+
+# NEXT_PUBLIC_* vars are inlined into the client bundle at build time.
+# Accept them as build args so `docker compose build` can forward them.
+ARG NEXT_PUBLIC_BETTER_AUTH_URL
+ARG NEXT_PUBLIC_APP_URL
+ARG NEXT_PUBLIC_PLAUSIBLE_DOMAIN
+ARG NEXT_PUBLIC_PLAUSIBLE_SRC
+ENV NEXT_PUBLIC_BETTER_AUTH_URL=$NEXT_PUBLIC_BETTER_AUTH_URL
+ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
+ENV NEXT_PUBLIC_PLAUSIBLE_DOMAIN=$NEXT_PUBLIC_PLAUSIBLE_DOMAIN
+ENV NEXT_PUBLIC_PLAUSIBLE_SRC=$NEXT_PUBLIC_PLAUSIBLE_SRC
+
 RUN pnpm build
 
 # Production
@@ -22,14 +34,13 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
-
 COPY --from=builder /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
 
-USER nextjs
+# Run as root — this container manages Docker via the mounted socket,
+# which is a root-equivalent privilege regardless of the in-container user.
+# A non-root user just creates permission issues without any security benefit.
 
 EXPOSE 3000
 ENV PORT=3000

@@ -11,6 +11,7 @@
  */
 
 export type FeatureFlag =
+  | "ui"
   | "metrics"
   | "logs"
   | "terminal"
@@ -25,6 +26,11 @@ type FlagConfig = {
 };
 
 const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
+  ui: {
+    env: "FEATURE_UI",
+    label: "Web UI",
+    description: "Web dashboard for managing projects, apps, and deployments",
+  },
   metrics: {
     env: "FEATURE_METRICS",
     label: "Metrics",
@@ -62,6 +68,31 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
  */
 export function isFeatureEnabled(flag: FeatureFlag): boolean {
   return process.env[FLAG_CONFIG[flag].env] !== "false";
+}
+
+/**
+ * Feature flags that gate UI tabs and their corresponding API endpoints.
+ */
+export type UIGatedFlag = "metrics" | "logs" | "terminal" | "cron" | "backups";
+
+/**
+ * Subset of feature flags relevant to UI tab gating.
+ * Passed from server components to client components as a serializable object.
+ */
+export type FeatureFlags = Record<UIGatedFlag, boolean>;
+
+/**
+ * Get the feature flags needed for UI tab gating.
+ * Call this in server components and pass the result as a prop.
+ */
+export function getFeatureFlags(): FeatureFlags {
+  return {
+    metrics: isFeatureEnabled("metrics"),
+    logs: isFeatureEnabled("logs"),
+    terminal: isFeatureEnabled("terminal"),
+    cron: isFeatureEnabled("cron"),
+    backups: isFeatureEnabled("backups"),
+  };
 }
 
 export type FeatureFlagInfo = {

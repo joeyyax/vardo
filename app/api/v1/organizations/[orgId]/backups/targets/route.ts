@@ -3,6 +3,7 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { backupTargets } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
+import { isFeatureEnabled } from "@/lib/config/features";
 import { eq, or, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
@@ -58,6 +59,9 @@ const createTargetSchema = z.discriminatedUnion("type", [
 // GET /api/v1/organizations/[orgId]/backups/targets
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
+    if (!isFeatureEnabled("backups")) {
+      return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
+    }
     const { orgId } = await params;
     const { organization } = await requireOrg();
 
@@ -88,6 +92,9 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 // POST /api/v1/organizations/[orgId]/backups/targets
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
+    if (!isFeatureEnabled("backups")) {
+      return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
+    }
     const { orgId } = await params;
     const { organization } = await requireOrg();
 

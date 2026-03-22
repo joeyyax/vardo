@@ -8,6 +8,7 @@ import { z } from "zod";
 import { verifyAppAccess } from "@/lib/api/verify-access";
 import { requireOrg } from "@/lib/auth/session";
 import { isAdmin } from "@/lib/auth/permissions";
+import { isFeatureEnabled } from "@/lib/config/features";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -37,6 +38,10 @@ const deleteCronSchema = z.object({
 // GET /api/v1/organizations/[orgId]/apps/[appId]/cron
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
+    if (!isFeatureEnabled("cron")) {
+      return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
+    }
+
     const { orgId, appId } = await params;
     const app = await verifyAppAccess(orgId, appId);
 
@@ -58,6 +63,10 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 // POST /api/v1/organizations/[orgId]/apps/[appId]/cron
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
+    if (!isFeatureEnabled("cron")) {
+      return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
+    }
+
     const { orgId, appId } = await params;
     const { membership } = await requireOrg();
     if (!isAdmin(membership.role)) {
@@ -101,6 +110,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 // PATCH /api/v1/organizations/[orgId]/apps/[appId]/cron
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
+    if (!isFeatureEnabled("cron")) {
+      return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
+    }
+
     const { orgId, appId } = await params;
     const app = await verifyAppAccess(orgId, appId);
 
@@ -139,6 +152,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 // DELETE /api/v1/organizations/[orgId]/apps/[appId]/cron
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
+    if (!isFeatureEnabled("cron")) {
+      return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
+    }
+
     const { orgId, appId } = await params;
     const app = await verifyAppAccess(orgId, appId);
 

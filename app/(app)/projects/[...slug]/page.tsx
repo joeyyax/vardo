@@ -4,6 +4,7 @@ import { projects } from "@/lib/db/schema";
 import { getCurrentOrg } from "@/lib/auth/session";
 import { eq, and, or } from "drizzle-orm";
 import { ProjectDetail } from "./project-detail";
+import { getFeatureFlags } from "@/lib/config/features";
 
 const VALID_TABS = ["apps", "deployments", "variables", "logs", "metrics"] as const;
 type ValidTab = (typeof VALID_TABS)[number];
@@ -83,5 +84,16 @@ export default async function ProjectDetailPage({
     redirect(`/projects/${project.name}${tabPath}`);
   }
 
-  return <ProjectDetail project={project} orgId={orgId} initialTab={tab || "apps"} />;
+  const featureFlags = getFeatureFlags();
+
+  // If the requested tab is gated by a disabled feature flag, fall back to default
+  const gatedTabs: Record<string, keyof typeof featureFlags> = {
+    logs: "logs",
+    metrics: "metrics",
+  };
+  const effectiveTab = tab && gatedTabs[tab] && !featureFlags[gatedTabs[tab]]
+    ? "apps"
+    : tab || "apps";
+
+  return <ProjectDetail project={project} orgId={orgId} initialTab={effectiveTab} featureFlags={featureFlags} />;
 }

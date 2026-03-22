@@ -79,6 +79,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { isAdmin } from "@/lib/auth/permissions";
 import { BranchSelect } from "@/components/branch-select";
+import type { FeatureFlags } from "@/lib/config/features";
 
 type Deployment = {
   id: string;
@@ -176,6 +177,7 @@ type AppDetailProps = {
   initialTab?: string;
   initialEnv?: string;
   initialSubView?: string;
+  featureFlags: FeatureFlags;
 };
 
 function statusDotColor(status: string) {
@@ -567,7 +569,7 @@ function formatDuration(ms: number) {
   return `${minutes}m ${remaining}s`;
 }
 
-export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = [], allAppNames = [], orgVarKeys = [], siblings = [], initialTab = "deployments", initialEnv, initialSubView }: AppDetailProps) {
+export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = [], allAppNames = [], orgVarKeys = [], siblings = [], initialTab = "deployments", initialEnv, initialSubView, featureFlags }: AppDetailProps) {
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -1626,21 +1628,29 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           <TabsTrigger value="networking">
             Networking
           </TabsTrigger>
-          <TabsTrigger value="logs">
-            Logs
-          </TabsTrigger>
+          {featureFlags?.logs !== false && (
+            <TabsTrigger value="logs">
+              Logs
+            </TabsTrigger>
+          )}
           <TabsTrigger value="volumes">
             Volumes
           </TabsTrigger>
-          <TabsTrigger value="cron">
-            Cron
-          </TabsTrigger>
-          <TabsTrigger value="terminal">
-            Terminal
-          </TabsTrigger>
-          <TabsTrigger value="metrics">
-            Metrics
-          </TabsTrigger>
+          {featureFlags?.cron !== false && (
+            <TabsTrigger value="cron">
+              Cron
+            </TabsTrigger>
+          )}
+          {featureFlags?.terminal !== false && (
+            <TabsTrigger value="terminal">
+              Terminal
+            </TabsTrigger>
+          )}
+          {featureFlags?.metrics !== false && (
+            <TabsTrigger value="metrics">
+              Metrics
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="deployments" className="pt-4 space-y-4">
@@ -2148,28 +2158,36 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           />
         </TabsContent>
 
-        <TabsContent value="logs" className="pt-4">
-          <LogViewer
-            key={`logs-${selectedEnvId}`}
-            streamUrl={`/api/v1/organizations/${orgId}/apps/${app.id}/logs/stream${selectedEnv ? `?environment=${selectedEnv.name}` : ""}`}
-          />
-        </TabsContent>
+        {featureFlags?.logs !== false && (
+          <TabsContent value="logs" className="pt-4">
+            <LogViewer
+              key={`logs-${selectedEnvId}`}
+              streamUrl={`/api/v1/organizations/${orgId}/apps/${app.id}/logs/stream${selectedEnv ? `?environment=${selectedEnv.name}` : ""}`}
+            />
+          </TabsContent>
+        )}
 
         <TabsContent value="volumes" className="pt-4">
           <VolumesPanel appId={app.id} orgId={orgId} />
         </TabsContent>
 
-        <TabsContent value="cron" className="pt-4">
-          <CronManager appId={app.id} orgId={orgId} />
-        </TabsContent>
+        {featureFlags?.cron !== false && (
+          <TabsContent value="cron" className="pt-4">
+            <CronManager appId={app.id} orgId={orgId} />
+          </TabsContent>
+        )}
 
-        <TabsContent value="terminal" className="pt-4">
-          <AppTerminal key={`terminal-${selectedEnvId}`} appId={app.id} orgId={orgId} />
-        </TabsContent>
+        {featureFlags?.terminal !== false && (
+          <TabsContent value="terminal" className="pt-4">
+            <AppTerminal key={`terminal-${selectedEnvId}`} appId={app.id} orgId={orgId} />
+          </TabsContent>
+        )}
 
-        <TabsContent value="metrics" className="pt-4">
-          <AppMetrics key={`metrics-${selectedEnvId}`} orgId={orgId} appId={app.id} environmentName={selectedEnv?.name} />
-        </TabsContent>
+        {featureFlags?.metrics !== false && (
+          <TabsContent value="metrics" className="pt-4">
+            <AppMetrics key={`metrics-${selectedEnvId}`} orgId={orgId} appId={app.id} environmentName={selectedEnv?.name} />
+          </TabsContent>
+        )}
 
       </Tabs>
 
