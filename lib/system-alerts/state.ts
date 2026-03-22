@@ -130,8 +130,12 @@ export function getAlertState(): Array<{
   });
 }
 
-export function clearAlertState(type: AlertType, key: string): void {
-  state.delete(makeKey(type, key));
+export function clearAlertState(type?: AlertType, key?: string): void {
+  if (type !== undefined && key !== undefined) {
+    state.delete(makeKey(type, key));
+  } else {
+    state.clear();
+  }
   // Sync the deletion to DB
   persistToDb().catch(() => {});
 }
