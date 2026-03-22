@@ -15,7 +15,9 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const appName = process.env.NEXT_PUBLIC_APP_NAME || "Vardo";
+import { DEFAULT_APP_NAME } from "@/lib/system-settings";
+
+const appName = process.env.NEXT_PUBLIC_APP_NAME || DEFAULT_APP_NAME;
 
 export const metadata: Metadata = {
   title: {
