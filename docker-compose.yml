@@ -1,18 +1,22 @@
 name: vardo
 
-# docker-compose.yml — Canonical, production-ready compose file.
+# Single compose file for all environments.
 #
-# In production:  docker compose --env-file .env.prod up -d
-# In development: docker compose up -d
-#   (Docker Compose auto-merges docker-compose.override.yml when present)
+#   Dev:   docker compose up -d
+#          Starts everything except the app container. Run with `pnpm dev`.
+#
+#   Prod:  docker compose up -d
+#          install.sh sets COMPOSE_PROFILES=production in .env, which
+#          also starts the app container.
 
 services:
   host:
+    profiles: [production]
     build:
       context: .
       args:
-        NEXT_PUBLIC_BETTER_AUTH_URL: https://${VARDO_DOMAIN}
-        NEXT_PUBLIC_APP_URL: https://${VARDO_DOMAIN}
+        NEXT_PUBLIC_BETTER_AUTH_URL: https://${VARDO_DOMAIN:-localhost}
+        NEXT_PUBLIC_APP_URL: https://${VARDO_DOMAIN:-localhost}
         NEXT_PUBLIC_PLAUSIBLE_DOMAIN: ${NEXT_PUBLIC_PLAUSIBLE_DOMAIN:-}
         NEXT_PUBLIC_PLAUSIBLE_SRC: ${NEXT_PUBLIC_PLAUSIBLE_SRC:-}
     restart: unless-stopped
@@ -21,21 +25,15 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    env_file: .env
     environment:
-      DATABASE_URL: postgresql://host:${DB_PASSWORD}@postgres:5432/host
+      DATABASE_URL: postgresql://host:${DB_PASSWORD:-host}@postgres:5432/host
       REDIS_URL: redis://redis:6379
-      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
-      NEXT_PUBLIC_BETTER_AUTH_URL: https://${VARDO_DOMAIN}
-      NEXT_PUBLIC_APP_URL: https://${VARDO_DOMAIN}
-      VARDO_BASE_DOMAIN: ${VARDO_BASE_DOMAIN}
+      NEXT_PUBLIC_BETTER_AUTH_URL: https://${VARDO_DOMAIN:-localhost}
+      NEXT_PUBLIC_APP_URL: https://${VARDO_DOMAIN:-localhost}
       VARDO_PROJECTS_DIR: /var/lib/host/projects
       CADVISOR_URL: http://cadvisor:8080
       LOKI_URL: http://loki:3100
-      GITHUB_APP_ID: ${GITHUB_APP_ID}
-      GITHUB_APP_SLUG: ${GITHUB_APP_SLUG}
-      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID}
-      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET}
-      GITHUB_PRIVATE_KEY: ${GITHUB_PRIVATE_KEY}
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
       interval: 30s
@@ -47,8 +45,7 @@ services:
       - host_projects:/var/lib/host/projects
     labels:
       - "traefik.enable=true"
-      # HTTPS route
-      - "traefik.http.routers.vardo.rule=Host(`${VARDO_DOMAIN}`)"
+      - "traefik.http.routers.vardo.rule=Host(`${VARDO_DOMAIN:-localhost}`)"
       - "traefik.http.routers.vardo.entrypoints=websecure"
       - "traefik.http.routers.vardo.tls.certresolver=le"
       - "traefik.http.services.vardo.loadbalancer.server.port=3000"
@@ -61,8 +58,10 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: host
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-host}
       POSTGRES_DB: host
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -72,10 +71,13 @@ services:
       retries: 5
     networks:
       - internal
+      - vardo-network
 
   redis:
     image: redis/redis-stack-server:latest
     restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -85,12 +87,41 @@ services:
       retries: 3
     networks:
       - internal
+      - vardo-network
+
+  traefik:
+    image: traefik:v3
+    restart: unless-stopped
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=vardo-network"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.web.http.redirections.entrypoint.permanent=true"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.websecure.http.tls=true"
+      - "--certificatesresolvers.le.acme.tlschallenge=true"
+      - "--certificatesresolvers.le.acme.email=${ACME_EMAIL:-}"
+      - "--certificatesresolvers.le.acme.storage=/letsencrypt/acme.json"
+      - "--log.level=${TRAEFIK_LOG_LEVEL:-INFO}"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - letsencrypt:/letsencrypt
+    networks:
+      - vardo-network
 
   cadvisor:
     profiles: [metrics]
     image: gcr.io/cadvisor/cadvisor:latest
     restart: unless-stopped
     privileged: true
+    ports:
+      - "${CADVISOR_PORT:-8081}:8080"
     volumes:
       - /:/rootfs:ro
       - /var/run:/var/run:ro
@@ -98,17 +129,21 @@ services:
       - /var/lib/docker/:/var/lib/docker:ro
     networks:
       - internal
+      - vardo-network
 
   loki:
     profiles: [logs]
     image: grafana/loki:3.4
     restart: unless-stopped
     command: -config.file=/etc/loki/loki.yml
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
     volumes:
       - ./config/loki.yml:/etc/loki/loki.yml:ro
       - loki_data:/loki
     networks:
       - internal
+      - vardo-network
     mem_limit: 512m
 
   promtail:
@@ -124,44 +159,8 @@ services:
       - loki
     networks:
       - internal
-    mem_limit: 128m
-
-  traefik:
-    image: traefik:v3
-    restart: unless-stopped
-    command:
-      # The dashboard is exposed via Traefik labels below with TLS and
-      # BasicAuth protection (TRAEFIK_DASHBOARD_AUTH env var).
-      - "--api.dashboard=true"
-      - "--providers.docker=true"
-      - "--providers.docker.exposedbydefault=false"
-      - "--providers.docker.network=vardo-network"
-      - "--entrypoints.web.address=:80"
-      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
-      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
-      - "--entrypoints.web.http.redirections.entrypoint.permanent=true"
-      - "--entrypoints.websecure.address=:443"
-      - "--entrypoints.websecure.http.tls=true"
-      - "--certificatesresolvers.le.acme.tlschallenge=true"
-      - "--certificatesresolvers.le.acme.email=${ACME_EMAIL}"
-      - "--certificatesresolvers.le.acme.storage=/letsencrypt/acme.json"
-      - "--log.level=WARN"
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - letsencrypt:/letsencrypt
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.traefik.rule=Host(`traefik.${VARDO_BASE_DOMAIN}`)"
-      - "traefik.http.routers.traefik.entrypoints=websecure"
-      - "traefik.http.routers.traefik.tls.certresolver=le"
-      - "traefik.http.routers.traefik.service=api@internal"
-      - "traefik.http.middlewares.traefik-auth.basicauth.users=${TRAEFIK_DASHBOARD_AUTH}"
-      - "traefik.http.routers.traefik.middlewares=traefik-auth"
-    networks:
       - vardo-network
+    mem_limit: 128m
 
 volumes:
   postgres_data:

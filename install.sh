@@ -241,7 +241,7 @@ fi
 
 # ── Configure ──────────────────────────────────────────────────────────────────
 
-ENV_FILE="$HOST_DIR/.env.prod"
+ENV_FILE="$HOST_DIR/.env"
 
 if [ ! -f "$ENV_FILE" ]; then
   log "Creating configuration..."
@@ -292,7 +292,7 @@ if [ ! -f "$ENV_FILE" ]; then
   fi
 
   # Optional services and backup storage are configured via the setup wizard
-  COMPOSE_PROFILES=""
+  COMPOSE_PROFILES="production"
   FEATURE_METRICS="false"
   FEATURE_LOGS="false"
 
@@ -347,10 +347,10 @@ log "Ensuring shared Docker network exists..."
 docker network create vardo-network 2>/dev/null || true
 
 log "Building Vardo (this may take a few minutes)..."
-docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" build
+docker compose -f "$COMPOSE_FILE" build
 
 log "Starting Vardo..."
-docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d
+docker compose -f "$COMPOSE_FILE" up -d
 
 # ── Wait for healthy ───────────────────────────────────────────────────────────
 
@@ -359,7 +359,7 @@ TIMEOUT=60
 INTERVAL=2
 ELAPSED=0
 while [ $ELAPSED -lt $TIMEOUT ]; do
-  if docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec -T host curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
+  if docker compose -f "$COMPOSE_FILE" exec -T host curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
     log "Host is healthy"
     break
   fi
@@ -375,7 +375,7 @@ fi
 
 # Seed templates
 log "Seeding templates..."
-docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec -T host node -e "
+docker compose -f "$COMPOSE_FILE" exec -T host node -e "
   fetch('http://localhost:3000/api/v1/templates/seed', { method: 'POST' })
     .then(r => r.json())
     .then(d => console.log('Templates:', d))
