@@ -27,17 +27,17 @@ export default async function UserSettingsTabPage({
   const validTab = tab as ValidTab;
 
   // Tokens tab needs orgId
-  let orgId: string | undefined;
+  let orgId: string | null = null;
   if (validTab === "tokens") {
     const orgData = await getCurrentOrg();
     if (!orgData) redirect("/login");
-    orgId = orgData.organization.id;
+    orgId = orgData.organization?.id ?? null;
   }
 
   return <TabContent tab={validTab} orgId={orgId} />;
 }
 
-function TabContent({ tab, orgId }: { tab: ValidTab; orgId?: string }) {
+function TabContent({ tab, orgId }: { tab: ValidTab; orgId: string | null }) {
   switch (tab) {
     case "profile":
       return <AccountInfo />;
@@ -50,7 +50,17 @@ function TabContent({ tab, orgId }: { tab: ValidTab; orgId?: string }) {
         </div>
       );
     case "tokens":
-      return orgId ? <ApiTokens orgId={orgId} /> : null;
+      if (!orgId) {
+        return (
+          <div className="rounded-xl border bg-card p-6 text-center">
+            <p className="text-sm text-muted-foreground">
+              No organization selected. Create or join an organization to manage
+              API tokens.
+            </p>
+          </div>
+        );
+      }
+      return <ApiTokens orgId={orgId} />;
     case "connections":
       return <GitHubConnection />;
     case "appearance":
