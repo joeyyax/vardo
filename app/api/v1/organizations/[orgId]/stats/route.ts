@@ -5,7 +5,7 @@ import { apps } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq } from "drizzle-orm";
 import { fetchAllContainerMetrics } from "@/lib/metrics/cadvisor";
-import { queryMetrics, queryDiskHistory, queryMetricsPoints } from "@/lib/metrics/store";
+import { queryMetrics, queryMetricsPoints } from "@/lib/metrics/store";
 import type { MetricsPoint } from "@/lib/metrics/types";
 import { isFeatureEnabled } from "@/lib/config/features";
 
@@ -78,8 +78,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       const perAppPoints = await Promise.all(
         activeAppNames.map((name) => queryMetricsPoints(name, fromMs, toMs, bucketMs))
       );
-      const diskHistory = await queryDiskHistory(fromMs, toMs, bucketMs);
-
       // Merge all apps' points by timestamp
       const pointMap = new Map<number, MetricsPoint>();
       for (const appPoints of perAppPoints) {
@@ -91,16 +89,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             existing.memoryLimit = Math.max(existing.memoryLimit, p.memoryLimit);
             existing.networkRx += p.networkRx;
             existing.networkTx += p.networkTx;
+            existing.diskTotal += p.diskTotal;
           } else {
             pointMap.set(p.timestamp, { ...p });
           }
         }
-      }
-      // Add disk data
-      const diskMap = new Map(diskHistory);
-      for (const [ts, val] of diskMap) {
-        const existing = pointMap.get(ts);
-        if (existing) existing.diskTotal = val;
       }
 
       const points = Array.from(pointMap.values()).sort((a, b) => a.timestamp - b.timestamp);
