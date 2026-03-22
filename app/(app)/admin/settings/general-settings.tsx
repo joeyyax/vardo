@@ -7,13 +7,14 @@ import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { useSystemSetting } from "./use-system-setting";
+import { DEFAULT_APP_NAME } from "@/lib/system-settings";
 
 export function GeneralSettings() {
-  const [instanceName, setInstanceName] = useState("Vardo");
+  const [instanceName, setInstanceName] = useState(DEFAULT_APP_NAME);
 
   const onLoad = useCallback(
     (data: Record<string, unknown>) => {
-      setInstanceName((data.instanceName as string) || "Vardo");
+      setInstanceName((data.instanceName as string) || DEFAULT_APP_NAME);
     },
     [],
   );
@@ -55,7 +56,7 @@ export function GeneralSettings() {
                 id="sys-instance-name"
                 value={instanceName}
                 onChange={(e) => setInstanceName(e.target.value)}
-                placeholder="Vardo"
+                placeholder={DEFAULT_APP_NAME}
                 required
               />
               <p className="text-xs text-muted-foreground">

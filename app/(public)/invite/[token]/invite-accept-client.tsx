@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Loader2, Mail, KeyRound } from "lucide-react";
+import { DEFAULT_APP_NAME } from "@/lib/system-settings";
 import {
   Card,
   CardContent,
@@ -38,11 +39,11 @@ export function InviteAcceptClient({
 
   const heading = orgName
     ? `You've been invited to ${orgName}`
-    : "You've been invited to Host";
+    : `You've been invited to ${DEFAULT_APP_NAME}`;
 
   const description = inviterName
-    ? `${inviterName} invited you to join ${orgName ? orgName : "Host"}.`
-    : `You've been invited to join ${orgName ? orgName : "Host"}.`;
+    ? `${inviterName} invited you to join ${orgName || DEFAULT_APP_NAME}.`
+    : `You've been invited to join ${orgName || DEFAULT_APP_NAME}.`;
 
   async function handleAccept() {
     setAccepting(true);

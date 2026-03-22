@@ -11,6 +11,9 @@ import { systemSettings } from "@/lib/db/schema";
 import { decryptSystemOrFallback, encryptSystem } from "@/lib/crypto/encrypt";
 import { eq } from "drizzle-orm";
 
+/** Default app name used across the UI, emails, and metadata when not configured. */
+export const DEFAULT_APP_NAME = "Vardo";
+
 // Short-TTL in-memory cache for system settings. These change rarely (admin
 // panel only), so a 30s cache eliminates repeated DB + decrypt calls when
 // multiple config readers fan out within the same request or tick cycle.
@@ -95,7 +98,7 @@ export async function getInstanceConfig(): Promise<InstanceConfig> {
 
   // Env var fallback
   return {
-    instanceName: process.env.NEXT_PUBLIC_APP_NAME ?? "Vardo",
+    instanceName: process.env.NEXT_PUBLIC_APP_NAME ?? DEFAULT_APP_NAME,
     baseDomain: process.env.HOST_BASE_DOMAIN ?? "",
     serverIp: process.env.HOST_SERVER_IP ?? "",
   };
