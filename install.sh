@@ -135,6 +135,16 @@ log "Firewall enabled (ports 22, 80, 443)"
 # This is a known Docker behavior. To restrict container-published ports, use
 # Docker's built-in --ip flag or network policies rather than ufw rules.
 
+# ── Dependencies ──────────────────────────────────────────────────────────────
+
+for dep in curl git; do
+  if ! command -v $dep &> /dev/null; then
+    log "Installing $dep..."
+    apt-get update -qq > /dev/null 2>&1
+    apt-get install -y -qq $dep > /dev/null 2>&1
+  fi
+done
+
 # ── Docker ─────────────────────────────────────────────────────────────────────
 
 # Docker check
