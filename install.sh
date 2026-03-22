@@ -304,7 +304,6 @@ if [ ! -f "$ENV_FILE" ]; then
   TRAEFIK_DASHBOARD_AUTH=$(printf 'admin:%s' "$(openssl passwd -apr1 "$TRAEFIK_DASH_PASS")" | sed 's/\$/\$\$/g')
 
   cat > "$ENV_FILE" <<EOF
-ENV=production
 COMPOSE_PROFILES=production
 VARDO_DOMAIN=$VARDO_DOMAIN
 VARDO_BASE_DOMAIN=$VARDO_BASE_DOMAIN

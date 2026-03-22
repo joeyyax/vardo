@@ -2,11 +2,11 @@ name: vardo
 
 # Single compose file for all environments.
 #
-#   Dev:   ENV=dev docker compose up -d
-#          Starts everything except the app container. Run the app with `pnpm dev`.
+#   Dev:   docker compose up -d
+#          App container skipped (no production profile). Run the app with `pnpm dev`.
 #
 #   Prod:  docker compose up -d
-#          ENV defaults to "production" — all services start, ACME enabled.
+#          install.sh sets COMPOSE_PROFILES=production — all services start.
 
 services:
   host:

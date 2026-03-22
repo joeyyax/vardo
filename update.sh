@@ -116,15 +116,14 @@ if [ -f ".env" ] && grep -q "^HOST_" .env 2>/dev/null; then
   sed -i 's/^HOST_EXPOSE_PORTS=/VARDO_EXPOSE_PORTS=/' .env
 fi
 
-# Migrate COMPOSE_PROFILES to ENV=production
-if [ -f ".env" ] && grep -q "^COMPOSE_PROFILES=" .env 2>/dev/null && ! grep -q "^ENV=" .env 2>/dev/null; then
-  echo "ENV=production" >> .env
-  echo "COMPOSE_PROFILES=production" >> .env
-  log "Added ENV=production (migrated from COMPOSE_PROFILES)"
-elif [ -f ".env" ] && ! grep -q "^ENV=" .env 2>/dev/null; then
-  echo "ENV=production" >> .env
-  echo "COMPOSE_PROFILES=production" >> .env
-  log "Added ENV=production"
+# Ensure COMPOSE_PROFILES=production is set
+if [ -f ".env" ] && ! grep -q "^COMPOSE_PROFILES=.*production" .env 2>/dev/null; then
+  if grep -q "^COMPOSE_PROFILES=" .env; then
+    sed -i 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=production/' .env
+  else
+    echo "COMPOSE_PROFILES=production" >> .env
+  fi
+  log "Set COMPOSE_PROFILES=production"
 fi
 
 # Remove FEATURE_METRICS and FEATURE_LOGS (now always enabled)
@@ -227,7 +226,7 @@ echo -e "${RESET}"
 
 step "Rebuilding containers"
 
-# ENV from .env controls which services start (production = all, dev = skip app).
+# COMPOSE_PROFILES from .env controls which services start.
 log "Building images (this may take a few minutes)..."
 docker compose -f "$COMPOSE_FILE" build --quiet
 
