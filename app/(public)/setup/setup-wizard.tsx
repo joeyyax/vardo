@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { signUp } from "@/lib/auth/client";
 import { Button } from "@/components/ui/button";
@@ -77,11 +77,52 @@ const STEPS = [
 
 type StepId = (typeof STEPS)[number]["id"];
 
+const STORAGE_KEY = "vardo-setup";
+
+function loadProgress(): { step: StepId; completed: StepId[] } | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function saveProgress(step: StepId, completed: Set<StepId>) {
+  try {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ step, completed: [...completed] }),
+    );
+  } catch {}
+}
+
 export function SetupWizard() {
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState<StepId>("account");
   const [loading, setLoading] = useState(false);
   const [completedSteps, setCompletedSteps] = useState<Set<StepId>>(new Set());
+  const [hydrated, setHydrated] = useState(false);
+
+  // Restore progress from localStorage on mount
+  useEffect(() => {
+    const saved = loadProgress();
+    if (saved) {
+      setCompletedSteps(new Set(saved.completed));
+      setCurrentStep(saved.step);
+    }
+    setHydrated(true);
+  }, []);
+
+  // Persist progress on every change
+  useEffect(() => {
+    if (hydrated) {
+      saveProgress(currentStep, completedSteps);
+    }
+  }, [currentStep, completedSteps, hydrated]);
+
+  if (!hydrated) return null;
 
   const currentIndex = STEPS.findIndex((s) => s.id === currentStep);
 
