@@ -279,6 +279,17 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
         </div>
       </div>
 
+      <ConfirmDeleteDialog
+        open={!!removeTarget}
+        onOpenChange={(open) => { if (!open) setRemoveTarget(null); }}
+        title="Remove member"
+        description={`Remove ${removeTarget?.name || "this member"} from ${orgName}? They'll lose access immediately.`}
+        confirmLabel="Remove"
+        loadingLabel="Removing..."
+        onConfirm={confirmRemove}
+        loading={removing}
+      />
+
       {/* Add member sheet */}
       <BottomSheet open={inviteOpen} onOpenChange={setInviteOpen}>
         <BottomSheetContent>

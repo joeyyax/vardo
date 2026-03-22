@@ -2,7 +2,6 @@
 
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -10,6 +9,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
 
 type ConfirmDeleteDialogProps = {
   open: boolean;
@@ -45,17 +45,15 @@ function ConfirmDeleteDialog({
           <AlertDialogCancel className="squircle" disabled={loading}>
             Cancel
           </AlertDialogCancel>
-          <AlertDialogAction
+          <Button
+            type="button"
+            variant={variant}
+            className="squircle"
             onClick={onConfirm}
             disabled={loading}
-            className={
-              variant === "destructive"
-                ? "squircle bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                : "squircle"
-            }
           >
             {loading ? loadingLabel : confirmLabel}
-          </AlertDialogAction>
+          </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

@@ -281,7 +281,7 @@ export function AppEnvironments({
           }}
         >
           <Plus className="mr-1.5 size-4" />
-          Add Environment
+          Add environment
         </Button>
       </div>
 
@@ -408,7 +408,7 @@ export function AppEnvironments({
                         <Button
                           size="sm"
                           variant="ghost"
-                          title="Edit domain"
+                          aria-label="Edit domain"
                           onClick={() => {
                             setEditingId(isEditing ? null : env.id);
                             setEditDomain(env.domain || "");
@@ -422,7 +422,7 @@ export function AppEnvironments({
                         <Button
                           size="sm"
                           variant="ghost"
-                          title="Clone environment"
+                          aria-label="Clone environment"
                           onClick={() => {
                             setCloning(isCloning ? null : env.id);
                             setCloneName(`${env.name}-copy`);
@@ -437,7 +437,7 @@ export function AppEnvironments({
                         <Button
                           size="sm"
                           variant="ghost"
-                          title="Promote to production"
+                          aria-label="Promote to production"
                           onClick={() => setPromoteTarget({ id: env.id, name: env.name })}
                         >
                           <ArrowUp className="size-3.5" />
@@ -447,6 +447,7 @@ export function AppEnvironments({
                         <Button
                           size="sm"
                           variant="ghost"
+                          aria-label="Delete environment"
                           className="text-destructive hover:text-destructive"
                           onClick={() => setDeleteTarget(env)}
                         >
