@@ -4,11 +4,11 @@ import { OrgSwitcher } from "@/components/layout/org-switcher";
 import { SettingsNav } from "@/components/settings-nav";
 
 const SETTINGS_TABS = [
-  { label: "Shared variables", href: "/org/settings/variables" },
-  { label: "Domains", href: "/org/settings/domains" },
-  { label: "Notifications", href: "/org/settings/notifications" },
-  { label: "Team", href: "/org/settings/team" },
-  { label: "Invitations", href: "/org/settings/invitations" },
+  { label: "Shared variables", href: "/settings/variables" },
+  { label: "Domains", href: "/settings/domains" },
+  { label: "Notifications", href: "/settings/notifications" },
+  { label: "Team", href: "/settings/team" },
+  { label: "Invitations", href: "/settings/invitations" },
 ];
 
 export default async function OrgSettingsLayout({
@@ -29,7 +29,7 @@ export default async function OrgSettingsLayout({
     <div className="space-y-6">
       <div className="flex items-center gap-3">
         <h1 className="text-2xl font-semibold tracking-tight">
-          Organization settings
+          Settings
         </h1>
         <OrgSwitcher
           currentOrgId={orgData.organization.id}

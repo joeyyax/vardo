@@ -1,11 +1,11 @@
 import { redirect } from "next/navigation";
 
 const TAB_MAP: Record<string, string> = {
-  variables: "/org/settings/variables",
-  domains: "/org/settings/domains",
-  notifications: "/org/settings/notifications",
-  team: "/org/settings/team",
-  invitations: "/org/settings/invitations",
+  variables: "/settings/variables",
+  domains: "/settings/domains",
+  notifications: "/settings/notifications",
+  team: "/settings/team",
+  invitations: "/settings/invitations",
 };
 
 export default async function SettingsRedirectPage({
@@ -14,6 +14,6 @@ export default async function SettingsRedirectPage({
   searchParams: Promise<{ tab?: string }>;
 }) {
   const { tab } = await searchParams;
-  const target = (tab && TAB_MAP[tab]) || "/org/settings/variables";
+  const target = (tab && TAB_MAP[tab]) || "/settings/variables";
   redirect(target);
 }
