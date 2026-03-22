@@ -343,10 +343,13 @@ fi
 
 # ── Start ──────────────────────────────────────────────────────────────────────
 
+log "Ensuring shared Docker network exists..."
+docker network create vardo-network 2>/dev/null || true
+
 log "Building Vardo (this may take a few minutes)..."
 docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" build
 
-log "Starting Host..."
+log "Starting Vardo..."
 docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d
 
 # ── Wait for healthy ───────────────────────────────────────────────────────────

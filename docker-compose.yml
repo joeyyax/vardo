@@ -52,7 +52,7 @@ services:
       - "traefik.http.services.host.loadbalancer.server.port=3000"
     networks:
       - internal
-      - host-network
+      - vardo-network
 
   postgres:
     image: postgres:17
@@ -133,7 +133,7 @@ services:
       - "--api.dashboard=true"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
-      - "--providers.docker.network=host-network"
+      - "--providers.docker.network=vardo-network"
       - "--entrypoints.web.address=:80"
       - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
       - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
@@ -159,7 +159,7 @@ services:
       - "traefik.http.middlewares.traefik-auth.basicauth.users=${TRAEFIK_DASHBOARD_AUTH}"
       - "traefik.http.routers.traefik.middlewares=traefik-auth"
     networks:
-      - host-network
+      - vardo-network
 
 volumes:
   postgres_data:
@@ -170,6 +170,5 @@ volumes:
 
 networks:
   internal:
-  host-network:
-    name: host-network
-    driver: bridge
+  vardo-network:
+    external: true
