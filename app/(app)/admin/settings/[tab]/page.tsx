@@ -5,9 +5,9 @@ import { AuthSettings } from "../auth-settings";
 import { FeatureFlagsSettings } from "../feature-flags-settings";
 import { BackupSettings } from "../backup-settings";
 import { GitHubSettings } from "../github-settings";
-import { ServicesSettings } from "../services-settings";
+import { InfrastructureSettings } from "../infrastructure-settings";
 
-const VALID_TABS = ["general", "email", "authentication", "feature-flags", "backup", "github", "services"] as const;
+const VALID_TABS = ["general", "email", "authentication", "feature-flags", "backup", "github", "infrastructure"] as const;
 type ValidTab = (typeof VALID_TABS)[number];
 
 const TAB_COMPONENTS: Record<ValidTab, React.ComponentType> = {
@@ -17,7 +17,7 @@ const TAB_COMPONENTS: Record<ValidTab, React.ComponentType> = {
   "feature-flags": FeatureFlagsSettings,
   "backup": BackupSettings,
   "github": GitHubSettings,
-  "services": ServicesSettings,
+  "infrastructure": InfrastructureSettings,
 };
 
 export default async function AdminSettingsTabPage({

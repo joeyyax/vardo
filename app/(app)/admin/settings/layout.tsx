@@ -13,7 +13,7 @@ const NAV_ITEMS = [
   { label: "Feature flags", href: "/admin/settings/feature-flags" },
   { label: "Backup storage", href: "/admin/settings/backup" },
   { label: "GitHub App", href: "/admin/settings/github" },
-  { label: "Services", href: "/admin/settings/services" },
+  { label: "Infrastructure", href: "/admin/settings/infrastructure" },
 ];
 
 export default async function AdminSettingsLayout({
