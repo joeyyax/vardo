@@ -59,7 +59,7 @@ export function EmailLayout({
               margin: "0 0 32px",
             }}
           >
-            Host
+            Vardo
           </Text>
           {children}
           <Hr style={{ borderColor: "#eeeeee", margin: "32px 0 24px" }} />
