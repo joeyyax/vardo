@@ -1,6 +1,6 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { assertSafeName } from "@/lib/docker/validate";
+import { assertSafeName, assertSafeMountPath } from "@/lib/docker/validate";
 import { assertSafeSyncPath } from "@/lib/utils/exec";
 
 const execFileAsync = promisify(execFile);
@@ -96,6 +96,7 @@ async function getImageManifest(
   mountPath: string,
 ): Promise<FileEntry[]> {
   assertSafeImageRef(imageName);
+  assertSafeMountPath(mountPath);
   // Use find + md5sum to enumerate all regular files under the mount path.
   const script = `find "${mountPath}" -type f -exec sh -c 'for f; do s=$(stat -c %s "$f" 2>/dev/null || stat -f %z "$f" 2>/dev/null); h=$(md5sum "$f" 2>/dev/null | cut -d" " -f1); echo "$f\\t$h\\t$s"; done' _ {} +`;
 
@@ -250,6 +251,7 @@ export async function syncFilesFromImage(
   if (paths.length === 0) return { synced: [], failed: [] };
 
   assertSafeName(volumeDockerName);
+  assertSafeMountPath(mountPath);
 
   // Validate every path before building the shell script. assertSafeSyncPath
   // rejects path traversal (..),  absolute paths, and shell metacharacters so
