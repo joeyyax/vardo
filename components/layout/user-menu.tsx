@@ -30,7 +30,7 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations }: Us
   const router = useRouter();
   const { theme, setTheme } = useTheme();
   const { data: session, isPending } = useSession();
-  const isAdmin = !!(session?.user as { isAppAdmin?: boolean } | undefined)?.isAppAdmin;
+  const isAdmin = !!session?.user?.isAppAdmin;
 
   const currentOrg = organizations?.find((o) => o.id === currentOrgId) || organizations?.[0];
 
