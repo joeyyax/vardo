@@ -241,7 +241,7 @@ echo ""
 
 # Source env for domain display
 source "$ENV_FILE" 2>/dev/null || true
-echo -e "  ${BOLD}Dashboard:${RESET}  https://${HOST_DOMAIN:-localhost}"
+echo -e "  ${BOLD}Dashboard:${RESET}  https://${VARDO_DOMAIN:-localhost}"
 echo -e "  ${BOLD}Version:${RESET}    $NEW_VERSION"
 if [ -n "$BACKUP_FILE" ]; then
   echo -e "  ${BOLD}Backup:${RESET}     $BACKUP_FILE"

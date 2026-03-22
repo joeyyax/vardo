@@ -16,7 +16,7 @@ import { assertSafeName } from "@/lib/docker/validate";
 
 const execFileAsync = promisify(execFile);
 
-const BACKUPS_DIR = resolve(process.env.HOST_BACKUPS_DIR || "./.host/backups");
+const BACKUPS_DIR = resolve(process.env.VARDO_BACKUPS_DIR || "./.host/backups");
 
 // ---------------------------------------------------------------------------
 // Types

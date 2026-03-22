@@ -11,7 +11,7 @@ import { createSSEResponse } from "@/lib/api/sse";
 import { isLokiAvailable, queryRange, tailLogs, buildLogQLQuery } from "@/lib/loki/client";
 import { isFeatureEnabled } from "@/lib/config/features";
 
-const PROJECTS_DIR = resolve(process.env.HOST_PROJECTS_DIR || "./.host/projects");
+const PROJECTS_DIR = resolve(process.env.VARDO_PROJECTS_DIR || "./.host/projects");
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;

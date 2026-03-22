@@ -38,7 +38,7 @@ import {
 
 const execFileAsync = promisify(execFile);
 
-const PROJECTS_DIR = resolve(process.env.HOST_PROJECTS_DIR || "./.host/projects");
+const PROJECTS_DIR = resolve(process.env.VARDO_PROJECTS_DIR || "./.host/projects");
 const NETWORK_NAME = "vardo-network";
 
 const HEALTH_CHECK_TIMEOUT_MS = 60000;

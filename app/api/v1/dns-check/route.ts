@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { resolve4, resolveCname } from "dns/promises";
 import { networkInterfaces } from "os";
 
-const BASE_DOMAIN = process.env.HOST_BASE_DOMAIN || "localhost";
+const BASE_DOMAIN = process.env.VARDO_BASE_DOMAIN || "localhost";
 
 function getServerIPs(): string[] {
   const ips: string[] = [];
