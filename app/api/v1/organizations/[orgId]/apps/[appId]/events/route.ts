@@ -34,8 +34,39 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const encoder = new TextEncoder();
+
+    // Subscribe before constructing the stream so that a cap error is caught
+    // by the outer try/catch and returned as a 503 instead of leaving the
+    // client connected to a stream that never delivers events.
+    let unsubscribe: () => void;
+    try {
+      unsubscribe = subscribe(appChannel(appId), (data) => {
+        try {
+          const event = (data.event as string) || "update";
+          controller.enqueue(
+            encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+          );
+        } catch {
+          // Client disconnected
+        }
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Subscriber cap reached";
+      return new Response(JSON.stringify({ error: msg }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // `controller` is assigned synchronously inside ReadableStream.start before
+    // any messages can arrive (Redis messages are async), so the closure above
+    // is safe to reference it.
+    let controller!: ReadableStreamDefaultController;
+
     const stream = new ReadableStream({
-      start(controller) {
+      start(ctrl) {
+        controller = ctrl;
+
         // Send keepalive every 30s to prevent connection timeout
         const keepalive = setInterval(() => {
           try {
@@ -44,21 +75,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             clearInterval(keepalive);
           }
         }, 30000);
-
-        // Subscribe to app events via Redis pub/sub
-        const unsubscribe = subscribe(
-          appChannel(appId),
-          (data) => {
-            try {
-              const event = data.event as string || "update";
-              controller.enqueue(
-                encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
-              );
-            } catch {
-              // Client disconnected
-            }
-          }
-        );
 
         // Clean up when client disconnects
         request.signal.addEventListener("abort", () => {
