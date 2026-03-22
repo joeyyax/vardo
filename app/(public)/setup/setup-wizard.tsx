@@ -68,6 +68,16 @@ export function SetupWizard() {
   return (
     <div className="flex min-h-dvh items-center justify-center p-4">
       <div className="w-full max-w-lg space-y-8">
+        {/* Welcome */}
+        <div className="text-center space-y-2">
+          <h1 className="text-3xl font-bold tracking-tight">Welcome to Vardo</h1>
+          <p className="text-muted-foreground">
+            Let&apos;s get your self-hosted PaaS up and running. This wizard will
+            walk you through the essentials — everything after account creation
+            can be skipped and configured later in Settings.
+          </p>
+        </div>
+
         {/* Stepper */}
         <div className="flex items-center justify-center gap-1">
           {STEPS.map((step, i) => {
