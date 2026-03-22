@@ -1,0 +1,313 @@
+"use client";
+
+import { Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { signIn } from "@/lib/auth/client";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { KeyRound, Mail, Lock, Loader2, Eye, EyeOff } from "lucide-react";
+
+type SignInMethod = "passkey" | "password" | "magic";
+
+function LoginForm() {
+  const searchParams = useSearchParams();
+  const callbackUrl = searchParams.get("callbackUrl") ?? "/track";
+
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState<string | null>(null);
+  const [magicLinkSent, setMagicLinkSent] = useState(false);
+  const [method, setMethod] = useState<SignInMethod>("password");
+  const [error, setError] = useState<string | null>(null);
+
+  const handlePasskeySignIn = async () => {
+    setIsLoading("passkey");
+    setError(null);
+    try {
+      const result = await signIn.passkey({
+        fetchOptions: {
+          onSuccess: () => {
+            window.location.href = callbackUrl;
+          },
+        },
+      });
+      if (result?.error) {
+        setError(result.error.message ?? "Passkey sign in failed");
+      }
+    } catch {
+      setError("Passkey sign in failed. Make sure you have a passkey set up.");
+    } finally {
+      setIsLoading(null);
+    }
+  };
+
+  const handlePasswordSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) return;
+
+    setIsLoading("password");
+    setError(null);
+    try {
+      const result = await signIn.email({
+        email,
+        password,
+        callbackURL: callbackUrl,
+      });
+      if (result?.error) {
+        setError(result.error.message ?? "Invalid email or password");
+      } else {
+        // If 2FA is enabled, the twoFactorClient plugin handles the redirect
+        // Otherwise, redirect to callback
+        window.location.href = callbackUrl;
+      }
+    } catch {
+      setError("Sign in failed");
+    } finally {
+      setIsLoading(null);
+    }
+  };
+
+  const handleMagicLinkSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) return;
+
+    setIsLoading("magic");
+    setError(null);
+    try {
+      const result = await signIn.magicLink({
+        email,
+        callbackURL: callbackUrl,
+      });
+      if (result?.error) {
+        setError(result.error.message ?? "Failed to send magic link");
+      } else {
+        setMagicLinkSent(true);
+      }
+    } catch {
+      setError("Failed to send magic link");
+    } finally {
+      setIsLoading(null);
+    }
+  };
+
+  if (magicLinkSent) {
+    return (
+      <Card className="w-full max-w-md squircle rounded-2xl">
+        <CardHeader className="text-center">
+          <div className="mx-auto mb-4 w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+            <Mail className="w-6 h-6 text-primary" />
+          </div>
+          <CardTitle>Check your email</CardTitle>
+          <CardDescription className="mt-2">
+            We sent a sign-in link to <strong>{email}</strong>
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="text-center">
+          <p className="text-sm text-muted-foreground mb-4">
+            Click the link in your email to sign in. It expires in 10 minutes.
+          </p>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setMagicLinkSent(false);
+              setEmail("");
+            }}
+          >
+            Use a different method
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="w-full max-w-md squircle rounded-2xl">
+      <CardHeader className="text-center">
+        <CardTitle className="text-2xl">Welcome back</CardTitle>
+        <CardDescription>
+          Sign in to continue tracking your time
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {error && (
+          <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-lg">
+            {error}
+          </div>
+        )}
+
+        {/* Passkey - Primary method */}
+        <Button
+          variant="default"
+          className="w-full h-11 squircle rounded-lg"
+          onClick={handlePasskeySignIn}
+          disabled={isLoading !== null}
+        >
+          {isLoading === "passkey" ? (
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          ) : (
+            <KeyRound className="w-4 h-4 mr-2" />
+          )}
+          Sign in with Passkey
+        </Button>
+
+        <div className="relative">
+          <div className="absolute inset-0 flex items-center">
+            <Separator />
+          </div>
+          <div className="relative flex justify-center text-xs uppercase">
+            <span className="bg-card px-2 text-muted-foreground">
+              or use email
+            </span>
+          </div>
+        </div>
+
+        {/* Email + password or magic link */}
+        {method === "password" ? (
+          <form onSubmit={handlePasswordSignIn} className="space-y-3">
+            <div className="space-y-2">
+              <Label htmlFor="email">Email address</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="h-11 squircle rounded-lg"
+                disabled={isLoading !== null}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="h-11 squircle rounded-lg pr-10"
+                  disabled={isLoading !== null}
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  tabIndex={-1}
+                >
+                  {showPassword ? (
+                    <EyeOff className="size-4" />
+                  ) : (
+                    <Eye className="size-4" />
+                  )}
+                </button>
+              </div>
+            </div>
+            <Button
+              type="submit"
+              variant="outline"
+              className="w-full h-11 squircle rounded-lg"
+              disabled={isLoading !== null || !email || !password}
+            >
+              {isLoading === "password" ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Lock className="w-4 h-4 mr-2" />
+              )}
+              Sign in with password
+            </Button>
+          </form>
+        ) : (
+          <form onSubmit={handleMagicLinkSignIn} className="space-y-3">
+            <div className="space-y-2">
+              <Label htmlFor="email">Email address</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="h-11 squircle rounded-lg"
+                disabled={isLoading !== null}
+                required
+              />
+            </div>
+            <Button
+              type="submit"
+              variant="outline"
+              className="w-full h-11 squircle rounded-lg"
+              disabled={isLoading !== null || !email}
+            >
+              {isLoading === "magic" ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Mail className="w-4 h-4 mr-2" />
+              )}
+              Send magic link
+            </Button>
+          </form>
+        )}
+
+        <div className="text-center">
+          <button
+            type="button"
+            onClick={() => {
+              setMethod(method === "password" ? "magic" : "password");
+              setError(null);
+            }}
+            className="text-xs text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
+          >
+            {method === "password"
+              ? "Use magic link instead"
+              : "Use password instead"}
+          </button>
+        </div>
+
+        <p className="text-xs text-center text-muted-foreground pt-2">
+          Don&apos;t have an account? Just sign in and we&apos;ll create one.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function LoginSkeleton() {
+  return (
+    <Card className="w-full max-w-md squircle rounded-2xl">
+      <CardHeader className="text-center">
+        <CardTitle className="text-2xl">Welcome back</CardTitle>
+        <CardDescription>
+          Sign in to continue tracking your time
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="h-11 bg-muted animate-pulse rounded-lg" />
+        <div className="h-4" />
+        <div className="space-y-3">
+          <div className="h-11 bg-muted animate-pulse rounded-lg" />
+          <div className="h-11 bg-muted animate-pulse rounded-lg" />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4 bg-muted/30">
+      <Suspense fallback={<LoginSkeleton />}>
+        <LoginForm />
+      </Suspense>
+    </div>
+  );
+}
