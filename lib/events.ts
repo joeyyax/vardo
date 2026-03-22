@@ -2,6 +2,8 @@ import Redis from "ioredis";
 
 const url = process.env.REDIS_URL || "redis://localhost:6379";
 
+// Per-process cap — single-node assumption. This will not distribute across
+// multiple instances; each process maintains its own independent counter.
 const MAX_SUBSCRIBERS = 200;
 const WARN_THRESHOLD = 180;
 
@@ -88,8 +90,13 @@ function getOrCreateState(): SubscriberState {
 
 /**
  * Derive the PSUBSCRIBE pattern from a channel name.
- * e.g. "app:abc123" -> "app:*", "org:xyz" -> "org:*"
- * Falls back to exact channel if no colon prefix.
+ *
+ * Channels must follow the `prefix:id` format (colon-separated), e.g.
+ * `"app:abc123"` or `"org:xyz"`. The function returns the wildcard pattern
+ * for the prefix — `"app:*"` or `"org:*"` — used for PSUBSCRIBE so that a
+ * single Redis subscription covers all IDs under that prefix.
+ *
+ * If no colon is present the channel is returned unchanged (exact match).
  */
 function patternFor(channel: string): string {
   const colon = channel.indexOf(":");
@@ -111,10 +118,9 @@ export function subscribe(
   const state = getOrCreateState();
 
   if (state.subscriberCount >= MAX_SUBSCRIBERS) {
-    console.error(
+    throw new Error(
       `[events] Max subscriber cap (${MAX_SUBSCRIBERS}) reached — rejecting subscription to ${channel}`,
     );
-    return () => {}; // no-op unsubscribe
   }
 
   state.subscriberCount++;
@@ -194,5 +200,5 @@ function cleanup() {
   publishClient.disconnect();
 }
 
-process.on("SIGTERM", cleanup);
-process.on("SIGINT", cleanup);
+process.once("SIGTERM", cleanup);
+process.once("SIGINT", cleanup);
