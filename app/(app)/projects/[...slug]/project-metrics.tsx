@@ -1,0 +1,471 @@
+"use client";
+
+import { useState, useEffect, useRef, useCallback } from "react";
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  ReferenceLine,
+} from "recharts";
+import { Activity, Cpu, HardDrive, MemoryStick, Network, Loader2 } from "lucide-react";
+
+type ContainerStatsSnapshot = {
+  containerId: string;
+  containerName: string;
+  cpuPercent: number;
+  memoryUsage: number;
+  memoryLimit: number;
+  memoryPercent: number;
+  networkRx: number;
+  networkTx: number;
+  blockRead: number;
+  blockWrite: number;
+};
+
+type TimeSeriesPoint = {
+  time: string;
+  timestamp: number;
+  // Aggregate across containers
+  cpuPercent: number;
+  memoryUsage: number;
+  memoryLimit: number;
+  memoryPercent: number;
+  networkRx: number;
+  networkTx: number;
+  // Per-tick deltas for network rate
+  networkRxRate: number;
+  networkTxRate: number;
+};
+
+type ProjectMetricsProps = {
+  orgId: string;
+  projectId: string;
+};
+
+const MAX_DATA_POINTS = 150; // ~5 minutes at 2s intervals
+
+function formatBytes(bytes: number, decimals = 1): string {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(decimals))} ${sizes[i]}`;
+}
+
+function formatBytesRate(bytes: number): string {
+  return `${formatBytes(bytes)}/s`;
+}
+
+function formatTime(timestamp: number): string {
+  return new Date(timestamp).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+function ChartCard({
+  title,
+  icon: Icon,
+  children,
+}: {
+  title: string;
+  icon: React.ComponentType<{ className?: string }>;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="squircle rounded-lg border bg-card overflow-hidden">
+      <div className="flex items-center gap-2 px-4 py-3 border-b">
+        <Icon className="size-4 text-muted-foreground" />
+        <h3 className="text-sm font-medium">{title}</h3>
+      </div>
+      <div className="p-4">{children}</div>
+    </div>
+  );
+}
+
+function ContainerRow({ stats }: { stats: ContainerStatsSnapshot }) {
+  return (
+    <div className="flex items-center justify-between gap-4 px-4 py-3">
+      <div className="flex items-center gap-3 min-w-0">
+        <span className="size-2 rounded-full bg-status-success shrink-0" />
+        <span className="text-sm font-mono truncate">{stats.containerName}</span>
+      </div>
+      <div className="flex items-center gap-6 text-xs text-muted-foreground shrink-0">
+        <span className="tabular-nums w-16 text-right" title="CPU">
+          {stats.cpuPercent.toFixed(1)}% CPU
+        </span>
+        <span className="tabular-nums w-24 text-right" title="Memory">
+          {formatBytes(stats.memoryUsage)} / {formatBytes(stats.memoryLimit)}
+        </span>
+        <span className="tabular-nums w-20 text-right" title="Network RX">
+          {formatBytes(stats.networkRx)} rx
+        </span>
+        <span className="tabular-nums w-20 text-right" title="Network TX">
+          {formatBytes(stats.networkTx)} tx
+        </span>
+      </div>
+    </div>
+  );
+}
+
+const chartTooltipStyle = {
+  contentStyle: {
+    backgroundColor: "oklch(0.21 0.006 285.75)",
+    border: "1px solid oklch(0.30 0.006 285.75)",
+    borderRadius: "8px",
+    fontSize: "12px",
+    color: "oklch(0.87 0.006 285.75)",
+  },
+  itemStyle: { color: "oklch(0.87 0.006 285.75)" },
+  labelStyle: { color: "oklch(0.55 0.006 285.75)" },
+};
+
+export function ProjectMetrics({ orgId, projectId }: ProjectMetricsProps) {
+  const [data, setData] = useState<TimeSeriesPoint[]>([]);
+  const [containers, setContainers] = useState<ContainerStatsSnapshot[]>([]);
+  const [connected, setConnected] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const prevNetworkRef = useRef<{ rx: number; tx: number } | null>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
+
+  const handleStatsEvent = useCallback((event: MessageEvent) => {
+    try {
+      const payload = JSON.parse(event.data) as {
+        containers: ContainerStatsSnapshot[];
+        timestamp: string;
+      };
+
+      setContainers(payload.containers);
+      setConnected(true);
+      setError(null);
+
+      if (payload.containers.length === 0) return;
+
+      // Aggregate across all containers
+      const totals = payload.containers.reduce(
+        (acc, c) => ({
+          cpuPercent: acc.cpuPercent + c.cpuPercent,
+          memoryUsage: acc.memoryUsage + c.memoryUsage,
+          memoryLimit: acc.memoryLimit + c.memoryLimit,
+          memoryPercent: acc.memoryPercent + c.memoryPercent,
+          networkRx: acc.networkRx + c.networkRx,
+          networkTx: acc.networkTx + c.networkTx,
+        }),
+        { cpuPercent: 0, memoryUsage: 0, memoryLimit: 0, memoryPercent: 0, networkRx: 0, networkTx: 0 }
+      );
+
+      // Calculate network rates from cumulative counters
+      let networkRxRate = 0;
+      let networkTxRate = 0;
+      if (prevNetworkRef.current) {
+        const rxDelta = totals.networkRx - prevNetworkRef.current.rx;
+        const txDelta = totals.networkTx - prevNetworkRef.current.tx;
+        // 2 second intervals
+        networkRxRate = Math.max(0, rxDelta / 2);
+        networkTxRate = Math.max(0, txDelta / 2);
+      }
+      prevNetworkRef.current = { rx: totals.networkRx, tx: totals.networkTx };
+
+      const ts = new Date(payload.timestamp).getTime();
+      const point: TimeSeriesPoint = {
+        time: formatTime(ts),
+        timestamp: ts,
+        cpuPercent: Math.round(totals.cpuPercent * 100) / 100,
+        memoryUsage: totals.memoryUsage,
+        memoryLimit: totals.memoryLimit,
+        memoryPercent: Math.round(totals.memoryPercent * 100) / 100,
+        networkRx: totals.networkRx,
+        networkTx: totals.networkTx,
+        networkRxRate,
+        networkTxRate,
+      };
+
+      setData((prev) => {
+        const next = [...prev, point];
+        return next.length > MAX_DATA_POINTS ? next.slice(-MAX_DATA_POINTS) : next;
+      });
+    } catch {
+      // Ignore parse errors
+    }
+  }, []);
+
+  useEffect(() => {
+    const url = `/api/v1/organizations/${orgId}/projects/${projectId}/stats/stream`;
+    const es = new EventSource(url);
+    eventSourceRef.current = es;
+
+    es.addEventListener("stats", handleStatsEvent);
+
+    es.addEventListener("error", (event) => {
+      // EventSource "error" event on SSE means either actual error or reconnection
+      const data = (event as MessageEvent).data;
+      if (data) {
+        try {
+          const parsed = JSON.parse(data);
+          setError(parsed.message || "Connection error");
+        } catch {
+          setError("Connection lost, reconnecting...");
+        }
+      }
+    });
+
+    es.onerror = () => {
+      setConnected(false);
+    };
+
+    return () => {
+      es.close();
+      eventSourceRef.current = null;
+    };
+  }, [orgId, projectId, handleStatsEvent]);
+
+  // Loading state
+  if (!connected && !error) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
+        <Loader2 className="size-6 text-muted-foreground animate-spin" />
+        <p className="text-sm text-muted-foreground">Connecting to container metrics...</p>
+      </div>
+    );
+  }
+
+  // No containers running
+  if (connected && containers.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
+        <Activity className="size-8 text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">No running containers.</p>
+        <p className="text-xs text-muted-foreground">
+          Deploy the project to see real-time resource metrics.
+        </p>
+      </div>
+    );
+  }
+
+  // Error state
+  if (error && containers.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
+        <p className="text-sm text-muted-foreground">{error}</p>
+      </div>
+    );
+  }
+
+  const latestMemoryLimit = data.length > 0 ? data[data.length - 1].memoryLimit : 0;
+
+  return (
+    <div className="space-y-6">
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="squircle rounded-lg border bg-card px-4 py-3">
+          <p className="text-xs text-muted-foreground">CPU Usage</p>
+          <p className="text-2xl font-semibold tabular-nums mt-1">
+            {containers.reduce((s, c) => s + c.cpuPercent, 0).toFixed(1)}%
+          </p>
+        </div>
+        <div className="squircle rounded-lg border bg-card px-4 py-3">
+          <p className="text-xs text-muted-foreground">Memory</p>
+          <p className="text-2xl font-semibold tabular-nums mt-1">
+            {formatBytes(containers.reduce((s, c) => s + c.memoryUsage, 0))}
+          </p>
+        </div>
+        <div className="squircle rounded-lg border bg-card px-4 py-3">
+          <p className="text-xs text-muted-foreground">Network RX</p>
+          <p className="text-2xl font-semibold tabular-nums mt-1">
+            {formatBytes(containers.reduce((s, c) => s + c.networkRx, 0))}
+          </p>
+        </div>
+        <div className="squircle rounded-lg border bg-card px-4 py-3">
+          <p className="text-xs text-muted-foreground">Network TX</p>
+          <p className="text-2xl font-semibold tabular-nums mt-1">
+            {formatBytes(containers.reduce((s, c) => s + c.networkTx, 0))}
+          </p>
+        </div>
+      </div>
+
+      {/* CPU Chart */}
+      <ChartCard title="CPU Usage" icon={Cpu}>
+        <ResponsiveContainer width="100%" height={200}>
+          <AreaChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+            <defs>
+              <linearGradient id="cpuGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="oklch(0.65 0.19 255)" stopOpacity={0.3} />
+                <stop offset="95%" stopColor="oklch(0.65 0.19 255)" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.30 0.006 285.75)" />
+            <XAxis
+              dataKey="time"
+              tick={{ fontSize: 10, fill: "oklch(0.55 0.006 285.75)" }}
+              tickLine={false}
+              axisLine={false}
+              interval="preserveStartEnd"
+              minTickGap={60}
+            />
+            <YAxis
+              tick={{ fontSize: 10, fill: "oklch(0.55 0.006 285.75)" }}
+              tickLine={false}
+              axisLine={false}
+              tickFormatter={(v) => `${v}%`}
+              domain={[0, "auto"]}
+              width={45}
+            />
+            <Tooltip
+              {...chartTooltipStyle}
+              formatter={(value: number) => [`${value.toFixed(2)}%`, "CPU"]}
+            />
+            <Area
+              type="monotone"
+              dataKey="cpuPercent"
+              stroke="oklch(0.65 0.19 255)"
+              fill="url(#cpuGradient)"
+              strokeWidth={1.5}
+              dot={false}
+              isAnimationActive={false}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      </ChartCard>
+
+      {/* Memory Chart */}
+      <ChartCard title="Memory Usage" icon={MemoryStick}>
+        <ResponsiveContainer width="100%" height={200}>
+          <AreaChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+            <defs>
+              <linearGradient id="memGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="oklch(0.72 0.17 150)" stopOpacity={0.3} />
+                <stop offset="95%" stopColor="oklch(0.72 0.17 150)" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.30 0.006 285.75)" />
+            <XAxis
+              dataKey="time"
+              tick={{ fontSize: 10, fill: "oklch(0.55 0.006 285.75)" }}
+              tickLine={false}
+              axisLine={false}
+              interval="preserveStartEnd"
+              minTickGap={60}
+            />
+            <YAxis
+              tick={{ fontSize: 10, fill: "oklch(0.55 0.006 285.75)" }}
+              tickLine={false}
+              axisLine={false}
+              tickFormatter={(v) => formatBytes(v, 0)}
+              domain={[0, "auto"]}
+              width={60}
+            />
+            <Tooltip
+              {...chartTooltipStyle}
+              formatter={(value: number) => [formatBytes(value), "Memory"]}
+            />
+            {latestMemoryLimit > 0 && (
+              <ReferenceLine
+                y={latestMemoryLimit}
+                stroke="oklch(0.65 0.22 25)"
+                strokeDasharray="4 4"
+                strokeWidth={1}
+                label={{
+                  value: `Limit: ${formatBytes(latestMemoryLimit, 0)}`,
+                  position: "insideTopRight",
+                  fill: "oklch(0.65 0.22 25)",
+                  fontSize: 10,
+                }}
+              />
+            )}
+            <Area
+              type="monotone"
+              dataKey="memoryUsage"
+              stroke="oklch(0.72 0.17 150)"
+              fill="url(#memGradient)"
+              strokeWidth={1.5}
+              dot={false}
+              isAnimationActive={false}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      </ChartCard>
+
+      {/* Network I/O Chart */}
+      <ChartCard title="Network I/O" icon={Network}>
+        <ResponsiveContainer width="100%" height={200}>
+          <AreaChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+            <defs>
+              <linearGradient id="rxGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="oklch(0.70 0.15 200)" stopOpacity={0.3} />
+                <stop offset="95%" stopColor="oklch(0.70 0.15 200)" stopOpacity={0} />
+              </linearGradient>
+              <linearGradient id="txGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="oklch(0.75 0.15 75)" stopOpacity={0.3} />
+                <stop offset="95%" stopColor="oklch(0.75 0.15 75)" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.30 0.006 285.75)" />
+            <XAxis
+              dataKey="time"
+              tick={{ fontSize: 10, fill: "oklch(0.55 0.006 285.75)" }}
+              tickLine={false}
+              axisLine={false}
+              interval="preserveStartEnd"
+              minTickGap={60}
+            />
+            <YAxis
+              tick={{ fontSize: 10, fill: "oklch(0.55 0.006 285.75)" }}
+              tickLine={false}
+              axisLine={false}
+              tickFormatter={(v) => formatBytesRate(v)}
+              domain={[0, "auto"]}
+              width={70}
+            />
+            <Tooltip
+              {...chartTooltipStyle}
+              formatter={(value: number, name: string) => [
+                formatBytesRate(value),
+                name === "networkRxRate" ? "RX" : "TX",
+              ]}
+            />
+            <Area
+              type="monotone"
+              dataKey="networkRxRate"
+              stroke="oklch(0.70 0.15 200)"
+              fill="url(#rxGradient)"
+              strokeWidth={1.5}
+              dot={false}
+              isAnimationActive={false}
+              name="networkRxRate"
+            />
+            <Area
+              type="monotone"
+              dataKey="networkTxRate"
+              stroke="oklch(0.75 0.15 75)"
+              fill="url(#txGradient)"
+              strokeWidth={1.5}
+              dot={false}
+              isAnimationActive={false}
+              name="networkTxRate"
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      </ChartCard>
+
+      {/* Container list */}
+      <ChartCard title="Containers" icon={HardDrive}>
+        {containers.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-4 text-center">
+            No running containers.
+          </p>
+        ) : (
+          <div className="divide-y -mx-4 -mb-4">
+            {containers.map((c) => (
+              <ContainerRow key={c.containerId} stats={c} />
+            ))}
+          </div>
+        )}
+      </ChartCard>
+    </div>
+  );
+}

@@ -36,11 +36,11 @@ export function Sidebar({ currentOrgId, organizations }: SidebarProps) {
   return (
     <aside
       className={`flex h-full flex-col bg-sidebar transition-[width] duration-200 ${
-        collapsed ? "w-14" : "w-56"
+        collapsed ? "w-16" : "w-60"
       }`}
     >
       {/* Header */}
-      <div className="flex h-14 items-center justify-between px-4">
+      <div className="flex h-16 items-center justify-between px-5">
         {collapsed ? (
           <Tooltip delayDuration={0}>
             <TooltipTrigger asChild>
@@ -80,13 +80,13 @@ export function Sidebar({ currentOrgId, organizations }: SidebarProps) {
       <Separator />
 
       {/* Navigation */}
-      <div className="flex-1 overflow-y-auto py-4">
+      <div className="flex-1 overflow-y-auto py-5">
         <SidebarNav collapsed={collapsed} orgId={currentOrgId} />
       </div>
 
       {/* Footer - Org Switcher & User Menu */}
-      <div className="mt-auto border-t p-2">
-        <div className="flex flex-col gap-1">
+      <div className="mt-auto border-t p-3">
+        <div className="flex flex-col gap-1.5">
           <OrgSwitcher
             currentOrgId={currentOrgId}
             organizations={organizations}

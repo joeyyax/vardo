@@ -1,0 +1,14 @@
+version = "1"
+name = "adminer"
+displayName = "Adminer"
+description = "Lightweight database management UI"
+category = "tool"
+source = "direct"
+deployType = "image"
+imageName = "adminer:latest"
+defaultPort = 8080
+
+[[envVars]]
+key = "ADMINER_DEFAULT_SERVER"
+description = "Default database server"
+required = false

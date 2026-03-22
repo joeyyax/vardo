@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { groups } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
-import { eq, asc } from "drizzle-orm";
+import { eq, and, asc } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { randomPaletteColor } from "@/lib/ui/colors";
@@ -96,5 +96,35 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       { error: "Internal server error" },
       { status: 500 }
     );
+  }
+}
+
+// DELETE /api/v1/organizations/[orgId]/groups
+export async function DELETE(request: NextRequest, { params }: RouteParams) {
+  try {
+    const { orgId } = await params;
+    const { organization } = await requireOrg();
+
+    if (organization.id !== orgId) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const { id } = await request.json();
+
+    const [deleted] = await db
+      .delete(groups)
+      .where(and(eq(groups.id, id), eq(groups.organizationId, orgId)))
+      .returning({ id: groups.id });
+
+    if (!deleted) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    if (error instanceof Error && error.message === "Unauthorized") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

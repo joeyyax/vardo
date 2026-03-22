@@ -36,7 +36,7 @@ export function MobileSidebar({ currentOrgId, organizations }: MobileSidebarProp
         </Button>
       </SheetTrigger>
       <SheetContent side="left" className="w-64 p-0">
-        <SheetHeader className="flex h-14 flex-row items-center justify-between px-4 border-b">
+        <SheetHeader className="flex h-16 flex-row items-center justify-between px-5 border-b">
           <Link href="/projects" className="flex items-center gap-2">
             <div className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
               <FolderKanban className="size-4" />
@@ -45,15 +45,15 @@ export function MobileSidebar({ currentOrgId, organizations }: MobileSidebarProp
           </Link>
         </SheetHeader>
 
-        <div className="flex h-[calc(100%-3.5rem)] flex-col">
+        <div className="flex h-[calc(100%-4rem)] flex-col">
           {/* Navigation */}
-          <div className="flex-1 overflow-y-auto py-4">
+          <div className="flex-1 overflow-y-auto py-5">
             <SidebarNav orgId={currentOrgId} />
           </div>
 
           {/* Footer - Org Switcher & User Menu */}
-          <div className="mt-auto border-t p-2">
-            <div className="flex flex-col gap-1">
+          <div className="mt-auto border-t p-3">
+            <div className="flex flex-col gap-1.5">
               <OrgSwitcher currentOrgId={currentOrgId} organizations={organizations} />
               <UserMenu />
             </div>

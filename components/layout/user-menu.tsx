@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { LogOut, User, ChevronsUpDown, Loader2 } from "lucide-react";
+import { LogOut, User, Users, ChevronsUpDown, Loader2, Settings, Shield, Building2, Check, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -23,13 +23,25 @@ function getInitials(name: string): string {
     .slice(0, 2);
 }
 
-type UserMenuProps = {
-  collapsed?: boolean;
+type Organization = {
+  id: string;
+  name: string;
+  slug: string;
+  role: string;
 };
 
-export function UserMenu({ collapsed }: UserMenuProps) {
+type UserMenuProps = {
+  collapsed?: boolean;
+  compact?: boolean;
+  currentOrgId?: string;
+  organizations?: Organization[];
+};
+
+export function UserMenu({ collapsed, compact, currentOrgId, organizations }: UserMenuProps) {
   const router = useRouter();
   const { data: session, isPending } = useSession();
+
+  const currentOrg = organizations?.find((o) => o.id === currentOrgId) || organizations?.[0];
 
   const handleSignOut = async () => {
     await signOut({
@@ -41,15 +53,20 @@ export function UserMenu({ collapsed }: UserMenuProps) {
     });
   };
 
+  const handleSwitchOrg = (orgId: string) => {
+    if (orgId === currentOrg?.id) return;
+    document.cookie = `time_current_org=${orgId};path=/;max-age=${60 * 60 * 24 * 365}`;
+    window.location.reload();
+  };
+
   if (isPending) {
     return (
       <Button
         variant="ghost"
-        className={`w-full px-2 py-1.5 h-auto ${collapsed ? "justify-center" : "justify-start gap-2"}`}
+        className={`px-2 py-1.5 h-auto ${collapsed ? "justify-center" : "justify-start gap-2"}`}
         disabled
       >
         <Loader2 className="size-6 animate-spin" />
-        {!collapsed && <span className="text-sm text-muted-foreground">Loading...</span>}
       </Button>
     );
   }
@@ -63,20 +80,20 @@ export function UserMenu({ collapsed }: UserMenuProps) {
       <DropdownMenuTrigger asChild>
         <Button
           variant="ghost"
-          className={`w-full px-2 py-1.5 h-auto ${collapsed ? "justify-center" : "justify-start gap-2"}`}
+          className={`px-2 py-1.5 h-auto ${collapsed ? "justify-center" : "justify-start gap-2"}`}
         >
-          <Avatar className="size-6">
+          <Avatar className="size-7">
             <AvatarImage src={user?.image ?? undefined} alt={displayName} />
             <AvatarFallback className="text-xs bg-sidebar-accent">
               {getInitials(displayName)}
             </AvatarFallback>
           </Avatar>
-          {!collapsed && (
+          {!collapsed && !compact && (
             <>
-              <div className="flex flex-1 flex-col items-start gap-0 overflow-hidden">
+              <div className="flex flex-col items-start gap-0 overflow-hidden">
                 <span className="truncate text-sm font-medium">{displayName}</span>
                 <span className="truncate text-xs text-muted-foreground">
-                  {email}
+                  {currentOrg?.name || email}
                 </span>
               </div>
               <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
@@ -85,8 +102,8 @@ export function UserMenu({ collapsed }: UserMenuProps) {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
-        align="start"
-        className="w-[--radix-dropdown-menu-trigger-width] min-w-56"
+        align="end"
+        className="min-w-56"
       >
         <DropdownMenuLabel className="font-normal">
           <div className="flex flex-col gap-1">
@@ -100,8 +117,56 @@ export function UserMenu({ collapsed }: UserMenuProps) {
           onClick={() => router.push("/profile")}
         >
           <User className="size-4" />
-          <span>Profile</span>
+          Profile
         </DropdownMenuItem>
+        <DropdownMenuItem
+          className="gap-2 cursor-pointer"
+          onClick={() => router.push("/admin")}
+        >
+          <Shield className="size-4" />
+          Admin
+        </DropdownMenuItem>
+
+        {/* Org switcher */}
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel className="text-xs text-muted-foreground">
+          Organizations
+        </DropdownMenuLabel>
+        {organizations?.map((org) => (
+          <DropdownMenuItem
+            key={org.id}
+            className="gap-2 cursor-pointer"
+            onClick={() => handleSwitchOrg(org.id)}
+          >
+            <Building2 className="size-4" />
+            <span className="truncate">{org.name}</span>
+            {org.id === currentOrg?.id && (
+              <Check className="ml-auto size-4 text-primary" />
+            )}
+          </DropdownMenuItem>
+        ))}
+        <DropdownMenuItem
+          className="gap-2 cursor-pointer"
+          onClick={() => router.push("/settings")}
+        >
+          <Settings className="size-4" />
+          Settings
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className="gap-2 cursor-pointer"
+          onClick={() => router.push("/team")}
+        >
+          <Users className="size-4" />
+          Team
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className="gap-2 cursor-pointer"
+          onClick={() => router.push("/onboarding")}
+        >
+          <Plus className="size-4" />
+          New organization
+        </DropdownMenuItem>
+
         <DropdownMenuSeparator />
         <DropdownMenuItem
           className="gap-2 cursor-pointer"
@@ -109,7 +174,7 @@ export function UserMenu({ collapsed }: UserMenuProps) {
           onClick={handleSignOut}
         >
           <LogOut className="size-4" />
-          <span>Sign out</span>
+          Sign out
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

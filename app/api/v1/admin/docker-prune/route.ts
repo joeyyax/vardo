@@ -2,14 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { user } from "@/lib/db/schema";
 import { requireSession } from "@/lib/auth/session";
-import { seedTemplates } from "@/lib/db/seed-templates";
 import { eq } from "drizzle-orm";
+import { exec } from "child_process";
+import { promisify } from "util";
 
-// POST /api/v1/templates/seed
+const execAsync = promisify(exec);
+
 export async function POST(_request: NextRequest) {
   try {
     const session = await requireSession();
-
     const dbUser = await db.query.user.findFirst({
       where: eq(user.id, session.user.id),
       columns: { isAppAdmin: true },
@@ -19,17 +20,18 @@ export async function POST(_request: NextRequest) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    await seedTemplates();
+    const { stdout } = await execAsync(
+      "docker system prune -f --volumes 2>&1 | tail -1",
+      { timeout: 60000 }
+    );
 
-    return NextResponse.json({ success: true });
+    const spaceReclaimed = stdout.trim();
+
+    return NextResponse.json({ success: true, spaceReclaimed });
   } catch (error) {
     if (error instanceof Error && error.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    console.error("Error seeding templates:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

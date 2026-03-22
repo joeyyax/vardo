@@ -77,13 +77,6 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     const vars = await db.query.envVars.findMany({
       where: eq(envVars.projectId, projectId),
-      columns: {
-        id: true,
-        key: true,
-        isSecret: true,
-        createdAt: true,
-        updatedAt: true,
-      },
     });
 
     return NextResponse.json({ envVars: vars });

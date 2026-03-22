@@ -1,9 +1,8 @@
 import { redirect } from "next/navigation";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { Sidebar, MobileSidebar } from "@/components/layout";
+import { TopNav } from "@/components/layout/top-nav";
 import { CommandPalette } from "@/components/command-palette";
 import { getCurrentOrg, getUserOrganizations } from "@/lib/auth/session";
-
 
 export default async function AppLayout({
   children,
@@ -21,32 +20,22 @@ export default async function AppLayout({
 
   return (
     <TooltipProvider>
-      <div data-main-content className="flex h-dvh bg-sidebar transition-transform duration-300 ease-out origin-bottom">
-        {/* Desktop Sidebar */}
-        <div className="hidden lg:block">
-          <Sidebar
-            currentOrgId={organization.id}
-            organizations={organizations}
-          />
-        </div>
+      <div className="flex flex-col h-dvh bg-sidebar">
+        {/* Top Navigation */}
+        <TopNav
+          currentOrgId={organization.id}
+          organizations={organizations}
+        />
 
         {/* Main Content */}
-        <div className="flex flex-1 flex-col overflow-hidden bg-background squircle lg:rounded-l-2xl">
-          {/* Mobile nav trigger */}
-          <div className="lg:hidden flex items-center gap-3 px-4 pt-3">
-            <MobileSidebar
-              currentOrgId={organization.id}
-              organizations={organizations}
-            />
-          </div>
-
-          {/* Page Content */}
-          <main className="flex-1 overflow-y-auto p-4 lg:p-6">{children}</main>
+        <div className="flex-1 overflow-y-auto bg-background rounded-t-2xl min-h-0">
+          <main className="mx-auto max-w-screen-xl px-5 py-8 lg:px-10 min-h-full">
+            {children}
+          </main>
         </div>
-
-        {/* Command Palette */}
-        <CommandPalette orgId={organization.id} />
       </div>
+
+      <CommandPalette orgId={organization.id} />
     </TooltipProvider>
   );
 }

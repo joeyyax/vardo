@@ -20,7 +20,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const searchParams = request.nextUrl.searchParams;
     const projectId = searchParams.get("projectId");
-    const taskId = searchParams.get("taskId");
     const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 100);
     const offset = parseInt(searchParams.get("offset") || "0");
 
@@ -31,20 +30,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       conditions.push(eq(activities.projectId, projectId));
     }
 
-    if (taskId) {
-      conditions.push(eq(activities.taskId, taskId));
-    }
-
     const activityList = await db.query.activities.findMany({
       where: and(...conditions),
       with: {
-        actor: {
+        user: {
           columns: { id: true, name: true, email: true, image: true },
         },
         project: {
-          columns: { id: true, name: true },
-        },
-        task: {
           columns: { id: true, name: true },
         },
       },

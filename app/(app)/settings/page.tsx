@@ -1,7 +1,9 @@
 import { redirect } from "next/navigation";
-import { getCurrentOrg } from "@/lib/auth/session";
+import { getCurrentOrg, getUserOrganizations } from "@/lib/auth/session";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { OrgEnvVarsEditor } from "./org-env-vars";
+import { OrgSwitcher } from "@/components/layout/org-switcher";
+import { ThemeSwitcher } from "@/app/(app)/profile/theme-switcher";
 
 export default async function SettingsPage() {
   const orgData = await getCurrentOrg();
@@ -11,14 +13,17 @@ export default async function SettingsPage() {
   }
 
   const orgId = orgData.organization.id;
+  const organizations = await getUserOrganizations();
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight">Settings</h1>
-        <p className="text-sm text-muted-foreground">
-          Manage your organization settings.
-        </p>
+      <div className="flex items-center gap-3">
+        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+        <OrgSwitcher
+          currentOrgId={orgId}
+          organizations={organizations}
+          collapsed={false}
+        />
       </div>
 
       <Tabs defaultValue="variables">
@@ -48,12 +53,8 @@ export default async function SettingsPage() {
           </div>
         </TabsContent>
 
-        <TabsContent value="general" className="pt-4">
-          <div className="flex items-center justify-center rounded-lg border border-dashed p-12">
-            <p className="text-sm text-muted-foreground">
-              General settings coming soon.
-            </p>
-          </div>
+        <TabsContent value="general" className="pt-4 space-y-8">
+          <ThemeSwitcher />
         </TabsContent>
       </Tabs>
     </div>

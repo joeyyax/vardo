@@ -1,0 +1,26 @@
+version = "1"
+name = "ghost"
+displayName = "Ghost"
+description = "Professional publishing platform"
+icon = "https://cdn.simpleicons.org/ghost"
+category = "web"
+source = "direct"
+deployType = "image"
+imageName = "ghost:5-alpine"
+defaultPort = 2368
+
+[[envVars]]
+key = "url"
+description = "Public URL of your Ghost site"
+required = true
+
+[[envVars]]
+key = "database__client"
+description = "Database client"
+required = false
+defaultValue = "sqlite3"
+
+[[volumes]]
+name = "content"
+mountPath = "/var/lib/ghost/content"
+description = "Ghost content and images"

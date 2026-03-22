@@ -1,0 +1,55 @@
+version = "1"
+name = "wordpress"
+displayName = "WordPress"
+description = "Popular CMS with MySQL database"
+icon = "https://cdn.simpleicons.org/wordpress/21759B"
+category = "web"
+source = "direct"
+deployType = "compose"
+defaultPort = 80
+composeContent = """
+services:
+  wordpress:
+    image: wordpress:latest
+    ports:
+      - "80:80"
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: ${WORDPRESS_DB_PASSWORD}
+      WORDPRESS_DB_NAME: wordpress
+    volumes:
+      - wp-content:/var/www/html/wp-content
+  db:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: wordpress
+      MYSQL_USER: wordpress
+      MYSQL_PASSWORD: ${WORDPRESS_DB_PASSWORD}
+    volumes:
+      - db-data:/var/lib/mysql
+volumes:
+  wp-content:
+  db-data:
+"""
+
+[[envVars]]
+key = "WORDPRESS_DB_PASSWORD"
+description = "WordPress database password"
+required = true
+
+[[envVars]]
+key = "MYSQL_ROOT_PASSWORD"
+description = "MySQL root password"
+required = true
+
+[[volumes]]
+name = "wp-content"
+mountPath = "/var/www/html/wp-content"
+description = "WordPress themes, plugins, and uploads"
+
+[[volumes]]
+name = "db-data"
+mountPath = "/var/lib/mysql"
+description = "MySQL database files"

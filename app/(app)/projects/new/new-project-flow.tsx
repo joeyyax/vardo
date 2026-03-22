@@ -15,6 +15,9 @@ import {
   FileText,
   Globe2,
   RefreshCw,
+  Eye,
+  EyeOff,
+  Shuffle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageToolbar } from "@/components/page-toolbar";
@@ -44,14 +47,20 @@ type Template = {
   description: string | null;
   icon: string | null;
   category: string;
-  source: Source;
-  deployType: DeployType;
+  source: string;
+  deployType: string;
   imageName: string | null;
   gitUrl: string | null;
   gitBranch: string | null;
   defaultPort: number | null;
   defaultEnvVars:
     | { key: string; description: string; required: boolean; defaultValue?: string }[]
+    | null;
+  defaultVolumes:
+    | { name: string; mountPath: string; description: string }[]
+    | null;
+  defaultConnectionInfo:
+    | { label: string; value: string; copyRef?: string }[]
     | null;
 };
 
@@ -96,6 +105,16 @@ const SOURCE_OPTIONS = [
 
 type SourceOption = (typeof SOURCE_OPTIONS)[number]["id"];
 
+function generatePassword(length = 24): string {
+  const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  return Array.from({ length }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+}
+
+function isPasswordField(key: string): boolean {
+  const lower = key.toLowerCase();
+  return lower.includes("password") || lower.includes("secret") || lower.includes("_key") || lower === "app_keys" || lower.includes("jwt");
+}
+
 function slugify(value: string) {
   return value
     .toLowerCase()
@@ -127,6 +146,14 @@ export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
   const [rootDirectory, setRootDirectory] = useState("");
   const [containerPort, setContainerPort] = useState("");
   const [autoDeploy, setAutoDeploy] = useState(true);
+  const [persistData, setPersistData] = useState(true);
+  const [templateVolumes, setTemplateVolumes] = useState<
+    { name: string; mountPath: string; description: string }[]
+  >([]);
+  const [templateConnectionInfo, setTemplateConnectionInfo] = useState<
+    { label: string; value: string; copyRef?: string }[]
+  >([]);
+  const [exposePort, setExposePort] = useState(false);
 
   // Domain
   const [generateDomain, setGenerateDomain] = useState(true);
@@ -137,6 +164,7 @@ export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
   const [templateEnvVars, setTemplateEnvVars] = useState<
     { key: string; value: string; description: string; required: boolean }[]
   >([]);
+  const [maskedFields, setMaskedFields] = useState<Set<string>>(new Set());
 
   // GitHub state
   const [installations, setInstallations] = useState<Installation[]>([]);
@@ -220,22 +248,45 @@ export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
     setDisplayName(template.displayName);
     setName(slugify(template.name));
     setSlugEdited(false);
-    setSource(template.source);
-    setDeployType(template.deployType);
+    setSource(template.source as Source);
+    setDeployType(template.deployType as DeployType);
     if (template.imageName) setImageName(template.imageName);
     if (template.gitUrl) setGitUrl(template.gitUrl);
     if (template.gitBranch) setGitBranch(template.gitBranch);
     if (template.defaultPort) setContainerPort(template.defaultPort.toString());
     setDescription(template.description || "");
-    // Databases/caches don't need public URLs
+    // Databases/caches don't need public URLs but always need persistence
     const noUrlCategories = ["database", "cache"];
+    const alwaysPersist = ["database", "cache", "monitoring", "tool"];
     setGenerateDomain(!noUrlCategories.includes(template.category));
+    setPersistData(alwaysPersist.includes(template.category));
+    setTemplateVolumes(template.defaultVolumes || []);
+    setTemplateConnectionInfo(template.defaultConnectionInfo || []);
     if (template.defaultEnvVars?.length) {
-      setTemplateEnvVars(template.defaultEnvVars.map((ev) => ({
-        key: ev.key, value: ev.defaultValue || "", description: ev.description, required: ev.required,
-      })));
+      const masked = new Set<string>();
+      const slug = slugify(template.name);
+      setTemplateEnvVars(template.defaultEnvVars.map((ev) => {
+        // Auto-generate passwords and secrets
+        if (isPasswordField(ev.key) && !ev.defaultValue) {
+          masked.add(ev.key);
+          return { key: ev.key, value: generatePassword(), description: ev.description, required: ev.required };
+        }
+        // Default database name and username to the project slug
+        const lower = ev.key.toLowerCase();
+        if (!ev.defaultValue && (lower.includes("_database") || lower.includes("_db") || lower.includes("_user") || lower === "database__client")) {
+          if (lower.includes("_user")) {
+            return { key: ev.key, value: slug, description: ev.description, required: ev.required };
+          }
+          if (lower.includes("_database") || lower.includes("_db")) {
+            return { key: ev.key, value: slug, description: ev.description, required: ev.required };
+          }
+        }
+        return { key: ev.key, value: ev.defaultValue || "", description: ev.description, required: ev.required };
+      }));
+      setMaskedFields(masked);
     } else {
       setTemplateEnvVars([]);
+      setMaskedFields(new Set());
     }
   }
 
@@ -280,6 +331,13 @@ export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
         displayName: displayName.trim(), name: name.trim(),
         description: description.trim() || undefined,
         source, deployType, autoTraefikLabels: true, autoDeploy, generateDomain,
+        persistentVolumes: persistData && templateVolumes.length > 0
+          ? templateVolumes.map((v) => ({ name: v.name, mountPath: v.mountPath }))
+          : undefined,
+        connectionInfo: templateConnectionInfo.length > 0 ? templateConnectionInfo : undefined,
+        exposedPorts: exposePort && containerPort
+          ? [{ internal: parseInt(containerPort, 10), description: "Primary port" }]
+          : undefined,
       };
       if (containerPort) body.containerPort = parseInt(containerPort, 10);
       if (rootDirectory.trim()) body.rootDirectory = rootDirectory.trim();
@@ -306,12 +364,18 @@ export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
       if (filledVars.length > 0) {
         await fetch(`/api/v1/organizations/${orgId}/projects/${project.id}/env-vars`, {
           method: "PUT", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ vars: filledVars.map((v) => ({ key: v.key, value: v.value, isSecret: true })) }),
+          body: JSON.stringify({ vars: filledVars.map((v) => ({ key: v.key, value: v.value, isSecret: isPasswordField(v.key) })) }),
         });
       }
 
-      toast.success("Project created");
-      router.push(`/projects/${project.id}`);
+      // Navigate to project page — if autoDeploy, pass flag so it triggers deploy with full SSE streaming
+      if (autoDeploy) {
+        toast.success("Project created — starting deploy...");
+        router.push(`/projects/${project.name}?deploy=1`);
+      } else {
+        toast.success("Project created");
+        router.push(`/projects/${project.name}`);
+      }
     } catch { toast.error("Failed to create project"); }
     finally { setCreating(false); }
   }
@@ -327,13 +391,7 @@ export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
   return (
     <div className="space-y-6">
       <PageToolbar>
-        <Button variant="ghost" size="sm" asChild>
-          <Link href="/projects">
-            <ArrowLeft className="mr-1.5 size-4" />
-            Projects
-          </Link>
-        </Button>
-        <h1 className="text-xl font-semibold tracking-tight">New Project</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">New Project</h1>
       </PageToolbar>
 
       {!isConfiguring ? (
@@ -383,7 +441,8 @@ export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
                       <img
                         src={tmpl.icon}
                         alt=""
-                        className="size-8 shrink-0 dark:invert"
+                        className="size-8 shrink-0"
+                        style={{ filter: "drop-shadow(0 0 1px rgba(255,255,255,0.3))" }}
                       />
                     ) : (
                       <Container className="size-8 shrink-0 text-muted-foreground" />
@@ -645,24 +704,67 @@ export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
               <div className="grid gap-3">
                 <Label>Environment Variables</Label>
                 <div className="grid gap-3">
-                  {templateEnvVars.map((ev, i) => (
-                    <div key={ev.key} className="grid gap-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs text-muted-foreground">{ev.key}</span>
-                        {ev.required && <Badge variant="secondary" className="text-[10px] px-1 py-0">required</Badge>}
+                  {templateEnvVars.map((ev, i) => {
+                    const isPassword = isPasswordField(ev.key);
+                    const isMasked = maskedFields.has(ev.key);
+                    return (
+                      <div key={ev.key} className="grid gap-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs text-muted-foreground">{ev.key}</span>
+                          {ev.required && <Badge variant="secondary" className="text-[10px] px-1 py-0">required</Badge>}
+                          {isPassword && ev.value && (
+                            <span className="text-[10px] text-status-success">auto-generated</span>
+                          )}
+                        </div>
+                        <div className="flex gap-1">
+                          <Input
+                            placeholder={ev.description}
+                            type={isPassword && isMasked ? "password" : "text"}
+                            value={ev.value}
+                            onChange={(e) => {
+                              const updated = [...templateEnvVars];
+                              updated[i] = { ...updated[i], value: e.target.value };
+                              setTemplateEnvVars(updated);
+                            }}
+                            className="font-mono text-sm"
+                          />
+                          {isPassword && (
+                            <>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="shrink-0 px-2"
+                                onClick={() => setMaskedFields((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(ev.key)) next.delete(ev.key);
+                                  else next.add(ev.key);
+                                  return next;
+                                })}
+                                title={isMasked ? "Show" : "Hide"}
+                              >
+                                {isMasked ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="shrink-0 px-2"
+                                onClick={() => {
+                                  const updated = [...templateEnvVars];
+                                  updated[i] = { ...updated[i], value: generatePassword() };
+                                  setTemplateEnvVars(updated);
+                                }}
+                                title="Regenerate"
+                              >
+                                <Shuffle className="size-3.5" />
+                              </Button>
+                            </>
+                          )}
+                        </div>
                       </div>
-                      <Input
-                        placeholder={ev.description}
-                        value={ev.value}
-                        onChange={(e) => {
-                          const updated = [...templateEnvVars];
-                          updated[i] = { ...updated[i], value: e.target.value };
-                          setTemplateEnvVars(updated);
-                        }}
-                        className="font-mono text-sm"
-                      />
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 <p className="text-xs text-muted-foreground">
                   You can add more variables after creation.
@@ -698,10 +800,32 @@ export function NewProjectFlow({ orgId, orgSlug, templates }: Props) {
               <Textarea id="description" placeholder="Optional" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
             </div>
 
-            {/* Auto deploy */}
-            <div className="flex items-center gap-3">
-              <Switch id="auto-deploy" checked={autoDeploy} onCheckedChange={setAutoDeploy} />
-              <Label htmlFor="auto-deploy">Auto Deploy</Label>
+            {/* Toggles */}
+            <div className="grid gap-3">
+              <div className="flex items-center gap-3">
+                <Switch id="persist-data" checked={persistData} onCheckedChange={setPersistData} />
+                <div>
+                  <Label htmlFor="persist-data">Persistent Storage</Label>
+                  {templateVolumes.length > 0 && persistData && (
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {templateVolumes.map((v) => v.mountPath).join(", ")}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <Switch id="expose-port" checked={exposePort} onCheckedChange={setExposePort} />
+                <div>
+                  <Label htmlFor="expose-port">Expose Port</Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Map to a public host port for external access (e.g. database tools)
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <Switch id="auto-deploy" checked={autoDeploy} onCheckedChange={setAutoDeploy} />
+                <Label htmlFor="auto-deploy">Auto Deploy</Label>
+              </div>
             </div>
 
               </>
