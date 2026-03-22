@@ -1621,6 +1621,10 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
 
   return (
     <div className="space-y-6">
+      {/* Visually-hidden live region for deploy outcome announcements — always in the DOM so screen readers register it before any state changes fire */}
+      <span className="sr-only" aria-live="assertive" aria-atomic="true">
+        {deployAnnouncement}
+      </span>
       <PageToolbar
         actions={
           <div className="flex items-center gap-2">
@@ -2075,10 +2079,6 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         </TabsList>
 
         <TabsContent value="deployments" className="pt-4 space-y-4">
-          {/* Visually-hidden live region for deploy outcome announcements — always mounted so screen readers register it */}
-          <span className="sr-only" aria-live="assertive" aria-atomic="true">
-            {deployAnnouncement}
-          </span>
           {filteredDeployments.length === 0 && !deploying && !serverRunningDeploy ? (
             <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
               <Rocket className="size-8 text-muted-foreground/50" />

@@ -227,7 +227,7 @@ function ProjectCard({
               <span aria-hidden="true" className={`size-1.5 rounded-full ${statusDotColor(a.status)}`} />
               {a.displayName}
               <span className="sr-only">
-                {a.status === "active" ? " — Running" : a.status === "error" ? " — Crashed" : a.status === "deploying" ? " — Deploying" : " — Stopped"}
+                {a.status === "active" ? ", Running" : a.status === "error" ? ", Crashed" : a.status === "deploying" ? ", Deploying" : ", Stopped"}
               </span>
             </Link>
         ))}
