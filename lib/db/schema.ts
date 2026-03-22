@@ -25,7 +25,7 @@ export const deployTypeEnum = pgEnum("deploy_type", [
   "nixpacks",
 ]);
 
-export const projectStatusEnum = pgEnum("project_status", [
+export const appStatusEnum = pgEnum("app_status", [
   "active",
   "stopped",
   "error",
@@ -63,6 +63,13 @@ export const cloneStrategyEnum = pgEnum("clone_strategy", [
 export const groupEnvironmentTypeEnum = pgEnum("group_environment_type", [
   "staging",
   "preview",
+]);
+
+export const transferStatusEnum = pgEnum("transfer_status", [
+  "pending",
+  "accepted",
+  "rejected",
+  "cancelled",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -173,7 +180,7 @@ export const memberships = pgTable("membership", {
 });
 
 // ---------------------------------------------------------------------------
-// Host: Organization Environment Variables (shared across projects)
+// Host: Organization Environment Variables (shared across apps)
 // ---------------------------------------------------------------------------
 
 export const orgEnvVars = pgTable(
@@ -191,6 +198,26 @@ export const orgEnvVars = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => [unique("org_env_var_org_key_uniq").on(t.organizationId, t.key)]
+);
+
+// ---------------------------------------------------------------------------
+// Host: Organization Domains (additive domain list)
+// ---------------------------------------------------------------------------
+
+export const orgDomains = pgTable(
+  "org_domain",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    domain: text("domain").notNull(),
+    isDefault: boolean("is_default").default(false),
+    enabled: boolean("enabled").default(true).notNull(),
+    verified: boolean("verified").default(false),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [unique("org_domain_uniq").on(t.organizationId, t.domain)]
 );
 
 // ---------------------------------------------------------------------------
@@ -232,11 +259,32 @@ export const githubAppInstallations = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// Host: Projects
+// Host: Projects (groups of related apps)
 // ---------------------------------------------------------------------------
 
 export const projects = pgTable(
   "project",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    displayName: text("display_name").notNull(),
+    description: text("description"),
+    color: text("color").default("#6366f1"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [unique("project_org_name_uniq").on(t.organizationId, t.name)]
+);
+
+// ---------------------------------------------------------------------------
+// Host: Apps (deployable Docker units)
+// ---------------------------------------------------------------------------
+
+export const apps = pgTable(
+  "app",
   {
     id: text("id").primaryKey(),
     organizationId: text("organization_id")
@@ -269,7 +317,7 @@ export const projects = pgTable(
     connectionInfo: jsonb("connection_info").$type<
       { label: string; value: string; copyRef?: string }[]
     >(),
-    groupId: text("group_id").references(() => groups.id, {
+    projectId: text("project_id").references(() => projects.id, {
       onDelete: "set null",
     }),
     cloneStrategy: cloneStrategyEnum("clone_strategy").default("clone"),
@@ -277,11 +325,13 @@ export const projects = pgTable(
     sortOrder: integer("sort_order").default(0),
     templateName: text("template_name"),
     templateVersion: text("template_version"),
-    status: projectStatusEnum("status").notNull().default("stopped"),
+    status: appStatusEnum("status").notNull().default("stopped"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
-  (t) => [unique("project_org_name_uniq").on(t.organizationId, t.name)]
+  (t) => [
+    unique("app_org_name_uniq").on(t.organizationId, t.name),
+  ]
 );
 
 // ---------------------------------------------------------------------------
@@ -290,9 +340,9 @@ export const projects = pgTable(
 
 export const deployments = pgTable("deployment", {
   id: text("id").primaryKey(),
-  projectId: text("project_id")
+  appId: text("app_id")
     .notNull()
-    .references(() => projects.id, { onDelete: "cascade" }),
+    .references(() => apps.id, { onDelete: "cascade" }),
   status: deploymentStatusEnum("status").notNull().default("queued"),
   trigger: deploymentTriggerEnum("trigger").notNull(),
   gitSha: text("git_sha"),
@@ -321,9 +371,9 @@ export const envVars = pgTable(
   "env_var",
   {
     id: text("id").primaryKey(),
-    projectId: text("project_id")
+    appId: text("app_id")
       .notNull()
-      .references(() => projects.id, { onDelete: "cascade" }),
+      .references(() => apps.id, { onDelete: "cascade" }),
     key: text("key").notNull(),
     value: text("value").notNull(), // AES-256-GCM encrypted
     environmentId: text("environment_id").references(() => environments.id, {
@@ -333,7 +383,7 @@ export const envVars = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
-  (t) => [unique("env_var_project_key_env_uniq").on(t.projectId, t.key, t.environmentId)]
+  (t) => [unique("env_var_app_key_env_uniq").on(t.appId, t.key, t.environmentId)]
 );
 
 // ---------------------------------------------------------------------------
@@ -342,9 +392,9 @@ export const envVars = pgTable(
 
 export const domains = pgTable("domain", {
   id: text("id").primaryKey(),
-  projectId: text("project_id")
+  appId: text("app_id")
     .notNull()
-    .references(() => projects.id, { onDelete: "cascade" }),
+    .references(() => apps.id, { onDelete: "cascade" }),
   domain: text("domain").notNull().unique(),
   serviceName: text("service_name"),
   port: integer("port"),
@@ -363,9 +413,9 @@ export const groupEnvironments = pgTable(
   "group_environment",
   {
     id: text("id").primaryKey(),
-    groupId: text("group_id")
+    projectId: text("project_id")
       .notNull()
-      .references(() => groups.id, { onDelete: "cascade" }),
+      .references(() => projects.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     type: groupEnvironmentTypeEnum("type").notNull().default("staging"),
     sourceEnvironment: text("source_environment").default("production"),
@@ -375,7 +425,7 @@ export const groupEnvironments = pgTable(
     expiresAt: timestamp("expires_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
-  (t) => [unique("group_env_group_name_uniq").on(t.groupId, t.name)]
+  (t) => [unique("group_env_project_name_uniq").on(t.projectId, t.name)]
 );
 
 // ---------------------------------------------------------------------------
@@ -386,12 +436,13 @@ export const environments = pgTable(
   "environment",
   {
     id: text("id").primaryKey(),
-    projectId: text("project_id")
+    appId: text("app_id")
       .notNull()
-      .references(() => projects.id, { onDelete: "cascade" }),
+      .references(() => apps.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     type: environmentTypeEnum("type").notNull().default("production"),
     domain: text("domain"),
+    gitBranch: text("git_branch"),
     isDefault: boolean("is_default").default(false),
     clonedFromId: text("cloned_from_id"),
     groupEnvironmentId: text("group_environment_id").references(
@@ -401,7 +452,7 @@ export const environments = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
-  (t) => [unique("env_project_name_uniq").on(t.projectId, t.name)]
+  (t) => [unique("env_app_name_uniq").on(t.appId, t.name)]
 );
 
 // ---------------------------------------------------------------------------
@@ -431,7 +482,7 @@ export const activities = pgTable("activity", {
   organizationId: text("organization_id")
     .notNull()
     .references(() => organizations.id, { onDelete: "cascade" }),
-  projectId: text("project_id").references(() => projects.id, {
+  appId: text("app_id").references(() => apps.id, {
     onDelete: "set null",
   }),
   userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
@@ -439,38 +490,6 @@ export const activities = pgTable("activity", {
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
-
-// ---------------------------------------------------------------------------
-// Host: Groups (nestable project containers)
-// ---------------------------------------------------------------------------
-
-export const groups = pgTable(
-  "group",
-  {
-    id: text("id").primaryKey(),
-    organizationId: text("organization_id")
-      .notNull()
-      .references(() => organizations.id, { onDelete: "cascade" }),
-    parentId: text("parent_id"),
-    name: text("name").notNull(),
-    color: text("color").notNull().default("#6366f1"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-  },
-  (t) => [unique("group_org_name_uniq").on(t.organizationId, t.name)]
-);
-
-export const projectGroups = pgTable(
-  "project_group",
-  {
-    projectId: text("project_id")
-      .notNull()
-      .references(() => projects.id, { onDelete: "cascade" }),
-    groupId: text("group_id")
-      .notNull()
-      .references(() => groups.id, { onDelete: "cascade" }),
-  },
-  (t) => [unique("project_group_uniq").on(t.projectId, t.groupId)]
-);
 
 // ---------------------------------------------------------------------------
 // Host: Tags (flat labels for filtering)
@@ -490,17 +509,17 @@ export const tags = pgTable(
   (t) => [unique("tag_org_name_uniq").on(t.organizationId, t.name)]
 );
 
-export const projectTags = pgTable(
-  "project_tag",
+export const appTags = pgTable(
+  "app_tag",
   {
-    projectId: text("project_id")
+    appId: text("app_id")
       .notNull()
-      .references(() => projects.id, { onDelete: "cascade" }),
+      .references(() => apps.id, { onDelete: "cascade" }),
     tagId: text("tag_id")
       .notNull()
       .references(() => tags.id, { onDelete: "cascade" }),
   },
-  (t) => [unique("project_tag_uniq").on(t.projectId, t.tagId)]
+  (t) => [unique("app_tag_uniq").on(t.appId, t.tagId)]
 );
 
 // ---------------------------------------------------------------------------
@@ -583,18 +602,18 @@ export const backupJobs = pgTable("backup_job", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-// Many-to-many: which projects are included in a backup job
-export const backupJobProjects = pgTable(
-  "backup_job_project",
+// Many-to-many: which apps are included in a backup job
+export const backupJobApps = pgTable(
+  "backup_job_app",
   {
     backupJobId: text("backup_job_id")
       .notNull()
       .references(() => backupJobs.id, { onDelete: "cascade" }),
-    projectId: text("project_id")
+    appId: text("app_id")
       .notNull()
-      .references(() => projects.id, { onDelete: "cascade" }),
+      .references(() => apps.id, { onDelete: "cascade" }),
   },
-  (t) => [unique("backup_job_project_uniq").on(t.backupJobId, t.projectId)]
+  (t) => [unique("backup_job_app_uniq").on(t.backupJobId, t.appId)]
 );
 
 // ---------------------------------------------------------------------------
@@ -606,9 +625,9 @@ export const backups = pgTable("backup", {
   jobId: text("job_id")
     .notNull()
     .references(() => backupJobs.id, { onDelete: "cascade" }),
-  projectId: text("project_id")
+  appId: text("app_id")
     .notNull()
-    .references(() => projects.id, { onDelete: "cascade" }),
+    .references(() => apps.id, { onDelete: "cascade" }),
   targetId: text("target_id")
     .notNull()
     .references(() => backupTargets.id, { onDelete: "cascade" }),
@@ -622,19 +641,35 @@ export const backups = pgTable("backup", {
 });
 
 // ---------------------------------------------------------------------------
-// Host: Volume Limits (per-project storage constraints)
+// Host: Volume Limits (per-app storage constraints)
 // ---------------------------------------------------------------------------
 
 export const volumeLimits = pgTable("volume_limit", {
   id: text("id").primaryKey(),
-  projectId: text("project_id")
+  appId: text("app_id")
     .notNull()
-    .references(() => projects.id, { onDelete: "cascade" })
+    .references(() => apps.id, { onDelete: "cascade" })
     .unique(),
   maxSizeBytes: bigint("max_size_bytes", { mode: "number" }).notNull(),
   warnAtPercent: integer("warn_at_percent").default(80),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// ---------------------------------------------------------------------------
+// Host: Domain Checks (health monitoring history)
+// ---------------------------------------------------------------------------
+
+export const domainChecks = pgTable("domain_check", {
+  id: text("id").primaryKey(),
+  domainId: text("domain_id")
+    .notNull()
+    .references(() => domains.id, { onDelete: "cascade" }),
+  reachable: boolean("reachable").notNull(),
+  statusCode: integer("status_code"),
+  responseTimeMs: integer("response_time_ms"),
+  error: text("error"),
+  checkedAt: timestamp("checked_at").defaultNow().notNull(),
 });
 
 // ---------------------------------------------------------------------------
@@ -680,6 +715,66 @@ export const templates = pgTable("template", {
 });
 
 // ---------------------------------------------------------------------------
+// Host: Cron Jobs (scheduled tasks)
+// ---------------------------------------------------------------------------
+
+export const cronJobTypeEnum = pgEnum("cron_job_type", [
+  "command",
+  "url",
+]);
+
+export const cronJobStatusEnum = pgEnum("cron_job_status", [
+  "success",
+  "failed",
+  "running",
+]);
+
+export const cronJobs = pgTable("cron_job", {
+  id: text("id").primaryKey(),
+  appId: text("app_id")
+    .notNull()
+    .references(() => apps.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  type: cronJobTypeEnum("type").notNull().default("command"),
+  schedule: text("schedule").notNull(), // cron expression
+  command: text("command").notNull(), // shell command or URL depending on type
+  enabled: boolean("enabled").default(true).notNull(),
+  lastRunAt: timestamp("last_run_at"),
+  lastStatus: cronJobStatusEnum("last_status"),
+  lastLog: text("last_log"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// ---------------------------------------------------------------------------
+// Host: App Transfers (move apps between organizations)
+// ---------------------------------------------------------------------------
+
+export const appTransfers = pgTable("app_transfer", {
+  id: text("id").primaryKey(),
+  appId: text("app_id")
+    .notNull()
+    .references(() => apps.id, { onDelete: "cascade" }),
+  sourceOrgId: text("source_org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  destinationOrgId: text("destination_org_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  status: transferStatusEnum("status").notNull().default("pending"),
+  initiatedBy: text("initiated_by")
+    .references(() => user.id, { onDelete: "set null" }),
+  respondedBy: text("responded_by")
+    .references(() => user.id, { onDelete: "set null" }),
+  frozenRefs: jsonb("frozen_refs").$type<
+    { key: string; originalRef: string; frozenValue: string }[]
+  >(),
+  note: text("note"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  respondedAt: timestamp("responded_at"),
+});
+
+// ---------------------------------------------------------------------------
 // Relations
 // ---------------------------------------------------------------------------
 
@@ -691,19 +786,24 @@ export const userRelations = relations(user, ({ many }) => ({
   apiTokens: many(apiTokens),
   activities: many(activities),
   githubAppInstallations: many(githubAppInstallations),
+  initiatedTransfers: many(appTransfers, { relationName: "initiatedByUser" }),
+  respondedTransfers: many(appTransfers, { relationName: "respondedByUser" }),
 }));
 
 export const organizationsRelations = relations(organizations, ({ many }) => ({
   memberships: many(memberships),
   projects: many(projects),
+  apps: many(apps),
   deployKeys: many(deployKeys),
   apiTokens: many(apiTokens),
   activities: many(activities),
-  groups: many(groups),
   tags: many(tags),
   backupTargets: many(backupTargets),
   backupJobs: many(backupJobs),
   orgEnvVars: many(orgEnvVars),
+  orgDomains: many(orgDomains),
+  outgoingTransfers: many(appTransfers, { relationName: "sourceOrg" }),
+  incomingTransfers: many(appTransfers, { relationName: "destinationOrg" }),
 }));
 
 export const membershipsRelations = relations(memberships, ({ one }) => ({
@@ -722,30 +822,40 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
     fields: [projects.organizationId],
     references: [organizations.id],
   }),
+  apps: many(apps),
+  groupEnvironments: many(groupEnvironments),
+}));
+
+export const appsRelations = relations(apps, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [apps.organizationId],
+    references: [organizations.id],
+  }),
   deployKey: one(deployKeys, {
-    fields: [projects.gitKeyId],
+    fields: [apps.gitKeyId],
     references: [deployKeys.id],
   }),
-  group: one(groups, {
-    fields: [projects.groupId],
-    references: [groups.id],
+  project: one(projects, {
+    fields: [apps.projectId],
+    references: [projects.id],
   }),
   deployments: many(deployments),
   envVars: many(envVars),
   domains: many(domains),
   environments: many(environments),
   activities: many(activities),
-  projectGroups: many(projectGroups),
-  projectTags: many(projectTags),
-  backupJobProjects: many(backupJobProjects),
+  appTags: many(appTags),
+  backupJobApps: many(backupJobApps),
   backups: many(backups),
   volumeLimit: many(volumeLimits),
+  cronJobs: many(cronJobs),
+  transfers: many(appTransfers),
 }));
 
 export const deploymentsRelations = relations(deployments, ({ one }) => ({
-  project: one(projects, {
-    fields: [deployments.projectId],
-    references: [projects.id],
+  app: one(apps, {
+    fields: [deployments.appId],
+    references: [apps.id],
   }),
   environment: one(environments, {
     fields: [deployments.environmentId],
@@ -762,9 +872,9 @@ export const deploymentsRelations = relations(deployments, ({ one }) => ({
 }));
 
 export const envVarsRelations = relations(envVars, ({ one }) => ({
-  project: one(projects, {
-    fields: [envVars.projectId],
-    references: [projects.id],
+  app: one(apps, {
+    fields: [envVars.appId],
+    references: [apps.id],
   }),
   environment: one(environments, {
     fields: [envVars.environmentId],
@@ -772,19 +882,27 @@ export const envVarsRelations = relations(envVars, ({ one }) => ({
   }),
 }));
 
-export const domainsRelations = relations(domains, ({ one }) => ({
-  project: one(projects, {
-    fields: [domains.projectId],
-    references: [projects.id],
+export const domainsRelations = relations(domains, ({ one, many }) => ({
+  app: one(apps, {
+    fields: [domains.appId],
+    references: [apps.id],
+  }),
+  domainChecks: many(domainChecks),
+}));
+
+export const domainChecksRelations = relations(domainChecks, ({ one }) => ({
+  domain: one(domains, {
+    fields: [domainChecks.domainId],
+    references: [domains.id],
   }),
 }));
 
 export const environmentsRelations = relations(
   environments,
   ({ one, many }) => ({
-    project: one(projects, {
-      fields: [environments.projectId],
-      references: [projects.id],
+    app: one(apps, {
+      fields: [environments.appId],
+      references: [apps.id],
     }),
     groupEnvironment: one(groupEnvironments, {
       fields: [environments.groupEnvironmentId],
@@ -828,9 +946,9 @@ export const activitiesRelations = relations(activities, ({ one }) => ({
     fields: [activities.organizationId],
     references: [organizations.id],
   }),
-  project: one(projects, {
-    fields: [activities.projectId],
-    references: [projects.id],
+  app: one(apps, {
+    fields: [activities.appId],
+    references: [apps.id],
   }),
   user: one(user, {
     fields: [activities.userId],
@@ -838,26 +956,12 @@ export const activitiesRelations = relations(activities, ({ one }) => ({
   }),
 }));
 
-export const groupsRelations = relations(groups, ({ one, many }) => ({
-  organization: one(organizations, {
-    fields: [groups.organizationId],
-    references: [organizations.id],
-  }),
-  parent: one(groups, {
-    fields: [groups.parentId],
-    references: [groups.id],
-  }),
-  projects: many(projects),
-  projectGroups: many(projectGroups),
-  groupEnvironments: many(groupEnvironments),
-}));
-
 export const groupEnvironmentsRelations = relations(
   groupEnvironments,
   ({ one, many }) => ({
-    group: one(groups, {
-      fields: [groupEnvironments.groupId],
-      references: [groups.id],
+    project: one(projects, {
+      fields: [groupEnvironments.projectId],
+      references: [projects.id],
     }),
     createdByUser: one(user, {
       fields: [groupEnvironments.createdBy],
@@ -868,32 +972,21 @@ export const groupEnvironmentsRelations = relations(
   })
 );
 
-export const projectGroupsRelations = relations(projectGroups, ({ one }) => ({
-  project: one(projects, {
-    fields: [projectGroups.projectId],
-    references: [projects.id],
-  }),
-  group: one(groups, {
-    fields: [projectGroups.groupId],
-    references: [groups.id],
-  }),
-}));
-
 export const tagsRelations = relations(tags, ({ one, many }) => ({
   organization: one(organizations, {
     fields: [tags.organizationId],
     references: [organizations.id],
   }),
-  projectTags: many(projectTags),
+  appTags: many(appTags),
 }));
 
-export const projectTagsRelations = relations(projectTags, ({ one }) => ({
-  project: one(projects, {
-    fields: [projectTags.projectId],
-    references: [projects.id],
+export const appTagsRelations = relations(appTags, ({ one }) => ({
+  app: one(apps, {
+    fields: [appTags.appId],
+    references: [apps.id],
   }),
   tag: one(tags, {
-    fields: [projectTags.tagId],
+    fields: [appTags.tagId],
     references: [tags.id],
   }),
 }));
@@ -919,20 +1012,20 @@ export const backupJobsRelations = relations(backupJobs, ({ one, many }) => ({
     fields: [backupJobs.targetId],
     references: [backupTargets.id],
   }),
-  backupJobProjects: many(backupJobProjects),
+  backupJobApps: many(backupJobApps),
   backups: many(backups),
 }));
 
-export const backupJobProjectsRelations = relations(
-  backupJobProjects,
+export const backupJobAppsRelations = relations(
+  backupJobApps,
   ({ one }) => ({
     backupJob: one(backupJobs, {
-      fields: [backupJobProjects.backupJobId],
+      fields: [backupJobApps.backupJobId],
       references: [backupJobs.id],
     }),
-    project: one(projects, {
-      fields: [backupJobProjects.projectId],
-      references: [projects.id],
+    app: one(apps, {
+      fields: [backupJobApps.appId],
+      references: [apps.id],
     }),
   })
 );
@@ -942,9 +1035,9 @@ export const backupsRelations = relations(backups, ({ one }) => ({
     fields: [backups.jobId],
     references: [backupJobs.id],
   }),
-  project: one(projects, {
-    fields: [backups.projectId],
-    references: [projects.id],
+  app: one(apps, {
+    fields: [backups.appId],
+    references: [apps.id],
   }),
   target: one(backupTargets, {
     fields: [backups.targetId],
@@ -953,9 +1046,16 @@ export const backupsRelations = relations(backups, ({ one }) => ({
 }));
 
 export const volumeLimitsRelations = relations(volumeLimits, ({ one }) => ({
-  project: one(projects, {
-    fields: [volumeLimits.projectId],
-    references: [projects.id],
+  app: one(apps, {
+    fields: [volumeLimits.appId],
+    references: [apps.id],
+  }),
+}));
+
+export const cronJobsRelations = relations(cronJobs, ({ one }) => ({
+  app: one(apps, {
+    fields: [cronJobs.appId],
+    references: [apps.id],
   }),
 }));
 
@@ -965,3 +1065,40 @@ export const orgEnvVarsRelations = relations(orgEnvVars, ({ one }) => ({
     references: [organizations.id],
   }),
 }));
+
+export const orgDomainsRelations = relations(orgDomains, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [orgDomains.organizationId],
+    references: [organizations.id],
+  }),
+}));
+
+export const appTransfersRelations = relations(
+  appTransfers,
+  ({ one }) => ({
+    app: one(apps, {
+      fields: [appTransfers.appId],
+      references: [apps.id],
+    }),
+    sourceOrg: one(organizations, {
+      fields: [appTransfers.sourceOrgId],
+      references: [organizations.id],
+      relationName: "sourceOrg",
+    }),
+    destinationOrg: one(organizations, {
+      fields: [appTransfers.destinationOrgId],
+      references: [organizations.id],
+      relationName: "destinationOrg",
+    }),
+    initiatedByUser: one(user, {
+      fields: [appTransfers.initiatedBy],
+      references: [user.id],
+      relationName: "initiatedByUser",
+    }),
+    respondedByUser: one(user, {
+      fields: [appTransfers.respondedBy],
+      references: [user.id],
+      relationName: "respondedByUser",
+    }),
+  })
+);

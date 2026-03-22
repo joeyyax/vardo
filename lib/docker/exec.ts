@@ -106,7 +106,7 @@ export async function startExec(execId: string): Promise<net.Socket> {
   return new Promise<net.Socket>((resolve, reject) => {
     const socket = conn.socketPath
       ? net.connect({ path: conn.socketPath })
-      : net.connect({ host: conn.host, port: conn.port });
+      : net.connect({ host: conn.host!, port: conn.port! });
 
     let resolved = false;
     let headerBuf = Buffer.alloc(0);

@@ -13,6 +13,7 @@ defaultPort = 2368
 key = "url"
 description = "Public URL of your Ghost site"
 required = true
+defaultValue = "${project.url}"
 
 [[envVars]]
 key = "database__client"

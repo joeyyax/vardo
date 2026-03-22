@@ -1,7 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { LogOut, User, Users, ChevronsUpDown, Loader2, Settings, Shield, Building2, Check, Plus } from "lucide-react";
+import { useTheme } from "next-themes";
+import { LogOut, User, Users, ChevronsUpDown, Loader2, Settings, Shield, Building2, Check, Plus, Sun, Moon, Monitor } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -25,6 +26,7 @@ type UserMenuProps = {
 
 export function UserMenu({ collapsed, compact, currentOrgId, organizations }: UserMenuProps) {
   const router = useRouter();
+  const { theme, setTheme } = useTheme();
   const { data: session, isPending } = useSession();
 
   const currentOrg = organizations?.find((o) => o.id === currentOrgId) || organizations?.[0];
@@ -153,6 +155,32 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations }: Us
           New organization
         </DropdownMenuItem>
 
+        <DropdownMenuSeparator />
+        <div className="px-2 py-1.5">
+          <div className="inline-flex items-center gap-0.5 rounded-md bg-muted p-0.5 w-full">
+            {([
+              { value: "light", icon: Sun, label: "Light" },
+              { value: "dark", icon: Moon, label: "Dark" },
+              { value: "system", icon: Monitor, label: "Auto" },
+            ] as const).map(({ value, icon: Icon, label }) => (
+              <button
+                key={value}
+                onClick={(e) => {
+                  e.preventDefault();
+                  setTheme(value);
+                }}
+                className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded px-2 py-1 text-xs font-medium transition-colors ${
+                  theme === value
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Icon className="size-3" />
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
         <DropdownMenuSeparator />
         <DropdownMenuItem
           className="gap-2 cursor-pointer"

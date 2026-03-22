@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import {
   backupJobs,
-  backupJobProjects,
+  backupJobApps,
   backupTargets,
   backups,
 } from "@/lib/db/schema";
@@ -18,7 +19,7 @@ type RouteParams = {
 const createJobSchema = z.object({
   name: z.string().min(1, "Name is required"),
   targetId: z.string().min(1, "Target is required"),
-  projectIds: z.array(z.string()).min(1, "At least one project is required"),
+  appIds: z.array(z.string()).min(1, "At least one app is required"),
   schedule: z.string().default("0 2 * * *"),
   enabled: z.boolean().default(true),
   keepLast: z.number().int().positive().nullable().optional(),
@@ -45,9 +46,9 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         target: {
           columns: { id: true, name: true, type: true },
         },
-        backupJobProjects: {
+        backupJobApps: {
           with: {
-            project: {
+            app: {
               columns: { id: true, name: true, displayName: true },
             },
           },
@@ -77,7 +78,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
             limit: 20,
             with: {
               job: { columns: { id: true, name: true } },
-              project: {
+              app: {
                 columns: { id: true, name: true, displayName: true },
               },
             },
@@ -86,14 +87,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ jobs, recentHistory });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error fetching backup jobs:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error fetching backup jobs");
   }
 }
 
@@ -157,25 +151,18 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       })
       .returning();
 
-    // Create project associations
-    if (data.projectIds.length > 0) {
-      await db.insert(backupJobProjects).values(
-        data.projectIds.map((projectId) => ({
+    // Create app associations
+    if (data.appIds.length > 0) {
+      await db.insert(backupJobApps).values(
+        data.appIds.map((appId) => ({
           backupJobId: jobId,
-          projectId,
+          appId,
         }))
       );
     }
 
     return NextResponse.json({ job }, { status: 201 });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error creating backup job:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error creating backup job");
   }
 }

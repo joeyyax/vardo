@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { githubAppInstallations } from "@/lib/db/schema";
 import { requireSession } from "@/lib/auth/session";
@@ -16,14 +17,7 @@ export async function GET() {
 
     return NextResponse.json({ installations });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error fetching GitHub installations:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error fetching GitHub installations");
   }
 }
 
@@ -72,13 +66,6 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error deleting GitHub installation:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error deleting GitHub installation");
   }
 }

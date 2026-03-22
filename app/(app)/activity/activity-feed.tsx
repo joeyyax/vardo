@@ -13,7 +13,7 @@ type ActivityUser = {
   image: string | null;
 };
 
-type ActivityProject = {
+type ActivityApp = {
   id: string;
   name: string;
   displayName: string;
@@ -25,7 +25,7 @@ type Activity = {
   metadata: unknown;
   createdAt: Date | string;
   user: ActivityUser | null;
-  project: ActivityProject | null;
+  app: ActivityApp | null;
 };
 
 type ActivityFeedProps = {
@@ -96,15 +96,15 @@ function ActionDescription({
 }: {
   activity: Activity;
 }) {
-  const { action, project } = activity;
+  const { action, app } = activity;
   const metadata = meta(activity.metadata);
 
-  const projectLink = project ? (
+  const appLink = app ? (
     <Link
-      href={`/projects/${project.name}`}
+      href={`/apps/${app.name}`}
       className="font-semibold hover:underline"
     >
-      {project.displayName}
+      {app.displayName}
     </Link>
   ) : null;
 
@@ -112,7 +112,7 @@ function ActionDescription({
     case "project.created":
       return (
         <span>
-          created {projectLink ?? <span className="font-semibold">{(metadata?.displayName as string) || (metadata?.name as string) || "a project"}</span>}
+          created {appLink ?? <span className="font-semibold">{(metadata?.displayName as string) || (metadata?.name as string) || "an app"}</span>}
         </span>
       );
 
@@ -120,7 +120,7 @@ function ActionDescription({
       const changes = metadata?.changes as string[] | undefined;
       return (
         <span>
-          updated {projectLink ?? "a project"}
+          updated {appLink ?? "an app"}
           {changes && changes.length > 0 && (
             <span className="text-muted-foreground">
               {" "}({changes.join(", ")})
@@ -131,7 +131,7 @@ function ActionDescription({
     }
 
     case "project.deleted": {
-      const name = (metadata?.name as string) || "a project";
+      const name = (metadata?.name as string) || "an app";
       return (
         <span>
           deleted project <span className="font-semibold">{name}</span>
@@ -142,7 +142,7 @@ function ActionDescription({
     case "deployment.started":
       return (
         <span>
-          started deploy of {projectLink ?? "a project"}
+          started deploy of {appLink ?? "an app"}
         </span>
       );
 
@@ -150,7 +150,7 @@ function ActionDescription({
       const durationMs = metadata?.durationMs as number | undefined;
       return (
         <span>
-          deployed {projectLink ?? "a project"} successfully
+          deployed {appLink ?? "an app"} successfully
           {durationMs && (
             <span className="text-muted-foreground">
               {" "}in {formatDuration(durationMs)}
@@ -163,7 +163,7 @@ function ActionDescription({
     case "deployment.failed":
       return (
         <span>
-          deploy of {projectLink ?? "a project"} failed
+          deploy of {appLink ?? "an app"} failed
         </span>
       );
 
@@ -171,7 +171,7 @@ function ActionDescription({
       return (
         <span>
           {action}
-          {projectLink && <> on {projectLink}</>}
+          {appLink && <> on {appLink}</>}
         </span>
       );
   }

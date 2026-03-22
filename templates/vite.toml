@@ -1,9 +1,0 @@
-version = "1"
-name = "vite"
-displayName = "Vite / React"
-description = "Fast frontend build tool — deploy from a repo"
-icon = "https://cdn.simpleicons.org/vite"
-category = "web"
-source = "git"
-deployType = "nixpacks"
-defaultPort = 3000

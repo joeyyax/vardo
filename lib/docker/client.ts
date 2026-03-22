@@ -197,10 +197,13 @@ function parseInspectPorts(
 // Containers
 // ---------------------------------------------------------------------------
 
-export async function listContainers(projectLabel?: string): Promise<ContainerInfo[]> {
+export async function listContainers(projectLabel?: string, environmentLabel?: string): Promise<ContainerInfo[]> {
   const filters: Record<string, string[]> = {};
   if (projectLabel) {
     filters.label = [`host.project=${projectLabel}`];
+    if (environmentLabel) {
+      filters.label.push(`host.environment=${environmentLabel}`);
+    }
   }
 
   const query = Object.keys(filters).length
@@ -502,6 +505,88 @@ export async function getSystemDiskUsage(): Promise<DiskUsage> {
     buildCache,
     total: images.totalSize + containers.totalSize + volumes.totalSize + buildCache.totalSize,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Per-Project Disk Usage
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute disk usage broken down by project.
+ * Uses container labels to map containers and volumes to project names.
+ * Returns a Map from project name to total bytes used (containers + volumes).
+ */
+export async function getPerProjectDiskUsage(): Promise<Map<string, number>> {
+  const raw = await dockerRequest<{
+    Images: { Id: string; Size: number; SharedSize: number }[];
+    Containers: { Id: string; ImageID: string; SizeRw: number; SizeRootFs: number; Labels: Record<string, string> }[];
+    Volumes: { Name: string; UsageData: { Size: number; RefCount: number }; Labels: Record<string, string> }[];
+    BuildCache: { ID: string; Size: number; InUse: boolean }[];
+  }>("GET", "/system/df");
+
+  const byProject = new Map<string, number>();
+
+  // Build image size lookup
+  const imageSize = new Map<string, number>();
+  for (const img of raw.Images || []) {
+    imageSize.set(img.Id, img.Size || 0);
+  }
+
+  // Track which images have been attributed to which project (avoid double-counting)
+  const imageAttributed = new Map<string, Set<string>>();
+
+  // Containers: writable layer + image size (deduplicated per project)
+  for (const c of raw.Containers || []) {
+    const project = c.Labels?.["host.project"];
+    if (!project) continue;
+
+    // Container writable layer
+    byProject.set(project, (byProject.get(project) || 0) + (c.SizeRw || 0));
+
+    // Image size (only count once per project)
+    if (c.ImageID) {
+      if (!imageAttributed.has(project)) imageAttributed.set(project, new Set());
+      if (!imageAttributed.get(project)!.has(c.ImageID)) {
+        imageAttributed.get(project)!.add(c.ImageID);
+        const imgSize = imageSize.get(c.ImageID) || 0;
+        if (imgSize > 0) {
+          byProject.set(project, (byProject.get(project) || 0) + imgSize);
+        }
+      }
+    }
+  }
+
+  // Build a map from compose project name -> host project name using container labels
+  const composeToProject = new Map<string, string>();
+  for (const c of raw.Containers || []) {
+    const hostProject = c.Labels?.["host.project"];
+    const composeProject = c.Labels?.["com.docker.compose.project"];
+    if (hostProject && composeProject) {
+      composeToProject.set(composeProject, hostProject);
+    }
+  }
+
+  // Volumes: match by compose project label, then fall back to name prefix
+  for (const v of raw.Volumes || []) {
+    const size = v.UsageData?.Size || 0;
+    if (size <= 0) continue;
+
+    const composeProject = v.Labels?.["com.docker.compose.project"];
+    if (composeProject && composeToProject.has(composeProject)) {
+      const project = composeToProject.get(composeProject)!;
+      byProject.set(project, (byProject.get(project) || 0) + size);
+      continue;
+    }
+
+    for (const projectName of new Set(composeToProject.values())) {
+      if (v.Name.startsWith(`${projectName}-`) || v.Name.startsWith(`${projectName}_`)) {
+        byProject.set(projectName, (byProject.get(projectName) || 0) + size);
+        break;
+      }
+    }
+  }
+
+  return byProject;
 }
 
 // ---------------------------------------------------------------------------

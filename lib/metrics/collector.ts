@@ -1,6 +1,6 @@
 import { fetchAllContainerMetrics } from "./cadvisor";
-import { storeMetrics, storeDiskUsage } from "./store";
-import { getSystemDiskUsage } from "@/lib/docker/client";
+import { storeMetrics, storeDiskUsage, storeProjectDisk } from "./store";
+import { getSystemDiskUsage, getPerProjectDiskUsage } from "@/lib/docker/client";
 
 let interval: ReturnType<typeof setInterval> | null = null;
 let started = false;
@@ -54,6 +54,19 @@ export function startCollector(intervalMs = 30000) {
         });
       } catch (err) {
         console.error("[collector] Disk error:", (err as Error).message);
+      }
+
+      // Per-project disk usage
+      try {
+        const perProject = await getPerProjectDiskUsage();
+        const ts = Date.now();
+        await Promise.allSettled(
+          Array.from(perProject.entries()).map(([name, size]) =>
+            storeProjectDisk(name, ts, size)
+          )
+        );
+      } catch (err) {
+        console.error("[collector] Per-project disk error:", (err as Error).message);
       }
     }
     diskTickCounter++;

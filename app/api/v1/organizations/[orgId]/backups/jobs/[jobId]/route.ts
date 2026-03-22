@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { backupJobs, backupJobProjects } from "@/lib/db/schema";
+import { backupJobs, backupJobApps } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
@@ -14,7 +15,7 @@ const updateJobSchema = z.object({
   schedule: z.string().optional(),
   enabled: z.boolean().optional(),
   targetId: z.string().optional(),
-  projectIds: z.array(z.string()).optional(),
+  appIds: z.array(z.string()).optional(),
   keepLast: z.number().int().positive().nullable().optional(),
   keepDaily: z.number().int().positive().nullable().optional(),
   keepWeekly: z.number().int().positive().nullable().optional(),
@@ -40,9 +41,9 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       ),
       with: {
         target: true,
-        backupJobProjects: {
+        backupJobApps: {
           with: {
-            project: {
+            app: {
               columns: { id: true, name: true, displayName: true },
             },
           },
@@ -60,14 +61,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ job });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error fetching backup job:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error fetching backup job");
   }
 }
 
@@ -91,7 +85,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const { projectIds, ...updateData } = parsed.data;
+    const { appIds, ...updateData } = parsed.data;
 
     const [updated] = await db
       .update(backupJobs)
@@ -105,19 +99,19 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    // Update project associations if provided
-    if (projectIds) {
+    // Update app associations if provided
+    if (appIds) {
       // Remove existing
       await db
-        .delete(backupJobProjects)
-        .where(eq(backupJobProjects.backupJobId, jobId));
+        .delete(backupJobApps)
+        .where(eq(backupJobApps.backupJobId, jobId));
 
       // Insert new
-      if (projectIds.length > 0) {
-        await db.insert(backupJobProjects).values(
-          projectIds.map((projectId) => ({
+      if (appIds.length > 0) {
+        await db.insert(backupJobApps).values(
+          appIds.map((appId) => ({
             backupJobId: jobId,
-            projectId,
+            appId,
           }))
         );
       }
@@ -125,14 +119,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ job: updated });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error updating backup job:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error updating backup job");
   }
 }
 
@@ -172,13 +159,6 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error deleting backup job:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error deleting backup job");
   }
 }

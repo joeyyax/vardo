@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { user } from "@/lib/db/schema";
 import { requireSession } from "@/lib/auth/session";
@@ -29,9 +30,6 @@ export async function POST(_request: NextRequest) {
 
     return NextResponse.json({ success: true, spaceReclaimed });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return handleRouteError(error);
   }
 }

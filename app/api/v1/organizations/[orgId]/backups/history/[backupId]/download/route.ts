@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { backups } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
@@ -25,13 +26,13 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const backup = await db.query.backups.findFirst({
       where: eq(backups.id, backupId),
       with: {
-        project: {
+        app: {
           columns: { id: true, name: true, organizationId: true },
         },
       },
     });
 
-    if (!backup || backup.project.organizationId !== orgId) {
+    if (!backup || backup.app.organizationId !== orgId) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
@@ -50,7 +51,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     // SSH targets: download to temp and stream through server
     const tempPath = await downloadBackupToTemp(backupId);
-    const fileName = `${backup.project.name}-${backup.volumeName ?? "backup"}-${backup.startedAt.toISOString().slice(0, 10)}.tar.gz`;
+    const fileName = `${backup.app.name}-${backup.volumeName ?? "backup"}-${backup.startedAt.toISOString().slice(0, 10)}.tar.gz`;
 
     try {
       const stream = createReadStream(tempPath);
@@ -83,13 +84,6 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       throw new Error("Failed to stream backup file");
     }
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error generating backup download:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
-    );
+    return handleRouteError(error, "Error generating backup download");
   }
 }

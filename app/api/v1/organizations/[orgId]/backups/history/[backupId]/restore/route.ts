@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { backups } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
@@ -23,13 +24,13 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     const backup = await db.query.backups.findFirst({
       where: eq(backups.id, backupId),
       with: {
-        project: {
+        app: {
           columns: { id: true, organizationId: true },
         },
       },
     });
 
-    if (!backup || backup.project.organizationId !== orgId) {
+    if (!backup || backup.app.organizationId !== orgId) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
@@ -44,13 +45,6 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json(result);
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error restoring backup:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
-    );
+    return handleRouteError(error, "Error restoring backup");
   }
 }

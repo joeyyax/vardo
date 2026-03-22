@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { backupTargets } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
@@ -80,14 +81,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ targets: enriched });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error fetching backup targets:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error fetching backup targets");
   }
 }
 
@@ -127,13 +121,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ target }, { status: 201 });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    console.error("Error creating backup target:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return handleRouteError(error, "Error creating backup target");
   }
 }
