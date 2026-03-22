@@ -74,7 +74,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
       for (const inst of installations) {
         try {
-          const octokit = getInstallationOctokit(inst.installationId);
+          const octokit = await getInstallationOctokit(inst.installationId);
           const { data } = await octokit.rest.repos.listBranches({
             owner,
             repo,
