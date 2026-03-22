@@ -58,7 +58,7 @@ If you prefer not to use the install script:
 
 ```bash
 # Clone the repository
-git clone --depth 1 https://github.com/joeyyax/host.git /opt/host
+git clone --depth 1 https://github.com/joeyyax/vardo.git /opt/host
 cd /opt/host
 
 # Copy and edit the environment file

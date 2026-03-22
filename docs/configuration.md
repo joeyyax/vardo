@@ -17,7 +17,7 @@ Host uses two environment files:
 | `NEXT_PUBLIC_BETTER_AUTH_URL` | Public URL of the Host instance | `http://localhost:3000` |
 | `NEXT_PUBLIC_APP_URL` | Public URL of the Host instance (used by the frontend) | `http://localhost:3000` |
 
-### Host PaaS Variables
+### Vardo Variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
@@ -213,7 +213,7 @@ mountPath = "/var/lib/postgresql/data"
 description = "PostgreSQL data files"
 
 [[connectionInfo]]
-label = "Host"
+label = "Vardo"
 value = "${project.name}"
 copyRef = "HOST"
 
@@ -262,7 +262,7 @@ value = "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${project.name}:5432
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `label` | string | Display label (e.g. "Host", "Port", "Connection URL") |
+| `label` | string | Display label (e.g. "Vardo", "Port", "Connection URL") |
 | `value` | string | Value, supports `${...}` template expressions |
 | `copyRef` | string | Optional env var name for the copy button |
 
