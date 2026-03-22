@@ -210,3 +210,52 @@ export async function getOptionalServicesConfig(): Promise<OptionalServicesConfi
     return { metrics: false, logs: false };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Feature flags (DB-stored overrides)
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns feature flag overrides stored in the database, or null if none
+ * have been configured. Keys are FeatureFlag names, values are booleans.
+ */
+export async function getFeatureFlagsConfig(): Promise<Record<string, boolean> | null> {
+  const raw = await getSystemSettingRaw("feature_flags");
+  if (!raw) return null;
+
+  try {
+    return JSON.parse(raw) as Record<string, boolean>;
+  } catch {
+    console.error("[system-settings] Failed to parse feature_flags config");
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Authentication config
+// ---------------------------------------------------------------------------
+
+export type AuthConfig = {
+  registrationMode: "closed" | "open" | "approval";
+  sessionDurationDays: number;
+};
+
+/**
+ * Returns the authentication configuration. Falls back to sensible defaults
+ * (closed registration, 7-day sessions) if not configured.
+ */
+export async function getAuthConfig(): Promise<AuthConfig> {
+  const raw = await getSystemSettingRaw("auth_config");
+  if (!raw) return { registrationMode: "closed", sessionDurationDays: 7 };
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<AuthConfig>;
+    return {
+      registrationMode: parsed.registrationMode ?? "closed",
+      sessionDurationDays: parsed.sessionDurationDays ?? 7,
+    };
+  } catch {
+    console.error("[system-settings] Failed to parse auth_config");
+    return { registrationMode: "closed", sessionDurationDays: 7 };
+  }
+}

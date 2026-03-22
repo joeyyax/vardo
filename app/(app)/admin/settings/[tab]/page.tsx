@@ -1,19 +1,21 @@
 import { notFound } from "next/navigation";
 import { GeneralSettings } from "../general-settings";
 import { EmailSettings } from "../email-settings";
+import { FeatureFlagsSettings } from "../feature-flags-settings";
 import { BackupSettings } from "../backup-settings";
 import { GitHubSettings } from "../github-settings";
 import { ServicesSettings } from "../services-settings";
 
-const VALID_TABS = ["general", "email", "backup", "github", "services"] as const;
+const VALID_TABS = ["general", "email", "feature-flags", "backup", "github", "services"] as const;
 type ValidTab = (typeof VALID_TABS)[number];
 
 const TAB_COMPONENTS: Record<ValidTab, React.ComponentType> = {
-  general: GeneralSettings,
-  email: EmailSettings,
-  backup: BackupSettings,
-  github: GitHubSettings,
-  services: ServicesSettings,
+  "general": GeneralSettings,
+  "email": EmailSettings,
+  "feature-flags": FeatureFlagsSettings,
+  "backup": BackupSettings,
+  "github": GitHubSettings,
+  "services": ServicesSettings,
 };
 
 export default async function AdminSettingsTabPage({
