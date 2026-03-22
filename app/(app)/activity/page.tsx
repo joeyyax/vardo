@@ -10,7 +10,7 @@ export default async function ActivityPage() {
   const orgData = await getCurrentOrg();
   if (!orgData) redirect("/login");
 
-  const orgId = orgData.organization.id;
+  const orgId = (orgData.organization as { id: string }).id;
 
   const recentActivities = await db.query.activities.findMany({
     where: eq(activities.organizationId, orgId),

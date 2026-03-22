@@ -72,7 +72,7 @@ type GroupEnvironment = {
 
 type Deployment = {
   id: string;
-  status: "queued" | "running" | "success" | "failed" | "cancelled";
+  status: "queued" | "running" | "success" | "failed" | "cancelled" | "rolled_back";
   trigger: "manual" | "webhook" | "api" | "rollback";
   gitSha: string | null;
   gitMessage: string | null;
