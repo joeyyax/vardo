@@ -40,8 +40,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-    ports:
-      - "3000:3000"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - host_projects:/var/lib/host/projects
@@ -51,9 +49,10 @@ services:
       - "traefik.http.routers.host-secure.rule=Host(`${HOST_DOMAIN}`)"
       - "traefik.http.routers.host-secure.entrypoints=websecure"
       - "traefik.http.routers.host-secure.tls.certresolver=le"
-      # HTTP catch-all (works with IP, no DNS required)
-      - "traefik.http.routers.host-http.rule=HostRegexp(`.+`) || PathPrefix(`/`)"
+      # HTTP catch-all (lowest priority — works with IP, no DNS required)
+      - "traefik.http.routers.host-http.rule=PathPrefix(`/`)"
       - "traefik.http.routers.host-http.entrypoints=web"
+      - "traefik.http.routers.host-http.priority=1"
       - "traefik.http.services.host.loadbalancer.server.port=3000"
     networks:
       - internal

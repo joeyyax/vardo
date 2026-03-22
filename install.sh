@@ -284,74 +284,10 @@ if [ ! -f "$ENV_FILE" ]; then
     fi
   fi
 
-  # ── Optional services ─────────────────────────────────────────────────────
-  echo ""
-  log "Optional services (can be changed later in .env.prod)"
-
+  # Optional services and backup storage are configured via the setup wizard
   COMPOSE_PROFILES=""
-  FEATURE_METRICS="true"
-  FEATURE_LOGS="true"
-
-  read -p "  Enable container metrics? (requires cAdvisor) [Y/n] " ENABLE_METRICS < /dev/tty
-  if [ "$ENABLE_METRICS" = "n" ] || [ "$ENABLE_METRICS" = "N" ]; then
-    FEATURE_METRICS="false"
-  else
-    COMPOSE_PROFILES="metrics"
-  fi
-
-  read -p "  Enable persistent logs? (requires Loki + Promtail) [Y/n] " ENABLE_LOGS < /dev/tty
-  if [ "$ENABLE_LOGS" = "n" ] || [ "$ENABLE_LOGS" = "N" ]; then
-    FEATURE_LOGS="false"
-  else
-    if [ -n "$COMPOSE_PROFILES" ]; then
-      COMPOSE_PROFILES="$COMPOSE_PROFILES,logs"
-    else
-      COMPOSE_PROFILES="logs"
-    fi
-  fi
-
-  # ── Backup storage ──────────────────────────────────────────────────────
-  echo ""
-  BACKUP_STORAGE_TYPE=""
-  BACKUP_STORAGE_BUCKET=""
-  BACKUP_STORAGE_REGION=""
-  BACKUP_STORAGE_ENDPOINT=""
-  BACKUP_STORAGE_ACCESS_KEY=""
-  BACKUP_STORAGE_SECRET_KEY=""
-
-  read -p "  Configure backup storage? (recommended) [Y/n] " ENABLE_BACKUPS < /dev/tty
-  if [ "$ENABLE_BACKUPS" != "n" ] && [ "$ENABLE_BACKUPS" != "N" ]; then
-    echo ""
-    echo -e "  ${BOLD}Backup storage type:${RESET}"
-    echo "    1) S3 (AWS S3 or compatible)"
-    echo "    2) R2 (Cloudflare R2)"
-    echo "    3) B2 (Backblaze B2)"
-    read -p "  Choose [1-3]: " BACKUP_TYPE_CHOICE < /dev/tty
-    case "$BACKUP_TYPE_CHOICE" in
-      1) BACKUP_STORAGE_TYPE="s3" ;;
-      2) BACKUP_STORAGE_TYPE="r2" ;;
-      3) BACKUP_STORAGE_TYPE="b2" ;;
-      *) BACKUP_STORAGE_TYPE="s3" ;;
-    esac
-
-    read -p "  Bucket name: " BACKUP_STORAGE_BUCKET < /dev/tty
-    if [ "$BACKUP_STORAGE_TYPE" = "r2" ]; then
-      read -p "  R2 endpoint (e.g. https://<account-id>.r2.cloudflarestorage.com): " BACKUP_STORAGE_ENDPOINT < /dev/tty
-      BACKUP_STORAGE_REGION="auto"
-    elif [ "$BACKUP_STORAGE_TYPE" = "b2" ]; then
-      read -p "  B2 endpoint (e.g. https://s3.us-west-004.backblazeb2.com): " BACKUP_STORAGE_ENDPOINT < /dev/tty
-      read -p "  B2 region (e.g. us-west-004): " BACKUP_STORAGE_REGION < /dev/tty
-    else
-      read -p "  Region (e.g. us-east-1): " BACKUP_STORAGE_REGION < /dev/tty
-      read -p "  Custom endpoint (leave blank for AWS): " BACKUP_STORAGE_ENDPOINT < /dev/tty
-    fi
-    read -p "  Access key: " BACKUP_STORAGE_ACCESS_KEY < /dev/tty
-    read -sp "  Secret key: " BACKUP_STORAGE_SECRET_KEY < /dev/tty
-    echo ""
-    log "Backup storage configured (${BACKUP_STORAGE_TYPE}://${BACKUP_STORAGE_BUCKET})"
-  else
-    warn "You can configure backup storage later in settings"
-  fi
+  FEATURE_METRICS="false"
+  FEATURE_LOGS="false"
 
   echo ""
 
@@ -383,15 +319,7 @@ COMPOSE_PROFILES=$COMPOSE_PROFILES
 FEATURE_METRICS=$FEATURE_METRICS
 FEATURE_LOGS=$FEATURE_LOGS
 
-# Backup storage (auto-creates Host-level backup target on startup)
-BACKUP_STORAGE_TYPE=$BACKUP_STORAGE_TYPE
-BACKUP_STORAGE_BUCKET=$BACKUP_STORAGE_BUCKET
-BACKUP_STORAGE_REGION=$BACKUP_STORAGE_REGION
-BACKUP_STORAGE_ENDPOINT=$BACKUP_STORAGE_ENDPOINT
-BACKUP_STORAGE_ACCESS_KEY=$BACKUP_STORAGE_ACCESS_KEY
-BACKUP_STORAGE_SECRET_KEY=$BACKUP_STORAGE_SECRET_KEY
-
-# GitHub App (optional — configure later in Settings)
+# GitHub App (optional — configure in setup wizard or Settings)
 GITHUB_APP_ID=
 GITHUB_APP_SLUG=
 GITHUB_CLIENT_ID=
@@ -468,9 +396,12 @@ fi
 
 # Getting started
 echo -e "  ${BOLD}Getting started:${RESET}"
-echo -e "    1. Visit ${BOLD}https://${HOST_DOMAIN:-localhost}${RESET} in your browser"
-echo -e "    2. Create your first account — the first user is automatically the admin"
-echo -e "    3. Configure a GitHub App in Settings for repository access (optional)"
+if [ -n "$SERVER_IP" ]; then
+  echo -e "    1. Visit ${BOLD}http://${SERVER_IP}${RESET} to complete setup (works before DNS)"
+else
+  echo -e "    1. Visit ${BOLD}https://${HOST_DOMAIN:-localhost}${RESET} to complete setup"
+fi
+echo -e "    2. The setup wizard will walk you through account creation, email, backups, and more"
 echo ""
 
 # Useful commands
