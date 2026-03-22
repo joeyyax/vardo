@@ -98,6 +98,24 @@ log "Installation found at $HOST_DIR"
 log "Docker: $(docker --version | head -1)"
 log "Compose: $(docker compose version | head -1)"
 
+# Migrate .env.prod → .env if needed (pre-v2 installations)
+if [ -f ".env.prod" ] && [ ! -f ".env" ]; then
+  log "Migrating .env.prod → .env"
+  mv .env.prod .env
+elif [ -f ".env.prod" ] && [ -f ".env" ]; then
+  warn ".env.prod and .env both exist — using .env, remove .env.prod manually"
+fi
+
+# Migrate HOST_* → VARDO_* env vars if needed
+if [ -f ".env" ] && grep -q "^HOST_" .env 2>/dev/null; then
+  log "Renaming HOST_* env vars to VARDO_*"
+  sed -i 's/^HOST_DOMAIN=/VARDO_DOMAIN=/' .env
+  sed -i 's/^HOST_BASE_DOMAIN=/VARDO_BASE_DOMAIN=/' .env
+  sed -i 's/^HOST_SERVER_IP=/VARDO_SERVER_IP=/' .env
+  sed -i 's/^HOST_PROJECTS_DIR=/VARDO_PROJECTS_DIR=/' .env
+  sed -i 's/^HOST_EXPOSE_PORTS=/VARDO_EXPOSE_PORTS=/' .env
+fi
+
 # ── Pre-update checks ───────────────────────────────────────────────────────
 
 step "Checking for updates"
