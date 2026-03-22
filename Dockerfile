@@ -41,8 +41,7 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/drizzle ./drizzle
-COPY --from=builder /app/drizzle.config.ts ./
-COPY --from=builder /app/lib/db/schema.ts ./lib/db/schema.ts
+COPY --from=builder /app/scripts/migrate.mjs ./scripts/migrate.mjs
 
 # Run as root — this container manages Docker via the mounted socket,
 # which is a root-equivalent privilege regardless of the in-container user.
@@ -51,5 +50,5 @@ EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-# drizzle-kit migrate runs before next start (defined in package.json "start" script)
-CMD ["pnpm", "start"]
+# Custom migration runner applies each migration individually, then starts Next.js
+CMD ["sh", "-c", "node scripts/migrate.mjs && npx next start"]
