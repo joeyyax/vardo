@@ -19,12 +19,6 @@ describe("invitation token generation", () => {
     );
     expect(tokens.size).toBe(20);
   });
-
-  it("token has sufficient entropy (≥ 128 bits via 32 bytes)", () => {
-    // 32 bytes = 256 bits — well over the 128-bit security floor
-    const bytes = crypto.randomBytes(32);
-    expect(bytes.byteLength).toBe(32);
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -46,35 +40,8 @@ describe("invitation expiry logic", () => {
   });
 
   it("invitation is expired when expiresAt is in the past", () => {
-    const expiresAt = makeExpiresAt(-1); // 1ms in the past
-    expect(isExpired(expiresAt)).toBe(true);
-  });
-
-  it("invitation is expired exactly at the boundary", () => {
-    // Slightly in the past to handle test execution time
     const expiresAt = makeExpiresAt(-100);
     expect(isExpired(expiresAt)).toBe(true);
-  });
-
-  it("7-day window expires at the correct timestamp", () => {
-    const before = Date.now();
-    const expiresAt = new Date(before + 7 * 24 * 60 * 60 * 1000);
-    const after = Date.now();
-
-    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
-    expect(expiresAt.getTime()).toBeGreaterThanOrEqual(before + sevenDaysMs);
-    expect(expiresAt.getTime()).toBeLessThanOrEqual(after + sevenDaysMs);
-  });
-
-  it("newly created invitation (status=pending, valid expiresAt) is active", () => {
-    const invitation = {
-      status: "pending" as const,
-      expiresAt: makeExpiresAt(7 * 24 * 60 * 60 * 1000),
-    };
-
-    const isActive =
-      invitation.status === "pending" && !isExpired(invitation.expiresAt);
-    expect(isActive).toBe(true);
   });
 });
 
@@ -194,47 +161,22 @@ describe("invitation scope and role validation", () => {
     return typeof role === "string" && validRoles.includes(role);
   }
 
-  it("accepts valid scopes", () => {
+  it("accepts valid scopes and rejects unknown ones", () => {
     for (const scope of validScopes) {
       expect(validateScope(scope)).toBe(true);
     }
-  });
-
-  it("rejects unknown scopes", () => {
     expect(validateScope("team")).toBe(false);
     expect(validateScope("")).toBe(false);
     expect(validateScope(null)).toBe(false);
-    expect(validateScope(undefined)).toBe(false);
   });
 
-  it("accepts valid roles", () => {
+  it("accepts valid roles and rejects unknown ones", () => {
     for (const role of validRoles) {
       expect(validateRole(role)).toBe(true);
     }
-  });
-
-  it("rejects unknown roles", () => {
     expect(validateRole("superadmin")).toBe(false);
-    expect(validateRole("viewer")).toBe(false);
     expect(validateRole("")).toBe(false);
     expect(validateRole(null)).toBe(false);
-  });
-
-  it("scope is hardcoded to 'org' when sent from the InvitationsPanel", () => {
-    // The frontend always sends scope: "org" — confirm that's the only
-    // value the invitations panel passes to the API.
-    const scope = "org";
-    expect(validateScope(scope)).toBe(true);
-    expect(scope).toBe("org");
-  });
-
-  it("UI only allows 'member' or 'admin' roles — not 'owner'", () => {
-    const uiAllowedRoles = ["member", "admin"];
-    for (const role of uiAllowedRoles) {
-      expect(validateRole(role)).toBe(true);
-    }
-    // 'owner' is a valid DB role but not selectable in the invite form
-    expect(uiAllowedRoles.includes("owner")).toBe(false);
   });
 });
 

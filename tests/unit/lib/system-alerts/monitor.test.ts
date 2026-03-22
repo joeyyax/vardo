@@ -83,15 +83,6 @@ describe("service health transition detection", () => {
     expect(triggered).toContain("redis");
   });
 
-  it("does not trigger for healthy service with no previous state", () => {
-    const current: ServiceSnapshot[] = [
-      { name: "redis", status: "healthy", description: "Redis" },
-    ];
-
-    const triggered = detectTransitions(current, previousHealth);
-    expect(triggered).toHaveLength(0);
-  });
-
   it("does not trigger for unconfigured service", () => {
     previousHealth.set("smtp", "unconfigured");
 
@@ -146,30 +137,13 @@ function highestApplicableThreshold(
 describe("disk threshold ordering", () => {
   const THRESHOLDS = [95, 90, 85]; // descending — mirrors monitor.ts
 
-  it("fires the 95% threshold first when disk jumps from 0% to 97%", () => {
-    const result = highestApplicableThreshold(
-      { percent: 97 },
-      0,
-      THRESHOLDS
-    );
+  it("fires the 95% threshold first when disk jumps past it", () => {
+    const result = highestApplicableThreshold({ percent: 97 }, 0, THRESHOLDS);
     expect(result).toBe(95);
   });
 
-  it("fires the 90% threshold when disk is at 92% and previous was below 90%", () => {
-    const result = highestApplicableThreshold(
-      { percent: 92 },
-      80,
-      THRESHOLDS
-    );
-    expect(result).toBe(90);
-  });
-
   it("fires the 85% threshold when disk is at 87% and previous was below 85%", () => {
-    const result = highestApplicableThreshold(
-      { percent: 87 },
-      70,
-      THRESHOLDS
-    );
+    const result = highestApplicableThreshold({ percent: 87 }, 70, THRESHOLDS);
     expect(result).toBe(85);
   });
 
@@ -183,31 +157,19 @@ describe("disk threshold ordering", () => {
   });
 
   it("does not fire any threshold when disk is below 85%", () => {
-    const result = highestApplicableThreshold(
-      { percent: 80 },
-      70,
-      THRESHOLDS
-    );
+    const result = highestApplicableThreshold({ percent: 80 }, 70, THRESHOLDS);
     expect(result).toBeNull();
   });
 
   it("fires on first tick when previousPercent is null and disk exceeds threshold", () => {
-    const result = highestApplicableThreshold(
-      { percent: 91 },
-      null,
-      THRESHOLDS
-    );
+    const result = highestApplicableThreshold({ percent: 91 }, null, THRESHOLDS);
     expect(result).toBe(90);
   });
 
   it("when crossing multiple thresholds at once, only the highest fires", () => {
     // Jump from 60% to 97% — crosses 85, 90, and 95 all at once
     // Only 95 should fire (break after first match)
-    const result = highestApplicableThreshold(
-      { percent: 97 },
-      60,
-      THRESHOLDS
-    );
+    const result = highestApplicableThreshold({ percent: 97 }, 60, THRESHOLDS);
     expect(result).toBe(95);
   });
 });

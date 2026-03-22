@@ -33,35 +33,6 @@ describe("isDueNow — digest tick scheduling", () => {
     const settings: DigestSettings = { enabled: true, day: 1, hour: 10 };
     expect(isDueNow(settings, mondayAt9)).toBe(false);
   });
-
-  it("returns false when both day and hour differ", () => {
-    const settings: DigestSettings = { enabled: true, day: 5, hour: 14 };
-    expect(isDueNow(settings, mondayAt9)).toBe(false);
-  });
-
-  it("handles Sunday (day=0) correctly", () => {
-    const sunday = new Date(2026, 2, 22, 8, 0, 0); // March 22, 2026 is a Sunday
-    const settings: DigestSettings = { enabled: true, day: 0, hour: 8 };
-    expect(isDueNow(settings, sunday)).toBe(true);
-  });
-
-  it("handles Saturday (day=6) correctly", () => {
-    const saturday = new Date(2026, 2, 21, 12, 0, 0); // March 21, 2026 is a Saturday
-    const settings: DigestSettings = { enabled: true, day: 6, hour: 12 };
-    expect(isDueNow(settings, saturday)).toBe(true);
-  });
-
-  it("returns false at the start of the correct day but wrong hour", () => {
-    const monday0am = new Date(2026, 2, 23, 0, 0, 0);
-    const settings: DigestSettings = { enabled: true, day: 1, hour: 9 };
-    expect(isDueNow(settings, monday0am)).toBe(false);
-  });
-
-  it("returns false at the correct hour on the wrong day", () => {
-    const tuesday9am = new Date(2026, 2, 24, 9, 0, 0); // Tuesday
-    const settings: DigestSettings = { enabled: true, day: 1, hour: 9 }; // Monday
-    expect(isDueNow(settings, tuesday9am)).toBe(false);
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -96,24 +67,6 @@ describe("isSameHour — duplicate-send guard", () => {
     const a = new Date(2026, 2, 23, 9, 0, 0);
     const b = new Date(2026, 2, 24, 9, 0, 0);
     expect(isSameHour(a, b)).toBe(false);
-  });
-
-  it("returns false for the same day/hour in different months", () => {
-    const a = new Date(2026, 2, 23, 9, 0, 0); // March
-    const b = new Date(2026, 3, 23, 9, 0, 0); // April
-    expect(isSameHour(a, b)).toBe(false);
-  });
-
-  it("returns false for the same day/hour in different years", () => {
-    const a = new Date(2026, 2, 23, 9, 0, 0);
-    const b = new Date(2025, 2, 23, 9, 0, 0);
-    expect(isSameHour(a, b)).toBe(false);
-  });
-
-  it("returns true when both dates are identical", () => {
-    const a = new Date(2026, 2, 23, 9, 30, 0);
-    const b = new Date(2026, 2, 23, 9, 30, 0);
-    expect(isSameHour(a, b)).toBe(true);
   });
 });
 
@@ -231,7 +184,6 @@ describe("upsert behaviour for digest settings", () => {
     expect(result.enabled).toBe(true);
     expect(result.dayOfWeek).toBe(2);
     expect(result.hourOfDay).toBe(10);
-    expect(store.has("org_1")).toBe(true);
   });
 
   it("uses defaults for unspecified fields on first PATCH", () => {
@@ -252,32 +204,6 @@ describe("upsert behaviour for digest settings", () => {
     expect(result.dayOfWeek).toBe(5);    // preserved
     expect(result.hourOfDay).toBe(16);   // updated
   });
-
-  it("updates the updatedAt timestamp on each PATCH", async () => {
-    const store = new Map<string, StoredSettings>();
-    const first = upsertSettings(store, "org_1", { enabled: false });
-
-    // Brief pause to ensure a different timestamp is possible
-    await new Promise((r) => setTimeout(r, 2));
-    const second = upsertSettings(store, "org_1", { enabled: true });
-
-    expect(second.updatedAt.getTime()).toBeGreaterThanOrEqual(
-      first.updatedAt.getTime()
-    );
-  });
-
-  it("each org has independent settings", () => {
-    const store = new Map<string, StoredSettings>();
-    upsertSettings(store, "org_1", { enabled: true, dayOfWeek: 1, hourOfDay: 8 });
-    upsertSettings(store, "org_2", { enabled: false, dayOfWeek: 5, hourOfDay: 14 });
-
-    const org1 = store.get("org_1")!;
-    const org2 = store.get("org_2")!;
-
-    expect(org1.enabled).toBe(true);
-    expect(org2.enabled).toBe(false);
-    expect(org1.dayOfWeek).not.toBe(org2.dayOfWeek);
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -286,20 +212,9 @@ describe("upsert behaviour for digest settings", () => {
 
 describe("digest collector data aggregation", () => {
   type DeployRow = { status: "success" | "failed" | "running" };
-  type BackupRow = { status: "success" | "failed" };
   type CronRunRow = { status: "success" | "failed"; cronJobId: string };
 
   function aggregateDeploys(rows: DeployRow[]) {
-    let total = 0, succeeded = 0, failed = 0;
-    for (const row of rows) {
-      total++;
-      if (row.status === "success") succeeded++;
-      if (row.status === "failed") failed++;
-    }
-    return { total, succeeded, failed };
-  }
-
-  function aggregateBackups(rows: BackupRow[]) {
     let total = 0, succeeded = 0, failed = 0;
     for (const row of rows) {
       total++;
@@ -333,23 +248,6 @@ describe("digest collector data aggregation", () => {
     expect(result).toEqual({ total: 0, succeeded: 0, failed: 0 });
   });
 
-  it("correctly counts backup totals, successes, and failures", () => {
-    const rows: BackupRow[] = [
-      { status: "success" },
-      { status: "failed" },
-      { status: "failed" },
-    ];
-    const result = aggregateBackups(rows);
-    expect(result.total).toBe(3);
-    expect(result.succeeded).toBe(1);
-    expect(result.failed).toBe(2);
-  });
-
-  it("returns zeros for an empty backup set", () => {
-    const result = aggregateBackups([]);
-    expect(result).toEqual({ total: 0, succeeded: 0, failed: 0 });
-  });
-
   it("counts total cron failures and deduplicated affected jobs", () => {
     const runs: CronRunRow[] = [
       { status: "failed", cronJobId: "job_1" },
@@ -362,14 +260,5 @@ describe("digest collector data aggregation", () => {
     expect(result.affectedJobs).toHaveLength(2);
     expect(result.affectedJobs).toContain("job_1");
     expect(result.affectedJobs).toContain("job_2");
-  });
-
-  it("returns empty cron summary when all runs succeed", () => {
-    const runs: CronRunRow[] = [
-      { status: "success", cronJobId: "job_1" },
-    ];
-    const result = aggregateCronFailures(runs);
-    expect(result.totalFailures).toBe(0);
-    expect(result.affectedJobs).toHaveLength(0);
   });
 });

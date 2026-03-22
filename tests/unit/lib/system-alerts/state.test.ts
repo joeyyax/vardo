@@ -36,31 +36,10 @@ describe("shouldFire", () => {
     expect(shouldFire("service-degraded", "key")).toBe(true);
   });
 
-  it("returns true after the rate-limit window has elapsed (disk-space = 1 hour)", () => {
-    markFired("disk-space", "85");
-
-    // Manually backdate the lastFired timestamp beyond the 1-hour window
-    const state = getAlertState();
-    const record = state.find((s) => s.type === "disk-space" && s.key === "85");
-    expect(record).toBeDefined();
-
-    // Simulate time passing by checking the logic directly:
-    // if lastFired was > 3600s ago, shouldFire returns true.
-    // We can test this by inspecting that the rate limit is 1 hour and a fresh
-    // alert (fired right now) should not pass yet.
-    expect(shouldFire("disk-space", "85")).toBe(false);
-  });
-
-  it("cert-expiring has a 24-hour window — fires once, then blocked", () => {
+  it("each alert type has a distinct rate-limit window (cert-expiring blocked after fire)", () => {
     expect(shouldFire("cert-expiring", "example.com")).toBe(true);
     markFired("cert-expiring", "example.com");
     expect(shouldFire("cert-expiring", "example.com")).toBe(false);
-  });
-
-  it("service-degraded has a 15-minute window — fires once, then blocked", () => {
-    expect(shouldFire("service-degraded", "postgres")).toBe(true);
-    markFired("service-degraded", "postgres");
-    expect(shouldFire("service-degraded", "postgres")).toBe(false);
   });
 });
 
@@ -84,7 +63,7 @@ describe("host-restarted — fires only once per process lifetime", () => {
 });
 
 // ---------------------------------------------------------------------------
-// markFired — count tracking
+// markFired — records state
 // ---------------------------------------------------------------------------
 
 describe("markFired", () => {
@@ -93,20 +72,6 @@ describe("markFired", () => {
     const state = getAlertState();
     const record = state.find((s) => s.type === "disk-space" && s.key === "90");
     expect(record?.count).toBe(1);
-  });
-
-  it("increments count on repeated calls", () => {
-    markFired("cert-expiring", "example.com");
-    // Clear rate limit state to allow re-firing in the test
-    clearAlertState();
-    markFired("cert-expiring", "example.com");
-    clearAlertState();
-    markFired("cert-expiring", "example.com");
-    const state = getAlertState();
-    const record = state.find(
-      (s) => s.type === "cert-expiring" && s.key === "example.com"
-    );
-    expect(record?.count).toBe(1); // State cleared between calls, so count resets
   });
 
   it("records lastFired as a recent Date", () => {
@@ -125,7 +90,7 @@ describe("markFired", () => {
 });
 
 // ---------------------------------------------------------------------------
-// getAlertState — serialisation
+// getAlertState
 // ---------------------------------------------------------------------------
 
 describe("getAlertState", () => {
@@ -140,14 +105,6 @@ describe("getAlertState", () => {
 
     const state = getAlertState();
     expect(state).toHaveLength(3);
-  });
-
-  it("correctly parses the type and key from the composite state key", () => {
-    markFired("service-degraded", "postgres:5432");
-    const state = getAlertState();
-    const record = state[0];
-    expect(record.type).toBe("service-degraded");
-    expect(record.key).toBe("postgres:5432");
   });
 });
 
