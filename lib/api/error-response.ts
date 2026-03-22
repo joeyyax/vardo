@@ -8,6 +8,9 @@ export function handleRouteError(error: unknown, context?: string) {
   if (error instanceof Error && error.message === "Unauthorized") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  if (error instanceof Error && error.message === "Forbidden") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   if (context) {
     console.error(`${context}:`, error);
   }

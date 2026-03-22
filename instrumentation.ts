@@ -59,6 +59,15 @@ export async function register() {
       console.error("[instrumentation] Failed to start system health monitor:", err);
     }
 
+    console.log("[instrumentation] Starting digest scheduler...");
+    try {
+      const { startDigestScheduler } = await import("./lib/digest/scheduler");
+      startDigestScheduler();
+      console.log("[instrumentation] Digest scheduler started");
+    } catch (err) {
+      console.error("[instrumentation] Failed to start digest scheduler:", err);
+    }
+
     console.log("[instrumentation] Starting domain monitor...");
     try {
       setInterval(async () => {

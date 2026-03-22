@@ -880,6 +880,26 @@ export const notificationChannels = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// Host: Weekly Digest Settings (per-org)
+// ---------------------------------------------------------------------------
+
+export const digestSettings = pgTable("digest_setting", {
+  id: text("id").primaryKey(),
+  organizationId: text("organization_id")
+    .notNull()
+    .unique()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  enabled: boolean("enabled").default(true).notNull(),
+  // 0 = Sunday … 6 = Saturday
+  dayOfWeek: integer("day_of_week").default(1).notNull(),
+  // 0-23 UTC
+  hourOfDay: integer("hour_of_day").default(8).notNull(),
+  lastSentAt: timestamp("last_sent_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// ---------------------------------------------------------------------------
 // Relations
 // ---------------------------------------------------------------------------
 
@@ -895,7 +915,7 @@ export const userRelations = relations(user, ({ many }) => ({
   respondedTransfers: many(appTransfers, { relationName: "respondedByUser" }),
 }));
 
-export const organizationsRelations = relations(organizations, ({ many }) => ({
+export const organizationsRelations = relations(organizations, ({ many, one }) => ({
   memberships: many(memberships),
   projects: many(projects),
   apps: many(apps),
@@ -911,6 +931,10 @@ export const organizationsRelations = relations(organizations, ({ many }) => ({
   incomingTransfers: many(appTransfers, { relationName: "destinationOrg" }),
   notificationChannels: many(notificationChannels),
   invitations: many(invitations),
+  digestSetting: one(digestSettings, {
+    fields: [organizations.id],
+    references: [digestSettings.organizationId],
+  }),
 }));
 
 export const membershipsRelations = relations(memberships, ({ one }) => ({
@@ -1237,6 +1261,13 @@ export const appTransfersRelations = relations(
 );
 
 export const notificationChannelsRelations = relations(notificationChannels, ({ one }) => ({ organization: one(organizations, { fields: [notificationChannels.organizationId], references: [organizations.id] }) }));
+
+export const digestSettingsRelations = relations(digestSettings, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [digestSettings.organizationId],
+    references: [organizations.id],
+  }),
+}));
 
 // ---------------------------------------------------------------------------
 // Host: Invitations
