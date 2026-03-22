@@ -1,6 +1,7 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { assertSafeName } from "@/lib/docker/validate";
+import { assertSafeSyncPath } from "@/lib/utils/exec";
 
 const execFileAsync = promisify(execFile);
 
@@ -249,6 +250,13 @@ export async function syncFilesFromImage(
   if (paths.length === 0) return { synced: [], failed: [] };
 
   assertSafeName(volumeDockerName);
+
+  // Validate every path before building the shell script. assertSafeSyncPath
+  // rejects path traversal (..),  absolute paths, and shell metacharacters so
+  // the validated values are safe to interpolate into quoted shell strings.
+  for (const p of paths) {
+    assertSafeSyncPath(p);
+  }
 
   // Build a script that copies each file from the image path to the volume
   const copyCommands = paths.map((p) => {
