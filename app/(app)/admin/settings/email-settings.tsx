@@ -114,7 +114,15 @@ export function EmailSettings() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4 max-w-lg">
+    <div className="space-y-6">
+      <div className="space-y-1">
+        <h2 className="text-lg font-medium">Email</h2>
+        <p className="text-sm text-muted-foreground">
+          Configure how your instance sends transactional emails — deploy notifications, invitations, and alerts.
+        </p>
+      </div>
+
+    <form onSubmit={handleSubmit} className="space-y-4">
       {configured && (
         <p className="text-xs text-muted-foreground">
           Email is configured. Edit fields below to update.
@@ -381,5 +389,6 @@ export function EmailSettings() {
         Save
       </Button>
     </form>
+    </div>
   );
 }

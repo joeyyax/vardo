@@ -82,7 +82,15 @@ export function GitHubSettings() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4 max-w-lg">
+    <div className="space-y-6">
+      <div className="space-y-1">
+        <h2 className="text-lg font-medium">GitHub App</h2>
+        <p className="text-sm text-muted-foreground">
+          Connect a GitHub App to enable repository imports and deploy keys.
+        </p>
+      </div>
+
+    <form onSubmit={handleSubmit} className="space-y-4">
       {configured && (
         <p className="text-xs text-muted-foreground">
           GitHub App is configured. Edit fields below to update.
@@ -304,5 +312,6 @@ export function GitHubSettings() {
         Save
       </Button>
     </form>
+    </div>
   );
 }

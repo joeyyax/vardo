@@ -141,7 +141,7 @@ export function OverviewSettings() {
 
   if (error || !data) {
     return (
-      <div className="space-y-4 max-w-2xl">
+      <div className="space-y-4">
         <p className="text-sm text-muted-foreground">Unable to load system overview.</p>
         <Button variant="outline" className="squircle" onClick={() => fetchData(true)}>
           Retry
@@ -151,10 +151,15 @@ export function OverviewSettings() {
   }
 
   return (
-    <div className="space-y-8 max-w-2xl">
+    <div className="space-y-8">
       {/* Header with refresh */}
       <div className="flex items-center justify-between">
-        <div />
+        <div className="space-y-1">
+          <h2 className="text-lg font-medium">Overview</h2>
+          <p className="text-sm text-muted-foreground">
+            System health and resource usage at a glance.
+          </p>
+        </div>
         <Button
           variant="ghost"
           size="sm"

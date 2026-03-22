@@ -96,7 +96,15 @@ export function BackupSettings() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4 max-w-lg">
+    <div className="space-y-6">
+      <div className="space-y-1">
+        <h2 className="text-lg font-medium">Backup storage</h2>
+        <p className="text-sm text-muted-foreground">
+          Configure where automated backups are stored — S3, R2, or B2 compatible storage.
+        </p>
+      </div>
+
+    <form onSubmit={handleSubmit} className="space-y-4">
       {configured && (
         <p className="text-xs text-muted-foreground">
           Backup storage is configured. Edit fields below to update.
@@ -261,5 +269,6 @@ export function BackupSettings() {
         Save
       </Button>
     </form>
+    </div>
   );
 }

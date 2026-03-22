@@ -6,10 +6,9 @@ import { AuthSettings } from "../auth-settings";
 import { FeatureFlagsSettings } from "../feature-flags-settings";
 import { BackupSettings } from "../backup-settings";
 import { GitHubSettings } from "../github-settings";
-import { InfrastructureSettings } from "../infrastructure-settings";
 import { DomainSettings } from "../domain-settings";
 
-const VALID_TABS = ["overview", "general", "email", "authentication", "feature-flags", "backup", "github", "infrastructure", "domain"] as const;
+const VALID_TABS = ["overview", "general", "email", "authentication", "feature-flags", "backup", "github", "domain"] as const;
 type ValidTab = (typeof VALID_TABS)[number];
 
 const TAB_COMPONENTS: Record<ValidTab, React.ComponentType> = {
@@ -20,7 +19,6 @@ const TAB_COMPONENTS: Record<ValidTab, React.ComponentType> = {
   "feature-flags": FeatureFlagsSettings,
   "backup": BackupSettings,
   "github": GitHubSettings,
-  "infrastructure": InfrastructureSettings,
   "domain": DomainSettings,
 };
 

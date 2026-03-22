@@ -87,7 +87,14 @@ export function DomainSettings() {
   }
 
   return (
-    <div className="space-y-6 max-w-lg">
+    <div className="space-y-6">
+      <div className="space-y-1">
+        <h2 className="text-lg font-medium">Domain & SSL</h2>
+        <p className="text-sm text-muted-foreground">
+          DNS configuration and SSL certificate status for your instance.
+        </p>
+      </div>
+
       {/* Domain configuration (read-only) */}
       <div className="space-y-4">
         <div className="space-y-2">

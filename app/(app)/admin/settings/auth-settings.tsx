@@ -72,7 +72,15 @@ export function AuthSettings() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6 max-w-lg">
+    <div className="space-y-6">
+      <div className="space-y-1">
+        <h2 className="text-lg font-medium">Authentication</h2>
+        <p className="text-sm text-muted-foreground">
+          Control who can sign up and how sessions work.
+        </p>
+      </div>
+
+    <form onSubmit={handleSubmit} className="space-y-6">
       <div className="space-y-2">
         <Label htmlFor="sys-registration-mode">Registration mode</Label>
         <Select value={registrationMode} onValueChange={setRegistrationMode}>
@@ -148,5 +156,6 @@ export function AuthSettings() {
         )}
       </div>
     </form>
+    </div>
   );
 }
