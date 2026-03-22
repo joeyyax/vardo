@@ -2,7 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import { LogOut, User, Users, ChevronsUpDown, Loader2, Settings, Shield, Building2, Check, Plus, Sun, Moon, Monitor } from "lucide-react";
+import { LogOut, User, ChevronsUpDown, Loader2, Settings, Shield, Building2, Check, Plus, Sun, Moon, Monitor } from "lucide-react";
+import { useAdmin } from "@/lib/hooks/use-admin";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -25,6 +26,7 @@ type UserMenuProps = {
 };
 
 export function UserMenu({ collapsed, compact, currentOrgId, organizations }: UserMenuProps) {
+  const isAdmin = useAdmin();
   const router = useRouter();
   const { theme, setTheme } = useTheme();
   const { data: session, isPending } = useSession();
@@ -93,6 +95,7 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations }: Us
         align="end"
         className="min-w-56"
       >
+        {/* Profile info */}
         <DropdownMenuLabel className="font-normal">
           <div className="flex flex-col gap-1">
             <p className="text-sm font-medium">{displayName}</p>
@@ -100,6 +103,8 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations }: Us
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
+
+        {/* Settings links */}
         <DropdownMenuItem
           className="gap-2 cursor-pointer"
           onClick={() => router.push("/user/settings/profile")}
@@ -109,11 +114,20 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations }: Us
         </DropdownMenuItem>
         <DropdownMenuItem
           className="gap-2 cursor-pointer"
-          onClick={() => router.push("/admin")}
+          onClick={() => router.push("/settings")}
         >
-          <Shield className="size-4" />
-          Admin
+          <Settings className="size-4" />
+          Org settings
         </DropdownMenuItem>
+        {isAdmin && (
+          <DropdownMenuItem
+            className="gap-2 cursor-pointer"
+            onClick={() => router.push("/admin/settings")}
+          >
+            <Shield className="size-4" />
+            Admin settings
+          </DropdownMenuItem>
+        )}
 
         {/* Org switcher */}
         <DropdownMenuSeparator />
@@ -135,26 +149,13 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations }: Us
         ))}
         <DropdownMenuItem
           className="gap-2 cursor-pointer"
-          onClick={() => router.push("/settings")}
-        >
-          <Settings className="size-4" />
-          Settings
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          className="gap-2 cursor-pointer"
-          onClick={() => router.push("/settings/team")}
-        >
-          <Users className="size-4" />
-          Team
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          className="gap-2 cursor-pointer"
           onClick={() => router.push("/onboarding")}
         >
           <Plus className="size-4" />
           New organization
         </DropdownMenuItem>
 
+        {/* Theme switcher */}
         <DropdownMenuSeparator />
         <div className="px-2 py-1.5">
           <div className="inline-flex items-center gap-0.5 rounded-md bg-muted p-0.5 w-full">
@@ -181,6 +182,8 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations }: Us
             ))}
           </div>
         </div>
+
+        {/* Sign out */}
         <DropdownMenuSeparator />
         <DropdownMenuItem
           className="gap-2 cursor-pointer"

@@ -3,7 +3,11 @@ import { redirect } from "next/navigation";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { TopNav } from "@/components/layout/top-nav";
 import { CommandPalette } from "@/components/command-palette";
-import { getCurrentOrg, getUserOrganizations } from "@/lib/auth/session";
+import { AdminProvider } from "@/lib/hooks/use-admin";
+import { getSession, getCurrentOrg, getUserOrganizations } from "@/lib/auth/session";
+import { db } from "@/lib/db";
+import { user } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 import { isFeatureEnabled } from "@/lib/config/features";
 
 export const metadata: Metadata = {
@@ -31,7 +35,7 @@ export default async function AppLayout({
     );
   }
 
-  const orgData = await getCurrentOrg();
+  const [session, orgData] = await Promise.all([getSession(), getCurrentOrg()]);
 
   if (!orgData) {
     redirect("/create-org");
@@ -40,24 +44,33 @@ export default async function AppLayout({
   const { organization } = orgData;
   const organizations = await getUserOrganizations();
 
+  let isAdmin = false;
+  if (session?.user?.id) {
+    const dbUser = await db.query.user.findFirst({
+      where: eq(user.id, session.user.id),
+      columns: { isAppAdmin: true },
+    });
+    isAdmin = !!dbUser?.isAppAdmin;
+  }
+
   return (
-    <TooltipProvider>
-      <div className="flex flex-col h-dvh bg-sidebar">
-        {/* Top Navigation */}
-        <TopNav
-          currentOrgId={organization.id}
-          organizations={organizations}
-        />
+    <AdminProvider isAdmin={isAdmin}>
+      <TooltipProvider>
+        <div className="flex flex-col h-dvh bg-sidebar">
+          <TopNav
+            currentOrgId={organization.id}
+            organizations={organizations}
+          />
 
-        {/* Main Content */}
-        <div className="flex-1 overflow-y-auto bg-background rounded-t-2xl min-h-0">
-          <main className="mx-auto max-w-screen-xl px-5 py-8 lg:px-10 min-h-full">
-            {children}
-          </main>
+          <div className="flex-1 overflow-y-auto bg-background rounded-t-2xl min-h-0">
+            <main className="mx-auto max-w-screen-xl px-5 py-8 lg:px-10 min-h-full">
+              {children}
+            </main>
+          </div>
         </div>
-      </div>
 
-      <CommandPalette orgId={organization.id} />
-    </TooltipProvider>
+        <CommandPalette orgId={organization.id} />
+      </TooltipProvider>
+    </AdminProvider>
   );
 }
