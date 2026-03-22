@@ -154,7 +154,7 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations }: Us
               onClick={() => router.push("/admin/settings")}
             >
               <Shield className="size-4" />
-              Admin settings
+              Admin
             </DropdownMenuItem>
           </>
         )}
