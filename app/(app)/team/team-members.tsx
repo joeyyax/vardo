@@ -82,7 +82,9 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
       const data = await res.json();
 
       if (!res.ok) {
-        toast.error(data.error || "Failed to add member");
+        toast.error("Couldn't add member", {
+          description: data.error || "They may not have an account yet",
+        });
         return;
       }
 
@@ -92,7 +94,9 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
       setInviteRole("member");
       router.refresh();
     } catch {
-      toast.error("Failed to add member");
+      toast.error("Couldn't add member", {
+        description: "Check your connection and try again",
+      });
     } finally {
       setInviting(false);
     }
@@ -109,7 +113,9 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
       const data = await res.json();
 
       if (!res.ok) {
-        toast.error(data.error || "Failed to update role");
+        toast.error("Couldn't update role", {
+          description: data.error,
+        });
         return;
       }
 
@@ -118,7 +124,9 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
         prev.map((m) => (m.id === userId ? { ...m, role: newRole } : m))
       );
     } catch {
-      toast.error("Failed to update role");
+      toast.error("Couldn't update role", {
+        description: "Check your connection and try again",
+      });
     }
   }
 
@@ -134,7 +142,9 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
       const data = await res.json();
 
       if (!res.ok) {
-        toast.error(data.error || "Failed to remove member");
+        toast.error("Couldn't remove member", {
+          description: data.error,
+        });
         return;
       }
 
@@ -142,7 +152,9 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
       setMembers((prev) => prev.filter((m) => m.id !== removeTarget.id));
       setRemoveTarget(null);
     } catch {
-      toast.error("Failed to remove member");
+      toast.error("Couldn't remove member", {
+        description: "Check your connection and try again",
+      });
     } finally {
       setRemoving(false);
     }

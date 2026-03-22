@@ -401,10 +401,14 @@ export function BackupManager({ orgId, apps }: Props) {
         fetchData();
       } else {
         const err = await res.json();
-        toast.error(err.error || "Failed to create target");
+        toast.error("Couldn't create backup target", {
+          description: err.error || "Check storage credentials",
+        });
       }
     } catch {
-      toast.error("Failed to create target");
+      toast.error("Couldn't create backup target", {
+        description: "Check your connection and try again",
+      });
     } finally {
       setSavingTarget(false);
     }
@@ -441,10 +445,14 @@ export function BackupManager({ orgId, apps }: Props) {
         fetchData();
       } else {
         const err = await res.json();
-        toast.error(err.error || "Failed to create job");
+        toast.error("Couldn't create backup job", {
+          description: err.error || "Check schedule and app selection",
+        });
       }
     } catch {
-      toast.error("Failed to create job");
+      toast.error("Couldn't create backup job", {
+        description: "Check your connection and try again",
+      });
     } finally {
       setSaving(false);
     }
@@ -473,15 +481,21 @@ export function BackupManager({ orgId, apps }: Props) {
         if (data.success) {
           toast.success("Backup completed successfully");
         } else {
-          toast.error("Backup completed with errors");
+          toast.error("Backup completed with errors", {
+            description: "Check the logs for details",
+          });
         }
         fetchData();
       } else {
         const err = await res.json();
-        toast.error(err.error || "Failed to run backup");
+        toast.error("Couldn't run backup", {
+          description: err.error || "Check target connectivity",
+        });
       }
     } catch {
-      toast.error("Failed to run backup");
+      toast.error("Couldn't run backup", {
+        description: "Check your connection and try again",
+      });
     } finally {
       setRunningJobs((prev) => {
         const next = new Set(prev);
@@ -506,9 +520,16 @@ export function BackupManager({ orgId, apps }: Props) {
       if (res.ok) {
         toast.success(enabled ? "Backup job enabled" : "Backup job paused");
         fetchData();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error("Couldn't update backup job", {
+          description: err.error,
+        });
       }
     } catch {
-      toast.error("Failed to update job");
+      toast.error("Couldn't update backup job", {
+        description: "Check your connection and try again",
+      });
     }
   }
 
@@ -525,10 +546,14 @@ export function BackupManager({ orgId, apps }: Props) {
         fetchData();
       } else {
         const err = await res.json();
-        toast.error(err.error || "Failed to delete job");
+        toast.error("Couldn't delete backup job", {
+          description: err.error,
+        });
       }
     } catch {
-      toast.error("Failed to delete job");
+      toast.error("Couldn't delete backup job", {
+        description: "Check your connection and try again",
+      });
     }
   }
 
@@ -547,10 +572,14 @@ export function BackupManager({ orgId, apps }: Props) {
         fetchData();
       } else {
         const err = await res.json();
-        toast.error(err.error || "Failed to restore backup");
+        toast.error("Couldn't restore backup", {
+          description: err.error || "Check target connectivity and try again",
+        });
       }
     } catch {
-      toast.error("Failed to restore backup");
+      toast.error("Couldn't restore backup", {
+        description: "Check your connection and try again",
+      });
     } finally {
       setRestoringBackups((prev) => {
         const next = new Set(prev);
