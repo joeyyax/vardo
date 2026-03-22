@@ -122,14 +122,9 @@ function ProjectCard({
     return result;
   }, [projectApps]);
 
-  const router = useRouter();
-
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={() => router.push(`/projects/${project.name}`)}
-      onKeyDown={(e) => { if (e.key === "Enter") router.push(`/projects/${project.name}`); }}
+    <Link
+      href={`/projects/${project.name}`}
       className="squircle relative flex flex-col rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50 overflow-hidden cursor-pointer"
     >
       {aggregatedCpu.length > 0 && (
@@ -232,7 +227,7 @@ function ProjectCard({
             </Link>
         ))}
       </div>
-    </div>
+    </Link>
   );
 }
 
