@@ -17,7 +17,7 @@ import {
 import {
   Loader2,
   Check,
-  ChevronRight,
+  Circle,
   User,
   Mail,
   HardDrive,
@@ -25,17 +25,54 @@ import {
   Github,
   Globe,
   Rocket,
+  Container,
 } from "lucide-react";
 import { toast } from "sonner";
 
 const STEPS = [
-  { id: "account", label: "Account", icon: User },
-  { id: "email", label: "Email", icon: Mail },
-  { id: "backup", label: "Backups", icon: HardDrive },
-  { id: "services", label: "Services", icon: Gauge },
-  { id: "github", label: "GitHub", icon: Github },
-  { id: "domain", label: "Domain", icon: Globe },
-  { id: "done", label: "Done", icon: Rocket },
+  {
+    id: "account",
+    label: "Create account",
+    description: "Set up your admin credentials",
+    icon: User,
+    required: true,
+  },
+  {
+    id: "email",
+    label: "Email provider",
+    description: "SMTP or Resend for notifications",
+    icon: Mail,
+  },
+  {
+    id: "backup",
+    label: "Backup storage",
+    description: "S3, R2, or B2 for volume backups",
+    icon: HardDrive,
+  },
+  {
+    id: "services",
+    label: "Optional services",
+    description: "Metrics and log collection",
+    icon: Gauge,
+  },
+  {
+    id: "github",
+    label: "GitHub App",
+    description: "Repository access and auto-deploy",
+    icon: Github,
+  },
+  {
+    id: "domain",
+    label: "Domain & DNS",
+    description: "Verify DNS records for HTTPS",
+    icon: Globe,
+  },
+  {
+    id: "done",
+    label: "Ready to go",
+    description: "Start deploying",
+    icon: Rocket,
+  },
 ] as const;
 
 type StepId = (typeof STEPS)[number]["id"];
@@ -58,141 +95,171 @@ export function SetupWizard() {
   }
 
   function goTo(step: StepId) {
-    // Can only go to completed steps or the next available step
     const targetIndex = STEPS.findIndex((s) => s.id === step);
-    if (targetIndex <= currentIndex || completedSteps.has(STEPS[targetIndex - 1]?.id)) {
+    if (
+      targetIndex <= currentIndex ||
+      completedSteps.has(STEPS[targetIndex - 1]?.id)
+    ) {
       setCurrentStep(step);
     }
   }
 
   return (
-    <div className="flex min-h-dvh items-center justify-center p-4">
-      <div className="w-full max-w-lg space-y-8">
-        {/* Welcome */}
-        <div className="text-center space-y-2">
-          <h1 className="text-3xl font-bold tracking-tight">Welcome to Vardo</h1>
-          <p className="text-muted-foreground">
-            Let&apos;s get your self-hosted PaaS up and running. This wizard will
-            walk you through the essentials — everything after account creation
-            can be skipped and configured later in Settings.
-          </p>
+    <div className="flex min-h-dvh items-center justify-center p-6 md:p-12">
+      <div className="grid w-full max-w-4xl gap-12 md:grid-cols-[320px_1fr]">
+        {/* Left column — branding, intro, steps */}
+        <div className="space-y-8">
+          {/* Branding */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2.5">
+              <Container className="size-6" />
+              <span className="text-xl font-bold tracking-tight">Vardo</span>
+            </div>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Welcome to your self-hosted PaaS. This wizard walks you through
+              the essentials. Everything after account creation is optional and
+              can be configured later in Settings.
+            </p>
+          </div>
+
+          {/* Step list */}
+          <nav className="space-y-1">
+            {STEPS.map((step, i) => {
+              const Icon = step.icon;
+              const isActive = step.id === currentStep;
+              const isDone = completedSteps.has(step.id);
+              const canClick =
+                i <= currentIndex ||
+                completedSteps.has(STEPS[i - 1]?.id);
+
+              return (
+                <button
+                  key={step.id}
+                  onClick={() => canClick && goTo(step.id)}
+                  className={`flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${
+                    isActive
+                      ? "bg-muted"
+                      : canClick
+                        ? "hover:bg-muted/50 cursor-pointer"
+                        : "opacity-40 cursor-default"
+                  }`}
+                >
+                  <div className="mt-0.5">
+                    {isDone ? (
+                      <div className="flex size-5 items-center justify-center rounded-full bg-primary">
+                        <Check className="size-3 text-primary-foreground" />
+                      </div>
+                    ) : isActive ? (
+                      <div className="flex size-5 items-center justify-center rounded-full border-2 border-primary">
+                        <Circle className="size-2 fill-primary text-primary" />
+                      </div>
+                    ) : (
+                      <div className="flex size-5 items-center justify-center rounded-full border border-muted-foreground/30">
+                        <Icon className="size-3 text-muted-foreground" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <div
+                      className={`text-sm font-medium ${isActive ? "text-foreground" : isDone ? "text-foreground" : "text-muted-foreground"}`}
+                    >
+                      {step.label}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {step.description}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </nav>
         </div>
 
-        {/* Stepper */}
-        <div className="flex items-center justify-center gap-1">
-          {STEPS.map((step, i) => {
-            const Icon = step.icon;
-            const isActive = step.id === currentStep;
-            const isDone = completedSteps.has(step.id);
-            return (
-              <button
-                key={step.id}
-                onClick={() => goTo(step.id)}
-                className={`flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-medium transition-colors ${
-                  isActive
-                    ? "bg-primary text-primary-foreground"
-                    : isDone
-                      ? "bg-muted text-foreground cursor-pointer hover:bg-muted/80"
-                      : "text-muted-foreground cursor-default"
-                }`}
-              >
-                {isDone ? (
-                  <Check className="size-3.5" />
-                ) : (
-                  <Icon className="size-3.5" />
-                )}
-                <span className="hidden sm:inline">{step.label}</span>
-                {i < STEPS.length - 1 && (
-                  <ChevronRight className="size-3 text-muted-foreground ml-1 hidden sm:block" />
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Step Content */}
-        <div className="space-y-6">
-          {currentStep === "account" && (
-            <AccountStep
-              loading={loading}
-              setLoading={setLoading}
-              onComplete={() => {
-                markComplete("account");
-                goNext();
-              }}
-            />
-          )}
-          {currentStep === "email" && (
-            <EmailStep
-              loading={loading}
-              setLoading={setLoading}
-              onComplete={() => {
-                markComplete("email");
-                goNext();
-              }}
-              onSkip={() => {
-                markComplete("email");
-                goNext();
-              }}
-            />
-          )}
-          {currentStep === "backup" && (
-            <BackupStep
-              loading={loading}
-              setLoading={setLoading}
-              onComplete={() => {
-                markComplete("backup");
-                goNext();
-              }}
-              onSkip={() => {
-                markComplete("backup");
-                goNext();
-              }}
-            />
-          )}
-          {currentStep === "services" && (
-            <ServicesStep
-              loading={loading}
-              setLoading={setLoading}
-              onComplete={() => {
-                markComplete("services");
-                goNext();
-              }}
-              onSkip={() => {
-                markComplete("services");
-                goNext();
-              }}
-            />
-          )}
-          {currentStep === "github" && (
-            <GithubStep
-              loading={loading}
-              setLoading={setLoading}
-              onComplete={() => {
-                markComplete("github");
-                goNext();
-              }}
-              onSkip={() => {
-                markComplete("github");
-                goNext();
-              }}
-            />
-          )}
-          {currentStep === "domain" && (
-            <DomainStep
-              onComplete={() => {
-                markComplete("domain");
-                goNext();
-              }}
-              onSkip={() => {
-                markComplete("domain");
-                goNext();
-              }}
-            />
-          )}
-          {currentStep === "done" && (
-            <DoneStep onFinish={() => router.push("/projects")} />
-          )}
+        {/* Right column — current step form */}
+        <div className="flex items-start pt-0 md:pt-12">
+          <div className="w-full space-y-6">
+            {currentStep === "account" && (
+              <AccountStep
+                loading={loading}
+                setLoading={setLoading}
+                onComplete={() => {
+                  markComplete("account");
+                  goNext();
+                }}
+              />
+            )}
+            {currentStep === "email" && (
+              <EmailStep
+                loading={loading}
+                setLoading={setLoading}
+                onComplete={() => {
+                  markComplete("email");
+                  goNext();
+                }}
+                onSkip={() => {
+                  markComplete("email");
+                  goNext();
+                }}
+              />
+            )}
+            {currentStep === "backup" && (
+              <BackupStep
+                loading={loading}
+                setLoading={setLoading}
+                onComplete={() => {
+                  markComplete("backup");
+                  goNext();
+                }}
+                onSkip={() => {
+                  markComplete("backup");
+                  goNext();
+                }}
+              />
+            )}
+            {currentStep === "services" && (
+              <ServicesStep
+                loading={loading}
+                setLoading={setLoading}
+                onComplete={() => {
+                  markComplete("services");
+                  goNext();
+                }}
+                onSkip={() => {
+                  markComplete("services");
+                  goNext();
+                }}
+              />
+            )}
+            {currentStep === "github" && (
+              <GithubStep
+                loading={loading}
+                setLoading={setLoading}
+                onComplete={() => {
+                  markComplete("github");
+                  goNext();
+                }}
+                onSkip={() => {
+                  markComplete("github");
+                  goNext();
+                }}
+              />
+            )}
+            {currentStep === "domain" && (
+              <DomainStep
+                onComplete={() => {
+                  markComplete("domain");
+                  goNext();
+                }}
+                onSkip={() => {
+                  markComplete("domain");
+                  goNext();
+                }}
+              />
+            )}
+            {currentStep === "done" && (
+              <DoneStep onFinish={() => router.push("/projects")} />
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -237,55 +304,46 @@ function AccountStep({
   }
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-2 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Create your account
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          The first account is automatically the admin.
-        </p>
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="space-y-2">
+        <Label htmlFor="name">Name</Label>
+        <Input
+          id="name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          required
+          autoFocus
+        />
       </div>
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="name">Name</Label>
-          <Input
-            id="name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="email">Email</Label>
-          <Input
-            id="email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="password">Password</Label>
-          <Input
-            id="password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            minLength={8}
-            required
-          />
-        </div>
-        <Button type="submit" className="squircle w-full" disabled={loading}>
-          {loading ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            "Create account"
-          )}
-        </Button>
-      </form>
-    </div>
+      <div className="space-y-2">
+        <Label htmlFor="email">Email</Label>
+        <Input
+          id="email"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+        />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="password">Password</Label>
+        <Input
+          id="password"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          minLength={8}
+          required
+        />
+      </div>
+      <Button type="submit" className="squircle w-full" disabled={loading}>
+        {loading ? (
+          <Loader2 className="size-4 animate-spin" />
+        ) : (
+          "Create account"
+        )}
+      </Button>
+    </form>
   );
 }
 
@@ -311,7 +369,7 @@ function EmailStep({
   const [smtpPass, setSmtpPass] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [fromEmail, setFromEmail] = useState("");
-  const [fromName, setFromName] = useState("Host");
+  const [fromName, setFromName] = useState("Vardo");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -342,123 +400,113 @@ function EmailStep({
   }
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-2 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Email provider
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Configure how Host sends emails (magic links, notifications).
-        </p>
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="space-y-2">
+        <Label>Provider</Label>
+        <Select value={provider} onValueChange={setProvider}>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="smtp">SMTP</SelectItem>
+            <SelectItem value="resend">Resend</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="space-y-2">
-          <Label>Provider</Label>
-          <Select value={provider} onValueChange={setProvider}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="smtp">SMTP</SelectItem>
-              <SelectItem value="resend">Resend</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
 
-        {provider === "smtp" ? (
-          <>
-            <div className="grid grid-cols-3 gap-2">
-              <div className="col-span-2 space-y-2">
-                <Label htmlFor="smtpHost">SMTP Host</Label>
-                <Input
-                  id="smtpHost"
-                  value={smtpHost}
-                  onChange={(e) => setSmtpHost(e.target.value)}
-                  placeholder="smtp.example.com"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="smtpPort">Port</Label>
-                <Input
-                  id="smtpPort"
-                  value={smtpPort}
-                  onChange={(e) => setSmtpPort(e.target.value)}
-                  required
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="smtpUser">Username</Label>
+      {provider === "smtp" ? (
+        <>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="col-span-2 space-y-2">
+              <Label htmlFor="smtpHost">SMTP Host</Label>
               <Input
-                id="smtpUser"
-                value={smtpUser}
-                onChange={(e) => setSmtpUser(e.target.value)}
+                id="smtpHost"
+                value={smtpHost}
+                onChange={(e) => setSmtpHost(e.target.value)}
+                placeholder="smtp.example.com"
                 required
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="smtpPass">Password</Label>
+              <Label htmlFor="smtpPort">Port</Label>
               <Input
-                id="smtpPass"
-                type="password"
-                value={smtpPass}
-                onChange={(e) => setSmtpPass(e.target.value)}
+                id="smtpPort"
+                value={smtpPort}
+                onChange={(e) => setSmtpPort(e.target.value)}
                 required
               />
             </div>
-          </>
-        ) : (
+          </div>
           <div className="space-y-2">
-            <Label htmlFor="apiKey">Resend API Key</Label>
+            <Label htmlFor="smtpUser">Username</Label>
             <Input
-              id="apiKey"
+              id="smtpUser"
+              value={smtpUser}
+              onChange={(e) => setSmtpUser(e.target.value)}
+              required
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="smtpPass">Password</Label>
+            <Input
+              id="smtpPass"
               type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder="re_..."
+              value={smtpPass}
+              onChange={(e) => setSmtpPass(e.target.value)}
               required
             />
           </div>
-        )}
-
-        <div className="grid grid-cols-2 gap-2">
-          <div className="space-y-2">
-            <Label htmlFor="fromEmail">From email</Label>
-            <Input
-              id="fromEmail"
-              type="email"
-              value={fromEmail}
-              onChange={(e) => setFromEmail(e.target.value)}
-              placeholder="noreply@example.com"
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="fromName">From name</Label>
-            <Input
-              id="fromName"
-              value={fromName}
-              onChange={(e) => setFromName(e.target.value)}
-            />
-          </div>
+        </>
+      ) : (
+        <div className="space-y-2">
+          <Label htmlFor="apiKey">Resend API Key</Label>
+          <Input
+            id="apiKey"
+            type="password"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder="re_..."
+            required
+          />
         </div>
+      )}
 
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            className="squircle flex-1"
-            onClick={onSkip}
-          >
-            Skip for now
-          </Button>
-          <Button type="submit" className="squircle flex-1" disabled={loading}>
-            {loading ? <Loader2 className="size-4 animate-spin" /> : "Save"}
-          </Button>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-2">
+          <Label htmlFor="fromEmail">From email</Label>
+          <Input
+            id="fromEmail"
+            type="email"
+            value={fromEmail}
+            onChange={(e) => setFromEmail(e.target.value)}
+            placeholder="noreply@example.com"
+            required
+          />
         </div>
-      </form>
-    </div>
+        <div className="space-y-2">
+          <Label htmlFor="fromName">From name</Label>
+          <Input
+            id="fromName"
+            value={fromName}
+            onChange={(e) => setFromName(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div className="flex gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          className="squircle flex-1"
+          onClick={onSkip}
+        >
+          Skip
+        </Button>
+        <Button type="submit" className="squircle flex-1" disabled={loading}>
+          {loading ? <Loader2 className="size-4 animate-spin" /> : "Save"}
+        </Button>
+      </div>
+    </form>
   );
 }
 
@@ -491,7 +539,14 @@ function BackupStep({
       const res = await fetch("/api/setup/backup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type, bucket, region, endpoint, accessKey, secretKey }),
+        body: JSON.stringify({
+          type,
+          bucket,
+          region,
+          endpoint,
+          accessKey,
+          secretKey,
+        }),
       });
       if (!res.ok) throw new Error("Failed to save");
       toast.success("Backup storage saved");
@@ -504,93 +559,83 @@ function BackupStep({
   }
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-2 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Backup storage
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Where should Host store volume backups?
-        </p>
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="space-y-2">
+        <Label>Storage type</Label>
+        <Select value={type} onValueChange={setType}>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="s3">AWS S3</SelectItem>
+            <SelectItem value="r2">Cloudflare R2</SelectItem>
+            <SelectItem value="b2">Backblaze B2</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="space-y-2">
+        <Label htmlFor="bucket">Bucket name</Label>
+        <Input
+          id="bucket"
+          value={bucket}
+          onChange={(e) => setBucket(e.target.value)}
+          required
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
         <div className="space-y-2">
-          <Label>Storage type</Label>
-          <Select value={type} onValueChange={setType}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="s3">AWS S3</SelectItem>
-              <SelectItem value="r2">Cloudflare R2</SelectItem>
-              <SelectItem value="b2">Backblaze B2</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="bucket">Bucket name</Label>
+          <Label htmlFor="region">Region</Label>
           <Input
-            id="bucket"
-            value={bucket}
-            onChange={(e) => setBucket(e.target.value)}
-            required
-          />
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <div className="space-y-2">
-            <Label htmlFor="region">Region</Label>
-            <Input
-              id="region"
-              value={region}
-              onChange={(e) => setRegion(e.target.value)}
-              placeholder={type === "r2" ? "auto" : "us-east-1"}
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="endpoint">Endpoint</Label>
-            <Input
-              id="endpoint"
-              value={endpoint}
-              onChange={(e) => setEndpoint(e.target.value)}
-              placeholder={type === "s3" ? "Leave blank for AWS" : ""}
-            />
-          </div>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="accessKey">Access key</Label>
-          <Input
-            id="accessKey"
-            value={accessKey}
-            onChange={(e) => setAccessKey(e.target.value)}
+            id="region"
+            value={region}
+            onChange={(e) => setRegion(e.target.value)}
+            placeholder={type === "r2" ? "auto" : "us-east-1"}
             required
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="secretKey">Secret key</Label>
+          <Label htmlFor="endpoint">Endpoint</Label>
           <Input
-            id="secretKey"
-            type="password"
-            value={secretKey}
-            onChange={(e) => setSecretKey(e.target.value)}
-            required
+            id="endpoint"
+            value={endpoint}
+            onChange={(e) => setEndpoint(e.target.value)}
+            placeholder={type === "s3" ? "Leave blank for AWS" : ""}
           />
         </div>
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            className="squircle flex-1"
-            onClick={onSkip}
-          >
-            Skip for now
-          </Button>
-          <Button type="submit" className="squircle flex-1" disabled={loading}>
-            {loading ? <Loader2 className="size-4 animate-spin" /> : "Save"}
-          </Button>
-        </div>
-      </form>
-    </div>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="accessKey">Access key</Label>
+        <Input
+          id="accessKey"
+          value={accessKey}
+          onChange={(e) => setAccessKey(e.target.value)}
+          required
+        />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="secretKey">Secret key</Label>
+        <Input
+          id="secretKey"
+          type="password"
+          value={secretKey}
+          onChange={(e) => setSecretKey(e.target.value)}
+          required
+        />
+      </div>
+      <div className="flex gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          className="squircle flex-1"
+          onClick={onSkip}
+        >
+          Skip
+        </Button>
+        <Button type="submit" className="squircle flex-1" disabled={loading}>
+          {loading ? <Loader2 className="size-4 animate-spin" /> : "Save"}
+        </Button>
+      </div>
+    </form>
   );
 }
 
@@ -632,49 +677,39 @@ function ServicesStep({
   }
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-2 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Optional services
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Enable monitoring and logging. These can be changed later in Settings.
-        </p>
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="flex items-center justify-between rounded-lg border p-4">
+        <div className="space-y-0.5">
+          <div className="text-sm font-medium">Container metrics</div>
+          <div className="text-xs text-muted-foreground">
+            cAdvisor — CPU, memory, network stats per container
+          </div>
+        </div>
+        <Switch checked={metrics} onCheckedChange={setMetrics} />
       </div>
-      <form onSubmit={handleSubmit} className="space-y-6">
-        <div className="flex items-center justify-between rounded-lg border p-4">
-          <div className="space-y-0.5">
-            <div className="text-sm font-medium">Container metrics</div>
-            <div className="text-xs text-muted-foreground">
-              cAdvisor — CPU, memory, network stats per container
-            </div>
+      <div className="flex items-center justify-between rounded-lg border p-4">
+        <div className="space-y-0.5">
+          <div className="text-sm font-medium">Persistent logs</div>
+          <div className="text-xs text-muted-foreground">
+            Loki + Promtail — searchable container logs
           </div>
-          <Switch checked={metrics} onCheckedChange={setMetrics} />
         </div>
-        <div className="flex items-center justify-between rounded-lg border p-4">
-          <div className="space-y-0.5">
-            <div className="text-sm font-medium">Persistent logs</div>
-            <div className="text-xs text-muted-foreground">
-              Loki + Promtail — searchable container logs
-            </div>
-          </div>
-          <Switch checked={logs} onCheckedChange={setLogs} />
-        </div>
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            className="squircle flex-1"
-            onClick={onSkip}
-          >
-            Skip for now
-          </Button>
-          <Button type="submit" className="squircle flex-1" disabled={loading}>
-            {loading ? <Loader2 className="size-4 animate-spin" /> : "Save"}
-          </Button>
-        </div>
-      </form>
-    </div>
+        <Switch checked={logs} onCheckedChange={setLogs} />
+      </div>
+      <div className="flex gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          className="squircle flex-1"
+          onClick={onSkip}
+        >
+          Skip
+        </Button>
+        <Button type="submit" className="squircle flex-1" disabled={loading}>
+          {loading ? <Loader2 className="size-4 animate-spin" /> : "Save"}
+        </Button>
+      </div>
+    </form>
   );
 }
 
@@ -727,91 +762,83 @@ function GithubStep({
   }
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-2 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">GitHub App</h1>
-        <p className="text-sm text-muted-foreground">
-          Connect a GitHub App for repository access and auto-deploy.
-        </p>
-      </div>
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="grid grid-cols-2 gap-2">
-          <div className="space-y-2">
-            <Label htmlFor="appId">App ID</Label>
-            <Input
-              id="appId"
-              value={appId}
-              onChange={(e) => setAppId(e.target.value)}
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="appSlug">App slug</Label>
-            <Input
-              id="appSlug"
-              value={appSlug}
-              onChange={(e) => setAppSlug(e.target.value)}
-              required
-            />
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <div className="space-y-2">
-            <Label htmlFor="ghClientId">Client ID</Label>
-            <Input
-              id="ghClientId"
-              value={clientId}
-              onChange={(e) => setClientId(e.target.value)}
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="ghClientSecret">Client secret</Label>
-            <Input
-              id="ghClientSecret"
-              type="password"
-              value={clientSecret}
-              onChange={(e) => setClientSecret(e.target.value)}
-              required
-            />
-          </div>
-        </div>
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="grid grid-cols-2 gap-2">
         <div className="space-y-2">
-          <Label htmlFor="privateKey">Private key (PEM)</Label>
-          <textarea
-            id="privateKey"
-            className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            value={privateKey}
-            onChange={(e) => setPrivateKey(e.target.value)}
-            placeholder="-----BEGIN RSA PRIVATE KEY-----"
-            required
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="webhookSecret">Webhook secret</Label>
+          <Label htmlFor="appId">App ID</Label>
           <Input
-            id="webhookSecret"
-            type="password"
-            value={webhookSecret}
-            onChange={(e) => setWebhookSecret(e.target.value)}
+            id="appId"
+            value={appId}
+            onChange={(e) => setAppId(e.target.value)}
             required
           />
         </div>
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            className="squircle flex-1"
-            onClick={onSkip}
-          >
-            Skip for now
-          </Button>
-          <Button type="submit" className="squircle flex-1" disabled={loading}>
-            {loading ? <Loader2 className="size-4 animate-spin" /> : "Save"}
-          </Button>
+        <div className="space-y-2">
+          <Label htmlFor="appSlug">App slug</Label>
+          <Input
+            id="appSlug"
+            value={appSlug}
+            onChange={(e) => setAppSlug(e.target.value)}
+            required
+          />
         </div>
-      </form>
-    </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-2">
+          <Label htmlFor="ghClientId">Client ID</Label>
+          <Input
+            id="ghClientId"
+            value={clientId}
+            onChange={(e) => setClientId(e.target.value)}
+            required
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="ghClientSecret">Client secret</Label>
+          <Input
+            id="ghClientSecret"
+            type="password"
+            value={clientSecret}
+            onChange={(e) => setClientSecret(e.target.value)}
+            required
+          />
+        </div>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="privateKey">Private key (PEM)</Label>
+        <textarea
+          id="privateKey"
+          className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          value={privateKey}
+          onChange={(e) => setPrivateKey(e.target.value)}
+          placeholder="-----BEGIN RSA PRIVATE KEY-----"
+          required
+        />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="webhookSecret">Webhook secret</Label>
+        <Input
+          id="webhookSecret"
+          type="password"
+          value={webhookSecret}
+          onChange={(e) => setWebhookSecret(e.target.value)}
+          required
+        />
+      </div>
+      <div className="flex gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          className="squircle flex-1"
+          onClick={onSkip}
+        >
+          Skip
+        </Button>
+        <Button type="submit" className="squircle flex-1" disabled={loading}>
+          {loading ? <Loader2 className="size-4 animate-spin" /> : "Save"}
+        </Button>
+      </div>
+    </form>
   );
 }
 
@@ -828,15 +855,6 @@ function DomainStep({
 }) {
   return (
     <div className="space-y-4">
-      <div className="space-y-2 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Domain & DNS
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          DNS was configured during install. Verify your records are pointing to
-          this server.
-        </p>
-      </div>
       <div className="rounded-lg border p-4 space-y-3">
         <div className="text-sm font-medium">Required DNS records</div>
         <div className="space-y-1 font-mono text-xs text-muted-foreground">
@@ -858,7 +876,7 @@ function DomainStep({
           className="squircle flex-1"
           onClick={onSkip}
         >
-          Skip for now
+          Skip
         </Button>
         <Button className="squircle flex-1" onClick={onComplete}>
           DNS is configured
@@ -874,21 +892,19 @@ function DomainStep({
 
 function DoneStep({ onFinish }: { onFinish: () => void }) {
   return (
-    <div className="space-y-6 text-center">
+    <div className="space-y-6">
       <div className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">
+        <h2 className="text-2xl font-semibold tracking-tight">
           You&apos;re all set
-        </h1>
+        </h2>
         <p className="text-sm text-muted-foreground">
-          Host is ready. Deploy your first app or explore the dashboard.
+          Vardo is ready. Deploy your first app or explore the dashboard.
+          Any skipped steps can be configured later in Settings.
         </p>
       </div>
       <Button className="squircle w-full" size="lg" onClick={onFinish}>
         Go to dashboard
       </Button>
-      <p className="text-xs text-muted-foreground">
-        Any skipped steps can be configured later in Settings.
-      </p>
     </div>
   );
 }
