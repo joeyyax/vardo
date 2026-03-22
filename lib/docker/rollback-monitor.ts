@@ -1,15 +1,14 @@
 import { db } from "@/lib/db";
 import { deployments, apps } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import { promisify } from "util";
 import { join, resolve } from "path";
-import { readFile } from "fs/promises";
 import { listContainers, inspectContainer } from "./client";
 import { publishEvent, appChannel } from "@/lib/events";
 import { recordActivity } from "@/lib/activity";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 const PROJECTS_DIR = resolve(process.env.HOST_PROJECTS_DIR || "./.host/projects");
 const POLL_INTERVAL_MS = 5000;
 
@@ -179,8 +178,9 @@ async function performRollback(opts: PerformRollbackOpts): Promise<void> {
   const crashedComposePath = join(crashedSlotDir, "docker-compose.yml");
 
   try {
-    await execAsync(
-      `docker compose -f "${crashedComposePath}" -p "${crashedProjectName}" down --remove-orphans`,
+    await execFileAsync(
+      "docker",
+      ["compose", "-f", crashedComposePath, "-p", crashedProjectName, "down", "--remove-orphans"],
       { cwd: crashedSlotDir, timeout: 30000 }
     );
   } catch (err) {
@@ -196,8 +196,9 @@ async function performRollback(opts: PerformRollbackOpts): Promise<void> {
   const prevComposePath = join(prevSlotDir, "docker-compose.yml");
 
   try {
-    await execAsync(
-      `docker compose -f "${prevComposePath}" -p "${prevProjectName}" up -d`,
+    await execFileAsync(
+      "docker",
+      ["compose", "-f", prevComposePath, "-p", prevProjectName, "up", "-d"],
       { cwd: prevSlotDir, timeout: 60000 }
     );
   } catch (err) {
