@@ -40,7 +40,7 @@ const STEPS = [
   {
     id: "email",
     label: "Email provider",
-    description: "SMTP or Resend for notifications",
+    description: "SMTP, Mailpace, or Resend",
     icon: Mail,
   },
   {
@@ -407,12 +407,13 @@ function EmailStep({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="smtp">SMTP</SelectItem>
+            <SelectItem value="mailpace">Mailpace</SelectItem>
             <SelectItem value="resend">Resend</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
-      {provider === "smtp" ? (
+      {provider === "smtp" && (
         <>
           <div className="grid grid-cols-3 gap-2">
             <div className="col-span-2 space-y-2">
@@ -455,7 +456,20 @@ function EmailStep({
             />
           </div>
         </>
-      ) : (
+      )}
+      {provider === "mailpace" && (
+        <div className="space-y-2">
+          <Label htmlFor="apiKey">Mailpace API Token</Label>
+          <Input
+            id="apiKey"
+            type="password"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            required
+          />
+        </div>
+      )}
+      {provider === "resend" && (
         <div className="space-y-2">
           <Label htmlFor="apiKey">Resend API Key</Label>
           <Input
