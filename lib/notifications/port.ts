@@ -13,7 +13,8 @@ export type NotificationEventType =
   | "system-alert-disk"
   | "system-alert-restart"
   | "system-alert-cert"
-  | "system-alert-update";
+  | "system-alert-update"
+  | "weekly-digest";
 
 export type NotificationEvent = {
   type: NotificationEventType;
