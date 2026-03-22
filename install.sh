@@ -22,9 +22,10 @@ error() { echo -e "${RED}▸${RESET} $1"; exit 1; }
 # ── Preflight checks ──────────────────────────────────────────────────────────
 
 echo ""
-echo -e "${BOLD}         __   ___${RESET}"
-echo -e "${BOLD}  \\  / /  \\ |__/ |  \\  /\\ ${RESET}"
-echo -e "${BOLD}   \\/  \\__/ |  \\ |__/ /~~\\ ${RESET}"
+echo -e "${BOLD}  /\\   /__ _| |__ _| | ___${RESET}"
+echo -e "${BOLD}  \\ \\ / / _\` | \`__/ _\` |/ _ \\${RESET}"
+echo -e "${BOLD}   \\ V / (_| | | | (_| | (_) |${RESET}"
+echo -e "${BOLD}    \\_/ \\__,_|_|  \\__,_|\\___/${RESET}"
 echo ""
 echo -e "${DIM}  Deploy everything. Own everything.${RESET}"
 echo ""
