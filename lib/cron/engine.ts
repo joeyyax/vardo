@@ -6,6 +6,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import { listContainers } from "@/lib/docker/client";
 import { shouldRunNow } from "./parse";
+import { acquireLock } from "@/lib/redis-lock";
 
 const execFileAsync = promisify(execFile);
 
@@ -110,19 +111,10 @@ export async function tickCronJobs(): Promise<void> {
     // Check if this job should run now
     if (!shouldRunNow(job.schedule, now)) continue;
 
-    // Avoid running the same job twice in the same minute
-    if (job.lastRunAt) {
-      const lastRun = new Date(job.lastRunAt);
-      if (
-        lastRun.getFullYear() === now.getFullYear() &&
-        lastRun.getMonth() === now.getMonth() &&
-        lastRun.getDate() === now.getDate() &&
-        lastRun.getHours() === now.getHours() &&
-        lastRun.getMinutes() === now.getMinutes()
-      ) {
-        continue; // Already ran this minute
-      }
-    }
+    // Acquire a distributed lock for this job+minute to prevent double-fire
+    const minuteTs = Math.floor(now.getTime() / 60_000);
+    const locked = await acquireLock(`lock:cron:${job.id}:${minuteTs}`, 61_000);
+    if (!locked) continue;
 
     // Mark as running
     const runId = nanoid();
