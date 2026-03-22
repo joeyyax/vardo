@@ -11,7 +11,12 @@ import { rateLimit } from "@/lib/api/rate-limit";
 
 // POST /api/v1/github/webhook — GitHub App webhook receiver
 export async function POST(request: NextRequest) {
-  const limited = rateLimit(request, { key: "webhook", limit: 30, windowMs: 60000 });
+  // This endpoint is unauthenticated (signature-verified below), so IP is the only
+  // available identifier. Note: x-forwarded-for can be spoofed if the app is not
+  // behind a trusted proxy that overwrites the header (e.g. nginx/Caddy). The
+  // HMAC signature check is the primary security control here; rate limiting is
+  // a secondary DoS defence only.
+  const limited = await rateLimit(request, { key: "webhook", limit: 30, windowMs: 60000 });
   if (limited) return limited;
 
   try {
