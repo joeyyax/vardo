@@ -15,7 +15,7 @@ export default function GlobalError({
             <p className="text-6xl font-mono font-light" style={{ color: "rgba(255,255,255,0.15)" }}>500</p>
             <div className="space-y-1">
               <p className="text-base font-medium" style={{ color: "rgba(255,255,255,0.7)" }}>
-                Something went wrong
+                Unexpected error
               </p>
               <p className="text-sm" style={{ color: "rgba(255,255,255,0.5)" }}>
                 An unexpected error occurred. Try refreshing the page.

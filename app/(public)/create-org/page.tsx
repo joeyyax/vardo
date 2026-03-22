@@ -40,7 +40,7 @@ export default function CreateOrgPage() {
       if (!res.ok) {
         const data = await res.json();
         toast.error("Couldn't create organization", {
-          description: data.error || "Check your input and try again",
+          description: data.error || "Check the name and try again",
         });
         return;
       }

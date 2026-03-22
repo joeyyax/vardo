@@ -522,9 +522,7 @@ export function BackupManager({ orgId, apps }: Props) {
         fetchData();
       }
     } catch {
-      toast.error("Couldn't update backup job", {
-        description: "Try again",
-      });
+      toast.error("Couldn't update backup job");
     }
   }
 
@@ -542,7 +540,7 @@ export function BackupManager({ orgId, apps }: Props) {
       } else {
         const err = await res.json();
         toast.error("Couldn't delete backup job", {
-          description: err.error || "Try again",
+          description: err.error,
         });
       }
     } catch {

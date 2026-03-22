@@ -199,7 +199,7 @@ export function CronManager({ appId, orgId }: Props) {
       } else {
         const err = await res.json().catch(() => ({}));
         toast.error("Couldn't delete cron job", {
-          description: err.error || "Try again",
+          description: err.error,
         });
       }
     } catch {
@@ -223,9 +223,7 @@ export function CronManager({ appId, orgId }: Props) {
         fetchJobs();
       }
     } catch {
-      toast.error("Couldn't update cron job", {
-        description: "Try again",
-      });
+      toast.error("Couldn't update cron job");
     }
   }
 

@@ -114,7 +114,7 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
 
       if (!res.ok) {
         toast.error("Couldn't update role", {
-          description: data.error || "Try again",
+          description: data.error,
         });
         return;
       }
@@ -143,7 +143,7 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
 
       if (!res.ok) {
         toast.error("Couldn't remove member", {
-          description: data.error || "Try again",
+          description: data.error,
         });
         return;
       }
