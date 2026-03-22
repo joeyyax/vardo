@@ -28,27 +28,29 @@ async function migrate() {
   let migrated = 0;
   let skipped = 0;
 
-  for (const v of allVars) {
-    if (!v.isSecret) {
-      skipped++;
-      continue;
+  await db.transaction(async (tx) => {
+    for (const v of allVars) {
+      if (!v.isSecret) {
+        skipped++;
+        continue;
+      }
+
+      if (isEncrypted(v.value)) {
+        console.log(`  [skip] ${v.key} (org: ${v.organizationId}) — already encrypted`);
+        skipped++;
+        continue;
+      }
+
+      const encrypted = encrypt(v.value, v.organizationId);
+      await tx
+        .update(orgEnvVars)
+        .set({ value: encrypted, updatedAt: new Date() })
+        .where(eq(orgEnvVars.id, v.id));
+
+      console.log(`  [migrated] ${v.key} (org: ${v.organizationId})`);
+      migrated++;
     }
-
-    if (isEncrypted(v.value)) {
-      console.log(`  [skip] ${v.key} (org: ${v.organizationId}) — already encrypted`);
-      skipped++;
-      continue;
-    }
-
-    const encrypted = encrypt(v.value, v.organizationId);
-    await db
-      .update(orgEnvVars)
-      .set({ value: encrypted, updatedAt: new Date() })
-      .where(eq(orgEnvVars.id, v.id));
-
-    console.log(`  [migrated] ${v.key} (org: ${v.organizationId})`);
-    migrated++;
-  }
+  });
 
   console.log(`\nDone: ${migrated} migrated, ${skipped} skipped`);
 }
