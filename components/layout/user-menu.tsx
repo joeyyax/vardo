@@ -16,6 +16,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useSession, signOut } from "@/lib/auth/client";
 import { getInitials } from "@/lib/utils";
+import { toast } from "sonner";
+import { switchOrganization } from "@/lib/organizations/switch";
 import type { Organization } from "@/lib/types";
 
 type UserMenuProps = {
@@ -43,10 +45,15 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations }: Us
     });
   };
 
-  const handleSwitchOrg = (orgId: string) => {
+  const handleSwitchOrg = async (orgId: string) => {
     if (orgId === currentOrg?.id) return;
-    document.cookie = `time_current_org=${orgId};path=/;max-age=${60 * 60 * 24 * 365}`;
-    window.location.reload();
+    const result = await switchOrganization(orgId);
+    if (result.ok) {
+      router.push("/projects");
+      router.refresh();
+    } else {
+      toast.error(result.error);
+    }
   };
 
   if (isPending) {
