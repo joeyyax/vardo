@@ -9,6 +9,7 @@ import { OrgSwitcher } from "@/components/layout/org-switcher";
 import { TeamMembers } from "@/app/(app)/team/team-members";
 import { OrgDomainEditor } from "./org-domain-editor";
 import { NotificationChannelsEditor } from "./notification-channels";
+import { DigestSettingsEditor } from "./digest-settings";
 
 export default async function SettingsPage({
   searchParams,
@@ -77,7 +78,12 @@ export default async function SettingsPage({
         </TabsContent>
 
         <TabsContent value="notifications" className="pt-4">
-          <NotificationChannelsEditor orgId={orgId} />
+          <div className="space-y-8">
+            <NotificationChannelsEditor orgId={orgId} />
+            <div className="border-t border-border pt-6">
+              <DigestSettingsEditor orgId={orgId} />
+            </div>
+          </div>
         </TabsContent>
 
         <TabsContent value="team" className="pt-4">

@@ -6,7 +6,8 @@ export type NotificationEventType =
   | "cron-failed"
   | "volume-drift"
   | "disk-write-alert"
-  | "auto-rollback";
+  | "auto-rollback"
+  | "weekly-digest";
 
 export type NotificationEvent = {
   type: NotificationEventType;
