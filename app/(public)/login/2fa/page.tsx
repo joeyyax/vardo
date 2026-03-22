@@ -3,7 +3,6 @@
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, ShieldCheck, KeyRound } from "lucide-react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,29 +25,31 @@ function TwoFactorForm() {
   const [code, setCode] = useState("");
   const [trustDevice, setTrustDevice] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setError(null);
 
     try {
       if (mode === "totp") {
-        const { error } = await twoFactor.verifyTotp({
+        const { error: err } = await twoFactor.verifyTotp({
           code,
           trustDevice,
         });
-        if (error) {
-          toast.error(error.message || "Invalid code");
+        if (err) {
+          setError(err.message || "Invalid code");
           setLoading(false);
           return;
         }
       } else {
         // Backup code verification
-        const { error } = await twoFactor.verifyBackupCode({
+        const { error: err } = await twoFactor.verifyBackupCode({
           code,
         });
-        if (error) {
-          toast.error(error.message || "Invalid backup code");
+        if (err) {
+          setError(err.message || "Invalid backup code");
           setLoading(false);
           return;
         }
@@ -56,7 +57,7 @@ function TwoFactorForm() {
 
       router.push(callbackUrl);
     } catch {
-      toast.error("Verification failed");
+      setError("Verification failed");
       setLoading(false);
     }
   };
@@ -76,6 +77,14 @@ function TwoFactorForm() {
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {error && (
+            <div
+              role="alert"
+              className="p-3 text-sm text-destructive bg-destructive/10 rounded-lg"
+            >
+              {error}
+            </div>
+          )}
           {mode === "totp" ? (
             <div className="grid gap-2">
               <Label htmlFor="totp-code">Authentication code</Label>
