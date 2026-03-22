@@ -48,7 +48,7 @@ Host uses two environment files:
 | `GITHUB_APP_SLUG` | GitHub App slug (URL name) | -- |
 | `GITHUB_CLIENT_ID` | OAuth client ID | -- |
 | `GITHUB_CLIENT_SECRET` | OAuth client secret | -- |
-| `GITHUB_WEBHOOK_SECRET` | Secret for verifying GitHub webhook signatures | -- |
+| `GITHUB_WEBHOOK_SECRET` | Secret for verifying GitHub webhook signatures. **Required** — the webhook endpoint returns 500 if unset. Must be unique; never share with `BETTER_AUTH_SECRET`. | -- |
 | `GITHUB_PRIVATE_KEY` | Base64-encoded PEM private key for the GitHub App | -- |
 
 ### Monitoring (Production)
