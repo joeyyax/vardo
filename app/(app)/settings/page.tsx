@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { memberships, invitations, user } from "@/lib/db/schema";
+import { memberships, invitations } from "@/lib/db/schema";
 import { getSession, getCurrentOrg, getUserOrganizations } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -11,8 +11,6 @@ import { OrgDomainEditor } from "./org-domain-editor";
 import { NotificationChannelsEditor } from "./notification-channels";
 import { InvitationsPanel } from "./invitations";
 import { DigestSettingsEditor } from "./digest-settings";
-import { SystemSettings } from "./system-settings";
-
 export default async function SettingsPage({
   searchParams,
 }: {
@@ -28,13 +26,6 @@ export default async function SettingsPage({
 
   const orgId = orgData.organization.id;
   const organizations = await getUserOrganizations();
-
-  // Check if current user is an app admin
-  const dbUser = await db.query.user.findFirst({
-    where: eq(user.id, session.user.id),
-    columns: { isAppAdmin: true },
-  });
-  const isAdmin = !!dbUser?.isAppAdmin;
 
   const orgMemberships = await db.query.memberships.findMany({
     where: eq(memberships.organizationId, orgId),
@@ -142,13 +133,6 @@ export default async function SettingsPage({
           />
         </TabsContent>
       </Tabs>
-
-      {isAdmin && (
-        <>
-          <div className="border-t border-border" />
-          <SystemSettings defaultTab={tab === "system" ? "email" : undefined} />
-        </>
-      )}
     </div>
   );
 }
