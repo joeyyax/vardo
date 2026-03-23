@@ -327,23 +327,26 @@ export function InstancesSettings() {
               <DialogHeader>
                 <DialogTitle>Invite code</DialogTitle>
                 <DialogDescription>
-                  Run this on the instance you want to connect. Expires in 15 minutes, one-time use.
+                  Run this command on the instance you want to connect. Expires in 15 minutes, one-time use.
                 </DialogDescription>
               </DialogHeader>
               <div className="flex items-center gap-2">
-                <code className="flex-1 rounded-md bg-muted px-3 py-2 font-mono text-sm tracking-widest text-center">
-                  {inviteCode}
+                <code className="flex-1 rounded-md bg-muted px-3 py-2 font-mono text-sm">
+                  vardo join {inviteCode}
                 </code>
                 <Button
                   variant="outline"
                   size="sm"
                   className="squircle shrink-0"
-                  aria-label="Copy invite code"
-                  onClick={() => copyToClipboard(inviteCode, "Invite code")}
+                  aria-label="Copy join command"
+                  onClick={() => copyToClipboard(`vardo join ${inviteCode}`, "Join command")}
                 >
                   <Copy className="size-4" />
                 </Button>
               </div>
+              <p className="text-xs text-muted-foreground">
+                Run this on the remote instance where Vardo is installed.
+              </p>
               <DialogFooter>
                 <Button className="squircle" onClick={handleCloseInvite}>
                   Done
