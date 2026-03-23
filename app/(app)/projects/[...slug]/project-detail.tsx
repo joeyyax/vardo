@@ -59,6 +59,7 @@ import { LogViewer, DeploymentLog } from "@/components/log-viewer";
 import { EnvEditor } from "@/components/env-editor";
 import { AppMetrics } from "@/app/(app)/apps/[...slug]/app-metrics";
 import { ProjectMetrics } from "./project-metrics";
+import { ProjectInstances } from "@/components/mesh/project-instances";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -749,10 +750,16 @@ export function ProjectDetail({
   project,
   orgId,
   initialTab,
+  meshEnabled = false,
+  meshPeers = [],
+  projectInstances = [],
 }: {
   project: Project;
   orgId: string;
   initialTab: string;
+  meshEnabled?: boolean;
+  meshPeers?: { id: string; name: string; type: string; status: string }[];
+  projectInstances?: { id: string; environment: string; gitRef: string | null; status: string; meshPeerId: string | null; transferredAt: Date | null }[];
 }) {
   const router = useRouter();
   const color = "#a1a1aa"; // neutral — project color is unused
@@ -1244,6 +1251,16 @@ export function ProjectDetail({
           <TabsTrigger value="metrics">
             Metrics
           </TabsTrigger>
+          {meshEnabled && (
+            <TabsTrigger value="instances">
+              Instances
+              {projectInstances.length > 0 && (
+                <Badge variant="secondary" className="ml-1.5 text-xs">
+                  {projectInstances.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="apps" className="pt-4">
@@ -1305,6 +1322,17 @@ export function ProjectDetail({
         <TabsContent value="metrics" className="pt-4">
           <ProjectMetricsTab apps={topLevelApps} orgId={orgId} projectId={project.id} />
         </TabsContent>
+
+        {meshEnabled && (
+          <TabsContent value="instances" className="pt-4">
+            <ProjectInstances
+              projectId={project.id}
+              orgId={orgId}
+              peers={meshPeers}
+              instances={projectInstances}
+            />
+          </TabsContent>
+        )}
       </Tabs>
 
       {/* New environment sheet */}

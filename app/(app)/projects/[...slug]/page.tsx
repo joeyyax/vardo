@@ -1,11 +1,12 @@
 import { redirect, notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { projects } from "@/lib/db/schema";
+import { projects, meshPeers, projectInstances } from "@/lib/db/schema";
 import { getCurrentOrg } from "@/lib/auth/session";
 import { eq, and, or } from "drizzle-orm";
+import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { ProjectDetail } from "./project-detail";
 
-const VALID_TABS = ["apps", "deployments", "variables", "logs", "metrics"] as const;
+const VALID_TABS = ["apps", "deployments", "variables", "logs", "metrics", "instances"] as const;
 type ValidTab = (typeof VALID_TABS)[number];
 
 export default async function ProjectDetailPage({
@@ -117,5 +118,31 @@ export default async function ProjectDetailPage({
 
   const effectiveTab = tab || "apps";
 
-  return <ProjectDetail project={project} orgId={orgId} initialTab={effectiveTab} />;
+  // Fetch mesh data in parallel if mesh is enabled
+  const meshEnabled = await isFeatureEnabledAsync("mesh");
+  let meshData: { peers: { id: string; name: string; type: string; status: string }[]; instances: { id: string; environment: string; gitRef: string | null; status: string; meshPeerId: string | null; transferredAt: Date | null }[] } = { peers: [], instances: [] };
+
+  if (meshEnabled) {
+    const [peers, instances] = await Promise.all([
+      db.query.meshPeers.findMany({
+        columns: { id: true, name: true, type: true, status: true },
+      }),
+      db.query.projectInstances.findMany({
+        where: eq(projectInstances.projectId, project.id),
+        columns: { id: true, environment: true, gitRef: true, status: true, meshPeerId: true, transferredAt: true },
+      }),
+    ]);
+    meshData = { peers, instances };
+  }
+
+  return (
+    <ProjectDetail
+      project={project}
+      orgId={orgId}
+      initialTab={effectiveTab}
+      meshEnabled={meshEnabled}
+      meshPeers={meshData.peers}
+      projectInstances={meshData.instances}
+    />
+  );
 }
