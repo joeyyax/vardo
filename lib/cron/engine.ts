@@ -176,18 +176,16 @@ export async function tickCronJobs(): Promise<void> {
 
     if (!result.success) {
       try {
-        const { notify } = await import("@/lib/notifications/dispatch");
-        await notify(job.app.organizationId, {
-          type: "cron-failed",
+        const { emit } = await import("@/lib/notifications/dispatch");
+        emit(job.app.organizationId, {
+          type: "cron.failed",
           title: `Cron failed: ${job.name} (${job.app.displayName || job.app.name})`,
           message: result.log.slice(0, 500),
-          metadata: {
-            cronJobId: job.id,
-            cronJobName: job.name,
-            appId: job.app.id,
-            projectName: job.app.displayName || job.app.name,
-            durationMs: String(result.durationMs),
-          },
+          cronJobId: job.id,
+          cronJobName: job.name,
+          appId: job.app.id,
+          projectName: job.app.displayName || job.app.name,
+          durationMs: result.durationMs,
         });
       } catch (err) {
         console.error(`[cron] Failed to send notification for ${job.name}:`, err);

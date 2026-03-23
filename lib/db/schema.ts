@@ -896,6 +896,7 @@ export const notificationChannels = pgTable(
     type: notificationChannelTypeEnum("type").notNull(),
     config: jsonb("config").notNull().$type<{ recipients: string[] } | { url: string; secret?: string } | { webhookUrl: string }>(),
     enabled: boolean("enabled").default(true).notNull(),
+    subscribedEvents: text("subscribed_events").array().default([]).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

@@ -8,7 +8,7 @@ import { z } from "zod";
 import { maskChannelConfig } from "@/lib/notifications/mask-config";
 
 type RouteParams = { params: Promise<{ orgId: string; channelId: string }> };
-const updateSchema = z.object({ name: z.string().min(1).max(100).optional(), config: z.union([z.object({ recipients: z.array(z.string().email()).min(1) }), z.object({ url: z.string().url(), secret: z.string().optional() }), z.object({ webhookUrl: z.string().url() })]).optional(), enabled: z.boolean().optional() });
+const updateSchema = z.object({ name: z.string().min(1).max(100).optional(), config: z.union([z.object({ recipients: z.array(z.string().email()).min(1) }), z.object({ url: z.string().url(), secret: z.string().optional() }), z.object({ webhookUrl: z.string().url() })]).optional(), enabled: z.boolean().optional(), subscribedEvents: z.array(z.string()).optional() });
 
 export async function GET(_req: NextRequest, { params }: RouteParams) {
   try {
@@ -32,6 +32,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     if (parsed.data.name !== undefined) updates.name = parsed.data.name;
     if (parsed.data.config !== undefined) updates.config = parsed.data.config;
     if (parsed.data.enabled !== undefined) updates.enabled = parsed.data.enabled;
+    if (parsed.data.subscribedEvents !== undefined) updates.subscribedEvents = parsed.data.subscribedEvents;
     const [channel] = await db.update(notificationChannels).set(updates).where(and(eq(notificationChannels.id, channelId), eq(notificationChannels.organizationId, orgId))).returning();
     if (!channel) return NextResponse.json({ error: "Channel not found" }, { status: 404 });
     return NextResponse.json({ channel: maskChannelConfig(channel) });
