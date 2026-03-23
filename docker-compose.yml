@@ -63,7 +63,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:-host}
       POSTGRES_DB: host
     ports:
-      - "${POSTGRES_PORT:-5433}:5432"
+      - "${POSTGRES_PORT:-9100}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -80,7 +80,7 @@ services:
     image: redis/redis-stack-server:latest
     restart: unless-stopped
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "${REDIS_PORT:-9200}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -125,7 +125,7 @@ services:
     restart: unless-stopped
     privileged: true
     ports:
-      - "${CADVISOR_PORT:-8081}:8080"
+      - "${CADVISOR_PORT:-9300}:8080"
     volumes:
       - /:/rootfs:ro
       - /var/run:/var/run:ro
@@ -141,7 +141,7 @@ services:
     restart: unless-stopped
     command: -config.file=/etc/loki/loki.yml
     ports:
-      - "${LOKI_PORT:-3100}:3100"
+      - "${LOKI_PORT:-9400}:3100"
     volumes:
       - ./config/loki.yml:/etc/loki/loki.yml:ro
       - loki_data:/loki

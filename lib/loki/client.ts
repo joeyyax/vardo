@@ -2,7 +2,7 @@
 // Loki HTTP client — queries persistent container logs
 // ---------------------------------------------------------------------------
 
-const LOKI_URL = process.env.LOKI_URL || "http://localhost:3100";
+const LOKI_URL = process.env.LOKI_URL || "http://localhost:9400";
 
 // ---------------------------------------------------------------------------
 // Availability check

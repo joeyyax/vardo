@@ -2,7 +2,7 @@ import Redis from "ioredis";
 import { seriesToPoints } from "./aggregate";
 import type { MetricsPoint } from "./types";
 
-const url = process.env.REDIS_URL || "redis://localhost:6379";
+const url = process.env.REDIS_URL || "redis://localhost:9200";
 
 // Dedicated connection for time-series operations
 const globalForTS = globalThis as unknown as { tsRedis: Redis | undefined };

@@ -215,6 +215,52 @@ preflight_checks() {
   else
     log "Disk: ${disk_gb}GB free"
   fi
+
+  # Ports
+  check_ports
+}
+
+check_port_in_use() {
+  local port="$1"
+  if [[ "$PLATFORM" == "macos" ]]; then
+    lsof -iTCP:"$port" -sTCP:LISTEN -t &>/dev/null
+  else
+    ss -tlnp "sport = :$port" 2>/dev/null | grep -q LISTEN
+  fi
+}
+
+check_ports() {
+  local ports_ok=true
+
+  # Traefik ports — required for production, skipped for dev
+  if ! is_dev; then
+    for port in 80 443; do
+      if check_port_in_use "$port"; then
+        fail "Port $port is in use — Traefik needs it for TLS. Free the port and retry."
+        ports_ok=false
+      fi
+    done
+  fi
+
+  # Service ports — warn and suggest override
+  local -A service_ports=(
+    [POSTGRES_PORT]="${POSTGRES_PORT:-9100}"
+    [REDIS_PORT]="${REDIS_PORT:-9200}"
+    [CADVISOR_PORT]="${CADVISOR_PORT:-9300}"
+    [LOKI_PORT]="${LOKI_PORT:-9400}"
+  )
+
+  for env_var in "${!service_ports[@]}"; do
+    local port="${service_ports[$env_var]}"
+    if check_port_in_use "$port"; then
+      warn "Port $port is in use — set $env_var in .env to use a different port"
+      ports_ok=false
+    fi
+  done
+
+  if $ports_ok; then
+    log "Ports available"
+  fi
 }
 
 setup_swap() {
