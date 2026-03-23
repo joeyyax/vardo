@@ -447,7 +447,14 @@ export function InstancesSettings() {
           ) : null}
 
       {/* About the mesh */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="space-y-6">
+        <p className="text-sm text-muted-foreground max-w-2xl">
+          Run Vardo on multiple servers and keep them in sync. Each server is
+          an "instance" — this page lets you link them together over an encrypted
+          WireGuard tunnel so they share project data automatically. Generate an
+          invite on one instance, paste it on the other, and they'll find each other.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-3">
               <h3 className="text-sm font-medium">Features</h3>
               <ul className="text-sm space-y-2">
@@ -498,6 +505,7 @@ export function InstancesSettings() {
                 </li>
               </ul>
             </div>
+        </div>
       </div>
 
       {/* Generate invite dialog */}
