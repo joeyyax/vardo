@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { OverviewSettings } from "../overview-settings";
 import { GeneralSettings } from "../general-settings";
 import { EmailSettings } from "../email-settings";
@@ -24,6 +25,11 @@ const TAB_COMPONENTS: Record<ValidTab, React.ComponentType> = {
   "instances": InstancesSettings,
 };
 
+/** Tabs that require a feature flag to be enabled. */
+const FLAG_GATED_TABS: Partial<Record<ValidTab, Parameters<typeof isFeatureEnabledAsync>[0]>> = {
+  instances: "mesh",
+};
+
 export default async function AdminSettingsTabPage({
   params,
 }: {
@@ -32,6 +38,11 @@ export default async function AdminSettingsTabPage({
   const { tab } = await params;
 
   if (!VALID_TABS.includes(tab as ValidTab)) {
+    notFound();
+  }
+
+  const requiredFlag = FLAG_GATED_TABS[tab as ValidTab];
+  if (requiredFlag && !(await isFeatureEnabledAsync(requiredFlag))) {
     notFound();
   }
 
