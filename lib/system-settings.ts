@@ -229,28 +229,6 @@ export async function getBackupStorageConfig(): Promise<BackupStorageConfig | nu
 }
 
 // ---------------------------------------------------------------------------
-// Optional services
-// ---------------------------------------------------------------------------
-
-export type OptionalServicesConfig = {
-  metrics: boolean;
-  logs: boolean;
-};
-
-export async function getOptionalServicesConfig(): Promise<OptionalServicesConfig> {
-  const dbConfig = await getSystemSettingRaw("optional_services")
-    .then((raw) => raw ? parseJson<OptionalServicesConfig>(raw, "optional_services") : null);
-
-  if (dbConfig) return { metrics: !!dbConfig.metrics, logs: !!dbConfig.logs };
-
-  // Env var fallback
-  return {
-    metrics: process.env.FEATURE_METRICS === "true",
-    logs: process.env.FEATURE_LOGS === "true",
-  };
-}
-
-// ---------------------------------------------------------------------------
 // Feature flags (DB-stored overrides)
 // ---------------------------------------------------------------------------
 

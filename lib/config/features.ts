@@ -2,18 +2,16 @@
  * Feature flags for Host.
  *
  * Controls which features are available system-wide. Useful for:
- * - Resource-constrained deployments (disable metrics, logs)
  * - Simplified UX (disable environments, previews)
  * - Pre-release/testing (gate new features)
  *
  * All flags default to enabled. Set the env var to "false" to disable.
  * Core features (projects, apps, deployments) cannot be disabled.
+ * Metrics and logs are always available — no opt-out.
  */
 
 export type FeatureFlag =
   | "ui"
-  | "metrics"
-  | "logs"
   | "terminal"
   | "environments"
   | "backups"
@@ -31,16 +29,6 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
     env: "FEATURE_UI",
     label: "Web UI",
     description: "Web dashboard for managing projects, apps, and deployments",
-  },
-  metrics: {
-    env: "FEATURE_METRICS",
-    label: "Metrics",
-    description: "Container CPU, memory, and network monitoring with historical charts",
-  },
-  logs: {
-    env: "FEATURE_LOGS",
-    label: "Logs",
-    description: "Persistent log collection and streaming via Loki",
   },
   terminal: {
     env: "FEATURE_TERMINAL",
@@ -109,7 +97,7 @@ export function getFlagConfig(flag: FeatureFlag): FlagConfig {
 /**
  * Feature flags that gate UI tabs and their corresponding API endpoints.
  */
-export type UIGatedFlag = "metrics" | "logs" | "terminal" | "cron" | "backups";
+export type UIGatedFlag = "terminal" | "cron" | "backups";
 
 /**
  * Subset of feature flags relevant to UI tab gating.
@@ -123,8 +111,6 @@ export type FeatureFlags = Record<UIGatedFlag, boolean>;
  */
 export function getFeatureFlags(): FeatureFlags {
   return {
-    metrics: isFeatureEnabled("metrics"),
-    logs: isFeatureEnabled("logs"),
     terminal: isFeatureEnabled("terminal"),
     cron: isFeatureEnabled("cron"),
     backups: isFeatureEnabled("backups"),
