@@ -9,8 +9,9 @@ import { NotificationChannelsEditor } from "../notification-channels";
 import { DigestSettingsEditor } from "../digest-settings";
 import { TeamMembers } from "@/app/(app)/team/team-members";
 import { InvitationsPanel } from "../invitations";
+import { OrgGeneralSettings } from "../org-general-settings";
 
-const VALID_TABS = ["variables", "domains", "notifications", "team", "invitations"] as const;
+const VALID_TABS = ["general", "variables", "domains", "notifications", "team", "invitations"] as const;
 type ValidTab = (typeof VALID_TABS)[number];
 
 export default async function OrgSettingsTabPage({
@@ -34,6 +35,14 @@ export default async function OrgSettingsTabPage({
   const orgId = orgData.organization.id;
 
   switch (tab as ValidTab) {
+    case "general":
+      return (
+        <OrgGeneralSettings
+          orgId={orgId}
+          orgName={orgData.organization.name}
+        />
+      );
+
     case "variables":
       return <OrgEnvVarsEditor orgId={orgId} />;
 

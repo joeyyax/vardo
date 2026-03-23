@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 const TAB_MAP: Record<string, string> = {
+  general: "/settings/general",
   variables: "/settings/variables",
   domains: "/settings/domains",
   notifications: "/settings/notifications",
@@ -14,6 +15,6 @@ export default async function SettingsRedirectPage({
   searchParams: Promise<{ tab?: string }>;
 }) {
   const { tab } = await searchParams;
-  const target = (tab && TAB_MAP[tab]) || "/settings/variables";
+  const target = (tab && TAB_MAP[tab]) || "/settings/general";
   redirect(target);
 }
