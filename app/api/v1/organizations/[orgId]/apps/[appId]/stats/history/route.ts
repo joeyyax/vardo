@@ -6,8 +6,6 @@ import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { queryMetricsPoints } from "@/lib/metrics/store";
 import { isMetricsEnabled } from "@/lib/metrics/config";
-import { isFeatureEnabled } from "@/lib/config/features";
-
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
 };
@@ -16,10 +14,6 @@ type RouteParams = {
 // Query params: from (ms), to (ms), metric (cpu|memory|networkRx|networkTx), bucket (ms)
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    if (!isFeatureEnabled("metrics")) {
-      return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
-    }
-
     const { orgId, appId } = await params;
     const { organization } = await requireOrg();
 

@@ -5,8 +5,6 @@ import { apps } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { fetchProjectMetrics } from "@/lib/metrics/cadvisor";
-import { isFeatureEnabled } from "@/lib/config/features";
-
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
 };
@@ -14,10 +12,6 @@ type RouteParams = {
 // GET /api/v1/organizations/[orgId]/apps/[appId]/stats
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
-    if (!isFeatureEnabled("metrics")) {
-      return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
-    }
-
     const { orgId, appId } = await params;
     const { organization } = await requireOrg();
 

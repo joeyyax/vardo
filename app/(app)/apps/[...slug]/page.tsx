@@ -211,10 +211,8 @@ export default async function AppDetailPage({ params }: PageProps) {
 
   // If the requested tab is gated by a disabled feature flag, fall back to default
   const gatedTabs: Record<string, keyof typeof featureFlags> = {
-    logs: "logs",
     cron: "cron",
     terminal: "terminal",
-    metrics: "metrics",
   };
   const effectiveTab = tab && gatedTabs[tab] && !featureFlags[gatedTabs[tab]]
     ? "deployments"
