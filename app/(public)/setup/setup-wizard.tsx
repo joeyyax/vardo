@@ -24,6 +24,7 @@ import {
   HardDrive,
   Github,
   Globe,
+  Network,
   Rocket,
   Container,
 } from "lucide-react";
@@ -60,6 +61,12 @@ const STEPS = [
     label: "Domain & DNS",
     description: "Verify DNS records for HTTPS",
     icon: Globe,
+  },
+  {
+    id: "instances",
+    label: "Instances",
+    description: "Connect to other Vardo instances",
+    icon: Network,
   },
   {
     id: "done",
@@ -274,6 +281,20 @@ export function SetupWizard() {
                 }}
                 onSkip={() => {
                   markComplete("domain");
+                  goNext();
+                }}
+              />
+            )}
+            {currentStep === "instances" && (
+              <InstancesStep
+                loading={loading}
+                setLoading={setLoading}
+                onComplete={() => {
+                  markComplete("instances");
+                  goNext();
+                }}
+                onSkip={() => {
+                  markComplete("instances");
                   goNext();
                 }}
               />
@@ -848,6 +869,98 @@ function DomainStep({
           DNS is configured
         </Button>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Step 6: Instances
+// ---------------------------------------------------------------------------
+
+function InstancesStep({
+  loading,
+  setLoading,
+  onComplete,
+  onSkip,
+}: {
+  loading: boolean;
+  setLoading: (v: boolean) => void;
+  onComplete: () => void;
+  onSkip: () => void;
+}) {
+  const [token, setToken] = useState("");
+  const [joined, setJoined] = useState(false);
+
+  async function handleJoin(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const res = await fetch("/api/v1/admin/mesh/join", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: token.trim() }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to join");
+      }
+      toast.success("Connected to instance");
+      setJoined(true);
+      onComplete();
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to join mesh",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border p-4 space-y-2">
+        <div className="text-sm font-medium">What are instances?</div>
+        <p className="text-xs text-muted-foreground">
+          Connect multiple Vardo installations over encrypted WireGuard
+          tunnels. Manage projects across dev, staging and production
+          from a single dashboard.
+        </p>
+      </div>
+
+      <form onSubmit={handleJoin} className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="inviteToken">Invite token</Label>
+          <Input
+            id="inviteToken"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            placeholder="Paste an invite token from another instance"
+            required
+          />
+          <p className="text-xs text-muted-foreground">
+            Generate an invite token on the instance you want to connect
+            to, then paste it here.
+          </p>
+        </div>
+
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            className="squircle flex-1"
+            onClick={onSkip}
+          >
+            Skip
+          </Button>
+          <Button
+            type="submit"
+            className="squircle flex-1"
+            disabled={loading || joined || !token.trim()}
+          >
+            {loading ? <Loader2 className="size-4 animate-spin" /> : "Join"}
+          </Button>
+        </div>
+      </form>
     </div>
   );
 }
