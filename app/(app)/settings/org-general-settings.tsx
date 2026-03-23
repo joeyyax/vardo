@@ -14,9 +14,10 @@ interface OrgGeneralSettingsProps {
 
 export function OrgGeneralSettings({ orgId, orgName }: OrgGeneralSettingsProps) {
   const [name, setName] = useState(orgName);
+  const [savedName, setSavedName] = useState(orgName);
   const [saving, setSaving] = useState(false);
 
-  const isDirty = name.trim() !== orgName;
+  const isDirty = name.trim() !== savedName;
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -37,6 +38,7 @@ export function OrgGeneralSettings({ orgId, orgName }: OrgGeneralSettingsProps) 
         throw new Error(data.error ?? "Failed to save");
       }
 
+      setSavedName(trimmed);
       toast.success("Organization name updated");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save");
