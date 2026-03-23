@@ -271,8 +271,7 @@ export function InstancesSettings() {
           <p className="text-sm text-muted-foreground max-w-2xl">
             Run Vardo on multiple servers and keep them in sync. Each server is
             an "instance" — this page lets you link them together over an encrypted
-            WireGuard tunnel so they share project data automatically. Generate an
-            invite on one instance, paste it on the other, and they'll find each other.
+            WireGuard tunnel so they share project data automatically.
           </p>
         </div>
         <div className="flex items-center gap-2">
