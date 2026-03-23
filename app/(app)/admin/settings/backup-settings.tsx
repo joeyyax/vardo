@@ -284,7 +284,7 @@ export function BackupSettings() {
               <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
               <span className="text-muted-foreground">
                 <span className="font-medium text-foreground">Automatic</span>{" "}
-                — apps with persistent volumes get daily backups at 2 AM with 7-day retention
+                — apps with persistent volumes get daily backups with 7-day retention by default
               </span>
             </li>
             <li className="flex items-start gap-2.5">
