@@ -7,6 +7,7 @@ import {
   ActiveSessions,
   ApiTokens,
 } from "../account-settings";
+import { ThemeSwitcher } from "../theme-switcher";
 import { GitHubConnection } from "../github-connection";
 
 const VALID_TABS = ["profile", "auth", "tokens", "connections"] as const;
@@ -39,7 +40,12 @@ export default async function UserSettingsTabPage({
 function TabContent({ tab, orgId }: { tab: ValidTab; orgId: string | null }) {
   switch (tab) {
     case "profile":
-      return <AccountInfo />;
+      return (
+        <div className="space-y-6">
+          <AccountInfo />
+          <ThemeSwitcher />
+        </div>
+      );
     case "auth":
       return (
         <div className="space-y-8">

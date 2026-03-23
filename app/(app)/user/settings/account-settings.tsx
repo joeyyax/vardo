@@ -65,6 +65,7 @@ export function AccountInfo() {
     <Card className="squircle rounded-lg">
       <CardHeader>
         <CardTitle>Account</CardTitle>
+        <CardDescription>Your name is shown in team members and activity feeds.</CardDescription>
       </CardHeader>
       <CardContent>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -143,7 +144,7 @@ export function PasswordManagement() {
     <Card className="squircle rounded-lg">
       <CardHeader>
         <CardTitle>Password</CardTitle>
-        <CardDescription>Change your account password.</CardDescription>
+        <CardDescription>Must be at least 8 characters. Existing sessions stay active.</CardDescription>
       </CardHeader>
       <CardContent>
           <form onSubmit={handleChangePassword} className="space-y-3 max-w-sm">
@@ -307,7 +308,7 @@ export function TwoFactorAuth() {
     <Card className="squircle rounded-lg">
       <CardHeader>
         <CardTitle>Two-factor authentication</CardTitle>
-        <CardDescription>Add an extra layer of security to your account with TOTP.</CardDescription>
+        <CardDescription>Use an authenticator app like 1Password or Authy for a second factor at login.</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="flex items-center justify-between">
@@ -511,7 +512,7 @@ export function ActiveSessions() {
     <Card className="squircle rounded-lg">
       <CardHeader>
         <CardTitle>Active sessions</CardTitle>
-        <CardDescription>Manage your active sessions across devices.</CardDescription>
+        <CardDescription>Revoke sessions you don&apos;t recognize. Your current session is marked.</CardDescription>
       </CardHeader>
       <CardContent>
       {loading ? (
@@ -676,7 +677,7 @@ export function ApiTokens({ orgId }: { orgId: string }) {
         <div className="flex items-center justify-between">
           <div>
             <CardTitle>API tokens</CardTitle>
-            <CardDescription>Manage API tokens for programmatic access.</CardDescription>
+            <CardDescription>Tokens authenticate API requests. Treat them like passwords — they grant full access to your organization.</CardDescription>
           </div>
           <Button
             size="sm"

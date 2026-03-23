@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession, getCurrentOrg } from "@/lib/auth/session";
 import { SettingsNav } from "@/components/settings-nav";
-import { ThemeSwitcher } from "./theme-switcher";
 
 const NAV_ITEMS = [
   { label: "Profile", href: "/user/settings/profile" },
@@ -23,16 +22,13 @@ export default async function UserSettingsLayout({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Account settings
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Manage your account, security, and preferences.
-          </p>
-        </div>
-        <ThemeSwitcher />
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Account settings
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          Manage your account, security, and preferences.
+        </p>
       </div>
 
       <SettingsNav items={NAV_ITEMS} />

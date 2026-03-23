@@ -52,7 +52,7 @@ export function OrgGeneralSettings({ orgId, orgName }: OrgGeneralSettingsProps) 
     <Card className="squircle rounded-lg">
       <CardHeader>
         <CardTitle>General</CardTitle>
-        <CardDescription>Basic organization settings.</CardDescription>
+        <CardDescription>The organization name appears in the sidebar, team invitations, and notification emails.</CardDescription>
       </CardHeader>
       <CardContent>
           <form onSubmit={handleSave} className="space-y-4 max-w-md">

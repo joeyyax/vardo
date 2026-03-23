@@ -99,7 +99,7 @@ export function GitHubConnection() {
         <div className="flex items-center justify-between">
           <div>
             <CardTitle>GitHub</CardTitle>
-            <CardDescription>Connect your GitHub account to import repositories.</CardDescription>
+            <CardDescription>Link a GitHub account to deploy from private repos and enable auto-deploy on push.</CardDescription>
           </div>
           <Button
             size="sm"
