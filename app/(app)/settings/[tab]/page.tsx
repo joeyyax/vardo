@@ -49,11 +49,9 @@ export default async function OrgSettingsTabPage({
 
     case "notifications":
       return (
-        <div className="space-y-8">
+        <div className="space-y-4">
           <NotificationChannelsEditor orgId={orgId} />
-          <div className="border-t border-border pt-6">
-            <DigestSettingsEditor orgId={orgId} />
-          </div>
+          <DigestSettingsEditor orgId={orgId} />
         </div>
       );
 
