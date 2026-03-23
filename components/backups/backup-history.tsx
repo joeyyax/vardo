@@ -114,7 +114,7 @@ export function BackupHistory({
                   <Button
                     size="icon-xs"
                     variant="ghost"
-                    title="Restore"
+                    aria-label="Restore backup"
                     disabled={restoringBackups.has(backup.id)}
                     onClick={() => restoreBackup(backup.id)}
                   >
@@ -125,7 +125,7 @@ export function BackupHistory({
                     )}
                   </Button>
                   {backup.storagePath && (
-                    <Button size="icon-xs" variant="ghost" title="Download" asChild>
+                    <Button size="icon-xs" variant="ghost" aria-label="Download backup" asChild>
                       <a href={`/api/v1/organizations/${orgId}/backups/history/${backup.id}/download`}>
                         <Download className="size-3.5" aria-hidden="true" />
                       </a>

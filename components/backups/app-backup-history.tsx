@@ -21,11 +21,10 @@ export function AppBackupHistory({
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch(`/api/v1/organizations/${orgId}/backups`);
+      const res = await fetch(`/api/v1/organizations/${orgId}/backups?appId=${appId}`);
       if (res.ok) {
         const data = await res.json();
-        const all: RecentBackup[] = data.recentHistory || [];
-        setHistory(all.filter((h) => h.app.id === appId));
+        setHistory(data.recentHistory || []);
       }
     } catch {
       // silent

@@ -88,7 +88,7 @@ export function BackupPage({
 
       {/* Storage targets with inline jobs */}
       <section className="space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-lg font-medium">Storage targets</h2>
             <p className="text-sm text-muted-foreground">
@@ -123,7 +123,7 @@ export function BackupPage({
                 Add an S3 bucket, Cloudflare R2, Backblaze B2, or SSH server to start backing up.
               </p>
             </div>
-            <Button size="sm" onClick={() => setTargetFormOpen(true)}>
+            <Button size="sm" className="squircle" onClick={() => setTargetFormOpen(true)}>
               <Plus className="mr-1.5 size-4" aria-hidden="true" />
               Add target
             </Button>

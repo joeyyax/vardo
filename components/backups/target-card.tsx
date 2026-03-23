@@ -165,7 +165,7 @@ export function TargetCard({
                           size="icon-xs"
                           variant="ghost"
                           onClick={() => toggleJob(job.id, !job.enabled)}
-                          title={job.enabled ? "Pause job" : "Enable job"}
+                          aria-label={job.enabled ? "Pause job" : "Enable job"}
                         >
                           {job.enabled ? <PowerOff className="size-3.5" /> : <Power className="size-3.5" />}
                         </Button>
@@ -173,7 +173,7 @@ export function TargetCard({
                           size="icon-xs"
                           variant="ghost"
                           onClick={() => setDeleteJobId(job.id)}
-                          title="Delete job"
+                          aria-label="Delete job"
                         >
                           <Trash2 className="size-3.5" />
                         </Button>
