@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent } from "@/components/ui/card";
 import { slugify } from "@/lib/ui/slugify";
 
 export function NewProjectForm({ orgId }: { orgId: string }) {
@@ -72,7 +73,8 @@ export function NewProjectForm({ orgId }: { orgId: string }) {
 
   return (
     <form onSubmit={handleSubmit} className="max-w-lg space-y-6">
-      <div className="squircle rounded-lg border bg-card p-6 space-y-5">
+      <Card className="squircle rounded-lg">
+        <CardContent className="space-y-5">
         <div className="space-y-2">
           <Label htmlFor="displayName">Name</Label>
           <Input
@@ -114,7 +116,8 @@ export function NewProjectForm({ orgId }: { orgId: string }) {
             className="squircle"
           />
         </div>
-      </div>
+        </CardContent>
+      </Card>
 
       <div className="flex items-center gap-3">
         <Button type="submit" disabled={submitting || !slug.trim()} className="squircle">

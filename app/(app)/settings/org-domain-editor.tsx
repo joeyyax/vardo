@@ -17,6 +17,7 @@ import {
   BottomSheetClose,
 } from "@/components/ui/bottom-sheet";
 import { toast } from "sonner";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Globe,
   Plus,
@@ -203,7 +204,8 @@ export function OrgDomainEditor({
   const customDomains = domains.filter((d) => !d.isDefault);
 
   return (
-    <div className="space-y-4">
+    <Card className="squircle rounded-lg">
+      <CardContent className="space-y-4">
       <div>
         <p className="text-sm text-muted-foreground">
           Manage domains for auto-generated project URLs. Projects can use any
@@ -326,6 +328,8 @@ export function OrgDomainEditor({
         Add Domain
       </Button>
 
+      </CardContent>
+
       {/* Add domain bottom sheet */}
       <BottomSheet open={addOpen} onOpenChange={setAddOpen}>
         <BottomSheetContent>
@@ -403,6 +407,6 @@ export function OrgDomainEditor({
           </BottomSheetFooter>
         </BottomSheetContent>
       </BottomSheet>
-    </div>
+    </Card>
   );
 }

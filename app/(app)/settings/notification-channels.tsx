@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
 import { Loader2, Plus, Trash2, Bell } from "lucide-react";
 
@@ -55,7 +56,8 @@ export function NotificationChannelsEditor({ orgId }: { orgId: string }) {
   if (loading) return <div className="flex items-center gap-2 text-muted-foreground py-8"><Loader2 className="h-4 w-4 animate-spin" />Loading...</div>;
 
   return (
-    <div className="space-y-4">
+    <Card className="squircle rounded-lg">
+      <CardContent className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">Configure where notifications are sent for deploy, backup, and cron failures.</p>
         {!showForm && <Button size="sm" onClick={() => setShowForm(true)} className="squircle"><Plus className="h-4 w-4 mr-1" />Add channel</Button>}
@@ -89,6 +91,7 @@ export function NotificationChannelsEditor({ orgId }: { orgId: string }) {
           </div>
         ))}</div>
       )}
-    </div>
+      </CardContent>
+    </Card>
   );
 }
