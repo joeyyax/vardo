@@ -36,6 +36,20 @@
       "when": 1774292931774,
       "tag": "0004_mesh-peers",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1774295269520,
+      "tag": "0005_mesh-token-hash",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1774295680301,
+      "tag": "0006_mesh-internal-ip-unique",
+      "breakpoints": true
     }
   ]
 }
