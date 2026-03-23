@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { notify } from "@/lib/notifications/dispatch";
+import { emit } from "@/lib/notifications/dispatch";
 import { queryDiskWriteRange } from "./store";
 import type { ContainerMetrics } from "./cadvisor";
 
@@ -105,18 +105,16 @@ export async function checkDiskWriteAlerts(
           const orgId = app?.organizationId || container.organizationId;
 
           if (orgId) {
-            notify(orgId, {
-              type: "disk-write-alert",
+            emit(orgId, {
+              type: "disk.write-alert",
               title: `High disk writes: ${appName}`,
               message: `App '${appName}' wrote ${formatBytes(writtenInHour)} in the last hour (threshold: ${formatThreshold(threshold)})`,
-              metadata: {
-                appId: app?.id || "",
-                containerName: container.containerName,
-                containerId: container.containerId,
-                writtenBytes: writtenInHour.toString(),
-                thresholdBytes: threshold.toString(),
-                window: "1h",
-              },
+              appId: app?.id || "",
+              containerName: container.containerName,
+              containerId: container.containerId,
+              writtenBytes: writtenInHour,
+              thresholdBytes: threshold,
+              window: "1h",
             });
 
             console.warn(

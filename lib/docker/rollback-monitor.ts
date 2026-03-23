@@ -259,22 +259,19 @@ async function sendRollbackNotification(
   success: boolean
 ): Promise<void> {
   try {
-    const { notify } = await import("@/lib/notifications/dispatch");
-    if (success) {
-      notify(organizationId, {
-        type: "deploy-failed",
-        title: `Auto-rollback: ${appName}`,
-        message: `Container crashed after deploy. Rolled back to previous version.`,
-        metadata: { projectName: appName, appId },
-      });
-    } else {
-      notify(organizationId, {
-        type: "deploy-failed",
-        title: `Auto-rollback failed: ${appName}`,
-        message: `Container crashed after deploy and rollback to previous version also failed. Manual intervention required.`,
-        metadata: { projectName: appName, appId },
-      });
-    }
+    const { emit } = await import("@/lib/notifications/dispatch");
+    emit(organizationId, {
+      type: "deploy.rollback",
+      title: success
+        ? `Auto-rollback: ${appName}`
+        : `Auto-rollback failed: ${appName}`,
+      message: success
+        ? `Container crashed after deploy. Rolled back to previous version.`
+        : `Container crashed after deploy and rollback to previous version also failed. Manual intervention required.`,
+      projectName: appName,
+      appId,
+      rollbackSuccess: success,
+    });
   } catch (err) {
     console.error("[rollback-monitor] Notification error:", err);
   }

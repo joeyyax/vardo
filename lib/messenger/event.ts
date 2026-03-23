@@ -2,15 +2,20 @@
  * Event notification adapter — wraps lib/notifications/dispatch.ts.
  *
  * Dispatches structured events to all enabled org notification channels
- * (email, webhook, slack). This is the primary server-side notification path.
+ * (email, webhook, slack) and publishes to the event bus for real-time
+ * consumers (SSE streams, toast notifications).
  *
  * Usage:
- *   import { event } from "@/lib/messenger";
+ *   import { event, emit } from "@/lib/messenger/server";
  *   event(orgId, { type: "deploy-success", title: "...", message: "...", metadata: {} });
+ *   emit(orgId, { type: "deploy.success", title: "...", message: "...", ... });
  */
 
 import { notify as dispatch } from "@/lib/notifications/dispatch";
 import type { NotificationEvent } from "@/lib/notifications/port";
+
+export { emit } from "@/lib/notifications/dispatch";
+export type { BusEvent, BusEventType } from "@/lib/bus";
 
 export function event(orgId: string, evt: NotificationEvent): void {
   dispatch(orgId, evt);
