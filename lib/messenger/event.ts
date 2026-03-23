@@ -6,11 +6,8 @@
  * consumers (SSE streams, toast notifications).
  *
  * Usage:
- *   import { event } from "@/lib/messenger";
+ *   import { event, emit } from "@/lib/messenger/server";
  *   event(orgId, { type: "deploy-success", title: "...", message: "...", metadata: {} });
- *
- * For typed bus events directly:
- *   import { emit } from "@/lib/messenger";
  *   emit(orgId, { type: "deploy.success", title: "...", message: "...", ... });
  */
 
