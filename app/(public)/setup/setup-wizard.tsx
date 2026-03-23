@@ -99,8 +99,9 @@ function saveProgress(step: StepId, completed: Set<StepId>) {
   } catch {}
 }
 
-export function SetupWizard() {
+export function SetupWizard({ meshEnabled = true }: { meshEnabled?: boolean }) {
   const router = useRouter();
+  const steps = meshEnabled ? STEPS : STEPS.filter((s) => s.id !== "instances");
   const [currentStep, setCurrentStep] = useState<StepId>("account");
   const [loading, setLoading] = useState(false);
   const [completedSteps, setCompletedSteps] = useState<Set<StepId>>(new Set());
@@ -125,22 +126,22 @@ export function SetupWizard() {
 
   if (!hydrated) return null;
 
-  const currentIndex = STEPS.findIndex((s) => s.id === currentStep);
+  const currentIndex = steps.findIndex((s) => s.id === currentStep);
 
   function markComplete(step: StepId) {
     setCompletedSteps((prev) => new Set([...prev, step]));
   }
 
   function goNext() {
-    const next = STEPS[currentIndex + 1];
+    const next = steps[currentIndex + 1];
     if (next) setCurrentStep(next.id);
   }
 
   function goTo(step: StepId) {
-    const targetIndex = STEPS.findIndex((s) => s.id === step);
+    const targetIndex = steps.findIndex((s) => s.id === step);
     if (
       targetIndex <= currentIndex ||
-      completedSteps.has(STEPS[targetIndex - 1]?.id)
+      completedSteps.has(steps[targetIndex - 1]?.id)
     ) {
       setCurrentStep(step);
     }
@@ -166,13 +167,13 @@ export function SetupWizard() {
         <div className="grid gap-12 md:grid-cols-[280px_1fr]">
           {/* Left column — steps */}
           <nav className="space-y-1">
-            {STEPS.map((step, i) => {
+            {steps.map((step, i) => {
               const Icon = step.icon;
               const isActive = step.id === currentStep;
               const isDone = completedSteps.has(step.id);
               const canClick =
                 i <= currentIndex ||
-                completedSteps.has(STEPS[i - 1]?.id);
+                completedSteps.has(steps[i - 1]?.id);
 
               return (
                 <button
@@ -901,8 +902,10 @@ function InstancesStep({
         body: JSON.stringify({ token: token.trim() }),
       });
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed to join");
+        const text = await res.text();
+        let message = "Failed to join";
+        try { message = JSON.parse(text).error || message; } catch {}
+        throw new Error(message);
       }
       toast.success("Connected to instance");
       setJoined(true);
