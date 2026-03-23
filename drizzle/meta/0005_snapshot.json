@@ -1,5 +1,5 @@
 {
-  "id": "9ece30f7-e6bf-4214-bcc3-d1d6e3cc71f8",
+  "id": "e5a9292c-7947-4037-88a4-a6ef27487181",
   "prevId": "b7f8c483-4abd-439d-9e6d-5ba0c33ee778",
   "version": "7",
   "dialect": "postgresql",
@@ -2781,6 +2781,13 @@
           "nullsNotDistinct": false,
           "columns": [
             "public_key"
+          ]
+        },
+        "mesh_peer_token_hash_unique": {
+          "name": "mesh_peer_token_hash_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "token_hash"
           ]
         }
       },

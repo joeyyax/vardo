@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { db } from "@/lib/db";
 import { systemSettings } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, like } from "drizzle-orm";
 
 const INVITE_PREFIX = "mesh_invite:";
 const INVITE_TTL_MS = 15 * 60 * 1000; // 15 minutes
@@ -20,6 +20,9 @@ export async function createInvite(hub: {
   endpoint: string;
   internalIp: string;
 }): Promise<string> {
+  // Clean up any expired invites while we're here
+  await cleanExpiredInvites();
+
   const code = randomBytes(4).toString("hex"); // 8-char hex code
 
   const invite: MeshInvite = {
@@ -48,32 +51,55 @@ export async function createInvite(hub: {
   return code;
 }
 
-/** Redeem an invite code. Returns hub connection info or null if invalid/expired. */
+/**
+ * Redeem an invite code atomically.
+ * DELETE...RETURNING ensures only one concurrent request can succeed.
+ */
 export async function redeemInvite(
   code: string
 ): Promise<Omit<MeshInvite, "code" | "expiresAt"> | null> {
   const key = `${INVITE_PREFIX}${code}`;
 
-  const row = await db.query.systemSettings.findFirst({
-    where: eq(systemSettings.key, key),
-  });
+  // Atomic delete — if two requests race, only one gets the row back
+  const deleted = await db
+    .delete(systemSettings)
+    .where(eq(systemSettings.key, key))
+    .returning();
 
-  if (!row) return null;
+  if (deleted.length === 0) return null;
 
-  const invite: MeshInvite = JSON.parse(row.value);
+  const invite: MeshInvite = JSON.parse(deleted[0].value);
 
   if (Date.now() > invite.expiresAt) {
-    // Expired — clean up
-    await db.delete(systemSettings).where(eq(systemSettings.key, key));
+    // Already deleted, and it was expired — return null
     return null;
   }
-
-  // One-time use — delete after redeem
-  await db.delete(systemSettings).where(eq(systemSettings.key, key));
 
   return {
     hubPublicKey: invite.hubPublicKey,
     hubEndpoint: invite.hubEndpoint,
     hubInternalIp: invite.hubInternalIp,
   };
+}
+
+/** Remove expired invite codes from system_settings. */
+async function cleanExpiredInvites(): Promise<void> {
+  const rows = await db.query.systemSettings.findMany({
+    where: like(systemSettings.key, `${INVITE_PREFIX}%`),
+  });
+
+  const now = Date.now();
+  for (const row of rows) {
+    try {
+      const invite: MeshInvite = JSON.parse(row.value);
+      if (now > invite.expiresAt) {
+        await db
+          .delete(systemSettings)
+          .where(eq(systemSettings.key, row.key));
+      }
+    } catch {
+      // Malformed entry — clean it up
+      await db.delete(systemSettings).where(eq(systemSettings.key, row.key));
+    }
+  }
 }

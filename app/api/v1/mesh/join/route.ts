@@ -1,12 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
-import { db } from "@/lib/db";
-import { meshPeers } from "@/lib/db/schema";
-import { nanoid } from "nanoid";
+import { rateLimit } from "@/lib/api/rate-limit";
 import { z } from "zod";
 import { redeemInvite } from "@/lib/mesh/invite";
-import { allocateIp, toCidr } from "@/lib/mesh";
-import { generateMeshToken } from "@/lib/mesh/auth";
+import { registerPeer } from "@/lib/mesh/peers";
 
 const WG_KEY_RE = /^[A-Za-z0-9+/]{43}=$/;
 
@@ -22,11 +19,19 @@ const joinSchema = z.object({
 /**
  * POST /api/v1/mesh/join — join the mesh using an invite code.
  *
- * No session auth required — the invite code is the credential.
- * Called by the joining instance during the pairing flow.
+ * No session auth — the invite code is the credential.
+ * Rate limited: 5 attempts per minute per IP.
  */
 export async function POST(request: NextRequest) {
   try {
+    // Rate limit — unauthenticated endpoint, brute-force protection
+    const limited = await rateLimit(request, {
+      key: "mesh-join",
+      limit: 5,
+      windowMs: 60_000,
+    });
+    if (limited) return limited;
+
     const body = await request.json();
     const parsed = joinSchema.safeParse(body);
     if (!parsed.success) {
@@ -36,9 +41,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { code, instanceId, name, type, publicKey, endpoint } = parsed.data;
+    const { code, ...peerInput } = parsed.data;
 
-    // Redeem the invite — one-time use, validates expiry
+    // Redeem the invite — atomic, one-time use
     const hub = await redeemInvite(code);
     if (!hub) {
       return NextResponse.json(
@@ -47,35 +52,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Allocate a tunnel IP for the new peer
-    const allPeers = await db.query.meshPeers.findMany({
-      columns: { internalIp: true },
-    });
-    const internalIp = allocateIp(allPeers.map((p) => p.internalIp));
+    const { peer, token } = await registerPeer(peerInput);
 
-    // Generate a service-to-service token
-    const { raw: token, hash: tokenHash } = generateMeshToken();
-
-    const peer = {
-      id: nanoid(),
-      instanceId,
-      name,
-      type: type as "persistent" | "dev",
-      publicKey,
-      endpoint: endpoint ?? null,
-      allowedIps: toCidr(internalIp),
-      internalIp,
-      apiUrl: `http://${internalIp}:3000`,
-      tokenHash,
-      status: "offline" as const,
-      lastSeenAt: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    await db.insert(meshPeers).values(peer);
-
-    // Return everything the joining peer needs to configure WireGuard
     const { tokenHash: _hash, ...peerWithoutHash } = peer;
     return NextResponse.json(
       {

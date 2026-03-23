@@ -23,11 +23,12 @@ export async function DELETE(
       return NextResponse.json({ error: "Peer not found" }, { status: 404 });
     }
 
-    // Cascade delete project_instances for this peer
-    await db
-      .delete(projectInstances)
-      .where(eq(projectInstances.meshPeerId, peerId));
-    await db.delete(meshPeers).where(eq(meshPeers.id, peerId));
+    await db.transaction(async (tx) => {
+      await tx
+        .delete(projectInstances)
+        .where(eq(projectInstances.meshPeerId, peerId));
+      await tx.delete(meshPeers).where(eq(meshPeers.id, peerId));
+    });
 
     return NextResponse.json({ ok: true });
   } catch (error) {

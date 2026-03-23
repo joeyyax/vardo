@@ -4,10 +4,8 @@ import { requireAppAdmin } from "@/lib/auth/admin";
 import { db } from "@/lib/db";
 import { meshPeers } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { nanoid } from "nanoid";
 import { z } from "zod";
-import { allocateIp, toCidr } from "@/lib/mesh";
-import { generateMeshToken } from "@/lib/mesh/auth";
+import { registerPeer } from "@/lib/mesh/peers";
 
 const WG_KEY_RE = /^[A-Za-z0-9+/]{43}=$/;
 
@@ -50,11 +48,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { instanceId, name, type, publicKey, endpoint } = parsed.data;
-
-    // Check for duplicate instanceId or publicKey
+    // Check for duplicate instanceId
     const existing = await db.query.meshPeers.findFirst({
-      where: eq(meshPeers.instanceId, instanceId),
+      where: eq(meshPeers.instanceId, parsed.data.instanceId),
     });
     if (existing) {
       return NextResponse.json(
@@ -63,35 +59,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Allocate a tunnel IP
-    const allPeers = await db.query.meshPeers.findMany({
-      columns: { internalIp: true },
-    });
-    const internalIp = allocateIp(allPeers.map((p) => p.internalIp));
+    const { peer, token } = await registerPeer(parsed.data);
 
-    // Generate a service-to-service token
-    const { raw: token, hash: tokenHash } = generateMeshToken();
-
-    const peer = {
-      id: nanoid(),
-      instanceId,
-      name,
-      type: type as "persistent" | "dev",
-      publicKey,
-      endpoint: endpoint ?? null,
-      allowedIps: toCidr(internalIp),
-      internalIp,
-      apiUrl: `http://${internalIp}:3000`,
-      tokenHash,
-      status: "offline" as const,
-      lastSeenAt: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    await db.insert(meshPeers).values(peer);
-
-    // Return the peer info + raw token (only time it's visible)
     const { tokenHash: _hash, ...peerWithoutHash } = peer;
     return NextResponse.json({ peer: peerWithoutHash, token }, { status: 201 });
   } catch (error) {

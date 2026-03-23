@@ -1374,7 +1374,7 @@ export const meshPeers = pgTable("mesh_peer", {
   allowedIps: text("allowed_ips").notNull(), // WireGuard AllowedIPs (CIDR)
   internalIp: text("internal_ip").notNull(), // WireGuard tunnel address (e.g. 10.99.0.1)
   apiUrl: text("api_url"), // reachable URL for mesh API calls over tunnel
-  tokenHash: text("token_hash"), // SHA-256 hash of the peer's bearer token
+  tokenHash: text("token_hash").unique(), // SHA-256 hash of the peer's bearer token
   lastSeenAt: timestamp("last_seen_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
