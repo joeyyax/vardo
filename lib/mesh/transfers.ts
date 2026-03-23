@@ -124,97 +124,130 @@ export async function buildProjectBundle(
 
 /**
  * Import a project bundle received from another instance.
- * Creates the project and apps if they don't exist, or updates if they do.
- * Records a project_instances entry for tracking.
+ *
+ * For promote/pull: finds existing project by name within the org, updates
+ * apps if they exist (by name), creates if they don't.
+ * For clone: always creates new project and apps with unique names.
+ *
+ * All operations run in a transaction — partial failures roll back cleanly.
  */
 export async function importProjectBundle(
   orgId: string,
   bundle: ProjectBundle,
   environment: string
 ): Promise<{ projectId: string; appIds: string[] }> {
-  // Check if project already exists in this org (by name)
-  let project = await db.query.projects.findFirst({
-    where: eq(projects.name, bundle.project.name),
-  });
+  return db.transaction(async (tx) => {
+    const isClone = bundle.transferType === "clone";
 
-  const projectId = project?.id ?? nanoid();
+    // Find existing project in this org by name (scoped to org)
+    const existing = isClone
+      ? null
+      : await tx.query.projects.findFirst({
+          where: (p, { and, eq: e }) =>
+            and(e(p.organizationId, orgId), e(p.name, bundle.project.name)),
+        });
 
-  if (!project) {
-    // Create new project
-    await db.insert(projects).values({
-      id: projectId,
-      organizationId: orgId,
-      name: bundle.transferType === "clone"
-        ? `${bundle.project.name}-clone-${nanoid(6)}`
-        : bundle.project.name,
-      displayName: bundle.project.displayName,
-      description: bundle.project.description,
-      color: bundle.project.color,
-    });
-  }
+    const projectId = existing?.id ?? nanoid();
 
-  // Create/update apps
-  const appIds: string[] = [];
-  for (const appBundle of bundle.apps) {
-    const appId = nanoid();
-    appIds.push(appId);
+    if (!existing) {
+      await tx.insert(projects).values({
+        id: projectId,
+        organizationId: orgId,
+        name: isClone
+          ? `${bundle.project.name}-clone-${nanoid(6)}`
+          : bundle.project.name,
+        displayName: bundle.project.displayName,
+        description: bundle.project.description,
+        color: bundle.project.color,
+      });
+    }
 
-    await db.insert(apps).values({
-      id: appId,
-      organizationId: orgId,
+    // Create or update apps
+    const appIds: string[] = [];
+    for (const appBundle of bundle.apps) {
+      // For non-clone transfers, check if app already exists in this project
+      const existingApp = isClone
+        ? null
+        : await tx.query.apps.findFirst({
+            where: (a, { and, eq: e }) =>
+              and(e(a.projectId, projectId), e(a.name, appBundle.name)),
+          });
+
+      if (existingApp) {
+        // Update existing app
+        appIds.push(existingApp.id);
+        await tx
+          .update(apps)
+          .set({
+            composeContent: appBundle.composeContent,
+            gitUrl: appBundle.gitUrl,
+            gitBranch: appBundle.gitBranch,
+            imageName: appBundle.imageName,
+            envContent: appBundle.envContent,
+            updatedAt: new Date(),
+          })
+          .where(eq(apps.id, existingApp.id));
+      } else {
+        // Create new app
+        const appId = nanoid();
+        appIds.push(appId);
+
+        await tx.insert(apps).values({
+          id: appId,
+          organizationId: orgId,
+          projectId,
+          name: isClone ? `${appBundle.name}-${nanoid(6)}` : appBundle.name,
+          displayName: appBundle.displayName,
+          description: appBundle.description,
+          source: appBundle.source,
+          deployType: appBundle.deployType,
+          gitUrl: appBundle.gitUrl,
+          gitBranch: appBundle.gitBranch,
+          imageName: appBundle.imageName,
+          composeContent: appBundle.composeContent,
+          composeFilePath: appBundle.composeFilePath,
+          rootDirectory: appBundle.rootDirectory,
+          autoTraefikLabels: appBundle.autoTraefikLabels,
+          containerPort: appBundle.containerPort,
+          restartPolicy: appBundle.restartPolicy,
+          exposedPorts: appBundle.exposedPorts,
+          envContent: appBundle.envContent,
+          sortOrder: appBundle.sortOrder,
+          status: "stopped",
+        });
+
+        // Create volume records for new apps
+        for (const vol of appBundle.volumes) {
+          await tx.insert(volumes).values({
+            id: nanoid(),
+            appId,
+            organizationId: orgId,
+            name: vol.name,
+            mountPath: vol.mountPath,
+            persistent: vol.persistent,
+          });
+        }
+      }
+    }
+
+    // Record the deployment in project_instances
+    const composeSnapshot = bundle.apps
+      .map((a) => a.composeContent)
+      .filter(Boolean)
+      .join("\n---\n");
+
+    await tx.insert(projectInstances).values({
+      id: nanoid(),
       projectId,
-      name: bundle.transferType === "clone"
-        ? `${appBundle.name}-${nanoid(6)}`
-        : appBundle.name,
-      displayName: appBundle.displayName,
-      description: appBundle.description,
-      source: appBundle.source as "git" | "direct",
-      deployType: appBundle.deployType as "compose" | "dockerfile" | "image",
-      gitUrl: appBundle.gitUrl,
-      gitBranch: appBundle.gitBranch,
-      imageName: appBundle.imageName,
-      composeContent: appBundle.composeContent,
-      composeFilePath: appBundle.composeFilePath,
-      rootDirectory: appBundle.rootDirectory,
-      autoTraefikLabels: appBundle.autoTraefikLabels,
-      containerPort: appBundle.containerPort,
-      restartPolicy: appBundle.restartPolicy,
-      exposedPorts: appBundle.exposedPorts,
-      envContent: appBundle.envContent,
-      sortOrder: appBundle.sortOrder,
+      meshPeerId: null, // local instance
+      environment,
+      gitRef: bundle.gitRef,
+      composeContent: composeSnapshot || null,
+      sourceInstanceId: bundle.sourceInstanceId,
+      transferredAt: new Date(),
       status: "stopped",
     });
 
-    // Create volume records
-    for (const vol of appBundle.volumes) {
-      await db.insert(volumes).values({
-        id: nanoid(),
-        appId,
-        organizationId: orgId,
-        name: vol.name,
-        mountPath: vol.mountPath,
-        persistent: vol.persistent,
-      });
-    }
-  }
-
-  // Record the deployment in project_instances
-  const composeSnapshot = bundle.apps
-    .map((a) => a.composeContent)
-    .filter(Boolean)
-    .join("\n---\n");
-
-  await db.insert(projectInstances).values({
-    id: nanoid(),
-    projectId,
-    meshPeerId: null, // local instance
-    environment,
-    gitRef: bundle.gitRef,
-    composeContent: composeSnapshot || null,
-    sourceInstanceId: bundle.sourceInstanceId,
-    transferredAt: new Date(),
-    status: "stopped",
+    return { projectId, appIds };
   });
-
-  return { projectId, appIds };
 }

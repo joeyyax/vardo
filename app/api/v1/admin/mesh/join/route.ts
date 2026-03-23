@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
 
     await db.insert(meshPeers).values({
       id: nanoid(),
-      instanceId: joinData.peer.instanceId ?? "hub",
+      instanceId: joinData.peer.instanceId,
       name: "Hub",
       type: "persistent",
       publicKey: joinData.hub.publicKey,
