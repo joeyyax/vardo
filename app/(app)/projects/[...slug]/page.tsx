@@ -1,11 +1,13 @@
 import { redirect, notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { projects } from "@/lib/db/schema";
+import { projects, projectInstances } from "@/lib/db/schema";
 import { getCurrentOrg } from "@/lib/auth/session";
 import { eq, and, or } from "drizzle-orm";
+import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { ProjectDetail } from "./project-detail";
+import type { MeshPeerSummary, ProjectInstanceSummary } from "@/lib/mesh/types";
 
-const VALID_TABS = ["apps", "deployments", "variables", "logs", "metrics"] as const;
+const VALID_TABS = ["apps", "deployments", "variables", "logs", "metrics", "instances"] as const;
 type ValidTab = (typeof VALID_TABS)[number];
 
 export default async function ProjectDetailPage({
@@ -117,5 +119,27 @@ export default async function ProjectDetailPage({
 
   const effectiveTab = tab || "apps";
 
-  return <ProjectDetail project={project} orgId={orgId} initialTab={effectiveTab} />;
+  // Fetch mesh flag + data in parallel
+  const [meshEnabled, meshPeers, meshInstances] = await Promise.all([
+    isFeatureEnabledAsync("mesh"),
+    // Peers are system-level (not org-scoped) — all peers visible to admins
+    db.query.meshPeers.findMany({
+      columns: { id: true, name: true, type: true, status: true },
+    }).then((p) => p as MeshPeerSummary[]).catch(() => [] as MeshPeerSummary[]),
+    db.query.projectInstances.findMany({
+      where: eq(projectInstances.projectId, project.id),
+      columns: { id: true, environment: true, gitRef: true, status: true, meshPeerId: true, transferredAt: true },
+    }).then((i) => i as ProjectInstanceSummary[]).catch(() => [] as ProjectInstanceSummary[]),
+  ]);
+
+  return (
+    <ProjectDetail
+      project={project}
+      orgId={orgId}
+      initialTab={effectiveTab}
+      meshEnabled={meshEnabled}
+      meshPeers={meshEnabled ? meshPeers : []}
+      projectInstances={meshEnabled ? meshInstances : []}
+    />
+  );
 }
