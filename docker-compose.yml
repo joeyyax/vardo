@@ -9,7 +9,8 @@ name: vardo
 #          install.sh sets COMPOSE_PROFILES=production — all services start.
 
 services:
-  host:
+  frontend:
+    container_name: vardo-frontend
     build:
       context: .
       args:
@@ -54,6 +55,7 @@ services:
       - vardo-network
 
   postgres:
+    container_name: vardo-postgres
     image: postgres:17
     restart: unless-stopped
     environment:
@@ -74,6 +76,7 @@ services:
       - vardo-network
 
   redis:
+    container_name: vardo-redis
     image: redis/redis-stack-server:latest
     restart: unless-stopped
     ports:
@@ -90,6 +93,7 @@ services:
       - vardo-network
 
   traefik:
+    container_name: vardo-traefik
     image: traefik:v3
     restart: unless-stopped
     command:
@@ -116,6 +120,7 @@ services:
       - vardo-network
 
   cadvisor:
+    container_name: vardo-cadvisor
     image: gcr.io/cadvisor/cadvisor:latest
     restart: unless-stopped
     privileged: true
@@ -131,6 +136,7 @@ services:
       - vardo-network
 
   loki:
+    container_name: vardo-loki
     image: grafana/loki:3.4
     restart: unless-stopped
     command: -config.file=/etc/loki/loki.yml
@@ -145,6 +151,7 @@ services:
     mem_limit: 512m
 
   promtail:
+    container_name: vardo-promtail
     image: grafana/promtail:3.4
     restart: unless-stopped
     command: -config.file=/etc/promtail/promtail.yml
