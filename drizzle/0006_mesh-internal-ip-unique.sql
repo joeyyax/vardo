@@ -1,0 +1,1 @@
+ALTER TABLE "mesh_peer" ADD CONSTRAINT "mesh_peer_internal_ip_unique" UNIQUE("internal_ip");
