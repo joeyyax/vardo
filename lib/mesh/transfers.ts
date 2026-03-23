@@ -5,6 +5,20 @@ import { nanoid } from "nanoid";
 import { getInstanceId } from "@/lib/constants";
 
 // ---------------------------------------------------------------------------
+// Dependencies
+// ---------------------------------------------------------------------------
+
+/**
+ * Check if volume transfers are available.
+ * Volume transfers rely on the backup engine — if backups are disabled,
+ * only config transfers (compose, git ref, env vars) are possible.
+ */
+export async function canTransferVolumes(): Promise<boolean> {
+  const { isFeatureEnabledAsync } = await import("@/lib/config/features");
+  return isFeatureEnabledAsync("backups");
+}
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 

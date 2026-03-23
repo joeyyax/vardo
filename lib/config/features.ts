@@ -61,7 +61,7 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
     env: "FEATURE_MESH",
     label: "Instances",
     description:
-      "Connect multiple Vardo instances over encrypted WireGuard tunnels",
+      "Connect multiple Vardo instances over encrypted WireGuard tunnels. Volume transfers require backups to be enabled.",
   },
 };
 
