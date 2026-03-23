@@ -9,6 +9,7 @@ import {
   Trash2,
   Copy,
   Network,
+  Link,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +28,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { toast } from "@/lib/messenger";
 
@@ -78,8 +81,13 @@ export function InstancesSettings() {
   // Invite dialog
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteLoading, setInviteLoading] = useState(false);
-  const [inviteCode, setInviteCode] = useState<string | null>(null);
+  const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
+
+  // Join dialog
+  const [joinOpen, setJoinOpen] = useState(false);
+  const [joinToken, setJoinToken] = useState("");
+  const [joinLoading, setJoinLoading] = useState(false);
 
   // Delete dialog
   const [deleteTarget, setDeleteTarget] = useState<MeshPeer | null>(null);
@@ -118,7 +126,7 @@ export function InstancesSettings() {
         setInviteError(json.error || "Failed to generate invite");
         return;
       }
-      setInviteCode(json.code);
+      setInviteToken(json.token);
     } catch {
       setInviteError("Failed to generate invite");
     } finally {
@@ -128,8 +136,33 @@ export function InstancesSettings() {
 
   function handleCloseInvite() {
     setInviteOpen(false);
-    setInviteCode(null);
+    setInviteToken(null);
     setInviteError(null);
+  }
+
+  async function handleJoin(e: React.FormEvent) {
+    e.preventDefault();
+    setJoinLoading(true);
+    try {
+      const res = await fetch("/api/v1/admin/mesh/join", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: joinToken.trim() }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        toast.error(json.error || "Failed to join mesh");
+        return;
+      }
+      toast.success("Connected to mesh");
+      setJoinOpen(false);
+      setJoinToken("");
+      fetchPeers(true);
+    } catch {
+      toast.error("Failed to join mesh");
+    } finally {
+      setJoinLoading(false);
+    }
   }
 
   async function handleDelete() {
@@ -181,8 +214,10 @@ export function InstancesSettings() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="space-y-1">
           <h2 className="text-lg font-medium">Instances</h2>
-          <p className="text-sm text-muted-foreground">
-            Mesh peers connected via WireGuard. Generate invite codes to add new instances.
+          <p className="text-sm text-muted-foreground max-w-lg">
+            Connect multiple Vardo instances into a mesh network. Instances sync project
+            data over encrypted WireGuard tunnels — useful for staging/production pairs,
+            multi-server setups, or local dev environments.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -195,6 +230,15 @@ export function InstancesSettings() {
           >
             <RefreshCw className={`size-4 ${refreshing ? "animate-spin" : ""}`} />
             Refresh
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="squircle"
+            onClick={() => setJoinOpen(true)}
+          >
+            <Link className="size-4" />
+            Join mesh
           </Button>
           <Button
             size="sm"
@@ -213,17 +257,29 @@ export function InstancesSettings() {
           <CardContent className="flex flex-col items-center justify-center py-12 text-center">
             <Network className="size-10 text-muted-foreground/50 mb-3" />
             <p className="text-sm font-medium">No instances connected</p>
-            <p className="text-sm text-muted-foreground mt-1">
-              Generate an invite code to connect your first instance to the mesh.
+            <p className="text-sm text-muted-foreground mt-1 max-w-sm">
+              To connect two instances: generate an invite on one, then paste the
+              invite token on the other using "Join mesh".
             </p>
-            <Button
-              size="sm"
-              className="squircle mt-4"
-              onClick={handleGenerateInvite}
-            >
-              <Plus className="size-4" />
-              Generate invite
-            </Button>
+            <div className="flex items-center gap-2 mt-4">
+              <Button
+                variant="outline"
+                size="sm"
+                className="squircle"
+                onClick={() => setJoinOpen(true)}
+              >
+                <Link className="size-4" />
+                Join mesh
+              </Button>
+              <Button
+                size="sm"
+                className="squircle"
+                onClick={handleGenerateInvite}
+              >
+                <Plus className="size-4" />
+                Generate invite
+              </Button>
+            </div>
           </CardContent>
         </Card>
       ) : (
@@ -302,13 +358,13 @@ export function InstancesSettings() {
         </Card>
       )}
 
-      {/* Invite code dialog */}
+      {/* Generate invite dialog */}
       <Dialog open={inviteOpen} onOpenChange={(open) => !open && handleCloseInvite()}>
         <DialogContent className="squircle sm:max-w-md">
           {inviteLoading ? (
             <div className="flex flex-col items-center justify-center py-8 gap-3">
               <Loader2 className="size-6 animate-spin text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">Generating invite code...</p>
+              <p className="text-sm text-muted-foreground">Generating invite...</p>
             </div>
           ) : inviteError ? (
             <>
@@ -322,31 +378,29 @@ export function InstancesSettings() {
                 </Button>
               </DialogFooter>
             </>
-          ) : inviteCode ? (
+          ) : inviteToken ? (
             <>
               <DialogHeader>
-                <DialogTitle>Invite code</DialogTitle>
+                <DialogTitle>Invite token</DialogTitle>
                 <DialogDescription>
-                  Run this command on the instance you want to connect. Expires in 15 minutes, one-time use.
+                  Copy this token and paste it into the "Join mesh" dialog on the other
+                  instance. Expires in 15 minutes, one-time use.
                 </DialogDescription>
               </DialogHeader>
               <div className="flex items-center gap-2">
-                <code className="flex-1 rounded-md bg-muted px-3 py-2 font-mono text-sm">
-                  vardo join {inviteCode}
+                <code className="flex-1 rounded-md bg-muted px-3 py-2 font-mono text-xs break-all">
+                  {inviteToken}
                 </code>
                 <Button
                   variant="outline"
                   size="sm"
                   className="squircle shrink-0"
-                  aria-label="Copy join command"
-                  onClick={() => copyToClipboard(`vardo join ${inviteCode}`, "Join command")}
+                  aria-label="Copy invite token"
+                  onClick={() => copyToClipboard(inviteToken, "Invite token")}
                 >
                   <Copy className="size-4" />
                 </Button>
               </div>
-              <p className="text-xs text-muted-foreground">
-                Run this on the remote instance where Vardo is installed.
-              </p>
               <DialogFooter>
                 <Button className="squircle" onClick={handleCloseInvite}>
                   Done
@@ -354,6 +408,54 @@ export function InstancesSettings() {
               </DialogFooter>
             </>
           ) : null}
+        </DialogContent>
+      </Dialog>
+
+      {/* Join mesh dialog */}
+      <Dialog open={joinOpen} onOpenChange={setJoinOpen}>
+        <DialogContent className="squircle sm:max-w-md">
+          <form onSubmit={handleJoin}>
+            <DialogHeader>
+              <DialogTitle>Join mesh</DialogTitle>
+              <DialogDescription>
+                Paste the invite token from the other instance to connect this
+                instance to the mesh.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2 py-4">
+              <Label htmlFor="join-token">Invite token</Label>
+              <Input
+                id="join-token"
+                value={joinToken}
+                onChange={(e) => setJoinToken(e.target.value)}
+                placeholder="Paste invite token here"
+                className="font-mono text-xs"
+                required
+                autoFocus
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                className="squircle"
+                onClick={() => {
+                  setJoinOpen(false);
+                  setJoinToken("");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                className="squircle"
+                disabled={joinLoading || !joinToken.trim()}
+              >
+                {joinLoading && <Loader2 className="size-4 animate-spin" />}
+                Join
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 

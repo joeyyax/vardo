@@ -23,13 +23,18 @@ export async function POST() {
     const port = process.env.WIREGUARD_PORT || "51820";
     const endpoint = `${serverIp}:${port}`;
 
-    const code = await createInvite({
+    const domain = process.env.VARDO_DOMAIN || serverIp;
+    const protocol = domain === "localhost" ? "http" : "https";
+    const apiUrl = `${protocol}://${domain}`;
+
+    const token = await createInvite({
       publicKey,
       endpoint,
       internalIp: HUB_IP,
+      apiUrl,
     });
 
-    return NextResponse.json({ code }, { status: 201 });
+    return NextResponse.json({ token }, { status: 201 });
   } catch (error) {
     return handleRouteError(error, "Error creating mesh invite");
   }

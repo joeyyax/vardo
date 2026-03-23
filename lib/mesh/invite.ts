@@ -14,11 +14,18 @@ interface MeshInvite {
   expiresAt: number;
 }
 
-/** Generate a short invite code and store it in system settings. */
+/**
+ * Generate an invite and return a self-contained token.
+ * The token encodes the hub's API URL + the short code so the joining
+ * instance knows where to call without any extra input.
+ *
+ * Format: base64url("hubApiUrl|code")
+ */
 export async function createInvite(hub: {
   publicKey: string;
   endpoint: string;
   internalIp: string;
+  apiUrl: string;
 }): Promise<string> {
   // Clean up any expired invites while we're here
   await cleanExpiredInvites();
@@ -48,7 +55,26 @@ export async function createInvite(hub: {
       },
     });
 
-  return code;
+  // Encode hub URL + code into a self-contained token
+  const payload = `${hub.apiUrl}|${code}`;
+  return Buffer.from(payload).toString("base64url");
+}
+
+/** Decode an invite token into { hubApiUrl, code }. Returns null if malformed. */
+export function decodeInviteToken(
+  token: string
+): { hubApiUrl: string; code: string } | null {
+  try {
+    const payload = Buffer.from(token, "base64url").toString("utf-8");
+    const pipeIdx = payload.indexOf("|");
+    if (pipeIdx < 1) return null;
+    const hubApiUrl = payload.slice(0, pipeIdx);
+    const code = payload.slice(pipeIdx + 1);
+    if (!hubApiUrl || !code) return null;
+    return { hubApiUrl, code };
+  } catch {
+    return null;
+  }
 }
 
 /**
