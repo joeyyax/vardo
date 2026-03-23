@@ -248,81 +248,79 @@ export function InstancesSettings() {
 
   return (
     <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="space-y-1">
+          <h2 className="text-lg font-medium">Instances</h2>
+          <p className="text-sm text-muted-foreground">
+            Connect multiple Vardo instances into a mesh network.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => fetchPeers(true)}
+            disabled={refreshing}
+            aria-label="Refresh instances"
+          >
+            <RefreshCw className={`size-4 ${refreshing ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="squircle"
+            onClick={() => setJoinOpen(true)}
+          >
+            <Link className="size-4" />
+            Join mesh
+          </Button>
+          <Button
+            size="sm"
+            className="squircle"
+            onClick={handleGenerateInvite}
+          >
+            <Plus className="size-4" />
+            Generate invite
+          </Button>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Left column — info + actions */}
-        <div className="space-y-6">
-          <div className="space-y-1">
-            <h2 className="text-lg font-medium">Instances</h2>
+        {/* Left column — info */}
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <h3 className="text-sm font-medium">What this is</h3>
             <p className="text-sm text-muted-foreground">
-              Connect multiple Vardo instances into a mesh network.
+              An encrypted WireGuard tunnel between Vardo instances that
+              syncs project data automatically. Useful for staging/production
+              pairs, multi-server deployments and local dev connected to a
+              remote instance.
             </p>
           </div>
-
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <h3 className="text-sm font-medium">What this is</h3>
-              <p className="text-sm text-muted-foreground">
-                An encrypted WireGuard tunnel between Vardo instances that
-                syncs project data automatically. Useful for staging/production
-                pairs, multi-server deployments and local dev connected to a
-                remote instance.
-              </p>
-            </div>
-            <div className="space-y-2">
-              <h3 className="text-sm font-medium">What this isn't</h3>
-              <p className="text-sm text-muted-foreground">
-                This is not a VPN or general-purpose network. It only carries
-                Vardo API traffic between instances — project manifests,
-                heartbeats and sync data. It doesn't expose ports, route
-                internet traffic or replace SSH.
-              </p>
-            </div>
-            <div className="space-y-2">
-              <h3 className="text-sm font-medium">How to connect</h3>
-              <p className="text-sm text-muted-foreground">
-                Generate an invite on the hub instance, copy the token, then
-                paste it on the joining instance using "Join mesh". Both
-                sides configure WireGuard automatically.
-              </p>
-            </div>
+          <div className="space-y-2">
+            <h3 className="text-sm font-medium">What this isn't</h3>
+            <p className="text-sm text-muted-foreground">
+              This is not a VPN or general-purpose network. It only carries
+              Vardo API traffic between instances — project manifests,
+              heartbeats and sync data. It doesn't expose ports, route
+              internet traffic or replace SSH.
+            </p>
           </div>
-
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="squircle"
-              onClick={() => setJoinOpen(true)}
-            >
-              <Link className="size-4" />
-              Join mesh
-            </Button>
-            <Button
-              size="sm"
-              className="squircle"
-              onClick={handleGenerateInvite}
-            >
-              <Plus className="size-4" />
-              Generate invite
-            </Button>
+          <div className="space-y-2">
+            <h3 className="text-sm font-medium">How to connect</h3>
+            <p className="text-sm text-muted-foreground">
+              Generate an invite on the hub instance, copy the token, then
+              paste it on the joining instance using "Join mesh". Both
+              sides configure WireGuard automatically.
+            </p>
           </div>
         </div>
 
         {/* Right column — peer list + invites */}
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-medium">Connected instances</h3>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => fetchPeers(true)}
-              disabled={refreshing}
-              aria-label="Refresh instances"
-            >
-              <RefreshCw className={`size-4 ${refreshing ? "animate-spin" : ""}`} />
-              Refresh
-            </Button>
-          </div>
+          <h3 className="text-sm font-medium">Connected instances</h3>
 
           {/* Pending invites */}
           {invites.length > 0 && (
