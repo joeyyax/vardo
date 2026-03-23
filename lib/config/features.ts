@@ -16,7 +16,8 @@ export type FeatureFlag =
   | "environments"
   | "backups"
   | "cron"
-  | "passwordAuth";
+  | "passwordAuth"
+  | "mesh";
 
 type FlagConfig = {
   env: string;
@@ -55,6 +56,12 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
     label: "Password Auth",
     description:
       "Email/password authentication for sign-in and onboarding",
+  },
+  mesh: {
+    env: "FEATURE_MESH",
+    label: "Mesh networking",
+    description:
+      "Connect multiple Vardo instances over encrypted WireGuard tunnels",
   },
 };
 
