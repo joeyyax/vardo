@@ -1,7 +1,5 @@
-"use client";
-
 /**
- * Client-side notification adapter.
+ * Notification adapter — toast (client-side).
  *
  * Usage:
  *   import { notify } from "@/lib/notify";

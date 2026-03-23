@@ -36,8 +36,8 @@ function loading(message: ToastMessage, data?: ExternalToast) {
   return sonnerToast.loading(message, data);
 }
 
-function message(message: ToastMessage, data?: ExternalToast) {
-  return sonnerToast.message(message, data);
+function message(msg: ToastMessage, data?: ExternalToast) {
+  return sonnerToast.message(msg, data);
 }
 
 function promise<T>(
