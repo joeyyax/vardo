@@ -27,7 +27,7 @@ import {
   Rocket,
   Container,
 } from "lucide-react";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 
 const STEPS = [
   {
@@ -311,13 +311,13 @@ function AccountStep({
     try {
       const { error } = await signUp.email({ name, email, password });
       if (error) {
-        toast.error(error.message || "Failed to create account");
+        notify.toast.error(error.message || "Failed to create account");
         return;
       }
-      toast.success("Account created — you're the admin");
+      notify.toast.success("Account created — you're the admin");
       onComplete();
     } catch (err) {
-      toast.error(
+      notify.toast.error(
         err instanceof Error ? err.message : "Failed to create account",
       );
     } finally {
@@ -412,10 +412,10 @@ function EmailStep({
         }),
       });
       if (!res.ok) throw new Error("Failed to save");
-      toast.success("Email provider saved");
+      notify.toast.success("Email provider saved");
       onComplete();
     } catch {
-      toast.error("Failed to save email config");
+      notify.toast.error("Failed to save email config");
     } finally {
       setLoading(false);
     }
@@ -585,10 +585,10 @@ function BackupStep({
         }),
       });
       if (!res.ok) throw new Error("Failed to save");
-      toast.success("Backup storage saved");
+      notify.toast.success("Backup storage saved");
       onComplete();
     } catch {
-      toast.error("Failed to save backup config");
+      notify.toast.error("Failed to save backup config");
     } finally {
       setLoading(false);
     }
@@ -718,10 +718,10 @@ function GithubStep({
         }),
       });
       if (!res.ok) throw new Error("Failed to save");
-      toast.success("GitHub App saved");
+      notify.toast.success("GitHub App saved");
       onComplete();
     } catch {
-      toast.error("Failed to save GitHub config");
+      notify.toast.error("Failed to save GitHub config");
     } finally {
       setLoading(false);
     }

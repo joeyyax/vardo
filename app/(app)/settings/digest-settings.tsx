@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { Card, CardContent } from "@/components/ui/card";
 import { Loader2, Mail } from "lucide-react";
 
@@ -59,11 +59,11 @@ export function DigestSettingsEditor({ orgId }: { orgId: string }) {
         setLoadError(false);
       } else {
         setLoadError(true);
-        toast.error("Failed to load digest settings");
+        notify.toast.error("Failed to load digest settings");
       }
     } catch {
       setLoadError(true);
-      toast.error("Failed to load digest settings");
+      notify.toast.error("Failed to load digest settings");
     } finally {
       setLoading(false);
     }
@@ -86,7 +86,7 @@ export function DigestSettingsEditor({ orgId }: { orgId: string }) {
         });
         if (!res.ok) {
           const d = await res.json();
-          toast.error(d.error || "Failed to save digest settings");
+          notify.toast.error(d.error || "Failed to save digest settings");
           // Revert optimistic update
           load();
           return;
@@ -94,7 +94,7 @@ export function DigestSettingsEditor({ orgId }: { orgId: string }) {
         const d = await res.json();
         setSettings(d.digestSettings);
       } catch {
-        toast.error("Failed to save digest settings");
+        notify.toast.error("Failed to save digest settings");
         load();
       } finally {
         setSaving(false);

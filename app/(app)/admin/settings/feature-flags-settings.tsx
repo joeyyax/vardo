@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Loader2 } from "lucide-react";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import {
   Card,
   CardContent,
@@ -75,9 +75,9 @@ export function FeatureFlagsSettings() {
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error("Failed to save");
-      toast.success("Feature flags saved");
+      notify.toast.success("Feature flags saved");
     } catch {
-      toast.error("Failed to save feature flags");
+      notify.toast.error("Failed to save feature flags");
     } finally {
       setSaving(false);
     }

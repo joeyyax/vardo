@@ -28,7 +28,7 @@ import {
   Layers,
   History,
 } from "lucide-react";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { PageToolbar } from "@/components/page-toolbar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -227,14 +227,14 @@ function PortsManager({
         body: JSON.stringify({ exposedPorts: updated }),
       });
       if (!res.ok) {
-        toast.error("Failed to update ports");
+        notify.toast.error("Failed to update ports");
         return;
       }
       setPorts(updated);
-      toast.success("Ports updated — redeploy to apply");
+      notify.toast.success("Ports updated — redeploy to apply");
       router.refresh();
     } catch {
-      toast.error("Failed to update ports");
+      notify.toast.error("Failed to update ports");
     } finally {
       setSaving(false);
     }
@@ -243,7 +243,7 @@ function PortsManager({
   function handleAdd() {
     const internal = parseInt(newInternal);
     if (!internal || internal < 1 || internal > 65535) {
-      toast.error("Enter a valid port number (1-65535)");
+      notify.toast.error("Enter a valid port number (1-65535)");
       return;
     }
     const updated = [...ports, { internal, description: newDescription || undefined }];
@@ -586,14 +586,14 @@ function DependencySelector({
         body: JSON.stringify({ dependsOn: updated.length > 0 ? updated : null }),
       });
       if (!res.ok) {
-        toast.error("Failed to update dependencies");
+        notify.toast.error("Failed to update dependencies");
         return;
       }
       setDeps(updated);
-      toast.success("Dependencies updated");
+      notify.toast.success("Dependencies updated");
       router.refresh();
     } catch {
-      toast.error("Failed to update dependencies");
+      notify.toast.error("Failed to update dependencies");
     } finally {
       setSaving(false);
     }
@@ -767,13 +767,13 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         router.refresh();
 
         // Auto-deploy the new environment
-        toast.success(`Environment "${name}" created — deploying...`);
+        notify.toast.success(`Environment "${name}" created — deploying...`);
         fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/deploy`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ environmentId: newEnvId }),
         }).catch(() => {
-          toast.error("Auto-deploy failed");
+          notify.toast.error("Auto-deploy failed");
         });
       } else {
         const data = await res.json();
@@ -781,13 +781,13 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           const existing = app.environments.find((e) => e.name === name);
           if (existing) setSelectedEnvId(existing.id);
           setNewEnvOpen(false);
-          toast.info("Environment already exists");
+          notify.toast.info("Environment already exists");
         } else {
-          toast.error(data.error || "Failed to create environment");
+          notify.toast.error(data.error || "Failed to create environment");
         }
       }
     } catch {
-      toast.error("Failed to create environment");
+      notify.toast.error("Failed to create environment");
     } finally {
       setNewEnvSaving(false);
     }
@@ -950,10 +950,10 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         const data = JSON.parse(event.data);
         finished = true;
         if (data.success) {
-          toast.success(data.durationMs ? `Deployed in ${formatDuration(data.durationMs)}` : "Deployed");
+          notify.toast.success(data.durationMs ? `Deployed in ${formatDuration(data.durationMs)}` : "Deployed");
           setDeployAnnouncement("Deployment succeeded.");
         } else {
-          toast.error(data.error || "Deployment failed");
+          notify.toast.error(data.error || "Deployment failed");
           setDeployAnnouncement(`Deployment failed. ${data.error || ""}`);
         }
         if (data.deploymentId) {
@@ -996,7 +996,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
             }
             if (dep?.status === "success" || dep?.status === "failed") {
               if (dep.status === "success") {
-                toast.success(dep.durationMs ? `Deployed in ${formatDuration(dep.durationMs)}` : "Deployed");
+                notify.toast.success(dep.durationMs ? `Deployed in ${formatDuration(dep.durationMs)}` : "Deployed");
               } else {
                 // Extract last error line from deploy log for the toast
                 const errorLine = dep.log
@@ -1008,7 +1008,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                   .replace(/x-access-token:[^\s@]+/g, "***")
                   .replace(/ghs_[A-Za-z0-9]+/g, "***")
                   .trim();
-                toast.error(cleaned || "Deployment failed");
+                notify.toast.error(cleaned || "Deployment failed");
               }
               setViewingLogId(dep.id);
               stopped = true;
@@ -1087,13 +1087,13 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
       );
       if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error || "Failed to update tag");
+        notify.toast.error(data.error || "Failed to update tag");
         return;
       }
-      toast.success(isApplied ? "Tag removed" : "Tag added");
+      notify.toast.success(isApplied ? "Tag removed" : "Tag added");
       router.refresh();
     } catch {
-      toast.error("Failed to update tag");
+      notify.toast.error("Failed to update tag");
     } finally {
       setTogglingTagId(null);
     }
@@ -1156,14 +1156,14 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
 
       if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error || "Failed to save");
+        notify.toast.error(data.error || "Failed to save");
         return;
       }
 
       setEditOpen(false);
 
       if (redeployFieldChanged) {
-        toast.success("Saved — redeploy to apply changes", {
+        notify.toast.success("Saved — redeploy to apply changes", {
           action: {
             label: "Redeploy now",
             onClick: handleDeploy,
@@ -1171,12 +1171,12 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           duration: 8000,
         });
       } else {
-        toast.success("App updated");
+        notify.toast.success("App updated");
       }
 
       router.refresh();
     } catch {
-      toast.error("Failed to save");
+      notify.toast.error("Failed to save");
     } finally {
       setSaving(false);
     }
@@ -1186,9 +1186,9 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     try {
       const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/stop`, { method: "POST" });
       const data = await res.json();
-      data.success ? toast.success("Stopped") : toast.error(data.error || "Stop failed");
+      data.success ? notify.toast.success("Stopped") : notify.toast.error(data.error || "Stop failed");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Stop failed");
+      notify.toast.error(err instanceof Error ? err.message : "Stop failed");
     }
     router.refresh();
   }
@@ -1203,14 +1203,14 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
 
       if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error || "Failed to delete");
+        notify.toast.error(data.error || "Failed to delete");
         return;
       }
 
-      toast.success("App deleted");
+      notify.toast.success("App deleted");
       router.push("/projects");
     } catch {
-      toast.error("Failed to delete");
+      notify.toast.error("Failed to delete");
     } finally {
       setDeleting(false);
     }
@@ -1231,16 +1231,16 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
 
       if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error || "Failed to delete environment");
+        notify.toast.error(data.error || "Failed to delete environment");
         return;
       }
 
-      toast.success(`Environment "${selectedEnv?.name}" deleted`);
+      notify.toast.success(`Environment "${selectedEnv?.name}" deleted`);
       setSelectedEnvId(productionEnv?.id);
       setDeleteEnvOpen(false);
       router.refresh();
     } catch {
-      toast.error("Failed to delete environment");
+      notify.toast.error("Failed to delete environment");
     } finally {
       setDeletingEnv(false);
     }
@@ -1297,7 +1297,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
       );
 
       if (!res.body) {
-        toast.error("Deployment failed — no response");
+        notify.toast.error("Deployment failed — no response");
         setDeploying(false);
         return;
       }
@@ -1329,17 +1329,17 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
             } else if (eventType === "done") {
               const result = data as { deploymentId: string; success: boolean; durationMs: number; error?: string };
               if (result.success) {
-                toast.success(`Deployed in ${formatDuration(result.durationMs)}`);
+                notify.toast.success(`Deployed in ${formatDuration(result.durationMs)}`);
                 setDeployAnnouncement("Deployment succeeded.");
               } else {
-                toast.error(result.error || "Deployment failed");
+                notify.toast.error(result.error || "Deployment failed");
                 setDeployAnnouncement(`Deployment failed. ${result.error || ""}`);
               }
               if (result.deploymentId) {
                 setViewingLogId(result.deploymentId);
               }
             } else if (eventType === "error") {
-              toast.error((data as { message: string }).message);
+              notify.toast.error((data as { message: string }).message);
             }
           }
         }
@@ -1348,9 +1348,9 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
       router.refresh();
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
-        toast.info("Deployment aborted");
+        notify.toast.info("Deployment aborted");
       } else {
-        toast.error(err instanceof Error ? err.message : "Deployment failed");
+        notify.toast.error(err instanceof Error ? err.message : "Deployment failed");
       }
     } finally {
       setDeploying(false);
@@ -1371,14 +1371,14 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
       );
       if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error || "Failed to load rollback preview");
+        notify.toast.error(data.error || "Failed to load rollback preview");
         setRollbackTarget(null);
         return;
       }
       const preview = await res.json();
       setRollbackPreview(preview);
     } catch {
-      toast.error("Failed to load rollback preview");
+      notify.toast.error("Failed to load rollback preview");
       setRollbackTarget(null);
     } finally {
       setRollbackLoading(false);
@@ -1432,7 +1432,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
 
       if (!res.ok || !res.body) {
         const data = await res.json().catch(() => ({}));
-        toast.error((data as { error?: string }).error || "Rollback failed");
+        notify.toast.error((data as { error?: string }).error || "Rollback failed");
         setDeploying(false);
         setDeployAbort(null);
         return;
@@ -1464,9 +1464,9 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
             } else if (eventType === "done") {
               const result = data as { deploymentId: string; success: boolean; durationMs: number };
               if (result.success) {
-                toast.success("Rollback deployed successfully");
+                notify.toast.success("Rollback deployed successfully");
               } else {
-                toast.error("Rollback deployment failed");
+                notify.toast.error("Rollback deployment failed");
               }
               if (result.deploymentId) {
                 setViewingLogId(result.deploymentId);
@@ -1479,9 +1479,9 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
       router.refresh();
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
-        toast.info("Rollback aborted");
+        notify.toast.info("Rollback aborted");
       } else {
-        toast.error("Rollback failed");
+        notify.toast.error("Rollback failed");
       }
     } finally {
       setDeploying(false);
@@ -1500,13 +1500,13 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ domainId }),
           });
-          toast.success("Primary domain updated");
+          notify.toast.success("Primary domain updated");
           router.refresh();
           return;
         }
       }
     } catch {
-      toast.error("Failed to update primary domain");
+      notify.toast.error("Failed to update primary domain");
     }
   }
 
@@ -1527,16 +1527,16 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
       );
       if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error || "Failed to add domain");
+        notify.toast.error(data.error || "Failed to add domain");
         return;
       }
-      toast.success("Domain added");
+      notify.toast.success("Domain added");
       setDomainOpen(false);
       setNewDomain("");
       setNewDomainPort("");
       router.refresh();
     } catch {
-      toast.error("Failed to add domain");
+      notify.toast.error("Failed to add domain");
     } finally {
       setDomainSaving(false);
     }
@@ -1555,13 +1555,13 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
       );
       if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error || "Failed to delete domain");
+        notify.toast.error(data.error || "Failed to delete domain");
         return;
       }
-      toast.success("Domain removed");
+      notify.toast.success("Domain removed");
       router.refresh();
     } catch {
-      toast.error("Failed to delete domain");
+      notify.toast.error("Failed to delete domain");
     } finally {
       setDeletingDomainId(null);
     }
@@ -1585,14 +1585,14 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
       );
       if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error || "Failed to update domain");
+        notify.toast.error(data.error || "Failed to update domain");
         return;
       }
-      toast.success("Domain updated — redeploy to apply");
+      notify.toast.success("Domain updated — redeploy to apply");
       setEditingDomainId(null);
       router.refresh();
     } catch {
-      toast.error("Failed to update domain");
+      notify.toast.error("Failed to update domain");
     } finally {
       setDomainSaving(false);
     }
@@ -1639,9 +1639,9 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                       try {
                         const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/restart`, { method: "POST" });
                         const data = await res.json();
-                        data.success ? toast.success("Restarted") : toast.error(data.error || "Restart failed");
+                        data.success ? notify.toast.success("Restarted") : notify.toast.error(data.error || "Restart failed");
                       } catch (err) {
-                        toast.error(err instanceof Error ? err.message : "Restart failed");
+                        notify.toast.error(err instanceof Error ? err.message : "Restart failed");
                       }
                       router.refresh();
                     }}
@@ -2300,7 +2300,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                           type="button"
                           onClick={() => {
                             navigator.clipboard.writeText(copyValue);
-                            toast.success(`Copied ${copyValue}`);
+                            notify.toast.success(`Copied ${copyValue}`);
                           }}
                           className="shrink-0 p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
                           title={`Copy: ${copyValue}`}
@@ -2335,7 +2335,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                             type="button"
                             onClick={() => {
                               navigator.clipboard.writeText(`localhost:${p.external}`);
-                              toast.success("Copied");
+                              notify.toast.success("Copied");
                             }}
                             className="shrink-0 p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
                           >
@@ -3017,7 +3017,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                             <button
                               onClick={() => {
                                 navigator.clipboard.writeText(serverIP || "");
-                                toast.success("Copied");
+                                notify.toast.success("Copied");
                               }}
                               className="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground"
                             >
@@ -3035,7 +3035,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                               <button
                                 onClick={() => {
                                   navigator.clipboard.writeText(autoDomain);
-                                  toast.success("Copied");
+                                  notify.toast.success("Copied");
                                 }}
                                 className="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground"
                               >

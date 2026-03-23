@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useSession, signOut } from "@/lib/auth/client";
 import { getInitials } from "@/lib/utils";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { switchOrganization } from "@/lib/organizations/switch";
 import type { Organization } from "@/lib/types";
 
@@ -51,7 +51,7 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations }: Us
       router.push("/projects");
       router.refresh();
     } else {
-      toast.error(result.error);
+      notify.toast.error(result.error);
     }
   };
 

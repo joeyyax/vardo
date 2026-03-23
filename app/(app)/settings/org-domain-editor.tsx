@@ -16,7 +16,7 @@ import {
   BottomSheetFooter,
   BottomSheetClose,
 } from "@/components/ui/bottom-sheet";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Globe,
@@ -65,7 +65,7 @@ export function OrgDomainEditor({
       const data = await res.json();
       setDomains(data.domains);
     } catch {
-      toast.error("Failed to load domains");
+      notify.toast.error("Failed to load domains");
     } finally {
       setLoading(false);
     }
@@ -91,7 +91,7 @@ export function OrgDomainEditor({
       if (!res.ok) {
         setDomains(prev);
         const data = await res.json();
-        toast.error(data.error || "Failed to update domain");
+        notify.toast.error(data.error || "Failed to update domain");
         return;
       }
 
@@ -102,7 +102,7 @@ export function OrgDomainEditor({
       router.refresh();
     } catch {
       setDomains(prev);
-      toast.error("Failed to update domain");
+      notify.toast.error("Failed to update domain");
     }
   }
 
@@ -119,17 +119,17 @@ export function OrgDomainEditor({
 
       if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error || "Failed to add domain");
+        notify.toast.error(data.error || "Failed to add domain");
         return;
       }
 
-      toast.success("Domain added");
+      notify.toast.success("Domain added");
       setNewDomain("");
       setAddOpen(false);
       fetchDomains();
       router.refresh();
     } catch {
-      toast.error("Failed to add domain");
+      notify.toast.error("Failed to add domain");
     } finally {
       setAdding(false);
     }
@@ -153,14 +153,14 @@ export function OrgDomainEditor({
         setDomains((ds) =>
           ds.map((d) => (d.id === domain.id ? { ...d, verified: true } : d))
         );
-        toast.success("DNS verified successfully");
+        notify.toast.success("DNS verified successfully");
       } else {
-        toast.error(
+        notify.toast.error(
           "DNS not yet configured. Make sure your wildcard record is set up and has propagated."
         );
       }
     } catch {
-      toast.error("Failed to check DNS");
+      notify.toast.error("Failed to check DNS");
     } finally {
       setVerifying(null);
     }
@@ -178,15 +178,15 @@ export function OrgDomainEditor({
 
       if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error || "Failed to remove domain");
+        notify.toast.error(data.error || "Failed to remove domain");
         return;
       }
 
-      toast.success("Domain removed");
+      notify.toast.success("Domain removed");
       setDomains((ds) => ds.filter((d) => d.id !== domain.id));
       router.refresh();
     } catch {
-      toast.error("Failed to remove domain");
+      notify.toast.error("Failed to remove domain");
     } finally {
       setDeleting(null);
     }

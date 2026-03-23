@@ -27,7 +27,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import {
   DiscussionPanel,
   DiscussionEmptyState,
@@ -233,13 +233,13 @@ function EntityComments({
         fetchData();
         onCommentCreated?.();
         onUpdate?.();
-        toast.success("Comment added");
+        notify.toast.success("Comment added");
       } else {
-        toast.error("Failed to add comment");
+        notify.toast.error("Failed to add comment");
       }
     } catch (err) {
       console.error("Error creating comment:", err);
-      toast.error("Failed to add comment");
+      notify.toast.error("Failed to add comment");
     } finally {
       setIsSubmitting(false);
     }
@@ -260,13 +260,13 @@ function EntityComments({
         setEditContent("");
         fetchData();
         onCommentUpdated?.(commentId);
-        toast.success("Comment updated");
+        notify.toast.success("Comment updated");
       } else {
-        toast.error("Failed to update comment");
+        notify.toast.error("Failed to update comment");
       }
     } catch (err) {
       console.error("Error updating comment:", err);
-      toast.error("Failed to update comment");
+      notify.toast.error("Failed to update comment");
     }
   };
 
@@ -280,17 +280,17 @@ function EntityComments({
 
       if (response.ok) {
         fetchData();
-        toast.success(
+        notify.toast.success(
           comment.isShared
             ? "Comment made private"
             : "Comment shared with client"
         );
       } else {
-        toast.error("Failed to update sharing");
+        notify.toast.error("Failed to update sharing");
       }
     } catch (err) {
       console.error("Error toggling share:", err);
-      toast.error("Failed to update sharing");
+      notify.toast.error("Failed to update sharing");
     }
   };
 
@@ -304,15 +304,15 @@ function EntityComments({
 
       if (response.ok) {
         fetchData();
-        toast.success(
+        notify.toast.success(
           comment.isPinned ? "Comment unpinned" : "Comment pinned"
         );
       } else {
-        toast.error("Failed to update pin");
+        notify.toast.error("Failed to update pin");
       }
     } catch (err) {
       console.error("Error toggling pin:", err);
-      toast.error("Failed to update pin");
+      notify.toast.error("Failed to update pin");
     }
   };
 
@@ -330,13 +330,13 @@ function EntityComments({
         fetchData();
         onCommentDeleted?.(deletedId);
         onUpdate?.();
-        toast.success("Comment deleted");
+        notify.toast.success("Comment deleted");
       } else {
-        toast.error("Failed to delete comment");
+        notify.toast.error("Failed to delete comment");
       }
     } catch (err) {
       console.error("Error deleting comment:", err);
-      toast.error("Failed to delete comment");
+      notify.toast.error("Failed to delete comment");
     }
   };
 

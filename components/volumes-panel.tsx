@@ -22,7 +22,7 @@ import {
   EyeOff,
   Check,
 } from "lucide-react";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -185,15 +185,15 @@ function VolumeDiffSection({
         const data = await res.json();
         if (data.synced?.includes(path)) {
           setSynced((prev) => new Set(prev).add(path));
-          toast.success(`Synced ${path}`);
+          notify.toast.success(`Synced ${path}`);
         } else {
-          toast.error(`Failed to sync ${path}`);
+          notify.toast.error(`Failed to sync ${path}`);
         }
       } else {
-        toast.error("Sync failed");
+        notify.toast.error("Sync failed");
       }
     } catch {
-      toast.error("Sync failed");
+      notify.toast.error("Sync failed");
     } finally {
       setSyncing((prev) => {
         const next = new Set(prev);
@@ -210,7 +210,7 @@ function VolumeDiffSection({
 
     const currentPatterns = volume.ignorePatterns ?? [];
     if (currentPatterns.includes(pattern)) {
-      toast.success("Pattern already ignored");
+      notify.toast.success("Pattern already ignored");
       return;
     }
 
@@ -226,15 +226,15 @@ function VolumeDiffSection({
         }
       );
       if (res.ok) {
-        toast.success(`Added ignore pattern: ${pattern}`);
+        notify.toast.success(`Added ignore pattern: ${pattern}`);
         onIgnoreAdded(pattern);
         // Reload diff
         loadDiff();
       } else {
-        toast.error("Failed to add ignore pattern");
+        notify.toast.error("Failed to add ignore pattern");
       }
     } catch {
-      toast.error("Failed to add ignore pattern");
+      notify.toast.error("Failed to add ignore pattern");
     }
   }
 
@@ -499,14 +499,14 @@ export function VolumesPanel({ appId, orgId }: Props) {
         }
       );
       if (res.ok) {
-        toast.success(
+        notify.toast.success(
           updated.find((v) => v.name === volumeName)?.persistent
             ? "Volume marked as persistent"
             : "Volume marked as ephemeral"
         );
       }
     } catch {
-      toast.error("Failed to update");
+      notify.toast.error("Failed to update");
     } finally {
       setSaving(false);
     }
@@ -551,13 +551,13 @@ export function VolumesPanel({ appId, orgId }: Props) {
         }
       );
       if (res.ok) {
-        toast.success("Volume added");
+        notify.toast.success("Volume added");
         setAddOpen(false);
         setNewName("");
         setNewMountPath("");
       }
     } catch {
-      toast.error("Failed to add volume");
+      notify.toast.error("Failed to add volume");
     } finally {
       setSaving(false);
     }
@@ -582,9 +582,9 @@ export function VolumesPanel({ appId, orgId }: Props) {
           body: JSON.stringify({ volumes: volumePayload }),
         }
       );
-      toast.success("Volume removed");
+      notify.toast.success("Volume removed");
     } catch {
-      toast.error("Failed to remove volume");
+      notify.toast.error("Failed to remove volume");
     }
   }
 
@@ -593,7 +593,7 @@ export function VolumesPanel({ appId, orgId }: Props) {
     const warnPercent = parseInt(limitWarnPercent);
 
     if (!sizeNum || sizeNum <= 0) {
-      toast.error("Size must be a positive number");
+      notify.toast.error("Size must be a positive number");
       return;
     }
 
@@ -601,16 +601,16 @@ export function VolumesPanel({ appId, orgId }: Props) {
     const sizeMB = sizeBytes / (1024 * 1024);
 
     if (sizeMB < MIN_SIZE_MB) {
-      toast.error("Minimum size is 10 MB");
+      notify.toast.error("Minimum size is 10 MB");
       return;
     }
     if (sizeMB > MAX_SIZE_MB) {
-      toast.error("Maximum size is 100 GB");
+      notify.toast.error("Maximum size is 100 GB");
       return;
     }
 
     if (!warnPercent || warnPercent < 1 || warnPercent > 100) {
-      toast.error("Warn threshold must be between 1 and 100");
+      notify.toast.error("Warn threshold must be between 1 and 100");
       return;
     }
 
@@ -631,13 +631,13 @@ export function VolumesPanel({ appId, orgId }: Props) {
         const data = await res.json();
         setLimit(data.limit);
         setLimitEditing(false);
-        toast.success("Volume limit saved");
+        notify.toast.success("Volume limit saved");
       } else {
         const data = await res.json().catch(() => ({}));
-        toast.error(data.error || "Failed to save limit");
+        notify.toast.error(data.error || "Failed to save limit");
       }
     } catch {
-      toast.error("Failed to save limit");
+      notify.toast.error("Failed to save limit");
     } finally {
       setLimitSaving(false);
     }
@@ -656,10 +656,10 @@ export function VolumesPanel({ appId, orgId }: Props) {
         setLimitUnit("MB");
         setLimitWarnPercent("80");
         setLimitEditing(false);
-        toast.success("Volume limit removed");
+        notify.toast.success("Volume limit removed");
       }
     } catch {
-      toast.error("Failed to remove limit");
+      notify.toast.error("Failed to remove limit");
     } finally {
       setLimitSaving(false);
     }

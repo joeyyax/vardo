@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 
 /**
  * Shared hook for loading and saving a system setting panel.
@@ -57,12 +57,12 @@ export function useSystemSetting<T extends Record<string, unknown>>(
           const msg = body?.error ?? "Failed to save";
           throw new Error(msg);
         }
-        toast.success(`${opts.label} saved`);
+        notify.toast.success(`${opts.label} saved`);
         setConfigured(true);
         opts.onSaved?.();
         fetchConfig();
       } catch (err) {
-        toast.error(
+        notify.toast.error(
           err instanceof Error ? err.message : `Failed to save ${opts.label.toLowerCase()}`,
         );
       } finally {

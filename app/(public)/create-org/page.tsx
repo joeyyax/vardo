@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 
 export default function CreateOrgPage() {
   const router = useRouter();
@@ -39,16 +39,16 @@ export default function CreateOrgPage() {
 
       if (!res.ok) {
         const data = await res.json();
-        toast.error("Couldn't create organization", {
+        notify.toast.error("Couldn't create organization", {
           description: data.error || "Check the name and try again",
         });
         return;
       }
 
-      toast.success("Organization created");
+      notify.toast.success("Organization created");
       router.push("/projects");
     } catch {
-      toast.error("Couldn't create organization", {
+      notify.toast.error("Couldn't create organization", {
         description: "Check your connection and try again",
       });
     } finally {

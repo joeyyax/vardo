@@ -27,7 +27,7 @@ import {
   MetricsLine,
   useAppMetrics,
 } from "@/components/app-metrics-card";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { PageToolbar } from "@/components/page-toolbar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -957,13 +957,13 @@ export function ProjectDetail({
       );
       if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error || "Failed to delete project");
+        notify.toast.error(data.error || "Failed to delete project");
         return;
       }
-      toast.success("Project deleted");
+      notify.toast.success("Project deleted");
       router.push("/projects");
     } catch {
-      toast.error("Failed to delete project");
+      notify.toast.error("Failed to delete project");
     } finally {
       setDeleting(false);
     }
@@ -988,16 +988,16 @@ export function ProjectDetail({
         }
       );
       if (res.ok) {
-        toast.success("Deploying all apps...");
+        notify.toast.success("Deploying all apps...");
         // Subscribe to real-time deploy events for status transitions
         subscribeToDeployEvents();
       } else {
         const data = await res.json().catch(() => ({}));
-        toast.error(data.error || "Deploy failed");
+        notify.toast.error(data.error || "Deploy failed");
         setDeploying(false);
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Deploy failed");
+      notify.toast.error(err instanceof Error ? err.message : "Deploy failed");
       setDeploying(false);
     }
   }
@@ -1008,7 +1008,7 @@ export function ProjectDetail({
         await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/restart`, { method: "POST" });
       } catch { /* continue */ }
     }
-    toast.success("All apps restarted");
+    notify.toast.success("All apps restarted");
     router.refresh();
   }
 
@@ -1018,7 +1018,7 @@ export function ProjectDetail({
         await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/stop`, { method: "POST" });
       } catch { /* continue */ }
     }
-    toast.success("All apps stopped");
+    notify.toast.success("All apps stopped");
     router.refresh();
   }
 
@@ -1037,15 +1037,15 @@ export function ProjectDetail({
         }
       );
       if (res.ok) {
-        toast.success("Project updated");
+        notify.toast.success("Project updated");
         setEditOpen(false);
         router.refresh();
       } else {
         const data = await res.json().catch(() => ({}));
-        toast.error(data.error || "Failed to update");
+        notify.toast.error(data.error || "Failed to update");
       }
     } catch {
-      toast.error("Failed to update");
+      notify.toast.error("Failed to update");
     } finally {
       setEditSaving(false);
     }
@@ -1065,17 +1065,17 @@ export function ProjectDetail({
         }
       );
       if (res.ok) {
-        toast.success(`Environment "${name}" created`);
+        notify.toast.success(`Environment "${name}" created`);
         setNewEnvOpen(false);
         setNewEnvName("");
         setSelectedEnv(name);
         router.refresh();
       } else {
         const data = await res.json();
-        toast.error(data.error || "Failed to create environment");
+        notify.toast.error(data.error || "Failed to create environment");
       }
     } catch {
-      toast.error("Failed to create environment");
+      notify.toast.error("Failed to create environment");
     } finally {
       setNewEnvSaving(false);
     }

@@ -12,7 +12,7 @@ import {
   Pencil,
   ArrowUp,
 } from "lucide-react";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -108,17 +108,17 @@ export function AppEnvironments({
 
       if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error || "Failed to create environment");
+        notify.toast.error(data.error || "Failed to create environment");
         return;
       }
 
-      toast.success("Environment created");
+      notify.toast.success("Environment created");
       setCreating(false);
       setNewName("");
       setNewDomain("");
       router.refresh();
     } catch {
-      toast.error("Failed to create environment");
+      notify.toast.error("Failed to create environment");
     } finally {
       setSaving(false);
     }
@@ -141,17 +141,17 @@ export function AppEnvironments({
 
       if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error || "Failed to clone environment");
+        notify.toast.error(data.error || "Failed to clone environment");
         return;
       }
 
       const data = await res.json();
-      toast.success(`Cloned with ${data.clonedVars} variables`);
+      notify.toast.success(`Cloned with ${data.clonedVars} variables`);
       setCloning(null);
       setCloneName("");
       router.refresh();
     } catch {
-      toast.error("Failed to clone environment");
+      notify.toast.error("Failed to clone environment");
     } finally {
       setCloneSaving(false);
     }
@@ -172,15 +172,15 @@ export function AppEnvironments({
 
       if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error || "Failed to update environment");
+        notify.toast.error(data.error || "Failed to update environment");
         return;
       }
 
-      toast.success("Environment updated");
+      notify.toast.success("Environment updated");
       setEditingId(null);
       router.refresh();
     } catch {
-      toast.error("Failed to update environment");
+      notify.toast.error("Failed to update environment");
     }
   }
 
@@ -195,15 +195,15 @@ export function AppEnvironments({
 
       if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error || "Failed to delete environment");
+        notify.toast.error(data.error || "Failed to delete environment");
         return;
       }
 
-      toast.success("Environment deleted");
+      notify.toast.success("Environment deleted");
       setDeleteTarget(null);
       router.refresh();
     } catch {
-      toast.error("Failed to delete environment");
+      notify.toast.error("Failed to delete environment");
     } finally {
       setDeleting(false);
     }
@@ -216,7 +216,7 @@ export function AppEnvironments({
       // Clone this environment's vars into production
       const prodEnv = allEnvironments.find((e) => e.type === "production");
       if (!prodEnv) {
-        toast.error("No production environment found");
+        notify.toast.error("No production environment found");
         return;
       }
 
@@ -234,15 +234,15 @@ export function AppEnvironments({
 
       if (!res.ok) {
         // Fallback: just notify that promotion needs manual var copy for now
-        toast.error("Promotion requires manually copying variables to production");
+        notify.toast.error("Promotion requires manually copying variables to production");
         return;
       }
 
-      toast.success(`Promoted "${promoteTarget.name}" variables to production`);
+      notify.toast.success(`Promoted "${promoteTarget.name}" variables to production`);
       setPromoteTarget(null);
       router.refresh();
     } catch {
-      toast.error("Failed to promote environment");
+      notify.toast.error("Failed to promote environment");
     } finally {
       setPromoting(false);
     }

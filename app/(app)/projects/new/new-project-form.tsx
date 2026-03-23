@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,7 +34,7 @@ export function NewProjectForm({ orgId }: { orgId: string }) {
     e.preventDefault();
 
     if (!slug.trim()) {
-      toast.error("Slug is required");
+      notify.toast.error("Slug is required");
       return;
     }
 
@@ -57,15 +57,15 @@ export function NewProjectForm({ orgId }: { orgId: string }) {
       const data = await res.json();
 
       if (!res.ok) {
-        toast.error(data.error || "Failed to create project");
+        notify.toast.error(data.error || "Failed to create project");
         return;
       }
 
-      toast.success("Project created");
+      notify.toast.success("Project created");
       router.refresh();
       router.push(`/projects/${data.project.name}`);
     } catch {
-      toast.error("Failed to create project");
+      notify.toast.error("Failed to create project");
     } finally {
       setSubmitting(false);
     }
