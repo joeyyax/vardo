@@ -9,7 +9,6 @@ set -euo pipefail
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-VARDO_DIR="/opt/vardo"
 COMPOSE_FILE="docker-compose.yml"
 REPO_URL="https://github.com/joeyyax/vardo.git"
 
@@ -25,6 +24,31 @@ UNATTENDED=false
 AUTO_YES=false
 PURGE=false
 COMMAND=""
+PLATFORM=""
+VARDO_ROLE=""
+
+# ── Platform detection ────────────────────────────────────────────────────────
+
+detect_platform() {
+  case "$(uname -s)" in
+    Darwin) PLATFORM="macos" ;;
+    Linux)
+      if grep -qi microsoft /proc/version 2>/dev/null; then
+        PLATFORM="wsl"
+      else
+        PLATFORM="linux"
+      fi
+      ;;
+    *) PLATFORM="unknown" ;;
+  esac
+
+  # Set default VARDO_DIR based on platform (overridable via env var)
+  if [[ "$PLATFORM" == "macos" ]]; then
+    VARDO_DIR="${VARDO_DIR:-$HOME/vardo}"
+  else
+    VARDO_DIR="${VARDO_DIR:-/opt/vardo}"
+  fi
+}
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
 
@@ -46,6 +70,14 @@ confirm() {
   else
     read -p "  $prompt [y/N] " -r yn < /dev/tty
     [[ "$yn" =~ ^[Yy] ]]
+  fi
+}
+
+_sed_i() {
+  if [[ "$PLATFORM" == "macos" ]]; then
+    sed -i '' "$@"
+  else
+    sed -i "$@"
   fi
 }
 
@@ -73,7 +105,11 @@ env_get() {
 load_env_display() {
   VARDO_DOMAIN="${VARDO_DOMAIN:-$(env_get VARDO_DOMAIN)}"
   VARDO_BASE_DOMAIN="${VARDO_BASE_DOMAIN:-$(env_get VARDO_BASE_DOMAIN)}"
+  VARDO_ROLE="${VARDO_ROLE:-$(env_get VARDO_ROLE)}"
 }
+
+is_production() { [[ "${VARDO_ROLE:-production}" == "production" ]]; }
+is_dev() { [[ "${VARDO_ROLE:-}" == "development" ]]; }
 
 # ── Detection ─────────────────────────────────────────────────────────────────
 
@@ -108,11 +144,29 @@ check_root() {
   fi
 }
 
+get_ram_mb() {
+  if [[ "$PLATFORM" == "macos" ]]; then
+    local ram_bytes
+    ram_bytes=$(sysctl -n hw.memsize 2>/dev/null || echo "0")
+    echo $((ram_bytes / 1024 / 1024))
+  else
+    local ram_kb
+    ram_kb=$(grep MemTotal /proc/meminfo 2>/dev/null | awk '{print $2}' || echo "0")
+    echo $((ram_kb / 1024))
+  fi
+}
+
 preflight_checks() {
   step "System checks"
 
   # OS
-  if [ -f /etc/os-release ]; then
+  if [[ "$PLATFORM" == "macos" ]]; then
+    local macos_ver
+    macos_ver=$(sw_vers -productVersion 2>/dev/null || echo "unknown")
+    log "macOS $macos_ver"
+  elif [[ "$PLATFORM" == "wsl" ]]; then
+    log "WSL2 (Windows Subsystem for Linux)"
+  elif [ -f /etc/os-release ]; then
     . /etc/os-release
     case "$ID" in
       ubuntu)
@@ -140,9 +194,8 @@ preflight_checks() {
   fi
 
   # RAM
-  local ram_kb ram_mb
-  ram_kb=$(grep MemTotal /proc/meminfo 2>/dev/null | awk '{print $2}' || echo "0")
-  ram_mb=$((ram_kb / 1024))
+  local ram_mb
+  ram_mb=$(get_ram_mb)
   if [ "$ram_mb" -gt 0 ] 2>/dev/null; then
     if [ "$ram_mb" -lt 1024 ]; then
       fail "Insufficient RAM: ${ram_mb}MB (minimum 1GB)"
@@ -162,12 +215,83 @@ preflight_checks() {
   else
     log "Disk: ${disk_gb}GB free"
   fi
+
+  # Ports
+  check_ports
+}
+
+check_port_in_use() {
+  local port="$1"
+  if [[ "$PLATFORM" == "macos" ]]; then
+    lsof -iTCP:"$port" -sTCP:LISTEN -t &>/dev/null
+  else
+    ss -tlnp "sport = :$port" 2>/dev/null | grep -q LISTEN
+  fi
+}
+
+find_free_port() {
+  local port="$1"
+  local extra_reserved="${2:-}"
+  local max=$((port + 100))
+  local reserved="7100 7200 7300 7400 $extra_reserved"
+  while check_port_in_use "$port" || [[ " $reserved " == *" $port "* ]]; do
+    port=$((port + 1))
+    if [ "$port" -ge "$max" ]; then return 1; fi
+  done
+  echo "$port"
+}
+
+check_ports() {
+  local ports_ok=true
+
+  # Traefik ports — required for production only
+  if is_production; then
+    for port in 80 443; do
+      if check_port_in_use "$port"; then
+        fail "Port $port is in use — Traefik needs it for TLS. Free the port and retry."
+      fi
+    done
+  fi
+
+  # Service ports — detect conflicts and resolve
+  local env_vars=("POSTGRES_PORT" "REDIS_PORT" "CADVISOR_PORT" "LOKI_PORT")
+  local defaults=(7100 7200 7300 7400)
+  local labels=("PostgreSQL" "Redis" "cAdvisor" "Loki")
+  local assigned=()
+
+  for i in "${!env_vars[@]}"; do
+    local env_var="${env_vars[$i]}"
+    local default="${defaults[$i]}"
+    local label="${labels[$i]}"
+    local current="${!env_var:-$default}"
+
+    if check_port_in_use "$current"; then
+      local alt
+      alt=$(find_free_port "$((current + 1))" "${assigned[*]}")
+      if [ -n "$alt" ]; then
+        warn "$label: port $current in use — reassigning to $alt"
+        export "${env_var}=$alt"
+        assigned+=("$alt")
+      else
+        warn "$label: port $current in use — set $env_var in .env to override"
+      fi
+      ports_ok=false
+    else
+      assigned+=("$current")
+    fi
+  done
+
+  if $ports_ok; then
+    log "Ports available"
+  fi
 }
 
 setup_swap() {
-  local ram_kb ram_mb
-  ram_kb=$(grep MemTotal /proc/meminfo 2>/dev/null | awk '{print $2}' || echo "0")
-  ram_mb=$((ram_kb / 1024))
+  # macOS manages its own swap
+  [[ "$PLATFORM" == "macos" ]] && return
+
+  local ram_mb
+  ram_mb=$(get_ram_mb)
 
   if [ "$ram_mb" -gt 0 ] && [ "$ram_mb" -lt 4096 ]; then
     if ! swapon --show 2>/dev/null | grep -q .; then
@@ -186,7 +310,36 @@ setup_swap() {
   fi
 }
 
-install_packages() {
+install_packages_macos() {
+  step "Prerequisites"
+
+  # Git — comes with Xcode CLI tools
+  if command -v git &>/dev/null; then
+    log "Git: $(git --version 2>/dev/null)"
+  else
+    fail "Git not found. Run: xcode-select --install"
+  fi
+
+  # Docker Desktop
+  if docker info &>/dev/null 2>&1; then
+    log "Docker: $(docker --version 2>/dev/null | head -1)"
+  else
+    if [ -d "/Applications/Docker.app" ]; then
+      fail "Docker Desktop is installed but not running. Start it and try again."
+    else
+      fail "Docker Desktop not found. Install it from https://docker.com/products/docker-desktop"
+    fi
+  fi
+
+  # Compose check
+  if docker compose version &>/dev/null; then
+    log "Compose: $(docker compose version 2>/dev/null | sed 's/Docker Compose version //')"
+  else
+    fail "Docker Compose not available"
+  fi
+}
+
+install_packages_linux() {
   step "Packages"
 
   local to_install=()
@@ -254,11 +407,20 @@ install_packages() {
     fail "Docker Compose plugin not found"
   fi
 
-  # Log rotation
+  # Log rotation (Linux only — Docker Desktop manages its own)
   configure_docker_logging
 }
 
+install_packages() {
+  if [[ "$PLATFORM" == "macos" ]]; then
+    install_packages_macos
+  else
+    install_packages_linux
+  fi
+}
+
 configure_docker_logging() {
+  [[ "$PLATFORM" == "macos" ]] && return
   local daemon="/etc/docker/daemon.json"
   local needs_restart=false
 
@@ -338,76 +500,142 @@ generate_env() {
 
   step "Configuration"
 
-  # Domain prompts — in unattended mode, require env vars
-  if $UNATTENDED; then
-    [ -n "${VARDO_DOMAIN:-}" ] || fail "VARDO_DOMAIN is required in --unattended mode"
-    [ -n "${VARDO_BASE_DOMAIN:-}" ] || fail "VARDO_BASE_DOMAIN is required in --unattended mode"
-    [ -n "${ACME_EMAIL:-}" ] || fail "ACME_EMAIL is required in --unattended mode"
-  else
-    if [ -z "${VARDO_DOMAIN:-}" ]; then
+  # Role selection
+  if [ -z "${VARDO_ROLE:-}" ]; then
+    if [[ "$PLATFORM" == "macos" ]]; then
+      VARDO_ROLE="development"
+      info "Role: development (default for macOS)"
+    elif ! $UNATTENDED; then
       echo ""
-      read -p "  Domain for Vardo dashboard (e.g. host.example.com): " VARDO_DOMAIN < /dev/tty
-    fi
-    if [ -z "${VARDO_BASE_DOMAIN:-}" ]; then
-      read -p "  Base domain for projects (e.g. example.com): " VARDO_BASE_DOMAIN < /dev/tty
-    fi
-    if [ -z "${ACME_EMAIL:-}" ]; then
-      read -p "  Email for Let's Encrypt certificates: " ACME_EMAIL < /dev/tty
-    fi
-  fi
-
-  # Basic input validation — reject shell metacharacters
-  for var_name in VARDO_DOMAIN VARDO_BASE_DOMAIN ACME_EMAIL; do
-    local val="${!var_name}"
-    if [[ "$val" =~ [[:space:]\;\|\&\$\`\\\"\'\<\>] ]]; then
-      fail "$var_name contains invalid characters"
-    fi
-  done
-
-  # DNS check (informational)
-  local server_ip
-  server_ip=$(get_server_ip)
-  if [ -n "$server_ip" ]; then
-    info "Server IP: $server_ip"
-
-    command -v dig &>/dev/null || apt-get install -y -qq dnsutils > /dev/null 2>&1 || true
-
-    local domain_ip=""
-    if command -v dig &>/dev/null; then
-      domain_ip=$(dig +short "$VARDO_DOMAIN" 2>/dev/null | head -1)
-    elif command -v host &>/dev/null; then
-      domain_ip=$(host "$VARDO_DOMAIN" 2>/dev/null | awk '/has address/ {print $4; exit}')
-    fi
-
-    if [ -n "$domain_ip" ] && [ "$domain_ip" = "$server_ip" ]; then
-      log "DNS verified: $VARDO_DOMAIN → $server_ip"
+      echo -e "  ${BOLD}Instance role:${RESET}"
+      echo -e "    ${BOLD}1)${RESET} Production    Public server with TLS and domains"
+      echo -e "    ${BOLD}2)${RESET} Staging       Testing environment (homelab, VPS)"
+      echo -e "    ${BOLD}3)${RESET} Development   Local development"
+      echo ""
+      local role_choice
+      read -p "  Choose [1]: " role_choice < /dev/tty
+      case "${role_choice:-1}" in
+        1) VARDO_ROLE="production" ;;
+        2) VARDO_ROLE="staging" ;;
+        3) VARDO_ROLE="development" ;;
+        *) VARDO_ROLE="production" ;;
+      esac
     else
-      echo ""
-      warn "DNS not yet configured. Point these records to $server_ip:"
-      dimln "  A   $VARDO_DOMAIN         → $server_ip"
-      dimln "  A   *.$VARDO_BASE_DOMAIN  → $server_ip"
-      echo ""
+      VARDO_ROLE="production"
     fi
   fi
+  [[ "$VARDO_ROLE" =~ ^(production|staging|development)$ ]] || fail "Invalid role: $VARDO_ROLE (expected: production, staging, development)"
+  log "Role: $VARDO_ROLE"
+
+  # Domain prompts — only for production and staging (optional for staging)
+  if [[ "$VARDO_ROLE" == "production" ]]; then
+    if $UNATTENDED; then
+      [ -n "${VARDO_DOMAIN:-}" ] || fail "VARDO_DOMAIN is required in --unattended mode"
+      [ -n "${VARDO_BASE_DOMAIN:-}" ] || fail "VARDO_BASE_DOMAIN is required in --unattended mode"
+      [ -n "${ACME_EMAIL:-}" ] || fail "ACME_EMAIL is required in --unattended mode"
+    else
+      if [ -z "${VARDO_DOMAIN:-}" ]; then
+        echo ""
+        read -p "  Domain for Vardo dashboard (e.g. host.example.com): " VARDO_DOMAIN < /dev/tty
+      fi
+      if [ -z "${VARDO_BASE_DOMAIN:-}" ]; then
+        read -p "  Base domain for projects (e.g. example.com): " VARDO_BASE_DOMAIN < /dev/tty
+      fi
+      if [ -z "${ACME_EMAIL:-}" ]; then
+        read -p "  Email for Let's Encrypt certificates: " ACME_EMAIL < /dev/tty
+      fi
+    fi
+
+    # Basic input validation — reject shell metacharacters
+    for var_name in VARDO_DOMAIN VARDO_BASE_DOMAIN ACME_EMAIL; do
+      local val="${!var_name}"
+      if [[ "$val" =~ [[:space:]\;\|\&\$\`\\\"\'\<\>] ]]; then
+        fail "$var_name contains invalid characters"
+      fi
+    done
+
+    # DNS check (informational)
+    local server_ip
+    server_ip=$(get_server_ip)
+    if [ -n "$server_ip" ]; then
+      info "Server IP: $server_ip"
+
+      if [[ "$PLATFORM" != "macos" ]]; then
+        command -v dig &>/dev/null || apt-get install -y -qq dnsutils > /dev/null 2>&1 || true
+      fi
+
+      local domain_ip=""
+      if command -v dig &>/dev/null; then
+        domain_ip=$(dig +short "$VARDO_DOMAIN" 2>/dev/null | head -1)
+      elif command -v host &>/dev/null; then
+        domain_ip=$(host "$VARDO_DOMAIN" 2>/dev/null | awk '/has address/ {print $4; exit}')
+      fi
+
+      if [ -n "$domain_ip" ] && [ "$domain_ip" = "$server_ip" ]; then
+        log "DNS verified: $VARDO_DOMAIN → $server_ip"
+      else
+        echo ""
+        warn "DNS not yet configured. Point these records to $server_ip:"
+        dimln "  A   $VARDO_DOMAIN         → $server_ip"
+        dimln "  A   *.$VARDO_BASE_DOMAIN  → $server_ip"
+        echo ""
+      fi
+    fi
+  elif [[ "$VARDO_ROLE" == "staging" ]]; then
+    # Staging — domain is optional (may be behind existing reverse proxy)
+    if [ -z "${VARDO_DOMAIN:-}" ] && ! $UNATTENDED; then
+      echo ""
+      read -p "  Domain for Vardo dashboard (optional, press Enter to skip): " VARDO_DOMAIN < /dev/tty
+      if [ -n "${VARDO_DOMAIN:-}" ]; then
+        read -p "  Base domain for projects: " VARDO_BASE_DOMAIN < /dev/tty
+        read -p "  Email for Let's Encrypt: " ACME_EMAIL < /dev/tty
+      fi
+    fi
+  fi
+  # Development role: no domain prompts at all
 
   # Generate secrets
-  local db_pass auth_secret enc_key webhook_secret traefik_pass traefik_auth
+  local db_pass auth_secret enc_key webhook_secret
   db_pass=$(openssl rand -base64 32 | tr -d '/+=' | head -c 32)
   auth_secret=$(openssl rand -base64 32 | tr -d '/+=' | head -c 48)
   enc_key=$(openssl rand -hex 32)
   webhook_secret=$(openssl rand -hex 32)
-  traefik_pass=$(openssl rand -base64 12)
-  traefik_auth=$(printf 'admin:%s' "$(openssl passwd -apr1 "$traefik_pass")" | sed 's/\$/\$\$/g')
 
-  cat > "$env_file" <<EOF
-COMPOSE_PROFILES=production
-VARDO_DOMAIN=$VARDO_DOMAIN
-VARDO_BASE_DOMAIN=$VARDO_BASE_DOMAIN
+  if [[ "$VARDO_ROLE" == "development" ]]; then
+    # Dev .env — minimal, no TLS/domain config
+    cat > "$env_file" <<EOF
+VARDO_ROLE=development
 DB_PASSWORD=$db_pass
 BETTER_AUTH_SECRET=$auth_secret
 ENCRYPTION_MASTER_KEY=$enc_key
 GITHUB_WEBHOOK_SECRET=$webhook_secret
-ACME_EMAIL=$ACME_EMAIL
+EOF
+  elif [[ "$VARDO_ROLE" == "staging" ]] && [ -z "${VARDO_DOMAIN:-}" ]; then
+    # Staging without domain — no TLS, no Traefik auth
+    cat > "$env_file" <<EOF
+VARDO_ROLE=staging
+COMPOSE_PROFILES=production
+DB_PASSWORD=$db_pass
+BETTER_AUTH_SECRET=$auth_secret
+ENCRYPTION_MASTER_KEY=$enc_key
+GITHUB_WEBHOOK_SECRET=$webhook_secret
+EOF
+  else
+    # Production or staging with domain — full config
+    local traefik_pass traefik_auth
+    traefik_pass=$(openssl rand -base64 12)
+    traefik_auth=$(printf 'admin:%s' "$(openssl passwd -apr1 "$traefik_pass")" | sed 's/\$/\$\$/g')
+
+    cat > "$env_file" <<EOF
+VARDO_ROLE=${VARDO_ROLE}
+COMPOSE_PROFILES=production
+VARDO_DOMAIN=${VARDO_DOMAIN}
+VARDO_BASE_DOMAIN=${VARDO_BASE_DOMAIN}
+DB_PASSWORD=$db_pass
+BETTER_AUTH_SECRET=$auth_secret
+ENCRYPTION_MASTER_KEY=$enc_key
+GITHUB_WEBHOOK_SECRET=$webhook_secret
+ACME_EMAIL=${ACME_EMAIL}
 TRAEFIK_DASHBOARD_AUTH=$traefik_auth
 
 # GitHub App (optional — configure in setup wizard or Settings)
@@ -417,6 +645,26 @@ GITHUB_CLIENT_ID=
 GITHUB_CLIENT_SECRET=
 GITHUB_PRIVATE_KEY=
 EOF
+  fi
+
+  # Append port overrides if any were reassigned during preflight
+  local env_vars=("POSTGRES_PORT" "REDIS_PORT" "CADVISOR_PORT" "LOKI_PORT")
+  local defaults=(7100 7200 7300 7400)
+  local has_overrides=false
+
+  for i in "${!env_vars[@]}"; do
+    local env_var="${env_vars[$i]}"
+    local default="${defaults[$i]}"
+    local current="${!env_var:-$default}"
+    if [ "$current" != "$default" ]; then
+      if ! $has_overrides; then
+        echo "" >> "$env_file"
+        echo "# Port overrides (reassigned to avoid conflicts)" >> "$env_file"
+        has_overrides=true
+      fi
+      echo "${env_var}=${current}" >> "$env_file"
+    fi
+  done
 
   chmod 600 "$env_file"
   log "Configuration saved"
@@ -427,11 +675,17 @@ build_and_start() {
 
   docker network create vardo-network 2>/dev/null || true
 
-  info "Building containers (this may take a few minutes)..."
-  docker compose -f "$VARDO_DIR/$COMPOSE_FILE" build --quiet
+  if is_dev; then
+    # Dev mode: start infrastructure only (no frontend profile)
+    info "Starting infrastructure services (Postgres, Redis, Traefik)..."
+    docker compose -f "$VARDO_DIR/$COMPOSE_FILE" up -d
+  else
+    info "Building containers (this may take a few minutes)..."
+    docker compose -f "$VARDO_DIR/$COMPOSE_FILE" build --quiet
 
-  info "Starting services..."
-  docker compose -f "$VARDO_DIR/$COMPOSE_FILE" up -d
+    info "Starting services..."
+    docker compose -f "$VARDO_DIR/$COMPOSE_FILE" up -d
+  fi
 }
 
 wait_healthy() {
@@ -465,47 +719,64 @@ seed_templates() {
 }
 
 print_install_summary() {
-  local server_ip
-  server_ip=$(get_server_ip)
   local version
   version=$(get_version)
-
-  # Source env for domain
   load_env_display
 
   echo ""
   echo -e "${GREEN}${BOLD}  Vardo is running!${RESET}"
   echo ""
-  echo -e "  ${BOLD}Dashboard${RESET}   https://${VARDO_DOMAIN:-localhost}"
+  echo -e "  ${BOLD}Role${RESET}        $VARDO_ROLE"
   echo -e "  ${BOLD}Version${RESET}     $version"
-  echo ""
+  echo -e "  ${BOLD}Directory${RESET}   $VARDO_DIR"
 
-  if [ -n "$server_ip" ]; then
-    echo -e "  ${BOLD}Next step${RESET}   Visit ${BOLD}http://${server_ip}${RESET} to complete setup"
-    dimln "            (works before DNS propagates)"
+  if is_dev; then
+    echo ""
+    echo -e "  ${BOLD}Next steps${RESET}"
+    dimln "  1. cd $VARDO_DIR"
+    dimln "  2. pnpm install"
+    dimln "  3. pnpm dev"
+    dimln "  4. Visit http://localhost:3000 to complete setup"
+  elif [ -n "${VARDO_DOMAIN:-}" ]; then
+    echo -e "  ${BOLD}Dashboard${RESET}   https://${VARDO_DOMAIN}"
+    echo ""
+    local server_ip
+    server_ip=$(get_server_ip)
+    if [ -n "$server_ip" ]; then
+      echo -e "  ${BOLD}Next step${RESET}   Visit ${BOLD}http://${server_ip}${RESET} to complete setup"
+      dimln "            (works before DNS propagates)"
+    else
+      echo -e "  ${BOLD}Next step${RESET}   Visit the dashboard to complete setup"
+    fi
   else
-    echo -e "  ${BOLD}Next step${RESET}   Visit the dashboard to complete setup"
+    echo ""
+    echo -e "  ${BOLD}Next step${RESET}   Visit ${BOLD}http://localhost:3000${RESET} to complete setup"
   fi
   echo ""
+
+  local sudo_prefix=""
+  [[ "$PLATFORM" != "macos" ]] && sudo_prefix="sudo "
 
   echo -e "  ${BOLD}Commands${RESET}"
   dimln "  View logs       docker compose -f $VARDO_DIR/$COMPOSE_FILE logs -f"
   dimln "  Restart         docker compose -f $VARDO_DIR/$COMPOSE_FILE restart"
-  dimln "  Update          sudo bash $VARDO_DIR/install.sh update"
-  dimln "  Health check    sudo bash $VARDO_DIR/install.sh doctor"
+  dimln "  Update          ${sudo_prefix}bash $VARDO_DIR/install.sh update"
+  dimln "  Health check    ${sudo_prefix}bash $VARDO_DIR/install.sh doctor"
   echo ""
 }
 
 do_install() {
-  check_root
+  [[ "$PLATFORM" != "macos" ]] && check_root
   preflight_checks
   setup_swap
   install_packages
   clone_repo
   generate_env
   build_and_start
-  wait_healthy 60 2
-  seed_templates
+  if ! is_dev; then
+    wait_healthy 60 2
+    seed_templates
+  fi
   print_install_summary
 }
 
@@ -528,31 +799,34 @@ run_env_migrations() {
 
   # HOST_* → VARDO_*
   if grep -q "^HOST_" "$env_file" 2>/dev/null; then
-    sed -i 's/^HOST_DOMAIN=/VARDO_DOMAIN=/' "$env_file"
-    sed -i 's/^HOST_BASE_DOMAIN=/VARDO_BASE_DOMAIN=/' "$env_file"
-    sed -i 's/^HOST_SERVER_IP=/VARDO_SERVER_IP=/' "$env_file"
-    sed -i 's/^HOST_PROJECTS_DIR=/VARDO_PROJECTS_DIR=/' "$env_file"
-    sed -i 's/^HOST_EXPOSE_PORTS=/VARDO_EXPOSE_PORTS=/' "$env_file"
+    _sed_i 's/^HOST_DOMAIN=/VARDO_DOMAIN=/' "$env_file"
+    _sed_i 's/^HOST_BASE_DOMAIN=/VARDO_BASE_DOMAIN=/' "$env_file"
+    _sed_i 's/^HOST_SERVER_IP=/VARDO_SERVER_IP=/' "$env_file"
+    _sed_i 's/^HOST_PROJECTS_DIR=/VARDO_PROJECTS_DIR=/' "$env_file"
+    _sed_i 's/^HOST_EXPOSE_PORTS=/VARDO_EXPOSE_PORTS=/' "$env_file"
     log "Renamed HOST_* → VARDO_* env vars"
   fi
 
-  # Ensure COMPOSE_PROFILES=production
-  if ! grep -q "^COMPOSE_PROFILES=.*production" "$env_file" 2>/dev/null; then
-    if grep -q "^COMPOSE_PROFILES=" "$env_file"; then
-      sed -i 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=production/' "$env_file"
-    else
-      echo "COMPOSE_PROFILES=production" >> "$env_file"
+  # Ensure COMPOSE_PROFILES=production (skip for dev role)
+  load_env_display
+  if ! is_dev; then
+    if ! grep -q "^COMPOSE_PROFILES=.*production" "$env_file" 2>/dev/null; then
+      if grep -q "^COMPOSE_PROFILES=" "$env_file"; then
+        _sed_i 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=production/' "$env_file"
+      else
+        echo "COMPOSE_PROFILES=production" >> "$env_file"
+      fi
+      log "Set COMPOSE_PROFILES=production"
     fi
-    log "Set COMPOSE_PROFILES=production"
   fi
 
   # Remove deprecated feature flags
-  sed -i '/^FEATURE_METRICS=/d' "$env_file" 2>/dev/null || true
-  sed -i '/^FEATURE_LOGS=/d' "$env_file" 2>/dev/null || true
+  _sed_i '/^FEATURE_METRICS=/d' "$env_file" 2>/dev/null || true
+  _sed_i '/^FEATURE_LOGS=/d' "$env_file" 2>/dev/null || true
 }
 
 do_update() {
-  check_root
+  [[ "$PLATFORM" != "macos" ]] && check_root
 
   step "Preflight"
 
@@ -690,17 +964,26 @@ do_doctor() {
   step "System"
 
   # OS
-  if [ -f /etc/os-release ]; then
+  if [[ "$PLATFORM" == "macos" ]]; then
+    doctor_pass "macOS $(sw_vers -productVersion 2>/dev/null || echo 'unknown')"
+  elif [[ "$PLATFORM" == "wsl" ]]; then
+    doctor_pass "WSL2"
+  elif [ -f /etc/os-release ]; then
     . /etc/os-release
     doctor_pass "$PRETTY_NAME"
   else
     doctor_warn "Unknown OS"
   fi
 
+  # Role
+  load_env_display
+  if [ -n "${VARDO_ROLE:-}" ]; then
+    doctor_pass "Role: $VARDO_ROLE"
+  fi
+
   # RAM
-  local ram_kb ram_mb
-  ram_kb=$(grep MemTotal /proc/meminfo 2>/dev/null | awk '{print $2}' || echo "0")
-  ram_mb=$((ram_kb / 1024))
+  local ram_mb
+  ram_mb=$(get_ram_mb)
   if [ "$ram_mb" -ge 2048 ]; then
     doctor_pass "RAM: ${ram_mb}MB"
   elif [ "$ram_mb" -ge 1024 ]; then
@@ -709,13 +992,15 @@ do_doctor() {
     doctor_fail "RAM: ${ram_mb}MB (minimum 1GB)"
   fi
 
-  # Swap
-  if swapon --show 2>/dev/null | grep -q .; then
-    local swap_mb
-    swap_mb=$(swapon --show --noheadings --raw 2>/dev/null | awk '{sum+=$3} END {printf "%.0f", sum/1024/1024}')
-    doctor_pass "Swap: ${swap_mb}MB"
-  elif [ "$ram_mb" -lt 4096 ]; then
-    doctor_warn "No swap configured (recommended when RAM < 4GB)"
+  # Swap (Linux only — macOS manages its own)
+  if [[ "$PLATFORM" != "macos" ]]; then
+    if swapon --show 2>/dev/null | grep -q .; then
+      local swap_mb
+      swap_mb=$(swapon --show --noheadings --raw 2>/dev/null | awk '{sum+=$3} END {printf "%.0f", sum/1024/1024}')
+      doctor_pass "Swap: ${swap_mb}MB"
+    elif [ "$ram_mb" -lt 4096 ]; then
+      doctor_warn "No swap configured (recommended when RAM < 4GB)"
+    fi
   fi
 
   # Disk
@@ -795,11 +1080,13 @@ do_doctor() {
     doctor_fail "Docker daemon not responding"
   fi
 
-  # Log rotation
-  if [ -f /etc/docker/daemon.json ] && grep -q "max-size" /etc/docker/daemon.json 2>/dev/null; then
-    doctor_pass "Log rotation configured"
-  else
-    doctor_warn "Log rotation not configured"
+  # Log rotation (Linux only)
+  if [[ "$PLATFORM" != "macos" ]]; then
+    if [ -f /etc/docker/daemon.json ] && grep -q "max-size" /etc/docker/daemon.json 2>/dev/null; then
+      doctor_pass "Log rotation configured"
+    else
+      doctor_warn "Log rotation not configured"
+    fi
   fi
 
   # ── Containers ──────────────────────────────────────────────────────────
@@ -844,11 +1131,20 @@ do_doctor() {
   fi
 
   # App health endpoint
-  if docker compose -f "$VARDO_DIR/$COMPOSE_FILE" exec -T frontend \
-    curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
-    doctor_pass "App: /api/health OK"
+  if is_dev; then
+    # Dev mode — frontend runs outside compose, check localhost directly
+    if curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
+      doctor_pass "App: /api/health OK (dev server)"
+    else
+      doctor_warn "App: dev server not running on localhost:3000"
+    fi
   else
-    doctor_fail "App: /api/health unreachable"
+    if docker compose -f "$VARDO_DIR/$COMPOSE_FILE" exec -T frontend \
+      curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
+      doctor_pass "App: /api/health OK"
+    else
+      doctor_fail "App: /api/health unreachable"
+    fi
   fi
 
   # ── DNS ─────────────────────────────────────────────────────────────────
@@ -948,7 +1244,7 @@ do_doctor() {
 # ══════════════════════════════════════════════════════════════════════════════
 
 do_uninstall() {
-  check_root
+  [[ "$PLATFORM" != "macos" ]] && check_root
 
   step "Uninstall Vardo"
 
@@ -1098,9 +1394,11 @@ parse_args() {
         echo "  --help, -h     Show this help"
         echo ""
         echo "Environment variables (for unattended install):"
-        echo "  VARDO_DOMAIN       Dashboard domain"
-        echo "  VARDO_BASE_DOMAIN  Base domain for projects"
-        echo "  ACME_EMAIL         Let's Encrypt email"
+        echo "  VARDO_DIR          Installation directory (default: /opt/vardo or ~/vardo on macOS)"
+        echo "  VARDO_ROLE         Instance role: production, staging, development"
+        echo "  VARDO_DOMAIN       Dashboard domain (production/staging)"
+        echo "  VARDO_BASE_DOMAIN  Base domain for projects (production/staging)"
+        echo "  ACME_EMAIL         Let's Encrypt email (production)"
         exit 0
         ;;
     esac
@@ -1108,6 +1406,7 @@ parse_args() {
 }
 
 main() {
+  detect_platform
   parse_args "$@"
   print_banner
 
