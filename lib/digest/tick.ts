@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { digestSettings } from "@/lib/db/schema";
 import { eq, sql } from "drizzle-orm";
-import { notify } from "@/lib/notifications/dispatch";
+import { emit } from "@/lib/notifications/dispatch";
 import { collectDigestData } from "./collector";
 
 /**
@@ -52,25 +52,19 @@ export async function tickDigestJobs(): Promise<void> {
 
         const data = await collectDigestData(org.id, org.name);
 
-        await notify(org.id, {
-          type: "weekly-digest",
+        emit(org.id, {
+          type: "digest.weekly",
           title: `Weekly Digest — ${org.name}`,
           message: `Weekly health summary for ${org.name}: ${data.deploys.total} deploys, ${data.deploys.failed} failures.`,
-          metadata: {
-            orgName: org.name,
-            weekLabel: data.weekLabel,
-            deploysTotal: String(data.deploys.total),
-            deploysSucceeded: String(data.deploys.succeeded),
-            deploysFailed: String(data.deploys.failed),
-            backupsTotal: String(data.backups.total),
-            backupsSucceeded: String(data.backups.succeeded),
-            backupsFailed: String(data.backups.failed),
-            cronFailures: String(data.cron.totalFailures),
-            cronAffectedJobs: JSON.stringify(data.cron.affectedJobs),
-            diskWriteAlerts: String(data.alerts.diskWriteAlerts),
-            volumeDrifts: String(data.alerts.volumeDrifts),
-            projects: JSON.stringify(data.projects),
-          },
+          orgName: org.name,
+          weekLabel: data.weekLabel,
+          deploysTotal: data.deploys.total,
+          deploysSucceeded: data.deploys.succeeded,
+          deploysFailed: data.deploys.failed,
+          backupsTotal: data.backups.total,
+          backupsFailed: data.backups.failed,
+          cronTotal: data.cron.totalFailures,
+          cronFailed: data.cron.totalFailures,
         });
 
         console.log(`[digest] Digest sent for org "${org.name}"`);
