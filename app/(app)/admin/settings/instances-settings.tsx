@@ -289,31 +289,46 @@ export function InstancesSettings() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Left column — info */}
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <h3 className="text-sm font-medium">What this is</h3>
-            <p className="text-sm text-muted-foreground">
-              An encrypted WireGuard tunnel between Vardo instances that
-              syncs project data automatically. Useful for staging/production
-              pairs, multi-server deployments and local dev connected to a
-              remote instance.
-            </p>
+        <div className="space-y-5">
+          <p className="text-sm text-muted-foreground">
+            Link Vardo instances together over encrypted WireGuard tunnels.
+            Once connected, instances automatically sync project data and
+            stay aware of each other's health.
+          </p>
+
+          <div className="space-y-3">
+            <h3 className="text-sm font-medium">Features</h3>
+            <ul className="text-sm text-muted-foreground space-y-2">
+              <li>
+                <span className="font-medium text-foreground">Project sync</span>{" "}
+                — project manifests replicate across instances so each node
+                knows what's deployed where
+              </li>
+              <li>
+                <span className="font-medium text-foreground">Heartbeat monitoring</span>{" "}
+                — instances ping each other and surface online/offline status
+                in the dashboard
+              </li>
+              <li>
+                <span className="font-medium text-foreground">One-click pairing</span>{" "}
+                — generate an invite token, paste it on the other instance,
+                WireGuard configures itself on both sides
+              </li>
+              <li>
+                <span className="font-medium text-foreground">End-to-end encrypted</span>{" "}
+                — all traffic travels through WireGuard, no data leaves the
+                tunnel unencrypted
+              </li>
+            </ul>
           </div>
-          <div className="space-y-2">
-            <h3 className="text-sm font-medium">What this isn't</h3>
+
+          <div className="space-y-3">
+            <h3 className="text-sm font-medium">Good to know</h3>
             <p className="text-sm text-muted-foreground">
-              This is not a VPN or general-purpose network. It only carries
-              Vardo API traffic between instances — project manifests,
-              heartbeats and sync data. It doesn't expose ports, route
-              internet traffic or replace SSH.
-            </p>
-          </div>
-          <div className="space-y-2">
-            <h3 className="text-sm font-medium">How to connect</h3>
-            <p className="text-sm text-muted-foreground">
-              Generate an invite on the hub instance, copy the token, then
-              paste it on the joining instance using "Join mesh". Both
-              sides configure WireGuard automatically.
+              The mesh only carries Vardo API traffic — project manifests,
+              heartbeats and sync data. It doesn't expose ports, route internet
+              traffic or replace SSH. Think of it as a private backplane
+              between your instances, not a VPN.
             </p>
           </div>
         </div>
