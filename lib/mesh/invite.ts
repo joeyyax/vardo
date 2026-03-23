@@ -108,6 +108,31 @@ export async function redeemInvite(
   };
 }
 
+/** List all pending invites with their status. */
+export async function listInvites(): Promise<
+  Array<{ code: string; expiresAt: number; status: "pending" | "expired" }>
+> {
+  const rows = await db.query.systemSettings.findMany({
+    where: like(systemSettings.key, `${INVITE_PREFIX}%`),
+  });
+
+  const now = Date.now();
+  return rows
+    .map((row) => {
+      try {
+        const invite: MeshInvite = JSON.parse(row.value);
+        return {
+          code: invite.code,
+          expiresAt: invite.expiresAt,
+          status: now > invite.expiresAt ? ("expired" as const) : ("pending" as const),
+        };
+      } catch {
+        return null;
+      }
+    })
+    .filter((i): i is NonNullable<typeof i> => i !== null);
+}
+
 /** Remove expired invite codes from system_settings. */
 async function cleanExpiredInvites(): Promise<void> {
   const rows = await db.query.systemSettings.findMany({

@@ -6,6 +6,7 @@ import { meshPeers } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { registerPeer } from "@/lib/mesh/peers";
+import { listInvites } from "@/lib/mesh/invite";
 
 const WG_KEY_RE = /^[A-Za-z0-9+/]{43}=$/;
 
@@ -22,13 +23,16 @@ export async function GET() {
   try {
     await requireAppAdmin();
 
-    const peers = await db.query.meshPeers.findMany({
-      columns: {
-        tokenHash: false,
-      },
-    });
+    const [peers, invites] = await Promise.all([
+      db.query.meshPeers.findMany({
+        columns: {
+          tokenHash: false,
+        },
+      }),
+      listInvites(),
+    ]);
 
-    return NextResponse.json({ peers });
+    return NextResponse.json({ peers, invites });
   } catch (error) {
     return handleRouteError(error, "Error listing mesh peers");
   }

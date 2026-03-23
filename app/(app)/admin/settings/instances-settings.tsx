@@ -10,6 +10,8 @@ import {
   Copy,
   Network,
   Link,
+  Clock,
+  Timer,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -49,6 +51,12 @@ type MeshPeer = {
   updatedAt: string;
 };
 
+type MeshInviteStatus = {
+  code: string;
+  expiresAt: number;
+  status: "pending" | "expired";
+};
+
 async function copyToClipboard(text: string, label: string) {
   try {
     await navigator.clipboard.writeText(text);
@@ -72,8 +80,16 @@ function formatRelativeTime(dateStr: string | null): string {
   return `${diffDays}d ago`;
 }
 
+function formatTimeRemaining(expiresAt: number): string {
+  const remaining = expiresAt - Date.now();
+  if (remaining <= 0) return "Expired";
+  const mins = Math.ceil(remaining / 60_000);
+  return `${mins}m remaining`;
+}
+
 export function InstancesSettings() {
   const [peers, setPeers] = useState<MeshPeer[]>([]);
+  const [invites, setInvites] = useState<MeshInviteStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(false);
@@ -100,6 +116,7 @@ export function InstancesSettings() {
       if (!res.ok) throw new Error("Failed to load");
       const json = await res.json();
       setPeers(json.peers ?? []);
+      setInvites((json.invites ?? []).filter((i: MeshInviteStatus) => i.status === "pending"));
       setError(false);
     } catch {
       setError(true);
@@ -210,153 +227,198 @@ export function InstancesSettings() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="space-y-1">
-          <h2 className="text-lg font-medium">Instances</h2>
-          <p className="text-sm text-muted-foreground max-w-lg">
-            Connect multiple Vardo instances into a mesh network. Instances sync project
-            data over encrypted WireGuard tunnels — useful for staging/production pairs,
-            multi-server setups, or local dev environments.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => fetchPeers(true)}
-            disabled={refreshing}
-            aria-label="Refresh instances"
-          >
-            <RefreshCw className={`size-4 ${refreshing ? "animate-spin" : ""}`} />
-            Refresh
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="squircle"
-            onClick={() => setJoinOpen(true)}
-          >
-            <Link className="size-4" />
-            Join mesh
-          </Button>
-          <Button
-            size="sm"
-            className="squircle"
-            onClick={handleGenerateInvite}
-          >
-            <Plus className="size-4" />
-            Generate invite
-          </Button>
-        </div>
-      </div>
-
-      {/* Peer list */}
-      {peers.length === 0 ? (
-        <Card className="squircle rounded-lg">
-          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-            <Network className="size-10 text-muted-foreground/50 mb-3" />
-            <p className="text-sm font-medium">No instances connected</p>
-            <p className="text-sm text-muted-foreground mt-1 max-w-sm">
-              To connect two instances: generate an invite on one, then paste the
-              invite token on the other using "Join mesh".
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Left column — info + actions */}
+        <div className="space-y-6">
+          <div className="space-y-1">
+            <h2 className="text-lg font-medium">Instances</h2>
+            <p className="text-sm text-muted-foreground">
+              Connect multiple Vardo instances into a mesh network. Instances sync
+              project data over encrypted WireGuard tunnels.
             </p>
-            <div className="flex items-center gap-2 mt-4">
-              <Button
-                variant="outline"
-                size="sm"
-                className="squircle"
-                onClick={() => setJoinOpen(true)}
-              >
-                <Link className="size-4" />
-                Join mesh
-              </Button>
-              <Button
-                size="sm"
-                className="squircle"
-                onClick={handleGenerateInvite}
-              >
-                <Plus className="size-4" />
-                Generate invite
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card className="squircle rounded-lg">
-          <CardContent className="p-0">
-            <div className="divide-y">
-              {peers.map((peer) => (
-                <div
-                  key={peer.id}
-                  className="flex items-center justify-between gap-4 px-6 py-4"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span
-                      className={`size-2 rounded-full shrink-0 ${
-                        peer.status === "online"
-                          ? "bg-status-success"
-                          : "bg-status-neutral"
-                      }`}
-                      aria-hidden="true"
-                    />
-                    <span className="sr-only">{peer.status === "online" ? "Online" : "Offline"}</span>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium truncate">
-                          {peer.name}
-                        </p>
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                          {peer.type}
-                        </Badge>
+          </div>
+
+          <Card className="squircle rounded-lg">
+            <CardContent className="space-y-4">
+              <div className="space-y-3">
+                <h3 className="text-sm font-medium">How it works</h3>
+                <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside">
+                  <li>Generate an invite token on the hub instance</li>
+                  <li>Paste the token on the joining instance using "Join mesh"</li>
+                  <li>Both instances connect via an encrypted WireGuard tunnel</li>
+                  <li>Project data syncs automatically between connected instances</li>
+                </ol>
+              </div>
+              <div className="space-y-3">
+                <h3 className="text-sm font-medium">Use cases</h3>
+                <ul className="text-sm text-muted-foreground space-y-1">
+                  <li>Staging + production pairs with project sync</li>
+                  <li>Multi-server deployments across regions</li>
+                  <li>Local dev environments connected to a remote instance</li>
+                </ul>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="squircle"
+              onClick={() => setJoinOpen(true)}
+            >
+              <Link className="size-4" />
+              Join mesh
+            </Button>
+            <Button
+              size="sm"
+              className="squircle"
+              onClick={handleGenerateInvite}
+            >
+              <Plus className="size-4" />
+              Generate invite
+            </Button>
+          </div>
+        </div>
+
+        {/* Right column — peer list + invites */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-medium">Connected instances</h3>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => fetchPeers(true)}
+              disabled={refreshing}
+              aria-label="Refresh instances"
+            >
+              <RefreshCw className={`size-4 ${refreshing ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+          </div>
+
+          {/* Pending invites */}
+          {invites.length > 0 && (
+            <Card className="squircle rounded-lg border-dashed">
+              <CardContent className="p-0">
+                <div className="divide-y">
+                  {invites.map((invite) => (
+                    <div
+                      key={invite.code}
+                      className="flex items-center justify-between gap-4 px-6 py-3"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <Timer className="size-4 text-muted-foreground shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-sm text-muted-foreground">
+                            Pending invite
+                          </p>
+                          <p className="text-xs text-muted-foreground/70 font-mono">
+                            {invite.code}
+                          </p>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
-                        <span className="font-mono">{peer.internalIp}</span>
-                        {peer.endpoint && (
-                          <span className="font-mono">{peer.endpoint}</span>
-                        )}
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Clock className="size-3 text-muted-foreground" />
+                        <span className="text-xs text-muted-foreground">
+                          {formatTimeRemaining(invite.expiresAt)}
+                        </span>
                       </div>
                     </div>
-                  </div>
-
-                  <div className="flex items-center gap-3 shrink-0">
-                    <span className="text-xs text-muted-foreground">
-                      {formatRelativeTime(peer.lastSeenAt)}
-                    </span>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="size-8 p-0"
-                          aria-label={`Actions for ${peer.name}`}
-                        >
-                          <MoreHorizontal className="size-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="squircle">
-                        <DropdownMenuItem
-                          onClick={() => copyToClipboard(peer.publicKey, "Public key")}
-                        >
-                          <Copy className="size-4" />
-                          Copy public key
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          className="text-destructive focus:text-destructive"
-                          onClick={() => setDeleteTarget(peer)}
-                        >
-                          <Trash2 className="size-4" />
-                          Remove peer
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Peer list */}
+          {peers.length === 0 && invites.length === 0 ? (
+            <Card className="squircle rounded-lg">
+              <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                <Network className="size-10 text-muted-foreground/50 mb-3" />
+                <p className="text-sm font-medium">No instances connected</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Generate an invite or join an existing mesh to get started.
+                </p>
+              </CardContent>
+            </Card>
+          ) : peers.length > 0 ? (
+            <Card className="squircle rounded-lg">
+              <CardContent className="p-0">
+                <div className="divide-y">
+                  {peers.map((peer) => (
+                    <div
+                      key={peer.id}
+                      className="flex items-center justify-between gap-4 px-6 py-4"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span
+                          className={`size-2 rounded-full shrink-0 ${
+                            peer.status === "online"
+                              ? "bg-status-success"
+                              : "bg-status-neutral"
+                          }`}
+                          aria-hidden="true"
+                        />
+                        <span className="sr-only">{peer.status === "online" ? "Online" : "Offline"}</span>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-medium truncate">
+                              {peer.name}
+                            </p>
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                              {peer.type}
+                            </Badge>
+                          </div>
+                          <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
+                            <span className="font-mono">{peer.internalIp}</span>
+                            {peer.endpoint && (
+                              <span className="font-mono">{peer.endpoint}</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="text-xs text-muted-foreground">
+                          {formatRelativeTime(peer.lastSeenAt)}
+                        </span>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="size-8 p-0"
+                              aria-label={`Actions for ${peer.name}`}
+                            >
+                              <MoreHorizontal className="size-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="squircle">
+                            <DropdownMenuItem
+                              onClick={() => copyToClipboard(peer.publicKey, "Public key")}
+                            >
+                              <Copy className="size-4" />
+                              Copy public key
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={() => setDeleteTarget(peer)}
+                            >
+                              <Trash2 className="size-4" />
+                              Remove peer
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
+        </div>
+      </div>
 
       {/* Generate invite dialog */}
       <Dialog open={inviteOpen} onOpenChange={(open) => !open && handleCloseInvite()}>
