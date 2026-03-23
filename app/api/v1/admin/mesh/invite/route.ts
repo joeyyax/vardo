@@ -2,21 +2,12 @@ import { NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { createInvite } from "@/lib/mesh/invite";
-import { getHubPublicKey, HUB_IP } from "@/lib/mesh";
+import { ensureHubConfig, HUB_IP } from "@/lib/mesh";
 
 /** POST /api/v1/admin/mesh/invite — generate an invite code for a new peer */
 export async function POST() {
   try {
     await requireAppAdmin();
-
-    // Auto-resolve hub WireGuard details
-    const publicKey = await getHubPublicKey();
-    if (!publicKey) {
-      return NextResponse.json(
-        { error: "WireGuard is not running — start the mesh profile first" },
-        { status: 503 }
-      );
-    }
 
     const serverIp = process.env.VARDO_SERVER_IP || process.env.VARDO_DOMAIN;
     if (!serverIp) {
@@ -25,6 +16,9 @@ export async function POST() {
         { status: 503 }
       );
     }
+
+    // Bootstrap WireGuard if needed (generates keypair, writes config, brings up wg0)
+    const publicKey = await ensureHubConfig(HUB_IP);
 
     const port = process.env.WIREGUARD_PORT || "51820";
     const endpoint = `${serverIp}:${port}`;
