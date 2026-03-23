@@ -77,7 +77,7 @@ async function checkService(
 }
 
 async function checkLoki(): Promise<ServiceStatus> {
-  const url = process.env.LOKI_URL || "http://localhost:3100";
+  const url = process.env.LOKI_URL || "http://localhost:7400";
   if (!url) {
     return { name: "Loki", description: "Log aggregation", status: "unconfigured" };
   }
@@ -197,7 +197,7 @@ export async function getSystemHealth(): Promise<SystemHealth> {
       }),
       checkService("Redis", "Cache and time-series metrics", async () => {
         const Redis = (await import("ioredis")).default;
-        const url = process.env.REDIS_URL || "redis://localhost:6379";
+        const url = process.env.REDIS_URL || "redis://localhost:7200";
         const redis = new Redis(url, { maxRetriesPerRequest: 1, connectTimeout: 2000 });
         await redis.ping();
         redis.disconnect();
@@ -208,7 +208,7 @@ export async function getSystemHealth(): Promise<SystemHealth> {
         if (!ok) throw new Error("unreachable");
       }),
       checkService("cAdvisor", "Container metrics", async () => {
-        const url = process.env.CADVISOR_URL || "http://localhost:8081";
+        const url = process.env.CADVISOR_URL || "http://localhost:7300";
         const res = await fetch(`${url}/healthz`, { signal: AbortSignal.timeout(2000) });
         if (!res.ok) throw new Error(`${res.status}`);
       }),
