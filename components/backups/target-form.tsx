@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/bottom-sheet";
 import { Loader2 } from "lucide-react";
 import { toast } from "@/lib/messenger";
-import type { TargetType } from "./types";
+import type { BackupTarget, TargetType } from "./types";
 
 export function TargetForm({
   open,
@@ -30,31 +30,36 @@ export function TargetForm({
   orgId,
   isFirstTarget,
   onCreated,
+  editTarget,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   orgId: string;
   isFirstTarget: boolean;
   onCreated: () => void;
+  editTarget?: BackupTarget | null;
 }) {
+  const isEditing = !!editTarget;
+  const config = (editTarget?.config ?? {}) as Record<string, string>;
+
   const [saving, setSaving] = useState(false);
-  const [name, setName] = useState("");
-  const [type, setType] = useState<TargetType>("s3");
+  const [name, setName] = useState(editTarget?.name ?? "");
+  const [type, setType] = useState<TargetType>((editTarget?.type as TargetType) ?? "s3");
 
   // S3/R2/B2
-  const [bucket, setBucket] = useState("");
-  const [region, setRegion] = useState("");
-  const [endpoint, setEndpoint] = useState("");
-  const [accessKeyId, setAccessKeyId] = useState("");
-  const [secretAccessKey, setSecretAccessKey] = useState("");
-  const [prefix, setPrefix] = useState("");
+  const [bucket, setBucket] = useState(config.bucket ?? "");
+  const [region, setRegion] = useState(config.region ?? "");
+  const [endpoint, setEndpoint] = useState(config.endpoint ?? "");
+  const [accessKeyId, setAccessKeyId] = useState(config.accessKeyId ?? "");
+  const [secretAccessKey, setSecretAccessKey] = useState(config.secretAccessKey ?? "");
+  const [prefix, setPrefix] = useState(config.prefix ?? "");
 
   // SSH
-  const [sshHost, setSshHost] = useState("");
-  const [sshPort, setSshPort] = useState("");
-  const [sshUsername, setSshUsername] = useState("");
-  const [sshPrivateKey, setSshPrivateKey] = useState("");
-  const [sshPath, setSshPath] = useState("");
+  const [sshHost, setSshHost] = useState(config.host ?? "");
+  const [sshPort, setSshPort] = useState(config.port ?? "");
+  const [sshUsername, setSshUsername] = useState(config.username ?? "");
+  const [sshPrivateKey, setSshPrivateKey] = useState(config.privateKey ?? "");
+  const [sshPath, setSshPath] = useState(config.path ?? "");
 
   function reset() {
     setName("");
@@ -120,31 +125,35 @@ export function TargetForm({
     }
   }
 
-  async function handleCreate() {
+  async function handleSubmit() {
     if (!isValid()) return;
     setSaving(true);
     try {
-      const res = await fetch(`/api/v1/organizations/${orgId}/backups/targets`, {
-        method: "POST",
+      const url = isEditing
+        ? `/api/v1/organizations/${orgId}/backups/targets/${editTarget!.id}`
+        : `/api/v1/organizations/${orgId}/backups/targets`;
+
+      const res = await fetch(url, {
+        method: isEditing ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: name.trim(),
-          type,
+          ...(isEditing ? {} : { type }),
           config: buildConfig(),
-          isDefault: isFirstTarget,
+          ...(isEditing ? {} : { isDefault: isFirstTarget }),
         }),
       });
       if (res.ok) {
-        toast.success("Storage target created");
+        toast.success(isEditing ? "Target updated" : "Storage target created");
         onOpenChange(false);
-        reset();
+        if (!isEditing) reset();
         onCreated();
       } else {
         const err = await res.json();
-        toast.error(err.error || "Failed to create target");
+        toast.error(err.error || `Failed to ${isEditing ? "update" : "create"} target`);
       }
     } catch {
-      toast.error("Failed to create target");
+      toast.error(`Failed to ${isEditing ? "update" : "create"} target`);
     } finally {
       setSaving(false);
     }
@@ -154,7 +163,7 @@ export function TargetForm({
     <BottomSheet open={open} onOpenChange={onOpenChange}>
       <BottomSheetContent>
         <BottomSheetHeader>
-          <BottomSheetTitle>Add storage target</BottomSheetTitle>
+          <BottomSheetTitle>{isEditing ? "Edit storage target" : "Add storage target"}</BottomSheetTitle>
           <BottomSheetDescription>
             Configure where backups will be stored. Supports S3-compatible storage, Backblaze B2, and SSH/SFTP targets.
           </BottomSheetDescription>
@@ -238,8 +247,8 @@ export function TargetForm({
 
         <BottomSheetFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
-          <Button onClick={handleCreate} disabled={saving || !isValid()}>
-            {saving ? <><Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />Creating...</> : "Create target"}
+          <Button onClick={handleSubmit} disabled={saving || !isValid()}>
+            {saving ? <><Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />{isEditing ? "Saving..." : "Creating..."}</> : isEditing ? "Save" : "Create target"}
           </Button>
         </BottomSheetFooter>
       </BottomSheetContent>

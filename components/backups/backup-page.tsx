@@ -235,11 +235,20 @@ export function BackupPage({
 
       {/* Forms */}
       <TargetForm
-        open={targetFormOpen}
-        onOpenChange={setTargetFormOpen}
+        open={targetFormOpen || !!editingTargetId}
+        onOpenChange={(open) => {
+          if (!open) {
+            setTargetFormOpen(false);
+            setEditingTargetId(null);
+          }
+        }}
         orgId={orgId}
         isFirstTarget={userTargets.length === 0}
-        onCreated={fetchData}
+        onCreated={() => {
+          setEditingTargetId(null);
+          fetchData();
+        }}
+        editTarget={editingTargetId ? targets.find((t) => t.id === editingTargetId) ?? null : null}
       />
 
       <JobForm
