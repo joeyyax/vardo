@@ -59,7 +59,7 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
   },
   mesh: {
     env: "FEATURE_MESH",
-    label: "Instances",
+    label: "Mesh networking",
     description:
       "Connect multiple Vardo instances over encrypted WireGuard tunnels",
   },
