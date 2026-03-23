@@ -147,73 +147,73 @@ export function PasswordManagement() {
         <CardDescription>Must be at least 8 characters. Existing sessions stay active.</CardDescription>
       </CardHeader>
       <CardContent>
-          <form onSubmit={handleChangePassword} className="space-y-3 max-w-sm">
-            <div className="space-y-1.5">
-              <Label htmlFor="current-password">Current password</Label>
-              <div className="relative">
-                <Input
-                  id="current-password"
-                  type={showCurrent ? "text" : "password"}
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowCurrent(!showCurrent)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  {showCurrent ? (
-                    <EyeOff className="size-4" />
-                  ) : (
-                    <Eye className="size-4" />
-                  )}
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="new-password">New password</Label>
-              <div className="relative">
-                <Input
-                  id="new-password"
-                  type={showNew ? "text" : "password"}
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  minLength={8}
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowNew(!showNew)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  {showNew ? (
-                    <EyeOff className="size-4" />
-                  ) : (
-                    <Eye className="size-4" />
-                  )}
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="confirm-password">Confirm new password</Label>
+        <form onSubmit={handleChangePassword} className="space-y-3 max-w-sm">
+          <div className="space-y-1.5">
+            <Label htmlFor="current-password">Current password</Label>
+            <div className="relative">
               <Input
-                id="confirm-password"
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
+                id="current-password"
+                type={showCurrent ? "text" : "password"}
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowCurrent(!showCurrent)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                {showCurrent ? (
+                  <EyeOff className="size-4" />
+                ) : (
+                  <Eye className="size-4" />
+                )}
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="new-password">New password</Label>
+            <div className="relative">
+              <Input
+                id="new-password"
+                type={showNew ? "text" : "password"}
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
                 minLength={8}
                 required
               />
+              <button
+                type="button"
+                onClick={() => setShowNew(!showNew)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                {showNew ? (
+                  <EyeOff className="size-4" />
+                ) : (
+                  <Eye className="size-4" />
+                )}
+              </button>
             </div>
+          </div>
 
-            <Button type="submit" size="sm" disabled={saving}>
-              {saving && <Loader2 className="mr-1.5 size-4 animate-spin" />}
-              Change password
-            </Button>
-          </form>
+          <div className="space-y-1.5">
+            <Label htmlFor="confirm-password">Confirm new password</Label>
+            <Input
+              id="confirm-password"
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              minLength={8}
+              required
+            />
+          </div>
+
+          <Button type="submit" size="sm" disabled={saving}>
+            {saving && <Loader2 className="mr-1.5 size-4 animate-spin" />}
+            Change password
+          </Button>
+        </form>
       </CardContent>
     </Card>
   );
@@ -515,62 +515,62 @@ export function ActiveSessions() {
         <CardDescription>Revoke sessions you don&apos;t recognize. Your current session is marked.</CardDescription>
       </CardHeader>
       <CardContent>
-      {loading ? (
-        <div className="flex items-center justify-center p-8">
-          <Loader2 className="size-5 animate-spin text-muted-foreground" />
-        </div>
-      ) : sessions.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-2 p-8">
-          <Monitor className="size-8 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">No active sessions.</p>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {sessions.map((s) => {
-            const isCurrentSession = s.token === sessionData?.session?.token;
-            return (
-              <div
-                key={s.id}
-                className="flex items-center justify-between rounded-lg border p-3"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <Monitor className="size-4 shrink-0 text-muted-foreground" />
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium truncate">
-                        {parseUserAgent(s.userAgent)}
+        {loading ? (
+          <div className="flex items-center justify-center p-8">
+            <Loader2 className="size-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : sessions.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-2 p-8">
+            <Monitor className="size-8 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">No active sessions.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {sessions.map((s) => {
+              const isCurrentSession = s.token === sessionData?.session?.token;
+              return (
+                <div
+                  key={s.id}
+                  className="flex items-center justify-between rounded-lg border p-3"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <Monitor className="size-4 shrink-0 text-muted-foreground" />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium truncate">
+                          {parseUserAgent(s.userAgent)}
+                        </p>
+                        {isCurrentSession && (
+                          <Badge variant="secondary" className="text-xs">
+                            Current
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {s.ipAddress || "Unknown IP"} &middot; Created{" "}
+                        {new Date(s.createdAt).toLocaleDateString()}
                       </p>
-                      {isCurrentSession && (
-                        <Badge variant="secondary" className="text-xs">
-                          Current
-                        </Badge>
-                      )}
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      {s.ipAddress || "Unknown IP"} &middot; Created{" "}
-                      {new Date(s.createdAt).toLocaleDateString()}
-                    </p>
                   </div>
+                  {!isCurrentSession && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleRevoke(s.token)}
+                      disabled={revoking === s.token}
+                    >
+                      {revoking === s.token ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="size-4 text-destructive" />
+                      )}
+                    </Button>
+                  )}
                 </div>
-                {!isCurrentSession && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => handleRevoke(s.token)}
-                    disabled={revoking === s.token}
-                  >
-                    {revoking === s.token ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="size-4 text-destructive" />
-                    )}
-                  </Button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
+              );
+            })}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -693,97 +693,97 @@ export function ApiTokens({ orgId }: { orgId: string }) {
         </div>
       </CardHeader>
       <CardContent>
-      {/* Created token display */}
-      {createdToken && (
-        <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-4 space-y-2">
-          <p className="text-sm font-medium">
-            Token created. Copy it now -- it won't be shown again.
-          </p>
-          <div className="flex items-center gap-2">
-            <code className="flex-1 rounded bg-muted px-3 py-2 text-xs font-mono break-all">
-              {createdToken}
-            </code>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                navigator.clipboard.writeText(createdToken);
-                toast.success("Copied to clipboard");
-              }}
-            >
-              <Copy className="size-4" />
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Create form */}
-      {showCreate && (
-        <form
-          onSubmit={handleCreate}
-          className="flex items-end gap-2 max-w-sm"
-        >
-          <div className="flex-1 space-y-1.5">
-            <Label htmlFor="token-name">Token name</Label>
-            <Input
-              id="token-name"
-              value={newTokenName}
-              onChange={(e) => setNewTokenName(e.target.value)}
-              placeholder="e.g., CI/CD Pipeline"
-              required
-              autoFocus
-            />
-          </div>
-          <Button type="submit" size="sm" disabled={creating}>
-            {creating && <Loader2 className="mr-1.5 size-4 animate-spin" />}
-            Create
-          </Button>
-        </form>
-      )}
-
-      {/* Token list */}
-      {loading ? (
-        <div className="flex items-center justify-center p-8">
-          <Loader2 className="size-5 animate-spin text-muted-foreground" />
-        </div>
-      ) : tokens.length === 0 && !showCreate ? (
-        <div className="flex flex-col items-center justify-center gap-2 p-8">
-          <Key className="size-8 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">
-            No API tokens created yet.
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {tokens.map((token) => (
-            <div
-              key={token.id}
-              className="flex items-center justify-between rounded-lg border p-3"
-            >
-              <div className="min-w-0">
-                <p className="text-sm font-medium truncate">{token.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  Created {new Date(token.createdAt).toLocaleDateString()}
-                  {token.lastUsedAt &&
-                    ` \u00b7 Last used ${new Date(token.lastUsedAt).toLocaleDateString()}`}
-                </p>
-              </div>
+        {/* Created token display */}
+        {createdToken && (
+          <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-4 space-y-2">
+            <p className="text-sm font-medium">
+              Token created. Copy it now -- it won&apos;t be shown again.
+            </p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 rounded bg-muted px-3 py-2 text-xs font-mono break-all">
+                {createdToken}
+              </code>
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => handleDelete(token.id)}
-                disabled={deleting === token.id}
+                onClick={() => {
+                  navigator.clipboard.writeText(createdToken);
+                  toast.success("Copied to clipboard");
+                }}
               >
-                {deleting === token.id ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Trash2 className="size-4 text-destructive" />
-                )}
+                <Copy className="size-4" />
               </Button>
             </div>
-          ))}
-        </div>
-      )}
+          </div>
+        )}
+
+        {/* Create form */}
+        {showCreate && (
+          <form
+            onSubmit={handleCreate}
+            className="flex items-end gap-2 max-w-sm"
+          >
+            <div className="flex-1 space-y-1.5">
+              <Label htmlFor="token-name">Token name</Label>
+              <Input
+                id="token-name"
+                value={newTokenName}
+                onChange={(e) => setNewTokenName(e.target.value)}
+                placeholder="e.g., CI/CD Pipeline"
+                required
+                autoFocus
+              />
+            </div>
+            <Button type="submit" size="sm" disabled={creating}>
+              {creating && <Loader2 className="mr-1.5 size-4 animate-spin" />}
+              Create
+            </Button>
+          </form>
+        )}
+
+        {/* Token list */}
+        {loading ? (
+          <div className="flex items-center justify-center p-8">
+            <Loader2 className="size-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : tokens.length === 0 && !showCreate ? (
+          <div className="flex flex-col items-center justify-center gap-2 p-8">
+            <Key className="size-8 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">
+              No API tokens created yet.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {tokens.map((token) => (
+              <div
+                key={token.id}
+                className="flex items-center justify-between rounded-lg border p-3"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">{token.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Created {new Date(token.createdAt).toLocaleDateString()}
+                    {token.lastUsedAt &&
+                      ` \u00b7 Last used ${new Date(token.lastUsedAt).toLocaleDateString()}`}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => handleDelete(token.id)}
+                  disabled={deleting === token.id}
+                >
+                  {deleting === token.id ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="size-4 text-destructive" />
+                  )}
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
