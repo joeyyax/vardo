@@ -11,7 +11,7 @@ import {
   unique,
   jsonb,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import type { ConfigSnapshot } from "@/lib/types/deploy-snapshot";
 
 // ---------------------------------------------------------------------------
@@ -1370,7 +1370,7 @@ export const meshPeers = pgTable("mesh_peer", {
   type: meshPeerTypeEnum("type").notNull().default("persistent"),
   status: meshPeerStatusEnum("status").notNull().default("offline"),
   endpoint: text("endpoint"), // host:port for WireGuard (null for dev behind NAT)
-  publicKey: text("public_key").notNull(),
+  publicKey: text("public_key").notNull().unique(),
   allowedIps: text("allowed_ips").notNull(), // WireGuard AllowedIPs (CIDR)
   internalIp: text("internal_ip").notNull(), // WireGuard tunnel address (e.g. 10.99.0.1)
   apiUrl: text("api_url"), // reachable URL for mesh API calls over tunnel
@@ -1410,6 +1410,7 @@ export const projectInstances = pgTable(
       t.meshPeerId,
       t.environment
     ),
+    index("project_instance_project_idx").on(t.projectId),
     index("project_instance_peer_idx").on(t.meshPeerId),
   ]
 );

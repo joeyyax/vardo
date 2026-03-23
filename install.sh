@@ -602,8 +602,13 @@ generate_env() {
   webhook_secret=$(openssl rand -hex 32)
   if command -v uuidgen &>/dev/null; then
     instance_id=$(uuidgen | tr '[:upper:]' '[:lower:]')
+  elif [ -f /proc/sys/kernel/random/uuid ]; then
+    instance_id=$(cat /proc/sys/kernel/random/uuid)
   else
-    instance_id=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || openssl rand -hex 16 | sed 's/\(.\{8\}\)\(.\{4\}\)\(.\{4\}\)\(.\{4\}\)\(.\{12\}\)/\1-\2-\3-\4-\5/')
+    # RFC 4122 v4: set version (4) and variant (8/9/a/b) bits
+    local hex
+    hex=$(openssl rand -hex 16)
+    instance_id="${hex:0:8}-${hex:8:4}-4${hex:13:3}-$(printf '%x' $(( 0x${hex:16:2} & 0x3f | 0x80 )))${hex:18:2}-${hex:20:12}"
   fi
 
   if [[ "$VARDO_ROLE" == "development" ]]; then
