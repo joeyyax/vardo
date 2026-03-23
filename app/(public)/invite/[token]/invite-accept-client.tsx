@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
+import { toast } from "@/lib/messenger";
 import { Loader2, Mail, KeyRound } from "lucide-react";
 import { DEFAULT_APP_NAME } from "@/lib/constants";
 import {

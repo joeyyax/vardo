@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useSession, signOut } from "@/lib/auth/client";
 import { getInitials } from "@/lib/utils";
-import { toast } from "sonner";
+import { toast } from "@/lib/messenger";
 import { switchOrganization } from "@/lib/organizations/switch";
 import type { Organization } from "@/lib/types";
 

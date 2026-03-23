@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/messenger";
 
 /**
  * Shared hook for loading and saving a system setting panel.
