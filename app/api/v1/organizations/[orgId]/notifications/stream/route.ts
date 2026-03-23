@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { requireOrg } from "@/lib/auth/session";
 import { on } from "@/lib/bus";
+import type { BusEvent } from "@/lib/bus/events";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -20,17 +21,22 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const encoder = new TextEncoder();
 
-    // Subscribe before constructing the stream so that a cap error is caught
-    // by the outer try/catch and returned as a 503 instead of leaving the
-    // client connected to a stream that never delivers events.
+    // Buffer events until the controller is ready. The Redis subscriber
+    // callback can fire before ReadableStream.start() assigns the controller.
+    let controller: ReadableStreamDefaultController | null = null;
+    const pending: BusEvent[] = [];
+
     let unsubscribe: () => void;
     try {
       unsubscribe = on(orgId, (event) => {
+        if (!controller) {
+          pending.push(event);
+          return;
+        }
         try {
-          const eventType = event.type.replace(".", "-");
           controller.enqueue(
             encoder.encode(
-              `event: ${eventType}\ndata: ${JSON.stringify(event)}\n\n`,
+              `event: notification\ndata: ${JSON.stringify(event)}\n\n`,
             ),
           );
         } catch {
@@ -46,27 +52,37 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       });
     }
 
-    let controller!: ReadableStreamDefaultController;
-
     const stream = new ReadableStream({
       start(ctrl) {
         controller = ctrl;
 
-        // Send keepalive every 30s to prevent connection timeout
+        // Flush any events that arrived before the controller was ready
+        for (const event of pending) {
+          try {
+            ctrl.enqueue(
+              encoder.encode(
+                `event: notification\ndata: ${JSON.stringify(event)}\n\n`,
+              ),
+            );
+          } catch {
+            break;
+          }
+        }
+        pending.length = 0;
+
         const keepalive = setInterval(() => {
           try {
-            controller.enqueue(encoder.encode(": keepalive\n\n"));
+            ctrl.enqueue(encoder.encode(": keepalive\n\n"));
           } catch {
             clearInterval(keepalive);
           }
         }, 30000);
 
-        // Clean up when client disconnects
         request.signal.addEventListener("abort", () => {
           clearInterval(keepalive);
           unsubscribe();
           try {
-            controller.close();
+            ctrl.close();
           } catch {
             /* already closed */
           }

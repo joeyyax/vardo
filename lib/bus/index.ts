@@ -22,17 +22,18 @@ export { toBusEvent, toLegacyEvent } from "./compat";
 // ---------------------------------------------------------------------------
 
 type EmitHook = (orgId: string, event: BusEvent) => void;
-const emitHooks: EmitHook[] = [];
+const emitHooks = new Map<string, EmitHook>();
 
 /**
- * Register a hook that runs on every emit() call. Used by the notification
- * dispatch module to trigger channel delivery without a Redis roundtrip.
+ * Register a named hook that runs on every emit() call. Used by the
+ * notification dispatch module to trigger channel delivery without a
+ * Redis roundtrip.
  *
- * Hooks run synchronously and should not throw. Async work should be
- * wrapped in Promise.resolve().then(...) internally.
+ * Keyed by name to prevent duplicate registrations during HMR — calling
+ * onEmit("dispatch", fn) twice replaces the previous hook.
  */
-export function onEmit(hook: EmitHook): void {
-  emitHooks.push(hook);
+export function onEmit(name: string, hook: EmitHook): void {
+  emitHooks.set(name, hook);
 }
 
 // ---------------------------------------------------------------------------
@@ -63,7 +64,7 @@ export function emit(orgId: string, event: BusEvent): void {
   });
 
   // Run local hooks
-  for (const hook of emitHooks) {
+  for (const hook of emitHooks.values()) {
     try {
       hook(orgId, event);
     } catch (err) {

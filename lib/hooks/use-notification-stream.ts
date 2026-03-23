@@ -1,96 +1,82 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import type { BusEvent } from "@/lib/bus/events";
 
 type UseNotificationStreamOptions = {
   orgId: string;
-  /** Whether the stream is enabled (default true). Set false to disconnect. */
   enabled?: boolean;
+  onEvent?: (event: BusEvent) => void;
 };
 
 type UseNotificationStreamReturn = {
-  /** Whether the SSE stream is connected */
   connected: boolean;
-  /** Latest event received (null until the first event arrives) */
-  lastEvent: BusEvent | null;
 };
 
 /**
  * EventSource hook for the org notification SSE stream.
  *
  * Connects to /api/v1/organizations/[orgId]/notifications/stream and
- * yields typed BusEvents as they arrive. Automatically reconnects on
- * disconnect (via the browser's built-in EventSource retry).
+ * delivers typed BusEvents via the onEvent callback. Reconnects automatically
+ * on disconnect and when the tab regains visibility.
  */
 export function useNotificationStream(
   options: UseNotificationStreamOptions,
 ): UseNotificationStreamReturn {
-  const { orgId, enabled = true } = options;
+  const { orgId, enabled = true, onEvent } = options;
   const [connected, setConnected] = useState(false);
-  const [lastEvent, setLastEvent] = useState<BusEvent | null>(null);
-  const wasConnectedRef = useRef(false);
+  const onEventRef = useRef(onEvent);
+  onEventRef.current = onEvent;
 
-  useEffect(() => {
-    if (!enabled || !orgId) return;
-
-    // Don't open a connection while the tab is hidden
-    if (typeof document !== "undefined" && document.hidden) return;
+  const connect = useCallback(() => {
+    if (!orgId) return null;
 
     const url = `/api/v1/organizations/${orgId}/notifications/stream`;
     const es = new EventSource(url);
 
-    es.onopen = () => {
-      setConnected(true);
-      wasConnectedRef.current = true;
-    };
+    es.onopen = () => setConnected(true);
 
-    // Listen for all SSE events by handling the generic "message" event
-    // and also specific event types. Since we send events with custom
-    // event names (deploy-success, etc.), we use onmessage as a fallback
-    // and add specific listeners for each category prefix.
-    function handleEvent(event: MessageEvent) {
+    es.addEventListener("notification", (event: MessageEvent) => {
       try {
         const data = JSON.parse(event.data) as BusEvent;
-        setLastEvent(data);
+        onEventRef.current?.(data);
       } catch {
         // Skip malformed events
       }
+    });
+
+    es.onerror = () => setConnected(false);
+
+    return es;
+  }, [orgId]);
+
+  useEffect(() => {
+    if (!enabled || !orgId) return;
+
+    // Don't open while tab is hidden
+    if (typeof document !== "undefined" && document.hidden) return;
+
+    let es = connect();
+
+    // Reconnect when tab becomes visible
+    function handleVisibility() {
+      if (document.hidden) {
+        es?.close();
+        es = null;
+        setConnected(false);
+      } else if (!es) {
+        es = connect();
+      }
     }
 
-    // SSE custom event types use hyphenated names (deploy-success, etc.)
-    const eventTypes = [
-      "deploy-success",
-      "deploy-failed",
-      "deploy-rollback",
-      "backup-success",
-      "backup-failed",
-      "cron-failed",
-      "volume-drift",
-      "disk-write-alert",
-      "org-invitation-sent",
-      "org-invitation-accepted",
-      "system-service-down",
-      "system-disk-alert",
-      "system-restart-loop",
-      "system-cert-expiring",
-      "system-update-available",
-      "digest-weekly",
-    ];
-
-    for (const type of eventTypes) {
-      es.addEventListener(type, handleEvent);
-    }
-
-    es.onerror = () => {
-      setConnected(false);
-    };
+    document.addEventListener("visibilitychange", handleVisibility);
 
     return () => {
-      es.close();
+      document.removeEventListener("visibilitychange", handleVisibility);
+      es?.close();
       setConnected(false);
     };
-  }, [orgId, enabled]);
+  }, [orgId, enabled, connect]);
 
-  return { connected, lastEvent };
+  return { connected };
 }

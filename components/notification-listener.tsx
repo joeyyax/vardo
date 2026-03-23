@@ -1,38 +1,33 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback } from "react";
 import { toast } from "@/lib/messenger";
 import { useNotificationStream } from "@/lib/hooks/use-notification-stream";
 import type { BusEvent, BusEventType } from "@/lib/bus/events";
 
 /**
- * Map of event types to their toast severity. Events not listed here
- * default to "info" style.
+ * Event types that auto-toast. Low-signal events (digests, invitations,
+ * update notices) are excluded — they belong in a notification panel, not
+ * interrupting the user mid-session.
  */
-const EVENT_SEVERITY: Record<BusEventType, "success" | "error" | "info"> = {
+const TOAST_EVENTS: Partial<Record<BusEventType, "success" | "error" | "info">> = {
   "deploy.success": "success",
   "deploy.failed": "error",
   "deploy.rollback": "error",
   "backup.success": "success",
   "backup.failed": "error",
   "cron.failed": "error",
-  "volume.drift": "info",
   "disk.write-alert": "error",
-  "org.invitation-sent": "info",
-  "org.invitation-accepted": "success",
   "system.service-down": "error",
   "system.disk-alert": "error",
   "system.restart-loop": "error",
   "system.cert-expiring": "error",
-  "system.update-available": "info",
-  "digest.weekly": "info",
 };
 
-/**
- * Shows a sonner toast for each bus event based on its severity.
- */
 function showToast(event: BusEvent): void {
-  const severity = EVENT_SEVERITY[event.type] ?? "info";
+  const severity = TOAST_EVENTS[event.type];
+  if (!severity) return;
+
   const options = { description: event.message };
 
   switch (severity) {
@@ -50,22 +45,16 @@ function showToast(event: BusEvent): void {
 
 /**
  * Mounts in the app layout. Connects to the org notification SSE stream
- * and maps bus events to sonner toasts.
+ * and maps high-signal bus events to sonner toasts.
  *
- * Renders nothing visible — it's a side-effect-only component.
+ * Renders nothing visible — side-effect-only component.
  */
 export function NotificationListener({ orgId }: { orgId: string }) {
-  const { lastEvent } = useNotificationStream({ orgId });
-  const prevEventRef = useRef<BusEvent | null>(null);
+  const onEvent = useCallback((event: BusEvent) => {
+    showToast(event);
+  }, []);
 
-  useEffect(() => {
-    // Only fire for new events, not re-renders with the same event
-    if (!lastEvent) return;
-    if (lastEvent === prevEventRef.current) return;
-    prevEventRef.current = lastEvent;
-
-    showToast(lastEvent);
-  }, [lastEvent]);
+  useNotificationStream({ orgId, onEvent });
 
   return null;
 }

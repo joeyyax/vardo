@@ -54,7 +54,7 @@ function dispatchToChannels(orgId: string, event: BusEvent): void {
 }
 
 // Register as an emit hook so every bus event triggers channel dispatch
-onEmit(dispatchToChannels);
+onEmit("dispatch", dispatchToChannels);
 
 /**
  * Legacy notify() entrypoint. Converts the event to a typed BusEvent and
