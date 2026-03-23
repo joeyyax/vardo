@@ -6,6 +6,7 @@ import { Github, Loader2, ExternalLink, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 
 type Installation = {
   id: string;
@@ -93,35 +94,35 @@ export function GitHubConnection() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-base font-medium">GitHub</h2>
-          <p className="text-sm text-muted-foreground">
-            Connect your GitHub account to import repositories.
-          </p>
+    <Card className="squircle rounded-lg">
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle>GitHub</CardTitle>
+            <CardDescription>Link a GitHub account to deploy from private repos and enable auto-deploy on push.</CardDescription>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleConnect}
+            disabled={connecting}
+          >
+            {connecting ? (
+              <Loader2 className="mr-1.5 size-4 animate-spin" />
+            ) : (
+              <Github className="mr-1.5 size-4" />
+            )}
+            Connect GitHub
+          </Button>
         </div>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={handleConnect}
-          disabled={connecting}
-        >
-          {connecting ? (
-            <Loader2 className="mr-1.5 size-4 animate-spin" />
-          ) : (
-            <Github className="mr-1.5 size-4" />
-          )}
-          Connect GitHub
-        </Button>
-      </div>
-
+      </CardHeader>
+      <CardContent>
       {loading ? (
-        <div className="flex items-center justify-center rounded-lg border border-dashed p-8">
+        <div className="flex items-center justify-center p-8">
           <Loader2 className="size-5 animate-spin text-muted-foreground" />
         </div>
       ) : installations.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed p-8">
+        <div className="flex flex-col items-center justify-center gap-2 p-8">
           <Github className="size-8 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">
             No GitHub accounts connected yet.
@@ -132,7 +133,7 @@ export function GitHubConnection() {
           {installations.map((installation) => (
             <div
               key={installation.id}
-              className="flex items-center gap-3 rounded-lg border bg-card p-3"
+              className="flex items-center gap-3 rounded-lg border p-3"
             >
               {installation.accountAvatarUrl ? (
                 <img
@@ -186,6 +187,7 @@ export function GitHubConnection() {
           ))}
         </div>
       )}
-    </div>
+      </CardContent>
+    </Card>
   );
 }
