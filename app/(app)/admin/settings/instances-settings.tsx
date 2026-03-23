@@ -12,13 +12,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -52,8 +46,17 @@ type MeshPeer = {
   updatedAt: string;
 };
 
+async function copyToClipboard(text: string, label: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast.success(`${label} copied`);
+  } catch {
+    toast.error("Failed to copy to clipboard");
+  }
+}
+
 function formatRelativeTime(dateStr: string | null): string {
-  if (!dateStr) return "Never";
+  if (!dateStr) return "Awaiting first heartbeat";
   const date = new Date(dateStr);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
@@ -175,7 +178,7 @@ export function InstancesSettings() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="space-y-1">
           <h2 className="text-lg font-medium">Instances</h2>
           <p className="text-sm text-muted-foreground">
@@ -239,7 +242,9 @@ export function InstancesSettings() {
                           ? "bg-status-success"
                           : "bg-status-neutral"
                       }`}
+                      aria-hidden="true"
                     />
+                    <span className="sr-only">{peer.status === "online" ? "Online" : "Offline"}</span>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-medium truncate">
@@ -275,10 +280,7 @@ export function InstancesSettings() {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="squircle">
                         <DropdownMenuItem
-                          onClick={() => {
-                            navigator.clipboard.writeText(peer.publicKey);
-                            toast.success("Public key copied");
-                          }}
+                          onClick={() => copyToClipboard(peer.publicKey, "Public key")}
                         >
                           <Copy className="size-4" />
                           Copy public key
@@ -336,10 +338,8 @@ export function InstancesSettings() {
                   variant="outline"
                   size="sm"
                   className="squircle shrink-0"
-                  onClick={() => {
-                    navigator.clipboard.writeText(inviteCode);
-                    toast.success("Copied to clipboard");
-                  }}
+                  aria-label="Copy invite code"
+                  onClick={() => copyToClipboard(inviteCode, "Invite code")}
                 >
                   <Copy className="size-4" />
                 </Button>
