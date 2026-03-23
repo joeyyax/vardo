@@ -33,8 +33,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { toast } from "@/lib/messenger";
 
@@ -78,11 +76,7 @@ export function InstancesSettings() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
-  const [inviteForm, setInviteForm] = useState({
-    publicKey: "",
-    endpoint: "",
-    internalIp: "",
-  });
+  const [inviteError, setInviteError] = useState<string | null>(null);
 
   // Delete dialog
   const [deleteTarget, setDeleteTarget] = useState<MeshPeer | null>(null);
@@ -108,25 +102,22 @@ export function InstancesSettings() {
     fetchPeers();
   }, []);
 
-  async function handleGenerateInvite(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleGenerateInvite() {
     setInviteLoading(true);
+    setInviteError(null);
+    setInviteOpen(true);
     try {
       const res = await fetch("/api/v1/admin/mesh/invite", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(inviteForm),
       });
+      const json = await res.json();
       if (!res.ok) {
-        const json = await res.json();
-        toast.error(json.error || "Failed to generate invite");
+        setInviteError(json.error || "Failed to generate invite");
         return;
       }
-      const json = await res.json();
       setInviteCode(json.code);
-      toast.success("Invite code generated");
     } catch {
-      toast.error("Failed to generate invite");
+      setInviteError("Failed to generate invite");
     } finally {
       setInviteLoading(false);
     }
@@ -135,7 +126,7 @@ export function InstancesSettings() {
   function handleCloseInvite() {
     setInviteOpen(false);
     setInviteCode(null);
-    setInviteForm({ publicKey: "", endpoint: "", internalIp: "" });
+    setInviteError(null);
   }
 
   async function handleDelete() {
@@ -205,7 +196,7 @@ export function InstancesSettings() {
           <Button
             size="sm"
             className="squircle"
-            onClick={() => setInviteOpen(true)}
+            onClick={handleGenerateInvite}
           >
             <Plus className="size-4" />
             Generate invite
@@ -225,7 +216,7 @@ export function InstancesSettings() {
             <Button
               size="sm"
               className="squircle mt-4"
-              onClick={() => setInviteOpen(true)}
+              onClick={handleGenerateInvite}
             >
               <Plus className="size-4" />
               Generate invite
@@ -309,15 +300,32 @@ export function InstancesSettings() {
         </Card>
       )}
 
-      {/* Generate invite dialog */}
+      {/* Invite code dialog */}
       <Dialog open={inviteOpen} onOpenChange={(open) => !open && handleCloseInvite()}>
         <DialogContent className="squircle sm:max-w-md">
-          {inviteCode ? (
+          {inviteLoading ? (
+            <div className="flex flex-col items-center justify-center py-8 gap-3">
+              <Loader2 className="size-6 animate-spin text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">Generating invite code...</p>
+            </div>
+          ) : inviteError ? (
             <>
               <DialogHeader>
-                <DialogTitle>Invite code generated</DialogTitle>
+                <DialogTitle>Could not generate invite</DialogTitle>
+                <DialogDescription>{inviteError}</DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button className="squircle" onClick={handleCloseInvite}>
+                  Close
+                </Button>
+              </DialogFooter>
+            </>
+          ) : inviteCode ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>Invite code</DialogTitle>
                 <DialogDescription>
-                  Share this code with the target instance. It expires in 15 minutes and can only be used once.
+                  Run this on the instance you want to connect. Expires in 15 minutes, one-time use.
                 </DialogDescription>
               </DialogHeader>
               <div className="flex items-center gap-2">
@@ -342,73 +350,7 @@ export function InstancesSettings() {
                 </Button>
               </DialogFooter>
             </>
-          ) : (
-            <form onSubmit={handleGenerateInvite}>
-              <DialogHeader>
-                <DialogTitle>Generate invite</DialogTitle>
-                <DialogDescription>
-                  Enter the hub's WireGuard details for the joining peer's config.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <Label htmlFor="invite-publicKey">Hub public key</Label>
-                  <Input
-                    id="invite-publicKey"
-                    value={inviteForm.publicKey}
-                    onChange={(e) =>
-                      setInviteForm((f) => ({ ...f, publicKey: e.target.value }))
-                    }
-                    placeholder="Base64 WireGuard public key"
-                    className="font-mono text-sm"
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="invite-endpoint">Hub endpoint</Label>
-                  <Input
-                    id="invite-endpoint"
-                    value={inviteForm.endpoint}
-                    onChange={(e) =>
-                      setInviteForm((f) => ({ ...f, endpoint: e.target.value }))
-                    }
-                    placeholder="hub.example.com:51820"
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="invite-internalIp">Hub internal IP</Label>
-                  <Input
-                    id="invite-internalIp"
-                    value={inviteForm.internalIp}
-                    onChange={(e) =>
-                      setInviteForm((f) => ({ ...f, internalIp: e.target.value }))
-                    }
-                    placeholder="10.99.0.1"
-                    required
-                  />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="squircle"
-                  onClick={handleCloseInvite}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  className="squircle"
-                  disabled={inviteLoading}
-                >
-                  {inviteLoading && <Loader2 className="size-4 animate-spin" />}
-                  Generate
-                </Button>
-              </DialogFooter>
-            </form>
-          )}
+          ) : null}
         </DialogContent>
       </Dialog>
 

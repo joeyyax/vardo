@@ -122,6 +122,23 @@ export async function isWireguardRunning(): Promise<boolean> {
   }
 }
 
+/** Read the hub's WireGuard public key from the running container. */
+export async function getHubPublicKey(): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync("docker", [
+      "exec",
+      WG_CONTAINER,
+      "sh",
+      "-c",
+      "wg show wg0 public-key",
+    ]);
+    const key = stdout.trim();
+    return WG_KEY_RE.test(key) ? key : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Get the current WireGuard interface status. */
 export async function getWgStatus(): Promise<string | null> {
   try {
