@@ -283,8 +283,8 @@ export function BackupSettings() {
             <li className="flex items-start gap-2.5">
               <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
               <span className="text-muted-foreground">
-                <span className="font-medium text-foreground">Volume snapshots</span>{" "}
-                — each backup archives app volumes as tar.gz and uploads to your storage
+                <span className="font-medium text-foreground">Offsite storage</span>{" "}
+                — snapshots are uploaded to your S3-compatible provider, not stored locally
               </span>
             </li>
             <li className="flex items-start gap-2.5">
