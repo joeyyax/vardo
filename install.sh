@@ -231,8 +231,9 @@ check_port_in_use() {
 
 find_free_port() {
   local port="$1"
+  local extra_reserved="${2:-}"
   local max=$((port + 100))
-  local reserved="7100 7200 7300 7400"
+  local reserved="7100 7200 7300 7400 $extra_reserved"
   while check_port_in_use "$port" || [[ " $reserved " == *" $port "* ]]; do
     port=$((port + 1))
     if [ "$port" -ge "$max" ]; then return 1; fi
@@ -243,8 +244,8 @@ find_free_port() {
 check_ports() {
   local ports_ok=true
 
-  # Traefik ports — required for production, skipped for dev
-  if ! is_dev; then
+  # Traefik ports — required for production only
+  if is_production; then
     for port in 80 443; do
       if check_port_in_use "$port"; then
         fail "Port $port is in use — Traefik needs it for TLS. Free the port and retry."
@@ -256,6 +257,7 @@ check_ports() {
   local env_vars=("POSTGRES_PORT" "REDIS_PORT" "CADVISOR_PORT" "LOKI_PORT")
   local defaults=(7100 7200 7300 7400)
   local labels=("PostgreSQL" "Redis" "cAdvisor" "Loki")
+  local assigned=()
 
   for i in "${!env_vars[@]}"; do
     local env_var="${env_vars[$i]}"
@@ -265,14 +267,17 @@ check_ports() {
 
     if check_port_in_use "$current"; then
       local alt
-      alt=$(find_free_port "$((current + 1))")
+      alt=$(find_free_port "$((current + 1))" "${assigned[*]}")
       if [ -n "$alt" ]; then
         warn "$label: port $current in use — reassigning to $alt"
         export "${env_var}=$alt"
+        assigned+=("$alt")
       else
         warn "$label: port $current in use — set $env_var in .env to override"
       fi
       ports_ok=false
+    else
+      assigned+=("$current")
     fi
   done
 
