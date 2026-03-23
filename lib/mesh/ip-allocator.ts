@@ -26,7 +26,7 @@ function lastOctet(ip: string): number {
   return octet;
 }
 
-/** Find the next available IP given a list of already-assigned IPs. Returns CIDR (/32). */
+/** Find the next available IP given a list of already-assigned IPs. Returns bare IP — use toCidr() for WireGuard AllowedIPs. */
 export function allocateIp(assignedIps: string[]): string {
   const used = new Set(assignedIps.map(lastOctet));
 
