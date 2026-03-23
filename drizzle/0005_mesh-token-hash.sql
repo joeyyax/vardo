@@ -1,0 +1,1 @@
+ALTER TABLE "mesh_peer" ADD COLUMN "token_hash" text;
