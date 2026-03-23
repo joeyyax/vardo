@@ -1,22 +1,19 @@
 /**
- * Email adapter — stub interface for future unification.
+ * Email adapter — wraps lib/email/send.ts for direct email sending.
  *
- * The actual email sending currently lives in `lib/email/send.ts` and is used
- * by the server-side notification channels (`lib/notifications/email-channel.ts`).
- * This adapter will eventually wrap that infrastructure behind the unified
- * `notify.email()` interface.
+ * For event-driven notifications (deploy, backup, cron failures), use
+ * `notify.event()` instead — it routes through org notification channels.
  */
 
+import { sendEmail } from "@/lib/email/send";
+import type { ReactElement } from "react";
+
 export type EmailOptions = {
-  to: string | string[];
+  to: string;
   subject: string;
-  body: string;
-  html?: string;
-  replyTo?: string;
+  template: ReactElement;
 };
 
-export async function email(_options: EmailOptions): Promise<void> {
-  throw new Error(
-    "[notify.email] Not implemented yet. Use lib/email/send.ts directly for now.",
-  );
+export async function email(options: EmailOptions): Promise<void> {
+  await sendEmail(options);
 }
