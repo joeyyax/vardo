@@ -229,6 +229,16 @@ check_port_in_use() {
   fi
 }
 
+find_free_port() {
+  local port="$1"
+  local max=$((port + 100))
+  while check_port_in_use "$port"; do
+    port=$((port + 1))
+    if [ "$port" -ge "$max" ]; then return 1; fi
+  done
+  echo "$port"
+}
+
 check_ports() {
   local ports_ok=true
 
@@ -237,23 +247,30 @@ check_ports() {
     for port in 80 443; do
       if check_port_in_use "$port"; then
         fail "Port $port is in use — Traefik needs it for TLS. Free the port and retry."
-        ports_ok=false
       fi
     done
   fi
 
-  # Service ports — warn and suggest override
-  local -A service_ports=(
-    [POSTGRES_PORT]="${POSTGRES_PORT:-9100}"
-    [REDIS_PORT]="${REDIS_PORT:-9200}"
-    [CADVISOR_PORT]="${CADVISOR_PORT:-9300}"
-    [LOKI_PORT]="${LOKI_PORT:-9400}"
-  )
+  # Service ports — detect conflicts and resolve
+  local env_vars=("POSTGRES_PORT" "REDIS_PORT" "CADVISOR_PORT" "LOKI_PORT")
+  local defaults=(9100 9200 9300 9400)
+  local labels=("PostgreSQL" "Redis" "cAdvisor" "Loki")
 
-  for env_var in "${!service_ports[@]}"; do
-    local port="${service_ports[$env_var]}"
-    if check_port_in_use "$port"; then
-      warn "Port $port is in use — set $env_var in .env to use a different port"
+  for i in "${!env_vars[@]}"; do
+    local env_var="${env_vars[$i]}"
+    local default="${defaults[$i]}"
+    local label="${labels[$i]}"
+    local current="${!env_var:-$default}"
+
+    if check_port_in_use "$current"; then
+      local alt
+      alt=$(find_free_port "$((current + 1))")
+      if [ -n "$alt" ]; then
+        warn "$label: port $current in use — reassigning to $alt"
+        export "${env_var}=$alt"
+      else
+        warn "$label: port $current in use — set $env_var in .env to override"
+      fi
       ports_ok=false
     fi
   done
@@ -623,6 +640,25 @@ GITHUB_CLIENT_SECRET=
 GITHUB_PRIVATE_KEY=
 EOF
   fi
+
+  # Append port overrides if any were reassigned during preflight
+  local env_vars=("POSTGRES_PORT" "REDIS_PORT" "CADVISOR_PORT" "LOKI_PORT")
+  local defaults=(9100 9200 9300 9400)
+  local has_overrides=false
+
+  for i in "${!env_vars[@]}"; do
+    local env_var="${env_vars[$i]}"
+    local default="${defaults[$i]}"
+    local current="${!env_var:-$default}"
+    if [ "$current" != "$default" ]; then
+      if ! $has_overrides; then
+        echo "" >> "$env_file"
+        echo "# Port overrides (reassigned to avoid conflicts)" >> "$env_file"
+        has_overrides=true
+      fi
+      echo "${env_var}=${current}" >> "$env_file"
+    fi
+  done
 
   chmod 600 "$env_file"
   log "Configuration saved"
