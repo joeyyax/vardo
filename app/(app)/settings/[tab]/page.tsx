@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { memberships, invitations, apps } from "@/lib/db/schema";
+import { memberships, invitations } from "@/lib/db/schema";
 import { getSession, getCurrentOrg, getUserOrganizations } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { OrgEnvVarsEditor } from "../org-env-vars";
@@ -10,9 +10,8 @@ import { DigestSettingsEditor } from "../digest-settings";
 import { TeamMembers } from "@/app/(app)/team/team-members";
 import { InvitationsPanel } from "../invitations";
 import { OrgGeneralSettings } from "../org-general-settings";
-import { BackupManager } from "@/app/(app)/backups/backup-manager";
 
-const VALID_TABS = ["general", "variables", "domains", "backups", "notifications", "team", "invitations"] as const;
+const VALID_TABS = ["general", "variables", "domains", "notifications", "team", "invitations"] as const;
 type ValidTab = (typeof VALID_TABS)[number];
 
 export default async function OrgSettingsTabPage({
@@ -56,14 +55,6 @@ export default async function OrgSettingsTabPage({
           serverIP={process.env.VARDO_SERVER_IP}
         />
       );
-
-    case "backups": {
-      const appList = await db.query.apps.findMany({
-        where: eq(apps.organizationId, orgId),
-        columns: { id: true, name: true, displayName: true },
-      });
-      return <BackupManager orgId={orgId} apps={appList} />;
-    }
 
     case "notifications":
       return (
