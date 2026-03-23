@@ -23,6 +23,7 @@ import {
   BottomSheetTitle,
 } from "@/components/ui/bottom-sheet";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
+import { Card, CardContent } from "@/components/ui/card";
 import { isAdmin } from "@/lib/auth/permissions";
 import { formatDistanceToNow } from "date-fns";
 
@@ -182,7 +183,8 @@ export function InvitationsPanel({
         confirmLabel="Revoke"
       />
 
-      <div className="space-y-4">
+      <Card className="squircle rounded-lg">
+        <CardContent className="space-y-4">
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
             {invitations.filter((i) => i.status === "pending").length} pending
@@ -296,7 +298,8 @@ export function InvitationsPanel({
             })}
           </div>
         )}
-      </div>
+        </CardContent>
+      </Card>
 
       {/* Invite sheet */}
       <BottomSheet open={inviteOpen} onOpenChange={setInviteOpen}>

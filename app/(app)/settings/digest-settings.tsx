@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
+import { Card, CardContent } from "@/components/ui/card";
 import { Loader2, Mail } from "lucide-react";
 
 type DigestSettingsData = {
@@ -120,7 +121,8 @@ export function DigestSettingsEditor({ orgId }: { orgId: string }) {
   }
 
   return (
-    <div className="space-y-6">
+    <Card className="squircle rounded-lg">
+      <CardContent className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
@@ -203,6 +205,7 @@ export function DigestSettingsEditor({ orgId }: { orgId: string }) {
           })}
         </p>
       )}
-    </div>
+      </CardContent>
+    </Card>
   );
 }

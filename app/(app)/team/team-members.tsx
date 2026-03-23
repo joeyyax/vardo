@@ -25,6 +25,7 @@ import {
   BottomSheetTitle,
 } from "@/components/ui/bottom-sheet";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
+import { Card, CardContent } from "@/components/ui/card";
 import { isAdmin } from "@/lib/auth/permissions";
 import { OrgSwitcher } from "@/components/layout/org-switcher";
 import { getInitials } from "@/lib/utils";
@@ -208,7 +209,8 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
           </PageToolbar>
         )}
 
-        <div className="divide-y rounded-lg border">
+        <Card className="squircle rounded-lg">
+          <div className="divide-y">
           {sortedMembers.map((member) => {
             const isSelf = member.id === currentUserId;
             const isOwner = member.role === "owner";
@@ -288,7 +290,8 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
               </div>
             );
           })}
-        </div>
+          </div>
+        </Card>
       </div>
 
       <ConfirmDeleteDialog
