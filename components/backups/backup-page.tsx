@@ -25,6 +25,7 @@ export function BackupPage({
   const [history, setHistory] = useState<RecentBackup[]>([]);
   const [targetFormOpen, setTargetFormOpen] = useState(false);
   const [jobFormOpen, setJobFormOpen] = useState(false);
+  const [editingTargetId, setEditingTargetId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -81,7 +82,17 @@ export function BackupPage({
 
   return (
     <div className="space-y-8">
-      {/* Section 1: Auto-backup banner */}
+      {/* Header */}
+      <div className="space-y-1">
+        <h2 className="text-lg font-medium">Backups</h2>
+        <p className="text-sm text-muted-foreground">
+          {scope === "admin"
+            ? "Manage system-wide backup targets, retention policies, and view backup history across all organizations."
+            : "Manage backup targets and view backup history for this organization."}
+        </p>
+      </div>
+
+      {/* Auto-backup banner */}
       {autoTarget && (
         <AutoBackupBanner target={autoTarget} jobs={autoJobs} scope={scope} />
       )}
@@ -138,6 +149,7 @@ export function BackupPage({
                 orgId={orgId}
                 readOnly={scope === "org"}
                 onRefresh={fetchData}
+                onEdit={scope === "admin" ? () => setEditingTargetId(target.id) : undefined}
               />
             ))}
 
@@ -148,6 +160,7 @@ export function BackupPage({
                 target={target}
                 orgId={orgId}
                 onRefresh={fetchData}
+                onEdit={() => setEditingTargetId(target.id)}
               />
             ))}
           </div>

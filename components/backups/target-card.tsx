@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Play, Loader2, Power, PowerOff, Clock, Trash2 } from "lucide-react";
+import { Play, Loader2, Power, PowerOff, Clock, Trash2, Pencil } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { TargetIcon, scheduleLabel, targetSubtitle } from "./constants";
 import { StatusBadge } from "./status-badge";
@@ -17,11 +17,13 @@ export function TargetCard({
   orgId,
   readOnly = false,
   onRefresh,
+  onEdit,
 }: {
   target: TargetWithJobs;
   orgId: string;
   readOnly?: boolean;
   onRefresh: () => void;
+  onEdit?: () => void;
 }) {
   const [runningJobs, setRunningJobs] = useState<Set<string>>(new Set());
   const [deleteJobId, setDeleteJobId] = useState<string | null>(null);
@@ -110,6 +112,16 @@ export function TargetCard({
               </p>
             </div>
           </div>
+          {!readOnly && onEdit && (
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              aria-label="Edit target"
+              onClick={onEdit}
+            >
+              <Pencil className="size-3.5" />
+            </Button>
+          )}
         </div>
 
         {/* Inline jobs */}

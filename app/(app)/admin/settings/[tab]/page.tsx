@@ -51,25 +51,21 @@ export default async function AdminSettingsTabPage({
     notFound();
   }
 
-  // Backup tab needs special handling — renders BackupPage with admin scope
+  // Backup tab — full BackupPage with admin scope (system targets are editable)
   if (tab === "backup") {
     const orgData = await getCurrentOrg();
     const orgId = orgData?.organization.id;
-    if (!orgId) return <BackupSettings />;
+    if (!orgId) {
+      const Component = TAB_COMPONENTS[tab as ValidTab];
+      return <Component />;
+    }
 
     const appList = await db.query.apps.findMany({
       where: eq(apps.organizationId, orgId),
       columns: { id: true, name: true, displayName: true },
     });
 
-    return (
-      <div className="space-y-8">
-        <BackupSettings />
-        <div className="border-t pt-8">
-          <BackupPage scope="admin" orgId={orgId} apps={appList} />
-        </div>
-      </div>
-    );
+    return <BackupPage scope="admin" orgId={orgId} apps={appList} />;
   }
 
   const Component = TAB_COMPONENTS[tab as ValidTab];
