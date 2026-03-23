@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
 
 type Props = {
@@ -168,7 +169,8 @@ export function OrgEnvVarsEditor({ orgId }: Props) {
   }
 
   return (
-    <div className="space-y-3">
+    <Card className="squircle rounded-lg">
+      <CardContent className="space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">
           Shared across all projects. Reference with{" "}
@@ -225,7 +227,8 @@ export function OrgEnvVarsEditor({ orgId }: Props) {
           </div>
         )}
       </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }
 
