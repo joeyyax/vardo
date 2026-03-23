@@ -15,7 +15,7 @@ import {
   Globe2,
   RefreshCw,
 } from "lucide-react";
-import { notify } from "@/lib/notify";
+import { toast } from "@/lib/messenger";
 import { PageToolbar } from "@/components/page-toolbar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -208,7 +208,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], default
       try {
         const res = await fetch(`/api/v1/github/repos?installationId=${selectedInstallation}`);
         if (res.ok && !cancelled) setRepos((await res.json()).repos || []);
-      } catch { if (!cancelled) notify.toast.error("Failed to fetch repositories"); }
+      } catch { if (!cancelled) toast.error("Failed to fetch repositories"); }
       finally { if (!cancelled) setReposLoading(false); }
     }
     fetchRepos();
@@ -421,10 +421,10 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], default
           body.deployType = "nixpacks";
           body.gitUrl = repo.cloneUrl;
           body.gitBranch = repo.defaultBranch;
-          notify.toast.success(`Repository created: ${repo.fullName}`);
+          toast.success(`Repository created: ${repo.fullName}`);
         } else {
           const err = await repoRes.json();
-          notify.toast.error(err.error || "Failed to create repository");
+          toast.error(err.error || "Failed to create repository");
           setCreating(false);
           return;
         }
@@ -444,7 +444,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], default
       });
       if (!res.ok) {
         const data = await res.json();
-        notify.toast.error(data.error || "Failed to create app");
+        toast.error(data.error || "Failed to create app");
         return;
       }
 
@@ -465,9 +465,9 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], default
         }).catch(() => {
           // Deploy started server-side — client will see it on the detail page
         });
-        notify.toast.success("App created — deploying...");
+        toast.success("App created — deploying...");
       } else {
-        notify.toast.success("App created");
+        toast.success("App created");
       }
       // Redirect to the project page if the app belongs to a project
       if (parentId) {
@@ -480,7 +480,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], default
       } else {
         router.push(`/apps/${app.name}`);
       }
-    } catch (err) { notify.toast.error(err instanceof Error ? err.message : "Failed to create app"); }
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Failed to create app"); }
     finally { setCreating(false); }
   }
 
@@ -618,9 +618,9 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], default
                               return;
                             }
                           }
-                          notify.toast.error("Failed to start GitHub connection");
+                          toast.error("Failed to start GitHub connection");
                         } catch {
-                          notify.toast.error("Failed to connect GitHub");
+                          toast.error("Failed to connect GitHub");
                         } finally {
                           setConnectingGithub(false);
                         }

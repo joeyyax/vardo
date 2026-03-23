@@ -4,7 +4,7 @@ import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, AlertTriangle, ClipboardCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { notify } from "@/lib/notify";
+import { toast } from "@/lib/messenger";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { EditorView } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
@@ -24,7 +24,7 @@ const clipboardIcon = <ClipboardCheck className="size-4" />;
 
 function copyToast(value: string) {
   navigator.clipboard.writeText(value);
-  notify.toast.success("Copied to clipboard", {
+  toast.success("Copied to clipboard", {
     icon: clipboardIcon,
     description: value,
     classNames: { description: "font-mono" },
@@ -250,17 +250,17 @@ export function EnvEditor(props: EnvEditorProps) {
       );
       if (!res.ok) {
         const data = await res.json();
-        notify.toast.error(data.error || "Failed to save");
+        toast.error(data.error || "Failed to save");
         return false;
       }
-      notify.toast.success("Variables saved");
+      toast.success("Variables saved");
       setModified(false);
       setNeedsRedeploy(true);
       setInitialContent(content);
       setPasswordWarning(null);
       return true;
     } catch {
-      notify.toast.error("Failed to save");
+      toast.error("Failed to save");
       return false;
     } finally {
       setSaving(false);

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronsUpDown, Plus, Building2, Check, Loader2, Settings, Users } from "lucide-react";
-import { notify } from "@/lib/notify";
+import { toast } from "@/lib/messenger";
 import { switchOrganization } from "@/lib/organizations/switch";
 import { Button } from "@/components/ui/button";
 import {
@@ -76,7 +76,7 @@ export function OrgSwitcher({ currentOrgId, organizations: initialOrganizations,
       router.push("/projects");
       router.refresh();
     } else {
-      notify.toast.error(result.error);
+      toast.error(result.error);
       setSwitching(false);
     }
   };
@@ -110,7 +110,7 @@ export function OrgSwitcher({ currentOrgId, organizations: initialOrganizations,
       router.push("/projects");
       router.refresh();
     } catch (err) {
-      notify.toast.error(err instanceof Error ? err.message : "Failed to create organization");
+      toast.error(err instanceof Error ? err.message : "Failed to create organization");
     } finally {
       setCreating(false);
     }

@@ -13,7 +13,7 @@ import {
   Plus,
   Key,
 } from "lucide-react";
-import { notify } from "@/lib/notify";
+import { toast } from "@/lib/messenger";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,12 +42,12 @@ export function AccountInfo() {
     try {
       const { error } = await authClient.updateUser({ name: name.trim() });
       if (error) {
-        notify.toast.error(error.message || "Failed to update name");
+        toast.error(error.message || "Failed to update name");
       } else {
-        notify.toast.success("Name updated");
+        toast.success("Name updated");
       }
     } catch {
-      notify.toast.error("Failed to update name");
+      toast.error("Failed to update name");
     } finally {
       setSaving(false);
     }
@@ -110,11 +110,11 @@ export function PasswordManagement() {
   async function handleChangePassword(e: React.FormEvent) {
     e.preventDefault();
     if (newPassword !== confirmPassword) {
-      notify.toast.error("Passwords do not match");
+      toast.error("Passwords do not match");
       return;
     }
     if (newPassword.length < 8) {
-      notify.toast.error("Password must be at least 8 characters");
+      toast.error("Password must be at least 8 characters");
       return;
     }
 
@@ -126,15 +126,15 @@ export function PasswordManagement() {
         revokeOtherSessions: false,
       });
       if (error) {
-        notify.toast.error(error.message || "Failed to change password");
+        toast.error(error.message || "Failed to change password");
       } else {
-        notify.toast.success("Password changed");
+        toast.success("Password changed");
         setCurrentPassword("");
         setNewPassword("");
         setConfirmPassword("");
       }
     } catch {
-      notify.toast.error("Failed to change password");
+      toast.error("Failed to change password");
     } finally {
       setSaving(false);
     }
@@ -243,7 +243,7 @@ export function TwoFactorAuth() {
         password: "",
       });
       if (error) {
-        notify.toast.error(error.message || "Failed to enable 2FA");
+        toast.error(error.message || "Failed to enable 2FA");
         setEnabling(false);
         return;
       }
@@ -254,7 +254,7 @@ export function TwoFactorAuth() {
         }
       }
     } catch {
-      notify.toast.error("Failed to enable 2FA");
+      toast.error("Failed to enable 2FA");
     } finally {
       setEnabling(false);
     }
@@ -267,14 +267,14 @@ export function TwoFactorAuth() {
         code: verifyCode,
       });
       if (error) {
-        notify.toast.error(error.message || "Invalid code");
+        toast.error(error.message || "Invalid code");
       } else {
-        notify.toast.success("Two-factor authentication enabled");
+        toast.success("Two-factor authentication enabled");
         setTotpUri(null);
         setVerifyCode("");
       }
     } catch {
-      notify.toast.error("Failed to verify code");
+      toast.error("Failed to verify code");
     } finally {
       setVerifying(false);
     }
@@ -282,7 +282,7 @@ export function TwoFactorAuth() {
 
   async function handleDisable() {
     if (!disablePassword) {
-      notify.toast.error("Password is required");
+      toast.error("Password is required");
       return;
     }
     setDisabling(true);
@@ -291,14 +291,14 @@ export function TwoFactorAuth() {
         password: disablePassword,
       });
       if (error) {
-        notify.toast.error(error.message || "Failed to disable 2FA");
+        toast.error(error.message || "Failed to disable 2FA");
       } else {
-        notify.toast.success("Two-factor authentication disabled");
+        toast.success("Two-factor authentication disabled");
         setShowDisable(false);
         setDisablePassword("");
       }
     } catch {
-      notify.toast.error("Failed to disable 2FA");
+      toast.error("Failed to disable 2FA");
     } finally {
       setDisabling(false);
     }
@@ -465,14 +465,14 @@ export function ActiveSessions() {
     try {
       const { data, error } = await authClient.listSessions();
       if (error) {
-        notify.toast.error("Failed to load sessions");
+        toast.error("Failed to load sessions");
         return;
       }
       if (data) {
         setSessions(data as SessionInfo[]);
       }
     } catch {
-      notify.toast.error("Failed to load sessions");
+      toast.error("Failed to load sessions");
     } finally {
       setLoading(false);
     }
@@ -487,13 +487,13 @@ export function ActiveSessions() {
     try {
       const { error } = await authClient.revokeSession({ token });
       if (error) {
-        notify.toast.error(error.message || "Failed to revoke session");
+        toast.error(error.message || "Failed to revoke session");
       } else {
-        notify.toast.success("Session revoked");
+        toast.success("Session revoked");
         setSessions((prev) => prev.filter((s) => s.token !== token));
       }
     } catch {
-      notify.toast.error("Failed to revoke session");
+      toast.error("Failed to revoke session");
     } finally {
       setRevoking(null);
     }
@@ -635,13 +635,13 @@ export function ApiTokens({ orgId }: { orgId: string }) {
         setNewTokenName("");
         setShowCreate(false);
         fetchTokens();
-        notify.toast.success("Token created");
+        toast.success("Token created");
       } else {
         const data = await res.json();
-        notify.toast.error(data.error || "Failed to create token");
+        toast.error(data.error || "Failed to create token");
       }
     } catch {
-      notify.toast.error("Failed to create token");
+      toast.error("Failed to create token");
     } finally {
       setCreating(false);
     }
@@ -660,12 +660,12 @@ export function ApiTokens({ orgId }: { orgId: string }) {
       );
       if (res.ok) {
         setTokens((prev) => prev.filter((t) => t.id !== id));
-        notify.toast.success("Token deleted");
+        toast.success("Token deleted");
       } else {
-        notify.toast.error("Failed to delete token");
+        toast.error("Failed to delete token");
       }
     } catch {
-      notify.toast.error("Failed to delete token");
+      toast.error("Failed to delete token");
     } finally {
       setDeleting(null);
     }
@@ -708,7 +708,7 @@ export function ApiTokens({ orgId }: { orgId: string }) {
                 variant="ghost"
                 onClick={() => {
                   navigator.clipboard.writeText(createdToken);
-                  notify.toast.success("Copied to clipboard");
+                  toast.success("Copied to clipboard");
                 }}
               >
                 <Copy className="size-4" />

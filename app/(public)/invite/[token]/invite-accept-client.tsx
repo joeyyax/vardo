@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { notify } from "@/lib/notify";
+import { toast } from "@/lib/messenger";
 import { Loader2, Mail, KeyRound } from "lucide-react";
 import { DEFAULT_APP_NAME } from "@/lib/constants";
 import {
@@ -50,13 +50,13 @@ export function InviteAcceptClient({
     try {
       const result = await acceptAction();
       if (result?.error) {
-        notify.toast.error(result.error);
+        toast.error(result.error);
         return;
       }
-      notify.toast.success("Invitation accepted!");
+      toast.success("Invitation accepted!");
       router.push("/projects");
     } catch {
-      notify.toast.error("Failed to accept invitation");
+      toast.error("Failed to accept invitation");
     } finally {
       setAccepting(false);
     }
@@ -70,12 +70,12 @@ export function InviteAcceptClient({
         callbackURL: window.location.pathname,
       });
       if (result?.error) {
-        notify.toast.error(result.error.message ?? "Failed to send magic link");
+        toast.error(result.error.message ?? "Failed to send magic link");
       } else {
         setMagicLinkSent(true);
       }
     } catch {
-      notify.toast.error("Failed to send magic link");
+      toast.error("Failed to send magic link");
     } finally {
       setSigningIn(null);
     }
@@ -92,10 +92,10 @@ export function InviteAcceptClient({
         },
       });
       if (result?.error) {
-        notify.toast.error(result.error.message ?? "Passkey sign in failed");
+        toast.error(result.error.message ?? "Passkey sign in failed");
       }
     } catch {
-      notify.toast.error("Passkey sign in failed");
+      toast.error("Passkey sign in failed");
     } finally {
       setSigningIn(null);
     }

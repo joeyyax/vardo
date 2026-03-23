@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { notify } from "@/lib/notify";
+import { toast } from "@/lib/messenger";
 import { Loader2 } from "lucide-react";
 
 interface OrgGeneralSettingsProps {
@@ -40,9 +40,9 @@ export function OrgGeneralSettings({ orgId, orgName }: OrgGeneralSettingsProps) 
       }
 
       setSavedName(trimmed);
-      notify.toast.success("Organization name updated");
+      toast.success("Organization name updated");
     } catch (err) {
-      notify.toast.error(err instanceof Error ? err.message : "Failed to save");
+      toast.error(err instanceof Error ? err.message : "Failed to save");
     } finally {
       setSaving(false);
     }

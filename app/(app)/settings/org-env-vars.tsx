@@ -4,7 +4,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { notify } from "@/lib/notify";
+import { toast } from "@/lib/messenger";
 
 type Props = {
   orgId: string;
@@ -132,14 +132,14 @@ export function OrgEnvVarsEditor({ orgId }: Props) {
       });
       if (!res.ok) {
         const data = await res.json();
-        notify.toast.error(data.error || "Failed to save");
+        toast.error(data.error || "Failed to save");
         return;
       }
       const data = await res.json();
-      notify.toast.success(`${data.created} added, ${data.updated} updated`);
+      toast.success(`${data.created} added, ${data.updated} updated`);
       setModified(false);
     } catch {
-      notify.toast.error("Failed to save");
+      toast.error("Failed to save");
     } finally {
       setSaving(false);
     }

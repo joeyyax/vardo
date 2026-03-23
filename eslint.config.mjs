@@ -6,13 +6,13 @@ const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   {
-    ignores: ["lib/notify/toast.ts", "components/ui/sonner.tsx"],
+    ignores: ["lib/messenger/toast.ts", "components/ui/sonner.tsx"],
     rules: {
       "no-restricted-imports": ["error", {
         paths: [{
           name: "sonner",
           importNames: ["toast"],
-          message: "Use `import { notify } from \"@/lib/notify\"` and `notify.toast.*` instead.",
+          message: "Use `import { toast } from \"@/lib/messenger\"` instead.",
         }],
       }],
     },

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { Github, Loader2, ExternalLink, Trash2 } from "lucide-react";
-import { notify } from "@/lib/notify";
+import { toast } from "@/lib/messenger";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -28,11 +28,11 @@ export function GitHubConnection() {
   useEffect(() => {
     const github = searchParams.get("github");
     if (github === "connected") {
-      notify.toast.success("GitHub account connected");
+      toast.success("GitHub account connected");
     } else if (github === "pending") {
-      notify.toast.info("GitHub installation pending approval");
+      toast.info("GitHub installation pending approval");
     } else if (github === "error") {
-      notify.toast.error("Failed to connect GitHub account");
+      toast.error("Failed to connect GitHub account");
     }
   }, [searchParams]);
 
@@ -60,13 +60,13 @@ export function GitHubConnection() {
       const res = await fetch("/api/v1/github/connect");
       if (!res.ok) {
         const data = await res.json();
-        notify.toast.error(data.error || "Failed to generate connect URL");
+        toast.error(data.error || "Failed to generate connect URL");
         return;
       }
       const { url } = await res.json();
       window.location.href = url;
     } catch {
-      notify.toast.error("Failed to connect to GitHub");
+      toast.error("Failed to connect to GitHub");
       setConnecting(false);
     }
   }
@@ -81,13 +81,13 @@ export function GitHubConnection() {
       });
       if (res.ok) {
         setInstallations((prev) => prev.filter((i) => i.id !== id));
-        notify.toast.success("GitHub account disconnected");
+        toast.success("GitHub account disconnected");
       } else {
         const data = await res.json();
-        notify.toast.error(data.error || "Failed to disconnect");
+        toast.error(data.error || "Failed to disconnect");
       }
     } catch {
-      notify.toast.error("Failed to disconnect GitHub account");
+      toast.error("Failed to disconnect GitHub account");
     } finally {
       setRemoving(null);
     }

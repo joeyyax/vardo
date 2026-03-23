@@ -27,7 +27,7 @@ import {
   Rocket,
   Container,
 } from "lucide-react";
-import { notify } from "@/lib/notify";
+import { toast } from "@/lib/messenger";
 
 const STEPS = [
   {
@@ -311,13 +311,13 @@ function AccountStep({
     try {
       const { error } = await signUp.email({ name, email, password });
       if (error) {
-        notify.toast.error(error.message || "Failed to create account");
+        toast.error(error.message || "Failed to create account");
         return;
       }
-      notify.toast.success("Account created — you're the admin");
+      toast.success("Account created — you're the admin");
       onComplete();
     } catch (err) {
-      notify.toast.error(
+      toast.error(
         err instanceof Error ? err.message : "Failed to create account",
       );
     } finally {
@@ -412,10 +412,10 @@ function EmailStep({
         }),
       });
       if (!res.ok) throw new Error("Failed to save");
-      notify.toast.success("Email provider saved");
+      toast.success("Email provider saved");
       onComplete();
     } catch {
-      notify.toast.error("Failed to save email config");
+      toast.error("Failed to save email config");
     } finally {
       setLoading(false);
     }
@@ -585,10 +585,10 @@ function BackupStep({
         }),
       });
       if (!res.ok) throw new Error("Failed to save");
-      notify.toast.success("Backup storage saved");
+      toast.success("Backup storage saved");
       onComplete();
     } catch {
-      notify.toast.error("Failed to save backup config");
+      toast.error("Failed to save backup config");
     } finally {
       setLoading(false);
     }
@@ -718,10 +718,10 @@ function GithubStep({
         }),
       });
       if (!res.ok) throw new Error("Failed to save");
-      notify.toast.success("GitHub App saved");
+      toast.success("GitHub App saved");
       onComplete();
     } catch {
-      notify.toast.error("Failed to save GitHub config");
+      toast.error("Failed to save GitHub config");
     } finally {
       setLoading(false);
     }

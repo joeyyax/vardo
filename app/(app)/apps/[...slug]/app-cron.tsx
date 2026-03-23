@@ -12,7 +12,7 @@ import {
   Power,
   PowerOff,
 } from "lucide-react";
-import { notify } from "@/lib/notify";
+import { toast } from "@/lib/messenger";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -165,17 +165,17 @@ export function CronManager({ appId, orgId }: Props) {
       });
 
       if (res.ok) {
-        notify.toast.success(editId ? "Cron job updated" : "Cron job created");
+        toast.success(editId ? "Cron job updated" : "Cron job created");
         setSheetOpen(false);
         fetchJobs();
       } else {
         const err = await res.json();
-        notify.toast.error("Couldn't save cron job", {
+        toast.error("Couldn't save cron job", {
           description: err.error || "Check the schedule expression",
         });
       }
     } catch {
-      notify.toast.error("Couldn't save cron job", {
+      toast.error("Couldn't save cron job", {
         description: "Check your connection and try again",
       });
     } finally {
@@ -193,17 +193,17 @@ export function CronManager({ appId, orgId }: Props) {
         body: JSON.stringify({ id: deleteId }),
       });
       if (res.ok) {
-        notify.toast.success("Cron job deleted");
+        toast.success("Cron job deleted");
         setDeleteId(null);
         fetchJobs();
       } else {
         const err = await res.json().catch(() => ({}));
-        notify.toast.error("Couldn't delete cron job", {
+        toast.error("Couldn't delete cron job", {
           description: err.error,
         });
       }
     } catch {
-      notify.toast.error("Couldn't delete cron job", {
+      toast.error("Couldn't delete cron job", {
         description: "Check your connection and try again",
       });
     } finally {
@@ -219,16 +219,16 @@ export function CronManager({ appId, orgId }: Props) {
         body: JSON.stringify({ id, enabled }),
       });
       if (res.ok) {
-        notify.toast.success(enabled ? "Cron job enabled" : "Cron job paused");
+        toast.success(enabled ? "Cron job enabled" : "Cron job paused");
         fetchJobs();
       } else {
         const err = await res.json().catch(() => ({}));
-        notify.toast.error("Couldn't update cron job", {
+        toast.error("Couldn't update cron job", {
           description: err.error,
         });
       }
     } catch {
-      notify.toast.error("Couldn't update cron job", {
+      toast.error("Couldn't update cron job", {
         description: "Check your connection and try again",
       });
     }
