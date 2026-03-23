@@ -12,6 +12,8 @@ import {
   Link,
   Clock,
   Timer,
+  Check,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -296,41 +298,51 @@ export function InstancesSettings() {
             stay aware of each other's health.
           </p>
 
-          <div className="space-y-3">
-            <h3 className="text-sm font-medium">Features</h3>
-            <ul className="text-sm text-muted-foreground space-y-2">
-              <li>
+          <ul className="text-sm space-y-2.5">
+            <li className="flex items-start gap-2.5">
+              <Check className="size-4 text-status-success shrink-0 mt-0.5" />
+              <span className="text-muted-foreground">
                 <span className="font-medium text-foreground">Project sync</span>{" "}
-                — project manifests replicate across instances so each node
-                knows what's deployed where
-              </li>
-              <li>
+                — manifests replicate so each node knows what's deployed where
+              </span>
+            </li>
+            <li className="flex items-start gap-2.5">
+              <Check className="size-4 text-status-success shrink-0 mt-0.5" />
+              <span className="text-muted-foreground">
                 <span className="font-medium text-foreground">Heartbeat monitoring</span>{" "}
-                — instances ping each other and surface online/offline status
-                in the dashboard
-              </li>
-              <li>
+                — instances ping each other, online/offline status in the dashboard
+              </span>
+            </li>
+            <li className="flex items-start gap-2.5">
+              <Check className="size-4 text-status-success shrink-0 mt-0.5" />
+              <span className="text-muted-foreground">
                 <span className="font-medium text-foreground">One-click pairing</span>{" "}
-                — generate an invite token, paste it on the other instance,
-                WireGuard configures itself on both sides
-              </li>
-              <li>
+                — generate a token, paste it on the other side, WireGuard configures itself
+              </span>
+            </li>
+            <li className="flex items-start gap-2.5">
+              <Check className="size-4 text-status-success shrink-0 mt-0.5" />
+              <span className="text-muted-foreground">
                 <span className="font-medium text-foreground">End-to-end encrypted</span>{" "}
-                — all traffic travels through WireGuard, no data leaves the
-                tunnel unencrypted
-              </li>
-            </ul>
-          </div>
+                — all traffic through WireGuard, nothing leaves the tunnel unencrypted
+              </span>
+            </li>
+          </ul>
 
-          <div className="space-y-3">
-            <h3 className="text-sm font-medium">Good to know</h3>
-            <p className="text-sm text-muted-foreground">
-              The mesh only carries Vardo API traffic — project manifests,
-              heartbeats and sync data. It doesn't expose ports, route internet
-              traffic or replace SSH. Think of it as a private backplane
-              between your instances, not a VPN.
-            </p>
-          </div>
+          <ul className="text-sm space-y-2.5">
+            <li className="flex items-start gap-2.5">
+              <X className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" />
+              <span className="text-muted-foreground">Not a VPN — doesn't route internet traffic</span>
+            </li>
+            <li className="flex items-start gap-2.5">
+              <X className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" />
+              <span className="text-muted-foreground">Doesn't expose ports or replace SSH</span>
+            </li>
+            <li className="flex items-start gap-2.5">
+              <X className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" />
+              <span className="text-muted-foreground">Only carries Vardo API traffic — manifests, heartbeats and sync</span>
+            </li>
+          </ul>
         </div>
 
         {/* Right column — peer list + invites */}
