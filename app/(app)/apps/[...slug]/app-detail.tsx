@@ -2588,18 +2588,27 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           />
         </TabsContent>
 
-        <TabsContent value="volumes" className="pt-4">
+        <TabsContent value="volumes" className="pt-4 space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Persistent volumes survive redeploys and container restarts. Data in non-persistent volumes is ephemeral.
+          </p>
           <VolumesPanel appId={app.id} orgId={orgId} />
         </TabsContent>
 
         {featureFlags?.cron !== false && (
-          <TabsContent value="cron" className="pt-4">
+          <TabsContent value="cron" className="pt-4 space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Schedule commands to run inside this app&apos;s container on a fixed interval. Uses standard cron syntax.
+            </p>
             <CronManager appId={app.id} orgId={orgId} />
           </TabsContent>
         )}
 
         {featureFlags?.terminal !== false && (
-          <TabsContent value="terminal" className="pt-4">
+          <TabsContent value="terminal" className="pt-4 space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Interactive shell session inside the running container. Changes to the filesystem are lost on redeploy unless written to a persistent volume.
+            </p>
             <AppTerminal key={`terminal-${selectedEnvId}`} appId={app.id} orgId={orgId} />
           </TabsContent>
         )}

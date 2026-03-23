@@ -27,6 +27,10 @@ export default async function BackupsPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Backups</h1>
       </PageToolbar>
 
+      <p className="text-sm text-muted-foreground max-w-2xl">
+        Backups snapshot your app volumes to remote storage on a schedule. Each snapshot can be restored with one click. Create jobs to select which apps to back up and how often.
+      </p>
+
       <BackupManager orgId={orgId} apps={appList} />
     </div>
   );
