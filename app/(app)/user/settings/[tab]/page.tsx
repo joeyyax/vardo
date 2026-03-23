@@ -10,7 +10,7 @@ import {
 import { ThemeSwitcher } from "../theme-switcher";
 import { GitHubConnection } from "../github-connection";
 
-const VALID_TABS = ["profile", "auth", "tokens", "connections", "appearance"] as const;
+const VALID_TABS = ["profile", "auth", "tokens", "connections"] as const;
 type ValidTab = (typeof VALID_TABS)[number];
 
 export default async function UserSettingsTabPage({
@@ -40,7 +40,12 @@ export default async function UserSettingsTabPage({
 function TabContent({ tab, orgId }: { tab: ValidTab; orgId: string | null }) {
   switch (tab) {
     case "profile":
-      return <AccountInfo />;
+      return (
+        <div className="space-y-8">
+          <AccountInfo />
+          <ThemeSwitcher />
+        </div>
+      );
     case "auth":
       return (
         <div className="space-y-8">
@@ -63,7 +68,5 @@ function TabContent({ tab, orgId }: { tab: ValidTab; orgId: string | null }) {
       return <ApiTokens orgId={orgId} />;
     case "connections":
       return <GitHubConnection />;
-    case "appearance":
-      return <ThemeSwitcher />;
   }
 }

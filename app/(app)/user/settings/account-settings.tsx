@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { authClient, useSession } from "@/lib/auth/client";
 
 // ---------------------------------------------------------------------------
@@ -61,34 +62,35 @@ export function AccountInfo() {
   }
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h2 className="text-base font-semibold">Account</h2>
-      </div>
+    <Card className="squircle rounded-lg">
+      <CardHeader>
+        <CardTitle>Account</CardTitle>
+      </CardHeader>
+      <CardContent>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-2">
+              <Label htmlFor="profile-name">Name</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="profile-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  onBlur={() => {
+                    if (name.trim() && name !== sessionData?.user?.name) handleSaveName();
+                  }}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleSaveName(); }}
+                />
+                {saving && <Loader2 className="size-4 animate-spin text-muted-foreground mt-2.5" />}
+              </div>
+            </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="grid gap-2">
-          <Label htmlFor="profile-name">Name</Label>
-          <div className="flex gap-2">
-            <Input
-              id="profile-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onBlur={() => {
-                if (name.trim() && name !== sessionData?.user?.name) handleSaveName();
-              }}
-              onKeyDown={(e) => { if (e.key === "Enter") handleSaveName(); }}
-            />
-            {saving && <Loader2 className="size-4 animate-spin text-muted-foreground mt-2.5" />}
+            <div className="grid gap-2">
+              <Label>Email</Label>
+              <Input value={sessionData?.user?.email || ""} disabled />
+            </div>
           </div>
-        </div>
-
-        <div className="grid gap-2">
-          <Label>Email</Label>
-          <Input value={sessionData?.user?.email || ""} disabled />
-        </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -138,82 +140,81 @@ export function PasswordManagement() {
   }
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h2 className="text-base font-semibold">Password</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          Change your account password.
-        </p>
-      </div>
+    <Card className="squircle rounded-lg">
+      <CardHeader>
+        <CardTitle>Password</CardTitle>
+        <CardDescription>Change your account password.</CardDescription>
+      </CardHeader>
+      <CardContent>
+          <form onSubmit={handleChangePassword} className="space-y-3 max-w-sm">
+            <div className="space-y-1.5">
+              <Label htmlFor="current-password">Current password</Label>
+              <div className="relative">
+                <Input
+                  id="current-password"
+                  type={showCurrent ? "text" : "password"}
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowCurrent(!showCurrent)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showCurrent ? (
+                    <EyeOff className="size-4" />
+                  ) : (
+                    <Eye className="size-4" />
+                  )}
+                </button>
+              </div>
+            </div>
 
-      <form onSubmit={handleChangePassword} className="space-y-3 max-w-sm">
-        <div className="space-y-1.5">
-          <Label htmlFor="current-password">Current password</Label>
-          <div className="relative">
-            <Input
-              id="current-password"
-              type={showCurrent ? "text" : "password"}
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-              required
-            />
-            <button
-              type="button"
-              onClick={() => setShowCurrent(!showCurrent)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            >
-              {showCurrent ? (
-                <EyeOff className="size-4" />
-              ) : (
-                <Eye className="size-4" />
-              )}
-            </button>
-          </div>
-        </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="new-password">New password</Label>
+              <div className="relative">
+                <Input
+                  id="new-password"
+                  type={showNew ? "text" : "password"}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  minLength={8}
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNew(!showNew)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showNew ? (
+                    <EyeOff className="size-4" />
+                  ) : (
+                    <Eye className="size-4" />
+                  )}
+                </button>
+              </div>
+            </div>
 
-        <div className="space-y-1.5">
-          <Label htmlFor="new-password">New password</Label>
-          <div className="relative">
-            <Input
-              id="new-password"
-              type={showNew ? "text" : "password"}
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              minLength={8}
-              required
-            />
-            <button
-              type="button"
-              onClick={() => setShowNew(!showNew)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            >
-              {showNew ? (
-                <EyeOff className="size-4" />
-              ) : (
-                <Eye className="size-4" />
-              )}
-            </button>
-          </div>
-        </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="confirm-password">Confirm new password</Label>
+              <Input
+                id="confirm-password"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                minLength={8}
+                required
+              />
+            </div>
 
-        <div className="space-y-1.5">
-          <Label htmlFor="confirm-password">Confirm new password</Label>
-          <Input
-            id="confirm-password"
-            type="password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            minLength={8}
-            required
-          />
-        </div>
-
-        <Button type="submit" size="sm" disabled={saving}>
-          {saving && <Loader2 className="mr-1.5 size-4 animate-spin" />}
-          Change password
-        </Button>
-      </form>
-    </div>
+            <Button type="submit" size="sm" disabled={saving}>
+              {saving && <Loader2 className="mr-1.5 size-4 animate-spin" />}
+              Change password
+            </Button>
+          </form>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -303,15 +304,12 @@ export function TwoFactorAuth() {
   }
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h2 className="text-base font-semibold">Two-factor authentication</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          Add an extra layer of security to your account with TOTP.
-        </p>
-      </div>
-
-      <div className="rounded-lg border bg-card p-4">
+    <Card className="squircle rounded-lg">
+      <CardHeader>
+        <CardTitle>Two-factor authentication</CardTitle>
+        <CardDescription>Add an extra layer of security to your account with TOTP.</CardDescription>
+      </CardHeader>
+      <CardContent>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             {isEnabled ? (
@@ -438,8 +436,8 @@ export function TwoFactorAuth() {
             </div>
           </div>
         )}
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -510,20 +508,18 @@ export function ActiveSessions() {
   }
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h2 className="text-base font-semibold">Active sessions</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          Manage your active sessions across devices.
-        </p>
-      </div>
-
+    <Card className="squircle rounded-lg">
+      <CardHeader>
+        <CardTitle>Active sessions</CardTitle>
+        <CardDescription>Manage your active sessions across devices.</CardDescription>
+      </CardHeader>
+      <CardContent>
       {loading ? (
-        <div className="flex items-center justify-center rounded-lg border border-dashed p-8">
+        <div className="flex items-center justify-center p-8">
           <Loader2 className="size-5 animate-spin text-muted-foreground" />
         </div>
       ) : sessions.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed p-8">
+        <div className="flex flex-col items-center justify-center gap-2 p-8">
           <Monitor className="size-8 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">No active sessions.</p>
         </div>
@@ -534,7 +530,7 @@ export function ActiveSessions() {
             return (
               <div
                 key={s.id}
-                className="flex items-center justify-between rounded-lg border bg-card p-3"
+                className="flex items-center justify-between rounded-lg border p-3"
               >
                 <div className="flex items-center gap-3 min-w-0">
                   <Monitor className="size-4 shrink-0 text-muted-foreground" />
@@ -574,7 +570,8 @@ export function ActiveSessions() {
           })}
         </div>
       )}
-    </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -674,27 +671,27 @@ export function ApiTokens({ orgId }: { orgId: string }) {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-base font-semibold">API tokens</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Manage API tokens for programmatic access.
-          </p>
+    <Card className="squircle rounded-lg">
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle>API tokens</CardTitle>
+            <CardDescription>Manage API tokens for programmatic access.</CardDescription>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setShowCreate(!showCreate);
+              setCreatedToken(null);
+            }}
+          >
+            <Plus className="mr-1.5 size-4" />
+            New token
+          </Button>
         </div>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => {
-            setShowCreate(!showCreate);
-            setCreatedToken(null);
-          }}
-        >
-          <Plus className="mr-1.5 size-4" />
-          New token
-        </Button>
-      </div>
-
+      </CardHeader>
+      <CardContent>
       {/* Created token display */}
       {createdToken && (
         <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-4 space-y-2">
@@ -745,11 +742,11 @@ export function ApiTokens({ orgId }: { orgId: string }) {
 
       {/* Token list */}
       {loading ? (
-        <div className="flex items-center justify-center rounded-lg border border-dashed p-8">
+        <div className="flex items-center justify-center p-8">
           <Loader2 className="size-5 animate-spin text-muted-foreground" />
         </div>
       ) : tokens.length === 0 && !showCreate ? (
-        <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed p-8">
+        <div className="flex flex-col items-center justify-center gap-2 p-8">
           <Key className="size-8 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">
             No API tokens created yet.
@@ -760,7 +757,7 @@ export function ApiTokens({ orgId }: { orgId: string }) {
           {tokens.map((token) => (
             <div
               key={token.id}
-              className="flex items-center justify-between rounded-lg border bg-card p-3"
+              className="flex items-center justify-between rounded-lg border p-3"
             >
               <div className="min-w-0">
                 <p className="text-sm font-medium truncate">{token.name}</p>
@@ -786,6 +783,7 @@ export function ApiTokens({ orgId }: { orgId: string }) {
           ))}
         </div>
       )}
-    </div>
+      </CardContent>
+    </Card>
   );
 }
