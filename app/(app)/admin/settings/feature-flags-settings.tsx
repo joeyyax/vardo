@@ -7,13 +7,6 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Loader2 } from "lucide-react";
 import { toast } from "@/lib/messenger";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-
 type FlagState = {
   flag: string;
   label: string;
@@ -22,15 +15,7 @@ type FlagState = {
   envOverride: boolean;
 };
 
-type FlagGroup = {
-  title: string;
-  flags: string[];
-};
-
-const FLAG_GROUPS: FlagGroup[] = [
-  { title: "App features", flags: ["terminal", "environments", "backups", "cron"] },
-  { title: "Authentication", flags: ["passwordAuth"] },
-];
+const ALL_FLAGS = ["terminal", "environments", "backups", "cron", "mesh", "passwordAuth"];
 
 export function FeatureFlagsSettings() {
   const [loading, setLoading] = useState(true);
@@ -101,45 +86,33 @@ export function FeatureFlagsSettings() {
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {FLAG_GROUPS.map((group) => {
-          const groupFlags = flags.filter((f) => group.flags.includes(f.flag));
-          if (groupFlags.length === 0) return null;
-
-          return (
-            <Card key={group.title} className="squircle rounded-lg">
-              <CardHeader>
-                <CardTitle className="text-sm">{group.title}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {groupFlags.map((f) => (
-                  <div key={f.flag} className="flex items-center justify-between rounded-lg border p-4">
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-2">
-                        <Label htmlFor={`flag-${f.flag}`} className="text-sm font-medium">
-                          {f.label}
-                        </Label>
-                        {f.envOverride && (
-                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                            Set by environment variable
-                          </Badge>
-                        )}
-                      </div>
-                      <div className="text-xs text-muted-foreground">{f.description}</div>
-                    </div>
-                    <Switch
-                      id={`flag-${f.flag}`}
-                      checked={f.enabled}
-                      onCheckedChange={() => toggleFlag(f.flag)}
-                      disabled={f.envOverride}
-                      aria-label={`${f.enabled ? "Disable" : "Enable"} ${f.label}`}
-                    />
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          );
-        })}
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {flags
+          .filter((f) => ALL_FLAGS.includes(f.flag))
+          .map((f) => (
+            <div key={f.flag} className="flex items-center justify-between rounded-lg border p-4">
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor={`flag-${f.flag}`} className="text-sm font-medium">
+                    {f.label}
+                  </Label>
+                  {f.envOverride && (
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                      Set by environment variable
+                    </Badge>
+                  )}
+                </div>
+                <div className="text-xs text-muted-foreground">{f.description}</div>
+              </div>
+              <Switch
+                id={`flag-${f.flag}`}
+                checked={f.enabled}
+                onCheckedChange={() => toggleFlag(f.flag)}
+                disabled={f.envOverride}
+                aria-label={`${f.enabled ? "Disable" : "Enable"} ${f.label}`}
+              />
+            </div>
+          ))}
 
         <Button type="submit" className="squircle" disabled={saving} aria-label="Save feature flags">
           {saving && <Loader2 className="size-4 animate-spin" />}
