@@ -46,20 +46,19 @@ export async function POST(request: NextRequest) {
       }
     );
 
-    // Override transfer type to clone
-    bundle.transferType = "clone";
+    const cloneBundle = { ...bundle, transferType: "clone" as const };
 
     if (targetPeerId) {
       // Clone to a different peer
       const result = await meshJsonFetch(targetPeerId, "/api/v1/mesh/clone", {
         method: "POST",
-        body: JSON.stringify({ bundle, orgId }),
+        body: JSON.stringify({ bundle: cloneBundle, orgId }),
       });
       return NextResponse.json(result, { status: 201 });
     }
 
     // Clone locally
-    const result = await importProjectBundle(orgId, bundle, "development");
+    const result = await importProjectBundle(orgId, cloneBundle, "development");
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
     return handleRouteError(error, "Error cloning project");

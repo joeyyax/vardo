@@ -3,21 +3,12 @@ import { z } from "zod";
 import { handleRouteError } from "@/lib/api/error-response";
 import { requireMeshPeer } from "@/lib/mesh/auth";
 import { importProjectBundle } from "@/lib/mesh/transfers";
+import { projectBundleSchema } from "@/lib/mesh/bundle-schema";
 import type { ProjectBundle } from "@/lib/mesh/transfers";
 
 const cloneSchema = z.object({
-  bundle: z.object({
-    sourceInstanceId: z.string(),
-    project: z.object({
-      name: z.string().min(1),
-      displayName: z.string().min(1),
-      description: z.string().nullable(),
-      color: z.string().nullable(),
-    }),
-    apps: z.array(z.any()),
-    gitRef: z.string().nullable(),
+  bundle: projectBundleSchema.extend({
     transferType: z.literal("clone"),
-    volumeBackupIds: z.array(z.string()).optional(),
   }),
   orgId: z.string().min(1),
 });
@@ -43,7 +34,6 @@ export async function POST(request: NextRequest) {
 
     const { bundle, orgId } = parsed.data;
 
-    // Clone always creates a fresh "development" deployment
     const result = await importProjectBundle(
       orgId,
       bundle as ProjectBundle,

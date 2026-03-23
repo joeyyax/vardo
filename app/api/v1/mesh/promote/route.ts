@@ -3,51 +3,14 @@ import { z } from "zod";
 import { handleRouteError } from "@/lib/api/error-response";
 import { requireMeshPeer } from "@/lib/mesh/auth";
 import { importProjectBundle } from "@/lib/mesh/transfers";
+import { projectBundleSchema } from "@/lib/mesh/bundle-schema";
 import type { ProjectBundle } from "@/lib/mesh/transfers";
 
 const promoteSchema = z.object({
-  bundle: z.object({
-    sourceInstanceId: z.string(),
-    project: z.object({
-      name: z.string().min(1),
-      displayName: z.string().min(1),
-      description: z.string().nullable(),
-      color: z.string().nullable(),
-    }),
-    apps: z.array(z.object({
-      name: z.string().min(1),
-      displayName: z.string().min(1),
-      description: z.string().nullable(),
-      source: z.enum(["git", "direct"]),
-      deployType: z.enum(["compose", "dockerfile", "image", "static", "nixpacks"]),
-      gitUrl: z.string().nullable(),
-      gitBranch: z.string().nullable(),
-      imageName: z.string().nullable(),
-      composeContent: z.string().nullable(),
-      composeFilePath: z.string().nullable(),
-      rootDirectory: z.string().nullable(),
-      autoTraefikLabels: z.boolean().nullable(),
-      containerPort: z.number().nullable(),
-      restartPolicy: z.string().nullable(),
-      exposedPorts: z.array(z.object({
-        internal: z.number(),
-        external: z.number().optional(),
-        protocol: z.string().optional(),
-        description: z.string().optional(),
-      })).nullable(),
-      envContent: z.string().nullable(),
-      sortOrder: z.number().nullable(),
-      volumes: z.array(z.object({
-        name: z.string(),
-        mountPath: z.string(),
-        persistent: z.boolean(),
-      })),
-    })),
-    gitRef: z.string().nullable(),
+  bundle: projectBundleSchema.extend({
     transferType: z.literal("promote"),
-    volumeBackupIds: z.array(z.string()).optional(),
   }),
-  environment: z.string().min(1),
+  environment: z.enum(["production", "staging", "development"]),
   orgId: z.string().min(1),
 });
 
