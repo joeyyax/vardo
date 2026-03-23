@@ -60,6 +60,7 @@ import { EnvEditor } from "@/components/env-editor";
 import { AppMetrics } from "@/app/(app)/apps/[...slug]/app-metrics";
 import { ProjectMetrics } from "./project-metrics";
 import { ProjectInstances } from "@/components/mesh/project-instances";
+import { AppBackupHistory } from "@/components/backups/app-backup-history";
 import type { MeshPeerSummary, ProjectInstanceSummary } from "@/lib/mesh/types";
 
 // ---------------------------------------------------------------------------
@@ -1252,6 +1253,9 @@ export function ProjectDetail({
           <TabsTrigger value="metrics">
             Metrics
           </TabsTrigger>
+          <TabsTrigger value="backups">
+            Backups
+          </TabsTrigger>
           {meshEnabled && (
             <TabsTrigger value="instances">
               Instances
@@ -1322,6 +1326,24 @@ export function ProjectDetail({
 
         <TabsContent value="metrics" className="pt-4">
           <ProjectMetricsTab apps={topLevelApps} orgId={orgId} projectId={project.id} />
+        </TabsContent>
+
+        <TabsContent value="backups" className="pt-4 space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Volume snapshots for apps in this project. Download or restore any backup.
+          </p>
+          {topLevelApps.length > 0 ? (
+            <div className="space-y-4">
+              {topLevelApps.map((app) => (
+                <div key={app.id} className="space-y-2">
+                  <h3 className="text-sm font-medium">{app.displayName}</h3>
+                  <AppBackupHistory orgId={orgId} appId={app.id} />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No apps in this project yet.</p>
+          )}
         </TabsContent>
 
         {meshEnabled && (
