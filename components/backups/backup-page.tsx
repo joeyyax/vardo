@@ -86,60 +86,6 @@ export function BackupPage({
         <AutoBackupBanner target={autoTarget} jobs={autoJobs} scope={scope} />
       )}
 
-      {/* Info sections */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="space-y-3">
-          <h3 className="text-sm font-medium">How it works</h3>
-          <ul className="text-sm space-y-2">
-            <li className="flex items-start gap-2.5">
-              <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
-              <span className="text-muted-foreground">
-                <span className="font-medium text-foreground">Automatic</span>{" "}
-                — apps with persistent volumes get daily snapshots by default
-              </span>
-            </li>
-            <li className="flex items-start gap-2.5">
-              <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
-              <span className="text-muted-foreground">
-                <span className="font-medium text-foreground">Offsite</span>{" "}
-                — snapshots are uploaded to your S3-compatible provider, not stored on this server
-              </span>
-            </li>
-            <li className="flex items-start gap-2.5">
-              <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
-              <span className="text-muted-foreground">
-                <span className="font-medium text-foreground">Tiered retention</span>{" "}
-                — keep daily, weekly, monthly and yearly snapshots independently per job
-              </span>
-            </li>
-            <li className="flex items-start gap-2.5">
-              <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
-              <span className="text-muted-foreground">
-                <span className="font-medium text-foreground">One-click restore</span>{" "}
-                — any snapshot can be restored directly into the running volume
-              </span>
-            </li>
-          </ul>
-        </div>
-        <div className="space-y-3">
-          <h3 className="text-sm font-medium">Good to know</h3>
-          <ul className="text-sm space-y-2">
-            <li className="flex items-start gap-2.5">
-              <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
-              <span className="text-muted-foreground">Runs live — no downtime, no container restarts</span>
-            </li>
-            <li className="flex items-start gap-2.5">
-              <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
-              <span className="text-muted-foreground">Manual backups can be triggered anytime</span>
-            </li>
-            <li className="flex items-start gap-2.5">
-              <Info className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
-              <span className="text-muted-foreground">Only persistent volumes are backed up — ephemeral data is excluded</span>
-            </li>
-          </ul>
-        </div>
-      </div>
-
       {/* Storage targets with inline jobs */}
       <section className="space-y-3">
         <div className="flex items-center justify-between">
@@ -219,6 +165,60 @@ export function BackupPage({
 
         <BackupHistory history={history} orgId={orgId} onRefresh={fetchData} />
       </section>
+
+      {/* Info sections */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="space-y-3">
+          <h3 className="text-sm font-medium">How it works</h3>
+          <ul className="text-sm space-y-2">
+            <li className="flex items-start gap-2.5">
+              <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
+              <span className="text-muted-foreground">
+                <span className="font-medium text-foreground">Automatic</span>{" "}
+                — apps with persistent volumes get daily snapshots by default
+              </span>
+            </li>
+            <li className="flex items-start gap-2.5">
+              <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
+              <span className="text-muted-foreground">
+                <span className="font-medium text-foreground">Offsite</span>{" "}
+                — snapshots are uploaded to your S3-compatible provider, not stored on this server
+              </span>
+            </li>
+            <li className="flex items-start gap-2.5">
+              <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
+              <span className="text-muted-foreground">
+                <span className="font-medium text-foreground">Tiered retention</span>{" "}
+                — keep daily, weekly, monthly and yearly snapshots independently per job
+              </span>
+            </li>
+            <li className="flex items-start gap-2.5">
+              <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
+              <span className="text-muted-foreground">
+                <span className="font-medium text-foreground">One-click restore</span>{" "}
+                — any snapshot can be restored directly into the running volume
+              </span>
+            </li>
+          </ul>
+        </div>
+        <div className="space-y-3">
+          <h3 className="text-sm font-medium">Good to know</h3>
+          <ul className="text-sm space-y-2">
+            <li className="flex items-start gap-2.5">
+              <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
+              <span className="text-muted-foreground">Runs live — no downtime, no container restarts</span>
+            </li>
+            <li className="flex items-start gap-2.5">
+              <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
+              <span className="text-muted-foreground">Manual backups can be triggered anytime</span>
+            </li>
+            <li className="flex items-start gap-2.5">
+              <Info className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
+              <span className="text-muted-foreground">Only persistent volumes are backed up — ephemeral data is excluded</span>
+            </li>
+          </ul>
+        </div>
+      </div>
 
       {/* Forms */}
       <TargetForm
