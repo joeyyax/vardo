@@ -34,34 +34,34 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
   terminal: {
     env: "FEATURE_TERMINAL",
     label: "Terminal",
-    description: "Web-based terminal access to running containers",
+    description: "Web-based shell access to running containers. Disabling removes the Terminal tab from app detail pages.",
   },
   environments: {
     env: "FEATURE_ENVIRONMENTS",
     label: "Environments",
-    description: "Multiple deployment environments per app (staging, preview)",
+    description: "Multiple deployment environments per app (staging, preview). Disabling limits apps to a single production environment.",
   },
   backups: {
     env: "FEATURE_BACKUPS",
     label: "Backups",
-    description: "Scheduled volume backups with S3-compatible storage",
+    description: "Scheduled volume snapshots to S3-compatible storage. Also required for mesh volume transfers between instances.",
   },
   cron: {
     env: "FEATURE_CRON",
     label: "Cron Jobs",
-    description: "Scheduled command execution inside containers",
+    description: "Scheduled command execution inside containers. Disabling removes the Cron tab from app detail pages.",
   },
   passwordAuth: {
     env: "FEATURE_PASSWORD_AUTH",
     label: "Password Auth",
     description:
-      "Email/password authentication for sign-in and onboarding",
+      "Email/password sign-in and onboarding. When disabled, users must authenticate via passkey, magic link or GitHub.",
   },
   mesh: {
     env: "FEATURE_MESH",
     label: "Instances",
     description:
-      "Connect multiple Vardo instances over encrypted WireGuard tunnels. Volume transfers require backups to be enabled.",
+      "Connect multiple Vardo instances over encrypted WireGuard tunnels. Enables promote, pull and clone between instances.",
   },
 };
 

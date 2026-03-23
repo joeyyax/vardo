@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2 } from "lucide-react";
+import { Loader2, Check, Info } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { MASK_SENTINEL } from "@/lib/mask-secrets";
 import { useSystemSetting } from "./use-system-setting";
@@ -101,7 +101,7 @@ export function BackupSettings() {
       <div className="space-y-1">
         <h2 className="text-lg font-medium">Backup storage</h2>
         <p className="text-sm text-muted-foreground">
-          Configure where automated backups are stored — S3, R2, or B2 compatible storage.
+          Configure where volume snapshots are stored. Backups run on the schedules you set per-project in the Backups page.
         </p>
       </div>
 
@@ -274,6 +274,60 @@ export function BackupSettings() {
         </form>
       </CardContent>
     </Card>
+
+      {/* How backups work */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="space-y-3">
+          <h3 className="text-sm font-medium">How it works</h3>
+          <ul className="text-sm space-y-2">
+            <li className="flex items-start gap-2.5">
+              <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
+              <span className="text-muted-foreground">
+                <span className="font-medium text-foreground">Automatic</span>{" "}
+                — apps with persistent volumes get daily snapshots by default
+              </span>
+            </li>
+            <li className="flex items-start gap-2.5">
+              <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
+              <span className="text-muted-foreground">
+                <span className="font-medium text-foreground">Offsite</span>{" "}
+                — snapshots are uploaded to your S3-compatible provider, not stored on this server
+              </span>
+            </li>
+            <li className="flex items-start gap-2.5">
+              <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
+              <span className="text-muted-foreground">
+                <span className="font-medium text-foreground">Tiered retention</span>{" "}
+                — keep daily, weekly, monthly and yearly snapshots independently per job
+              </span>
+            </li>
+            <li className="flex items-start gap-2.5">
+              <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
+              <span className="text-muted-foreground">
+                <span className="font-medium text-foreground">One-click restore</span>{" "}
+                — any snapshot can be restored directly into the running volume
+              </span>
+            </li>
+          </ul>
+        </div>
+        <div className="space-y-3">
+          <h3 className="text-sm font-medium">Good to know</h3>
+          <ul className="text-sm space-y-2">
+            <li className="flex items-start gap-2.5">
+              <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
+              <span className="text-muted-foreground">Runs live — no downtime, no container restarts</span>
+            </li>
+            <li className="flex items-start gap-2.5">
+              <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
+              <span className="text-muted-foreground">Manual backups can be triggered anytime from the Backups page</span>
+            </li>
+            <li className="flex items-start gap-2.5">
+              <Info className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
+              <span className="text-muted-foreground">Only persistent volumes are backed up — ephemeral data is excluded</span>
+            </li>
+          </ul>
+        </div>
+      </div>
     </div>
   );
 }

@@ -13,7 +13,7 @@ import {
   Clock,
   Timer,
   Check,
-  X,
+  Info,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -487,15 +487,15 @@ export function InstancesSettings() {
               <h3 className="text-sm font-medium">Good to know</h3>
               <ul className="text-sm space-y-2">
                 <li className="flex items-start gap-2.5">
-                  <X className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
+                  <Info className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
                   <span className="text-muted-foreground">Not a VPN — doesn't route internet traffic</span>
                 </li>
                 <li className="flex items-start gap-2.5">
-                  <X className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
+                  <Info className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
                   <span className="text-muted-foreground">Doesn't expose ports or replace SSH</span>
                 </li>
                 <li className="flex items-start gap-2.5">
-                  <X className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
+                  <Info className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
                   <span className="text-muted-foreground">Only carries Vardo API traffic — manifests, heartbeats and sync</span>
                 </li>
               </ul>
