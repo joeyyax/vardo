@@ -158,6 +158,8 @@ services:
     restart: unless-stopped
     cap_add:
       - NET_ADMIN
+      # SYS_MODULE needed on kernels without wireguard built in (pre-5.6).
+      # Safe to remove on Ubuntu 20.04+, Debian 11+, modern Docker Desktop.
       - SYS_MODULE
     sysctls:
       - net.ipv4.conf.all.src_valid_mark=1
@@ -176,6 +178,7 @@ services:
       start_period: 10s
     networks:
       - internal
+    mem_limit: 64m
 
   promtail:
     container_name: vardo-promtail

@@ -7,4 +7,4 @@ export {
   getWgStatus,
 } from "./wireguard";
 export type { WgPeer } from "./wireguard";
-export { allocateIp, HUB_IP } from "./ip-allocator";
+export { allocateIp, toCidr, HUB_IP, HUB_CIDR } from "./ip-allocator";
