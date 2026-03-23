@@ -27,7 +27,7 @@ import {
   MetricsLine,
   useAppMetrics,
 } from "@/components/app-metrics-card";
-import { toast } from "sonner";
+import { toast } from "@/lib/messenger";
 import { PageToolbar } from "@/components/page-toolbar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";

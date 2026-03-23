@@ -28,7 +28,7 @@ import {
   Layers,
   History,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/messenger";
 import { PageToolbar } from "@/components/page-toolbar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

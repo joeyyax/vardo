@@ -16,7 +16,7 @@ import {
   BottomSheetFooter,
   BottomSheetClose,
 } from "@/components/ui/bottom-sheet";
-import { toast } from "sonner";
+import { toast } from "@/lib/messenger";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Globe,

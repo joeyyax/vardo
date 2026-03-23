@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { toast } from "sonner";
+import { toast } from "@/lib/messenger";
 import { Card, CardContent } from "@/components/ui/card";
 import { Loader2, Mail } from "lucide-react";
 
