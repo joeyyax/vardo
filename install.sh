@@ -594,17 +594,28 @@ generate_env() {
   fi
   # Development role: no domain prompts at all
 
-  # Generate secrets
-  local db_pass auth_secret enc_key webhook_secret
+  # Generate secrets + instance identity
+  local db_pass auth_secret enc_key webhook_secret instance_id
   db_pass=$(openssl rand -base64 32 | tr -d '/+=' | head -c 32)
   auth_secret=$(openssl rand -base64 32 | tr -d '/+=' | head -c 48)
   enc_key=$(openssl rand -hex 32)
   webhook_secret=$(openssl rand -hex 32)
+  if command -v uuidgen &>/dev/null; then
+    instance_id=$(uuidgen | tr '[:upper:]' '[:lower:]')
+  elif [ -f /proc/sys/kernel/random/uuid ]; then
+    instance_id=$(cat /proc/sys/kernel/random/uuid)
+  else
+    # RFC 4122 v4: set version (4) and variant (8/9/a/b) bits
+    local hex
+    hex=$(openssl rand -hex 16)
+    instance_id="${hex:0:8}-${hex:8:4}-4${hex:13:3}-$(printf '%x' $(( 0x${hex:16:2} & 0x3f | 0x80 )))${hex:18:2}-${hex:20:12}"
+  fi
 
   if [[ "$VARDO_ROLE" == "development" ]]; then
     # Dev .env — minimal, no TLS/domain config
     cat > "$env_file" <<EOF
 VARDO_ROLE=development
+VARDO_INSTANCE_ID=$instance_id
 DB_PASSWORD=$db_pass
 BETTER_AUTH_SECRET=$auth_secret
 ENCRYPTION_MASTER_KEY=$enc_key
@@ -614,6 +625,7 @@ EOF
     # Staging without domain — no TLS, no Traefik auth
     cat > "$env_file" <<EOF
 VARDO_ROLE=staging
+VARDO_INSTANCE_ID=$instance_id
 COMPOSE_PROFILES=production
 DB_PASSWORD=$db_pass
 BETTER_AUTH_SECRET=$auth_secret
@@ -628,6 +640,7 @@ EOF
 
     cat > "$env_file" <<EOF
 VARDO_ROLE=${VARDO_ROLE}
+VARDO_INSTANCE_ID=$instance_id
 COMPOSE_PROFILES=production
 VARDO_DOMAIN=${VARDO_DOMAIN}
 VARDO_BASE_DOMAIN=${VARDO_BASE_DOMAIN}

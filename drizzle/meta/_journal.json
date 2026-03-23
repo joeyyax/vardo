@@ -29,6 +29,13 @@
       "when": 1774229416199,
       "tag": "0003_unique_rocket_racer",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1774292931774,
+      "tag": "0004_mesh-peers",
+      "breakpoints": true
     }
   ]
 }

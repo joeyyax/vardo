@@ -11,7 +11,7 @@ import {
   unique,
   jsonb,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import type { ConfigSnapshot } from "@/lib/types/deploy-snapshot";
 
 // ---------------------------------------------------------------------------
@@ -80,6 +80,17 @@ export const notificationChannelTypeEnum = pgEnum("notification_channel_type", [
   "email",
   "webhook",
   "slack",
+]);
+
+export const meshPeerTypeEnum = pgEnum("mesh_peer_type", [
+  "persistent",
+  "dev",
+]);
+
+export const meshPeerStatusEnum = pgEnum("mesh_peer_status", [
+  "online",
+  "offline",
+  "unreachable",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -979,6 +990,7 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   }),
   apps: many(apps),
   groupEnvironments: many(groupEnvironments),
+  instances: many(projectInstances),
 }));
 
 export const appsRelations = relations(apps, ({ one, many }) => ({
@@ -1346,3 +1358,73 @@ export const systemSettings = pgTable("system_settings", {
   value: text("value").notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+// ---------------------------------------------------------------------------
+// Instance Mesh — peer registry (system-level, not org-scoped)
+// ---------------------------------------------------------------------------
+
+export const meshPeers = pgTable("mesh_peer", {
+  id: text("id").primaryKey(),
+  instanceId: text("instance_id").notNull().unique(),
+  name: text("name").notNull(),
+  type: meshPeerTypeEnum("type").notNull().default("persistent"),
+  status: meshPeerStatusEnum("status").notNull().default("offline"),
+  endpoint: text("endpoint"), // host:port for WireGuard (null for dev behind NAT)
+  publicKey: text("public_key").notNull().unique(),
+  allowedIps: text("allowed_ips").notNull(), // WireGuard AllowedIPs (CIDR)
+  internalIp: text("internal_ip").notNull(), // WireGuard tunnel address (e.g. 10.99.0.1)
+  apiUrl: text("api_url"), // reachable URL for mesh API calls over tunnel
+  lastSeenAt: timestamp("last_seen_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const meshPeersRelations = relations(meshPeers, ({ many }) => ({
+  projectInstances: many(projectInstances),
+}));
+
+// ---------------------------------------------------------------------------
+// Instance Mesh — project-to-instance-environment mapping
+// ---------------------------------------------------------------------------
+
+export const projectInstances = pgTable(
+  "project_instance",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    meshPeerId: text("mesh_peer_id").references(() => meshPeers.id, {
+      onDelete: "set null",
+    }),
+    environment: text("environment").notNull(), // production, staging, development, or custom
+    gitRef: text("git_ref"),
+    status: appStatusEnum("status").notNull().default("stopped"),
+    lastDeployedAt: timestamp("last_deployed_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    unique("project_instance_peer_env_uniq").on(
+      t.projectId,
+      t.meshPeerId,
+      t.environment
+    ),
+    index("project_instance_project_idx").on(t.projectId),
+    index("project_instance_peer_idx").on(t.meshPeerId),
+  ]
+);
+
+export const projectInstancesRelations = relations(
+  projectInstances,
+  ({ one }) => ({
+    project: one(projects, {
+      fields: [projectInstances.projectId],
+      references: [projects.id],
+    }),
+    meshPeer: one(meshPeers, {
+      fields: [projectInstances.meshPeerId],
+      references: [meshPeers.id],
+    }),
+  })
+);
