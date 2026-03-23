@@ -1,193 +1,291 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
 # Vardo — Self-hosted PaaS
-# Install with: curl -fsSL https://get.host.joeyyax.dev | bash
+# Install, update, diagnose, and manage your Vardo instance.
+#
+# Fresh install:  curl -fsSL https://get.host.joeyyax.dev | bash
+# After install:  sudo bash /opt/vardo/install.sh
+
+# ── Constants ─────────────────────────────────────────────────────────────────
+
+VARDO_DIR="/opt/vardo"
+COMPOSE_FILE="docker-compose.yml"
+REPO_URL="https://github.com/joeyyax/vardo.git"
 
 BOLD="\033[1m"
 DIM="\033[2m"
 GREEN="\033[32m"
 YELLOW="\033[33m"
 RED="\033[31m"
+CYAN="\033[36m"
 RESET="\033[0m"
 
-HOST_DIR="/opt/vardo"
-COMPOSE_FILE="docker-compose.yml"
-DNS_OK=false
+UNATTENDED=false
+AUTO_YES=false
+PURGE=false
+COMMAND=""
 
-log() { echo -e "${GREEN}▸${RESET} $1"; }
-warn() { echo -e "${YELLOW}▸${RESET} $1"; }
-error() { echo -e "${RED}▸${RESET} $1"; exit 1; }
+# ── Utilities ─────────────────────────────────────────────────────────────────
 
-# ── Preflight checks ──────────────────────────────────────────────────────────
+log()     { echo -e "  ${GREEN}✓${RESET} $1"; }
+warn()    { echo -e "  ${YELLOW}!${RESET} $1"; }
+fail()    { echo -e "  ${RED}✗${RESET} $1"; exit 1; }
+info()    { echo -e "  ${CYAN}·${RESET} $1"; }
+step()    { echo -e "\n${BOLD}  $1${RESET}"; }
+dimln()   { echo -e "  ${DIM}$1${RESET}"; }
 
-echo ""
-echo -e "${BOLD}  /\\   /__ _| |__ _| | ___${RESET}"
-echo -e "${BOLD}  \\ \\ / / _\` | \`__/ _\` |/ _ \\${RESET}"
-echo -e "${BOLD}   \\ V / (_| | | | (_| | (_) |${RESET}"
-echo -e "${BOLD}    \\_/ \\__,_|_|  \\__,_|\\___/${RESET}"
-echo ""
-echo -e "${DIM}  Deploy everything. Own everything.${RESET}"
-echo ""
-
-# Root check
-if [ "$EUID" -ne 0 ]; then
-  error "Please run as root: sudo bash install.sh"
-fi
-
-# ── System requirements ────────────────────────────────────────────────────────
-
-# OS check
-if [ -f /etc/os-release ]; then
-  . /etc/os-release
-  case "$ID" in
-    ubuntu)
-      MAJOR_VER=$(echo "$VERSION_ID" | cut -d. -f1)
-      if [ "$MAJOR_VER" -lt 22 ] 2>/dev/null; then
-        warn "Ubuntu $VERSION_ID detected — Ubuntu 22.04+ is recommended"
-      else
-        log "OS: Ubuntu $VERSION_ID"
-      fi
-      ;;
-    debian)
-      MAJOR_VER=$(echo "$VERSION_ID" | cut -d. -f1)
-      if [ "$MAJOR_VER" -lt 12 ] 2>/dev/null; then
-        warn "Debian $VERSION_ID detected — Debian 12+ is recommended"
-      else
-        log "OS: Debian $VERSION_ID"
-      fi
-      ;;
-    *)
-      warn "Detected $PRETTY_NAME — this script is tested on Ubuntu 22.04+ and Debian 12+"
-      warn "Continuing anyway, but some steps may not work as expected"
-      ;;
-  esac
-else
-  warn "Could not detect OS — this script is tested on Ubuntu 22.04+ and Debian 12+"
-fi
-
-# RAM check
-TOTAL_RAM_KB=$(grep MemTotal /proc/meminfo 2>/dev/null | awk '{print $2}' || echo "0")
-TOTAL_RAM_MB=$((TOTAL_RAM_KB / 1024))
-if [ "$TOTAL_RAM_MB" -gt 0 ] 2>/dev/null; then
-  if [ "$TOTAL_RAM_MB" -lt 1024 ]; then
-    error "Insufficient RAM: ${TOTAL_RAM_MB}MB detected, minimum 1GB required"
-  elif [ "$TOTAL_RAM_MB" -lt 2048 ]; then
-    warn "Low RAM: ${TOTAL_RAM_MB}MB detected — 2GB+ is recommended for production"
+confirm() {
+  if $UNATTENDED || $AUTO_YES; then return 0; fi
+  local prompt="${1:-Continue?}"
+  local default="${2:-n}"
+  local yn
+  if [[ "$default" == "y" ]]; then
+    read -p "  $prompt [Y/n] " -r yn < /dev/tty
+    [[ -z "$yn" || "$yn" =~ ^[Yy] ]]
   else
-    log "RAM: ${TOTAL_RAM_MB}MB"
+    read -p "  $prompt [y/N] " -r yn < /dev/tty
+    [[ "$yn" =~ ^[Yy] ]]
   fi
-fi
+}
 
-# Disk check
-AVAILABLE_DISK_KB=$(df / 2>/dev/null | tail -1 | awk '{print $4}')
-AVAILABLE_DISK_GB=$((AVAILABLE_DISK_KB / 1048576))
-if [ "$AVAILABLE_DISK_GB" -lt 20 ] 2>/dev/null; then
-  warn "Low disk space: ${AVAILABLE_DISK_GB}GB free — 20GB+ is recommended"
-else
-  log "Disk: ${AVAILABLE_DISK_GB}GB free"
-fi
+get_version() {
+  if [ -d "$VARDO_DIR/.git" ]; then
+    git -C "$VARDO_DIR" describe --tags --always 2>/dev/null \
+      || git -C "$VARDO_DIR" rev-parse --short HEAD 2>/dev/null \
+      || echo "unknown"
+  else
+    echo "unknown"
+  fi
+}
 
-# ── Swap file ──────────────────────────────────────────────────────────────────
+get_server_ip() {
+  curl -sf --max-time 5 https://api.ipify.org 2>/dev/null || echo ""
+}
 
-if [ "$TOTAL_RAM_MB" -gt 0 ] && [ "$TOTAL_RAM_MB" -lt 4096 ]; then
-  if ! swapon --show 2>/dev/null | grep -q .; then
-    log "Creating 2GB swap file (RAM is under 4GB)..."
-    fallocate -l 2G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none
-    chmod 600 /swapfile
-    mkswap /swapfile > /dev/null
-    if swapon /swapfile 2>/dev/null; then
-      if ! grep -q '/swapfile' /etc/fstab 2>/dev/null; then
-        echo '/swapfile none swap sw 0 0' >> /etc/fstab
-      fi
-      log "Swap enabled: 2GB"
+# Safely read a specific variable from .env without sourcing the whole file
+env_get() {
+  local key="$1" file="${2:-$VARDO_DIR/.env}"
+  [ -f "$file" ] && grep -m1 "^${key}=" "$file" 2>/dev/null | cut -d= -f2- || echo ""
+}
+
+# Load common env vars into the current scope for display purposes
+load_env_display() {
+  VARDO_DOMAIN="${VARDO_DOMAIN:-$(env_get VARDO_DOMAIN)}"
+  VARDO_BASE_DOMAIN="${VARDO_BASE_DOMAIN:-$(env_get VARDO_BASE_DOMAIN)}"
+}
+
+# ── Detection ─────────────────────────────────────────────────────────────────
+
+is_installed() {
+  [[ -d "$VARDO_DIR" && -f "$VARDO_DIR/$COMPOSE_FILE" && -f "$VARDO_DIR/.env" ]]
+}
+
+container_count() {
+  local status="${1:-running}"
+  local count
+  count=$(docker compose -f "$VARDO_DIR/$COMPOSE_FILE" ps --status "$status" --format json 2>/dev/null \
+    | { grep -c '"Name"' 2>/dev/null || true; })
+  echo "${count:-0}"
+}
+
+# ── Banner ────────────────────────────────────────────────────────────────────
+
+print_banner() {
+  echo ""
+  echo -e "${BOLD}  Vardo${RESET}"
+  echo -e "${DIM}  Deploy everything. Own everything.${RESET}"
+  echo ""
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# INSTALL
+# ══════════════════════════════════════════════════════════════════════════════
+
+check_root() {
+  if [ "$EUID" -ne 0 ]; then
+    fail "Please run as root: sudo bash install.sh"
+  fi
+}
+
+preflight_checks() {
+  step "System checks"
+
+  # OS
+  if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    case "$ID" in
+      ubuntu)
+        local major; major=$(echo "$VERSION_ID" | cut -d. -f1)
+        if [ "$major" -lt 22 ] 2>/dev/null; then
+          warn "Ubuntu $VERSION_ID — 22.04+ recommended"
+        else
+          log "Ubuntu $VERSION_ID"
+        fi
+        ;;
+      debian)
+        local major; major=$(echo "$VERSION_ID" | cut -d. -f1)
+        if [ "$major" -lt 12 ] 2>/dev/null; then
+          warn "Debian $VERSION_ID — 12+ recommended"
+        else
+          log "Debian $VERSION_ID"
+        fi
+        ;;
+      *)
+        warn "$PRETTY_NAME — tested on Ubuntu 22.04+ and Debian 12+"
+        ;;
+    esac
+  else
+    warn "Unknown OS — tested on Ubuntu 22.04+ and Debian 12+"
+  fi
+
+  # RAM
+  local ram_kb ram_mb
+  ram_kb=$(grep MemTotal /proc/meminfo 2>/dev/null | awk '{print $2}' || echo "0")
+  ram_mb=$((ram_kb / 1024))
+  if [ "$ram_mb" -gt 0 ] 2>/dev/null; then
+    if [ "$ram_mb" -lt 1024 ]; then
+      fail "Insufficient RAM: ${ram_mb}MB (minimum 1GB)"
+    elif [ "$ram_mb" -lt 2048 ]; then
+      warn "RAM: ${ram_mb}MB — 2GB+ recommended"
     else
-      rm -f /swapfile
-      warn "Could not enable swap (ZFS or container — not fatal)"
+      log "RAM: ${ram_mb}MB"
     fi
-  else
-    log "Swap already active: $(swapon --show --noheadings --raw | awk '{sum+=$3} END {printf "%.0fMB", sum/1024/1024}')"
   fi
-fi
 
-# ── Unattended security updates ───────────────────────────────────────────────
+  # Disk
+  local disk_kb disk_gb
+  disk_kb=$(df / 2>/dev/null | tail -1 | awk '{print $4}')
+  disk_gb=$((disk_kb / 1048576))
+  if [ "$disk_gb" -lt 20 ] 2>/dev/null; then
+    warn "Disk: ${disk_gb}GB free — 20GB+ recommended"
+  else
+    log "Disk: ${disk_gb}GB free"
+  fi
+}
 
-log "Configuring unattended security updates..."
-apt-get update -qq
-apt-get install -y -qq unattended-upgrades > /dev/null 2>&1
-dpkg-reconfigure -f noninteractive unattended-upgrades > /dev/null 2>&1
-log "Unattended security updates enabled"
+setup_swap() {
+  local ram_kb ram_mb
+  ram_kb=$(grep MemTotal /proc/meminfo 2>/dev/null | awk '{print $2}' || echo "0")
+  ram_mb=$((ram_kb / 1024))
 
-# NOTE: Firewall configuration is left to the user. Docker publishes ports
-# directly via iptables and bypasses ufw by default, so ufw rules alone
-# don't provide meaningful container isolation.
+  if [ "$ram_mb" -gt 0 ] && [ "$ram_mb" -lt 4096 ]; then
+    if ! swapon --show 2>/dev/null | grep -q .; then
+      info "Creating 2GB swap file..."
+      fallocate -l 2G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none
+      chmod 600 /swapfile
+      mkswap /swapfile > /dev/null
+      if swapon /swapfile 2>/dev/null; then
+        grep -q '/swapfile' /etc/fstab 2>/dev/null || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+        log "Swap enabled: 2GB"
+      else
+        rm -f /swapfile
+        warn "Could not enable swap (ZFS or container — not fatal)"
+      fi
+    fi
+  fi
+}
 
-# ── Dependencies ──────────────────────────────────────────────────────────────
+install_packages() {
+  step "Packages"
 
-for dep in curl git; do
-  if ! command -v $dep &> /dev/null; then
-    log "Installing $dep..."
+  local to_install=()
+  command -v curl &>/dev/null || to_install+=("curl")
+  command -v git &>/dev/null || to_install+=("git")
+
+  # Unattended upgrades
+  local needs_unattended=false
+  if ! dpkg -s unattended-upgrades &>/dev/null 2>&1; then
+    to_install+=("unattended-upgrades")
+    needs_unattended=true
+  fi
+
+  # Docker
+  local needs_docker=false
+  if ! command -v docker &>/dev/null; then
+    needs_docker=true
+  fi
+
+  if [ ${#to_install[@]} -eq 0 ] && ! $needs_docker; then
+    log "All required packages installed"
+    log "Docker: $(docker --version 2>/dev/null | head -1)"
+    return
+  fi
+
+  # Show what will be installed
+  if [ ${#to_install[@]} -gt 0 ]; then
+    info "Will install via apt: ${to_install[*]}"
+  fi
+  if $needs_docker; then
+    info "Will install: Docker Engine + Compose plugin"
+  fi
+
+  if ! $UNATTENDED && ! $AUTO_YES; then
+    echo ""
+    if ! confirm "Install these packages?"; then
+      fail "Cannot continue without required packages."
+    fi
+    echo ""
+  fi
+
+  # apt packages
+  if [ ${#to_install[@]} -gt 0 ]; then
     apt-get update -qq > /dev/null 2>&1
-    apt-get install -y -qq $dep > /dev/null 2>&1
-  fi
-done
-
-# ── Docker ─────────────────────────────────────────────────────────────────────
-
-# Docker check
-if ! command -v docker &> /dev/null; then
-  log "Installing Docker..."
-  curl -fsSL https://get.docker.com | sh
-  systemctl enable docker
-  systemctl start docker
-  log "Docker installed"
-else
-  log "Docker found: $(docker --version | head -1)"
-fi
-
-# Docker Compose check
-if ! docker compose version &> /dev/null; then
-  error "Docker Compose plugin not found. Install Docker Desktop or the compose plugin."
-fi
-
-# Docker log rotation
-DAEMON_JSON="/etc/docker/daemon.json"
-NEEDS_DOCKER_RESTART=false
-
-if [ -f "$DAEMON_JSON" ]; then
-  # Merge log config into existing daemon.json
-  if command -v python3 &> /dev/null; then
-    MERGED=$(python3 -c "
-import json, sys
-try:
-    with open('$DAEMON_JSON') as f:
-        existing = json.load(f)
-except (json.JSONDecodeError, FileNotFoundError):
-    existing = {}
-existing.setdefault('log-driver', 'json-file')
-existing.setdefault('log-opts', {})
-existing['log-opts'].setdefault('max-size', '10m')
-existing['log-opts'].setdefault('max-file', '3')
-print(json.dumps(existing, indent=2))
-" 2>/dev/null)
-    if [ -n "$MERGED" ]; then
-      echo "$MERGED" > "$DAEMON_JSON"
-      NEEDS_DOCKER_RESTART=true
-      log "Docker log rotation configured (merged with existing daemon.json)"
+    apt-get install -y -qq "${to_install[@]}" > /dev/null 2>&1
+    if $needs_unattended; then
+      dpkg-reconfigure -f noninteractive unattended-upgrades > /dev/null 2>&1
     fi
-  elif command -v jq &> /dev/null; then
-    MERGED=$(jq '. + {"log-driver":"json-file"} | .["log-opts"] = (.["log-opts"] // {} | . + {"max-size":"10m","max-file":"3"})' "$DAEMON_JSON" 2>/dev/null)
-    if [ -n "$MERGED" ]; then
-      echo "$MERGED" > "$DAEMON_JSON"
-      NEEDS_DOCKER_RESTART=true
-      log "Docker log rotation configured (merged with existing daemon.json)"
+    log "Installed: ${to_install[*]}"
+  fi
+
+  # Docker
+  if $needs_docker; then
+    info "Installing Docker (this may take a minute)..."
+    curl -fsSL https://get.docker.com | sh > /dev/null 2>&1
+    systemctl enable docker > /dev/null 2>&1
+    systemctl start docker
+    log "Docker installed"
+  else
+    log "Docker: $(docker --version | head -1)"
+  fi
+
+  # Compose check
+  if ! docker compose version &>/dev/null; then
+    fail "Docker Compose plugin not found"
+  fi
+
+  # Log rotation
+  configure_docker_logging
+}
+
+configure_docker_logging() {
+  local daemon="/etc/docker/daemon.json"
+  local needs_restart=false
+
+  if [ -f "$daemon" ]; then
+    if command -v python3 &>/dev/null; then
+      local merged
+      merged=$(python3 -c "
+import json, sys
+path = sys.argv[1]
+try:
+    with open(path) as f: c = json.load(f)
+except (json.JSONDecodeError, FileNotFoundError):
+    c = {}
+c.setdefault('log-driver','json-file')
+c.setdefault('log-opts',{})
+c['log-opts'].setdefault('max-size','10m')
+c['log-opts'].setdefault('max-file','3')
+print(json.dumps(c,indent=2))
+" "$daemon" 2>/dev/null || true)
+      if [ -n "$merged" ]; then
+        echo "$merged" > "$daemon"
+        needs_restart=true
+      fi
     fi
   else
-    warn "Cannot merge daemon.json — neither python3 nor jq available. Skipping log rotation config."
-  fi
-else
-  mkdir -p /etc/docker
-  cat > "$DAEMON_JSON" <<'DAEMONJSON'
+    mkdir -p /etc/docker
+    cat > "$daemon" <<'EOF'
 {
   "log-driver": "json-file",
   "log-opts": {
@@ -195,124 +293,122 @@ else
     "max-file": "3"
   }
 }
-DAEMONJSON
-  NEEDS_DOCKER_RESTART=true
-  log "Docker log rotation configured"
-fi
+EOF
+    needs_restart=true
+  fi
 
-if [ "$NEEDS_DOCKER_RESTART" = true ]; then
-  systemctl restart docker 2>/dev/null || true
-  log "Waiting for Docker daemon to be ready..."
-  DOCKER_WAIT=0
-  while [ $DOCKER_WAIT -lt 30 ]; do
-    if docker info > /dev/null 2>&1; then
-      break
+  if $needs_restart; then
+    systemctl restart docker 2>/dev/null || true
+    local wait=0
+    while [ $wait -lt 30 ]; do
+      docker info > /dev/null 2>&1 && break
+      sleep 1; wait=$((wait + 1))
+    done
+    [ $wait -ge 30 ] && fail "Docker daemon did not start within 30s"
+  fi
+}
+
+clone_repo() {
+  step "Installation"
+
+  if [ -d "$VARDO_DIR" ]; then
+    log "Existing installation at $VARDO_DIR"
+    cd "$VARDO_DIR"
+    if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
+      warn "Local changes detected, stashing..."
+      git stash --quiet
     fi
-    sleep 1
-    DOCKER_WAIT=$((DOCKER_WAIT + 1))
+    git pull --quiet
+    log "Updated to latest"
+  else
+    info "Cloning to $VARDO_DIR..."
+    git clone --depth 1 "$REPO_URL" "$VARDO_DIR"
+    cd "$VARDO_DIR"
+    log "Installed to $VARDO_DIR"
+  fi
+}
+
+generate_env() {
+  local env_file="$VARDO_DIR/.env"
+
+  if [ -f "$env_file" ]; then
+    log "Configuration exists at $env_file"
+    return
+  fi
+
+  step "Configuration"
+
+  # Domain prompts — in unattended mode, require env vars
+  if $UNATTENDED; then
+    [ -n "${VARDO_DOMAIN:-}" ] || fail "VARDO_DOMAIN is required in --unattended mode"
+    [ -n "${VARDO_BASE_DOMAIN:-}" ] || fail "VARDO_BASE_DOMAIN is required in --unattended mode"
+    [ -n "${ACME_EMAIL:-}" ] || fail "ACME_EMAIL is required in --unattended mode"
+  else
+    if [ -z "${VARDO_DOMAIN:-}" ]; then
+      echo ""
+      read -p "  Domain for Vardo dashboard (e.g. host.example.com): " VARDO_DOMAIN < /dev/tty
+    fi
+    if [ -z "${VARDO_BASE_DOMAIN:-}" ]; then
+      read -p "  Base domain for projects (e.g. example.com): " VARDO_BASE_DOMAIN < /dev/tty
+    fi
+    if [ -z "${ACME_EMAIL:-}" ]; then
+      read -p "  Email for Let's Encrypt certificates: " ACME_EMAIL < /dev/tty
+    fi
+  fi
+
+  # Basic input validation — reject shell metacharacters
+  for var_name in VARDO_DOMAIN VARDO_BASE_DOMAIN ACME_EMAIL; do
+    local val="${!var_name}"
+    if [[ "$val" =~ [[:space:]\;\|\&\$\`\\\"\'\<\>] ]]; then
+      fail "$var_name contains invalid characters"
+    fi
   done
-  if [ $DOCKER_WAIT -ge 30 ]; then
-    error "Docker daemon did not become ready within 30 seconds"
-  fi
-  log "Docker daemon is ready"
-fi
 
-# Git check
-if ! command -v git &> /dev/null; then
-  log "Installing git..."
-  apt-get install -y -qq git > /dev/null 2>&1
-fi
+  # DNS check (informational)
+  local server_ip
+  server_ip=$(get_server_ip)
+  if [ -n "$server_ip" ]; then
+    info "Server IP: $server_ip"
 
-# ── Clone / update ─────────────────────────────────────────────────────────────
+    command -v dig &>/dev/null || apt-get install -y -qq dnsutils > /dev/null 2>&1 || true
 
-if [ -d "$HOST_DIR" ]; then
-  log "Updating Host..."
-  cd "$HOST_DIR"
-  if ! git diff --quiet || ! git diff --cached --quiet; then
-    warn "Local changes detected, stashing..."
-    git stash --quiet
-  fi
-  git pull --quiet
-else
-  log "Installing Vardo to $HOST_DIR..."
-  git clone --depth 1 https://github.com/joeyyax/vardo.git "$HOST_DIR"
-  cd "$HOST_DIR"
-fi
-
-# ── Configure ──────────────────────────────────────────────────────────────────
-
-ENV_FILE="$HOST_DIR/.env"
-
-if [ ! -f "$ENV_FILE" ]; then
-  log "Creating configuration..."
-
-  # Prompt for required values (skip if already set via env vars)
-  if [ -z "$VARDO_DOMAIN" ]; then
-    read -p "  Domain for Vardo dashboard (e.g. host.example.com): " VARDO_DOMAIN < /dev/tty
-  fi
-  if [ -z "$VARDO_BASE_DOMAIN" ]; then
-    read -p "  Base domain for projects (e.g. example.com): " VARDO_BASE_DOMAIN < /dev/tty
-  fi
-  if [ -z "$ACME_EMAIL" ]; then
-    read -p "  Email for Let's Encrypt: " ACME_EMAIL < /dev/tty
-  fi
-
-  # ── DNS validation (informational only — never blocks install) ────────────
-  SERVER_IP=$(curl -sf --max-time 5 https://api.ipify.org 2>/dev/null || echo "")
-  if [ -n "$SERVER_IP" ]; then
-    log "Server public IP: $SERVER_IP"
-
-    if ! command -v dig &> /dev/null; then
-      apt-get install -y -qq dnsutils > /dev/null 2>&1 || true
+    local domain_ip=""
+    if command -v dig &>/dev/null; then
+      domain_ip=$(dig +short "$VARDO_DOMAIN" 2>/dev/null | head -1)
+    elif command -v host &>/dev/null; then
+      domain_ip=$(host "$VARDO_DOMAIN" 2>/dev/null | awk '/has address/ {print $4; exit}')
     fi
 
-    if command -v dig &> /dev/null; then
-      DOMAIN_IP=$(dig +short "$VARDO_DOMAIN" 2>/dev/null | head -1)
-    elif command -v host &> /dev/null; then
-      DOMAIN_IP=$(host "$VARDO_DOMAIN" 2>/dev/null | awk '/has address/ {print $4; exit}')
+    if [ -n "$domain_ip" ] && [ "$domain_ip" = "$server_ip" ]; then
+      log "DNS verified: $VARDO_DOMAIN → $server_ip"
     else
-      DOMAIN_IP=""
-    fi
-
-    if [ -n "$DOMAIN_IP" ] && [ "$DOMAIN_IP" = "$SERVER_IP" ]; then
-      log "DNS verified: $VARDO_DOMAIN -> $SERVER_IP"
-      DNS_OK=true
-    else
-      if [ -n "$DOMAIN_IP" ]; then
-        warn "DNS mismatch: $VARDO_DOMAIN resolves to $DOMAIN_IP (this server is $SERVER_IP)"
-      else
-        warn "Could not resolve $VARDO_DOMAIN — configure DNS when ready"
-      fi
       echo ""
-      echo -e "  ${DIM}Point these DNS records to this server:${RESET}"
-      echo -e "    A   ${VARDO_DOMAIN}           -> ${SERVER_IP}"
-      echo -e "    A   *.${VARDO_BASE_DOMAIN}    -> ${SERVER_IP}"
+      warn "DNS not yet configured. Point these records to $server_ip:"
+      dimln "  A   $VARDO_DOMAIN         → $server_ip"
+      dimln "  A   *.$VARDO_BASE_DOMAIN  → $server_ip"
       echo ""
     fi
   fi
-
-  echo ""
 
   # Generate secrets
-  DB_PASSWORD=$(openssl rand -base64 32 | tr -d '/+=' | head -c 32)
-  AUTH_SECRET=$(openssl rand -base64 32 | tr -d '/+=' | head -c 48)
-  ENCRYPTION_MASTER_KEY=$(openssl rand -hex 32)
-  GITHUB_WEBHOOK_SECRET=$(openssl rand -hex 32)
+  local db_pass auth_secret enc_key webhook_secret traefik_pass traefik_auth
+  db_pass=$(openssl rand -base64 32 | tr -d '/+=' | head -c 32)
+  auth_secret=$(openssl rand -base64 32 | tr -d '/+=' | head -c 48)
+  enc_key=$(openssl rand -hex 32)
+  webhook_secret=$(openssl rand -hex 32)
+  traefik_pass=$(openssl rand -base64 12)
+  traefik_auth=$(printf 'admin:%s' "$(openssl passwd -apr1 "$traefik_pass")" | sed 's/\$/\$\$/g')
 
-  # Generate Traefik dashboard BasicAuth credentials
-  TRAEFIK_DASH_PASS=$(openssl rand -base64 12)
-  TRAEFIK_DASHBOARD_AUTH=$(printf 'admin:%s' "$(openssl passwd -apr1 "$TRAEFIK_DASH_PASS")" | sed 's/\$/\$\$/g')
-
-  cat > "$ENV_FILE" <<EOF
+  cat > "$env_file" <<EOF
 COMPOSE_PROFILES=production
 VARDO_DOMAIN=$VARDO_DOMAIN
 VARDO_BASE_DOMAIN=$VARDO_BASE_DOMAIN
-DB_PASSWORD=$DB_PASSWORD
-BETTER_AUTH_SECRET=$AUTH_SECRET
-ENCRYPTION_MASTER_KEY=$ENCRYPTION_MASTER_KEY
-GITHUB_WEBHOOK_SECRET=$GITHUB_WEBHOOK_SECRET
+DB_PASSWORD=$db_pass
+BETTER_AUTH_SECRET=$auth_secret
+ENCRYPTION_MASTER_KEY=$enc_key
+GITHUB_WEBHOOK_SECRET=$webhook_secret
 ACME_EMAIL=$ACME_EMAIL
-TRAEFIK_DASHBOARD_AUTH=$TRAEFIK_DASHBOARD_AUTH
+TRAEFIK_DASHBOARD_AUTH=$traefik_auth
 
 # GitHub App (optional — configure in setup wizard or Settings)
 GITHUB_APP_ID=
@@ -322,107 +418,732 @@ GITHUB_CLIENT_SECRET=
 GITHUB_PRIVATE_KEY=
 EOF
 
-  chmod 600 "$ENV_FILE"
-  log "Configuration saved to $ENV_FILE"
-else
-  log "Configuration exists at $ENV_FILE"
-  source "$ENV_FILE"
-fi
+  chmod 600 "$env_file"
+  log "Configuration saved"
+}
 
-# ── Start ──────────────────────────────────────────────────────────────────────
+build_and_start() {
+  step "Starting Vardo"
 
-log "Ensuring shared Docker network exists..."
-docker network create vardo-network 2>/dev/null || true
+  docker network create vardo-network 2>/dev/null || true
 
-log "Building Vardo (this may take a few minutes)..."
-docker compose -f "$COMPOSE_FILE" build
+  info "Building containers (this may take a few minutes)..."
+  docker compose -f "$VARDO_DIR/$COMPOSE_FILE" build --quiet
 
-log "Starting Vardo..."
-docker compose -f "$COMPOSE_FILE" up -d
+  info "Starting services..."
+  docker compose -f "$VARDO_DIR/$COMPOSE_FILE" up -d
+}
 
-# ── Wait for healthy ───────────────────────────────────────────────────────────
+wait_healthy() {
+  local timeout="${1:-60}"
+  local interval="${2:-2}"
+  local elapsed=0
+  local container="${3:-frontend}"
 
-log "Waiting for Host to become healthy..."
-TIMEOUT=60
-INTERVAL=2
-ELAPSED=0
-while [ $ELAPSED -lt $TIMEOUT ]; do
-  if docker compose -f "$COMPOSE_FILE" exec -T host curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
-    log "Host is healthy"
-    break
-  fi
-  sleep $INTERVAL
-  ELAPSED=$((ELAPSED + INTERVAL))
-done
-if [ $ELAPSED -ge $TIMEOUT ]; then
-  warn "Health check timed out after ${TIMEOUT}s — continuing anyway"
-fi
+  info "Waiting for Vardo to become healthy..."
+  while [ $elapsed -lt "$timeout" ]; do
+    if docker compose -f "$VARDO_DIR/$COMPOSE_FILE" exec -T "$container" \
+      curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
+      log "Vardo is healthy"
+      return 0
+    fi
+    sleep "$interval"
+    elapsed=$((elapsed + interval))
+  done
 
-# NOTE: Migrations run automatically via the app's start script (drizzle-kit migrate).
-# No need to run drizzle-kit push separately inside the container.
+  warn "Health check timed out after ${timeout}s — may still be starting"
+  return 1
+}
 
-# Seed templates
-log "Seeding templates..."
-docker compose -f "$COMPOSE_FILE" exec -T host node -e "
-  fetch('http://localhost:3000/api/v1/templates/seed', { method: 'POST' })
-    .then(r => r.json())
-    .then(d => console.log('Templates:', d))
-    .catch(() => console.log('Skipped (first user needs to register first)'));
-" 2>/dev/null || true
+seed_templates() {
+  docker compose -f "$VARDO_DIR/$COMPOSE_FILE" exec -T frontend node -e "
+    fetch('http://localhost:3000/api/v1/templates/seed', { method: 'POST' })
+      .then(r => r.json())
+      .then(d => console.log('Templates:', JSON.stringify(d)))
+      .catch(() => {});
+  " 2>/dev/null || true
+}
 
-# ── Summary ───────────────────────────────────────────────────────────────────
+print_install_summary() {
+  local server_ip
+  server_ip=$(get_server_ip)
+  local version
+  version=$(get_version)
 
-echo ""
-echo -e "${GREEN}${BOLD}  ======================================${RESET}"
-echo -e "${GREEN}${BOLD}  Host is running!${RESET}"
-echo -e "${GREEN}${BOLD}  ======================================${RESET}"
-echo ""
-echo -e "  ${BOLD}Dashboard:${RESET}  https://${VARDO_DOMAIN:-localhost}"
-echo -e "  ${BOLD}Traefik:${RESET}    https://traefik.${VARDO_BASE_DOMAIN:-localhost}"
-if [ -n "$TRAEFIK_DASH_PASS" ]; then
-  echo -e "  ${BOLD}Traefik login:${RESET} admin / ${TRAEFIK_DASH_PASS}"
-fi
-echo ""
+  # Source env for domain
+  load_env_display
 
-# DNS records reminder
-if [ "$DNS_OK" != true ] && [ -n "$SERVER_IP" ]; then
-  echo -e "  ${YELLOW}${BOLD}DNS Records (required):${RESET}"
-  echo -e "    A   ${VARDO_DOMAIN:-<your-domain>}           -> ${SERVER_IP}"
-  echo -e "    A   *.${VARDO_BASE_DOMAIN:-<your-base-domain>}    -> ${SERVER_IP}"
   echo ""
-fi
+  echo -e "${GREEN}${BOLD}  Vardo is running!${RESET}"
+  echo ""
+  echo -e "  ${BOLD}Dashboard${RESET}   https://${VARDO_DOMAIN:-localhost}"
+  echo -e "  ${BOLD}Version${RESET}     $version"
+  echo ""
 
-# Getting started
-echo -e "  ${BOLD}Getting started:${RESET}"
-if [ -n "$SERVER_IP" ]; then
-  echo -e "    1. Visit ${BOLD}http://${SERVER_IP}${RESET} to complete setup (works before DNS)"
-else
-  echo -e "    1. Visit ${BOLD}https://${VARDO_DOMAIN:-localhost}${RESET} to complete setup"
-fi
-echo -e "    2. The setup wizard will walk you through account creation, email, backups, and more"
-echo ""
+  if [ -n "$server_ip" ]; then
+    echo -e "  ${BOLD}Next step${RESET}   Visit ${BOLD}http://${server_ip}${RESET} to complete setup"
+    dimln "            (works before DNS propagates)"
+  else
+    echo -e "  ${BOLD}Next step${RESET}   Visit the dashboard to complete setup"
+  fi
+  echo ""
 
-# Useful commands
-echo -e "  ${BOLD}Useful commands:${RESET}"
-echo -e "    ${DIM}View logs:${RESET}    docker compose -f $HOST_DIR/$COMPOSE_FILE --env-file $HOST_DIR/.env.prod logs -f"
-echo -e "    ${DIM}Restart:${RESET}      docker compose -f $HOST_DIR/$COMPOSE_FILE --env-file $HOST_DIR/.env.prod restart"
-echo -e "    ${DIM}Stop:${RESET}         docker compose -f $HOST_DIR/$COMPOSE_FILE --env-file $HOST_DIR/.env.prod down"
-echo ""
+  echo -e "  ${BOLD}Commands${RESET}"
+  dimln "  View logs       docker compose -f $VARDO_DIR/$COMPOSE_FILE logs -f"
+  dimln "  Restart         docker compose -f $VARDO_DIR/$COMPOSE_FILE restart"
+  dimln "  Update          sudo bash $VARDO_DIR/install.sh update"
+  dimln "  Health check    sudo bash $VARDO_DIR/install.sh doctor"
+  echo ""
+}
 
-# Update instructions
-echo -e "  ${BOLD}To update Vardo:${RESET}"
-echo -e "    sudo bash $HOST_DIR/update.sh"
-echo ""
+do_install() {
+  check_root
+  preflight_checks
+  setup_swap
+  install_packages
+  clone_repo
+  generate_env
+  build_and_start
+  wait_healthy 60 2
+  seed_templates
+  print_install_summary
+}
 
-# Backup recommendations
-echo -e "  ${BOLD}Backup recommendations:${RESET}"
-echo -e "    ${DIM}- Back up $HOST_DIR/.env.prod (contains secrets)${RESET}"
-echo -e "    ${DIM}- Back up PostgreSQL data: docker compose -f $HOST_DIR/$COMPOSE_FILE exec -T postgres pg_dumpall -U host > backup.sql${RESET}"
-echo -e "    ${DIM}- Consider automated daily backups with cron${RESET}"
-echo ""
+# ══════════════════════════════════════════════════════════════════════════════
+# UPDATE
+# ══════════════════════════════════════════════════════════════════════════════
 
-# Security notes
-echo -e "  ${BOLD}Security notes:${RESET}"
-echo -e "    ${DIM}- Unattended security updates are enabled${RESET}"
-echo -e "    ${DIM}- Docker log rotation is configured (10MB x 3 files per container)${RESET}"
-echo ""
+run_env_migrations() {
+  local env_file="$VARDO_DIR/.env"
+
+  # .env.prod → .env (pre-v2) — must run before the .env existence check
+  if [ -f "$VARDO_DIR/.env.prod" ] && [ ! -f "$env_file" ]; then
+    mv "$VARDO_DIR/.env.prod" "$env_file"
+    log "Migrated .env.prod → .env"
+  elif [ -f "$VARDO_DIR/.env.prod" ]; then
+    warn ".env.prod and .env both exist — using .env"
+  fi
+
+  [ -f "$env_file" ] || return
+
+  # HOST_* → VARDO_*
+  if grep -q "^HOST_" "$env_file" 2>/dev/null; then
+    sed -i 's/^HOST_DOMAIN=/VARDO_DOMAIN=/' "$env_file"
+    sed -i 's/^HOST_BASE_DOMAIN=/VARDO_BASE_DOMAIN=/' "$env_file"
+    sed -i 's/^HOST_SERVER_IP=/VARDO_SERVER_IP=/' "$env_file"
+    sed -i 's/^HOST_PROJECTS_DIR=/VARDO_PROJECTS_DIR=/' "$env_file"
+    sed -i 's/^HOST_EXPOSE_PORTS=/VARDO_EXPOSE_PORTS=/' "$env_file"
+    log "Renamed HOST_* → VARDO_* env vars"
+  fi
+
+  # Ensure COMPOSE_PROFILES=production
+  if ! grep -q "^COMPOSE_PROFILES=.*production" "$env_file" 2>/dev/null; then
+    if grep -q "^COMPOSE_PROFILES=" "$env_file"; then
+      sed -i 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=production/' "$env_file"
+    else
+      echo "COMPOSE_PROFILES=production" >> "$env_file"
+    fi
+    log "Set COMPOSE_PROFILES=production"
+  fi
+
+  # Remove deprecated feature flags
+  sed -i '/^FEATURE_METRICS=/d' "$env_file" 2>/dev/null || true
+  sed -i '/^FEATURE_LOGS=/d' "$env_file" 2>/dev/null || true
+}
+
+do_update() {
+  check_root
+
+  step "Preflight"
+
+  [ -d "$VARDO_DIR" ] || fail "Vardo not found at $VARDO_DIR"
+  [ -f "$VARDO_DIR/$COMPOSE_FILE" ] || fail "No $COMPOSE_FILE in $VARDO_DIR"
+  [ -f "$VARDO_DIR/.env" ] || fail "No .env in $VARDO_DIR"
+  command -v docker &>/dev/null || fail "Docker is not installed"
+  docker compose version &>/dev/null || fail "Docker Compose plugin not found"
+  [ -d "$VARDO_DIR/.git" ] || fail "$VARDO_DIR is not a git repository"
+
+  cd "$VARDO_DIR"
+
+  local current_version current_branch previous_commit
+  current_version=$(get_version)
+  current_branch=$(git rev-parse --abbrev-ref HEAD)
+  previous_commit=$(git rev-parse HEAD)
+
+  log "Version: $current_version"
+  log "Branch: $current_branch"
+
+  # Env migrations
+  run_env_migrations
+
+  # Ensure network
+  docker network create vardo-network 2>/dev/null || true
+
+  # Check for updates
+  step "Checking for updates"
+
+  git fetch origin "$current_branch" --quiet 2>/dev/null || git fetch --quiet
+
+  local incoming
+  incoming=$(git log HEAD..origin/"$current_branch" --oneline 2>/dev/null || true)
+
+  if [ -z "$incoming" ]; then
+    log "Already up to date"
+    return
+  fi
+
+  local commit_count
+  commit_count=$(echo "$incoming" | wc -l | tr -d ' ')
+  info "$commit_count incoming commit(s):"
+  echo ""
+  echo -e "${DIM}"
+  git log HEAD..origin/"$current_branch" --oneline --no-decorate | head -20
+  echo -e "${RESET}"
+
+  if ! $UNATTENDED && ! $AUTO_YES; then
+    if ! confirm "Apply update?"; then
+      warn "Update cancelled"
+      return
+    fi
+  fi
+
+  # Backup database
+  step "Backup"
+
+  local backup_dir="$VARDO_DIR/backups"
+  local backup_file="$backup_dir/pre-update-$(date +%Y%m%d%H%M%S).sql"
+  mkdir -p "$backup_dir"
+
+  info "Dumping database..."
+  touch "$backup_file" && chmod 600 "$backup_file"
+  if docker compose -f "$COMPOSE_FILE" exec -T postgres pg_dump -U host host > "$backup_file" 2>/dev/null; then
+    local backup_size
+    backup_size=$(du -h "$backup_file" | cut -f1)
+    log "Backup: $backup_file ($backup_size)"
+  else
+    warn "Database backup failed — continuing without backup"
+    rm -f "$backup_file"
+    backup_file=""
+  fi
+
+  # Pull
+  step "Pulling updates"
+
+  if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
+    warn "Local changes detected, stashing..."
+    git stash --quiet
+  fi
+
+  if git pull origin "$current_branch" --quiet; then
+    local new_version
+    new_version=$(get_version)
+    log "Updated: $current_version → $new_version"
+  else
+    fail "git pull failed — resolve conflicts manually in $VARDO_DIR"
+  fi
+
+  # Rebuild
+  step "Rebuilding"
+
+  info "Building containers..."
+  docker compose -f "$COMPOSE_FILE" build --quiet
+
+  info "Restarting services..."
+  docker compose -f "$COMPOSE_FILE" up -d
+
+  wait_healthy 90 3
+
+  # Summary
+  local new_version
+  new_version=$(get_version)
+  load_env_display
+
+  echo ""
+  echo -e "${GREEN}${BOLD}  Update complete!${RESET}"
+  echo ""
+  echo -e "  ${BOLD}Dashboard${RESET}   https://${VARDO_DOMAIN:-localhost}"
+  echo -e "  ${BOLD}Version${RESET}     $new_version"
+  [ -n "${backup_file:-}" ] && echo -e "  ${BOLD}Backup${RESET}      $backup_file"
+  echo ""
+
+  dimln "Rollback:"
+  dimln "  cd $VARDO_DIR"
+  dimln "  git checkout $previous_commit"
+  dimln "  docker compose build && docker compose up -d"
+  [ -n "${backup_file:-}" ] && dimln "  cat $backup_file | docker compose exec -T postgres psql -U host host"
+  echo ""
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DOCTOR
+# ══════════════════════════════════════════════════════════════════════════════
+
+do_doctor() {
+  local pass=0 warn_count=0 fail_count=0
+
+  doctor_pass() { log "$1"; pass=$((pass + 1)); }
+  doctor_warn() { warn "$1"; warn_count=$((warn_count + 1)); }
+  doctor_fail() { echo -e "  ${RED}✗${RESET} $1"; fail_count=$((fail_count + 1)); }
+
+  # ── System ──────────────────────────────────────────────────────────────
+
+  step "System"
+
+  # OS
+  if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    doctor_pass "$PRETTY_NAME"
+  else
+    doctor_warn "Unknown OS"
+  fi
+
+  # RAM
+  local ram_kb ram_mb
+  ram_kb=$(grep MemTotal /proc/meminfo 2>/dev/null | awk '{print $2}' || echo "0")
+  ram_mb=$((ram_kb / 1024))
+  if [ "$ram_mb" -ge 2048 ]; then
+    doctor_pass "RAM: ${ram_mb}MB"
+  elif [ "$ram_mb" -ge 1024 ]; then
+    doctor_warn "RAM: ${ram_mb}MB (2GB+ recommended)"
+  elif [ "$ram_mb" -gt 0 ]; then
+    doctor_fail "RAM: ${ram_mb}MB (minimum 1GB)"
+  fi
+
+  # Swap
+  if swapon --show 2>/dev/null | grep -q .; then
+    local swap_mb
+    swap_mb=$(swapon --show --noheadings --raw 2>/dev/null | awk '{sum+=$3} END {printf "%.0f", sum/1024/1024}')
+    doctor_pass "Swap: ${swap_mb}MB"
+  elif [ "$ram_mb" -lt 4096 ]; then
+    doctor_warn "No swap configured (recommended when RAM < 4GB)"
+  fi
+
+  # Disk
+  local disk_kb disk_gb
+  disk_kb=$(df / 2>/dev/null | tail -1 | awk '{print $4}')
+  disk_gb=$((disk_kb / 1048576))
+  if [ "$disk_gb" -ge 20 ]; then
+    doctor_pass "Disk: ${disk_gb}GB free"
+  elif [ "$disk_gb" -ge 10 ]; then
+    doctor_warn "Disk: ${disk_gb}GB free (20GB+ recommended)"
+  else
+    doctor_fail "Disk: ${disk_gb}GB free (critically low)"
+  fi
+
+  # ── Installation ────────────────────────────────────────────────────────
+
+  step "Installation"
+
+  if [ -d "$VARDO_DIR" ]; then
+    doctor_pass "Directory: $VARDO_DIR"
+  else
+    doctor_fail "Directory not found: $VARDO_DIR"
+    # Can't continue without the installation
+    echo ""
+    echo -e "  ${BOLD}Result${RESET}  $pass passed, $warn_count warnings, $fail_count failed"
+    return
+  fi
+
+  if [ -f "$VARDO_DIR/.env" ]; then
+    doctor_pass ".env exists"
+  else
+    doctor_fail ".env not found"
+  fi
+
+  if [ -d "$VARDO_DIR/.git" ]; then
+    local version branch
+    version=$(get_version)
+    branch=$(git -C "$VARDO_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+    doctor_pass "Git: $version ($branch)"
+
+    # Check for available updates
+    git -C "$VARDO_DIR" fetch --quiet 2>/dev/null || true
+    local behind
+    behind=$(git -C "$VARDO_DIR" rev-list HEAD..origin/"$branch" --count 2>/dev/null || echo "0")
+    if [ "$behind" -gt 0 ]; then
+      doctor_warn "$behind update(s) available"
+    else
+      doctor_pass "Up to date"
+    fi
+  else
+    doctor_fail "Not a git repository"
+  fi
+
+  # ── Docker ──────────────────────────────────────────────────────────────
+
+  step "Docker"
+
+  if command -v docker &>/dev/null; then
+    doctor_pass "Docker: $(docker --version 2>/dev/null | sed 's/Docker version //' | cut -d, -f1)"
+  else
+    doctor_fail "Docker not installed"
+    echo ""
+    echo -e "  ${BOLD}Result${RESET}  $pass passed, $warn_count warnings, $fail_count failed"
+    return
+  fi
+
+  if docker compose version &>/dev/null; then
+    doctor_pass "Compose: $(docker compose version 2>/dev/null | sed 's/Docker Compose version //')"
+  else
+    doctor_fail "Docker Compose plugin not found"
+  fi
+
+  # Docker daemon
+  if docker info > /dev/null 2>&1; then
+    doctor_pass "Docker daemon running"
+  else
+    doctor_fail "Docker daemon not responding"
+  fi
+
+  # Log rotation
+  if [ -f /etc/docker/daemon.json ] && grep -q "max-size" /etc/docker/daemon.json 2>/dev/null; then
+    doctor_pass "Log rotation configured"
+  else
+    doctor_warn "Log rotation not configured"
+  fi
+
+  # ── Containers ──────────────────────────────────────────────────────────
+
+  step "Containers"
+
+  if [ -f "$VARDO_DIR/$COMPOSE_FILE" ]; then
+    local containers
+    containers=$(docker compose -f "$VARDO_DIR/$COMPOSE_FILE" ps --format "{{.Name}}\t{{.Status}}" 2>/dev/null || true)
+
+    if [ -z "$containers" ]; then
+      doctor_fail "No containers running"
+    else
+      while IFS=$'\t' read -r name status; do
+        if echo "$status" | grep -qi "healthy"; then
+          doctor_pass "$name — healthy"
+        elif echo "$status" | grep -qi "up\|running"; then
+          doctor_warn "$name — running (no healthcheck)"
+        else
+          doctor_fail "$name — $status"
+        fi
+      done <<< "$containers"
+    fi
+  fi
+
+  # ── Connectivity ────────────────────────────────────────────────────────
+
+  step "Connectivity"
+
+  # PostgreSQL
+  if docker compose -f "$VARDO_DIR/$COMPOSE_FILE" exec -T postgres pg_isready -U host -q 2>/dev/null; then
+    doctor_pass "PostgreSQL: accepting connections"
+  else
+    doctor_fail "PostgreSQL: not responding"
+  fi
+
+  # Redis
+  if docker compose -f "$VARDO_DIR/$COMPOSE_FILE" exec -T redis redis-cli ping 2>/dev/null | grep -q PONG; then
+    doctor_pass "Redis: PONG"
+  else
+    doctor_fail "Redis: not responding"
+  fi
+
+  # App health endpoint
+  if docker compose -f "$VARDO_DIR/$COMPOSE_FILE" exec -T frontend \
+    curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
+    doctor_pass "App: /api/health OK"
+  else
+    doctor_fail "App: /api/health unreachable"
+  fi
+
+  # ── DNS ─────────────────────────────────────────────────────────────────
+
+  step "DNS"
+
+  load_env_display
+  local server_ip
+  server_ip=$(get_server_ip)
+
+  if [ -n "${VARDO_DOMAIN:-}" ] && [ -n "$server_ip" ]; then
+    local domain_ip=""
+    if command -v dig &>/dev/null; then
+      domain_ip=$(dig +short "$VARDO_DOMAIN" 2>/dev/null | head -1)
+    elif command -v host &>/dev/null; then
+      domain_ip=$(host "$VARDO_DOMAIN" 2>/dev/null | awk '/has address/ {print $4; exit}')
+    fi
+
+    if [ -n "$domain_ip" ] && [ "$domain_ip" = "$server_ip" ]; then
+      doctor_pass "$VARDO_DOMAIN → $server_ip"
+    elif [ -n "$domain_ip" ]; then
+      doctor_warn "$VARDO_DOMAIN → $domain_ip (expected $server_ip)"
+    else
+      doctor_fail "$VARDO_DOMAIN — not resolving"
+    fi
+
+    # Wildcard check
+    if [ -n "${VARDO_BASE_DOMAIN:-}" ]; then
+      local wildcard_ip=""
+      if command -v dig &>/dev/null; then
+        wildcard_ip=$(dig +short "test-check.$VARDO_BASE_DOMAIN" 2>/dev/null | head -1)
+      elif command -v host &>/dev/null; then
+        wildcard_ip=$(host "test-check.$VARDO_BASE_DOMAIN" 2>/dev/null | awk '/has address/ {print $4; exit}')
+      fi
+
+      if [ -n "$wildcard_ip" ] && [ "$wildcard_ip" = "$server_ip" ]; then
+        doctor_pass "*.$VARDO_BASE_DOMAIN → $server_ip"
+      elif [ -n "$wildcard_ip" ]; then
+        doctor_warn "*.$VARDO_BASE_DOMAIN → $wildcard_ip (expected $server_ip)"
+      else
+        doctor_fail "*.$VARDO_BASE_DOMAIN — not resolving"
+      fi
+    fi
+  else
+    doctor_warn "Cannot check DNS (missing VARDO_DOMAIN or server IP)"
+  fi
+
+  # ── TLS ─────────────────────────────────────────────────────────────────
+
+  step "TLS"
+
+  if [ -n "${VARDO_DOMAIN:-}" ]; then
+    if curl -sf --max-time 5 "https://${VARDO_DOMAIN}/api/health" > /dev/null 2>&1; then
+      doctor_pass "HTTPS: valid certificate for $VARDO_DOMAIN"
+    elif curl -sf --max-time 5 -k "https://${VARDO_DOMAIN}/api/health" > /dev/null 2>&1; then
+      doctor_warn "HTTPS: responding but certificate may be invalid"
+    else
+      doctor_fail "HTTPS: not responding on $VARDO_DOMAIN"
+    fi
+  else
+    doctor_warn "Cannot check TLS (VARDO_DOMAIN not set)"
+  fi
+
+  # ── Disk usage ──────────────────────────────────────────────────────────
+
+  step "Disk usage"
+
+  local docker_size
+  docker_size=$(docker system df --format "{{.Size}}" 2>/dev/null | head -1 || echo "unknown")
+  info "Docker images: $docker_size"
+
+  local volume_size
+  volume_size=$(docker system df --format "{{.Size}}" 2>/dev/null | tail -1 || echo "unknown")
+  info "Docker volumes: $volume_size"
+
+  if [ -d "$VARDO_DIR/backups" ]; then
+    local backup_size
+    backup_size=$(du -sh "$VARDO_DIR/backups" 2>/dev/null | cut -f1 || echo "0")
+    info "Backups: $backup_size"
+  fi
+
+  # ── Summary ─────────────────────────────────────────────────────────────
+
+  echo ""
+  if [ $fail_count -eq 0 ] && [ $warn_count -eq 0 ]; then
+    echo -e "  ${GREEN}${BOLD}All clear!${RESET} $pass checks passed"
+  elif [ $fail_count -eq 0 ]; then
+    echo -e "  ${YELLOW}${BOLD}Mostly healthy${RESET}  $pass passed, $warn_count warning(s)"
+  else
+    echo -e "  ${RED}${BOLD}Issues found${RESET}  $pass passed, $warn_count warning(s), $fail_count failed"
+  fi
+  echo ""
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# UNINSTALL
+# ══════════════════════════════════════════════════════════════════════════════
+
+do_uninstall() {
+  check_root
+
+  step "Uninstall Vardo"
+
+  if [ ! -d "$VARDO_DIR" ]; then
+    warn "Vardo not found at $VARDO_DIR"
+    return
+  fi
+
+  echo ""
+  warn "This will stop all Vardo containers."
+  if $PURGE; then
+    warn "Purge mode: will also remove volumes, data, and installation directory."
+  fi
+  echo ""
+
+  if ! $UNATTENDED && ! $AUTO_YES; then
+    if ! confirm "Stop all Vardo containers?"; then
+      warn "Uninstall cancelled"
+      return
+    fi
+  fi
+
+  # Stop containers
+  info "Stopping containers..."
+  docker compose -f "$VARDO_DIR/$COMPOSE_FILE" down 2>/dev/null || true
+  log "Containers stopped"
+
+  if $PURGE; then
+    # Purge requires explicit interactive confirmation even with --yes
+    if $UNATTENDED; then
+      # --unattended --purge is allowed (for scripted teardown)
+      info "Unattended purge — removing all data"
+    elif ! $AUTO_YES; then
+      echo ""
+      warn "This will permanently delete all Vardo data including the database."
+      if ! confirm "Type 'y' to confirm data destruction"; then
+        warn "Purge cancelled — containers are stopped, data preserved"
+        return
+      fi
+    fi
+
+    warn "Removing all data in 5 seconds... (Ctrl+C to cancel)"
+    sleep 5
+
+    info "Removing Docker volumes..."
+    docker compose -f "$VARDO_DIR/$COMPOSE_FILE" down -v 2>/dev/null || true
+    log "Volumes removed"
+
+    info "Removing $VARDO_DIR..."
+    rm -rf "$VARDO_DIR"
+    log "Installation directory removed"
+
+    docker network rm vardo-network 2>/dev/null || true
+    log "Network removed"
+
+    echo ""
+    echo -e "  ${GREEN}${BOLD}Vardo has been completely removed.${RESET}"
+  else
+    echo ""
+    echo -e "  ${GREEN}${BOLD}Vardo containers stopped.${RESET}"
+    echo ""
+    dimln "Data and configuration preserved at $VARDO_DIR"
+    dimln "To remove everything: sudo bash install.sh uninstall --purge"
+    dimln "To start again:       docker compose -f $VARDO_DIR/$COMPOSE_FILE up -d"
+  fi
+  echo ""
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# INTERACTIVE MENU
+# ══════════════════════════════════════════════════════════════════════════════
+
+show_menu() {
+  local version running
+  version=$(get_version)
+  running=$(container_count "running")
+
+  load_env_display
+
+  echo -e "  ${BOLD}Vardo${RESET} is installed at $VARDO_DIR"
+  echo -e "  Version: ${BOLD}$version${RESET}  |  Containers: ${BOLD}$running running${RESET}"
+  echo ""
+  echo -e "  ${BOLD}1)${RESET} Update         Pull latest and rebuild"
+  echo -e "  ${BOLD}2)${RESET} Doctor         Check system health"
+  echo -e "  ${BOLD}3)${RESET} Uninstall      Stop and remove"
+  echo -e "  ${BOLD}4)${RESET} Start fresh    Wipe and reinstall"
+  echo -e "  ${BOLD}q)${RESET} Quit"
+  echo ""
+
+  local choice
+  read -p "  Choose [1]: " choice < /dev/tty
+  choice="${choice:-1}"
+
+  case "$choice" in
+    1) do_update ;;
+    2) do_doctor ;;
+    3) do_uninstall ;;
+    4)
+      echo ""
+      warn "This will wipe the current installation and start fresh."
+      if confirm "Are you sure?"; then
+        # Copy script to temp location since purge deletes /opt/vardo
+        local tmp_script
+        tmp_script=$(mktemp /tmp/vardo-reinstall.XXXXXX)
+        cp "$0" "$tmp_script"
+        chmod +x "$tmp_script"
+        exec bash "$tmp_script" --fresh-reinstall
+      fi
+      ;;
+    q|Q) exit 0 ;;
+    *) warn "Invalid choice"; exit 1 ;;
+  esac
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MAIN
+# ══════════════════════════════════════════════════════════════════════════════
+
+parse_args() {
+  for arg in "$@"; do
+    case "$arg" in
+      install|update|doctor|uninstall)
+        COMMAND="$arg"
+        ;;
+      --unattended)
+        UNATTENDED=true
+        ;;
+      --yes|-y)
+        AUTO_YES=true
+        ;;
+      --purge)
+        PURGE=true
+        ;;
+      --help|-h)
+        echo "Usage: install.sh [command] [flags]"
+        echo ""
+        echo "Commands:"
+        echo "  install      Fresh installation (default if not installed)"
+        echo "  update       Pull latest changes and rebuild"
+        echo "  doctor       Run health diagnostics"
+        echo "  uninstall    Stop and remove Vardo"
+        echo ""
+        echo "Flags:"
+        echo "  --unattended   Skip all prompts"
+        echo "  --yes, -y      Auto-confirm prompts"
+        echo "  --purge        Remove all data with uninstall"
+        echo "  --help, -h     Show this help"
+        echo ""
+        echo "Environment variables (for unattended install):"
+        echo "  VARDO_DOMAIN       Dashboard domain"
+        echo "  VARDO_BASE_DOMAIN  Base domain for projects"
+        echo "  ACME_EMAIL         Let's Encrypt email"
+        exit 0
+        ;;
+    esac
+  done
+}
+
+main() {
+  parse_args "$@"
+  print_banner
+
+  # Internal flag: "start fresh" copies script to /tmp then exec's with this flag
+  if [ "${1:-}" = "--fresh-reinstall" ]; then
+    PURGE=true
+    AUTO_YES=true
+    do_uninstall
+    do_install
+    # Clean up temp script
+    rm -f "$0" 2>/dev/null || true
+    return
+  fi
+
+  # Explicit command
+  if [ -n "$COMMAND" ]; then
+    case "$COMMAND" in
+      install)   do_install ;;
+      update)    do_update ;;
+      doctor)    do_doctor ;;
+      uninstall) do_uninstall ;;
+    esac
+    return
+  fi
+
+  # Auto-detect: installed → menu, not installed → install
+  if is_installed; then
+    if $UNATTENDED; then
+      # Unattended with no command defaults to update
+      do_update
+    else
+      show_menu
+    fi
+  else
+    do_install
+  fi
+}
+
+main "$@"
