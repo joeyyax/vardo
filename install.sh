@@ -73,6 +73,14 @@ confirm() {
   fi
 }
 
+_sed_i() {
+  if [[ "$PLATFORM" == "macos" ]]; then
+    sed -i '' "$@"
+  else
+    sed -i "$@"
+  fi
+}
+
 get_version() {
   if [ -d "$VARDO_DIR/.git" ]; then
     git -C "$VARDO_DIR" describe --tags --always 2>/dev/null \
@@ -343,6 +351,7 @@ install_packages() {
 }
 
 configure_docker_logging() {
+  [[ "$PLATFORM" == "macos" ]] && return
   local daemon="/etc/docker/daemon.json"
   local needs_restart=false
 
@@ -446,6 +455,7 @@ generate_env() {
       VARDO_ROLE="production"
     fi
   fi
+  [[ "$VARDO_ROLE" =~ ^(production|staging|development)$ ]] || fail "Invalid role: $VARDO_ROLE (expected: production, staging, development)"
   log "Role: $VARDO_ROLE"
 
   # Domain prompts — only for production and staging (optional for staging)
@@ -698,15 +708,6 @@ run_env_migrations() {
   fi
 
   [ -f "$env_file" ] || return
-
-  # Cross-platform sed -i (macOS requires '' argument, Linux doesn't)
-  _sed_i() {
-    if [[ "$PLATFORM" == "macos" ]]; then
-      sed -i '' "$@"
-    else
-      sed -i "$@"
-    fi
-  }
 
   # HOST_* → VARDO_*
   if grep -q "^HOST_" "$env_file" 2>/dev/null; then
