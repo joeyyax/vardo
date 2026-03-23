@@ -107,6 +107,7 @@ export function InstancesSettings() {
   const [joinOpen, setJoinOpen] = useState(false);
   const [joinToken, setJoinToken] = useState("");
   const [joinLoading, setJoinLoading] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
 
   // Delete/cancel dialogs
   const [deleteTarget, setDeleteTarget] = useState<MeshPeer | null>(null);
@@ -133,6 +134,17 @@ export function InstancesSettings() {
   useEffect(() => {
     fetchPeers();
   }, []);
+
+  // Live-update invite countdowns and auto-remove expired
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (invites.length === 0) return;
+    const id = setInterval(() => {
+      setTick((t) => t + 1);
+      setInvites((prev) => prev.filter((i) => Date.now() < i.expiresAt));
+    }, 30_000);
+    return () => clearInterval(id);
+  }, [invites.length]);
 
   async function handleGenerateInvite() {
     setInviteLoading(true);
@@ -164,6 +176,7 @@ export function InstancesSettings() {
   async function handleJoin(e: React.FormEvent) {
     e.preventDefault();
     setJoinLoading(true);
+    setJoinError(null);
     try {
       const res = await fetch("/api/v1/admin/mesh/join", {
         method: "POST",
@@ -172,15 +185,16 @@ export function InstancesSettings() {
       });
       const json = await res.json();
       if (!res.ok) {
-        toast.error(json.error || "Failed to join mesh");
+        setJoinError(json.error || "Failed to join mesh");
         return;
       }
       toast.success("Connected to mesh");
       setJoinOpen(false);
       setJoinToken("");
+      setJoinError(null);
       fetchPeers(true);
     } catch {
-      toast.error("Failed to join mesh");
+      setJoinError("Failed to join mesh");
     } finally {
       setJoinLoading(false);
     }
@@ -289,67 +303,7 @@ export function InstancesSettings() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Left column — info */}
-        <div className="space-y-5">
-          <p className="text-sm text-muted-foreground">
-            Link Vardo instances together over encrypted WireGuard tunnels.
-            Once connected, instances automatically sync project data and
-            stay aware of each other's health.
-          </p>
-
-          <ul className="text-sm space-y-2.5">
-            <li className="flex items-start gap-2.5">
-              <Check className="size-4 text-status-success shrink-0 mt-0.5" />
-              <span className="text-muted-foreground">
-                <span className="font-medium text-foreground">Project sync</span>{" "}
-                — manifests replicate so each node knows what's deployed where
-              </span>
-            </li>
-            <li className="flex items-start gap-2.5">
-              <Check className="size-4 text-status-success shrink-0 mt-0.5" />
-              <span className="text-muted-foreground">
-                <span className="font-medium text-foreground">Heartbeat monitoring</span>{" "}
-                — instances ping each other, online/offline status in the dashboard
-              </span>
-            </li>
-            <li className="flex items-start gap-2.5">
-              <Check className="size-4 text-status-success shrink-0 mt-0.5" />
-              <span className="text-muted-foreground">
-                <span className="font-medium text-foreground">One-click pairing</span>{" "}
-                — generate a token, paste it on the other side, WireGuard configures itself
-              </span>
-            </li>
-            <li className="flex items-start gap-2.5">
-              <Check className="size-4 text-status-success shrink-0 mt-0.5" />
-              <span className="text-muted-foreground">
-                <span className="font-medium text-foreground">End-to-end encrypted</span>{" "}
-                — all traffic through WireGuard, nothing leaves the tunnel unencrypted
-              </span>
-            </li>
-          </ul>
-
-          <ul className="text-sm space-y-2.5">
-            <li className="flex items-start gap-2.5">
-              <X className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" />
-              <span className="text-muted-foreground">Not a VPN — doesn't route internet traffic</span>
-            </li>
-            <li className="flex items-start gap-2.5">
-              <X className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" />
-              <span className="text-muted-foreground">Doesn't expose ports or replace SSH</span>
-            </li>
-            <li className="flex items-start gap-2.5">
-              <X className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" />
-              <span className="text-muted-foreground">Only carries Vardo API traffic — manifests, heartbeats and sync</span>
-            </li>
-          </ul>
-        </div>
-
-        {/* Right column — peer list + invites */}
-        <div className="space-y-4">
-          <h3 className="text-sm font-medium">Connected instances</h3>
-
-          {/* Pending invites */}
+      {/* Pending invites */}
           {invites.length > 0 && (
             <Card className="squircle rounded-lg border-dashed">
               <CardContent className="p-0">
@@ -360,13 +314,13 @@ export function InstancesSettings() {
                       className="flex items-center justify-between gap-4 px-6 py-3"
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <Timer className="size-4 text-muted-foreground shrink-0" />
+                        <Timer className="size-4 text-muted-foreground shrink-0" aria-hidden="true" />
                         <div className="min-w-0">
                           <p className="text-sm text-muted-foreground">
                             Pending invite
                           </p>
                           <div className="flex items-center gap-1.5 mt-0.5">
-                            <Clock className="size-3 text-muted-foreground/70" />
+                            <Clock className="size-3 text-muted-foreground/70" aria-hidden="true" />
                             <span className="text-xs text-muted-foreground/70">
                               {formatTimeRemaining(invite.expiresAt)}
                             </span>
@@ -409,7 +363,7 @@ export function InstancesSettings() {
           {peers.length === 0 && invites.length === 0 ? (
             <Card className="squircle rounded-lg">
               <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-                <Network className="size-10 text-muted-foreground/50 mb-3" />
+                <Network className="size-10 text-muted-foreground/50 mb-3" aria-hidden="true" />
                 <p className="text-sm font-medium">No instances connected</p>
                 <p className="text-sm text-muted-foreground mt-1">
                   Generate an invite or join an existing mesh to get started.
@@ -491,17 +445,78 @@ export function InstancesSettings() {
               </CardContent>
             </Card>
           ) : null}
-        </div>
-      </div>
+
+      {/* About the mesh */}
+      <Card className="squircle rounded-lg">
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-3">
+              <h3 className="text-sm font-medium">Features</h3>
+              <ul className="text-sm space-y-2">
+                <li className="flex items-start gap-2.5">
+                  <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
+                  <span className="text-muted-foreground">
+                    <span className="font-medium text-foreground">Project sync</span>{" "}
+                    — manifests replicate so each node knows what's deployed where
+                  </span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
+                  <span className="text-muted-foreground">
+                    <span className="font-medium text-foreground">Heartbeat monitoring</span>{" "}
+                    — instances ping each other, online/offline status in the dashboard
+                  </span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
+                  <span className="text-muted-foreground">
+                    <span className="font-medium text-foreground">One-click pairing</span>{" "}
+                    — generate a token, paste it on the other side, WireGuard configures itself
+                  </span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
+                  <span className="text-muted-foreground">
+                    <span className="font-medium text-foreground">End-to-end encrypted</span>{" "}
+                    — all traffic through WireGuard, nothing unencrypted
+                  </span>
+                </li>
+              </ul>
+            </div>
+            <div className="space-y-3">
+              <h3 className="text-sm font-medium">Good to know</h3>
+              <ul className="text-sm space-y-2">
+                <li className="flex items-start gap-2.5">
+                  <X className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
+                  <span className="text-muted-foreground">Not a VPN — doesn't route internet traffic</span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <X className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
+                  <span className="text-muted-foreground">Doesn't expose ports or replace SSH</span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <X className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
+                  <span className="text-muted-foreground">Only carries Vardo API traffic — manifests, heartbeats and sync</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Generate invite dialog */}
       <Dialog open={inviteOpen} onOpenChange={(open) => !open && handleCloseInvite()}>
         <DialogContent className="squircle sm:max-w-md">
           {inviteLoading ? (
-            <div className="flex flex-col items-center justify-center py-8 gap-3">
-              <Loader2 className="size-6 animate-spin text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">Generating invite...</p>
-            </div>
+            <>
+              <DialogHeader>
+                <DialogTitle className="sr-only">Generating invite</DialogTitle>
+              </DialogHeader>
+              <div className="flex flex-col items-center justify-center py-8 gap-3">
+                <Loader2 className="size-6 animate-spin text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">Generating invite...</p>
+              </div>
+            </>
           ) : inviteError ? (
             <>
               <DialogHeader>
@@ -563,12 +578,18 @@ export function InstancesSettings() {
               <Input
                 id="join-token"
                 value={joinToken}
-                onChange={(e) => setJoinToken(e.target.value)}
+                onChange={(e) => {
+                  setJoinToken(e.target.value);
+                  if (joinError) setJoinError(null);
+                }}
                 placeholder="Paste invite token here"
                 className="font-mono text-xs"
                 required
                 autoFocus
               />
+              {joinError && (
+                <p className="text-sm text-destructive">{joinError}</p>
+              )}
             </div>
             <DialogFooter>
               <Button
