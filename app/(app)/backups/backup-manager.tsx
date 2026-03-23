@@ -635,7 +635,7 @@ export function BackupManager({ orgId, apps }: Props) {
           <div>
             <h2 className="text-lg font-medium">Automatic Backups</h2>
             <p className="text-sm text-muted-foreground">
-              Your data is automatically backed up by Host. These backups are read-only.
+              Your data is automatically backed up by the host. You can download or restore these backups anytime.
             </p>
           </div>
 

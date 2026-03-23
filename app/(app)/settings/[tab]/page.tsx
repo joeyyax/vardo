@@ -62,17 +62,7 @@ export default async function OrgSettingsTabPage({
         where: eq(apps.organizationId, orgId),
         columns: { id: true, name: true, displayName: true },
       });
-      return (
-        <div className="space-y-4">
-          <div className="space-y-1">
-            <h2 className="text-lg font-medium">Backups</h2>
-            <p className="text-sm text-muted-foreground">
-              Manage backup jobs and storage targets for this organization. Host-level backups run automatically on all apps — these are additional backups you control.
-            </p>
-          </div>
-          <BackupManager orgId={orgId} apps={appList} />
-        </div>
-      );
+      return <BackupManager orgId={orgId} apps={appList} />;
     }
 
     case "notifications":
