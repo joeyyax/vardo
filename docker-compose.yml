@@ -153,8 +153,6 @@ services:
   wireguard:
     container_name: vardo-wireguard
     image: linuxserver/wireguard
-    profiles:
-      - mesh
     restart: unless-stopped
     cap_add:
       - NET_ADMIN
