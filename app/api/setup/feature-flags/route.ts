@@ -17,6 +17,7 @@ const ADMIN_FLAGS: FeatureFlag[] = [
   "backups",
   "cron",
   "passwordAuth",
+  "mesh",
 ];
 
 /** Only accept known feature flag keys (excluding "ui" kill switch). */
@@ -26,6 +27,7 @@ const flagsSchema = z.object({
   backups: z.boolean().optional(),
   cron: z.boolean().optional(),
   passwordAuth: z.boolean().optional(),
+  mesh: z.boolean().optional(),
 }).strict();
 
 export async function GET(request: NextRequest) {

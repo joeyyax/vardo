@@ -94,6 +94,18 @@ async function checkTraefik(): Promise<ServiceStatus> {
   });
 }
 
+async function checkWireguard(): Promise<ServiceStatus | null> {
+  const { isFeatureEnabledAsync } = await import("@/lib/config/features");
+  const meshEnabled = await isFeatureEnabledAsync("mesh");
+  if (!meshEnabled) return null;
+
+  return checkService("WireGuard", "Mesh network tunnels", async () => {
+    const { isWireguardRunning } = await import("@/lib/mesh/wireguard");
+    const running = await isWireguardRunning();
+    if (!running) throw new Error("not running");
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Resource checks
 // ---------------------------------------------------------------------------
@@ -214,6 +226,7 @@ export async function getSystemHealth(): Promise<SystemHealth> {
       }),
       checkLoki(),
       checkTraefik(),
+      checkWireguard(),
     ]),
     getResourceStatuses(),
   ]);
