@@ -53,6 +53,7 @@ type MeshPeer = {
 
 type MeshInviteStatus = {
   code: string;
+  token: string;
   expiresAt: number;
   status: "pending" | "expired";
 };
@@ -105,9 +106,10 @@ export function InstancesSettings() {
   const [joinToken, setJoinToken] = useState("");
   const [joinLoading, setJoinLoading] = useState(false);
 
-  // Delete dialog
+  // Delete/cancel dialogs
   const [deleteTarget, setDeleteTarget] = useState<MeshPeer | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [cancellingCode, setCancellingCode] = useState<string | null>(null);
 
   async function fetchPeers(isRefresh = false) {
     if (isRefresh) setRefreshing(true);
@@ -205,6 +207,25 @@ export function InstancesSettings() {
     }
   }
 
+  async function handleCancelInvite(code: string) {
+    setCancellingCode(code);
+    try {
+      const res = await fetch(`/api/v1/admin/mesh/invite/${code}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        toast.error("Failed to cancel invite");
+        return;
+      }
+      setInvites((prev) => prev.filter((i) => i.code !== code));
+      toast.success("Invite cancelled");
+    } catch {
+      toast.error("Failed to cancel invite");
+    } finally {
+      setCancellingCode(null);
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-8" role="status" aria-live="polite">
@@ -233,32 +254,38 @@ export function InstancesSettings() {
           <div className="space-y-1">
             <h2 className="text-lg font-medium">Instances</h2>
             <p className="text-sm text-muted-foreground">
-              Connect multiple Vardo instances into a mesh network. Instances sync
-              project data over encrypted WireGuard tunnels.
+              Connect multiple Vardo instances into a mesh network.
             </p>
           </div>
 
-          <Card className="squircle rounded-lg">
-            <CardContent className="space-y-4">
-              <div className="space-y-3">
-                <h3 className="text-sm font-medium">How it works</h3>
-                <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside">
-                  <li>Generate an invite token on the hub instance</li>
-                  <li>Paste the token on the joining instance using "Join mesh"</li>
-                  <li>Both instances connect via an encrypted WireGuard tunnel</li>
-                  <li>Project data syncs automatically between connected instances</li>
-                </ol>
-              </div>
-              <div className="space-y-3">
-                <h3 className="text-sm font-medium">Use cases</h3>
-                <ul className="text-sm text-muted-foreground space-y-1">
-                  <li>Staging + production pairs with project sync</li>
-                  <li>Multi-server deployments across regions</li>
-                  <li>Local dev environments connected to a remote instance</li>
-                </ul>
-              </div>
-            </CardContent>
-          </Card>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <h3 className="text-sm font-medium">What this is</h3>
+              <p className="text-sm text-muted-foreground">
+                An encrypted WireGuard tunnel between Vardo instances that
+                syncs project data automatically. Useful for staging/production
+                pairs, multi-server deployments and local dev connected to a
+                remote instance.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-sm font-medium">What this isn't</h3>
+              <p className="text-sm text-muted-foreground">
+                This is not a VPN or general-purpose network. It only carries
+                Vardo API traffic between instances — project manifests,
+                heartbeats and sync data. It doesn't expose ports, route
+                internet traffic or replace SSH.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-sm font-medium">How to connect</h3>
+              <p className="text-sm text-muted-foreground">
+                Generate an invite on the hub instance, copy the token, then
+                paste it on the joining instance using "Join mesh". Both
+                sides configure WireGuard automatically.
+              </p>
+            </div>
+          </div>
 
           <div className="flex items-center gap-2">
             <Button
@@ -313,16 +340,38 @@ export function InstancesSettings() {
                           <p className="text-sm text-muted-foreground">
                             Pending invite
                           </p>
-                          <p className="text-xs text-muted-foreground/70 font-mono">
-                            {invite.code}
-                          </p>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <Clock className="size-3 text-muted-foreground/70" />
+                            <span className="text-xs text-muted-foreground/70">
+                              {formatTimeRemaining(invite.expiresAt)}
+                            </span>
+                          </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <Clock className="size-3 text-muted-foreground" />
-                        <span className="text-xs text-muted-foreground">
-                          {formatTimeRemaining(invite.expiresAt)}
-                        </span>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="size-8 p-0"
+                          aria-label="Copy invite token"
+                          onClick={() => copyToClipboard(invite.token, "Invite token")}
+                        >
+                          <Copy className="size-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="size-8 p-0 text-destructive hover:text-destructive"
+                          aria-label="Cancel invite"
+                          disabled={cancellingCode === invite.code}
+                          onClick={() => handleCancelInvite(invite.code)}
+                        >
+                          {cancellingCode === invite.code ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : (
+                            <Trash2 className="size-3.5" />
+                          )}
+                        </Button>
                       </div>
                     </div>
                   ))}

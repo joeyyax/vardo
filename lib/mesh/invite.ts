@@ -108,9 +108,9 @@ export async function redeemInvite(
   };
 }
 
-/** List all pending invites with their status. */
-export async function listInvites(): Promise<
-  Array<{ code: string; expiresAt: number; status: "pending" | "expired" }>
+/** List all pending invites with their status and self-contained token. */
+export async function listInvites(apiUrl: string): Promise<
+  Array<{ code: string; token: string; expiresAt: number; status: "pending" | "expired" }>
 > {
   const rows = await db.query.systemSettings.findMany({
     where: like(systemSettings.key, `${INVITE_PREFIX}%`),
@@ -121,8 +121,10 @@ export async function listInvites(): Promise<
     .map((row) => {
       try {
         const invite: MeshInvite = JSON.parse(row.value);
+        const payload = `${apiUrl}|${invite.code}`;
         return {
           code: invite.code,
+          token: Buffer.from(payload).toString("base64url"),
           expiresAt: invite.expiresAt,
           status: now > invite.expiresAt ? ("expired" as const) : ("pending" as const),
         };
@@ -131,6 +133,16 @@ export async function listInvites(): Promise<
       }
     })
     .filter((i): i is NonNullable<typeof i> => i !== null);
+}
+
+/** Cancel (delete) a pending invite by code. */
+export async function cancelInvite(code: string): Promise<boolean> {
+  const key = `${INVITE_PREFIX}${code}`;
+  const deleted = await db
+    .delete(systemSettings)
+    .where(eq(systemSettings.key, key))
+    .returning();
+  return deleted.length > 0;
 }
 
 /** Remove expired invite codes from system_settings. */

@@ -23,13 +23,17 @@ export async function GET() {
   try {
     await requireAppAdmin();
 
+    const serverIp = process.env.VARDO_SERVER_IP || process.env.VARDO_DOMAIN || "localhost";
+    const protocol = serverIp === "localhost" ? "http" : "https";
+    const apiUrl = `${protocol}://${serverIp}`;
+
     const [peers, invites] = await Promise.all([
       db.query.meshPeers.findMany({
         columns: {
           tokenHash: false,
         },
       }),
-      listInvites(),
+      listInvites(apiUrl),
     ]);
 
     return NextResponse.json({ peers, invites });
