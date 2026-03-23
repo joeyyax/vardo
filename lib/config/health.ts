@@ -255,5 +255,10 @@ export async function getSystemHealth(): Promise<SystemHealth> {
     pid: process.pid,
   };
 
-  return { services, resources, runtime, auth };
+  return {
+    services: services.filter((s): s is ServiceStatus => s !== null),
+    resources,
+    runtime,
+    auth,
+  };
 }
