@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/messenger";
 import { useNotificationStream } from "@/lib/hooks/use-notification-stream";
 import type { BusEvent, BusEventType } from "@/lib/bus/events";
 

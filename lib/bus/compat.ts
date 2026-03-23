@@ -76,7 +76,8 @@ export function toLegacyEvent(event: BusEvent): NotificationEvent {
     throw new Error(`[bus/compat] Unknown bus event type: ${event.type}`);
   }
 
-  const { type: _type, title, message, ...rest } = event;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { type: _busType, title, message, ...rest } = event;
   const metadata: Record<string, string> = {};
 
   for (const [key, value] of Object.entries(rest)) {
