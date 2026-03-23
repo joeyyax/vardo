@@ -447,9 +447,7 @@ export function InstancesSettings() {
           ) : null}
 
       {/* About the mesh */}
-      <Card className="squircle rounded-lg">
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-3">
               <h3 className="text-sm font-medium">Features</h3>
               <ul className="text-sm space-y-2">
@@ -500,9 +498,7 @@ export function InstancesSettings() {
                 </li>
               </ul>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+      </div>
 
       {/* Generate invite dialog */}
       <Dialog open={inviteOpen} onOpenChange={(open) => !open && handleCloseInvite()}>
