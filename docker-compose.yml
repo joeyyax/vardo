@@ -150,6 +150,36 @@ services:
       - vardo-network
     mem_limit: 512m
 
+  wireguard:
+    container_name: vardo-wireguard
+    image: linuxserver/wireguard
+    profiles:
+      - mesh
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      # SYS_MODULE needed on kernels without wireguard built in (pre-5.6).
+      # Safe to remove on Ubuntu 20.04+, Debian 11+, modern Docker Desktop.
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+    environment:
+      - PUID=1000
+      - PGID=1000
+    ports:
+      - "${WIREGUARD_PORT:-51820}:51820/udp"
+    volumes:
+      - wireguard_config:/config
+    healthcheck:
+      test: ["CMD-SHELL", "wg show wg0 2>/dev/null | grep -q 'interface' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - internal
+    mem_limit: 64m
+
   promtail:
     container_name: vardo-promtail
     image: grafana/promtail:3.4
@@ -172,6 +202,7 @@ volumes:
   host_projects:
   letsencrypt:
   loki_data:
+  wireguard_config:
 
 networks:
   internal:
