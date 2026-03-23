@@ -284,7 +284,7 @@ export function BackupSettings() {
               <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
               <span className="text-muted-foreground">
                 <span className="font-medium text-foreground">Automatic</span>{" "}
-                — apps with persistent volumes get daily backups with 7-day retention by default
+                — apps with persistent volumes get daily snapshots, kept for 7 days, with weekly and monthly retention tiers
               </span>
             </li>
             <li className="flex items-start gap-2.5">
@@ -316,7 +316,7 @@ export function BackupSettings() {
             </li>
             <li className="flex items-start gap-2.5">
               <X className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
-              <span className="text-muted-foreground">Custom schedules and retention can be set per job in the Backups page</span>
+              <span className="text-muted-foreground">Manual backups can be triggered anytime from the Backups page</span>
             </li>
           </ul>
         </div>
