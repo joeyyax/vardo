@@ -6,6 +6,7 @@ import { meshPeers } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { registerPeer } from "@/lib/mesh/peers";
+import { listInvites } from "@/lib/mesh/invite";
 
 const WG_KEY_RE = /^[A-Za-z0-9+/]{43}=$/;
 
@@ -22,13 +23,20 @@ export async function GET() {
   try {
     await requireAppAdmin();
 
-    const peers = await db.query.meshPeers.findMany({
-      columns: {
-        tokenHash: false,
-      },
-    });
+    const serverIp = process.env.VARDO_SERVER_IP || process.env.VARDO_DOMAIN || "localhost";
+    const protocol = serverIp === "localhost" ? "http" : "https";
+    const apiUrl = `${protocol}://${serverIp}`;
 
-    return NextResponse.json({ peers });
+    const [peers, invites] = await Promise.all([
+      db.query.meshPeers.findMany({
+        columns: {
+          tokenHash: false,
+        },
+      }),
+      listInvites(apiUrl),
+    ]);
+
+    return NextResponse.json({ peers, invites });
   } catch (error) {
     return handleRouteError(error, "Error listing mesh peers");
   }

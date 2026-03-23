@@ -122,6 +122,54 @@ export async function isWireguardRunning(): Promise<boolean> {
   }
 }
 
+/**
+ * Ensure the hub has a WireGuard config. If wg0 doesn't exist yet,
+ * generate a keypair, write the initial config, and bring the interface up.
+ * Returns the hub's public key.
+ */
+export async function ensureHubConfig(hubIp: string): Promise<string> {
+  // Check if wg0 is already up
+  try {
+    const { stdout } = await execFileAsync("docker", [
+      "exec", WG_CONTAINER, "sh", "-c", "wg show wg0 public-key",
+    ]);
+    const key = stdout.trim();
+    if (WG_KEY_RE.test(key)) return key;
+  } catch {
+    // Interface doesn't exist — bootstrap below
+  }
+
+  // Generate keypair and write initial config (no peers yet)
+  const { privateKey, publicKey } = await generateKeypair();
+  const port = parseInt(process.env.WIREGUARD_PORT || "51820", 10);
+  const config = buildWgConfig(privateKey, port, hubIp, []);
+  await writeWgConfig(config);
+
+  // Bring interface up
+  await execFileAsync("docker", [
+    "exec", WG_CONTAINER, "sh", "-c", "wg-quick up wg0",
+  ]);
+
+  return publicKey;
+}
+
+/** Read the hub's WireGuard public key from the running container. */
+export async function getHubPublicKey(): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync("docker", [
+      "exec",
+      WG_CONTAINER,
+      "sh",
+      "-c",
+      "wg show wg0 public-key",
+    ]);
+    const key = stdout.trim();
+    return WG_KEY_RE.test(key) ? key : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Get the current WireGuard interface status. */
 export async function getWgStatus(): Promise<string | null> {
   try {

@@ -14,11 +14,18 @@ interface MeshInvite {
   expiresAt: number;
 }
 
-/** Generate a short invite code and store it in system settings. */
+/**
+ * Generate an invite and return a self-contained token.
+ * The token encodes the hub's API URL + the short code so the joining
+ * instance knows where to call without any extra input.
+ *
+ * Format: base64url("hubApiUrl|code")
+ */
 export async function createInvite(hub: {
   publicKey: string;
   endpoint: string;
   internalIp: string;
+  apiUrl: string;
 }): Promise<string> {
   // Clean up any expired invites while we're here
   await cleanExpiredInvites();
@@ -48,7 +55,26 @@ export async function createInvite(hub: {
       },
     });
 
-  return code;
+  // Encode hub URL + code into a self-contained token
+  const payload = `${hub.apiUrl}|${code}`;
+  return Buffer.from(payload).toString("base64url");
+}
+
+/** Decode an invite token into { hubApiUrl, code }. Returns null if malformed. */
+export function decodeInviteToken(
+  token: string
+): { hubApiUrl: string; code: string } | null {
+  try {
+    const payload = Buffer.from(token, "base64url").toString("utf-8");
+    const pipeIdx = payload.indexOf("|");
+    if (pipeIdx < 1) return null;
+    const hubApiUrl = payload.slice(0, pipeIdx);
+    const code = payload.slice(pipeIdx + 1);
+    if (!hubApiUrl || !code) return null;
+    return { hubApiUrl, code };
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -80,6 +106,43 @@ export async function redeemInvite(
     hubEndpoint: invite.hubEndpoint,
     hubInternalIp: invite.hubInternalIp,
   };
+}
+
+/** List all pending invites with their status and self-contained token. */
+export async function listInvites(apiUrl: string): Promise<
+  Array<{ code: string; token: string; expiresAt: number; status: "pending" | "expired" }>
+> {
+  const rows = await db.query.systemSettings.findMany({
+    where: like(systemSettings.key, `${INVITE_PREFIX}%`),
+  });
+
+  const now = Date.now();
+  return rows
+    .map((row) => {
+      try {
+        const invite: MeshInvite = JSON.parse(row.value);
+        const payload = `${apiUrl}|${invite.code}`;
+        return {
+          code: invite.code,
+          token: Buffer.from(payload).toString("base64url"),
+          expiresAt: invite.expiresAt,
+          status: now > invite.expiresAt ? ("expired" as const) : ("pending" as const),
+        };
+      } catch {
+        return null;
+      }
+    })
+    .filter((i): i is NonNullable<typeof i> => i !== null);
+}
+
+/** Cancel (delete) a pending invite by code. */
+export async function cancelInvite(code: string): Promise<boolean> {
+  const key = `${INVITE_PREFIX}${code}`;
+  const deleted = await db
+    .delete(systemSettings)
+    .where(eq(systemSettings.key, key))
+    .returning();
+  return deleted.length > 0;
 }
 
 /** Remove expired invite codes from system_settings. */
