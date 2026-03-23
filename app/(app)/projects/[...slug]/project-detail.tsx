@@ -53,7 +53,6 @@ import {
 } from "@/components/ui/bottom-sheet";
 import { detectAppType } from "@/lib/ui/app-type";
 import { envTypeDotColor } from "@/lib/ui/status-colors";
-import type { FeatureFlags } from "@/lib/config/features";
 import { Uptime, StatusIndicator, AppIcon, DeploymentStatusBadge, formatDuration } from "@/components/app-status";
 import { EndpointsPopover } from "@/components/endpoints-popover";
 import { LogViewer, DeploymentLog } from "@/components/log-viewer";
@@ -750,12 +749,10 @@ export function ProjectDetail({
   project,
   orgId,
   initialTab,
-  featureFlags,
 }: {
   project: Project;
   orgId: string;
   initialTab: string;
-  featureFlags: FeatureFlags;
 }) {
   const router = useRouter();
   const color = "#a1a1aa"; // neutral — project color is unused
@@ -1241,16 +1238,12 @@ export function ProjectDetail({
               </Badge>
             )}
           </TabsTrigger>
-          {featureFlags?.logs !== false && (
-            <TabsTrigger value="logs">
-              Logs
-            </TabsTrigger>
-          )}
-          {featureFlags?.metrics !== false && (
-            <TabsTrigger value="metrics">
-              Metrics
-            </TabsTrigger>
-          )}
+          <TabsTrigger value="logs">
+            Logs
+          </TabsTrigger>
+          <TabsTrigger value="metrics">
+            Metrics
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="apps" className="pt-4">
@@ -1305,17 +1298,13 @@ export function ProjectDetail({
           <ProjectVariables apps={topLevelApps} orgId={orgId} />
         </TabsContent>
 
-        {featureFlags?.logs !== false && (
-          <TabsContent value="logs" className="pt-4">
-            <ProjectLogs apps={topLevelApps} orgId={orgId} />
-          </TabsContent>
-        )}
+        <TabsContent value="logs" className="pt-4">
+          <ProjectLogs apps={topLevelApps} orgId={orgId} />
+        </TabsContent>
 
-        {featureFlags?.metrics !== false && (
-          <TabsContent value="metrics" className="pt-4">
-            <ProjectMetricsTab apps={topLevelApps} orgId={orgId} projectId={project.id} />
-          </TabsContent>
-        )}
+        <TabsContent value="metrics" className="pt-4">
+          <ProjectMetricsTab apps={topLevelApps} orgId={orgId} projectId={project.id} />
+        </TabsContent>
       </Tabs>
 
       {/* New environment sheet */}

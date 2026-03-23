@@ -116,14 +116,20 @@ if [ -f ".env" ] && grep -q "^HOST_" .env 2>/dev/null; then
   sed -i 's/^HOST_EXPOSE_PORTS=/VARDO_EXPOSE_PORTS=/' .env
 fi
 
-# Ensure COMPOSE_PROFILES includes production
+# Ensure COMPOSE_PROFILES=production is set
 if [ -f ".env" ] && ! grep -q "^COMPOSE_PROFILES=.*production" .env 2>/dev/null; then
   if grep -q "^COMPOSE_PROFILES=" .env; then
-    sed -i 's/^COMPOSE_PROFILES=\(.*\)/COMPOSE_PROFILES=production,\1/' .env
+    sed -i 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=production/' .env
   else
     echo "COMPOSE_PROFILES=production" >> .env
   fi
-  log "Added 'production' to COMPOSE_PROFILES"
+  log "Set COMPOSE_PROFILES=production"
+fi
+
+# Remove FEATURE_METRICS and FEATURE_LOGS (now always enabled)
+if [ -f ".env" ]; then
+  sed -i '/^FEATURE_METRICS=/d' .env 2>/dev/null || true
+  sed -i '/^FEATURE_LOGS=/d' .env 2>/dev/null || true
 fi
 
 # Ensure vardo-network exists

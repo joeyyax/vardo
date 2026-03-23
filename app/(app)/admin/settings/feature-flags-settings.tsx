@@ -28,7 +28,6 @@ type FlagGroup = {
 };
 
 const FLAG_GROUPS: FlagGroup[] = [
-  { title: "Core services", flags: ["metrics", "logs"] },
   { title: "App features", flags: ["terminal", "environments", "backups", "cron"] },
   { title: "Authentication", flags: ["passwordAuth"] },
 ];
