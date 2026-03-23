@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { Plus, MoreHorizontal, Shield, UserMinus, Crown } from "lucide-react";
 import { PageToolbar } from "@/components/page-toolbar";
 import { Button } from "@/components/ui/button";
@@ -83,19 +83,19 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
       const data = await res.json();
 
       if (!res.ok) {
-        toast.error("Couldn't add member", {
+        notify.toast.error("Couldn't add member", {
           description: data.error || "They may not have an account yet",
         });
         return;
       }
 
-      toast.success(`Added ${data.member.email || data.member.name}`);
+      notify.toast.success(`Added ${data.member.email || data.member.name}`);
       setInviteOpen(false);
       setInviteEmail("");
       setInviteRole("member");
       router.refresh();
     } catch {
-      toast.error("Couldn't add member", {
+      notify.toast.error("Couldn't add member", {
         description: "Check your connection and try again",
       });
     } finally {
@@ -114,18 +114,18 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
       const data = await res.json();
 
       if (!res.ok) {
-        toast.error("Couldn't update role", {
+        notify.toast.error("Couldn't update role", {
           description: data.error,
         });
         return;
       }
 
-      toast.success(`Role updated to ${ROLE_LABELS[newRole]}`);
+      notify.toast.success(`Role updated to ${ROLE_LABELS[newRole]}`);
       setMembers((prev) =>
         prev.map((m) => (m.id === userId ? { ...m, role: newRole } : m))
       );
     } catch {
-      toast.error("Couldn't update role", {
+      notify.toast.error("Couldn't update role", {
         description: "Check your connection and try again",
       });
     }
@@ -143,17 +143,17 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
       const data = await res.json();
 
       if (!res.ok) {
-        toast.error("Couldn't remove member", {
+        notify.toast.error("Couldn't remove member", {
           description: data.error,
         });
         return;
       }
 
-      toast.success("Member removed");
+      notify.toast.success("Member removed");
       setMembers((prev) => prev.filter((m) => m.id !== removeTarget.id));
       setRemoveTarget(null);
     } catch {
-      toast.error("Couldn't remove member", {
+      notify.toast.error("Couldn't remove member", {
         description: "Check your connection and try again",
       });
     } finally {

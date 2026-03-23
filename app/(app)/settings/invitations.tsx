@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { Plus, Mail, MoreHorizontal, RefreshCw, XCircle, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -79,7 +79,7 @@ export function InvitationsPanel({
 
     const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailPattern.test(trimmedEmail)) {
-      toast.error("Please enter a valid email address");
+      notify.toast.error("Please enter a valid email address");
       return;
     }
 
@@ -98,17 +98,17 @@ export function InvitationsPanel({
       const data = await res.json();
 
       if (!res.ok) {
-        toast.error(data.error || "Failed to send invitation");
+        notify.toast.error(data.error || "Failed to send invitation");
         return;
       }
 
-      toast.success(`Invitation sent to ${inviteEmail.trim()}`);
+      notify.toast.success(`Invitation sent to ${inviteEmail.trim()}`);
       setInviteOpen(false);
       setInviteEmail("");
       setInviteRole("member");
       router.refresh();
     } catch {
-      toast.error("Failed to send invitation");
+      notify.toast.error("Failed to send invitation");
     } finally {
       setInviting(false);
     }
@@ -129,18 +129,18 @@ export function InvitationsPanel({
       const data = await res.json();
 
       if (!res.ok) {
-        toast.error(data.error || "Failed to revoke invitation");
+        notify.toast.error(data.error || "Failed to revoke invitation");
         return;
       }
 
-      toast.success("Invitation revoked");
+      notify.toast.success("Invitation revoked");
       setInvitations((prev) =>
         prev.map((inv) =>
           inv.id === invitationId ? { ...inv, status: "expired" as const } : inv
         )
       );
     } catch {
-      toast.error("Failed to revoke invitation");
+      notify.toast.error("Failed to revoke invitation");
     } finally {
       setPendingAction(null);
     }
@@ -158,14 +158,14 @@ export function InvitationsPanel({
       const data = await res.json();
 
       if (!res.ok) {
-        toast.error(data.error || "Failed to resend invitation");
+        notify.toast.error(data.error || "Failed to resend invitation");
         return;
       }
 
-      toast.success(`Invitation resent to ${email}`);
+      notify.toast.success(`Invitation resent to ${email}`);
       router.refresh();
     } catch {
-      toast.error("Failed to resend invitation");
+      notify.toast.error("Failed to resend invitation");
     } finally {
       setPendingAction(null);
     }

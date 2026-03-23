@@ -8,7 +8,7 @@ import {
   Shield,
   ShieldCheck,
 } from "lucide-react";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,12 +27,12 @@ export function DockerPrune() {
       const res = await fetch("/api/v1/admin/docker-prune", { method: "POST" });
       if (res.ok) {
         const data = await res.json();
-        toast.success(`Cleaned up ${data.spaceReclaimed || "unused resources"}`);
+        notify.toast.success(`Cleaned up ${data.spaceReclaimed || "unused resources"}`);
       } else {
-        toast.error("Cleanup failed");
+        notify.toast.error("Cleanup failed");
       }
     } catch {
-      toast.error("Cleanup failed");
+      notify.toast.error("Cleanup failed");
     } finally {
       setPruning(false);
     }
@@ -114,13 +114,13 @@ export function UserManagement() {
         setEmail("");
         setName("");
         fetchUsers();
-        toast.success("User invited");
+        notify.toast.success("User invited");
       } else {
         const data = await res.json();
-        toast.error(data.error || "Failed to invite user");
+        notify.toast.error(data.error || "Failed to invite user");
       }
     } catch {
-      toast.error("Failed to invite user");
+      notify.toast.error("Failed to invite user");
     } finally {
       setInviting(false);
     }
