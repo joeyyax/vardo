@@ -1,5 +1,6 @@
 import { getSystemHealth } from "@/lib/config/health";
-import { notify } from "@/lib/notifications/dispatch";
+import { emit } from "@/lib/notifications/dispatch";
+import type { BusEvent } from "@/lib/bus";
 import { shouldFire, markFired, loadAlertState } from "./state";
 import { db } from "@/lib/db";
 import { systemSettings } from "@/lib/db/schema";
@@ -23,14 +24,14 @@ async function getAllOrgIds(): Promise<string[]> {
   }
 }
 
-async function notifyAll(event: Parameters<typeof notify>[1]): Promise<void> {
+async function emitAll(event: BusEvent): Promise<void> {
   const orgIds = await getAllOrgIds();
   const results = await Promise.allSettled(
-    orgIds.map((orgId) => notify(orgId, event)),
+    orgIds.map((orgId) => { emit(orgId, event); }),
   );
   for (const result of results) {
     if (result.status === "rejected") {
-      console.error("[system-alerts] notifyAll error:", result.reason);
+      console.error("[system-alerts] emitAll error:", result.reason);
     }
   }
 }
@@ -52,15 +53,13 @@ async function checkServiceAlerts(health: Awaited<ReturnType<typeof getSystemHea
         if (!shouldFire("service-degraded", service.name)) continue;
         markFired("service-degraded", service.name);
 
-        await notifyAll({
-          type: "system-alert-service",
+        await emitAll({
+          type: "system.service-down",
           title: `Service degraded: ${service.name}`,
           message: `${service.name} (${service.description}) is no longer responding. Check system health for details.`,
-          metadata: {
-            service: service.name,
-            description: service.description,
-            latencyMs: service.latencyMs?.toString() ?? "",
-          },
+          service: service.name,
+          description: service.description,
+          latencyMs: service.latencyMs?.toString() ?? "",
         });
       }
     }
@@ -87,17 +86,15 @@ async function checkDiskAlerts(health: Awaited<ReturnType<typeof getSystemHealth
         markFired("disk-space", key);
 
         const isCritical = threshold >= 95;
-        await notifyAll({
-          type: "system-alert-disk",
+        await emitAll({
+          type: "system.disk-alert",
           title: `Disk usage at ${Math.round(disk.percent)}%`,
           message: `Host disk usage has reached ${Math.round(disk.percent)}% (threshold: ${threshold}%). Free up space to prevent service disruption.`,
-          metadata: {
-            percent: disk.percent.toString(),
-            threshold: threshold.toString(),
-            severity: isCritical ? "critical" : "warning",
-            used: disk.current.toString(),
-            total: disk.total.toString(),
-          },
+          percent: disk.percent,
+          threshold,
+          severity: isCritical ? "critical" : "warning",
+          used: disk.current,
+          total: disk.total,
         });
         // Only fire the highest triggered threshold per cycle
         break;
@@ -148,13 +145,11 @@ async function checkHostRestart(): Promise<void> {
     if (!shouldFire("host-restarted", "host")) return;
     markFired("host-restarted", "host");
 
-    await notifyAll({
-      type: "system-alert-restart",
+    await emitAll({
+      type: "system.restart-loop",
       title: "Host restarted",
       message: `The host process restarted. Current uptime: ${Math.round(uptimeSeconds)}s. All services are reinitializing.`,
-      metadata: {
-        uptimeSeconds: uptimeSeconds.toString(),
-      },
+      uptimeSeconds,
     });
   } catch (err) {
     console.error("[system-alerts] Host restart check error:", err);
@@ -231,16 +226,14 @@ async function checkCertAlerts(): Promise<void> {
               if (!shouldFire("cert-expiring", certDomain)) continue;
               markFired("cert-expiring", certDomain);
 
-              await notifyAll({
-                type: "system-alert-cert",
+              await emitAll({
+                type: "system.cert-expiring",
                 title: `Certificate expiring: ${certDomain}`,
                 message: `The TLS certificate for ${certDomain} expires in ${Math.round(daysLeft)} day(s). Traefik should auto-renew — check logs if renewal is not happening.`,
-                metadata: {
-                  domain: certDomain,
-                  daysLeft: Math.round(daysLeft).toString(),
-                  expiresAt: notAfter.toISOString(),
-                  resolver: resolver,
-                },
+                domain: certDomain,
+                daysLeft: Math.round(daysLeft),
+                expiresAt: notAfter.toISOString(),
+                resolver: resolver,
               });
             }
           }
@@ -274,14 +267,12 @@ async function checkUpdateAlert(): Promise<void> {
     if (!shouldFire("update-available", "main")) return;
     markFired("update-available", "main");
 
-    await notifyAll({
-      type: "system-alert-update",
+    await emitAll({
+      type: "system.update-available",
       title: "Host update available",
       message: `A new version of Host is available. Remote: ${remoteHead.slice(0, 8)} — Local: ${localHead.slice(0, 8)}. Pull and redeploy when ready.`,
-      metadata: {
-        remoteHead: remoteHead.slice(0, 8),
-        localHead: localHead.slice(0, 8),
-      },
+      remoteHead: remoteHead.slice(0, 8),
+      localHead: localHead.slice(0, 8),
     });
   } catch {
     // git not available or no remote — best-effort

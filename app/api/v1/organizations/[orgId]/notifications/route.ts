@@ -9,7 +9,7 @@ import { z } from "zod";
 import { maskChannelConfig } from "@/lib/notifications/mask-config";
 
 type RouteParams = { params: Promise<{ orgId: string }> };
-const createSchema = z.object({ name: z.string().min(1).max(100), type: z.enum(["email", "webhook", "slack"]), config: z.union([z.object({ recipients: z.array(z.string().email()).min(1) }), z.object({ url: z.string().url(), secret: z.string().optional() }), z.object({ webhookUrl: z.string().url() })]), enabled: z.boolean().optional().default(true) });
+const createSchema = z.object({ name: z.string().min(1).max(100), type: z.enum(["email", "webhook", "slack"]), config: z.union([z.object({ recipients: z.array(z.string().email()).min(1) }), z.object({ url: z.string().url(), secret: z.string().optional() }), z.object({ webhookUrl: z.string().url() })]), enabled: z.boolean().optional().default(true), subscribedEvents: z.array(z.string()).optional().default([]) });
 
 export async function GET(_req: NextRequest, { params }: RouteParams) {
   try {
@@ -29,7 +29,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     if (organization.id !== orgId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const parsed = createSchema.safeParse(await req.json());
     if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
-    const [channel] = await db.insert(notificationChannels).values({ id: nanoid(), organizationId: orgId, name: parsed.data.name, type: parsed.data.type, config: parsed.data.config, enabled: parsed.data.enabled }).returning();
+    const [channel] = await db.insert(notificationChannels).values({ id: nanoid(), organizationId: orgId, name: parsed.data.name, type: parsed.data.type, config: parsed.data.config, enabled: parsed.data.enabled, subscribedEvents: parsed.data.subscribedEvents }).returning();
     return NextResponse.json({ channel: maskChannelConfig(channel) }, { status: 201 });
   } catch (error) { return handleRouteError(error, "Error creating notification channel"); }
 }

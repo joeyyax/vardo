@@ -116,12 +116,14 @@ export async function runPostDeployDriftCheck(opts: DriftCheckOpts): Promise<voi
     // Fire notification if drift exceeds threshold
     if (totalDrift >= DRIFT_NOTIFICATION_THRESHOLD) {
       try {
-        const { notify } = await import("@/lib/notifications/dispatch");
-        await notify(organizationId, {
-          type: "volume-drift",
+        const { emit } = await import("@/lib/notifications/dispatch");
+        emit(organizationId, {
+          type: "volume.drift",
           title: `Volume drift detected: ${appName}`,
           message: `${totalDrift} unignored file change(s) detected across volumes after deploy. Review in the Volumes panel.`,
-          metadata: { appId, appName, totalDrift: String(totalDrift) },
+          appId,
+          appName,
+          totalDrift,
         });
       } catch {
         // Notification module may not exist yet — non-fatal

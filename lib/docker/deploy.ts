@@ -1200,19 +1200,43 @@ async function sendDeployNotification(
 ) {
   try {
     if (!app.organizationId) return;
-    const { notify } = await import("@/lib/notifications/dispatch");
+    const { emit } = await import("@/lib/notifications/dispatch");
     const deployment = await db.query.deployments.findFirst({ where: eq(deployments.id, deploymentId), columns: { gitSha: true, gitMessage: true, triggeredBy: true } });
     let triggeredByName: string | undefined;
     if (deployment?.triggeredBy) { const { user: userTable } = await import("@/lib/db/schema"); const u = await db.query.user.findFirst({ where: eq(userTable.id, deployment.triggeredBy), columns: { name: true, email: true } }); triggeredByName = u?.name || u?.email || undefined; }
     const duration = durationMs < 1000 ? `${durationMs}ms` : `${Math.round(durationMs / 1000)}s`;
     const domain = app.domains[0]?.domain;
-    const metadata: Record<string, string> = { projectName: app.displayName || app.name, appId: app.id, deploymentId };
-    if (domain) metadata.domain = domain;
-    if (deployment?.gitSha) metadata.gitSha = deployment.gitSha;
-    if (deployment?.gitMessage) metadata.gitMessage = deployment.gitMessage;
-    if (triggeredByName) metadata.triggeredBy = triggeredByName;
-    if (success) { metadata.duration = duration; await notify(app.organizationId, { type: "deploy-success", title: `Deploy successful: ${app.displayName || app.name}`, message: `${app.displayName || app.name} was deployed successfully in ${duration}.`, metadata }); }
-    else { if (errorMessage) metadata.errorMessage = errorMessage; await notify(app.organizationId, { type: "deploy-failed", title: `Deploy failed: ${app.displayName || app.name}`, message: errorMessage || "Deployment failed with an unknown error.", metadata }); }
+    const projectName = app.displayName || app.name;
+
+    if (success) {
+      emit(app.organizationId, {
+        type: "deploy.success",
+        title: `Deploy successful: ${projectName}`,
+        message: `${projectName} was deployed successfully in ${duration}.`,
+        projectName,
+        appId: app.id,
+        deploymentId,
+        duration,
+        domain,
+        gitSha: deployment?.gitSha ?? undefined,
+        gitMessage: deployment?.gitMessage ?? undefined,
+        triggeredBy: triggeredByName,
+      });
+    } else {
+      emit(app.organizationId, {
+        type: "deploy.failed",
+        title: `Deploy failed: ${projectName}`,
+        message: errorMessage || "Deployment failed with an unknown error.",
+        projectName,
+        appId: app.id,
+        deploymentId,
+        domain,
+        gitSha: deployment?.gitSha ?? undefined,
+        gitMessage: deployment?.gitMessage ?? undefined,
+        triggeredBy: triggeredByName,
+        errorMessage,
+      });
+    }
   } catch (err) { console.error("[notifications] Deploy notification error:", err); }
 }
 
