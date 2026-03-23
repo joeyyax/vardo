@@ -8,7 +8,7 @@ import { meshJsonFetch } from "@/lib/mesh/client";
 const promoteSchema = z.object({
   projectId: z.string().min(1),
   targetPeerId: z.string().min(1),
-  environment: z.string().min(1),
+  environment: z.enum(["production", "staging", "development"]),
   orgId: z.string().min(1),
   includeEnvVars: z.boolean().default(false),
 });

@@ -10,7 +10,7 @@ const pullSchema = z.object({
   sourcePeerId: z.string().min(1),
   projectId: z.string().min(1),
   orgId: z.string().min(1),
-  environment: z.string().min(1).default("development"),
+  environment: z.enum(["production", "staging", "development"]).default("development"),
   includeEnvVars: z.boolean().default(false),
 });
 
