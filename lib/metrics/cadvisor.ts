@@ -1,4 +1,4 @@
-const CADVISOR_URL = process.env.CADVISOR_URL || "http://localhost:9300";
+const CADVISOR_URL = process.env.CADVISOR_URL || "http://localhost:7300";
 
 export type ContainerMetrics = {
   containerId: string;

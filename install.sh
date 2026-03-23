@@ -232,7 +232,8 @@ check_port_in_use() {
 find_free_port() {
   local port="$1"
   local max=$((port + 100))
-  while check_port_in_use "$port"; do
+  local reserved="7100 7200 7300 7400"
+  while check_port_in_use "$port" || [[ " $reserved " == *" $port "* ]]; do
     port=$((port + 1))
     if [ "$port" -ge "$max" ]; then return 1; fi
   done
@@ -253,7 +254,7 @@ check_ports() {
 
   # Service ports — detect conflicts and resolve
   local env_vars=("POSTGRES_PORT" "REDIS_PORT" "CADVISOR_PORT" "LOKI_PORT")
-  local defaults=(9100 9200 9300 9400)
+  local defaults=(7100 7200 7300 7400)
   local labels=("PostgreSQL" "Redis" "cAdvisor" "Loki")
 
   for i in "${!env_vars[@]}"; do
@@ -643,7 +644,7 @@ EOF
 
   # Append port overrides if any were reassigned during preflight
   local env_vars=("POSTGRES_PORT" "REDIS_PORT" "CADVISOR_PORT" "LOKI_PORT")
-  local defaults=(9100 9200 9300 9400)
+  local defaults=(7100 7200 7300 7400)
   local has_overrides=false
 
   for i in "${!env_vars[@]}"; do

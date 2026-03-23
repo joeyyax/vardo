@@ -1,6 +1,6 @@
 import Redis from "ioredis";
 
-const url = process.env.REDIS_URL || "redis://localhost:9200";
+const url = process.env.REDIS_URL || "redis://localhost:7200";
 
 // Per-process cap — single-node assumption. This will not distribute across
 // multiple instances; each process maintains its own independent counter.
