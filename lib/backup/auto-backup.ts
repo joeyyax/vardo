@@ -175,7 +175,10 @@ export async function ensureAutoBackupJob(opts: {
     name: `Auto: ${appName}`,
     schedule: "0 2 * * *",
     enabled: true,
+    keepLast: 1,
     keepDaily: 7,
+    keepWeekly: 4,
+    keepMonthly: 6,
     notifyOnFailure: true,
   });
 

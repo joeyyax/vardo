@@ -229,7 +229,10 @@ export function BackupManager({ orgId, apps }: Props) {
   const [newJobTargetId, setNewJobTargetId] = useState("");
   const [newJobSchedule, setNewJobSchedule] = useState("0 2 * * *");
   const [newJobAppIds, setNewJobAppIds] = useState<string[]>([]);
-  const [newJobKeepLast, setNewJobKeepLast] = useState("7");
+  const [newJobKeepLast, setNewJobKeepLast] = useState("1");
+  const [newJobKeepDaily, setNewJobKeepDaily] = useState("7");
+  const [newJobKeepWeekly, setNewJobKeepWeekly] = useState("4");
+  const [newJobKeepMonthly, setNewJobKeepMonthly] = useState("6");
 
   // New target form
   const [targetSheetOpen, setTargetSheetOpen] = useState(false);
@@ -435,6 +438,9 @@ export function BackupManager({ orgId, apps }: Props) {
           appIds: newJobAppIds,
           schedule: newJobSchedule,
           keepLast: newJobKeepLast ? parseInt(newJobKeepLast, 10) : null,
+          keepDaily: newJobKeepDaily ? parseInt(newJobKeepDaily, 10) : null,
+          keepWeekly: newJobKeepWeekly ? parseInt(newJobKeepWeekly, 10) : null,
+          keepMonthly: newJobKeepMonthly ? parseInt(newJobKeepMonthly, 10) : null,
         }),
       });
 
@@ -463,7 +469,10 @@ export function BackupManager({ orgId, apps }: Props) {
     setNewJobTargetId("");
     setNewJobSchedule("0 2 * * *");
     setNewJobAppIds([]);
-    setNewJobKeepLast("7");
+    setNewJobKeepLast("1");
+    setNewJobKeepDaily("7");
+    setNewJobKeepWeekly("4");
+    setNewJobKeepMonthly("6");
   }
 
   // -- Run backup --
@@ -892,8 +901,16 @@ export function BackupManager({ orgId, apps }: Props) {
                         <span>
                           Target: {job.target.name}
                         </span>
-                        {job.keepLast && (
-                          <span>Keep last {job.keepLast}</span>
+                        {(job.keepLast || job.keepDaily || job.keepWeekly || job.keepMonthly) && (
+                          <span>
+                            Retention:{" "}
+                            {[
+                              job.keepLast && `${job.keepLast} last`,
+                              job.keepDaily && `${job.keepDaily} daily`,
+                              job.keepWeekly && `${job.keepWeekly} weekly`,
+                              job.keepMonthly && `${job.keepMonthly} monthly`,
+                            ].filter(Boolean).join(", ")}
+                          </span>
                         )}
                       </div>
 
@@ -1348,19 +1365,52 @@ export function BackupManager({ orgId, apps }: Props) {
               </div>
 
               <div className="grid gap-2">
-                <Label htmlFor="keep-last">Retention (keep last N)</Label>
-                <Input
-                  id="keep-last"
-                  type="number"
-                  min="1"
-                  max="365"
-                  value={newJobKeepLast}
-                  onChange={(e) => setNewJobKeepLast(e.target.value)}
-                />
+                <Label className="text-sm font-medium">Retention</Label>
                 <p className="text-xs text-muted-foreground">
-                  Number of recent backups to keep. Older backups will be
-                  pruned.
+                  How many snapshots to keep at each tier. Older backups are pruned automatically.
                 </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="keep-last" className="text-xs text-muted-foreground">Keep last</Label>
+                    <Input
+                      id="keep-last"
+                      type="number"
+                      min="0"
+                      value={newJobKeepLast}
+                      onChange={(e) => setNewJobKeepLast(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="keep-daily" className="text-xs text-muted-foreground">Keep daily</Label>
+                    <Input
+                      id="keep-daily"
+                      type="number"
+                      min="0"
+                      value={newJobKeepDaily}
+                      onChange={(e) => setNewJobKeepDaily(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="keep-weekly" className="text-xs text-muted-foreground">Keep weekly</Label>
+                    <Input
+                      id="keep-weekly"
+                      type="number"
+                      min="0"
+                      value={newJobKeepWeekly}
+                      onChange={(e) => setNewJobKeepWeekly(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="keep-monthly" className="text-xs text-muted-foreground">Keep monthly</Label>
+                    <Input
+                      id="keep-monthly"
+                      type="number"
+                      min="0"
+                      value={newJobKeepMonthly}
+                      onChange={(e) => setNewJobKeepMonthly(e.target.value)}
+                    />
+                  </div>
+                </div>
               </div>
 
               <div className="grid gap-2">

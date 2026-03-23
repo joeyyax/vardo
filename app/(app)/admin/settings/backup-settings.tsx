@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Check, X } from "lucide-react";
+import { Loader2, Check, Info } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { MASK_SENTINEL } from "@/lib/mask-secrets";
 import { useSystemSetting } from "./use-system-setting";
@@ -314,16 +314,16 @@ export function BackupSettings() {
           <h3 className="text-sm font-medium">Good to know</h3>
           <ul className="text-sm space-y-2">
             <li className="flex items-start gap-2.5">
-              <X className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
-              <span className="text-muted-foreground">Only persistent volumes are backed up — ephemeral data is excluded</span>
-            </li>
-            <li className="flex items-start gap-2.5">
-              <X className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
+              <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
               <span className="text-muted-foreground">Runs live — no downtime, no container restarts</span>
             </li>
             <li className="flex items-start gap-2.5">
-              <X className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
+              <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
               <span className="text-muted-foreground">Manual backups can be triggered anytime from the Backups page</span>
+            </li>
+            <li className="flex items-start gap-2.5">
+              <Info className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
+              <span className="text-muted-foreground">Only persistent volumes are backed up — ephemeral data is excluded</span>
             </li>
           </ul>
         </div>
