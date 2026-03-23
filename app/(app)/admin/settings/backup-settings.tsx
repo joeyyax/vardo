@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Check, Info } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { MASK_SENTINEL } from "@/lib/mask-secrets";
 import { useSystemSetting } from "./use-system-setting";
@@ -68,7 +68,6 @@ export function BackupSettings() {
     },
   });
 
-  // Finding 11: Reset fields when storage type changes
   function handleTypeChange(next: string) {
     if (next !== type) {
       setBucket("");
@@ -99,9 +98,9 @@ export function BackupSettings() {
   return (
     <div className="space-y-6">
       <div className="space-y-1">
-        <h2 className="text-lg font-medium">Backup storage</h2>
+        <h2 className="text-lg font-medium">Backups</h2>
         <p className="text-sm text-muted-foreground">
-          Configure where volume snapshots are stored. Backups run on the schedules you set per-project in the Backups page.
+          Configure the system-wide backup storage target. This is the default target for automatic backups across all organizations.
         </p>
       </div>
 
@@ -166,49 +165,15 @@ export function BackupSettings() {
             {isMaskedValue(accessKey) && !editingAccessKey ? (
               <div className="flex gap-2">
                 <Input id="sys-accessKey" value={toDisplay(accessKey)} disabled className="font-mono" />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="squircle shrink-0"
-                  aria-label="Edit access key"
-                  onClick={() => {
-                    setEditingAccessKey(true);
-                    setAccessKey("");
-                  }}
-                >
-                  Edit
-                </Button>
+                <Button type="button" variant="outline" size="sm" className="squircle shrink-0" aria-label="Edit access key" onClick={() => { setEditingAccessKey(true); setAccessKey(""); }}>Edit</Button>
               </div>
             ) : editingAccessKey ? (
               <div className="flex gap-2">
-                <Input
-                  id="sys-accessKey"
-                  value={accessKey}
-                  onChange={(e) => setAccessKey(e.target.value)}
-                  required
-                  autoFocus
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="squircle shrink-0"
-                  onClick={() => {
-                    setEditingAccessKey(false);
-                    setAccessKey(maskedAccessKey.current);
-                  }}
-                >
-                  Cancel
-                </Button>
+                <Input id="sys-accessKey" value={accessKey} onChange={(e) => setAccessKey(e.target.value)} required autoFocus />
+                <Button type="button" variant="outline" size="sm" className="squircle shrink-0" onClick={() => { setEditingAccessKey(false); setAccessKey(maskedAccessKey.current); }}>Cancel</Button>
               </div>
             ) : (
-              <Input
-                id="sys-accessKey"
-                value={accessKey}
-                onChange={(e) => setAccessKey(e.target.value)}
-                required
-              />
+              <Input id="sys-accessKey" value={accessKey} onChange={(e) => setAccessKey(e.target.value)} required />
             )}
           </div>
 
@@ -217,53 +182,15 @@ export function BackupSettings() {
             {isMaskedValue(secretKey) && !editingSecretKey ? (
               <div className="flex gap-2">
                 <Input id="sys-secretKey" value={toDisplay(secretKey)} disabled className="font-mono" />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="squircle shrink-0"
-                  aria-label="Edit secret key"
-                  onClick={() => {
-                    setEditingSecretKey(true);
-                    setSecretKey("");
-                  }}
-                >
-                  Edit
-                </Button>
+                <Button type="button" variant="outline" size="sm" className="squircle shrink-0" aria-label="Edit secret key" onClick={() => { setEditingSecretKey(true); setSecretKey(""); }}>Edit</Button>
               </div>
             ) : editingSecretKey ? (
               <div className="flex gap-2">
-                <Input
-                  id="sys-secretKey"
-                  type="password"
-                  value={secretKey}
-                  onChange={(e) => setSecretKey(e.target.value)}
-                  autoComplete="current-password"
-                  required
-                  autoFocus
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="squircle shrink-0"
-                  onClick={() => {
-                    setEditingSecretKey(false);
-                    setSecretKey(maskedSecretKey.current);
-                  }}
-                >
-                  Cancel
-                </Button>
+                <Input id="sys-secretKey" type="password" value={secretKey} onChange={(e) => setSecretKey(e.target.value)} autoComplete="current-password" required autoFocus />
+                <Button type="button" variant="outline" size="sm" className="squircle shrink-0" onClick={() => { setEditingSecretKey(false); setSecretKey(maskedSecretKey.current); }}>Cancel</Button>
               </div>
             ) : (
-              <Input
-                id="sys-secretKey"
-                type="password"
-                value={secretKey}
-                onChange={(e) => setSecretKey(e.target.value)}
-                autoComplete="current-password"
-                required
-              />
+              <Input id="sys-secretKey" type="password" value={secretKey} onChange={(e) => setSecretKey(e.target.value)} autoComplete="current-password" required />
             )}
           </div>
 
@@ -274,60 +201,6 @@ export function BackupSettings() {
         </form>
       </CardContent>
     </Card>
-
-      {/* How backups work */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="space-y-3">
-          <h3 className="text-sm font-medium">How it works</h3>
-          <ul className="text-sm space-y-2">
-            <li className="flex items-start gap-2.5">
-              <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
-              <span className="text-muted-foreground">
-                <span className="font-medium text-foreground">Automatic</span>{" "}
-                — apps with persistent volumes get daily snapshots by default
-              </span>
-            </li>
-            <li className="flex items-start gap-2.5">
-              <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
-              <span className="text-muted-foreground">
-                <span className="font-medium text-foreground">Offsite</span>{" "}
-                — snapshots are uploaded to your S3-compatible provider, not stored on this server
-              </span>
-            </li>
-            <li className="flex items-start gap-2.5">
-              <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
-              <span className="text-muted-foreground">
-                <span className="font-medium text-foreground">Tiered retention</span>{" "}
-                — keep daily, weekly, monthly and yearly snapshots independently per job
-              </span>
-            </li>
-            <li className="flex items-start gap-2.5">
-              <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
-              <span className="text-muted-foreground">
-                <span className="font-medium text-foreground">One-click restore</span>{" "}
-                — any snapshot can be restored directly into the running volume
-              </span>
-            </li>
-          </ul>
-        </div>
-        <div className="space-y-3">
-          <h3 className="text-sm font-medium">Good to know</h3>
-          <ul className="text-sm space-y-2">
-            <li className="flex items-start gap-2.5">
-              <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
-              <span className="text-muted-foreground">Runs live — no downtime, no container restarts</span>
-            </li>
-            <li className="flex items-start gap-2.5">
-              <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
-              <span className="text-muted-foreground">Manual backups can be triggered anytime from the Backups page</span>
-            </li>
-            <li className="flex items-start gap-2.5">
-              <Info className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
-              <span className="text-muted-foreground">Only persistent volumes are backed up — ephemeral data is excluded</span>
-            </li>
-          </ul>
-        </div>
-      </div>
     </div>
   );
 }
