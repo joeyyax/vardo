@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -22,32 +23,9 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Loader2, ArrowUpRight, ArrowDownLeft, Copy, Network } from "lucide-react";
 import { toast } from "@/lib/messenger";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-type MeshPeer = {
-  id: string;
-  name: string;
-  type: string;
-  status: string;
-};
-
-type ProjectInstance = {
-  id: string;
-  environment: string;
-  gitRef: string | null;
-  status: string;
-  meshPeerId: string | null;
-  transferredAt: Date | null;
-};
+import type { MeshPeerSummary, ProjectInstanceSummary } from "@/lib/mesh/types";
 
 type TransferAction = "promote" | "pull" | "clone";
-
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
 
 export function ProjectInstances({
   projectId,
@@ -57,9 +35,10 @@ export function ProjectInstances({
 }: {
   projectId: string;
   orgId: string;
-  peers: MeshPeer[];
-  instances: ProjectInstance[];
+  peers: MeshPeerSummary[];
+  instances: ProjectInstanceSummary[];
 }) {
+  const router = useRouter();
   const [transferAction, setTransferAction] = useState<TransferAction | null>(null);
   const [targetPeerId, setTargetPeerId] = useState("");
   const [environment, setEnvironment] = useState("staging");
@@ -71,18 +50,21 @@ export function ProjectInstances({
     return peers.find((p) => p.id === peerId)?.name ?? "Unknown";
   }
 
-  function peerStatus(peerId: string | null) {
+  function peerStatus(peerId: string | null): string {
     if (!peerId) return "online";
     return peers.find((p) => p.id === peerId)?.status ?? "offline";
   }
 
   function statusColor(status: string) {
     switch (status) {
-      case "running": return "bg-green-500";
-      case "online": return "bg-green-500";
-      case "stopped": return "bg-zinc-400";
-      case "offline": return "bg-zinc-400";
-      default: return "bg-yellow-500";
+      case "running":
+      case "online":
+        return "bg-green-500";
+      case "stopped":
+      case "offline":
+        return "bg-zinc-400";
+      default:
+        return "bg-yellow-500";
     }
   }
 
@@ -126,6 +108,7 @@ export function ProjectInstances({
       toast.success(`${labels[transferAction]} successfully`);
       setTransferAction(null);
       setTargetPeerId("");
+      router.refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Transfer failed");
     } finally {
@@ -135,7 +118,7 @@ export function ProjectInstances({
 
   // Group instances: persistent first, then dev
   const persistentInstances = instances.filter((i) => {
-    if (!i.meshPeerId) return true; // local
+    if (!i.meshPeerId) return true;
     const peer = peers.find((p) => p.id === i.meshPeerId);
     return peer?.type === "persistent";
   });
@@ -144,11 +127,12 @@ export function ProjectInstances({
     const peer = peers.find((p) => p.id === i.meshPeerId);
     return peer?.type === "dev";
   });
+  const allInstances = [...persistentInstances, ...devInstances];
 
   if (peers.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
-        <Network className="size-8 text-muted-foreground" />
+        <Network className="size-8 text-muted-foreground" aria-hidden="true" />
         <div className="text-center space-y-1">
           <p className="text-sm font-medium">No connected instances</p>
           <p className="text-sm text-muted-foreground">
@@ -159,77 +143,37 @@ export function ProjectInstances({
     );
   }
 
-  return (
-    <div className="space-y-4">
-      {/* Instances table */}
-      <div className="rounded-lg border">
-        <div className="grid grid-cols-[1fr_1fr_auto_auto] gap-4 border-b px-4 py-2 text-xs font-medium text-muted-foreground">
-          <div>Environment</div>
-          <div>Instance</div>
-          <div>Status</div>
-          <div>Actions</div>
-        </div>
-
-        {[...persistentInstances, ...devInstances].map((inst) => (
-          <div key={inst.id} className="grid grid-cols-[1fr_1fr_auto_auto] gap-4 items-center border-b last:border-0 px-4 py-3">
-            <div className="text-sm font-medium capitalize">{inst.environment}</div>
-            <div className="flex items-center gap-2 text-sm">
-              <div className={`size-2 rounded-full ${statusColor(peerStatus(inst.meshPeerId))}`} />
-              {peerName(inst.meshPeerId)}
-            </div>
-            <Badge variant="secondary" className="text-xs capitalize">
-              {inst.status}
-            </Badge>
-            <div className="flex gap-1">
-              {inst.environment !== "production" && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={() => {
-                    setTransferAction("promote");
-                    setTargetPeerId("");
-                    setEnvironment(inst.environment === "development" ? "staging" : "production");
-                  }}
-                >
-                  <ArrowUpRight className="size-3 mr-1" />
-                  Promote
-                </Button>
-              )}
-              {inst.environment !== "development" && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={() => {
-                    setTransferAction("pull");
-                    setTargetPeerId(inst.meshPeerId ?? "");
-                  }}
-                >
-                  <ArrowDownLeft className="size-3 mr-1" />
-                  Pull
-                </Button>
-              )}
-            </div>
+  if (allInstances.length === 0) {
+    return (
+      <div className="space-y-4">
+        <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
+          <Network className="size-8 text-muted-foreground" aria-hidden="true" />
+          <div className="text-center space-y-1">
+            <p className="text-sm font-medium">No deployments across instances</p>
+            <p className="text-sm text-muted-foreground">
+              Promote, pull or clone this project to connected instances.
+            </p>
           </div>
-        ))}
+          <Button
+            variant="outline"
+            size="sm"
+            className="squircle"
+            onClick={() => {
+              setTransferAction("clone");
+              setTargetPeerId("");
+            }}
+          >
+            <Copy className="size-3.5 mr-1.5" aria-hidden="true" />
+            Clone to...
+          </Button>
+        </div>
+        {renderDialog()}
       </div>
+    );
+  }
 
-      {/* Clone button */}
-      <Button
-        variant="outline"
-        size="sm"
-        className="squircle"
-        onClick={() => {
-          setTransferAction("clone");
-          setTargetPeerId("");
-        }}
-      >
-        <Copy className="size-3.5 mr-1.5" />
-        Clone to...
-      </Button>
-
-      {/* Transfer dialog */}
+  function renderDialog() {
+    return (
       <Dialog open={!!transferAction} onOpenChange={(open) => !open && setTransferAction(null)}>
         <DialogContent className="squircle">
           <DialogHeader>
@@ -306,12 +250,101 @@ export function ProjectInstances({
               disabled={loading || !targetPeerId}
               onClick={handleTransfer}
             >
-              {loading && <Loader2 className="size-4 animate-spin mr-1.5" />}
+              {loading && <Loader2 className="size-4 animate-spin mr-1.5" aria-hidden="true" />}
               {transferAction}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b">
+              <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">Environment</th>
+              <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">Instance</th>
+              <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">Status</th>
+              <th className="px-4 py-2 text-right text-xs font-medium text-muted-foreground">
+                <span className="sr-only">Actions</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {allInstances.map((inst) => {
+              const status = peerStatus(inst.meshPeerId);
+              return (
+                <tr key={inst.id} className="border-b last:border-0">
+                  <td className="px-4 py-3 font-medium capitalize">{inst.environment}</td>
+                  <td className="px-4 py-3">
+                    <span className="flex items-center gap-2">
+                      <span className={`size-2 rounded-full ${statusColor(status)}`} aria-hidden="true" />
+                      {peerName(inst.meshPeerId)}
+                      <span className="sr-only">({status})</span>
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <Badge variant="secondary" className="text-xs capitalize">
+                      {inst.status}
+                    </Badge>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <span className="flex justify-end gap-1">
+                      {inst.environment !== "production" && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => {
+                            setTransferAction("promote");
+                            setTargetPeerId("");
+                            setEnvironment(inst.environment === "development" ? "staging" : "production");
+                          }}
+                        >
+                          <ArrowUpRight className="size-3 mr-1" aria-hidden="true" />
+                          Promote
+                        </Button>
+                      )}
+                      {inst.environment !== "development" && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => {
+                            setTransferAction("pull");
+                            setTargetPeerId(inst.meshPeerId ?? "");
+                          }}
+                        >
+                          <ArrowDownLeft className="size-3 mr-1" aria-hidden="true" />
+                          Pull
+                        </Button>
+                      )}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <Button
+        variant="outline"
+        size="sm"
+        className="squircle"
+        onClick={() => {
+          setTransferAction("clone");
+          setTargetPeerId("");
+        }}
+      >
+        <Copy className="size-3.5 mr-1.5" aria-hidden="true" />
+        Clone to...
+      </Button>
+
+      {renderDialog()}
     </div>
   );
 }

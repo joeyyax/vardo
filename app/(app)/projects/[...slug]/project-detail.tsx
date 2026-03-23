@@ -60,6 +60,7 @@ import { EnvEditor } from "@/components/env-editor";
 import { AppMetrics } from "@/app/(app)/apps/[...slug]/app-metrics";
 import { ProjectMetrics } from "./project-metrics";
 import { ProjectInstances } from "@/components/mesh/project-instances";
+import type { MeshPeerSummary, ProjectInstanceSummary } from "@/lib/mesh/types";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -758,8 +759,8 @@ export function ProjectDetail({
   orgId: string;
   initialTab: string;
   meshEnabled?: boolean;
-  meshPeers?: { id: string; name: string; type: string; status: string }[];
-  projectInstances?: { id: string; environment: string; gitRef: string | null; status: string; meshPeerId: string | null; transferredAt: Date | null }[];
+  meshPeers?: MeshPeerSummary[];
+  projectInstances?: ProjectInstanceSummary[];
 }) {
   const router = useRouter();
   const color = "#a1a1aa"; // neutral — project color is unused
