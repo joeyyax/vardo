@@ -283,22 +283,22 @@ export function BackupSettings() {
             <li className="flex items-start gap-2.5">
               <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
               <span className="text-muted-foreground">
-                <span className="font-medium text-foreground">Offsite storage</span>{" "}
-                — snapshots are uploaded to your S3-compatible provider, not stored locally
+                <span className="font-medium text-foreground">Automatic</span>{" "}
+                — apps with persistent volumes get daily backups at 2 AM with 7-day retention
               </span>
             </li>
             <li className="flex items-start gap-2.5">
               <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
               <span className="text-muted-foreground">
-                <span className="font-medium text-foreground">Scheduled or manual</span>{" "}
-                — set cron schedules per job or trigger on demand from the Backups page
+                <span className="font-medium text-foreground">Offsite</span>{" "}
+                — snapshots are uploaded to your S3-compatible provider, not stored on this server
               </span>
             </li>
             <li className="flex items-start gap-2.5">
               <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
               <span className="text-muted-foreground">
                 <span className="font-medium text-foreground">One-click restore</span>{" "}
-                — download and extract any snapshot back into the running volume
+                — any snapshot can be restored directly into the running volume
               </span>
             </li>
           </ul>
@@ -312,11 +312,11 @@ export function BackupSettings() {
             </li>
             <li className="flex items-start gap-2.5">
               <X className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
-              <span className="text-muted-foreground">Backups run while apps are live — no downtime required</span>
+              <span className="text-muted-foreground">Runs live — no downtime, no container restarts</span>
             </li>
             <li className="flex items-start gap-2.5">
               <X className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
-              <span className="text-muted-foreground">Storage credentials are encrypted at rest and never exposed in the UI</span>
+              <span className="text-muted-foreground">Custom schedules and retention can be set per job in the Backups page</span>
             </li>
           </ul>
         </div>
