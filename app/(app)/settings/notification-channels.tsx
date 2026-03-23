@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
-import { toast } from "sonner";
+import { toast } from "@/lib/messenger";
 import { Loader2, Plus, Trash2, Bell } from "lucide-react";
 
 type ChannelType = "email" | "webhook" | "slack";

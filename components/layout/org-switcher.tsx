@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronsUpDown, Plus, Building2, Check, Loader2, Settings, Users } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/messenger";
 import { switchOrganization } from "@/lib/organizations/switch";
 import { Button } from "@/components/ui/button";
 import {
