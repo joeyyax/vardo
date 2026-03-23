@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 
@@ -48,36 +49,35 @@ export function OrgGeneralSettings({ orgId, orgName }: OrgGeneralSettingsProps) 
   }
 
   return (
-    <div className="space-y-6 max-w-md">
-      <div>
-        <h2 className="text-lg font-semibold">General</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          Basic organization settings.
-        </p>
-      </div>
+    <Card className="squircle rounded-lg">
+      <CardHeader>
+        <CardTitle>General</CardTitle>
+        <CardDescription>The organization name appears in the sidebar, team invitations, and notification emails.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleSave} className="space-y-4 max-w-md">
+          <div className="space-y-2">
+            <Label htmlFor="org-name">Organization name</Label>
+            <Input
+              id="org-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="My Organization"
+              maxLength={64}
+              required
+            />
+          </div>
 
-      <form onSubmit={handleSave} className="space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="org-name">Organization name</Label>
-          <Input
-            id="org-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="My Organization"
-            maxLength={64}
-            required
-          />
-        </div>
-
-        <Button
-          type="submit"
-          className="squircle"
-          disabled={!isDirty || saving || !name.trim()}
-        >
-          {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Save changes
-        </Button>
-      </form>
-    </div>
+          <Button
+            type="submit"
+            className="squircle"
+            disabled={!isDirty || saving || !name.trim()}
+          >
+            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Save changes
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
   );
 }
