@@ -1372,7 +1372,7 @@ export const meshPeers = pgTable("mesh_peer", {
   endpoint: text("endpoint"), // host:port for WireGuard (null for dev behind NAT)
   publicKey: text("public_key").notNull().unique(),
   allowedIps: text("allowed_ips").notNull(), // WireGuard AllowedIPs (CIDR)
-  internalIp: text("internal_ip").notNull(), // WireGuard tunnel address (e.g. 10.99.0.1)
+  internalIp: text("internal_ip").notNull().unique(), // WireGuard tunnel address (e.g. 10.99.0.1)
   apiUrl: text("api_url"), // reachable URL for mesh API calls over tunnel
   tokenHash: text("token_hash").unique(), // SHA-256 hash of the peer's bearer token
   lastSeenAt: timestamp("last_seen_at"),

@@ -9,12 +9,15 @@ import { getInstanceId } from "@/lib/constants";
 /**
  * GET /api/v1/mesh/sync?orgId=xxx — return this instance's project manifest.
  *
- * Authenticated via mesh bearer token. Scoped by orgId to preserve
- * multi-tenant isolation — peers only see projects for their org.
+ * Authenticated via mesh bearer token. Any authenticated peer can request
+ * any org's manifest — this is intentional for hub-spoke topology where
+ * the hub is the source of truth and all peers are trusted members of the
+ * mesh network (authenticated over WireGuard + bearer token). Org-level
+ * ACLs can be added later if multi-tenant peer isolation is needed.
  */
 export async function GET(request: NextRequest) {
   try {
-    await requireMeshPeer(request);
+    const peer = await requireMeshPeer(request);
 
     const orgId = request.nextUrl.searchParams.get("orgId");
     if (!orgId) {
@@ -46,6 +49,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       instanceId: getInstanceId(),
+      peerId: peer.id,
       syncedAt: new Date().toISOString(),
       projects: orgProjects,
     });

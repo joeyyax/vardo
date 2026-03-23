@@ -4,11 +4,13 @@ import { requireAppAdmin } from "@/lib/auth/admin";
 import { createInvite } from "@/lib/mesh/invite";
 import { z } from "zod";
 
+const WG_KEY_RE = /^[A-Za-z0-9+/]{43}=$/;
 const IP_RE = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
+const ENDPOINT_RE = /^[\w.\-]+:\d{1,5}$/;
 
 const createInviteSchema = z.object({
-  publicKey: z.string().min(1),
-  endpoint: z.string().min(1),
+  publicKey: z.string().regex(WG_KEY_RE, "Invalid WireGuard public key"),
+  endpoint: z.string().regex(ENDPOINT_RE, "Invalid endpoint (expected host:port)"),
   internalIp: z.string().regex(IP_RE, "Invalid IP address"),
 });
 
