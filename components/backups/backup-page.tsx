@@ -24,7 +24,7 @@ export function BackupPage({
   const [jobs, setJobs] = useState<BackupJob[]>([]);
   const [history, setHistory] = useState<RecentBackup[]>([]);
   const [targetFormOpen, setTargetFormOpen] = useState(false);
-  const [jobFormOpen, setJobFormOpen] = useState(false);
+  const [jobFormTargetId, setJobFormTargetId] = useState<string | null>(null);
   const [editingTargetId, setEditingTargetId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
@@ -106,24 +106,13 @@ export function BackupPage({
               Where your backups are stored. Each target can have one or more backup jobs.
             </p>
           </div>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setJobFormOpen(true)}
-              disabled={targets.length === 0}
-            >
-              <Plus className="mr-1.5 size-4" aria-hidden="true" />
-              New job
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => setTargetFormOpen(true)}
-            >
-              <Plus className="mr-1.5 size-4" aria-hidden="true" />
-              Add target
-            </Button>
-          </div>
+          <Button
+            size="sm"
+            onClick={() => setTargetFormOpen(true)}
+          >
+            <Plus className="mr-1.5 size-4" aria-hidden="true" />
+            Add target
+          </Button>
         </div>
 
         {allTargetsWithJobs.length === 0 ? (
@@ -150,6 +139,7 @@ export function BackupPage({
                 readOnly={scope === "org"}
                 onRefresh={fetchData}
                 onEdit={scope === "admin" ? () => setEditingTargetId(target.id) : undefined}
+                onAddJob={scope === "admin" ? () => setJobFormTargetId(target.id) : undefined}
               />
             ))}
 
@@ -161,6 +151,7 @@ export function BackupPage({
                 orgId={orgId}
                 onRefresh={fetchData}
                 onEdit={() => setEditingTargetId(target.id)}
+                onAddJob={() => setJobFormTargetId(target.id)}
               />
             ))}
           </div>
@@ -252,13 +243,16 @@ export function BackupPage({
       />
 
       <JobForm
-        open={jobFormOpen}
-        onOpenChange={setJobFormOpen}
+        open={!!jobFormTargetId}
+        onOpenChange={(open) => !open && setJobFormTargetId(null)}
         orgId={orgId}
         targets={targets}
         apps={apps}
-        defaultTargetId={userTargets[0]?.id || systemTargets[0]?.id}
-        onCreated={fetchData}
+        defaultTargetId={jobFormTargetId || undefined}
+        onCreated={() => {
+          setJobFormTargetId(null);
+          fetchData();
+        }}
       />
     </div>
   );

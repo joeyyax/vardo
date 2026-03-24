@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Play, Loader2, Power, PowerOff, Clock, Trash2, Pencil } from "lucide-react";
+import { Play, Loader2, Power, PowerOff, Clock, Trash2, Pencil, Plus } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { TargetIcon, scheduleLabel, targetSubtitle } from "./constants";
 import { StatusBadge } from "./status-badge";
@@ -18,12 +18,14 @@ export function TargetCard({
   readOnly = false,
   onRefresh,
   onEdit,
+  onAddJob,
 }: {
   target: TargetWithJobs;
   orgId: string;
   readOnly?: boolean;
   onRefresh: () => void;
   onEdit?: () => void;
+  onAddJob?: () => void;
 }) {
   const [runningJobs, setRunningJobs] = useState<Set<string>>(new Set());
   const [deleteJobId, setDeleteJobId] = useState<string | null>(null);
@@ -126,8 +128,14 @@ export function TargetCard({
 
         {/* Inline jobs */}
         {target.jobs.length === 0 ? (
-          <div className="px-4 py-6 text-center text-sm text-muted-foreground">
-            No backup jobs configured for this target.
+          <div className="px-4 py-6 text-center space-y-3">
+            <p className="text-sm text-muted-foreground">No backup jobs configured for this target.</p>
+            {!readOnly && onAddJob && (
+              <Button size="sm" variant="outline" onClick={onAddJob}>
+                <Plus className="mr-1.5 size-4" aria-hidden="true" />
+                Add job
+              </Button>
+            )}
           </div>
         ) : (
           <div className="divide-y">
@@ -214,6 +222,14 @@ export function TargetCard({
                 </div>
               );
             })}
+            {!readOnly && onAddJob && (
+              <div className="px-4 py-3 border-t">
+                <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={onAddJob}>
+                  <Plus className="size-3 mr-1" aria-hidden="true" />
+                  Add job
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </div>
