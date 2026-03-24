@@ -13,7 +13,6 @@ import { decryptSystemOrFallback, encryptSystem } from "@/lib/crypto/encrypt";
 import { eq } from "drizzle-orm";
 
 import { DEFAULT_APP_NAME } from "@/lib/constants";
-export { DEFAULT_APP_NAME };
 
 // Dynamic import to avoid pulling fs (via vardo-config.ts) into client bundles.
 // system-settings re-exports DEFAULT_APP_NAME which client components use,

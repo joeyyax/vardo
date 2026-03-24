@@ -91,7 +91,7 @@ export async function POST(request: NextRequest) {
       const { InviteEmail } = await import("@/lib/email/templates/invite");
       await sendEmail({
         to: normalizedEmail,
-        subject: `You've been invited to ${(await import("@/lib/system-settings")).DEFAULT_APP_NAME}`,
+        subject: `You've been invited to ${(await import("@/lib/constants")).DEFAULT_APP_NAME}`,
         template: InviteEmail({ email: normalizedEmail }),
       });
       emailSent = true;
