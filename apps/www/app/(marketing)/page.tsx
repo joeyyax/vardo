@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Nav } from "@/components/landing/nav";
 import { Hero } from "@/components/landing/hero";
+import { LaunchBanner } from "@/components/landing/launch-banner";
 import { Features } from "@/components/landing/features";
 import { Audience } from "@/components/landing/audience";
 import { InstallCta } from "@/components/landing/install-cta";
@@ -18,6 +19,7 @@ export default function HomePage() {
       <Nav />
       <main>
         <Hero />
+        <LaunchBanner />
         <Features />
         <Audience />
         <InstallCta />
