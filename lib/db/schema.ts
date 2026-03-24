@@ -656,8 +656,6 @@ export const backupJobs = pgTable("backup_job", {
   name: text("name").notNull(),
   schedule: text("schedule").notNull().default("0 2 * * *"),
   enabled: boolean("enabled").default(true).notNull(),
-  // System jobs back up Vardo's own database, not app volumes
-  isSystem: boolean("is_system").default(false).notNull(),
   // Proxmox-style retention
   keepAll: boolean("keep_all").default(false),
   keepLast: integer("keep_last"),
@@ -686,6 +684,20 @@ export const backupJobApps = pgTable(
       .references(() => apps.id, { onDelete: "cascade" }),
   },
   (t) => [unique("backup_job_app_uniq").on(t.backupJobId, t.appId)]
+);
+
+// Many-to-many: direct volume links for backup jobs (system volumes, etc.)
+export const backupJobVolumes = pgTable(
+  "backup_job_volume",
+  {
+    backupJobId: text("backup_job_id")
+      .notNull()
+      .references(() => backupJobs.id, { onDelete: "cascade" }),
+    volumeId: text("volume_id")
+      .notNull()
+      .references(() => volumes.id, { onDelete: "cascade" }),
+  },
+  (t) => [unique("backup_job_volume_uniq").on(t.backupJobId, t.volumeId)]
 );
 
 // ---------------------------------------------------------------------------
@@ -721,10 +733,8 @@ export const volumes = pgTable(
   {
     id: text("id").primaryKey(),
     appId: text("app_id")
-      .notNull()
       .references(() => apps.id, { onDelete: "cascade" }),
     organizationId: text("organization_id")
-      .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     name: text("name").notNull(), // e.g. "data", "uploads"
     mountPath: text("mount_path").notNull(), // e.g. "/var/lib/postgresql/data"
@@ -735,6 +745,10 @@ export const volumes = pgTable(
     warnAtPercent: integer("warn_at_percent").default(80),
     ignorePatterns: jsonb("ignore_patterns").$type<string[]>(), // glob patterns to ignore in diff (e.g. "uploads/**")
     driftCount: integer("drift_count").default(0), // unignored file drift after last deploy
+    // Backup strategy: "tar" (default) for file volumes, "dump" for databases
+    backupStrategy: text("backup_strategy").default("tar").notNull(),
+    // For "dump" strategy: { dumpCmd, restoreCmd } — shell commands run via docker exec
+    backupMeta: jsonb("backup_meta").$type<{ dumpCmd: string; restoreCmd: string }>(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -1201,6 +1215,7 @@ export const backupJobsRelations = relations(backupJobs, ({ one, many }) => ({
     references: [backupTargets.id],
   }),
   backupJobApps: many(backupJobApps),
+  backupJobVolumes: many(backupJobVolumes),
   backups: many(backups),
 }));
 
@@ -1214,6 +1229,20 @@ export const backupJobAppsRelations = relations(
     app: one(apps, {
       fields: [backupJobApps.appId],
       references: [apps.id],
+    }),
+  })
+);
+
+export const backupJobVolumesRelations = relations(
+  backupJobVolumes,
+  ({ one }) => ({
+    backupJob: one(backupJobs, {
+      fields: [backupJobVolumes.backupJobId],
+      references: [backupJobs.id],
+    }),
+    volume: one(volumes, {
+      fields: [backupJobVolumes.volumeId],
+      references: [volumes.id],
     }),
   })
 );

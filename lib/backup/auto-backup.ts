@@ -1,15 +1,17 @@
 // ---------------------------------------------------------------------------
 // Auto-Backup Configuration
 //
-// Provides two capabilities:
+// Provides three capabilities:
 // 1. ensureHostBackupTarget() — on app startup, auto-creates a Host-level
 //    backup target from config file or DB settings if none exists.
-// 2. ensureAutoBackupJob() — after deploy detects persistent volumes,
+// 2. ensureSystemBackupJob() — creates a backup job for Vardo's own
+//    PostgreSQL database, linked via a system volume with pg_dump strategy.
+// 3. ensureAutoBackupJob() — after deploy detects persistent volumes,
 //    auto-creates a daily backup job linked to the app.
 // ---------------------------------------------------------------------------
 
 import { db } from "@/lib/db";
-import { backupTargets, backupJobs, backupJobApps, volumes } from "@/lib/db/schema";
+import { backupTargets, backupJobs, backupJobApps, backupJobVolumes, volumes } from "@/lib/db/schema";
 import { eq, and, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { createHash } from "crypto";
@@ -89,19 +91,66 @@ export async function ensureHostBackupTarget() {
 // ---------------------------------------------------------------------------
 
 /**
+ * Build dump/restore commands for Vardo's own Postgres from DATABASE_URL.
+ */
+function buildSystemDumpMeta(): { dumpCmd: string; restoreCmd: string } {
+  const container = process.env.VARDO_PG_CONTAINER || "vardo-postgres";
+  const dbUrl = process.env.DATABASE_URL || "";
+  const dbMatch = dbUrl.match(/^postgresql:\/\/([A-Za-z0-9_-]+):[^@]+@[^/]+\/([A-Za-z0-9_-]+)/);
+  const user = dbMatch?.[1] || "host";
+  const dbname = dbMatch?.[2] || "host";
+  return {
+    dumpCmd: `docker exec ${container} pg_dump -U ${user} ${dbname}`,
+    restoreCmd: `docker exec -i ${container} psql -U ${user} ${dbname}`,
+  };
+}
+
+/**
  * Ensure a system backup job exists for Vardo's PostgreSQL database.
- * Requires a host-level backup target. Creates the job if none exists.
+ * Creates a system volume (appId=null) with pg_dump strategy and links
+ * it to the backup job via backupJobVolumes.
  *
  * Call this after ensureHostBackupTarget() succeeds.
  */
 export async function ensureSystemBackupJob(targetId: string) {
-  // Check if a system backup job already exists
-  const existing = await db.query.backupJobs.findFirst({
-    where: eq(backupJobs.isSystem, true),
+  // Check if a system volume for postgres already exists
+  const existingVolume = await db.query.volumes.findFirst({
+    where: and(isNull(volumes.appId), eq(volumes.name, "postgres")),
   });
 
-  if (existing) return existing;
+  let volumeId: string;
 
+  if (existingVolume) {
+    volumeId = existingVolume.id;
+  } else {
+    // Create the system volume with dump strategy
+    const meta = buildSystemDumpMeta();
+    volumeId = nanoid();
+    await db.insert(volumes).values({
+      id: volumeId,
+      appId: null,
+      organizationId: null,
+      name: "postgres",
+      mountPath: "/var/lib/postgresql/data",
+      persistent: true,
+      backupStrategy: "dump",
+      backupMeta: meta,
+    });
+    console.log(`[auto-backup] Created system volume for Vardo database (dump)`);
+  }
+
+  // Check if a backup job is already linked to this volume
+  const existingLink = await db.query.backupJobVolumes.findFirst({
+    where: eq(backupJobVolumes.volumeId, volumeId),
+  });
+
+  if (existingLink) {
+    return db.query.backupJobs.findFirst({
+      where: eq(backupJobs.id, existingLink.backupJobId),
+    });
+  }
+
+  // Create the backup job
   const jobId = nanoid();
   const [job] = await db
     .insert(backupJobs)
@@ -112,7 +161,6 @@ export async function ensureSystemBackupJob(targetId: string) {
       name: "Vardo database",
       schedule: staggeredSchedule("vardo-system-db"),
       enabled: true,
-      isSystem: true,
       keepLast: 2,
       keepDaily: 7,
       keepWeekly: 4,
@@ -120,6 +168,12 @@ export async function ensureSystemBackupJob(targetId: string) {
       notifyOnFailure: true,
     })
     .returning();
+
+  // Link the volume to the job
+  await db.insert(backupJobVolumes).values({
+    backupJobId: jobId,
+    volumeId,
+  });
 
   console.log(`[auto-backup] Created system backup job for Vardo database`);
   return job;
