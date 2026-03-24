@@ -92,8 +92,8 @@ export async function isFeatureEnabledAsync(flag: FeatureFlag): Promise<boolean>
   const { getFeatureFlagsConfig } = await import("@/lib/system-settings");
   const flags = await getFeatureFlagsConfig();
 
-  // Refresh sync cache
-  if (flags) flagCache = flags;
+  // Merge into sync cache (don't replace — preserve flags not in this result)
+  if (flags) flagCache = { ...flagCache, ...flags };
 
   if (flags && flag in flags) return flags[flag];
   return true; // default enabled

@@ -1,10 +1,11 @@
-import { readVardoConfig } from "@/lib/config/vardo-config";
-
 /** Default app name used across the UI, emails, and metadata when not configured. */
 export const DEFAULT_APP_NAME = "Vardo";
 
 /** Stable identity for this instance. Generated at install time, never changes. */
 export async function getInstanceId(): Promise<string> {
+  // Dynamic import to avoid pulling fs into client bundles
+  const { readVardoConfig } = await import("@/lib/config/vardo-config");
+
   // Config file takes priority
   const fileConfig = await readVardoConfig();
   if (fileConfig?.instance?.id) {
