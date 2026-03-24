@@ -1,5 +1,8 @@
 import { notFound, redirect } from "next/navigation";
-import { getCurrentOrg } from "@/lib/auth/session";
+import { getCurrentOrg, getSession } from "@/lib/auth/session";
+import { db } from "@/lib/db";
+import { account } from "@/lib/db/schema";
+import { eq, and } from "drizzle-orm";
 import {
   AccountInfo,
   PasswordManagement,
@@ -34,10 +37,25 @@ export default async function UserSettingsTabPage({
     orgId = orgData.organization?.id ?? null;
   }
 
-  return <TabContent tab={validTab} orgId={orgId} />;
+  // Auth tab needs to know if user has a password account
+  let hasPasswordAccount = false;
+  if (validTab === "auth") {
+    const session = await getSession();
+    if (session?.user?.id) {
+      const credentialAccount = await db.query.account.findFirst({
+        where: and(
+          eq(account.userId, session.user.id),
+          eq(account.providerId, "credential"),
+        ),
+      });
+      hasPasswordAccount = !!credentialAccount;
+    }
+  }
+
+  return <TabContent tab={validTab} orgId={orgId} hasPasswordAccount={hasPasswordAccount} />;
 }
 
-function TabContent({ tab, orgId }: { tab: ValidTab; orgId: string | null }) {
+function TabContent({ tab, orgId, hasPasswordAccount }: { tab: ValidTab; orgId: string | null; hasPasswordAccount: boolean }) {
   switch (tab) {
     case "profile":
       return (
@@ -64,7 +82,7 @@ function TabContent({ tab, orgId }: { tab: ValidTab; orgId: string | null }) {
             </p>
           </div>
           <PasswordManagement />
-          <TwoFactorAuth />
+          <TwoFactorAuth hasPasswordAccount={hasPasswordAccount} />
           <ActiveSessions />
         </div>
       );
