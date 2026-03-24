@@ -30,8 +30,6 @@ Vardo is not:
 
 Vardo runs Docker Compose on servers you control. It doesn't try to abstract away Docker or replace tools that already work.
 
-The architecture doesn't rule out cloud provider integration or enterprise features down the road — but v1 is self-hosted, single-server-first.
-
 ---
 
 ## Core Principles
@@ -249,3 +247,15 @@ When Vardo is working well:
 - nothing breaks silently
 
 That is the product.
+
+---
+
+## Standing On
+
+Vardo is inspired by and builds on ideas from:
+
+- **[Dokploy](https://dokploy.com)** — open source PaaS with Traefik integration
+- **[Coolify](https://coolify.io)** — self-hosted Heroku/Vercel alternative
+- **[Dokku](https://dokku.com)** — the original Docker-powered mini-PaaS
+
+These projects proved that self-hosted deployment platforms are viable and valuable. Vardo takes the ideas further with mesh networking, tiered backups, and a focus on multi-instance management.
