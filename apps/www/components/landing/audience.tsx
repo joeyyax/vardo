@@ -17,8 +17,8 @@ const notFor = [
     aside: "Your containers stay running. That's the point.",
   },
   {
-    label: "you're hosting other people's apps",
-    aside: "Vardo is for your stack, not a multi-tenant platform.",
+    label: "you need a full CI/CD pipeline",
+    aside: "We deploy. Testing happens before we get involved.",
   },
 ];
 
