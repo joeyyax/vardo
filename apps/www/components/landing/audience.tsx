@@ -36,7 +36,7 @@ export function Audience() {
             Who this is for
           </p>
           <h2 className="mt-3 text-3xl font-bold tracking-tight text-white sm:text-4xl">
-            Built for you... probably
+            You. <em className="font-normal italic text-neutral-400">Probably.</em>
           </h2>
           <div className="mt-10 space-y-6">
             {builtFor.map((item) => (
