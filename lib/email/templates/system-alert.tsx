@@ -81,7 +81,7 @@ export function SystemAlertEmail({
       {alertType === "system-alert-update" && (
         <InfoBox>
           <Text style={styles.muted}>
-            Pull the latest changes and redeploy Host at your convenience. No
+            Pull the latest changes and redeploy Vardo at your convenience. No
             immediate action required.
           </Text>
         </InfoBox>
