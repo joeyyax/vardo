@@ -14,7 +14,7 @@ const words = [
 ];
 
 function RotatingVerb() {
-  const [text, setText] = useState(words[0].text);
+  const [text, setText] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
   const [wordIndex, setWordIndex] = useState(0);
   const [showCursor, setShowCursor] = useState(true);
