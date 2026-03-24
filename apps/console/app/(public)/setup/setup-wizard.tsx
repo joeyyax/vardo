@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { signUp } from "@/lib/auth/client";
+import { signIn } from "@/lib/auth/client";
 import { DEFAULT_APP_NAME } from "@/lib/app-name";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,23 +33,17 @@ import { toast } from "@/lib/messenger";
 
 const STEPS = [
   {
-    id: "import",
-    label: "Import config",
-    description: "Restore from a previous installation",
-    icon: Upload,
-  },
-  {
-    id: "account",
-    label: "Create account",
-    description: "Set up your admin credentials",
-    icon: User,
-    required: true,
+    id: "welcome",
+    label: "Welcome",
+    description: "Get started with Vardo",
+    icon: Rocket,
   },
   {
     id: "email",
     label: "Email provider",
     description: "SMTP, Mailpace, or Resend",
     icon: Mail,
+    required: true,
   },
   {
     id: "backup",
@@ -74,6 +68,13 @@ const STEPS = [
     label: "Instances",
     description: "Connect to other Vardo instances",
     icon: Network,
+  },
+  {
+    id: "account",
+    label: "Create account",
+    description: "Sign in via magic link to claim admin",
+    icon: User,
+    required: true,
   },
   {
     id: "done",
@@ -109,7 +110,7 @@ function saveProgress(step: StepId, completed: Set<StepId>) {
 export function SetupWizard({ meshEnabled = true }: { meshEnabled?: boolean }) {
   const router = useRouter();
   const steps = meshEnabled ? STEPS : STEPS.filter((s) => s.id !== "instances");
-  const [currentStep, setCurrentStep] = useState<StepId>("account");
+  const [currentStep, setCurrentStep] = useState<StepId>("welcome");
   const [loading, setLoading] = useState(false);
   const [completedSteps, setCompletedSteps] = useState<Set<StepId>>(new Set());
   const [hydrated, setHydrated] = useState(false);
@@ -229,12 +230,55 @@ export function SetupWizard({ meshEnabled = true }: { meshEnabled?: boolean }) {
 
           {/* Right column — current step form */}
           <div className="w-full space-y-6">
-            {currentStep === "import" && (
+            {currentStep === "welcome" && (
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-xl font-semibold">Welcome to Vardo</h2>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Deploy everything. Own everything.
+                  </p>
+                </div>
+                <div className="grid gap-3">
+                  <Button
+                    variant="default"
+                    className="w-full h-14 squircle rounded-lg justify-start px-4"
+                    onClick={() => {
+                      markComplete("welcome");
+                      goNext();
+                    }}
+                  >
+                    <Rocket className="w-5 h-5 mr-3 shrink-0" />
+                    <div className="text-left">
+                      <p className="text-sm font-medium">Fresh install</p>
+                      <p className="text-xs opacity-80">
+                        Set up email, backups, and create your admin account
+                      </p>
+                    </div>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="w-full h-14 squircle rounded-lg justify-start px-4"
+                    onClick={() => {
+                      markComplete("welcome");
+                      setCurrentStep("import" as StepId);
+                    }}
+                  >
+                    <Upload className="w-5 h-5 mr-3 shrink-0" />
+                    <div className="text-left">
+                      <p className="text-sm font-medium">Restore from backup</p>
+                      <p className="text-xs text-muted-foreground">
+                        Import a config from a previous Vardo installation
+                      </p>
+                    </div>
+                  </Button>
+                </div>
+              </div>
+            )}
+            {currentStep === ("import" as StepId) && (
               <ImportStep
                 loading={loading}
                 setLoading={setLoading}
                 onComplete={(importedSections) => {
-                  markComplete("import");
                   // Mark config steps as complete if they were imported
                   const sectionToStep: Record<string, StepId> = {
                     email: "email",
@@ -245,11 +289,10 @@ export function SetupWizard({ meshEnabled = true }: { meshEnabled?: boolean }) {
                     const stepId = sectionToStep[section];
                     if (stepId) markComplete(stepId);
                   }
-                  goNext();
+                  setCurrentStep("email");
                 }}
                 onSkip={() => {
-                  markComplete("import");
-                  goNext();
+                  setCurrentStep("email");
                 }}
               />
             )}
@@ -445,42 +488,65 @@ function AccountStep({
   setLoading: (v: boolean) => void;
   onComplete: () => void;
 }) {
-  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [magicLinkSent, setMagicLinkSent] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!email) return;
     setLoading(true);
     try {
-      const { error } = await signUp.email({ name, email, password });
+      const { error } = await signIn.magicLink({
+        email,
+        callbackURL: "/setup",
+      });
       if (error) {
-        toast.error(error.message || "Failed to create account");
+        toast.error(error.message || "Failed to send magic link");
         return;
       }
-      toast.success("Account created — you're the admin");
-      onComplete();
+      setMagicLinkSent(true);
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : "Failed to create account",
+        err instanceof Error ? err.message : "Failed to send magic link",
       );
     } finally {
       setLoading(false);
     }
   }
 
+  if (magicLinkSent) {
+    return (
+      <div className="space-y-4 text-center">
+        <div className="mx-auto w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+          <Mail className="w-6 h-6 text-primary" />
+        </div>
+        <div>
+          <p className="text-sm font-medium">Check your email</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            We sent a sign-in link to <strong>{email}</strong>.
+            Click it to create your admin account and continue setup.
+          </p>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            setMagicLinkSent(false);
+            setEmail("");
+          }}
+        >
+          Try a different email
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="space-y-2">
-        <Label htmlFor="name">Name</Label>
-        <Input
-          id="name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          required
-          autoFocus
-        />
-      </div>
+      <p className="text-sm text-muted-foreground">
+        Enter your email to receive a sign-in link. The first account
+        automatically becomes the admin.
+      </p>
       <div className="space-y-2">
         <Label htmlFor="email">Email</Label>
         <Input
@@ -488,25 +554,16 @@ function AccountStep({
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+          placeholder="you@example.com"
           required
+          autoFocus
         />
       </div>
-      <div className="space-y-2">
-        <Label htmlFor="password">Password</Label>
-        <Input
-          id="password"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          minLength={8}
-          required
-        />
-      </div>
-      <Button type="submit" className="squircle w-full" disabled={loading}>
+      <Button type="submit" className="squircle w-full" disabled={loading || !email}>
         {loading ? (
           <Loader2 className="size-4 animate-spin" />
         ) : (
-          "Create account"
+          "Send sign-in link"
         )}
       </Button>
     </form>

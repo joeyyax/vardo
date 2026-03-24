@@ -14,7 +14,6 @@ const ADMIN_FLAGS: FeatureFlag[] = [
   "environments",
   "backups",
   "cron",
-  "passwordAuth",
   "mesh",
 ];
 
@@ -24,7 +23,6 @@ const flagsSchema = z.object({
   environments: z.boolean().optional(),
   backups: z.boolean().optional(),
   cron: z.boolean().optional(),
-  passwordAuth: z.boolean().optional(),
   mesh: z.boolean().optional(),
 }).strict();
 
