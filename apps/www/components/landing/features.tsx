@@ -92,6 +92,7 @@ const features: {
   description: string;
   details: string[];
   icon: ReactNode;
+  tech: string[];
 }[] = [
   {
     title: "Push, build, live",
@@ -104,6 +105,7 @@ const features: {
       "Resource limits (CPU, memory) per app",
     ],
     icon: <RocketIcon className="h-6 w-6" />,
+    tech: ["Git", "Docker", "Compose"],
   },
   {
     title: "HTTPS on every app, automatically",
@@ -116,6 +118,7 @@ const features: {
       "Domain health monitoring with uptime tracking",
     ],
     icon: <NetworkIcon className="h-6 w-6" />,
+    tech: ["Traefik", "Let's Encrypt"],
   },
   {
     title: "Security isn't a feature you enable",
@@ -128,6 +131,7 @@ const features: {
       "Org isolation — no cross-org data access",
     ],
     icon: <ShieldCheckIcon className="h-6 w-6" />,
+    tech: ["WebAuthn", "AES-256", "Redis"],
   },
   {
     title: "Automated, offsite, restorable",
@@ -140,6 +144,7 @@ const features: {
       "Per-volume strategy: tar for files, pg_dump for databases",
     ],
     icon: <ArchiveIcon className="h-6 w-6" />,
+    tech: ["S3", "R2", "B2"],
   },
   {
     title: "Know before your users do",
@@ -152,6 +157,7 @@ const features: {
       "Email and webhook alerts on failures",
     ],
     icon: <ActivityIcon className="h-6 w-6" />,
+    tech: ["cAdvisor", "Loki"],
   },
   {
     title: "Dev, staging, production — built in",
@@ -164,6 +170,7 @@ const features: {
       "Project-level grouping and shared config",
     ],
     icon: <LayersIcon className="h-6 w-6" />,
+    tech: ["Git branches", "Compose"],
   },
   {
     title: "Export everything, move anywhere",
@@ -176,6 +183,7 @@ const features: {
       "Resolution chain: config file, DB, defaults",
     ],
     icon: <SettingsIcon className="h-6 w-6" />,
+    tech: ["YAML", "Portable"],
   },
   {
     title: "Dashboard, terminal, or AI agent",
@@ -188,6 +196,7 @@ const features: {
       "AI agents: MCP server for Claude, Cursor, and more",
     ],
     icon: <CodeIcon className="h-6 w-6" />,
+    tech: ["REST", "CLI", "MCP"],
   },
 ];
 
@@ -214,6 +223,16 @@ function FeatureCard({ feature }: { feature: (typeof features)[number] }) {
           </li>
         ))}
       </ul>
+      <div className="mt-5 flex flex-wrap gap-1.5">
+        {feature.tech.map((t) => (
+          <span
+            key={t}
+            className="rounded-full border border-neutral-800 px-2.5 py-0.5 font-mono text-[11px] text-neutral-500"
+          >
+            {t}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
