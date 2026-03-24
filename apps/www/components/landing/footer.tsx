@@ -64,7 +64,7 @@ export function Footer() {
           ))}
         </div>
 
-        <div className="mt-14 border-t border-white/[0.04] pt-8 text-center text-sm text-neutral-700">
+        <div className="mt-14 border-t border-white/[0.04] pt-8 text-center text-sm text-neutral-500">
           Open source &middot; MIT licensed
         </div>
       </div>

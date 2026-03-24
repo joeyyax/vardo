@@ -49,7 +49,7 @@ export function TerminalBlock({ command, className }: TerminalBlockProps) {
         {/* Copy button */}
         <button
           onClick={handleCopy}
-          className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg border border-white/10 bg-white/5 p-2 text-neutral-400 opacity-0 backdrop-blur-sm transition-all duration-200 hover:bg-white/10 hover:text-neutral-200 group-hover:opacity-100"
+          className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg border border-white/10 bg-white/5 p-2 text-neutral-400 opacity-0 backdrop-blur-sm transition-all duration-200 hover:bg-white/10 hover:text-neutral-200 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-white/20"
           aria-label={copied ? "Copied" : "Copy command"}
           type="button"
         >

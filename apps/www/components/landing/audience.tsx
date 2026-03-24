@@ -91,7 +91,7 @@ export function Audience() {
 
         {/* Not for — honest, a little cheeky */}
         <div className="rounded-2xl rounded-t-none border border-neutral-800 bg-neutral-950 p-10 lg:rounded-l-none lg:rounded-r-2xl lg:rounded-t-2xl lg:border-l-0 sm:p-12">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-neutral-600">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-neutral-500">
             Who this isn&apos;t for
           </p>
           <h2 className="mt-3 text-3xl font-bold tracking-tight text-neutral-500 sm:text-4xl">
@@ -101,7 +101,7 @@ export function Audience() {
             {notFor.map((item) => (
               <div key={item.label}>
                 <div className="flex items-start gap-4">
-                  <span className="mt-1.5 block size-4 shrink-0 text-neutral-700">
+                  <span className="mt-1.5 block size-4 shrink-0 text-neutral-600">
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
                       viewBox="0 0 24 24"
@@ -119,7 +119,7 @@ export function Audience() {
                     <span className="text-lg leading-snug text-neutral-400">
                       {item.label}
                     </span>
-                    <p className="mt-1 font-mono text-sm text-neutral-600">
+                    <p className="mt-1 font-mono text-sm text-neutral-500">
                       {item.aside}
                     </p>
                   </div>

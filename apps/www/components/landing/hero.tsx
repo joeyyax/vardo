@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { TerminalBlock } from "./terminal-block";
 import { INSTALL_COMMAND } from "@/lib/constants";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 const words = [
   { text: "Deploy", color: "text-emerald-400" },
@@ -19,12 +19,20 @@ function RotatingVerb() {
 
   const currentWord = words[wordIndex];
 
-  useEffect(() => {
-    const blink = setInterval(() => setShowCursor((v) => !v), 530);
-    return () => clearInterval(blink);
+  // Respect prefers-reduced-motion
+  const prefersReducedMotion = useCallback(() => {
+    if (typeof window === "undefined") return false;
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   }, []);
 
   useEffect(() => {
+    if (prefersReducedMotion()) return;
+    const blink = setInterval(() => setShowCursor((v) => !v), 530);
+    return () => clearInterval(blink);
+  }, [prefersReducedMotion]);
+
+  useEffect(() => {
+    if (prefersReducedMotion()) return;
     const word = words[wordIndex].text;
 
     if (!isDeleting && text === word) {
@@ -86,7 +94,7 @@ export function Hero() {
               Install on a fresh server — one command, live in a few minutes
             </p>
             <TerminalBlock command={INSTALL_COMMAND} />
-            <p className="mt-4 text-sm text-neutral-600">
+            <p className="mt-4 text-sm text-neutral-500">
               Not a fan of pipe-to-bash?{" "}
               <Link
                 href="/docs/installation"
