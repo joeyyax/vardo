@@ -82,8 +82,8 @@ export function BackupPage({
         </p>
       </div>
 
-      {/* Auto-backup banner */}
-      {autoTarget && (
+      {/* Auto-backup banner — only shown to org users, admin is configuring this */}
+      {scope === "org" && autoTarget && (
         <AutoBackupBanner target={autoTarget} jobs={autoJobs} scope={scope} />
       )}
 
