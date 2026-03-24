@@ -27,7 +27,7 @@ export default async function BackupsPage() {
       </PageToolbar>
 
       <p className="text-sm text-muted-foreground max-w-2xl">
-        Backups are snapshots of your app volumes — databases, uploads and any persistent data. They don&apos;t include container images, code or environment variables. Snapshots are stored offsite and can be restored with one click.
+        Manage backup targets, schedules and retention for your organization.
       </p>
 
       <BackupPage scope="org" orgId={orgId} apps={appList} />
