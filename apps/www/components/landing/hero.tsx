@@ -85,7 +85,7 @@ export function Hero() {
           </p>
           <div className="mx-auto mt-14 max-w-xl">
             <p className="mb-3 text-sm text-neutral-500">
-              Install on a fresh server ~ one command, live in a few minutes
+              Install on a fresh server — one command, live in a few minutes
             </p>
             <TerminalBlock command="curl -fsSL https://vardo.run/install.sh | sudo bash" />
             <p className="mt-4 text-sm text-neutral-600">
