@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { backupJobs, backups } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { runBackup } from "./engine";
+import { runBackup, runSystemBackup } from "./engine";
 import { shouldRunNow } from "@/lib/cron/parse";
 import { acquireLock } from "@/lib/redis-lock";
 
@@ -50,7 +50,9 @@ export async function tickBackupJobs(): Promise<void> {
 
       console.log(`[backup] Running job "${job.name}" (${job.id})`);
 
-      const results = await runBackup(job.id);
+      const results = job.isSystem
+        ? await runSystemBackup(job.id)
+        : await runBackup(job.id);
 
       const succeeded = results.filter((r) => r.success).length;
       const failed = results.filter((r) => !r.success).length;
