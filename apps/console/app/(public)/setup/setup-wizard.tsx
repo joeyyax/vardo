@@ -471,6 +471,11 @@ function AccountStep({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      <p className="text-xs text-muted-foreground bg-muted/50 rounded-lg px-3 py-2">
+        After creating your account you&apos;ll need to set up an
+        authenticator app (like 1Password or Authy). This is required for
+        password accounts.
+      </p>
       <div className="space-y-2">
         <Label htmlFor="name">Name</Label>
         <Input

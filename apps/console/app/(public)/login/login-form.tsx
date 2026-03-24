@@ -27,7 +27,7 @@ function LoginForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState<string | null>(null);
   const [magicLinkSent, setMagicLinkSent] = useState(false);
-  const [method, setMethod] = useState<SignInMethod>("password");
+  const [method, setMethod] = useState<SignInMethod>("magic");
   const [error, setError] = useState<string | null>(null);
 
   const handlePasskeySignIn = async () => {
@@ -200,6 +200,10 @@ function LoginForm() {
         {/* Email + password or magic link */}
         {method === "password" ? (
           <form onSubmit={handlePasswordSignIn} className="space-y-3">
+            <p className="text-xs text-muted-foreground bg-muted/50 rounded-lg px-3 py-2">
+              Password sign-in requires an authenticator app as a second
+              factor. Use a passkey or magic link to skip this requirement.
+            </p>
             <div className="space-y-2">
               <Label htmlFor="email">Email address</Label>
               <Input
@@ -295,7 +299,7 @@ function LoginForm() {
           >
             {method === "password"
               ? "Use magic link instead"
-              : "Use password instead"}
+              : "Use password instead (requires 2FA)"}
           </button>
         </div>
 
