@@ -22,7 +22,7 @@ const notFor = [
   },
   {
     label: "you need edge compute",
-    aside: "We run on your servers. Put Cloudflare in front and you're covered for most things.",
+    aside: "We run on your servers — but we play great with Cloudflare Workers, CDNs, and edge caching in front.",
   },
 ];
 
