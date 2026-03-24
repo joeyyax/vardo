@@ -18,16 +18,22 @@ export function Hero() {
           </p>
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
             <Link
-              href="/docs"
+              href="/docs/getting-started"
               className="inline-flex h-11 items-center rounded-lg bg-primary px-6 text-sm font-medium text-primary-foreground transition-colors duration-150 hover:bg-primary/90"
             >
-              Read the docs
+              Get Started
+            </Link>
+            <Link
+              href="/docs"
+              className="inline-flex h-11 items-center rounded-lg border border-border px-6 text-sm font-medium text-foreground transition-colors duration-150 hover:bg-muted"
+            >
+              Documentation
             </Link>
             <Link
               href="https://github.com/joeyyax/vardo"
               className="inline-flex h-11 items-center rounded-lg border border-border px-6 text-sm font-medium text-foreground transition-colors duration-150 hover:bg-muted"
             >
-              View on GitHub
+              GitHub
             </Link>
           </div>
           <div className="mx-auto mt-12 max-w-xl">

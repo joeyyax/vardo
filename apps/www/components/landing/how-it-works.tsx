@@ -41,7 +41,7 @@ export function HowItWorks() {
             </h3>
             <p className="mt-2 text-muted-foreground">{step.description}</p>
             {step.code && (
-              <div className="mt-4 overflow-x-auto rounded-lg bg-neutral-950 px-4 py-3 font-mono text-sm text-neutral-300">
+              <div className="mt-4 overflow-x-auto rounded-lg bg-secondary px-4 py-3 font-mono text-sm text-secondary-foreground">
                 <span className="select-none text-emerald-400">$ </span>
                 {step.code}
               </div>

@@ -2,9 +2,9 @@ import { Section } from "./section";
 
 const features = [
   {
-    title: "Deploy anything",
+    title: "Ship in minutes, not hours",
     description:
-      "Push from Git, pull a Docker image, or paste a Compose file. Blue-green deployments with zero-downtime rollback.",
+      "Push from Git, pull a Docker image, or paste a Compose file. Blue-green deployments with zero-downtime rollback — your app is live before you take your next sip.",
     icon: (
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -24,9 +24,9 @@ const features = [
     ),
   },
   {
-    title: "Domains and TLS",
+    title: "HTTPS without the headache",
     description:
-      "Custom domains with automatic HTTPS via Let's Encrypt. Wildcard subdomains out of the box.",
+      "Custom domains with automatic TLS via Let's Encrypt. Wildcard subdomains out of the box — no cert wrangling, no Nginx configs.",
     icon: (
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -46,9 +46,9 @@ const features = [
     ),
   },
   {
-    title: "Backups that just happen",
+    title: "Sleep through the night",
     description:
-      "Automated volume snapshots to S3, R2, or B2. Tiered retention. One-click restore.",
+      "Automated volume snapshots to S3, R2, or B2. Tiered retention and one-click restore — so a bad deploy never means lost data.",
     icon: (
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -68,9 +68,9 @@ const features = [
     ),
   },
   {
-    title: "Built-in monitoring",
+    title: "Know before your users do",
     description:
-      "Container metrics, log aggregation, and health checks. No Grafana stack required.",
+      "Container metrics, log aggregation, and health checks built in. See problems the moment they start — no Grafana stack required.",
     icon: (
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -91,7 +91,7 @@ const features = [
 
 export function Features() {
   return (
-    <Section>
+    <Section className="bg-muted/30">
       <div className="text-center">
         <h2 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
           Everything you need to run production apps

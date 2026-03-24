@@ -30,11 +30,11 @@ const differentiators = [
 
 export function WhyVardo() {
   return (
-    <Section>
+    <Section className="bg-muted/30">
       <div className="grid gap-12 lg:grid-cols-2 lg:gap-16">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-            Built different
+            Your infrastructure, your way
           </h2>
           <p className="mt-6 text-lg text-muted-foreground">
             Most self-hosted PaaS tools are either too simple — no backups, no
