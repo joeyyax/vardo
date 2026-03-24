@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
+import { z } from "zod";
 import YAML from "yaml";
 import JSZip from "jszip";
 import {
@@ -9,6 +10,60 @@ import {
   type VardoConfig,
   type VardoSecrets,
 } from "@/lib/config/vardo-config";
+
+// Zod schema for config validation
+const configSchema = z.object({
+  instance: z.object({
+    id: z.string().optional(),
+    name: z.string().optional(),
+    domain: z.string().optional(),
+    baseDomain: z.string().optional(),
+    serverIp: z.string().optional(),
+  }).optional(),
+  auth: z.object({
+    registrationMode: z.enum(["closed", "open", "approval"]).optional(),
+    sessionDurationDays: z.number().int().positive().optional(),
+  }).optional(),
+  email: z.object({
+    provider: z.enum(["smtp", "mailpace", "resend"]).optional(),
+    fromEmail: z.string().optional(),
+    fromName: z.string().optional(),
+    smtpHost: z.string().optional(),
+    smtpPort: z.number().optional(),
+    smtpUser: z.string().optional(),
+  }).optional(),
+  backup: z.object({
+    type: z.enum(["s3", "r2", "b2", "ssh"]).optional(),
+    bucket: z.string().optional(),
+    region: z.string().optional(),
+    endpoint: z.string().optional(),
+  }).optional(),
+  github: z.object({
+    appId: z.string().optional(),
+    appSlug: z.string().optional(),
+    clientId: z.string().optional(),
+  }).optional(),
+  features: z.record(z.string(), z.boolean()).optional(),
+}).passthrough();
+
+const secretsSchema = z.object({
+  encryptionKey: z.string().optional(),
+  authSecret: z.string().optional(),
+  acmeEmail: z.string().optional(),
+  email: z.object({
+    apiKey: z.string().optional(),
+    smtpPass: z.string().optional(),
+  }).optional(),
+  backup: z.object({
+    accessKey: z.string().optional(),
+    secretKey: z.string().optional(),
+  }).optional(),
+  github: z.object({
+    clientSecret: z.string().optional(),
+    privateKey: z.string().optional(),
+    webhookSecret: z.string().optional(),
+  }).optional(),
+}).passthrough();
 
 /**
  * POST /api/v1/admin/config/import?persist=true|false
@@ -25,7 +80,7 @@ import {
  */
 export async function POST(request: NextRequest) {
   try {
-    // Auth: admin or fresh install
+    // Auth: admin or fresh install (no users exist yet)
     const { needsSetup } = await import("@/lib/setup");
     const isSetup = await needsSetup();
 
@@ -34,7 +89,8 @@ export async function POST(request: NextRequest) {
       await requireAdminAuth(request);
     }
 
-    const persist = request.nextUrl.searchParams.get("persist") === "true";
+    // Only admins can persist to disk — unauthenticated setup path writes to DB only
+    const persist = isSetup ? false : request.nextUrl.searchParams.get("persist") === "true";
     const contentType = request.headers.get("content-type") || "";
 
     let config: VardoConfig = {};
@@ -67,6 +123,27 @@ export async function POST(request: NextRequest) {
       // Raw YAML body
       const text = await request.text();
       config = YAML.parse(text) || {};
+    }
+
+    // Validate parsed data
+    const configResult = configSchema.safeParse(config);
+    if (!configResult.success) {
+      return NextResponse.json(
+        { error: "Invalid config file", details: configResult.error.flatten().fieldErrors },
+        { status: 400 }
+      );
+    }
+    config = configResult.data;
+
+    if (Object.keys(secrets).length > 0) {
+      const secretsResult = secretsSchema.safeParse(secrets);
+      if (!secretsResult.success) {
+        return NextResponse.json(
+          { error: "Invalid secrets file", details: secretsResult.error.flatten().fieldErrors },
+          { status: 400 }
+        );
+      }
+      secrets = secretsResult.data;
     }
 
     // Merge config + secrets into full config for import

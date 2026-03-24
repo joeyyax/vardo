@@ -369,6 +369,7 @@ export async function importVardoConfig(
   }
 
   invalidateSettingsCache();
+  invalidateConfigCache();
   return imported;
 }
 
