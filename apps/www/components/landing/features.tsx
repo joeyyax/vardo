@@ -194,7 +194,7 @@ interface TechPill {
 
 function TechPillBadge({ pill }: { pill: TechPill }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-muted/50 px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors group-hover:border-border group-hover:bg-muted">
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200/60 dark:border-neutral-800/60 bg-neutral-100/50 dark:bg-neutral-800/50 px-2.5 py-1 text-[11px] font-medium text-neutral-500 dark:text-neutral-400 transition-colors group-hover:border-neutral-200 dark:group-hover:border-neutral-800 group-hover:bg-neutral-100 dark:group-hover:bg-neutral-800">
       {pill.icon && <span className="shrink-0 [&>svg]:h-3 [&>svg]:w-3">{pill.icon}</span>}
       {pill.name}
     </span>
@@ -385,7 +385,7 @@ function FeatureCard({
 }) {
   return (
     <div
-      className={`group relative overflow-hidden rounded-2xl border border-border bg-card transition-all duration-300 hover:shadow-lg dark:hover:shadow-primary/5 ${
+      className={`group relative overflow-hidden rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 transition-all duration-300 hover:shadow-lg dark:hover:shadow-blue-600/5 ${
         hero
           ? `border-l-4 ${accent.border} p-8 sm:p-10`
           : `border-l-[3px] ${accent.border} p-7`
@@ -405,21 +405,21 @@ function FeatureCard({
             <div className={`inline-flex rounded-xl p-2.5 ${accent.iconBg}`}>
               {feature.icon}
             </div>
-            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">
+            <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
               {feature.category}
             </span>
           </div>
 
           {/* Title & description */}
           <h3
-            className={`font-bold text-foreground ${
+            className={`font-bold text-neutral-900 dark:text-neutral-100 ${
               hero ? "text-2xl sm:text-3xl" : "text-lg"
             }`}
           >
             {feature.title}
           </h3>
           <p
-            className={`mt-3 leading-relaxed text-muted-foreground ${
+            className={`mt-3 leading-relaxed text-neutral-500 dark:text-neutral-400 ${
               hero ? "max-w-lg text-base" : "text-sm"
             }`}
           >
@@ -431,7 +431,7 @@ function FeatureCard({
             {feature.details.map((detail) => (
               <li
                 key={detail}
-                className="flex items-start gap-2 text-sm text-muted-foreground break-inside-avoid"
+                className="flex items-start gap-2 text-sm text-neutral-500 dark:text-neutral-400 break-inside-avoid"
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -443,7 +443,7 @@ function FeatureCard({
                   strokeWidth="2"
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  className="mt-0.5 shrink-0 text-primary/70"
+                  className="mt-0.5 shrink-0 text-blue-500/70 dark:text-blue-400/70"
                 >
                   <polyline points="20 6 9 17 4 12" />
                 </svg>
@@ -483,10 +483,10 @@ export function Features() {
   return (
     <Section>
       <div className="mb-16 text-center">
-        <h2 className="text-3xl font-extrabold tracking-tight text-foreground sm:text-4xl lg:text-5xl">
+        <h2 className="text-3xl font-extrabold tracking-tight text-neutral-900 dark:text-neutral-100 sm:text-4xl lg:text-5xl">
           Everything you need to run production apps
         </h2>
-        <p className="mx-auto mt-5 max-w-2xl text-lg text-muted-foreground">
+        <p className="mx-auto mt-5 max-w-2xl text-lg text-neutral-500 dark:text-neutral-400">
           Built on proven, battle-tested technology. No proprietary formats,
           no novel protocols, no reinvented wheels.
         </p>

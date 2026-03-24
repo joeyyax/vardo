@@ -1,13 +1,13 @@
 import type { Metadata } from "next";
-import { Nav } from "../components/landing/nav";
-import { Hero } from "../components/landing/hero";
-import { Features } from "../components/landing/features";
-import { HowItWorks } from "../components/landing/how-it-works";
-import { WhyVardo } from "../components/landing/why-vardo";
-import { CloudTeaser } from "../components/landing/cloud-teaser";
-import { SocialProof } from "../components/landing/social-proof";
-import { InstallCta } from "../components/landing/install-cta";
-import { Footer } from "../components/landing/footer";
+import { Nav } from "@/components/landing/nav";
+import { Hero } from "@/components/landing/hero";
+import { Features } from "@/components/landing/features";
+import { HowItWorks } from "@/components/landing/how-it-works";
+import { WhyVardo } from "@/components/landing/why-vardo";
+import { CloudTeaser } from "@/components/landing/cloud-teaser";
+import { SocialProof } from "@/components/landing/social-proof";
+import { InstallCta } from "@/components/landing/install-cta";
+import { Footer } from "@/components/landing/footer";
 
 export const metadata: Metadata = {
   title: "Vardo — Self-hosted PaaS for Docker",
