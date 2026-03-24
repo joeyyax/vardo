@@ -207,7 +207,7 @@ export default async function AppDetailPage({ params }: PageProps) {
   const allParentApps = allProjectsList
     .map((p) => ({ id: p.id, name: p.name, color: p.color || "#6366f1" }));
 
-  const featureFlags = getFeatureFlags();
+  const featureFlags = await getFeatureFlags();
 
   // If the requested tab is gated by a disabled feature flag, fall back to default
   const gatedTabs: Record<string, keyof typeof featureFlags> = {

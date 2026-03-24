@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
 import { Loader2 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 type FlagState = {
@@ -12,7 +11,6 @@ type FlagState = {
   label: string;
   description: string;
   enabled: boolean;
-  envOverride: boolean;
 };
 
 const ALL_FLAGS = ["terminal", "environments", "backups", "cron", "mesh", "passwordAuth"];
@@ -49,9 +47,7 @@ export function FeatureFlagsSettings() {
     try {
       const payload: Record<string, boolean> = {};
       for (const f of flags) {
-        if (!f.envOverride) {
-          payload[f.flag] = f.enabled;
-        }
+        payload[f.flag] = f.enabled;
       }
 
       const res = await fetch("/api/setup/feature-flags", {
@@ -82,7 +78,7 @@ export function FeatureFlagsSettings() {
       <div className="space-y-1">
         <h2 className="text-lg font-medium">Feature flags</h2>
         <p className="text-sm text-muted-foreground">
-          Enable or disable features across your instance. Flags set by environment variables can&apos;t be changed here.
+          Enable or disable features across your instance.
         </p>
       </div>
 
@@ -92,23 +88,15 @@ export function FeatureFlagsSettings() {
           .map((f) => (
             <div key={f.flag} className="flex items-center justify-between rounded-lg border p-4">
               <div className="space-y-0.5">
-                <div className="flex items-center gap-2">
-                  <Label htmlFor={`flag-${f.flag}`} className="text-sm font-medium">
-                    {f.label}
-                  </Label>
-                  {f.envOverride && (
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                      Set by environment variable
-                    </Badge>
-                  )}
-                </div>
+                <Label htmlFor={`flag-${f.flag}`} className="text-sm font-medium">
+                  {f.label}
+                </Label>
                 <div className="text-xs text-muted-foreground">{f.description}</div>
               </div>
               <Switch
                 id={`flag-${f.flag}`}
                 checked={f.enabled}
                 onCheckedChange={() => toggleFlag(f.flag)}
-                disabled={f.envOverride}
                 aria-label={`${f.enabled ? "Disable" : "Enable"} ${f.label}`}
               />
             </div>
