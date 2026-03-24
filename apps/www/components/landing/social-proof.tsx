@@ -5,10 +5,10 @@ export function SocialProof() {
   return (
     <Section>
       <div className="mx-auto max-w-2xl text-center">
-        <h2 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100 sm:text-3xl">
+        <h2 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
           Fresh out of the oven
         </h2>
-        <p className="mx-auto mt-4 max-w-lg text-neutral-500 dark:text-neutral-400">
+        <p className="mx-auto mt-4 max-w-lg text-neutral-400">
           Vardo just shipped its first release. The core is solid and
           we&apos;re building fast. Good time to jump in.
         </p>
@@ -16,7 +16,7 @@ export function SocialProof() {
       <div className="mx-auto mt-10 flex max-w-xl items-center justify-center gap-3">
         <Link
           href="https://github.com/joeyyax/vardo"
-          className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-4 py-2.5 text-sm font-medium text-neutral-500 dark:text-neutral-400 transition-colors duration-150 hover:border-blue-500/50 hover:text-neutral-900 dark:hover:text-neutral-100"
+          className="inline-flex items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-900 px-4 py-2.5 text-sm font-medium text-neutral-400 transition-colors duration-150 hover:border-neutral-700 hover:text-neutral-100"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -35,7 +35,7 @@ export function SocialProof() {
         </Link>
         <Link
           href="https://github.com/joeyyax/vardo/issues"
-          className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-4 py-2.5 text-sm font-medium text-neutral-500 dark:text-neutral-400 transition-colors duration-150 hover:border-blue-500/50 hover:text-neutral-900 dark:hover:text-neutral-100"
+          className="inline-flex items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-900 px-4 py-2.5 text-sm font-medium text-neutral-400 transition-colors duration-150 hover:border-neutral-700 hover:text-neutral-100"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -52,7 +52,7 @@ export function SocialProof() {
           </svg>
           Feedback
         </Link>
-        <span className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-4 py-2.5 text-sm text-neutral-500 dark:text-neutral-400">
+        <span className="inline-flex items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-900 px-4 py-2.5 text-sm text-neutral-400">
           <svg
             xmlns="http://www.w3.org/2000/svg"
             width="16"

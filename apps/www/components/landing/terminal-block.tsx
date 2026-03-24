@@ -30,7 +30,7 @@ export function TerminalBlock({ command, className }: TerminalBlockProps) {
 
   return (
     <div
-      className={`group relative overflow-hidden rounded-xl border border-border bg-neutral-950 ${className ?? ""}`}
+      className={`group relative overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950 ${className ?? ""}`}
     >
       {/* macOS window chrome */}
       <div className="flex items-center gap-2 border-b border-white/[0.06] px-4 py-3">

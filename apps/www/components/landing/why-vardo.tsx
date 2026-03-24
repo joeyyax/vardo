@@ -13,12 +13,12 @@ export function WhyVardo() {
     <Section>
       <div className="grid gap-12 lg:grid-cols-2 lg:gap-16">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100 sm:text-4xl">
+          <h2 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
             Your infrastructure,
             <br />
             your way
           </h2>
-          <p className="mt-6 max-w-lg text-lg text-neutral-500 dark:text-neutral-400">
+          <p className="mt-6 max-w-lg text-lg text-neutral-400">
             Most self-hosted PaaS tools are either too simple — no backups, no
             monitoring — or too complex — Kubernetes in disguise. Vardo sits in
             the sweet spot: everything you need, nothing you don&apos;t.
@@ -38,11 +38,11 @@ export function WhyVardo() {
                   strokeWidth="2"
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  className="mt-0.5 shrink-0 text-blue-600 dark:text-blue-400"
+                  className="mt-0.5 shrink-0 text-blue-500"
                 >
                   <polyline points="20 6 9 17 4 12" />
                 </svg>
-                <span className="text-lg font-medium text-neutral-900 dark:text-neutral-100">
+                <span className="text-lg font-medium text-neutral-300">
                   {item}
                 </span>
               </div>
