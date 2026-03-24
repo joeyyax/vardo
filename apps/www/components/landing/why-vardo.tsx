@@ -38,7 +38,7 @@ export function WhyVardo() {
                   strokeWidth="2"
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  className="mt-0.5 shrink-0 text-emerald-500"
+                  className="mt-0.5 shrink-0 text-white"
                 >
                   <polyline points="20 6 9 17 4 12" />
                 </svg>
