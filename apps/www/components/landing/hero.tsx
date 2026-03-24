@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { TerminalBlock } from "./terminal-block";
+import { INSTALL_COMMAND } from "@/lib/constants";
 import { useState, useEffect } from "react";
 
 const words = [
@@ -84,7 +85,7 @@ export function Hero() {
             <p className="mb-3 text-sm text-neutral-500">
               Install on a fresh server — one command, live in a few minutes
             </p>
-            <TerminalBlock command="curl -fsSL https://vardo.run/install.sh | sudo bash" />
+            <TerminalBlock command={INSTALL_COMMAND} />
             <p className="mt-4 text-sm text-neutral-600">
               Not a fan of pipe-to-bash?{" "}
               <Link

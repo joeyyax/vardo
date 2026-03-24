@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Section } from "./section";
 import { TerminalBlock } from "./terminal-block";
+import { INSTALL_COMMAND } from "@/lib/constants";
 
 export function InstallCta() {
   return (
@@ -29,7 +30,7 @@ export function InstallCta() {
               One command. One server. Everything you need.
             </p>
             <div className="mx-auto mt-10 max-w-xl">
-              <TerminalBlock command="curl -fsSL https://vardo.run/install.sh | sudo bash" />
+              <TerminalBlock command={INSTALL_COMMAND} />
             </div>
             <p className="mt-6 text-sm text-neutral-500">
               Requires Ubuntu 22.04+ or Debian 12+. 1 GB RAM. A domain with DNS
