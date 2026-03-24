@@ -1,0 +1,20 @@
+{
+  "title": "Documentation",
+  "pages": [
+    "getting-started",
+    "installation",
+    "concepts",
+    "configuration",
+    "deployment",
+    "domains",
+    "backups",
+    "monitoring",
+    "security",
+    "admin-guide",
+    "api-reference",
+    "cli-reference",
+    "contributing",
+    "---Tutorials---",
+    "tutorials"
+  ]
+}
