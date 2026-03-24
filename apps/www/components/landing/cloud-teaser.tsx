@@ -13,9 +13,9 @@ export function CloudTeaser() {
       </div>
       <div className="grid gap-6 sm:grid-cols-2 lg:gap-8">
         {/* Self-hosted — primary */}
-        <div className="rounded-xl border border-blue-500/30 bg-neutral-900 p-8">
-          <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-500">
-            <span className="size-1.5 rounded-full bg-blue-500" />
+        <div className="rounded-xl border border-emerald-500/30 bg-neutral-900 p-8">
+          <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-500">
+            <span className="size-1.5 rounded-full bg-emerald-500" />
             Available now
           </div>
           <h3 className="text-2xl font-bold text-white">Self-hosted</h3>
@@ -25,7 +25,7 @@ export function CloudTeaser() {
           </p>
           <Link
             href="/docs/getting-started"
-            className="mt-6 inline-flex h-10 items-center rounded-lg bg-blue-500 px-5 text-sm font-medium text-white transition-colors duration-150 hover:bg-blue-600"
+            className="mt-6 inline-flex h-10 items-center rounded-lg bg-emerald-500 px-5 text-sm font-medium text-white transition-colors duration-150 hover:bg-emerald-600"
           >
             Get Started
           </Link>

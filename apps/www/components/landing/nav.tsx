@@ -43,7 +43,7 @@ export function Nav() {
           </Link>
           <Link
             href="/docs/getting-started"
-            className="inline-flex h-9 items-center rounded-lg bg-blue-500 px-4 text-sm font-medium text-white transition-colors duration-150 hover:bg-blue-600"
+            className="inline-flex h-9 items-center rounded-lg bg-emerald-500 px-4 text-sm font-medium text-white transition-colors duration-150 hover:bg-emerald-600"
           >
             Get Started
           </Link>

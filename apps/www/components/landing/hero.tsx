@@ -45,10 +45,10 @@ function RotatingVerb() {
   }, [text, isDeleting, wordIndex]);
 
   return (
-    <span className="text-blue-500">
+    <span className="text-emerald-500">
       {text}
       <span
-        className={`inline-block w-[0.04em] bg-blue-500 ml-0.5 ${
+        className={`inline-block w-[0.04em] bg-emerald-500 ml-0.5 ${
           showCursor ? "opacity-100" : "opacity-0"
         }`}
         style={{ height: "0.8em", verticalAlign: "baseline", marginBottom: "-0.05em" }}

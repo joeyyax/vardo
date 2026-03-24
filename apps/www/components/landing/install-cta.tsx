@@ -23,7 +23,7 @@ export function InstallCta() {
         </p>
         <Link
           href="/docs/installation"
-          className="mt-4 inline-block text-sm font-medium text-blue-500 transition-colors duration-150 hover:text-blue-400"
+          className="mt-4 inline-block text-sm font-medium text-emerald-500 transition-colors duration-150 hover:text-emerald-400"
         >
           See the full installation guide &rarr;
         </Link>
