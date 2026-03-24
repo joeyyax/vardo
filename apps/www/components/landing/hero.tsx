@@ -6,10 +6,7 @@ import { useState, useEffect } from "react";
 
 const words = [
   { text: "Deploy", color: "text-emerald-400" },
-  { text: "Launch", color: "text-sky-400" },
-  { text: "Build", color: "text-amber-400" },
-  { text: "Ship", color: "text-violet-400" },
-  { text: "Stage", color: "text-rose-400" },
+  { text: "Ship", color: "text-sky-400" },
   { text: "Scale", color: "text-teal-400" },
 ];
 
@@ -56,7 +53,7 @@ function RotatingVerb() {
     <span className={`transition-colors duration-300 ${currentWord.color}`}>
       {text}
       <span
-        className={`inline-block w-[0.04em] ml-0.5 transition-colors duration-300 ${
+        className={`inline-block w-[3px] sm:w-[4px] lg:w-[5px] ml-1 transition-colors duration-300 ${
           currentWord.color.replace("text-", "bg-")
         } ${showCursor ? "opacity-100" : "opacity-0"}`}
         style={{ height: "0.8em", verticalAlign: "baseline", marginBottom: "-0.05em" }}
