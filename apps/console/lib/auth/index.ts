@@ -1,7 +1,7 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { passkey } from "@better-auth/passkey";
-import { twoFactor, magicLink } from "better-auth/plugins";
+import { magicLink } from "better-auth/plugins";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import * as schema from "@/lib/db/schema";
@@ -24,23 +24,9 @@ export const auth = betterAuth({
     level: "debug",
   },
 
-  // Password auth enabled — required for onboarding first-user signup
-  // and password-based sign-in on the login page
-  emailAndPassword: {
-    enabled: true,
-    minPasswordLength: 8,
-  },
-
   plugins: [
     // Passkey authentication (WebAuthn)
     passkey(),
-
-    // Two-factor authentication (TOTP only, no SMS)
-    twoFactor({
-      issuer: "Vardo",
-      // TOTP is enabled by default
-      // Backup codes are enabled by default
-    }),
 
     // Magic link authentication
     magicLink({

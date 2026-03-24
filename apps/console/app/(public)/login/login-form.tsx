@@ -14,20 +14,15 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { KeyRound, Mail, Lock, Loader2, Eye, EyeOff } from "lucide-react";
-
-type SignInMethod = "passkey" | "password" | "magic";
+import { KeyRound, Mail, Loader2 } from "lucide-react";
 
 function LoginForm() {
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") ?? "/projects";
 
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState<string | null>(null);
   const [magicLinkSent, setMagicLinkSent] = useState(false);
-  const [method, setMethod] = useState<SignInMethod>("password");
   const [error, setError] = useState<string | null>(null);
 
   const handlePasskeySignIn = async () => {
@@ -46,32 +41,6 @@ function LoginForm() {
       }
     } catch {
       setError("Passkey sign in failed. Make sure you have a passkey set up.");
-    } finally {
-      setIsLoading(null);
-    }
-  };
-
-  const handlePasswordSignIn = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email || !password) return;
-
-    setIsLoading("password");
-    setError(null);
-    try {
-      const result = await signIn.email({
-        email,
-        password,
-        callbackURL: callbackUrl,
-      });
-      if (result?.error) {
-        setError(result.error.message ?? "Invalid email or password");
-      } else {
-        // If 2FA is enabled, the twoFactorClient plugin handles the redirect
-        // Otherwise, redirect to callback
-        window.location.href = callbackUrl;
-      }
-    } catch {
-      setError("Sign in failed");
     } finally {
       setIsLoading(null);
     }
@@ -197,108 +166,35 @@ function LoginForm() {
           </div>
         </div>
 
-        {/* Email + password or magic link */}
-        {method === "password" ? (
-          <form onSubmit={handlePasswordSignIn} className="space-y-3">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email address</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="h-11 squircle rounded-lg"
-                disabled={isLoading !== null}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <div className="relative">
-                <Input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="h-11 squircle rounded-lg pr-10"
-                  disabled={isLoading !== null}
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  tabIndex={-1}
-                >
-                  {showPassword ? (
-                    <EyeOff className="size-4" />
-                  ) : (
-                    <Eye className="size-4" />
-                  )}
-                </button>
-              </div>
-            </div>
-            <Button
-              type="submit"
-              variant="outline"
-              className="w-full h-11 squircle rounded-lg"
-              disabled={isLoading !== null || !email || !password}
-            >
-              {isLoading === "password" ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <Lock className="w-4 h-4 mr-2" />
-              )}
-              Sign in with password
-            </Button>
-          </form>
-        ) : (
-          <form onSubmit={handleMagicLinkSignIn} className="space-y-3">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email address</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="h-11 squircle rounded-lg"
-                disabled={isLoading !== null}
-                required
-              />
-            </div>
-            <Button
-              type="submit"
-              variant="outline"
-              className="w-full h-11 squircle rounded-lg"
-              disabled={isLoading !== null || !email}
-            >
-              {isLoading === "magic" ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <Mail className="w-4 h-4 mr-2" />
-              )}
-              Send magic link
-            </Button>
-          </form>
-        )}
-
-        <div className="text-center">
-          <button
-            type="button"
-            onClick={() => {
-              setMethod(method === "password" ? "magic" : "password");
-              setError(null);
-            }}
-            className="text-xs text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
+        {/* Magic link */}
+        <form onSubmit={handleMagicLinkSignIn} className="space-y-3">
+          <div className="space-y-2">
+            <Label htmlFor="email">Email address</Label>
+            <Input
+              id="email"
+              type="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="h-11 squircle rounded-lg"
+              disabled={isLoading !== null}
+              required
+            />
+          </div>
+          <Button
+            type="submit"
+            variant="outline"
+            className="w-full h-11 squircle rounded-lg"
+            disabled={isLoading !== null || !email}
           >
-            {method === "password"
-              ? "Use magic link instead"
-              : "Use password instead"}
-          </button>
-        </div>
-
+            {isLoading === "magic" ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Mail className="w-4 h-4 mr-2" />
+            )}
+            Send magic link
+          </Button>
+        </form>
       </CardContent>
     </Card>
   );

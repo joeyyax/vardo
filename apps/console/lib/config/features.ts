@@ -16,7 +16,6 @@ export type FeatureFlag =
   | "environments"
   | "backups"
   | "cron"
-  | "passwordAuth"
   | "mesh";
 
 type FlagConfig = {
@@ -44,11 +43,6 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
   cron: {
     label: "Cron Jobs",
     description: "Scheduled command execution inside containers. Disabling removes the Cron tab from app detail pages.",
-  },
-  passwordAuth: {
-    label: "Password Auth",
-    description:
-      "Email/password sign-in and onboarding. When disabled, users must authenticate via passkey, magic link or GitHub.",
   },
   mesh: {
     label: "Instances",
