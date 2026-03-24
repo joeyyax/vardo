@@ -7,6 +7,7 @@ const SETTINGS_TABS = [
   { label: "General", href: "/settings/general" },
   { label: "Shared variables", href: "/settings/variables" },
   { label: "Domains", href: "/settings/domains" },
+  { label: "Backups", href: "/settings/backups" },
   { label: "Notifications", href: "/settings/notifications" },
   { label: "Team", href: "/settings/team" },
   { label: "Invitations", href: "/settings/invitations" },

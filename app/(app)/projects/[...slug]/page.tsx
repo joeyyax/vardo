@@ -7,7 +7,7 @@ import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { ProjectDetail } from "./project-detail";
 import type { MeshPeerSummary, ProjectInstanceSummary } from "@/lib/mesh/types";
 
-const VALID_TABS = ["apps", "deployments", "variables", "logs", "metrics", "instances"] as const;
+const VALID_TABS = ["apps", "deployments", "variables", "logs", "metrics", "backups", "instances"] as const;
 type ValidTab = (typeof VALID_TABS)[number];
 
 export default async function ProjectDetailPage({

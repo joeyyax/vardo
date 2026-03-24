@@ -94,7 +94,15 @@
   from {
     transform: translateY(0);}
   to {
-    transform: translateY(calc(-100% - var(--gap)));}}}
+    transform: translateY(calc(-100% - var(--gap)));}}
+  --animate-shine: shine var(--duration) infinite linear;
+  @keyframes shine {
+  0% {
+    background-position: 0% 0%;}
+  50% {
+    background-position: 100% 100%;}
+  to {
+    background-position: 0% 0%;}}}
 
 :root {
   /* Motion */
@@ -291,4 +299,3 @@ html[data-bottom-sheet-open] [data-main-content] {
     }
   }
 }
-
