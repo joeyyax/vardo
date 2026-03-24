@@ -134,7 +134,10 @@ export function BackupPage({
         </Card>
 
         {/* Right: Backup jobs */}
-        <Card className="squircle">
+        <Card className={`squircle ${hasTargets && jobs.length === 0 ? "relative overflow-hidden" : ""}`}>
+          {hasTargets && jobs.length === 0 && (
+            <ShineBorder shineColor={["#A07CFE", "#FE8FB5", "#FFBE7B"]} duration={8} borderWidth={2} />
+          )}
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
             <CardTitle className="text-sm font-medium">Backup jobs</CardTitle>
             <Button size="sm" variant="outline" onClick={() => setJobFormOpen(true)} disabled={!hasTargets}>
@@ -150,8 +153,7 @@ export function BackupPage({
                 </p>
               </div>
             ) : jobs.length === 0 ? (
-              <div className="relative flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-8 overflow-hidden">
-                <ShineBorder shineColor={["#6366f1", "#8b5cf6", "#a78bfa"]} duration={8} borderWidth={2} />
+              <div className="flex flex-col items-center justify-center gap-3 p-8">
                 <Archive className="size-6 text-muted-foreground/50" aria-hidden="true" />
                 <p className="text-sm text-muted-foreground text-center">
                   No backup jobs configured. Create one to schedule automatic backups.
