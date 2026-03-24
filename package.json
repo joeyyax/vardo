@@ -49,6 +49,7 @@
     "drizzle-orm": "^0.45.1",
     "framer-motion": "^12.31.0",
     "ioredis": "^5.9.2",
+    "jszip": "^3.10.1",
     "lucide-react": "^0.563.0",
     "motion": "^12.31.0",
     "nanoid": "^5.1.6",

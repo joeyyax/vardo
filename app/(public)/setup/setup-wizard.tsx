@@ -27,10 +27,17 @@ import {
   Network,
   Rocket,
   Container,
+  Upload,
 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 
 const STEPS = [
+  {
+    id: "import",
+    label: "Import config",
+    description: "Restore from a previous installation",
+    icon: Upload,
+  },
   {
     id: "account",
     label: "Create account",
@@ -222,6 +229,30 @@ export function SetupWizard({ meshEnabled = true }: { meshEnabled?: boolean }) {
 
           {/* Right column — current step form */}
           <div className="w-full space-y-6">
+            {currentStep === "import" && (
+              <ImportStep
+                loading={loading}
+                setLoading={setLoading}
+                onComplete={(importedSections) => {
+                  markComplete("import");
+                  // Mark config steps as complete if they were imported
+                  const sectionToStep: Record<string, StepId> = {
+                    email: "email",
+                    backup: "backup",
+                    github: "github",
+                  };
+                  for (const section of importedSections) {
+                    const stepId = sectionToStep[section];
+                    if (stepId) markComplete(stepId);
+                  }
+                  goNext();
+                }}
+                onSkip={() => {
+                  markComplete("import");
+                  goNext();
+                }}
+              />
+            )}
             {currentStep === "account" && (
               <AccountStep
                 loading={loading}
@@ -306,6 +337,97 @@ export function SetupWizard({ meshEnabled = true }: { meshEnabled?: boolean }) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Step 0: Import Config
+// ---------------------------------------------------------------------------
+
+function ImportStep({
+  loading,
+  setLoading,
+  onComplete,
+  onSkip,
+}: {
+  loading: boolean;
+  setLoading: (v: boolean) => void;
+  onComplete: (importedSections: string[]) => void;
+  onSkip: () => void;
+}) {
+  async function handleFile(file: File) {
+    setLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/api/v1/admin/config/import?persist=true", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        let message = "Import failed";
+        try { message = JSON.parse(text).error || message; } catch {}
+        throw new Error(message);
+      }
+
+      const data = await res.json();
+      toast.success(`Config imported: ${data.imported.join(", ")}`);
+
+      if (data.missingSecrets?.length > 0) {
+        toast.error(`Some secrets are missing and will need to be configured: ${data.missingSecrets.join(", ")}`);
+      }
+
+      onComplete(data.imported);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Import failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border p-4 space-y-2">
+        <div className="text-sm font-medium">Restoring from a previous installation?</div>
+        <p className="text-xs text-muted-foreground">
+          Upload a vardo.yml, vardo.secrets.yml, or vardo.zip exported from
+          another instance. This will pre-fill your email, backup, GitHub, and
+          feature flag settings.
+        </p>
+      </div>
+
+      <label className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed p-8 cursor-pointer hover:bg-muted/50 transition-colors">
+        <Upload className="size-6 text-muted-foreground" aria-hidden="true" />
+        <span className="text-sm text-muted-foreground">
+          {loading ? "Importing..." : "Drop a config file or click to upload"}
+        </span>
+        <span className="text-xs text-muted-foreground">
+          .yml, .yaml, or .zip
+        </span>
+        <input
+          type="file"
+          accept=".yml,.yaml,.zip"
+          className="sr-only"
+          disabled={loading}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) handleFile(file);
+          }}
+        />
+      </label>
+
+      <Button
+        type="button"
+        variant="outline"
+        className="squircle w-full"
+        onClick={onSkip}
+      >
+        Skip — start fresh
+      </Button>
     </div>
   );
 }
