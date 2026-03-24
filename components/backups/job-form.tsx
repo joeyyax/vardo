@@ -126,7 +126,7 @@ export function JobForm({
               <Select value={targetId} onValueChange={setTargetId}>
                 <SelectTrigger><SelectValue placeholder="Select a target" /></SelectTrigger>
                 <SelectContent>
-                  {targets.filter((t) => !t.isAppLevel).map((t) => (
+                  {targets.map((t) => (
                     <SelectItem key={t.id} value={t.id}>{t.name} ({t.type})</SelectItem>
                   ))}
                 </SelectContent>
