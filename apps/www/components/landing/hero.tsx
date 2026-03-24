@@ -19,7 +19,8 @@ function RotatingVerb() {
   const [wordIndex, setWordIndex] = useState(0);
   const [showCursor, setShowCursor] = useState(true);
 
-  const currentColor = words[wordIndex].color;
+  const currentWord = words[wordIndex];
+  const isComplete = !isDeleting && text === currentWord.text;
 
   useEffect(() => {
     const blink = setInterval(() => setShowCursor((v) => !v), 530);
@@ -27,9 +28,9 @@ function RotatingVerb() {
   }, []);
 
   useEffect(() => {
-    const currentWord = words[wordIndex].text;
+    const word = words[wordIndex].text;
 
-    if (!isDeleting && text === currentWord) {
+    if (!isDeleting && text === word) {
       const pause = setTimeout(() => setIsDeleting(true), 5000);
       return () => clearTimeout(pause);
     }
@@ -43,9 +44,9 @@ function RotatingVerb() {
     const speed = isDeleting ? 60 : 100;
     const timeout = setTimeout(() => {
       if (isDeleting) {
-        setText(currentWord.slice(0, text.length - 1));
+        setText(word.slice(0, text.length - 1));
       } else {
-        setText(currentWord.slice(0, text.length + 1));
+        setText(word.slice(0, text.length + 1));
       }
     }, speed);
 
@@ -53,11 +54,17 @@ function RotatingVerb() {
   }, [text, isDeleting, wordIndex]);
 
   return (
-    <span className={`transition-colors duration-300 ${currentColor}`}>
+    <span
+      className={`transition-colors duration-500 ease-out ${
+        isComplete ? currentWord.color : "text-neutral-300"
+      }`}
+    >
       {text}
       <span
-        className={`inline-block w-[0.04em] ml-0.5 transition-colors duration-300 ${
-          currentColor.replace("text-", "bg-")
+        className={`inline-block w-[0.04em] ml-0.5 transition-colors duration-500 ease-out ${
+          isComplete
+            ? currentWord.color.replace("text-", "bg-")
+            : "bg-neutral-300"
         } ${showCursor ? "opacity-100" : "opacity-0"}`}
         style={{ height: "0.8em", verticalAlign: "baseline", marginBottom: "-0.05em" }}
         aria-hidden="true"
