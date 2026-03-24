@@ -7,7 +7,7 @@ const builtFor = [
   },
   {
     label: "Side projects that got real",
-    aside: "You outgrew Heroku's free tier and need a grown-up home.",
+    aside: "You outgrew Heroku's free tier, the cold starts, and the 30-second request timeouts.",
   },
   {
     label: "Agencies juggling client apps",
