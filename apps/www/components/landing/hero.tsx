@@ -53,18 +53,21 @@ function RotatingVerb() {
     return () => clearTimeout(timeout);
   }, [text, isDeleting, wordIndex]);
 
+  // Dim version while typing, full color on completion
+  const dimColor = currentWord.color.replace("-400", "-800");
+  const dimBg = dimColor.replace("text-", "bg-");
+  const fullBg = currentWord.color.replace("text-", "bg-");
+
   return (
     <span
-      className={`transition-colors duration-500 ease-out ${
-        isComplete ? currentWord.color : "text-neutral-300"
+      className={`transition-colors duration-700 ease-out ${
+        isComplete ? currentWord.color : dimColor
       }`}
     >
       {text}
       <span
-        className={`inline-block w-[0.04em] ml-0.5 transition-colors duration-500 ease-out ${
-          isComplete
-            ? currentWord.color.replace("text-", "bg-")
-            : "bg-neutral-300"
+        className={`inline-block w-[0.04em] ml-0.5 transition-colors duration-700 ease-out ${
+          isComplete ? fullBg : dimBg
         } ${showCursor ? "opacity-100" : "opacity-0"}`}
         style={{ height: "0.8em", verticalAlign: "baseline", marginBottom: "-0.05em" }}
         aria-hidden="true"
