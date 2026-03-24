@@ -10,7 +10,7 @@ const links = [
 export function Footer() {
   return (
     <footer className="border-t border-white/[0.06] bg-neutral-950 py-10">
-      <div className="mx-auto flex max-w-6xl flex-col items-center gap-4 px-4 sm:flex-row sm:justify-between sm:px-6 lg:px-8">
+      <div className="mx-auto flex max-w-7xl flex-col items-center gap-4 px-4 sm:flex-row sm:justify-between sm:px-6 lg:px-8">
         <nav className="flex flex-wrap gap-6" aria-label="Footer navigation">
           {links.map((link) => (
             <Link

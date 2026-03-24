@@ -11,7 +11,7 @@ export function Hero() {
       {/* Fade out the dot pattern at the bottom */}
       <div className="pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-background to-transparent" />
 
-      <div className="relative mx-auto flex min-h-[90vh] max-w-6xl items-center justify-center px-4 sm:px-6 lg:px-8">
+      <div className="relative mx-auto flex min-h-[90vh] max-w-7xl items-center justify-center px-4 sm:px-6 lg:px-8">
         <div className="w-full max-w-3xl text-center">
           <h1 className="text-5xl font-extrabold tracking-tight text-foreground sm:text-6xl lg:text-7xl xl:text-8xl">
             <span className="block">
