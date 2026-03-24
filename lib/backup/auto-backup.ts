@@ -79,7 +79,7 @@ export async function ensureHostBackupTarget() {
     .values({
       id: nanoid(),
       organizationId: null, // Host-level
-      name: "Host Auto-Configured",
+      name: "System default",
       type,
       config,
       isDefault: true,
@@ -177,8 +177,8 @@ export async function ensureAutoBackupJob(opts: {
     enabled: true,
     keepLast: 1,
     keepDaily: 7,
-    keepWeekly: 4,
-    keepMonthly: 6,
+    keepWeekly: 1,
+    keepMonthly: 1,
     notifyOnFailure: true,
   });
 

@@ -32,6 +32,7 @@ export function JobForm({
   apps,
   defaultTargetId,
   onCreated,
+  scope = "org",
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -40,28 +41,29 @@ export function JobForm({
   apps: App[];
   defaultTargetId?: string;
   onCreated: () => void;
+  scope?: "admin" | "org";
 }) {
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState("");
   const [targetId, setTargetId] = useState(defaultTargetId || "");
   const [schedule, setSchedule] = useState("0 2 * * *");
-  const [appIds, setAppIds] = useState<string[]>([]);
+  const [appIds, setAppIds] = useState<string[]>(scope === "admin" ? apps.map((a) => a.id) : []);
 
-  // Retention
+  // Retention — defaults: 1 last, 7 daily, 1 weekly, 1 monthly
   const [keepLast, setKeepLast] = useState("1");
   const [keepDaily, setKeepDaily] = useState("7");
-  const [keepWeekly, setKeepWeekly] = useState("4");
-  const [keepMonthly, setKeepMonthly] = useState("6");
+  const [keepWeekly, setKeepWeekly] = useState("1");
+  const [keepMonthly, setKeepMonthly] = useState("1");
 
   function reset() {
     setName("");
     setTargetId(defaultTargetId || "");
     setSchedule("0 2 * * *");
-    setAppIds([]);
+    setAppIds(scope === "admin" ? apps.map((a) => a.id) : []);
     setKeepLast("1");
     setKeepDaily("7");
-    setKeepWeekly("4");
-    setKeepMonthly("6");
+    setKeepWeekly("1");
+    setKeepMonthly("1");
   }
 
   function toggleApp(appId: string) {
@@ -170,26 +172,32 @@ export function JobForm({
               </div>
             </div>
 
-            <div className="grid gap-2">
-              <Label>Apps to back up</Label>
-              <div className="space-y-1 max-h-48 overflow-y-auto rounded-md border p-2">
-                {apps.length === 0 ? (
-                  <p className="text-xs text-muted-foreground py-2 text-center">No apps available</p>
-                ) : (
-                  apps.map((app) => (
-                    <label key={app.id} className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={appIds.includes(app.id)}
-                        onChange={() => toggleApp(app.id)}
-                        className="size-4 rounded border-input"
-                      />
-                      <span className="text-sm">{app.displayName}</span>
-                    </label>
-                  ))
-                )}
+            {scope === "admin" ? (
+              <p className="text-xs text-muted-foreground">
+                System-level backups cover all apps across all organizations.
+              </p>
+            ) : (
+              <div className="grid gap-2">
+                <Label>Apps to back up</Label>
+                <div className="space-y-1 max-h-48 overflow-y-auto rounded-md border p-2">
+                  {apps.length === 0 ? (
+                    <p className="text-xs text-muted-foreground py-2 text-center">No apps available</p>
+                  ) : (
+                    apps.map((app) => (
+                      <label key={app.id} className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={appIds.includes(app.id)}
+                          onChange={() => toggleApp(app.id)}
+                          className="size-4 rounded border-input"
+                        />
+                        <span className="text-sm">{app.displayName}</span>
+                      </label>
+                    ))
+                  )}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
 

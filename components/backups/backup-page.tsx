@@ -272,6 +272,7 @@ export function BackupPage({
         targets={targets}
         apps={apps}
         defaultTargetId={targets[0]?.id}
+        scope={scope}
         onCreated={() => {
           setJobFormOpen(false);
           fetchData();

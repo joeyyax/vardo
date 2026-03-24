@@ -25,8 +25,8 @@ const createJobSchema = z.object({
   enabled: z.boolean().default(true),
   keepLast: z.number().int().positive().nullable().default(1),
   keepDaily: z.number().int().positive().nullable().default(7),
-  keepWeekly: z.number().int().positive().nullable().default(4),
-  keepMonthly: z.number().int().positive().nullable().default(6),
+  keepWeekly: z.number().int().positive().nullable().default(1),
+  keepMonthly: z.number().int().positive().nullable().default(1),
   notifyOnSuccess: z.boolean().default(false),
   notifyOnFailure: z.boolean().default(true),
 });
