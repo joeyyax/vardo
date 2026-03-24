@@ -6,7 +6,7 @@
 .dot-pattern {
   background-image: radial-gradient(
     circle,
-    hsl(var(--foreground) / 0.06) 1px,
+    hsl(var(--foreground) / 0.08) 1px,
     transparent 1px
   );
   background-size: 24px 24px;

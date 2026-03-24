@@ -206,14 +206,14 @@ function TechPillBadge({ pill }: { pill: TechPill }) {
 /* ------------------------------------------------------------------ */
 
 const accentColors = [
-  { border: "border-l-blue-500/70 dark:border-l-blue-400/50", iconBg: "bg-blue-500/10 text-blue-600 dark:text-blue-400" },
-  { border: "border-l-emerald-500/70 dark:border-l-emerald-400/50", iconBg: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
-  { border: "border-l-amber-500/70 dark:border-l-amber-400/50", iconBg: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
-  { border: "border-l-violet-500/70 dark:border-l-violet-400/50", iconBg: "bg-violet-500/10 text-violet-600 dark:text-violet-400" },
-  { border: "border-l-rose-500/70 dark:border-l-rose-400/50", iconBg: "bg-rose-500/10 text-rose-600 dark:text-rose-400" },
-  { border: "border-l-cyan-500/70 dark:border-l-cyan-400/50", iconBg: "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400" },
-  { border: "border-l-orange-500/70 dark:border-l-orange-400/50", iconBg: "bg-orange-500/10 text-orange-600 dark:text-orange-400" },
-  { border: "border-l-indigo-500/70 dark:border-l-indigo-400/50", iconBg: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400" },
+  { border: "border-l-blue-500 dark:border-l-blue-400", iconBg: "bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400", glow: "bg-blue-400/10" },
+  { border: "border-l-emerald-500 dark:border-l-emerald-400", iconBg: "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400", glow: "bg-emerald-400/10" },
+  { border: "border-l-amber-500 dark:border-l-amber-400", iconBg: "bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400", glow: "bg-amber-400/10" },
+  { border: "border-l-violet-500 dark:border-l-violet-400", iconBg: "bg-violet-100 text-violet-600 dark:bg-violet-500/20 dark:text-violet-400", glow: "bg-violet-400/10" },
+  { border: "border-l-rose-500 dark:border-l-rose-400", iconBg: "bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400", glow: "bg-rose-400/10" },
+  { border: "border-l-cyan-500 dark:border-l-cyan-400", iconBg: "bg-cyan-100 text-cyan-600 dark:bg-cyan-500/20 dark:text-cyan-400", glow: "bg-cyan-400/10" },
+  { border: "border-l-orange-500 dark:border-l-orange-400", iconBg: "bg-orange-100 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400", glow: "bg-orange-400/10" },
+  { border: "border-l-indigo-500 dark:border-l-indigo-400", iconBg: "bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400", glow: "bg-indigo-400/10" },
 ];
 
 /* ------------------------------------------------------------------ */
@@ -385,16 +385,18 @@ function FeatureCard({
 }) {
   return (
     <div
-      className={`group relative overflow-hidden rounded-2xl border border-border/50 bg-card transition-all duration-300 hover:border-border hover:shadow-lg dark:hover:shadow-primary/5 ${
-        hero ? "gradient-border p-8 sm:p-10" : "p-7"
+      className={`group relative overflow-hidden rounded-2xl border border-border bg-card transition-all duration-300 hover:shadow-lg dark:hover:shadow-primary/5 ${
+        hero
+          ? `border-l-4 ${accent.border} p-8 sm:p-10`
+          : `border-l-[3px] ${accent.border} p-7`
       }`}
     >
-      {/* Subtle accent glow for hero cards */}
-      {hero && (
-        <div
-          className={`pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full blur-3xl ${accent.iconBg} opacity-20`}
-        />
-      )}
+      {/* Accent glow */}
+      <div
+        className={`pointer-events-none absolute -right-10 -top-10 rounded-full blur-3xl ${accent.glow} ${
+          hero ? "h-48 w-48" : "h-32 w-32 opacity-60"
+        }`}
+      />
 
       <div className={hero ? "relative grid gap-8 sm:grid-cols-[1fr_auto]" : "relative"}>
         <div>
