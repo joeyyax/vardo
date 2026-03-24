@@ -2,19 +2,26 @@
 
 ## Authentication
 
-All API endpoints (except `/api/health` and `/api/v1/github/webhook`) require authentication. Host supports two authentication methods:
+All API endpoints (except `/api/health` and `/api/v1/github/webhook`) require authentication. Vardo supports two authentication methods:
 
 ### Session Cookies
 
-The web dashboard uses session-based authentication managed by Better Auth. Sessions are stored in PostgreSQL, expire after 7 days, and are refreshed every 24 hours. When using the API from a browser context, the session cookie is sent automatically.
+The web dashboard uses session-based authentication managed by Better Auth. Sessions are stored in PostgreSQL, expire after 7 days (configurable), and are refreshed every 24 hours. When using the API from a browser context, the session cookie is sent automatically.
 
 ### API Tokens
 
-For programmatic access, create an API token in the dashboard under **Settings > API Tokens**. Tokens are scoped to a specific organization and user.
+For programmatic access, create an API token in the dashboard under **Settings > API Tokens**. Tokens are scoped to a specific organization and user, prefixed with `vardo_`, and displayed only once at creation time. The server stores a SHA-256 hash of the token.
 
-Tokens are prefixed with `host_` and displayed only once at creation time. The server stores a SHA-256 hash of the token.
+**Note:** Token-based authentication for API routes is a work in progress. Token creation and management endpoints are available, but token-based request auth is not yet wired up in the middleware.
 
-**Note:** API token authentication for API routes is a work in progress. Currently, all API routes authenticate via session cookies. Token creation and management endpoints are available, but token-based request authentication is not yet wired up in the middleware.
+### Programmatic Access (Workaround)
+
+Until token auth is wired up, you can use session cookies with curl. Sign in via the browser, then copy the session cookie:
+
+```bash
+curl -s https://host.example.com/api/v1/organizations \
+  -H "Cookie: better-auth.session_token=<your-session-token>"
+```
 
 ## Base URL
 
@@ -45,6 +52,16 @@ The `orgId` is the organization ID (not the slug). You can find it from the orga
 | GET | `/api/v1/organizations/{orgId}/members` | List organization members |
 | PUT | `/api/v1/organizations/{orgId}/members/{userId}` | Update a member's role |
 | DELETE | `/api/v1/organizations/{orgId}/members/{userId}` | Remove a member |
+| POST | `/api/v1/organizations/switch` | Switch the active organization |
+
+### Invitations
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/organizations/{orgId}/invitations` | List pending invitations |
+| POST | `/api/v1/organizations/{orgId}/invitations` | Invite a user to the org |
+| DELETE | `/api/v1/organizations/{orgId}/invitations/{invitationId}` | Cancel an invitation |
+| POST | `/api/v1/invitations/accept` | Accept an invitation (unauthenticated, token-verified) |
 
 ### Projects
 
@@ -75,6 +92,7 @@ The `orgId` is the organization ID (not the slug). You can find it from the orga
 | GET | `/api/v1/organizations/{orgId}/apps/{appId}/deploy/stream` | Stream deployment logs (SSE) |
 | POST | `/api/v1/organizations/{orgId}/apps/{appId}/stop` | Stop an app |
 | POST | `/api/v1/organizations/{orgId}/apps/{appId}/restart` | Restart an app |
+| POST | `/api/v1/organizations/{orgId}/apps/{appId}/rollback` | Roll back to a previous deployment |
 
 The deploy endpoint accepts an optional JSON body:
 
@@ -89,6 +107,12 @@ The deploy endpoint accepts an optional JSON body:
 - Omit the body or send `{}` to deploy to the default (production) environment.
 - Set `deployAll: true` to trigger a group deploy of all apps in the project.
 - The response is a Server-Sent Events (SSE) stream with `log`, `stage`, `tier`, and `done` events.
+
+### Git Branches
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/organizations/{orgId}/apps/{appId}/branches` | List branches for the app's connected repository |
 
 ### Environment Variables
 
@@ -184,6 +208,14 @@ The deploy endpoint accepts an optional JSON body:
 | GET | `/api/v1/organizations/{orgId}/transfers` | List incoming/outgoing transfers |
 | POST | `/api/v1/organizations/{orgId}/transfers/{transferId}` | Accept or reject a transfer |
 
+### Deploy Keys
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/organizations/{orgId}/deploy-keys` | List deploy keys |
+| POST | `/api/v1/organizations/{orgId}/deploy-keys` | Create a deploy key |
+| DELETE | `/api/v1/organizations/{orgId}/deploy-keys/{keyId}` | Delete a deploy key |
+
 ### API Tokens
 
 | Method | Path | Description |
@@ -200,6 +232,13 @@ The deploy endpoint accepts an optional JSON body:
 | POST | `/api/v1/organizations/{orgId}/notifications` | Create a notification channel |
 | PATCH | `/api/v1/organizations/{orgId}/notifications/{channelId}` | Update a channel |
 | DELETE | `/api/v1/organizations/{orgId}/notifications/{channelId}` | Delete a channel |
+
+### Digest
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/organizations/{orgId}/digest` | Get digest settings |
+| PATCH | `/api/v1/organizations/{orgId}/digest` | Update digest settings |
 
 ### Activity Log
 
@@ -242,7 +281,36 @@ The deploy endpoint accepts an optional JSON body:
 | GET | `/api/v1/admin/organizations` | List all organizations |
 | GET | `/api/v1/admin/users` | List all users |
 | GET | `/api/v1/admin/backup-targets` | List all backup targets |
+| GET | `/api/v1/admin/backups` | List all backups (system-wide) |
 | POST | `/api/v1/admin/docker-prune` | Prune unused Docker resources |
+| GET | `/api/v1/admin/dns-check` | DNS check (admin context) |
+| GET | `/api/v1/admin/config/export` | Export current config as vardo.yml + vardo.secrets.yml |
+| POST | `/api/v1/admin/config/import` | Import a vardo.yml config into system settings |
+
+### Mesh (Multi-Instance)
+
+These endpoints are only available when the `mesh` feature flag is enabled.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/admin/mesh/peers` | List connected mesh peers |
+| POST | `/api/v1/admin/mesh/join` | Join a mesh network (connect to a peer) |
+| POST | `/api/v1/admin/mesh/invite` | Generate an invite token for a new peer |
+| POST | `/api/v1/admin/mesh/clone` | Clone an app from another instance |
+| POST | `/api/v1/admin/mesh/promote` | Promote an app to another instance |
+| POST | `/api/v1/admin/mesh/pull` | Pull an app's config/volumes from another instance |
+| POST | `/api/v1/mesh/heartbeat` | Internal peer heartbeat (peer-to-peer) |
+| POST | `/api/v1/mesh/sync` | Sync state with a peer |
+| POST | `/api/v1/mesh/clone` | Receive a cloned app from another instance |
+| POST | `/api/v1/mesh/promote` | Receive a promoted app from another instance |
+| POST | `/api/v1/mesh/pull` | Respond to a pull request from another instance |
+| POST | `/api/v1/mesh/join` | Accept a join request from another instance |
+
+### System
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/system/alerts` | List system alerts |
 
 ## Rate Limits
 
@@ -257,11 +325,11 @@ When rate-limited, the API returns HTTP 429 with a `Retry-After` header indicati
 
 ## Webhook Format
 
-Host receives GitHub webhooks at `/api/v1/github/webhook`. The webhook secret is verified using HMAC-SHA256 (`x-hub-signature-256` header).
+Vardo receives GitHub webhooks at `/api/v1/github/webhook`. The webhook secret is verified using HMAC-SHA256 (`x-hub-signature-256` header).
 
 ### Supported Events
 
-**`push`** -- Triggers auto-deploy for apps that match the repository URL and branch with `autoDeploy` enabled.
+**`push`** — Triggers auto-deploy for apps that match the repository URL and branch with `autoDeploy` enabled.
 
 Response:
 ```json
@@ -273,10 +341,10 @@ Response:
 }
 ```
 
-**`pull_request`** -- Creates or destroys preview environments.
+**`pull_request`** — Creates or destroys preview environments.
 
-- `opened`, `reopened`, `synchronize` -- Creates a preview group environment for the matching project, deploys all apps, and posts preview URLs as a PR comment.
-- `closed` -- Destroys the preview environment and tears down all containers.
+- `opened`, `reopened`, `synchronize` — Creates a preview group environment for the matching project, deploys all apps, and posts preview URLs as a PR comment.
+- `closed` — Destroys the preview environment and tears down all containers.
 
 Response:
 ```json
