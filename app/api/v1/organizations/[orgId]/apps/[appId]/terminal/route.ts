@@ -17,6 +17,8 @@ type ExecSession = {
   socket: net.Socket;
   execId: string;
   containerId: string;
+  orgId: string;
+  appId: string;
   createdAt: number;
 };
 
@@ -108,6 +110,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       socket,
       execId,
       containerId,
+      orgId,
+      appId,
       createdAt: Date.now(),
     });
 
@@ -203,7 +207,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
     }
 
-    const { orgId } = await params;
+    const { orgId, appId } = await params;
     const { organization } = await requireOrg();
 
     if (organization.id !== orgId) {
@@ -225,6 +229,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         { error: "Session not found or expired" },
         { status: 404 },
       );
+    }
+
+    // Verify session belongs to this org and app
+    if (session.orgId !== orgId || session.appId !== appId) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     if (session.socket.destroyed) {
