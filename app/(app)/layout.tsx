@@ -6,6 +6,7 @@ import { CommandPalette } from "@/components/command-palette";
 import { NotificationListener } from "@/components/notification-listener";
 import { getCurrentOrg, getUserOrganizations } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/config/features";
+import { SessionFooter } from "@/components/layout/session-footer";
 
 export const metadata: Metadata = {
   robots: {
@@ -43,17 +44,19 @@ export default async function AppLayout({
 
   return (
     <TooltipProvider>
-      <div className="flex flex-col h-dvh bg-sidebar">
-        <TopNav
-          currentOrgId={organization.id}
-          organizations={organizations}
-        />
-
-        <div className="flex-1 overflow-y-auto bg-background rounded-t-2xl min-h-0">
-          <main className="mx-auto max-w-screen-xl px-5 py-8 lg:px-10 min-h-full">
-            {children}
-          </main>
+      <div className="min-h-dvh flex flex-col bg-background">
+        <div className="sticky top-0 z-40 bg-sidebar">
+          <TopNav
+            currentOrgId={organization.id}
+            organizations={organizations}
+          />
         </div>
+
+        <main className="mx-auto max-w-screen-xl px-5 py-8 lg:px-10 flex-1 w-full">
+          {children}
+        </main>
+
+        <SessionFooter />
       </div>
 
       <CommandPalette orgId={organization.id} />
