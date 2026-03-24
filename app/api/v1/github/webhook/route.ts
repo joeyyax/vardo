@@ -7,18 +7,10 @@ import { deployProject } from "@/lib/docker/deploy";
 import { createPreview, destroyPreview } from "@/lib/docker/preview";
 import { getGitHubAppConfig } from "@/lib/system-settings";
 
-import { rateLimit } from "@/lib/api/rate-limit";
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 // POST /api/v1/github/webhook — GitHub App webhook receiver
-export async function POST(request: NextRequest) {
-  // This endpoint is unauthenticated (signature-verified below), so IP is the only
-  // available identifier. Note: x-forwarded-for can be spoofed if the app is not
-  // behind a trusted proxy that overwrites the header (e.g. nginx/Caddy). The
-  // HMAC signature check is the primary security control here; rate limiting is
-  // a secondary DoS defence only.
-  const limited = await rateLimit(request, { key: "webhook", limit: 30, windowMs: 60000 });
-  if (limited) return limited;
-
+async function handler(request: NextRequest) {
   try {
     const body = await request.text();
     const event = request.headers.get("x-github-event");
@@ -197,6 +189,8 @@ async function handlePullRequest(payload: Record<string, unknown>): Promise<Next
 
   return NextResponse.json({ ok: true, skipped: `PR action: ${action}` });
 }
+
+export const POST = withRateLimit(handler, { tier: "public", key: "webhook" });
 
 /**
  * Post preview environment URLs as a GitHub PR comment.
