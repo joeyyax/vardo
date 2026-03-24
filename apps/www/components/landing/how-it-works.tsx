@@ -24,31 +24,41 @@ const steps = [
 
 export function HowItWorks() {
   return (
-    <Section>
-      <div className="text-center">
-        <h2 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-          From zero to production in three commands
-        </h2>
-      </div>
-      <div className="mt-16 grid gap-10 sm:grid-cols-3">
-        {steps.map((step) => (
-          <div key={step.number} className="relative">
-            <span className="text-4xl font-bold text-primary/20">
-              {step.number}
-            </span>
-            <h3 className="mt-3 text-lg font-semibold text-foreground">
-              {step.title}
-            </h3>
-            <p className="mt-2 text-muted-foreground">{step.description}</p>
-            {step.code && (
-              <div className="mt-4 overflow-x-auto rounded-lg bg-secondary px-4 py-3 font-mono text-sm text-secondary-foreground">
-                <span className="select-none text-emerald-400">$ </span>
-                {step.code}
+    <div className="bg-neutral-950 text-neutral-100">
+      <Section>
+        <div className="mb-16">
+          <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
+            From zero to production
+            <br />
+            in three steps
+          </h2>
+        </div>
+        <div className="space-y-16 sm:space-y-20">
+          {steps.map((step) => (
+            <div key={step.number} className="relative grid gap-6 sm:grid-cols-[120px_1fr] sm:gap-10">
+              <div className="relative">
+                <span className="text-7xl font-bold leading-none text-white/[0.07] sm:text-8xl">
+                  {step.number}
+                </span>
               </div>
-            )}
-          </div>
-        ))}
-      </div>
-    </Section>
+              <div>
+                <h3 className="text-xl font-semibold text-white">
+                  {step.title}
+                </h3>
+                <p className="mt-2 max-w-lg text-neutral-400">
+                  {step.description}
+                </p>
+                {step.code && (
+                  <div className="mt-4 inline-block overflow-x-auto rounded-lg border border-white/[0.08] bg-white/[0.04] px-4 py-3 font-mono text-sm text-neutral-300">
+                    <span className="select-none text-emerald-400">$ </span>
+                    {step.code}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </Section>
+    </div>
   );
 }

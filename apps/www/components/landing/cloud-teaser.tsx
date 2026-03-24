@@ -1,75 +1,51 @@
+import Link from "next/link";
 import { Section } from "./section";
 
 export function CloudTeaser() {
   return (
-    <Section className="bg-muted/30">
-      <div className="mx-auto max-w-3xl text-center">
+    <Section>
+      <div className="mb-12">
         <h2 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-          Self-hosted or managed — your choice
+          Self-hosted or managed
+          <br />
+          — your choice
         </h2>
-        <p className="mt-4 text-lg text-muted-foreground">
-          Run Vardo on your own hardware with full control, or let us handle the
-          infrastructure.
-        </p>
       </div>
-      <div className="mx-auto mt-12 grid max-w-4xl gap-6 sm:grid-cols-2">
-        {/* Self-hosted */}
-        <div className="rounded-xl border border-border bg-card p-6">
-          <div className="mb-3 flex size-10 items-center justify-center rounded-lg bg-primary/10">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="text-primary"
+      <div className="grid gap-6 sm:grid-cols-2 lg:gap-8">
+        {/* Self-hosted — primary */}
+        <div className="relative overflow-hidden rounded-xl border-2 border-primary bg-primary/[0.04] p-8">
+          <div className="absolute -right-8 -top-8 size-32 rounded-full bg-primary/[0.06] blur-2xl" />
+          <div className="relative">
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+              <span className="size-1.5 rounded-full bg-primary" />
+              Available now
+            </div>
+            <h3 className="text-2xl font-bold text-foreground">Self-hosted</h3>
+            <p className="mt-3 max-w-sm text-muted-foreground">
+              Install on any Ubuntu or Debian server. Full root access, your data
+              stays on your hardware, export and move anytime.
+            </p>
+            <Link
+              href="/docs/getting-started"
+              className="mt-6 inline-flex h-10 items-center rounded-lg bg-primary px-5 text-sm font-medium text-primary-foreground transition-colors duration-150 hover:bg-primary/90"
             >
-              <rect width="20" height="8" x="2" y="2" rx="2" ry="2" />
-              <rect width="20" height="8" x="2" y="14" rx="2" ry="2" />
-              <line x1="6" y1="6" x2="6.01" y2="6" />
-              <line x1="6" y1="18" x2="6.01" y2="18" />
-            </svg>
+              Get Started
+            </Link>
           </div>
-          <h3 className="text-lg font-semibold text-foreground">Self-hosted</h3>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Install on any Ubuntu or Debian server. Full root access, your
-            data stays on your hardware, export and move anytime.
-          </p>
-          <p className="mt-3 text-sm font-medium text-primary">
-            Available now
-          </p>
         </div>
-        {/* Managed cloud */}
-        <div className="rounded-xl border border-border bg-card p-6">
-          <div className="mb-3 flex size-10 items-center justify-center rounded-lg bg-primary/10">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="text-primary"
-            >
-              <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" />
-            </svg>
+
+        {/* Managed cloud — secondary */}
+        <div className="rounded-xl border border-border bg-card p-8">
+          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-border px-3 py-1 text-xs font-medium text-muted-foreground">
+            Coming soon
           </div>
-          <h3 className="text-lg font-semibold text-foreground">
-            Vardo Cloud
-          </h3>
-          <p className="mt-2 text-sm text-muted-foreground">
+          <h3 className="text-2xl font-bold text-foreground">Vardo Cloud</h3>
+          <p className="mt-3 max-w-sm text-muted-foreground">
             Same Vardo experience, managed for you. We handle provisioning,
             updates, and backups so you can focus on shipping.
           </p>
-          <p className="mt-3 text-sm text-muted-foreground">
-            Coming soon at{" "}
+          <p className="mt-6 text-sm text-muted-foreground">
+            Launching at{" "}
             <span className="font-medium text-foreground">vardo.cloud</span>
           </p>
         </div>

@@ -21,7 +21,11 @@ export function Nav() {
       }`}
     >
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        <Link href="/" className="text-lg font-bold tracking-tight text-foreground">
+        <Link
+          href="/"
+          className="text-xl font-bold tracking-wide text-foreground uppercase"
+          style={{ letterSpacing: "0.12em" }}
+        >
           Vardo
         </Link>
         <nav className="flex items-center gap-6" aria-label="Main navigation">
