@@ -28,7 +28,7 @@ Vardo is not:
 - a CI/CD pipeline builder
 - a serverless framework
 
-Vardo runs Docker Compose on servers you control. It doesn't try to abstract away Docker or replace tools that already work.
+Vardo uses Docker Compose — the same tool most developers already use locally — and makes it work seamlessly in production. No new abstractions to learn, no orchestration complexity to manage.
 
 ---
 
