@@ -11,10 +11,17 @@ import { db } from "@/lib/db";
 import { systemSettings } from "@/lib/db/schema";
 import { decryptSystemOrFallback, encryptSystem } from "@/lib/crypto/encrypt";
 import { eq } from "drizzle-orm";
-import { readVardoConfig } from "@/lib/config/vardo-config";
 
 import { DEFAULT_APP_NAME } from "@/lib/constants";
 export { DEFAULT_APP_NAME };
+
+// Dynamic import to avoid pulling fs (via vardo-config.ts) into client bundles.
+// system-settings re-exports DEFAULT_APP_NAME which client components use,
+// so all static imports in this file end up in client bundles.
+async function getVardoConfig() {
+  const { readVardoConfig } = await import("@/lib/config/vardo-config");
+  return readVardoConfig();
+}
 
 // Short-TTL in-memory cache for system settings. These change rarely (admin
 // panel only), so a 30s cache eliminates repeated DB + decrypt calls when
@@ -93,7 +100,7 @@ export type InstanceConfig = {
 };
 
 export async function getInstanceConfig(): Promise<InstanceConfig> {
-  const fileConfig = await readVardoConfig();
+  const fileConfig = await getVardoConfig();
   const dbConfig = await getSystemSettingRaw("instance_config")
     .then((raw) => raw ? parseJson<InstanceConfig>(raw, "instance_config") : null);
 
@@ -120,7 +127,7 @@ export type GitHubAppConfig = {
 
 export async function getGitHubAppConfig(): Promise<GitHubAppConfig | null> {
   // Config file takes priority
-  const fileConfig = await readVardoConfig();
+  const fileConfig = await getVardoConfig();
   if (fileConfig?.github?.appId) {
     return {
       appId: fileConfig.github.appId,
@@ -157,7 +164,7 @@ export type EmailProviderConfig = {
 
 export async function getEmailProviderConfig(): Promise<EmailProviderConfig | null> {
   // Config file takes priority
-  const fileConfig = await readVardoConfig();
+  const fileConfig = await getVardoConfig();
   if (fileConfig?.email?.provider) {
     return {
       provider: fileConfig.email.provider,
@@ -194,7 +201,7 @@ export type BackupStorageConfig = {
 
 export async function getBackupStorageConfig(): Promise<BackupStorageConfig | null> {
   // Config file takes priority
-  const fileConfig = await readVardoConfig();
+  const fileConfig = await getVardoConfig();
   if (fileConfig?.backup?.type) {
     return {
       type: fileConfig.backup.type,
@@ -220,7 +227,7 @@ export async function getBackupStorageConfig(): Promise<BackupStorageConfig | nu
 
 export async function getFeatureFlagsConfig(): Promise<Record<string, boolean> | null> {
   // Config file takes priority
-  const fileConfig = await readVardoConfig();
+  const fileConfig = await getVardoConfig();
   if (fileConfig?.features && Object.keys(fileConfig.features).length > 0) {
     return fileConfig.features;
   }
@@ -242,7 +249,7 @@ export type AuthConfig = {
 const VALID_REGISTRATION_MODES = ["closed", "open", "approval"] as const;
 
 export async function getAuthConfig(): Promise<AuthConfig> {
-  const fileConfig = await readVardoConfig();
+  const fileConfig = await getVardoConfig();
   const dbConfig = await getSystemSettingRaw("auth_config")
     .then((raw) => raw ? parseJson<Partial<AuthConfig>>(raw, "auth_config") : null);
 
