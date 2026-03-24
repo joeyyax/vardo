@@ -10,27 +10,11 @@ If a feature request conflicts with this list, the answer is usually "no".
 
 ## Vardo Is Not Kubernetes
 
-Vardo does not aim to replace:
-- Kubernetes
-- Docker Swarm
-- Nomad
-- AWS ECS
+Vardo does not aim to replace Kubernetes, Docker Swarm, Nomad, or ECS.
 
 Vardo runs Docker Compose on a single server (or a small mesh of servers). It does not orchestrate clusters, manage pod scheduling, or implement service mesh networking.
 
 If you need horizontal auto-scaling across dozens of nodes, Vardo is not the right tool.
-
----
-
-## Vardo Is Not a Cloud Provider
-
-Vardo does not:
-- Provision VPS instances
-- Manage cloud resources (EC2, GCE, DigitalOcean droplets)
-- Abstract across multiple cloud providers
-- Handle DNS registration
-
-You bring the server. Vardo runs on it.
 
 ---
 
@@ -139,9 +123,20 @@ Deleting an app, org, or project is permanent. Confirmation dialogs exist for a 
 
 ---
 
+## Not Today
+
+These are things Vardo doesn't do now. The architecture doesn't rule them out — they're just not where the focus is.
+
+- **Cloud provider integration** — provisioning servers from within Vardo
+- **Enterprise features** — SSO/SAML, audit logging, compliance
+- **Multi-region deployment** — geographic distribution with routing awareness
+- **Managed hosting** — a hosted version where we run the infrastructure
+
+---
+
 ## Principle
 
 > Vardo solves the problems it can solve cleanly.
-> Everything else is intentionally left out.
+> Everything else is intentionally left out — or waiting for the right time.
 >
 > Constraints are a feature.
