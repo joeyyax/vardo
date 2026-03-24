@@ -22,13 +22,11 @@ function RotatingVerb() {
     const currentWord = verbs[wordIndex];
 
     if (!isDeleting && text === currentWord) {
-      // Pause at full word before deleting
-      const pause = setTimeout(() => setIsDeleting(true), 2000);
+      const pause = setTimeout(() => setIsDeleting(true), 5000);
       return () => clearTimeout(pause);
     }
 
     if (isDeleting && text === "") {
-      // Move to next word
       setIsDeleting(false);
       setWordIndex((i) => (i + 1) % verbs.length);
       return;
@@ -73,19 +71,20 @@ export function Hero() {
             your code, get HTTPS, backups, and monitoring — without learning
             Kubernetes or paying for PaaS.
           </p>
-          <div className="mt-10">
-            <Link
-              href="/docs/getting-started"
-              className="inline-flex h-12 items-center rounded-xl bg-blue-500 px-8 text-sm font-semibold text-white transition-all duration-200 hover:bg-blue-600 hover:-translate-y-0.5"
-            >
-              Get Started
-            </Link>
-          </div>
           <div className="mx-auto mt-14 max-w-xl">
             <p className="mb-3 text-sm font-medium text-neutral-500">
               Install on any Ubuntu or Debian server in under five minutes
             </p>
             <TerminalBlock command="curl -fsSL https://vardo.run/install.sh | sudo bash" />
+            <p className="mt-4 text-sm text-neutral-600">
+              Not a fan of pipe-to-bash?{" "}
+              <Link
+                href="/docs/installation"
+                className="text-neutral-400 underline underline-offset-2 decoration-neutral-700 hover:text-white transition-colors duration-150"
+              >
+                Install manually
+              </Link>
+            </p>
           </div>
         </div>
       </div>
