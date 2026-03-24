@@ -150,18 +150,16 @@ export function BackupPage({
                 </p>
               </div>
             ) : jobs.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-8">
+              <div className="relative flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-8 overflow-hidden">
+                <ShineBorder shineColor={["#6366f1", "#8b5cf6", "#a78bfa"]} duration={8} borderWidth={2} />
                 <Archive className="size-6 text-muted-foreground/50" aria-hidden="true" />
                 <p className="text-sm text-muted-foreground text-center">
                   No backup jobs configured. Create one to schedule automatic backups.
                 </p>
-                <div className="relative overflow-hidden rounded-lg">
-                  <ShineBorder shineColor={["#6366f1", "#8b5cf6", "#a78bfa"]} duration={8} borderWidth={2} />
-                  <Button size="sm" variant="outline" onClick={() => setJobFormOpen(true)}>
-                    <Plus className="mr-1.5 size-4" aria-hidden="true" />
-                    New job
-                  </Button>
-                </div>
+                <Button size="sm" variant="outline" onClick={() => setJobFormOpen(true)}>
+                  <Plus className="mr-1.5 size-4" aria-hidden="true" />
+                  New job
+                </Button>
               </div>
             ) : (
               <div className="space-y-2">
