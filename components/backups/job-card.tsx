@@ -17,11 +17,13 @@ export function JobCard({
   orgId,
   readOnly = false,
   onRefresh,
+  showApps = true,
 }: {
   job: BackupJob;
   orgId: string;
   readOnly?: boolean;
   onRefresh: () => void;
+  showApps?: boolean;
 }) {
   const [running, setRunning] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -153,7 +155,7 @@ export function JobCard({
           <RetentionSummary job={job} />
         </div>
 
-        {job.backupJobApps.length > 0 && (
+        {showApps && job.backupJobApps.length > 0 && (
           <div className="flex flex-wrap gap-1">
             {job.backupJobApps.map((bja) => (
               <Badge key={bja.app.id} variant="secondary" className="text-xs">

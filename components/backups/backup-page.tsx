@@ -169,6 +169,7 @@ export function BackupPage({
                     job={job}
                     orgId={orgId}
                     readOnly={scope === "org" && job.target.type === "system"}
+                    showApps={scope !== "admin"}
                     onRefresh={fetchData}
                   />
                 ))}
