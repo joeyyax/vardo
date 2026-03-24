@@ -32,7 +32,10 @@ export function Audience() {
       <div className="grid gap-0 lg:grid-cols-2">
         {/* Built for — welcoming, confident */}
         <div className="rounded-2xl rounded-b-none border border-neutral-800 border-b-0 bg-neutral-900/50 p-10 lg:rounded-r-none lg:rounded-l-2xl lg:border-b lg:border-r-0 sm:p-12">
-          <h2 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-neutral-500">
+            Who this is for
+          </p>
+          <h2 className="mt-3 text-3xl font-bold tracking-tight text-white sm:text-4xl">
             Built for you... probably
           </h2>
           <div className="mt-10 space-y-6">
@@ -62,7 +65,10 @@ export function Audience() {
 
         {/* Not for — honest, a little cheeky */}
         <div className="rounded-2xl rounded-t-none border border-neutral-800 bg-neutral-950 p-10 lg:rounded-l-none lg:rounded-r-2xl lg:rounded-t-2xl lg:border-l-0 sm:p-12">
-          <h2 className="text-3xl font-bold tracking-tight text-neutral-500 sm:text-4xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-neutral-600">
+            Who this isn&apos;t for
+          </p>
+          <h2 className="mt-3 text-3xl font-bold tracking-tight text-neutral-500 sm:text-4xl">
             Maybe not for you, if...
           </h2>
           <div className="mt-10 space-y-8">
