@@ -15,15 +15,7 @@ export function Hero() {
           <h1 className="text-5xl font-extrabold tracking-tight sm:text-6xl lg:text-7xl xl:text-8xl">
             <span className="block text-foreground">
               Deploy on{" "}
-              <span
-                className="text-primary"
-                style={{
-                  background: "linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary) / 0.6))",
-                  WebkitBackgroundClip: "text",
-                  WebkitTextFillColor: "transparent",
-                  backgroundClip: "text",
-                }}
-              >
+              <span className="text-primary underline decoration-primary/30 decoration-4 underline-offset-[6px]">
                 your terms.
               </span>
             </span>
