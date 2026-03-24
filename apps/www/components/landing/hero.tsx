@@ -1,0 +1,111 @@
+"use client";
+
+import Link from "next/link";
+import { TerminalBlock } from "./terminal-block";
+import { INSTALL_COMMAND } from "@/lib/constants";
+import { useState, useEffect, useCallback } from "react";
+
+const words = [
+  { text: "Deploy", color: "text-emerald-400" },
+  { text: "Ship", color: "text-sky-400" },
+  { text: "Scale", color: "text-violet-400" },
+];
+
+function RotatingVerb() {
+  const [text, setText] = useState(words[0].text);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [wordIndex, setWordIndex] = useState(0);
+  const [showCursor, setShowCursor] = useState(true);
+
+  const currentWord = words[wordIndex];
+
+  // Respect prefers-reduced-motion
+  const prefersReducedMotion = useCallback(() => {
+    if (typeof window === "undefined") return false;
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  }, []);
+
+  useEffect(() => {
+    if (prefersReducedMotion()) return;
+    const blink = setInterval(() => setShowCursor((v) => !v), 530);
+    return () => clearInterval(blink);
+  }, [prefersReducedMotion]);
+
+  useEffect(() => {
+    if (prefersReducedMotion()) return;
+    const word = words[wordIndex].text;
+
+    if (!isDeleting && text === word) {
+      const pause = setTimeout(() => setIsDeleting(true), 5000);
+      return () => clearTimeout(pause);
+    }
+
+    if (isDeleting && text === "") {
+      setIsDeleting(false);
+      setWordIndex((i) => (i + 1) % words.length);
+      return;
+    }
+
+    const speed = isDeleting ? 60 : 100;
+    const timeout = setTimeout(() => {
+      if (isDeleting) {
+        setText(word.slice(0, text.length - 1));
+      } else {
+        setText(word.slice(0, text.length + 1));
+      }
+    }, speed);
+
+    return () => clearTimeout(timeout);
+  }, [text, isDeleting, wordIndex]);
+
+  return (
+    <span className={`transition-colors duration-300 ${currentWord.color}`}>
+      {text}
+      <span
+        className={`inline-block w-[3px] sm:w-[4px] lg:w-[5px] ml-1 bg-neutral-500 ${
+          showCursor ? "opacity-100" : "opacity-0"
+        }`}
+        style={{ height: "0.8em", verticalAlign: "baseline", marginBottom: "-0.05em" }}
+        aria-hidden="true"
+      />
+    </span>
+  );
+}
+
+export function Hero() {
+  return (
+    <section className="relative overflow-hidden">
+      <div className="relative mx-auto flex min-h-[90vh] items-center justify-center px-4 sm:px-6 lg:px-8">
+        <div className="w-full text-center">
+          <h1 className="text-5xl font-extrabold tracking-tight sm:text-6xl lg:text-7xl xl:text-8xl">
+            <RotatingVerb />{" "}
+            <span className="text-neutral-300">on your terms.</span>
+          </h1>
+          <p className="mx-auto mt-8 max-w-2xl text-lg leading-relaxed text-neutral-400 sm:text-xl">
+            Vardo is a self-hosted platform for deploying Docker apps.
+            Push your code, get HTTPS, backups, and monitoring —{" "}
+            <span className="font-mono text-base text-neutral-300">
+              without learning Kubernetes
+            </span>{" "}
+            or paying for PaaS.
+          </p>
+          <div className="mx-auto mt-14 max-w-xl">
+            <p className="mb-3 text-sm text-neutral-500">
+              Install on a fresh server — one command, live in a few minutes
+            </p>
+            <TerminalBlock command={INSTALL_COMMAND} />
+            <p className="mt-4 text-sm text-neutral-500">
+              Not a fan of pipe-to-bash?{" "}
+              <Link
+                href="/docs/installation"
+                className="text-neutral-400 underline underline-offset-2 decoration-neutral-700 hover:text-white transition-colors duration-150"
+              >
+                Install manually
+              </Link>
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
