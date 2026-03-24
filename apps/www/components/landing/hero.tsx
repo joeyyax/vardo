@@ -84,8 +84,8 @@ export function Hero() {
             or paying for PaaS.
           </p>
           <div className="mx-auto mt-14 max-w-xl">
-            <p className="mb-3 text-sm text-neutral-500 font-mono tracking-wide">
-              ~ one command, five minutes
+            <p className="mb-3 text-sm text-neutral-500">
+              Build on a fresh server ~ one command, live in a few minutes
             </p>
             <TerminalBlock command="curl -fsSL https://vardo.run/install.sh | sudo bash" />
             <p className="mt-4 text-sm text-neutral-600">
