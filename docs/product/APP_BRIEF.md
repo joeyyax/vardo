@@ -25,12 +25,12 @@ Each stage has sensible defaults. You configure what you want, skip what you don
 Vardo is not:
 
 - a Kubernetes distribution
-- a cloud provider abstraction layer
-- an enterprise orchestration platform
 - a CI/CD pipeline builder
 - a serverless framework
 
 Vardo runs Docker Compose on servers you control. It doesn't try to abstract away Docker or replace tools that already work.
+
+The architecture doesn't rule out cloud provider integration or enterprise features down the road — but v1 is self-hosted, single-server-first.
 
 ---
 
@@ -209,10 +209,8 @@ Settings should be boring. Deployments should be obvious. Errors should be clear
 Vardo intentionally does not aim to:
 
 - replace Kubernetes, Docker Swarm, or Nomad
-- manage cloud provider resources (AWS, GCP, Azure)
 - handle CI/CD pipelines (use GitHub Actions, GitLab CI)
 - provide serverless or edge function hosting
-- become a general-purpose infrastructure platform
 - support multi-tenant SaaS hosting for end customers
 
 ---
