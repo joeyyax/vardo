@@ -57,6 +57,13 @@
       "when": 1774300952672,
       "tag": "0007_mesh-transfers",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1774318397024,
+      "tag": "0008_notification-log",
+      "breakpoints": true
     }
   ]
 }
