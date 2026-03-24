@@ -68,7 +68,6 @@ export function BackupSettings() {
     },
   });
 
-  // Finding 11: Reset fields when storage type changes
   function handleTypeChange(next: string) {
     if (next !== type) {
       setBucket("");
@@ -99,9 +98,9 @@ export function BackupSettings() {
   return (
     <div className="space-y-6">
       <div className="space-y-1">
-        <h2 className="text-lg font-medium">Backup storage</h2>
+        <h2 className="text-lg font-medium">Backups</h2>
         <p className="text-sm text-muted-foreground">
-          Configure where volume snapshots are stored. Backups run on the schedules you set per-project in the Backups page.
+          Configure the system-wide backup storage target. This is the default target for automatic backups across all organizations.
         </p>
       </div>
 
@@ -166,49 +165,15 @@ export function BackupSettings() {
             {isMaskedValue(accessKey) && !editingAccessKey ? (
               <div className="flex gap-2">
                 <Input id="sys-accessKey" value={toDisplay(accessKey)} disabled className="font-mono" />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="squircle shrink-0"
-                  aria-label="Edit access key"
-                  onClick={() => {
-                    setEditingAccessKey(true);
-                    setAccessKey("");
-                  }}
-                >
-                  Edit
-                </Button>
+                <Button type="button" variant="outline" size="sm" className="squircle shrink-0" aria-label="Edit access key" onClick={() => { setEditingAccessKey(true); setAccessKey(""); }}>Edit</Button>
               </div>
             ) : editingAccessKey ? (
               <div className="flex gap-2">
-                <Input
-                  id="sys-accessKey"
-                  value={accessKey}
-                  onChange={(e) => setAccessKey(e.target.value)}
-                  required
-                  autoFocus
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="squircle shrink-0"
-                  onClick={() => {
-                    setEditingAccessKey(false);
-                    setAccessKey(maskedAccessKey.current);
-                  }}
-                >
-                  Cancel
-                </Button>
+                <Input id="sys-accessKey" value={accessKey} onChange={(e) => setAccessKey(e.target.value)} required autoFocus />
+                <Button type="button" variant="outline" size="sm" className="squircle shrink-0" onClick={() => { setEditingAccessKey(false); setAccessKey(maskedAccessKey.current); }}>Cancel</Button>
               </div>
             ) : (
-              <Input
-                id="sys-accessKey"
-                value={accessKey}
-                onChange={(e) => setAccessKey(e.target.value)}
-                required
-              />
+              <Input id="sys-accessKey" value={accessKey} onChange={(e) => setAccessKey(e.target.value)} required />
             )}
           </div>
 
@@ -217,53 +182,15 @@ export function BackupSettings() {
             {isMaskedValue(secretKey) && !editingSecretKey ? (
               <div className="flex gap-2">
                 <Input id="sys-secretKey" value={toDisplay(secretKey)} disabled className="font-mono" />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="squircle shrink-0"
-                  aria-label="Edit secret key"
-                  onClick={() => {
-                    setEditingSecretKey(true);
-                    setSecretKey("");
-                  }}
-                >
-                  Edit
-                </Button>
+                <Button type="button" variant="outline" size="sm" className="squircle shrink-0" aria-label="Edit secret key" onClick={() => { setEditingSecretKey(true); setSecretKey(""); }}>Edit</Button>
               </div>
             ) : editingSecretKey ? (
               <div className="flex gap-2">
-                <Input
-                  id="sys-secretKey"
-                  type="password"
-                  value={secretKey}
-                  onChange={(e) => setSecretKey(e.target.value)}
-                  autoComplete="current-password"
-                  required
-                  autoFocus
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="squircle shrink-0"
-                  onClick={() => {
-                    setEditingSecretKey(false);
-                    setSecretKey(maskedSecretKey.current);
-                  }}
-                >
-                  Cancel
-                </Button>
+                <Input id="sys-secretKey" type="password" value={secretKey} onChange={(e) => setSecretKey(e.target.value)} autoComplete="current-password" required autoFocus />
+                <Button type="button" variant="outline" size="sm" className="squircle shrink-0" onClick={() => { setEditingSecretKey(false); setSecretKey(maskedSecretKey.current); }}>Cancel</Button>
               </div>
             ) : (
-              <Input
-                id="sys-secretKey"
-                type="password"
-                value={secretKey}
-                onChange={(e) => setSecretKey(e.target.value)}
-                autoComplete="current-password"
-                required
-              />
+              <Input id="sys-secretKey" type="password" value={secretKey} onChange={(e) => setSecretKey(e.target.value)} autoComplete="current-password" required />
             )}
           </div>
 
@@ -319,7 +246,7 @@ export function BackupSettings() {
             </li>
             <li className="flex items-start gap-2.5">
               <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
-              <span className="text-muted-foreground">Manual backups can be triggered anytime from the Backups page</span>
+              <span className="text-muted-foreground">Manual backups can be triggered anytime</span>
             </li>
             <li className="flex items-start gap-2.5">
               <Info className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />

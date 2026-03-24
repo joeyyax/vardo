@@ -13,7 +13,7 @@ const BASE_NAV_ITEMS = [
   { label: "Email", href: "/admin/settings/email" },
   { label: "Authentication", href: "/admin/settings/authentication" },
   { label: "Feature flags", href: "/admin/settings/feature-flags" },
-  { label: "Backup storage", href: "/admin/settings/backup" },
+  { label: "Backups", href: "/admin/settings/backup" },
   { label: "GitHub App", href: "/admin/settings/github" },
   { label: "Domain & SSL", href: "/admin/settings/domain" },
 ];

@@ -1,4 +1,8 @@
 import { notFound } from "next/navigation";
+import { db } from "@/lib/db";
+import { apps } from "@/lib/db/schema";
+import { getCurrentOrg } from "@/lib/auth/session";
+import { eq } from "drizzle-orm";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { OverviewSettings } from "../overview-settings";
 import { GeneralSettings } from "../general-settings";
@@ -9,6 +13,7 @@ import { BackupSettings } from "../backup-settings";
 import { GitHubSettings } from "../github-settings";
 import { DomainSettings } from "../domain-settings";
 import { InstancesSettings } from "../instances-settings";
+import { BackupPage } from "@/components/backups/backup-page";
 
 const VALID_TABS = ["overview", "general", "email", "authentication", "feature-flags", "backup", "github", "domain", "instances"] as const;
 type ValidTab = (typeof VALID_TABS)[number];
@@ -44,6 +49,23 @@ export default async function AdminSettingsTabPage({
   const requiredFlag = FLAG_GATED_TABS[tab as ValidTab];
   if (requiredFlag && !(await isFeatureEnabledAsync(requiredFlag))) {
     notFound();
+  }
+
+  // Backup tab — full BackupPage with admin scope (system targets are editable)
+  if (tab === "backup") {
+    const orgData = await getCurrentOrg();
+    const orgId = orgData?.organization.id;
+    if (!orgId) {
+      const Component = TAB_COMPONENTS[tab as ValidTab];
+      return <Component />;
+    }
+
+    const appList = await db.query.apps.findMany({
+      where: eq(apps.organizationId, orgId),
+      columns: { id: true, name: true, displayName: true },
+    });
+
+    return <BackupPage scope="admin" orgId={orgId} apps={appList} />;
   }
 
   const Component = TAB_COMPONENTS[tab as ValidTab];
