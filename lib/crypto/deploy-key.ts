@@ -58,8 +58,9 @@ export async function cleanupKeyFile(filepath: string): Promise<void> {
 
 /**
  * Build the GIT_SSH_COMMAND for use with a deploy key.
- * Disables host key checking for automated clones.
+ * Uses accept-new with a persistent known_hosts so host keys are
+ * trusted on first connection and verified on subsequent ones.
  */
 export function buildGitSshCommand(keyFilePath: string): string {
-  return `ssh -i "${keyFilePath}" -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null`;
+  return `ssh -i "${keyFilePath}" -o StrictHostKeyChecking=accept-new`;
 }
