@@ -4,9 +4,6 @@ export function LaunchBanner() {
   return (
     <div className="border-y border-white/[0.04] py-4">
       <div className="mx-auto flex max-w-7xl items-center justify-center gap-3 px-4 text-sm sm:px-6 lg:px-8">
-        <span className="rounded-full bg-neutral-800 px-2.5 py-0.5 text-xs font-semibold text-neutral-300">
-          v1
-        </span>
         <span className="text-neutral-500">
           First release is live — building in the open.
         </span>
