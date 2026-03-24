@@ -54,6 +54,13 @@ export async function register() {
         })
         .catch((err) => console.error("[instrumentation] Failed to start cron scheduler:", err)),
 
+      import("./lib/notifications/scheduler")
+        .then(({ startNotificationRetryScheduler }) => {
+          startNotificationRetryScheduler();
+          console.log("[instrumentation] Notification retry scheduler started");
+        })
+        .catch((err) => console.error("[instrumentation] Failed to start notification retry scheduler:", err)),
+
       import("./lib/system-alerts/monitor")
         .then(({ startSystemAlertMonitor }) => {
           startSystemAlertMonitor();
