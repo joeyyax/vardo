@@ -1,17 +1,29 @@
 import { Section } from "./section";
 
 const builtFor = [
-  "Solo devs and small teams who want to own their stack",
-  "Side projects that outgrew Heroku's free tier",
-  "Agencies managing client apps across servers",
-  "Anyone who's done paying per-seat for infrastructure",
+  {
+    label: "Solo devs and small teams",
+    aside: "You want to own your stack without hiring a DevOps person.",
+  },
+  {
+    label: "Side projects that got real",
+    aside: "You outgrew Heroku's free tier and need a grown-up home.",
+  },
+  {
+    label: "Agencies juggling client apps",
+    aside: "One server, many projects. Each with its own domain, env, and deploy pipeline.",
+  },
+  {
+    label: "Anyone tired of per-seat pricing",
+    aside: "Your server costs the same whether you have 2 team members or 20.",
+  },
+  {
+    label: "Docker Compose users",
+    aside: "Your compose files work here. No new abstractions to learn.",
+  },
 ];
 
 const notFor = [
-  {
-    label: "you already have a DevOps team",
-    aside: "Then again — Vardo replaces a lot of what they're maintaining by hand.",
-  },
   {
     label: "you need scale-to-zero or auto-scaling",
     aside: "We don't. But your containers are always warm. No cold starts, no spin-up latency.",
@@ -42,9 +54,9 @@ export function Audience() {
           <h2 className="mt-3 text-3xl font-bold tracking-tight text-white sm:text-4xl">
             You. <em className="font-normal italic text-neutral-400">Probably.</em>
           </h2>
-          <div className="mt-10 space-y-6">
+          <div className="mt-10 space-y-8">
             {builtFor.map((item) => (
-              <div key={item} className="flex items-start gap-4">
+              <div key={item.label} className="flex items-start gap-4">
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   width="20"
@@ -59,9 +71,14 @@ export function Audience() {
                 >
                   <polyline points="20 6 9 17 4 12" />
                 </svg>
-                <span className="text-lg leading-snug text-neutral-200">
-                  {item}
-                </span>
+                <div>
+                  <span className="text-lg leading-snug text-neutral-200">
+                    {item.label}
+                  </span>
+                  <p className="mt-1 font-mono text-sm text-neutral-500">
+                    {item.aside}
+                  </p>
+                </div>
               </div>
             ))}
           </div>
