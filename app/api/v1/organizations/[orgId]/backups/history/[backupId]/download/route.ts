@@ -36,7 +36,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       },
     });
 
-    if (!backup || backup.app.organizationId !== orgId) {
+    if (!backup || backup.app?.organizationId !== orgId) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
@@ -55,7 +55,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     // SSH targets: download to temp and stream through server
     const tempPath = await downloadBackupToTemp(backupId);
-    const fileName = `${backup.app.name}-${backup.volumeName ?? "backup"}-${backup.startedAt.toISOString().slice(0, 10)}.tar.gz`;
+    const fileName = `${backup.app?.name ?? "vardo"}-${backup.volumeName ?? "backup"}-${backup.startedAt.toISOString().slice(0, 10)}.tar.gz`;
 
     try {
       const stream = createReadStream(tempPath);

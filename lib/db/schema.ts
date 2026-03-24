@@ -649,7 +649,6 @@ export const backupStatusEnum = pgEnum("backup_status", [
 export const backupJobs = pgTable("backup_job", {
   id: text("id").primaryKey(),
   organizationId: text("organization_id")
-    .notNull()
     .references(() => organizations.id, { onDelete: "cascade" }),
   targetId: text("target_id")
     .notNull()
@@ -657,6 +656,8 @@ export const backupJobs = pgTable("backup_job", {
   name: text("name").notNull(),
   schedule: text("schedule").notNull().default("0 2 * * *"),
   enabled: boolean("enabled").default(true).notNull(),
+  // System jobs back up Vardo's own database, not app volumes
+  isSystem: boolean("is_system").default(false).notNull(),
   // Proxmox-style retention
   keepAll: boolean("keep_all").default(false),
   keepLast: integer("keep_last"),
@@ -697,7 +698,6 @@ export const backups = pgTable("backup", {
     .notNull()
     .references(() => backupJobs.id, { onDelete: "cascade" }),
   appId: text("app_id")
-    .notNull()
     .references(() => apps.id, { onDelete: "cascade" }),
   targetId: text("target_id")
     .notNull()

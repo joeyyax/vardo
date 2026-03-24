@@ -12,6 +12,7 @@ import { db } from "@/lib/db";
 import { backupTargets, backupJobs, backupJobApps, volumes } from "@/lib/db/schema";
 import { eq, and, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { createHash } from "crypto";
 import { getBackupStorageConfig } from "@/lib/system-settings";
 
 // ---------------------------------------------------------------------------
@@ -84,7 +85,63 @@ export async function ensureHostBackupTarget() {
 }
 
 // ---------------------------------------------------------------------------
-// 2. Auto-create backup job on deploy
+// 2. System backup job for Vardo's own database
+// ---------------------------------------------------------------------------
+
+/**
+ * Ensure a system backup job exists for Vardo's PostgreSQL database.
+ * Requires a host-level backup target. Creates the job if none exists.
+ *
+ * Call this after ensureHostBackupTarget() succeeds.
+ */
+export async function ensureSystemBackupJob(targetId: string) {
+  // Check if a system backup job already exists
+  const existing = await db.query.backupJobs.findFirst({
+    where: eq(backupJobs.isSystem, true),
+  });
+
+  if (existing) return existing;
+
+  const jobId = nanoid();
+  const [job] = await db
+    .insert(backupJobs)
+    .values({
+      id: jobId,
+      organizationId: null, // system-level, not org-scoped
+      targetId,
+      name: "Vardo database",
+      schedule: staggeredSchedule("vardo-system-db"),
+      enabled: true,
+      isSystem: true,
+      keepLast: 1,
+      keepDaily: 7,
+      keepWeekly: 4,
+      keepMonthly: 3,
+      notifyOnFailure: true,
+    })
+    .returning();
+
+  console.log(`[auto-backup] Created system backup job for Vardo database`);
+  return job;
+}
+
+// ---------------------------------------------------------------------------
+// 3. Staggered schedule generation
+// ---------------------------------------------------------------------------
+
+/**
+ * Generate a deterministic staggered cron schedule from a seed string.
+ * Spreads backups across midnight–5 AM to avoid thundering herd.
+ */
+function staggeredSchedule(seed: string): string {
+  const hash = createHash("md5").update(seed).digest();
+  const minute = hash[0] % 60;      // 0–59
+  const hour = hash[1] % 6;         // 0–5 (midnight to 5 AM)
+  return `${minute} ${hour} * * *`;
+}
+
+// ---------------------------------------------------------------------------
+// 4. Auto-create backup job on deploy
 // ---------------------------------------------------------------------------
 
 /**
@@ -160,14 +217,14 @@ export async function ensureAutoBackupJob(opts: {
     return null;
   }
 
-  // Create a daily backup job at 2 AM
+  // Create a daily backup job with staggered schedule
   const jobId = nanoid();
   await db.insert(backupJobs).values({
     id: jobId,
     organizationId,
     targetId: target.id,
     name: `Auto: ${appName}`,
-    schedule: "0 2 * * *",
+    schedule: staggeredSchedule(appId),
     enabled: true,
     keepLast: 1,
     keepDaily: 7,

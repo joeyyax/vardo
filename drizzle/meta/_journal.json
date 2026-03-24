@@ -64,6 +64,34 @@
       "when": 1774318397024,
       "tag": "0008_notification-log",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1774321025267,
+      "tag": "0009_v1-indexes-fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1774321110141,
+      "tag": "0010_v1-indexes-fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1774321198817,
+      "tag": "0011_v1-indexes-fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1774329233907,
+      "tag": "0012_backup_system_jobs",
+      "breakpoints": true
     }
   ]
 }

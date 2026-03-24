@@ -289,13 +289,130 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
     .where(eq(backupJobs.id, jobId));
 
   try { const hasFailures = results.some((r) => !r.success); const allSuccess = results.every((r) => r.success);
-    if ((hasFailures && job.notifyOnFailure) || (allSuccess && job.notifyOnSuccess)) {
+    if (job.organizationId && ((hasFailures && job.notifyOnFailure) || (allSuccess && job.notifyOnSuccess))) {
       const { emit } = await import("@/lib/notifications/dispatch"); const appNames = job.backupJobApps.map((bja) => bja.app.name).join(", ");
       if (hasFailures) { const failed = results.filter((r) => !r.success); emit(job.organizationId, { type: "backup.failed", title: `Backup failed: ${job.name}`, message: `${failed.length} of ${results.length} backup(s) failed for: ${appNames}`, jobId: job.id, jobName: job.name, failedCount: failed.length, totalCount: results.length, errors: failed.map((r) => `${r.volumeName}: ${r.error}`).join("; ") }); }
       else { emit(job.organizationId, { type: "backup.success", title: `Backup successful: ${job.name}`, message: `${results.length} backup(s) completed for: ${appNames}`, jobId: job.id, jobName: job.name, totalCount: results.length, totalSize: results.reduce((sum, r) => sum + r.sizeBytes, 0) }); }
     }
   } catch (err) { console.error("[notifications] Backup notification error:", err); }
   return results;
+}
+
+// ---------------------------------------------------------------------------
+// System backup: Vardo's own PostgreSQL database
+// ---------------------------------------------------------------------------
+
+/**
+ * Run a pg_dump of Vardo's database and upload it to the storage target.
+ * Used for system backup jobs (isSystem = true).
+ */
+export async function runSystemBackup(jobId: string): Promise<BackupResult[]> {
+  const job = await db.query.backupJobs.findFirst({
+    where: eq(backupJobs.id, jobId),
+    with: { target: true },
+  });
+
+  if (!job) {
+    throw new Error(`System backup job not found: ${jobId}`);
+  }
+
+  const storage = createBackupStorage(job.target);
+  const ts = timestamp();
+  await ensureDir(BACKUPS_DIR);
+
+  const backupId = nanoid();
+  const startedAt = new Date();
+  const logLines: string[] = [];
+  const log = (msg: string) => {
+    logLines.push(`[${new Date().toISOString()}] ${msg}`);
+  };
+
+  const storageKey = `vardo-system/postgres/${ts}.sql.gz`;
+
+  // Create backup record as running
+  await db.insert(backups).values({
+    id: backupId,
+    jobId: job.id,
+    appId: null, // system backup — no app
+    targetId: job.target.id,
+    status: "running",
+    volumeName: "postgres",
+    startedAt,
+  });
+
+  const tmpDir = join(BACKUPS_DIR, `.tmp-${nanoid(8)}`);
+  await ensureDir(tmpDir);
+  const dumpFile = join(tmpDir, "vardo-db.sql.gz");
+
+  try {
+    // Run pg_dump inside the postgres container, pipe to gzip on the host
+    log("Running pg_dump on vardo-postgres");
+    await execFileAsync(
+      "sh",
+      ["-c", `docker exec vardo-postgres pg_dump -U host host | gzip > "${dumpFile}"`],
+      { timeout: 600_000 }, // 10 min
+    );
+
+    // Upload via storage adapter
+    log(`Uploading to ${storageKey}`);
+    const { sizeBytes } = await storage.upload(storageKey, dumpFile);
+
+    const finishedAt = new Date();
+    const durationMs = finishedAt.getTime() - startedAt.getTime();
+    log(`Upload complete (${sizeBytes} bytes, ${durationMs}ms)`);
+
+    await db
+      .update(backups)
+      .set({
+        status: "success",
+        sizeBytes,
+        storagePath: storageKey,
+        log: logLines.join("\n"),
+        finishedAt,
+      })
+      .where(eq(backups.id, backupId));
+
+    return [{
+      backupId,
+      appId: "",
+      volumeName: "postgres",
+      success: true,
+      sizeBytes,
+      storagePath: storageKey,
+      durationMs,
+    }];
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    log(`System backup failed: ${errorMsg}`);
+    const finishedAt = new Date();
+    const durationMs = finishedAt.getTime() - startedAt.getTime();
+
+    await db
+      .update(backups)
+      .set({
+        status: "failed",
+        log: logLines.join("\n"),
+        finishedAt,
+      })
+      .where(eq(backups.id, backupId));
+
+    return [{
+      backupId,
+      appId: "",
+      volumeName: "postgres",
+      success: false,
+      sizeBytes: 0,
+      storagePath: "",
+      error: errorMsg,
+      durationMs,
+    }];
+  } finally {
+    try {
+      await rm(tmpDir, { recursive: true, force: true });
+    } catch {
+      // best effort
+    }
+  }
 }
 
 /**
@@ -342,6 +459,9 @@ export async function restoreBackup(
     log("Download complete");
 
     // 2. Determine the Docker volume name (try blue first, then green)
+    if (!backup.app) {
+      throw new Error("Cannot restore a system backup via volume restore");
+    }
     assertSafeName(backup.app.name);
     assertSafeName(backup.volumeName);
     const blueVolume = `${backup.app.name}-blue_${backup.volumeName}`;

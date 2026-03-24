@@ -34,7 +34,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       },
     });
 
-    if (!backup || backup.app.organizationId !== orgId) {
+    if (!backup || backup.app?.organizationId !== orgId) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
