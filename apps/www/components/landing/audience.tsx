@@ -17,8 +17,12 @@ const notFor = [
     aside: "We don't. But your containers are always warm. No cold starts, no spin-up latency.",
   },
   {
-    label: "you need managed data services",
-    aside: "We'll run your Postgres or Redis just fine. But if you want replication, connection pooling, or file storage — pair us with PlanetScale, Neon, R2, S3. We're the compute, not the warehouse.",
+    label: "you need a managed database",
+    aside: "We'll run your Postgres or Redis just fine. But replication, failover, connection pooling — that's PlanetScale or Neon territory.",
+  },
+  {
+    label: "you need file or object storage",
+    aside: "Uploads, media, assets — that stuff belongs in R2 or S3, not on your server's disk.",
   },
   {
     label: "you need edge compute",
