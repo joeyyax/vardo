@@ -6,6 +6,13 @@ export async function register() {
     // Dedup guard — prevents duplicate schedulers on hot reload
     if (globalForInit.__vardo_initialized) return;
     globalForInit.__vardo_initialized = true;
+    // Load feature flags into sync cache — must run early so isFeatureEnabled()
+    // returns real values instead of defaults for the rest of startup
+    const { loadFeatureFlags } = await import("./lib/config/features");
+    await loadFeatureFlags().catch((err) =>
+      console.warn("[instrumentation] Failed to load feature flags:", err)
+    );
+
     // Check encryption key — must run first, before any other initialization
     const { checkEncryptionKey } = await import("./lib/crypto/encrypt");
     const keyCheck = checkEncryptionKey();
@@ -25,7 +32,7 @@ export async function register() {
           if (target) {
             console.log(`[instrumentation] Host backup target ready: ${target.name} (${target.type})`);
           } else {
-            console.log("[instrumentation] No backup storage configured (set BACKUP_STORAGE_* env vars or configure in settings)");
+            console.log("[instrumentation] No backup storage configured (add backup section to vardo.yml or configure in admin settings)");
           }
           startBackupScheduler();
           console.log("[instrumentation] Backup scheduler started");

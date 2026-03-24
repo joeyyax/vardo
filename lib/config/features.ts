@@ -57,25 +57,45 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// Sync cache — populated by loadFeatureFlags() at startup and refreshed
+// by every isFeatureEnabledAsync() call. Sync callers read from this.
+// ---------------------------------------------------------------------------
+
+let flagCache: Record<string, boolean> | null = null;
+
+/**
+ * Populate the sync flag cache. Call once at startup (instrumentation.ts).
+ * After this, isFeatureEnabled() returns real values instead of defaults.
+ */
+export async function loadFeatureFlags(): Promise<void> {
+  const { getFeatureFlagsConfig } = await import("@/lib/system-settings");
+  flagCache = (await getFeatureFlagsConfig()) ?? {};
+}
+
 /**
  * Check if a feature is enabled (synchronous).
- * Reads from cached config file if available, otherwise defaults to true.
- * For the authoritative async check, use isFeatureEnabledAsync().
+ * Reads from the in-memory cache populated by loadFeatureFlags().
+ * If cache hasn't loaded yet (early startup), defaults to true.
  */
 export function isFeatureEnabled(flag: FeatureFlag): boolean {
-  // Synchronous — can only check defaults. Async version is authoritative.
-  return true;
+  if (flagCache && flag in flagCache) return flagCache[flag];
+  return true; // default enabled
 }
 
 /**
  * Check if a feature is enabled (async, authoritative).
  * Resolution: config file > DB > default (true).
+ * Also refreshes the sync cache as a side effect.
  */
 export async function isFeatureEnabledAsync(flag: FeatureFlag): Promise<boolean> {
   const { getFeatureFlagsConfig } = await import("@/lib/system-settings");
   const flags = await getFeatureFlagsConfig();
-  if (flags && flag in flags) return flags[flag];
 
+  // Refresh sync cache
+  if (flags) flagCache = flags;
+
+  if (flags && flag in flags) return flags[flag];
   return true; // default enabled
 }
 

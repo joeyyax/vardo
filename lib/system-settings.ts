@@ -93,25 +93,15 @@ export type InstanceConfig = {
 };
 
 export async function getInstanceConfig(): Promise<InstanceConfig> {
-  // Config file takes priority
   const fileConfig = await readVardoConfig();
-  if (fileConfig?.instance) {
-    return {
-      instanceName: fileConfig.instance.name ?? DEFAULT_APP_NAME,
-      baseDomain: fileConfig.instance.baseDomain ?? "",
-      serverIp: fileConfig.instance.serverIp ?? "",
-    };
-  }
-
   const dbConfig = await getSystemSettingRaw("instance_config")
     .then((raw) => raw ? parseJson<InstanceConfig>(raw, "instance_config") : null);
 
-  if (dbConfig) return dbConfig;
-
+  // Merge: config file fields > DB fields > defaults
   return {
-    instanceName: DEFAULT_APP_NAME,
-    baseDomain: "",
-    serverIp: "",
+    instanceName: fileConfig?.instance?.name ?? dbConfig?.instanceName ?? DEFAULT_APP_NAME,
+    baseDomain: fileConfig?.instance?.baseDomain ?? dbConfig?.baseDomain ?? "",
+    serverIp: fileConfig?.instance?.serverIp ?? dbConfig?.serverIp ?? "",
   };
 }
 
@@ -249,21 +239,22 @@ export type AuthConfig = {
   sessionDurationDays: number;
 };
 
-export async function getAuthConfig(): Promise<AuthConfig> {
-  // Config file takes priority
-  const fileConfig = await readVardoConfig();
-  if (fileConfig?.auth) {
-    return {
-      registrationMode: fileConfig.auth.registrationMode ?? "closed",
-      sessionDurationDays: fileConfig.auth.sessionDurationDays ?? 7,
-    };
-  }
+const VALID_REGISTRATION_MODES = ["closed", "open", "approval"] as const;
 
+export async function getAuthConfig(): Promise<AuthConfig> {
+  const fileConfig = await readVardoConfig();
   const dbConfig = await getSystemSettingRaw("auth_config")
     .then((raw) => raw ? parseJson<Partial<AuthConfig>>(raw, "auth_config") : null);
 
+  // Validate registrationMode from config file
+  const fileRegMode = fileConfig?.auth?.registrationMode;
+  const validRegMode = fileRegMode && VALID_REGISTRATION_MODES.includes(fileRegMode)
+    ? fileRegMode
+    : undefined;
+
+  // Merge: config file fields > DB fields > defaults
   return {
-    registrationMode: dbConfig?.registrationMode ?? "closed",
-    sessionDurationDays: dbConfig?.sessionDurationDays ?? 7,
+    registrationMode: validRegMode ?? dbConfig?.registrationMode ?? "closed",
+    sessionDurationDays: fileConfig?.auth?.sessionDurationDays ?? dbConfig?.sessionDurationDays ?? 7,
   };
 }
