@@ -511,7 +511,19 @@ export async function restoreBackup(
     await storage.download(backup.storagePath, archivePath);
     log("Download complete");
 
-    // 2. Determine the Docker volume name (try blue first, then green)
+    // 2. Validate archive integrity before restoring
+    await verifyArchive(archivePath, "Downloaded backup");
+    if (backup.checksum) {
+      const downloadChecksum = `sha256:${await checksumFile(archivePath)}`;
+      if (downloadChecksum !== backup.checksum) {
+        throw new Error(
+          `Checksum mismatch — expected ${backup.checksum}, got ${downloadChecksum}. Archive may be corrupt.`
+        );
+      }
+      log("Checksum verified");
+    }
+
+    // 3. Determine the Docker volume name (try blue first, then green)
     if (!backup.app) {
       throw new Error("Cannot restore a system backup via volume restore");
     }
