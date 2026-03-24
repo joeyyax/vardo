@@ -223,7 +223,7 @@ export function PasswordManagement() {
 // Two-Factor Authentication
 // ---------------------------------------------------------------------------
 
-export function TwoFactorAuth() {
+export function TwoFactorAuth({ hasPasswordAccount = false }: { hasPasswordAccount?: boolean } = {}) {
   const { data: sessionData } = useSession();
   const [enabling, setEnabling] = useState(false);
   const [totpUri, setTotpUri] = useState<string | null>(null);
@@ -331,13 +331,19 @@ export function TwoFactorAuth() {
           </div>
 
           {isEnabled ? (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setShowDisable(!showDisable)}
-            >
-              Disable
-            </Button>
+            hasPasswordAccount ? (
+              <Badge variant="secondary" className="text-xs">
+                Required for password auth
+              </Badge>
+            ) : (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setShowDisable(!showDisable)}
+              >
+                Disable
+              </Button>
+            )
           ) : (
             <Button
               size="sm"
