@@ -4,8 +4,6 @@ import { requireAdminAuth } from "@/lib/auth/admin";
 import { getFeatureFlagsConfig, setSystemSetting } from "@/lib/system-settings";
 import {
   type FeatureFlag,
-  isFeatureEnabled,
-  isEnvOverridden,
   getFlagConfig,
   isFeatureEnabledAsync,
 } from "@/lib/config/features";
@@ -36,17 +34,13 @@ export async function GET(request: NextRequest) {
   const flags = await Promise.all(
     ADMIN_FLAGS.map(async (flag) => {
       const config = getFlagConfig(flag);
-      const envOverride = isEnvOverridden(flag);
-      const enabled = envOverride
-        ? isFeatureEnabled(flag)
-        : await isFeatureEnabledAsync(flag);
+      const enabled = await isFeatureEnabledAsync(flag);
 
       return {
         flag,
         label: config.label,
         description: config.description,
         enabled,
-        envOverride,
       };
     }),
   );

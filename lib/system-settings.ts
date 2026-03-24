@@ -1,9 +1,10 @@
 // ---------------------------------------------------------------------------
 // System settings helpers
 //
-// Read order: DB system_settings → env var → hardcoded default.
-// Once a setting is saved via the UI, the DB value takes precedence
-// permanently. Env vars act as seed/default for Docker/.env deployments.
+// Read order: config file (vardo.yml) → DB system_settings → hardcoded default.
+// Config file takes highest priority when present. DB stores values set via
+// the admin UI. No env var fallbacks — only DATABASE_URL, REDIS_URL, and
+// NODE_ENV remain as env vars (infrastructure connections).
 // ---------------------------------------------------------------------------
 
 import { db } from "@/lib/db";
@@ -12,7 +13,14 @@ import { decryptSystemOrFallback, encryptSystem } from "@/lib/crypto/encrypt";
 import { eq } from "drizzle-orm";
 
 import { DEFAULT_APP_NAME } from "@/lib/constants";
-export { DEFAULT_APP_NAME };
+
+// Dynamic import to avoid pulling fs (via vardo-config.ts) into client bundles.
+// system-settings re-exports DEFAULT_APP_NAME which client components use,
+// so all static imports in this file end up in client bundles.
+async function getVardoConfig() {
+  const { readVardoConfig } = await import("@/lib/config/vardo-config");
+  return readVardoConfig();
+}
 
 // Short-TTL in-memory cache for system settings. These change rarely (admin
 // panel only), so a 30s cache eliminates repeated DB + decrypt calls when
@@ -91,16 +99,15 @@ export type InstanceConfig = {
 };
 
 export async function getInstanceConfig(): Promise<InstanceConfig> {
+  const fileConfig = await getVardoConfig();
   const dbConfig = await getSystemSettingRaw("instance_config")
     .then((raw) => raw ? parseJson<InstanceConfig>(raw, "instance_config") : null);
 
-  if (dbConfig) return dbConfig;
-
-  // Env var fallback
+  // Merge: config file fields > DB fields > defaults
   return {
-    instanceName: process.env.NEXT_PUBLIC_APP_NAME ?? DEFAULT_APP_NAME,
-    baseDomain: process.env.VARDO_BASE_DOMAIN ?? "",
-    serverIp: process.env.VARDO_SERVER_IP ?? "",
+    instanceName: fileConfig?.instance?.name ?? dbConfig?.instanceName ?? DEFAULT_APP_NAME,
+    baseDomain: fileConfig?.instance?.baseDomain ?? dbConfig?.baseDomain ?? "",
+    serverIp: fileConfig?.instance?.serverIp ?? dbConfig?.serverIp ?? "",
   };
 }
 
@@ -118,22 +125,23 @@ export type GitHubAppConfig = {
 };
 
 export async function getGitHubAppConfig(): Promise<GitHubAppConfig | null> {
+  // Config file takes priority
+  const fileConfig = await getVardoConfig();
+  if (fileConfig?.github?.appId) {
+    return {
+      appId: fileConfig.github.appId,
+      appSlug: fileConfig.github.appSlug ?? "",
+      clientId: fileConfig.github.clientId ?? "",
+      clientSecret: fileConfig.github.clientSecret ?? "",
+      privateKey: fileConfig.github.privateKey ?? "",
+      webhookSecret: fileConfig.github.webhookSecret ?? "",
+    };
+  }
+
   const dbConfig = await getSystemSettingRaw("github_app")
     .then((raw) => raw ? parseJson<GitHubAppConfig>(raw, "github_app") : null);
 
   if (dbConfig) return dbConfig;
-
-  // Env var fallback
-  if (process.env.GITHUB_APP_ID && process.env.GITHUB_PRIVATE_KEY) {
-    return {
-      appId: process.env.GITHUB_APP_ID,
-      appSlug: process.env.GITHUB_APP_SLUG ?? "",
-      clientId: process.env.GITHUB_CLIENT_ID ?? "",
-      clientSecret: process.env.GITHUB_CLIENT_SECRET ?? "",
-      privateKey: Buffer.from(process.env.GITHUB_PRIVATE_KEY, "base64").toString("utf-8"),
-      webhookSecret: process.env.GITHUB_WEBHOOK_SECRET ?? "",
-    };
-  }
 
   return null;
 }
@@ -154,41 +162,25 @@ export type EmailProviderConfig = {
 };
 
 export async function getEmailProviderConfig(): Promise<EmailProviderConfig | null> {
+  // Config file takes priority
+  const fileConfig = await getVardoConfig();
+  if (fileConfig?.email?.provider) {
+    return {
+      provider: fileConfig.email.provider,
+      smtpHost: fileConfig.email.smtpHost,
+      smtpPort: fileConfig.email.smtpPort,
+      smtpUser: fileConfig.email.smtpUser,
+      smtpPass: fileConfig.email.smtpPass,
+      apiKey: fileConfig.email.apiKey,
+      fromEmail: fileConfig.email.fromEmail,
+      fromName: fileConfig.email.fromName,
+    };
+  }
+
   const dbConfig = await getSystemSettingRaw("email_provider")
     .then((raw) => raw ? parseJson<EmailProviderConfig>(raw, "email_provider") : null);
 
   if (dbConfig) return dbConfig;
-
-  // Env var fallback — detect provider from available keys
-  if (process.env.RESEND_API_KEY) {
-    return {
-      provider: "resend",
-      apiKey: process.env.RESEND_API_KEY,
-      fromEmail: process.env.EMAIL_FROM,
-      fromName: process.env.EMAIL_FROM_NAME,
-    };
-  }
-
-  if (process.env.MAILPACE_API_TOKEN) {
-    return {
-      provider: "mailpace",
-      apiKey: process.env.MAILPACE_API_TOKEN,
-      fromEmail: process.env.EMAIL_FROM,
-      fromName: process.env.EMAIL_FROM_NAME,
-    };
-  }
-
-  if (process.env.SMTP_HOST) {
-    return {
-      provider: "smtp",
-      smtpHost: process.env.SMTP_HOST,
-      smtpPort: process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : undefined,
-      smtpUser: process.env.SMTP_USER,
-      smtpPass: process.env.SMTP_PASS,
-      fromEmail: process.env.EMAIL_FROM,
-      fromName: process.env.EMAIL_FROM_NAME,
-    };
-  }
 
   return null;
 }
@@ -207,23 +199,23 @@ export type BackupStorageConfig = {
 };
 
 export async function getBackupStorageConfig(): Promise<BackupStorageConfig | null> {
+  // Config file takes priority
+  const fileConfig = await getVardoConfig();
+  if (fileConfig?.backup?.type) {
+    return {
+      type: fileConfig.backup.type,
+      bucket: fileConfig.backup.bucket,
+      region: fileConfig.backup.region,
+      endpoint: fileConfig.backup.endpoint,
+      accessKey: fileConfig.backup.accessKey,
+      secretKey: fileConfig.backup.secretKey,
+    };
+  }
+
   const dbConfig = await getSystemSettingRaw("backup_storage")
     .then((raw) => raw ? parseJson<BackupStorageConfig>(raw, "backup_storage") : null);
 
   if (dbConfig) return dbConfig;
-
-  // Env var fallback
-  const storageType = process.env.BACKUP_STORAGE_TYPE as BackupStorageConfig["type"] | undefined;
-  if (storageType && process.env.BACKUP_STORAGE_BUCKET) {
-    return {
-      type: storageType,
-      bucket: process.env.BACKUP_STORAGE_BUCKET,
-      region: process.env.BACKUP_STORAGE_REGION,
-      endpoint: process.env.BACKUP_STORAGE_ENDPOINT,
-      accessKey: process.env.BACKUP_STORAGE_ACCESS_KEY,
-      secretKey: process.env.BACKUP_STORAGE_SECRET_KEY,
-    };
-  }
 
   return null;
 }
@@ -233,6 +225,12 @@ export async function getBackupStorageConfig(): Promise<BackupStorageConfig | nu
 // ---------------------------------------------------------------------------
 
 export async function getFeatureFlagsConfig(): Promise<Record<string, boolean> | null> {
+  // Config file takes priority
+  const fileConfig = await getVardoConfig();
+  if (fileConfig?.features && Object.keys(fileConfig.features).length > 0) {
+    return fileConfig.features;
+  }
+
   const raw = await getSystemSettingRaw("feature_flags");
   if (!raw) return null;
   return parseJson<Record<string, boolean>>(raw, "feature_flags");
@@ -247,14 +245,22 @@ export type AuthConfig = {
   sessionDurationDays: number;
 };
 
-// No env var fallback — auth config is security-sensitive (registration mode,
-// session duration) and should only be set explicitly via the admin UI.
+const VALID_REGISTRATION_MODES = ["closed", "open", "approval"] as const;
+
 export async function getAuthConfig(): Promise<AuthConfig> {
+  const fileConfig = await getVardoConfig();
   const dbConfig = await getSystemSettingRaw("auth_config")
     .then((raw) => raw ? parseJson<Partial<AuthConfig>>(raw, "auth_config") : null);
 
+  // Validate registrationMode from config file
+  const fileRegMode = fileConfig?.auth?.registrationMode;
+  const validRegMode = fileRegMode && VALID_REGISTRATION_MODES.includes(fileRegMode)
+    ? fileRegMode
+    : undefined;
+
+  // Merge: config file fields > DB fields > defaults
   return {
-    registrationMode: dbConfig?.registrationMode ?? "closed",
-    sessionDurationDays: dbConfig?.sessionDurationDays ?? 7,
+    registrationMode: validRegMode ?? dbConfig?.registrationMode ?? "closed",
+    sessionDurationDays: fileConfig?.auth?.sessionDurationDays ?? dbConfig?.sessionDurationDays ?? 7,
   };
 }

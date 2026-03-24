@@ -231,7 +231,7 @@ export async function systemSettingsToVardoConfig(): Promise<{
 
   let instanceId: string | undefined;
   try {
-    instanceId = getInstanceId();
+    instanceId = await getInstanceId();
   } catch {
     // not set
   }
