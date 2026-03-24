@@ -6,6 +6,7 @@ FROM base AS deps
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/console/package.json ./apps/console/
+COPY apps/www/package.json ./apps/www/
 RUN pnpm install --frozen-lockfile
 
 # Build
