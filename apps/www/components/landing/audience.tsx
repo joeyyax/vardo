@@ -8,41 +8,96 @@ const builtFor = [
 ];
 
 const notFor = [
-  "Kubernetes-scale orchestration — we run Compose, not clusters",
-  "Serverless or edge functions — your containers stay running",
-  "Multi-tenant SaaS hosting — this is for your apps, not your customers'",
-  "People who want zero ops — that's what Vardo Cloud will be for",
+  {
+    label: "Kubernetes-scale orchestration",
+    aside: "We run Compose, not clusters.",
+  },
+  {
+    label: "Serverless or edge functions",
+    aside: "Your containers stay running.",
+  },
+  {
+    label: "Multi-tenant SaaS hosting",
+    aside: "This is for your apps, not your customers'.",
+  },
+  {
+    label: "People who want zero ops",
+    aside: "That's what Vardo Cloud will be for.",
+  },
 ];
 
 export function Audience() {
   return (
     <Section>
-      <div className="grid gap-16 lg:grid-cols-2 lg:gap-20">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
-            Who this is for
+      <div className="grid gap-0 lg:grid-cols-2">
+        {/* Built for — welcoming, confident */}
+        <div className="rounded-2xl rounded-b-none border border-neutral-800 border-b-0 bg-neutral-900/50 p-10 lg:rounded-r-none lg:rounded-l-2xl lg:border-b lg:border-r-0 sm:p-12">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-neutral-500">
+            Built for
+          </p>
+          <h2 className="mt-3 text-3xl font-bold tracking-tight text-white sm:text-4xl">
+            You, probably
           </h2>
-          <div className="mt-8 space-y-4">
+          <div className="mt-10 space-y-6">
             {builtFor.map((item) => (
-              <div key={item} className="flex items-start gap-3">
-                <span className="mt-1.5 block size-1.5 shrink-0 rounded-full bg-emerald-400" />
-                <span className="text-lg text-neutral-300">{item}</span>
+              <div key={item} className="flex items-start gap-4">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="mt-0.5 shrink-0 text-white"
+                >
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+                <span className="text-lg leading-snug text-neutral-200">
+                  {item}
+                </span>
               </div>
             ))}
           </div>
         </div>
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
-            Who this isn&apos;t for
-          </h2>
-          <p className="mt-4 text-sm text-neutral-500">
-            Honest about our limits. Not every tool is for every job.
+
+        {/* Not for — honest, a little cheeky */}
+        <div className="rounded-2xl rounded-t-none border border-neutral-800 bg-neutral-950 p-10 lg:rounded-l-none lg:rounded-r-2xl lg:rounded-t-2xl lg:border-l-0 sm:p-12">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-neutral-600">
+            Not for
           </p>
-          <div className="mt-8 space-y-4">
+          <h2 className="mt-3 text-3xl font-bold tracking-tight text-neutral-500 sm:text-4xl">
+            Probably not you
+          </h2>
+          <div className="mt-10 space-y-8">
             {notFor.map((item) => (
-              <div key={item} className="flex items-start gap-3">
-                <span className="mt-1.5 block size-1.5 shrink-0 rounded-full bg-neutral-600" />
-                <span className="text-lg text-neutral-400">{item}</span>
+              <div key={item.label}>
+                <div className="flex items-start gap-4">
+                  <span className="mt-1.5 block size-4 shrink-0 text-neutral-700">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </span>
+                  <div>
+                    <span className="text-lg leading-snug text-neutral-400">
+                      {item.label}
+                    </span>
+                    <p className="mt-1 font-mono text-sm text-neutral-600">
+                      {item.aside}
+                    </p>
+                  </div>
+                </div>
               </div>
             ))}
           </div>
