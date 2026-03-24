@@ -1,29 +1,26 @@
-import Link from "next/link";
+import type { Metadata } from "next";
+import { Hero } from "../components/landing/hero";
+import { Features } from "../components/landing/features";
+import { HowItWorks } from "../components/landing/how-it-works";
+import { WhyVardo } from "../components/landing/why-vardo";
+import { InstallCta } from "../components/landing/install-cta";
+import { Footer } from "../components/landing/footer";
+
+export const metadata: Metadata = {
+  title: "Vardo — Self-hosted PaaS for Docker",
+  description:
+    "Deploy Docker apps on your own server with automatic TLS, blue-green deployments, backups, and monitoring. No DevOps required.",
+};
 
 export default function HomePage() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center px-4">
-      <div className="max-w-2xl text-center">
-        <h1 className="text-5xl font-bold tracking-tight">Vardo</h1>
-        <p className="mt-4 text-lg text-muted-foreground">
-          Deploy Docker apps with zero DevOps. Self-hosted
-          platform-as-a-service.
-        </p>
-        <div className="mt-8 flex gap-4 justify-center">
-          <Link
-            href="/docs"
-            className="rounded-lg bg-primary px-6 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-          >
-            Documentation
-          </Link>
-          <Link
-            href="https://github.com/joeyyax/vardo"
-            className="rounded-lg border px-6 py-3 text-sm font-medium hover:bg-accent"
-          >
-            GitHub
-          </Link>
-        </div>
-      </div>
+    <main>
+      <Hero />
+      <Features />
+      <HowItWorks />
+      <WhyVardo />
+      <InstallCta />
+      <Footer />
     </main>
   );
 }
