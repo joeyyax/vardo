@@ -17,8 +17,8 @@ const notFor = [
     aside: "We don't. But your containers are always warm. No cold starts, no spin-up latency.",
   },
   {
-    label: "you need a managed database",
-    aside: "Vardo runs apps, not data platforms. Your databases run as containers — but we're not Supabase.",
+    label: "you need managed data services",
+    aside: "We'll run your Postgres or Redis just fine. But if you want replication, connection pooling, or file storage — pair us with PlanetScale, Neon, R2, S3. We're the compute, not the warehouse.",
   },
   {
     label: "you need edge compute",
