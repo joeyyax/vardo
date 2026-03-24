@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "dev:all": "pnpm --parallel -r dev",
+    "dev:all": "pnpm --parallel -r --include-workspace-root dev",
     "dev:www": "pnpm --filter vardo-www dev",
     "build": "next build",
     "start": "drizzle-kit migrate && next start",
