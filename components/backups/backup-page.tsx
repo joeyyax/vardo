@@ -198,15 +198,11 @@ export function BackupPage({
           <ul className="text-sm space-y-2">
             <li className="flex items-start gap-2.5">
               <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
-              <span className="text-muted-foreground">Persistent volumes — databases, uploads, file storage</span>
-            </li>
-            <li className="flex items-start gap-2.5">
-              <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
-              <span className="text-muted-foreground">Project config and environment variables (via database backup)</span>
+              <span className="text-muted-foreground">App persistent volumes — databases, uploads, file storage</span>
             </li>
             <li className="flex items-start gap-2.5">
               <Info className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
-              <span className="text-muted-foreground">Container images are not included — they&apos;re pulled from your registry on deploy</span>
+              <span className="text-muted-foreground">Does not include container images — they&apos;re pulled from your registry on deploy</span>
             </li>
           </ul>
         </div>
