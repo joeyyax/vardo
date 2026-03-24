@@ -66,7 +66,15 @@ export function BackupPage({
 
   const systemTargets = targets.filter((t) => t.isAppLevel);
   const userTargets = targets.filter((t) => !t.isAppLevel);
-  const hasTargets = targets.length > 0;
+
+  // Org scope: only show user targets and jobs. System targets/jobs are hidden
+  // (represented by the auto-backup banner instead).
+  const visibleTargets = scope === "admin" ? targets : userTargets;
+  const systemJobIds = new Set(
+    jobs.filter((j) => systemTargets.some((t) => t.id === j.target.id)).map((j) => j.id)
+  );
+  const visibleJobs = scope === "admin" ? jobs : jobs.filter((j) => !systemJobIds.has(j.id));
+  const hasVisibleTargets = visibleTargets.length > 0;
 
   // Auto-backup banner
   const autoTarget = systemTargets[0];
@@ -101,7 +109,7 @@ export function BackupPage({
             </Button>
           </CardHeader>
           <CardContent>
-            {!hasTargets ? (
+            {!hasVisibleTargets ? (
               <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-8">
                 <p className="text-sm text-muted-foreground text-center">
                   Add an S3 bucket, Cloudflare R2, Backblaze B2, or SSH server to start backing up.
@@ -109,17 +117,7 @@ export function BackupPage({
               </div>
             ) : (
               <div className="space-y-2">
-                {systemTargets.map((target) => (
-                  <TargetCard
-                    key={target.id}
-                    target={target}
-                    orgId={orgId}
-                    readOnly={scope === "org"}
-                    onRefresh={fetchData}
-                    onEdit={scope === "admin" ? () => setEditingTargetId(target.id) : undefined}
-                  />
-                ))}
-                {userTargets.map((target) => (
+                {visibleTargets.map((target) => (
                   <TargetCard
                     key={target.id}
                     target={target}
@@ -134,25 +132,25 @@ export function BackupPage({
         </Card>
 
         {/* Right: Backup jobs */}
-        <Card className={`squircle ${hasTargets && jobs.length === 0 ? "relative overflow-hidden" : ""}`}>
-          {hasTargets && jobs.length === 0 && (
+        <Card className={`squircle ${hasVisibleTargets && visibleJobs.length === 0 ? "relative overflow-hidden" : ""}`}>
+          {hasVisibleTargets && visibleJobs.length === 0 && (
             <ShineBorder shineColor={["#A07CFE", "#FE8FB5", "#FFBE7B"]} duration={8} borderWidth={2} />
           )}
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
             <CardTitle className="text-sm font-medium">Backup jobs</CardTitle>
-            <Button size="sm" variant="outline" onClick={() => setJobFormOpen(true)} disabled={!hasTargets}>
+            <Button size="sm" variant="outline" onClick={() => setJobFormOpen(true)} disabled={!hasVisibleTargets}>
               <Plus className="mr-1.5 size-4" aria-hidden="true" />
               New job
             </Button>
           </CardHeader>
           <CardContent>
-            {!hasTargets ? (
+            {!hasVisibleTargets ? (
               <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-8">
                 <p className="text-sm text-muted-foreground text-center">
                   Jobs can be added after you add a storage target.
                 </p>
               </div>
-            ) : jobs.length === 0 ? (
+            ) : visibleJobs.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-3 p-8">
                 <Archive className="size-6 text-muted-foreground/50" aria-hidden="true" />
                 <p className="text-sm text-muted-foreground text-center">
@@ -165,7 +163,7 @@ export function BackupPage({
               </div>
             ) : (
               <div className="space-y-2">
-                {jobs.map((job) => (
+                {visibleJobs.map((job) => (
                   <JobCard
                     key={job.id}
                     job={job}
