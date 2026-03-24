@@ -11,7 +11,12 @@ export function Hero() {
       <div className="relative mx-auto flex min-h-[85vh] max-w-6xl items-center justify-center px-4 sm:px-6 lg:px-8">
         <div className="w-full max-w-3xl text-center">
           <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl lg:text-6xl xl:text-7xl">
-            <span className="block">Deploy on your server.</span>
+            <span className="block">
+              Deploy on{" "}
+              <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
+                your terms.
+              </span>
+            </span>
             <span className="block text-muted-foreground">
               Not someone else&apos;s.
             </span>
