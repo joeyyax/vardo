@@ -2,7 +2,7 @@
 
 import { ShieldCheck, Check, Info, CloudUpload } from "lucide-react";
 import { scheduleLabel } from "./constants";
-import { retentionText } from "./retention-summary";
+import { retentionDescription } from "./retention-summary";
 import type { BackupJob, BackupTarget } from "./types";
 
 export function AutoBackupBanner({
@@ -14,7 +14,7 @@ export function AutoBackupBanner({
   jobs: BackupJob[];
   scope: "admin" | "org";
 }) {
-  const retention = jobs.length > 0 ? retentionText(jobs[0]) : "Default";
+  const retention = jobs.length > 0 ? retentionDescription(jobs[0]) : "Default retention";
   const schedule = jobs.length > 0 ? scheduleLabel(jobs[0].schedule) : "Daily";
 
   return (
@@ -40,7 +40,7 @@ export function AutoBackupBanner({
         </span>
         <span className="flex items-center gap-1.5">
           <Info className="size-3" aria-hidden="true" />
-          Retention: {retention}
+          {retention}
         </span>
       </div>
     </div>
