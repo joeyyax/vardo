@@ -9,20 +9,16 @@ const builtFor = [
 
 const notFor = [
   {
-    label: "Kubernetes-scale orchestration",
+    label: "you need Kubernetes-level orchestration",
     aside: "We run Compose, not clusters.",
   },
   {
-    label: "Serverless or edge functions",
-    aside: "Your containers stay running.",
+    label: "you're building on serverless or edge",
+    aside: "Your containers stay running. That's the point.",
   },
   {
-    label: "Multi-tenant SaaS hosting",
-    aside: "This is for your apps, not your customers'.",
-  },
-  {
-    label: "People who want zero ops",
-    aside: "That's what Vardo Cloud will be for.",
+    label: "you're hosting other people's apps",
+    aside: "Vardo is for your stack, not a multi-tenant platform.",
   },
 ];
 
