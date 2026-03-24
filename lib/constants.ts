@@ -1,18 +1,16 @@
-/** Default app name used across the UI, emails, and metadata when not configured. */
-export const DEFAULT_APP_NAME = "Vardo";
+// Re-export for server-side consumers that already import from here.
+// Client components should import from "@/lib/app-name" directly.
+export { DEFAULT_APP_NAME } from "@/lib/app-name";
 
 /** Stable identity for this instance. Generated at install time, never changes. */
 export async function getInstanceId(): Promise<string> {
-  // Dynamic import to avoid pulling fs into client bundles
   const { readVardoConfig } = await import("@/lib/config/vardo-config");
 
-  // Config file takes priority
   const fileConfig = await readVardoConfig();
   if (fileConfig?.instance?.id) {
     return fileConfig.instance.id;
   }
 
-  // Env var fallback — infrastructure-level, kept for install compatibility
   const id = process.env.VARDO_INSTANCE_ID;
   if (!id) {
     throw new Error(

@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-import { DEFAULT_APP_NAME } from "@/lib/constants";
+import { DEFAULT_APP_NAME } from "@/lib/app-name";
 
 const appName = process.env.NEXT_PUBLIC_APP_NAME || DEFAULT_APP_NAME;
 
