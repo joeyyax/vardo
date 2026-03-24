@@ -84,6 +84,20 @@ pnpm test        # Playwright + unit tests
 
 CI runs the same checks. PRs with failing typecheck or lint won't merge.
 
+### CI pipeline
+
+> **Planned** — Tracked in [#165](https://github.com/joeyyax/vardo/issues/165)
+
+Automated CI runs on every PR are not yet configured. The intent is to run `pnpm typecheck`, `pnpm lint`, and `pnpm test` in GitHub Actions on every push to a PR branch. Until this is set up, run checks locally before pushing.
+
+### Integration tests for critical paths
+
+> **Planned** — Tracked in [#296](https://github.com/joeyyax/vardo/issues/296)
+
+The current test suite covers unit-level logic. Integration tests for critical paths — deploy pipeline, backup job execution, webhook handling, auth flows — are planned but not yet written. These tests will run against a real Docker environment to catch regressions that unit tests miss.
+
+If you are adding a new critical path (deploy trigger, backup target, auth method), consider opening a follow-up issue to track the needed integration test.
+
 ---
 
 ## Project Structure

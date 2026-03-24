@@ -79,6 +79,14 @@ The `certResolver` field on a domain maps to a named resolver in your Traefik co
 
 > **Note:** Configuring additional ACME issuers is done in your Traefik config. Vardo passes the resolver name through to the label — it does not manage Traefik's resolver configuration.
 
+### Multiple ACME certificate issuers
+
+> **Planned** — Tracked in [#323](https://github.com/joeyyax/vardo/issues/323)
+
+Vardo will support configuring multiple ACME certificate issuers — Let's Encrypt, Google's public CA, and ZeroSSL — with automatic fallback. If the primary issuer fails (rate limits, outage), Vardo will automatically retry with the next issuer in the configured priority list.
+
+When implemented, you will be able to configure the issuer list in `vardo.yml` and select a per-domain preferred issuer from the domain settings UI. The fallback chain removes the current manual workaround of configuring Traefik resolvers directly.
+
 ### HTTP-only
 
 To disable TLS for a domain, set `sslEnabled: false`. Vardo will route the domain on the `web` entrypoint without TLS or redirect.

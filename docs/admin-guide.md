@@ -95,6 +95,22 @@ After configuring, use the **Send test email** button in the admin UI to verify 
 - `MAILPACE_API_TOKEN` → Mailpace provider
 - `SMTP_HOST` + `SMTP_USER` + `SMTP_PASS` → SMTP provider
 
+> **Note on provider support** — Tracked in [#325](https://github.com/joeyyax/vardo/issues/325)
+>
+> Mailpace is the only provider fully wired end-to-end (transactional email, magic links, and notifications). Resend and SMTP are recognized as provider options in the config schema, but their sending paths are not yet fully connected. Use Mailpace for production deployments until #325 ships.
+
+### Email delivery webhooks
+
+> **Planned** — Tracked in [#306](https://github.com/joeyyax/vardo/issues/306)
+
+Vardo will support inbound email delivery event webhooks from providers that support them (Mailpace, Resend). When configured, the provider sends bounce, complaint, and delivery status events to Vardo, which will:
+
+- Surface per-notification delivery status in the admin UI
+- Suppress future sends to addresses with hard bounces
+- Alert the admin when a notification channel's delivery rate drops
+
+This closes the feedback loop on whether notifications actually reached their destination.
+
 ### Authentication
 
 Controls sign-in options and registration behavior:
@@ -229,7 +245,7 @@ Vardo's PostgreSQL data is in a Docker volume (`postgres_data`). For a productio
 
 ```bash
 # Run from the host, daily at 2am
-0 2 * * * docker exec vardo-postgres pg_dump -U host host | gzip > /backups/vardo-$(date +%Y%m%d).sql.gz
+0 2 * * * docker exec vardo-postgres pg_dump -U vardo vardo | gzip > /backups/vardo-$(date +%Y%m%d).sql.gz
 ```
 
 ### Option 2: Volume snapshot
@@ -240,13 +256,13 @@ Most VPS providers (Hetzner, DigitalOcean, etc.) offer volume snapshots. Schedul
 
 ```bash
 # Stop the app first
-docker compose stop host
+docker compose stop vardo-frontend
 
 # Restore
-cat backup.sql.gz | gunzip | docker exec -i vardo-postgres psql -U host host
+cat backup.sql.gz | gunzip | docker exec -i vardo-postgres psql -U vardo vardo
 
 # Start the app
-docker compose start host
+docker compose start vardo-frontend
 ```
 
 ## Instance Settings via vardo.yml
@@ -367,6 +383,40 @@ Traefik runs as `vardo-traefik` and handles all inbound HTTP/HTTPS traffic. Conf
 - Log level defaults to `WARN`. Set `TRAEFIK_LOG_LEVEL=DEBUG` for verbose output.
 
 > Traefik's dashboard is not enabled by default. Avoid enabling it without authentication.
+
+### Traefik admin UI
+
+> **Planned** — Tracked in [#217](https://github.com/joeyyax/vardo/issues/217)
+
+Vardo will expose Traefik's router, middleware, and service configuration through the admin UI, removing the need to inspect raw Traefik labels or enable the Traefik dashboard directly.
+
+When implemented, admins will be able to see all active routers, their associated middleware chains, and which containers each service is load-balancing across — from within the Vardo dashboard, without needing shell access.
+
+## Instance Portability
+
+### Import / Export
+
+> **Planned** — Tracked in [#198](https://github.com/joeyyax/vardo/issues/198)
+
+Vardo will support exporting and importing instance state at four levels of depth:
+
+1. **Settings only** — `vardo.yml` + `vardo.secrets.yml` (system configuration, no app data)
+2. **Settings + env vars** — includes encrypted environment variables for all apps and orgs
+3. **Settings + env vars + compose files** — includes the full deployment configuration for all apps
+4. **Full export** — includes Docker volumes, enabling a complete migration to a new server
+
+This covers both instance migration (moving to a larger server) and disaster recovery (restore from a full export after hardware failure). The export format will be a single encrypted archive with a manifest.
+
+## Recommended Providers
+
+> **Planned** — Tracked in [#327](https://github.com/joeyyax/vardo/issues/327)
+
+A recommended providers guide is planned that will include referral and affiliate links for the hosting, storage, and email providers that work well with Vardo. In the meantime, the providers commonly used and tested with Vardo are:
+
+**VPS / Servers:** Hetzner, DigitalOcean, Vultr
+**Object storage (backups):** Cloudflare R2, Backblaze B2, AWS S3
+**Email:** Mailpace, Resend
+**DNS / CDN:** Cloudflare
 
 ## Troubleshooting Common Admin Tasks
 

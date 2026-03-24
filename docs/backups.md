@@ -81,7 +81,7 @@ SSH targets support backup and restore operations, but do not support pre-signed
 
 ## System-level vs org-level targets
 
-A backup target with `organizationId = null` is a system-level (Host-level) target. It serves as a global fallback for all organizations.
+A backup target with `organizationId = null` is a system-level target. It serves as a global fallback for all organizations.
 
 **Resolution order when looking for a backup target:**
 1. Org-level default target (`isDefault: true` for the org)
@@ -139,6 +139,14 @@ When an app with persistent volumes is deployed and a backup target exists, Vard
 
 The job is only created once. If the app already has a backup job, nothing happens.
 
+### Staggered backup scheduling
+
+> **Planned** — Tracked in [#292](https://github.com/joeyyax/vardo/issues/292)
+
+Auto-created backup jobs currently all use a fixed `0 2 * * *` schedule (2 AM). When many apps are backed up on the same instance, this creates a burst of concurrent backup activity. Staggered scheduling will distribute auto-created jobs across a configurable window (e.g. 1 AM – 5 AM) to spread the I/O load.
+
+This will not affect manually created jobs with custom cron expressions — only the auto-created jobs will be staggered.
+
 ## What gets backed up
 
 Vardo backs up **Docker named volumes** marked as `persistent: true` in the volumes table.
@@ -151,6 +159,14 @@ For each persistent volume, it:
 The storage path follows this pattern: `{orgSlug}/{appName}/{volumeName}/{timestamp}.tar.gz`
 
 Volumes that don't have a corresponding Docker volume (e.g. never deployed) are skipped and recorded as failed.
+
+### Backup strategy per volume type
+
+> **Planned** — Tracked in [#331](https://github.com/joeyyax/vardo/issues/331)
+
+Currently all volumes are backed up the same way: `tar czf`. This works for generic volumes (file storage, user uploads) but is not ideal for database volumes, where a consistent database dump (`pg_dump`, `mysqldump`) is safer than a filesystem snapshot of live database files.
+
+When implemented, volumes will be tagged by type (`database`, `generic`). Database volumes will use the appropriate dump tool for a consistent, importable backup. Generic volumes will continue to use `tar`. The restore path will handle both formats automatically.
 
 ### What is not backed up
 
