@@ -238,6 +238,7 @@ export async function collectDigestData(
   }
 
   for (const bk of backupRows) {
+    if (!bk.appId) continue; // system backups don't belong to an app
     const app = appById.get(bk.appId);
     if (!app) continue;
     const projectKey = app.projectId ?? `__no_project_${app.id}`;
