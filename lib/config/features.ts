@@ -1,11 +1,11 @@
 /**
- * Feature flags for Host.
+ * Feature flags for Vardo.
  *
  * Controls which features are available system-wide. Useful for:
  * - Simplified UX (disable environments, previews)
  * - Pre-release/testing (gate new features)
  *
- * All flags default to enabled. Set the env var to "false" to disable.
+ * Resolution: config file (vardo.yml) > DB system_settings > default (true).
  * Core features (projects, apps, deployments) cannot be disabled.
  * Metrics and logs are always available — no opt-out.
  */
@@ -20,45 +20,37 @@ export type FeatureFlag =
   | "mesh";
 
 type FlagConfig = {
-  env: string;
   label: string;
   description: string;
 };
 
 const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
   ui: {
-    env: "FEATURE_UI",
     label: "Web UI",
     description: "Web dashboard for managing projects, apps, and deployments",
   },
   terminal: {
-    env: "FEATURE_TERMINAL",
     label: "Terminal",
     description: "Web-based shell access to running containers. Disabling removes the Terminal tab from app detail pages.",
   },
   environments: {
-    env: "FEATURE_ENVIRONMENTS",
     label: "Environments",
     description: "Multiple deployment environments per app (staging, preview). Disabling limits apps to a single production environment.",
   },
   backups: {
-    env: "FEATURE_BACKUPS",
     label: "Backups",
     description: "Scheduled volume snapshots to S3-compatible storage. Also required for mesh volume transfers between instances.",
   },
   cron: {
-    env: "FEATURE_CRON",
     label: "Cron Jobs",
     description: "Scheduled command execution inside containers. Disabling removes the Cron tab from app detail pages.",
   },
   passwordAuth: {
-    env: "FEATURE_PASSWORD_AUTH",
     label: "Password Auth",
     description:
       "Email/password sign-in and onboarding. When disabled, users must authenticate via passkey, magic link or GitHub.",
   },
   mesh: {
-    env: "FEATURE_MESH",
     label: "Instances",
     description:
       "Connect multiple Vardo instances over encrypted WireGuard tunnels. Enables promote, pull and clone between instances.",
@@ -66,32 +58,25 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
 };
 
 /**
- * Check if a feature is enabled (synchronous, env-var only). Defaults to true.
+ * Check if a feature is enabled (synchronous).
+ * Reads from cached config file if available, otherwise defaults to true.
+ * For the authoritative async check, use isFeatureEnabledAsync().
  */
 export function isFeatureEnabled(flag: FeatureFlag): boolean {
-  return process.env[FLAG_CONFIG[flag].env] !== "false";
+  // Synchronous — can only check defaults. Async version is authoritative.
+  return true;
 }
 
 /**
- * Check if a feature is enabled with DB fallback.
- * Resolution: env var > DB override > default (true).
+ * Check if a feature is enabled (async, authoritative).
+ * Resolution: config file > DB > default (true).
  */
 export async function isFeatureEnabledAsync(flag: FeatureFlag): Promise<boolean> {
-  const envVal = process.env[FLAG_CONFIG[flag].env];
-  if (envVal !== undefined) return envVal !== "false";
-
   const { getFeatureFlagsConfig } = await import("@/lib/system-settings");
-  const dbFlags = await getFeatureFlagsConfig();
-  if (dbFlags && flag in dbFlags) return dbFlags[flag];
+  const flags = await getFeatureFlagsConfig();
+  if (flags && flag in flags) return flags[flag];
 
   return true; // default enabled
-}
-
-/**
- * Whether a flag's value is forced by an environment variable.
- */
-export function isEnvOverridden(flag: FeatureFlag): boolean {
-  return process.env[FLAG_CONFIG[flag].env] !== undefined;
 }
 
 /**
@@ -114,14 +99,15 @@ export type FeatureFlags = Record<UIGatedFlag, boolean>;
 
 /**
  * Get the feature flags needed for UI tab gating.
- * Call this in server components and pass the result as a prop.
+ * Async — reads from config file or DB.
  */
-export function getFeatureFlags(): FeatureFlags {
-  return {
-    terminal: isFeatureEnabled("terminal"),
-    cron: isFeatureEnabled("cron"),
-    backups: isFeatureEnabled("backups"),
-  };
+export async function getFeatureFlags(): Promise<FeatureFlags> {
+  const [terminal, cron, backups] = await Promise.all([
+    isFeatureEnabledAsync("terminal"),
+    isFeatureEnabledAsync("cron"),
+    isFeatureEnabledAsync("backups"),
+  ]);
+  return { terminal, cron, backups };
 }
 
 export type FeatureFlagInfo = {
@@ -133,12 +119,15 @@ export type FeatureFlagInfo = {
 
 /**
  * Get all feature flags with their states and metadata.
+ * Async — reads from config file or DB.
  */
-export function getAllFeatureFlags(): FeatureFlagInfo[] {
-  return (Object.keys(FLAG_CONFIG) as FeatureFlag[]).map((flag) => ({
-    flag,
-    enabled: isFeatureEnabled(flag),
-    label: FLAG_CONFIG[flag].label,
-    description: FLAG_CONFIG[flag].description,
-  }));
+export async function getAllFeatureFlags(): Promise<FeatureFlagInfo[]> {
+  return Promise.all(
+    (Object.keys(FLAG_CONFIG) as FeatureFlag[]).map(async (flag) => ({
+      flag,
+      enabled: await isFeatureEnabledAsync(flag),
+      label: FLAG_CONFIG[flag].label,
+      description: FLAG_CONFIG[flag].description,
+    })),
+  );
 }

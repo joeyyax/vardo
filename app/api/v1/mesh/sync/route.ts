@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
     });
 
     return NextResponse.json({
-      instanceId: getInstanceId(),
+      instanceId: await getInstanceId(),
       peerId: peer.id,
       syncedAt: new Date().toISOString(),
       projects: orgProjects,

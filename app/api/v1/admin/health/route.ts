@@ -11,7 +11,7 @@ export async function GET() {
 
     const [health, featureFlags] = await Promise.all([
       getSystemHealth(),
-      Promise.resolve(getAllFeatureFlags()),
+      getAllFeatureFlags(),
     ]);
 
     return NextResponse.json({

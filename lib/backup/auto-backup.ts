@@ -12,15 +12,16 @@ import { db } from "@/lib/db";
 import { backupTargets, backupJobs, backupJobApps, volumes } from "@/lib/db/schema";
 import { eq, and, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { readVardoConfig } from "@/lib/config/vardo-config";
 
 // ---------------------------------------------------------------------------
 // 1. Host-level backup target from env vars
 // ---------------------------------------------------------------------------
 
 /**
- * Check if a Host-level backup target exists. If not, but BACKUP_STORAGE_*
- * env vars are configured, auto-create one. This is the global safety-net
- * target that any org can fall back to.
+ * Check if a Host-level backup target exists. If not, but backup storage
+ * is configured (via config file or DB), auto-create one. This is the
+ * global safety-net target that any org can fall back to.
  *
  * Returns the Host-level target if one exists (or was created), null otherwise.
  */
@@ -34,13 +35,14 @@ export async function ensureHostBackupTarget() {
     return existing;
   }
 
-  // Check env vars
-  const storageType = process.env.BACKUP_STORAGE_TYPE;
-  const bucket = process.env.BACKUP_STORAGE_BUCKET;
-  const region = process.env.BACKUP_STORAGE_REGION;
-  const endpoint = process.env.BACKUP_STORAGE_ENDPOINT;
-  const accessKey = process.env.BACKUP_STORAGE_ACCESS_KEY;
-  const secretKey = process.env.BACKUP_STORAGE_SECRET_KEY;
+  // Read backup config from config file or DB
+  const fileConfig = await readVardoConfig();
+  const storageType = fileConfig?.backup?.type;
+  const bucket = fileConfig?.backup?.bucket;
+  const region = fileConfig?.backup?.region;
+  const endpoint = fileConfig?.backup?.endpoint;
+  const accessKey = fileConfig?.backup?.accessKey;
+  const secretKey = fileConfig?.backup?.secretKey;
 
   if (!storageType || !bucket || !accessKey || !secretKey) {
     // Not enough config to create a target
@@ -52,7 +54,7 @@ export async function ensureHostBackupTarget() {
   const type = storageType.toLowerCase() as (typeof validTypes)[number];
   if (!validTypes.includes(type)) {
     console.warn(
-      `[auto-backup] Invalid BACKUP_STORAGE_TYPE: ${storageType}. Must be one of: ${validTypes.join(", ")}`
+      `[auto-backup] Invalid backup storage type: ${storageType}. Must be one of: ${validTypes.join(", ")}`
     );
     return null;
   }
