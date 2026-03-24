@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
-import { notificationChannels } from "@/lib/db/schema";
+import { notificationChannels, notificationLogs } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
+import { nanoid } from "nanoid";
 import type { NotificationEvent } from "./port";
 import { createChannel } from "./factory";
 import { emit, onEmit, toBusEvent, toLegacyEvent } from "@/lib/bus";
@@ -37,13 +38,36 @@ function dispatchToChannels(orgId: string, event: BusEvent): void {
       await Promise.allSettled(
         channels.map(async (row) => {
           if (!channelAcceptsEvent(row.subscribedEvents, event.type)) return;
+
+          let status = "success";
+          let error: string | null = null;
+
           try {
             await createChannel(row).send(legacy);
           } catch (err) {
+            status = "failed";
+            error = err instanceof Error ? err.message : String(err);
             console.error(
               `[notifications] Channel "${row.name}" failed:`,
               err,
             );
+          }
+
+          // Log the attempt
+          try {
+            await db.insert(notificationLogs).values({
+              id: nanoid(),
+              organizationId: orgId,
+              channelId: row.id,
+              channelName: row.name,
+              channelType: row.type,
+              eventType: event.type,
+              eventTitle: legacy.title || event.type,
+              status,
+              error,
+            });
+          } catch {
+            // Don't let logging failures break dispatch
           }
         }),
       );
