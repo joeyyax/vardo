@@ -9,6 +9,7 @@ try {
 }
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   env: {
     NEXT_PUBLIC_GIT_SHA: gitSha,
   },
