@@ -1,14 +1,15 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, Plus, Check, Info } from "lucide-react";
+import { Loader2, Plus, Check, Info, Archive } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AutoBackupBanner } from "./auto-backup-banner";
 import { TargetCard } from "./target-card";
+import { JobCard } from "./job-card";
 import { TargetForm } from "./target-form";
 import { JobForm } from "./job-form";
 import { BackupHistory } from "./backup-history";
-import type { App, BackupTarget, BackupJob, RecentBackup, TargetWithJobs } from "./types";
+import type { App, BackupTarget, BackupJob, RecentBackup } from "./types";
 
 export function BackupPage({
   scope,
@@ -24,7 +25,7 @@ export function BackupPage({
   const [jobs, setJobs] = useState<BackupJob[]>([]);
   const [history, setHistory] = useState<RecentBackup[]>([]);
   const [targetFormOpen, setTargetFormOpen] = useState(false);
-  const [jobFormTargetId, setJobFormTargetId] = useState<string | null>(null);
+  const [jobFormOpen, setJobFormOpen] = useState(false);
   const [editingTargetId, setEditingTargetId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
@@ -61,24 +62,13 @@ export function BackupPage({
     );
   }
 
-  // Separate system (host-level) targets from user targets
   const systemTargets = targets.filter((t) => t.isAppLevel);
   const userTargets = targets.filter((t) => !t.isAppLevel);
+  const hasTargets = targets.length > 0;
 
-  // Group jobs under their target
-  const allTargetsWithJobs: TargetWithJobs[] = targets.map((t) => ({
-    ...t,
-    jobs: jobs.filter((j) => j.target.id === t.id),
-  }));
-
-  const systemTargetsWithJobs = allTargetsWithJobs.filter((t) => t.isAppLevel);
-  const userTargetsWithJobs = allTargetsWithJobs.filter((t) => !t.isAppLevel);
-
-  // Auto-backup banner data
+  // Auto-backup banner
   const autoTarget = systemTargets[0];
-  const autoJobs = autoTarget
-    ? jobs.filter((j) => j.target.id === autoTarget.id)
-    : [];
+  const autoJobs = autoTarget ? jobs.filter((j) => j.target.id === autoTarget.id) : [];
 
   return (
     <div className="space-y-8">
@@ -97,68 +87,93 @@ export function BackupPage({
         <AutoBackupBanner target={autoTarget} jobs={autoJobs} scope={scope} />
       )}
 
-      {/* Storage targets with inline jobs */}
-      <section className="space-y-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-lg font-medium">Storage targets</h2>
-            <p className="text-sm text-muted-foreground">
-              Where your backups are stored. Each target can have one or more backup jobs.
-            </p>
-          </div>
-          <Button
-            size="sm"
-            onClick={() => setTargetFormOpen(true)}
-          >
-            <Plus className="mr-1.5 size-4" aria-hidden="true" />
-            Add target
-          </Button>
-        </div>
-
-        {allTargetsWithJobs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-8">
-            <div className="text-center space-y-1">
-              <p className="text-sm font-medium">No storage targets configured</p>
-              <p className="text-sm text-muted-foreground">
-                Add an S3 bucket, Cloudflare R2, Backblaze B2, or SSH server to start backing up.
-              </p>
-            </div>
-            <Button size="sm" className="squircle" onClick={() => setTargetFormOpen(true)}>
+      {/* Two-column: Storage targets + Backup jobs */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Left: Storage targets */}
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-medium">Storage targets</h3>
+            <Button size="sm" variant="outline" onClick={() => setTargetFormOpen(true)}>
               <Plus className="mr-1.5 size-4" aria-hidden="true" />
               Add target
             </Button>
           </div>
-        ) : (
-          <div className="space-y-3">
-            {/* System targets first */}
-            {systemTargetsWithJobs.map((target) => (
-              <TargetCard
-                key={target.id}
-                target={target}
-                orgId={orgId}
-                readOnly={scope === "org"}
-                onRefresh={fetchData}
-                onEdit={scope === "admin" ? () => setEditingTargetId(target.id) : undefined}
-                onAddJob={scope === "admin" ? () => setJobFormTargetId(target.id) : undefined}
-              />
-            ))}
 
-            {/* User targets */}
-            {userTargetsWithJobs.map((target) => (
-              <TargetCard
-                key={target.id}
-                target={target}
-                orgId={orgId}
-                onRefresh={fetchData}
-                onEdit={() => setEditingTargetId(target.id)}
-                onAddJob={() => setJobFormTargetId(target.id)}
-              />
-            ))}
+          {!hasTargets ? (
+            <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-8">
+              <p className="text-sm text-muted-foreground text-center">
+                Add an S3 bucket, Cloudflare R2, Backblaze B2, or SSH server to start backing up.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {systemTargets.map((target) => (
+                <TargetCard
+                  key={target.id}
+                  target={target}
+                  orgId={orgId}
+                  readOnly={scope === "org"}
+                  onRefresh={fetchData}
+                  onEdit={scope === "admin" ? () => setEditingTargetId(target.id) : undefined}
+                />
+              ))}
+              {userTargets.map((target) => (
+                <TargetCard
+                  key={target.id}
+                  target={target}
+                  orgId={orgId}
+                  onRefresh={fetchData}
+                  onEdit={() => setEditingTargetId(target.id)}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Right: Backup jobs */}
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-medium">Backup jobs</h3>
+            <Button size="sm" variant="outline" onClick={() => setJobFormOpen(true)} disabled={!hasTargets}>
+              <Plus className="mr-1.5 size-4" aria-hidden="true" />
+              New job
+            </Button>
           </div>
-        )}
-      </section>
 
-      {/* Section 3: Backup history */}
+          {!hasTargets ? (
+            <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-8">
+              <p className="text-sm text-muted-foreground text-center">
+                Jobs can be added after you add a storage target.
+              </p>
+            </div>
+          ) : jobs.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-8">
+              <Archive className="size-6 text-muted-foreground/50" aria-hidden="true" />
+              <p className="text-sm text-muted-foreground text-center">
+                No backup jobs configured. Create one to schedule automatic backups.
+              </p>
+              <Button size="sm" variant="outline" onClick={() => setJobFormOpen(true)}>
+                <Plus className="mr-1.5 size-4" aria-hidden="true" />
+                New job
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {jobs.map((job) => (
+                <JobCard
+                  key={job.id}
+                  job={job}
+                  orgId={orgId}
+                  readOnly={scope === "org" && job.target.type === "system"}
+                  onRefresh={fetchData}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+
+      {/* Backup history */}
       <section className="space-y-3">
         <div>
           <h2 className="text-lg font-medium">Backup history</h2>
@@ -166,7 +181,6 @@ export function BackupPage({
             Recent snapshots across all targets and jobs.
           </p>
         </div>
-
         <BackupHistory history={history} orgId={orgId} onRefresh={fetchData} />
       </section>
 
@@ -243,14 +257,14 @@ export function BackupPage({
       />
 
       <JobForm
-        open={!!jobFormTargetId}
-        onOpenChange={(open) => !open && setJobFormTargetId(null)}
+        open={jobFormOpen}
+        onOpenChange={setJobFormOpen}
         orgId={orgId}
         targets={targets}
         apps={apps}
-        defaultTargetId={jobFormTargetId || undefined}
+        defaultTargetId={targets[0]?.id}
         onCreated={() => {
-          setJobFormTargetId(null);
+          setJobFormOpen(false);
           fetchData();
         }}
       />
