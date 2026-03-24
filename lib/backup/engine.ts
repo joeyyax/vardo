@@ -58,12 +58,29 @@ async function checksumFile(filePath: string): Promise<string> {
   });
 }
 
-/** Verify a file exists and has non-zero size. */
-async function verifyFileNotEmpty(filePath: string, label: string): Promise<number> {
+const MIN_VALID_GZIP_BYTES = 100; // gzip header alone is 10 bytes; a real dump is several KB
+
+/**
+ * Verify a gzipped archive is valid:
+ * - Not empty or suspiciously small (broken pipe, missing container)
+ * - Passes gzip integrity check (not truncated or corrupted)
+ */
+async function verifyArchive(filePath: string, label: string): Promise<number> {
   const info = await stat(filePath);
-  if (info.size === 0) {
-    throw new Error(`${label} produced an empty file — backup aborted`);
+  if (info.size < MIN_VALID_GZIP_BYTES) {
+    throw new Error(
+      `${label} produced a ${info.size}-byte file — too small to be valid, backup aborted`
+    );
   }
+
+  // gzip -t validates the entire compressed stream
+  try {
+    await execFileAsync("gzip", ["-t", filePath], { timeout: 60_000 });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`${label} archive is corrupt (gzip -t failed): ${msg}`);
+  }
+
   return info.size;
 }
 
@@ -99,7 +116,7 @@ async function backupVolume(
 
     // Verify archive is not empty
     const archivePath = join(tmpDir, archiveFile);
-    await verifyFileNotEmpty(archivePath, `Volume ${dockerVolumeName}`);
+    await verifyArchive(archivePath, `Volume ${dockerVolumeName}`);
 
     // Checksum before upload
     const checksum = await checksumFile(archivePath);
@@ -382,7 +399,7 @@ export async function runSystemBackup(jobId: string): Promise<BackupResult[]> {
     );
 
     // Verify dump is not empty (catches broken pipe, missing container, etc.)
-    await verifyFileNotEmpty(dumpFile, "pg_dump");
+    await verifyArchive(dumpFile, "pg_dump");
 
     // Checksum before upload
     const checksum = await checksumFile(dumpFile);
