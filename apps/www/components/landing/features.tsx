@@ -2,112 +2,169 @@ import { Section } from "./section";
 
 const features = [
   {
-    title: "Ship in minutes, not hours",
+    category: "Deployments",
+    builtOn: "Git · Docker · Compose",
+    title: "Push, build, live",
     description:
-      "Push from Git, pull a Docker image, or paste a Compose file. Blue-green deployments with zero-downtime rollback — your app is live before you take your next sip.",
-    icon: (
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="24"
-        height="24"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-        <polyline points="7 10 12 15 17 10" />
-        <line x1="12" y1="15" x2="12" y2="3" />
-      </svg>
-    ),
+      "Deploy from a Git push, Docker image, or Compose file. Blue-green deployments with automatic rollback on failure. One-click rollback to any previous version.",
+    details: [
+      "5 deploy types: Compose, Dockerfile, image, static, Nixpacks",
+      "Blue-green with health checks — zero-downtime by default",
+      "Persistent volumes survive redeploys",
+      "Resource limits (CPU, memory) per app",
+    ],
   },
   {
-    title: "HTTPS without the headache",
+    category: "Networking & TLS",
+    builtOn: "Traefik · Let's Encrypt",
+    title: "HTTPS on every app, automatically",
     description:
-      "Custom domains with automatic TLS via Let's Encrypt. Wildcard subdomains out of the box — no cert wrangling, no Nginx configs.",
-    icon: (
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="24"
-        height="24"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
-        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-        <circle cx="12" cy="16" r="1" />
-      </svg>
-    ),
+      "Add a domain, get a certificate. Wildcard DNS for instant subdomains. HTTP→HTTPS redirect by default. No Nginx configs, no cert wrangling.",
+    details: [
+      "Automatic certificate issuance and renewal",
+      "Custom domains with DNS verification",
+      "Wildcard subdomains out of the box",
+      "Domain health monitoring with uptime tracking",
+    ],
   },
   {
-    title: "Sleep through the night",
+    category: "Security",
+    builtOn: "WebAuthn · AES-256-GCM · Redis",
+    title: "Security isn't a feature you enable",
     description:
-      "Automated volume snapshots to S3, R2, or B2. Tiered retention and one-click restore — so a bad deploy never means lost data.",
-    icon: (
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="24"
-        height="24"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" />
-        <polyline points="12 12 12 8" />
-        <polyline points="12 12 15 14" />
-      </svg>
-    ),
+      "Passkey auth, encrypted secrets, rate limiting, CSP headers, org isolation. It's the layer everything else runs on.",
+    details: [
+      "Passkey/WebAuthn — phishing-resistant by default",
+      "Secrets encrypted at rest with AES-256-GCM",
+      "Per-token rate limiting backed by Redis",
+      "Org isolation — no cross-org data access",
+    ],
   },
   {
+    category: "Backups",
+    builtOn: "S3 · R2 · B2 · SSH",
+    title: "Automated, offsite, restorable",
+    description:
+      "Apps with persistent volumes get daily snapshots. Offsite storage, tiered retention, one-click restore. No downtime, no container restarts.",
+    details: [
+      "Daily snapshots to S3-compatible storage",
+      "Tiered retention: daily, weekly, monthly",
+      "One-click restore from any snapshot",
+      "Per-volume strategy: tar for files, pg_dump for databases",
+    ],
+  },
+  {
+    category: "Monitoring",
+    builtOn: "cAdvisor · Loki",
     title: "Know before your users do",
     description:
-      "Container metrics, log aggregation, and health checks built in. See problems the moment they start — no Grafana stack required.",
-    icon: (
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="24"
-        height="24"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-      </svg>
-    ),
+      "Container metrics, log aggregation, system health dashboard. No external monitoring stack required.",
+    details: [
+      "CPU, memory, disk, network per container",
+      "Centralized log aggregation across all apps",
+      "Domain health monitoring with state transitions",
+      "Email and webhook alerts on failures",
+    ],
+  },
+  {
+    category: "Environments",
+    builtOn: "Git branches · Docker Compose",
+    title: "Dev, staging, production — built in",
+    description:
+      "Environment-specific variables, domains, and configs. Promote between environments with one click. Projects group related apps.",
+    details: [
+      "Production, staging, dev, or custom environments",
+      "Environment-specific variables and domains",
+      "One-click promotion between environments",
+      "Project-level grouping and shared config",
+    ],
+  },
+  {
+    category: "Configuration",
+    builtOn: "YAML · portable formats",
+    title: "Export everything, move anywhere",
+    description:
+      "vardo.yml for settings, vardo.secrets.yml for keys. Export from one instance, import on another. No proprietary formats.",
+    details: [
+      "Config-as-code: vardo.yml (safe to commit)",
+      "Secrets file with restricted permissions",
+      "Full instance export/import",
+      "Resolution chain: config file → DB → defaults",
+    ],
+  },
+  {
+    category: "Developer experience",
+    builtOn: "REST · CLI · MCP",
+    title: "Dashboard, terminal, or AI agent",
+    description:
+      "Web UI, CLI, REST API, and MCP server. What you can do in the dashboard, you can do from a terminal or a script.",
+    details: [
+      "Dashboard: manage everything from a browser",
+      "CLI: deploy, rollback, logs from the terminal",
+      "REST API: every operation is an API call",
+      "AI agents: MCP server for Claude, Cursor, and more",
+    ],
   },
 ];
 
 export function Features() {
   return (
-    <Section className="bg-muted/30">
-      <div className="text-center">
+    <Section>
+      <div className="mb-16">
         <h2 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-          Everything you need to run production apps
+          Everything you need to run
+          <br />
+          production apps
         </h2>
+        <p className="mt-4 max-w-2xl text-lg text-muted-foreground">
+          Each feature is built on proven, battle-tested technology. No
+          proprietary formats, no novel protocols, no reinvented wheels.
+        </p>
       </div>
-      <div className="mt-16 grid gap-6 sm:grid-cols-2">
+      <div className="grid gap-px overflow-hidden rounded-2xl border border-border bg-border sm:grid-cols-2">
         {features.map((feature) => (
           <div
-            key={feature.title}
-            className="rounded-xl border border-border bg-card p-6 transition-colors duration-200 hover:border-primary/50"
+            key={feature.category}
+            className="bg-card p-8 transition-colors duration-200 hover:bg-muted/50"
           >
-            <div className="mb-4 text-primary">{feature.icon}</div>
+            <div className="mb-4 flex items-baseline justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-primary">
+                {feature.category}
+              </span>
+              <span className="text-xs text-muted-foreground/60 font-mono">
+                {feature.builtOn}
+              </span>
+            </div>
             <h3 className="text-lg font-semibold text-foreground">
               {feature.title}
             </h3>
-            <p className="mt-2 text-muted-foreground">{feature.description}</p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {feature.description}
+            </p>
+            <ul className="mt-4 space-y-1.5">
+              {feature.details.map((detail) => (
+                <li
+                  key={detail}
+                  className="flex items-start gap-2 text-sm text-muted-foreground"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="mt-0.5 shrink-0 text-primary/70"
+                  >
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  {detail}
+                </li>
+              ))}
+            </ul>
           </div>
         ))}
       </div>
