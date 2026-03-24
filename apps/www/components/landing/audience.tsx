@@ -17,10 +17,6 @@ const builtFor = [
     label: "Anyone tired of per-seat pricing",
     aside: "Your server costs the same whether you have 2 team members or 20.",
   },
-  {
-    label: "Docker Compose users",
-    aside: "Your compose files work here. No new abstractions to learn.",
-  },
 ];
 
 const notFor = [
