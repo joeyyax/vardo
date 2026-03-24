@@ -18,26 +18,25 @@ curl -fsSL https://get.host.joeyyax.dev | sudo bash
 
 The installer will prompt for three values:
 
-1. **Dashboard domain** -- where the Vardo dashboard will be accessible (e.g. `host.example.com`)
-2. **Base domain** -- the root domain used for auto-generated app subdomains (e.g. `example.com`)
-3. **ACME email** -- the email address used for Let's Encrypt TLS certificates
+1. **Dashboard domain** — where the Vardo dashboard will be accessible (e.g. `host.example.com`)
+2. **Base domain** — the root domain used for auto-generated app subdomains (e.g. `example.com`)
+3. **ACME email** — the email address used for Let's Encrypt TLS certificates
 
 ## What the Installer Does
 
 The install script performs the following steps, in order:
 
-1. **Preflight checks** -- Verifies root access, OS version, RAM (minimum 1 GB), and available disk space.
-2. **Swap file** -- Creates a 2 GB swap file on servers with less than 4 GB RAM, if no swap is already active.
-3. **Unattended upgrades** -- Installs and enables automatic security updates.
-4. **Firewall** -- Firewall configuration is left to the user. Docker publishes ports directly via iptables, bypassing ufw by default.
-5. **Docker** -- Installs Docker and the Compose plugin if not already present, then configures log rotation (10 MB x 3 files per container).
-6. **Git** -- Installs git if needed.
-7. **Clone** -- Clones the Vardo repository to `/opt/vardo` (or pulls latest if already installed).
-8. **Configuration** -- Prompts for domain, base domain, and ACME email. Generates random secrets for the database password, auth secret, encryption master key, webhook secret, and Traefik dashboard credentials. Writes everything to `/opt/vardo/.env.prod` with `chmod 600`.
-9. **DNS validation** -- Detects the server's public IP and checks whether the dashboard domain resolves to it. Warns if DNS is not yet configured but allows continuing.
-10. **Build and start** -- Runs `docker compose build` and `docker compose up -d` using the production compose file with the generated `.env.prod`.
-11. **Health check** -- Waits up to 60 seconds for the app to respond on `/api/health`.
-12. **Template seeding** -- Seeds the built-in service templates (PostgreSQL, Redis, MySQL, etc.) via an internal API call.
+1. **Preflight checks** — Verifies OS version, RAM (minimum 1 GB), and available disk space.
+2. **Swap file** — Creates a 2 GB swap file on servers with less than 4 GB RAM, if no swap is already active.
+3. **Packages** — Installs `curl`, `git`, and `unattended-upgrades` (automatic security updates) if not already present.
+4. **Docker** — Installs Docker Engine and the Compose plugin if not already present, then configures log rotation (10 MB x 3 files per container).
+5. **Firewall** — Firewall configuration is left to you. Docker publishes ports directly via iptables, bypassing ufw by default. The installer does **not** install or configure ufw.
+6. **Clone** — Clones the Vardo repository to `/opt/vardo` (or pulls latest if already installed).
+7. **Configuration** — Prompts for domain, base domain, and ACME email. Generates random secrets for the database password, auth secret, encryption master key, and Traefik dashboard credentials. Writes everything to `/opt/vardo/.env`.
+8. **DNS validation** — Detects the server's public IP and checks whether the dashboard domain resolves to it. Warns if DNS is not yet configured but allows continuing.
+9. **Build and start** — Runs `docker compose build` and `docker compose up -d` using the production compose file.
+10. **Health check** — Waits up to 60 seconds for the app to respond on `/api/health`.
+11. **Template seeding** — Seeds the built-in service templates (PostgreSQL, Redis, MySQL, etc.) via an internal API call.
 
 ## DNS Setup
 
@@ -62,11 +61,11 @@ git clone --depth 1 https://github.com/joeyyax/vardo.git /opt/vardo
 cd /opt/vardo
 
 # Copy and edit the environment file
-cp .env.example .env.prod
-# Edit .env.prod with your values -- see Configuration docs for details
+cp .env.example .env
+# Edit .env with your values — see Configuration docs for details
 
 # Build and start
-docker compose --env-file .env.prod up -d
+docker compose up -d
 ```
 
 The production Docker Compose stack includes these services:
@@ -86,32 +85,65 @@ The production Docker Compose stack includes these services:
 After installation completes:
 
 1. Visit `https://host.example.com` in your browser.
-2. Create your account -- the first user is automatically promoted to admin.
+2. Create your account — the first user is automatically promoted to admin.
 3. Walk through the onboarding flow: optionally connect a GitHub App, then create your first organization.
 4. Configure a GitHub App in Settings if you want to deploy from GitHub repositories (optional).
 
-### Useful Commands
+See [Getting Started](getting-started.md) for the full onboarding walkthrough.
+
+## Useful Commands
+
+After installation, all management goes through the install script at `/opt/vardo/install.sh`.
 
 ```bash
+# Re-run from installed location (shows interactive menu)
+sudo bash /opt/vardo/install.sh
+
+# Specific commands
+sudo bash /opt/vardo/install.sh update    # Pull latest and rebuild
+sudo bash /opt/vardo/install.sh doctor    # Run health diagnostics
+sudo bash /opt/vardo/install.sh uninstall # Stop and remove
+
 # View logs
-docker compose -f /opt/vardo/docker-compose.yml --env-file /opt/vardo/.env.prod logs -f
+docker compose -f /opt/vardo/docker-compose.yml logs -f
 
 # Restart
-docker compose -f /opt/vardo/docker-compose.yml --env-file /opt/vardo/.env.prod restart
+docker compose -f /opt/vardo/docker-compose.yml restart
 
 # Stop
-docker compose -f /opt/vardo/docker-compose.yml --env-file /opt/vardo/.env.prod down
+docker compose -f /opt/vardo/docker-compose.yml down
 
-# Update
-cd /opt/vardo && git pull && docker compose -f docker-compose.yml --env-file .env.prod up -d --build
+# Update manually
+cd /opt/vardo && git pull && docker compose up -d --build
 ```
 
-### Backups
+### Doctor Mode
+
+Run `sudo bash /opt/vardo/install.sh doctor` to check system health. It verifies Docker is running, required ports are available, containers are up, and the app is responding.
+
+### Unattended Install
+
+For automated provisioning, set environment variables and pass `--unattended`:
+
+```bash
+VARDO_DOMAIN=host.example.com \
+VARDO_BASE_DOMAIN=example.com \
+ACME_EMAIL=you@example.com \
+curl -fsSL https://get.host.joeyyax.dev | sudo bash -s -- --unattended
+```
+
+## Backups
 
 Back up these items regularly:
 
-- **`.env.prod`** -- Contains all secrets (database password, auth secret, encryption key).
-- **PostgreSQL data** -- `docker compose -f /opt/vardo/docker-compose.yml exec -T postgres pg_dumpall -U host > backup.sql`
-- **Docker volumes** -- The `host_projects` volume contains deployment data.
+- **`.env`** — Contains all secrets (database password, auth secret, encryption key). Located at `/opt/vardo/.env`.
+- **PostgreSQL data** — `docker compose -f /opt/vardo/docker-compose.yml exec -T postgres pg_dumpall -U host > backup.sql`
+- **Docker volumes** — The `host_projects` volume contains deployment data.
 
-Migrations run automatically on app startup via `drizzle-kit migrate`. There is no need to run migrations manually after updates.
+Migrations run automatically on app startup via Drizzle. There is no need to run migrations manually after updates.
+
+## macOS (Development)
+
+The installer also works on macOS for local development. Install path defaults to `~/vardo` instead of `/opt/vardo`. Docker Desktop must be installed and running first.
+
+See the [CLI Reference](cli-reference.md) for the full list of install script commands and flags.
