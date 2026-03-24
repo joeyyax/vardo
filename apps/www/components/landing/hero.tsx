@@ -8,7 +8,7 @@ import { useState, useEffect } from "react";
 const words = [
   { text: "Deploy", color: "text-emerald-400" },
   { text: "Ship", color: "text-sky-400" },
-  { text: "Scale", color: "text-teal-400" },
+  { text: "Scale", color: "text-violet-400" },
 ];
 
 function RotatingVerb() {

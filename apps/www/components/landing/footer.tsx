@@ -3,29 +3,22 @@ import { BrandIcon } from "../brand-icon";
 
 const columns = [
   {
-    title: "Product",
+    title: "Documentation",
     links: [
       { label: "Getting Started", href: "/docs/getting-started" },
       { label: "Installation", href: "/docs/installation" },
-      { label: "Features", href: "/docs/concepts" },
+      { label: "Concepts", href: "/docs/concepts" },
       { label: "API Reference", href: "/docs/api-reference" },
-    ],
-  },
-  {
-    title: "Resources",
-    links: [
-      { label: "Documentation", href: "/docs" },
       { label: "CLI Reference", href: "/docs/cli-reference" },
-      { label: "Configuration", href: "/docs/configuration" },
-      { label: "Security", href: "/docs/security" },
     ],
   },
   {
-    title: "Community",
+    title: "Project",
     links: [
       { label: "GitHub", href: "https://github.com/joeyyax/vardo" },
       { label: "Discussions", href: "https://github.com/joeyyax/vardo/discussions" },
       { label: "Issues", href: "https://github.com/joeyyax/vardo/issues" },
+      { label: "Contributing", href: "/docs/contributing" },
     ],
   },
 ];
@@ -34,7 +27,7 @@ export function Footer() {
   return (
     <footer className="border-t border-white/[0.06] bg-neutral-950">
       <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
-        <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-3">
           {/* Brand */}
           <div>
             <Link href="/" className="flex items-center gap-2">
