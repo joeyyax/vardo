@@ -1,8 +1,7 @@
 "use client";
 
 import { Archive, Check, Info } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { scheduleLabel, TargetIcon } from "./constants";
+import { scheduleLabel } from "./constants";
 import { retentionText } from "./retention-summary";
 import type { BackupJob, BackupTarget } from "./types";
 
@@ -23,21 +22,14 @@ export function AutoBackupBanner({
       <div className="flex items-start gap-3">
         <Archive className="size-5 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
         <div className="space-y-1">
-          <h3 className="text-sm font-medium">Automatic backups are enabled</h3>
+          <h3 className="text-sm font-medium">We&apos;ve got you covered</h3>
           <p className="text-sm text-muted-foreground">
-            {scope === "org"
-              ? "Your data is automatically backed up by the host. You can download or restore these backups anytime."
-              : "All apps with persistent volumes are backed up automatically."}
+            Your data is backed up automatically. You can download or restore any snapshot, or add your own backup targets for additional redundancy.
           </p>
         </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-muted-foreground pl-8">
-        <span className="flex items-center gap-1.5">
-          <TargetIcon type={target.type} />
-          {target.name}
-          <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{target.type}</Badge>
-        </span>
         <span className="flex items-center gap-1.5">
           <Check className="size-3 text-status-success" aria-hidden="true" />
           {schedule}

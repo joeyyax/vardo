@@ -82,19 +82,18 @@ export function BackupPage({
 
   return (
     <div className="space-y-8">
-      {/* Header */}
-      <div className="space-y-1">
-        <h2 className="text-lg font-medium">Backups</h2>
-        <p className="text-sm text-muted-foreground">
-          {scope === "admin"
-            ? "Manage system-wide backup targets, retention policies, and view backup history across all organizations."
-            : "Manage backup targets and view backup history for this organization."}
-        </p>
-      </div>
-
-      {/* Auto-backup banner — only shown to org users, admin is configuring this */}
-      {scope === "org" && autoTarget && (
+      {/* Auto-backup banner — only shown to org users when system backups exist */}
+      {scope === "org" && autoTarget ? (
         <AutoBackupBanner target={autoTarget} jobs={autoJobs} scope={scope} />
+      ) : (
+        <div className="space-y-1">
+          <h2 className="text-lg font-medium">Backups</h2>
+          <p className="text-sm text-muted-foreground">
+            {scope === "admin"
+              ? "Manage system-wide backup targets, retention policies, and view backup history across all organizations."
+              : "Configure backup targets and schedules for this organization."}
+          </p>
+        </div>
       )}
 
       {/* Two-column: Storage targets + Backup jobs */}
