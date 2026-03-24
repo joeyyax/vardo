@@ -1,4 +1,5 @@
 import { createMDX } from "fumadocs-mdx/next";
+import { resolve } from "path";
 
 const withMDX = createMDX();
 
@@ -6,7 +7,7 @@ const withMDX = createMDX();
 const config = {
   reactStrictMode: true,
   turbopack: {
-    root: "../..",
+    root: resolve(import.meta.dirname, "../.."),
   },
 };
 
