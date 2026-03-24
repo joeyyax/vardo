@@ -706,6 +706,7 @@ export const backups = pgTable("backup", {
   volumeName: text("volume_name"),
   sizeBytes: bigint("size_bytes", { mode: "number" }),
   storagePath: text("storage_path"),
+  checksum: text("checksum"), // sha256 hash of the archive before upload
   log: text("log"),
   startedAt: timestamp("started_at").defaultNow().notNull(),
   finishedAt: timestamp("finished_at"),

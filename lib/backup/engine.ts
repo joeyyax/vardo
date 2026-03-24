@@ -6,9 +6,11 @@ import {
 } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { createHash } from "crypto";
+import { createReadStream } from "fs";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { mkdir, rm } from "fs/promises";
+import { mkdir, rm, stat } from "fs/promises";
 import { resolve, join } from "path";
 import type { BackupStorage } from "./storage-port";
 import { createBackupStorage } from "./storage-factory";
@@ -45,6 +47,26 @@ async function ensureDir(dir: string): Promise<void> {
   await mkdir(dir, { recursive: true });
 }
 
+/** SHA-256 checksum of a file. */
+async function checksumFile(filePath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const hash = createHash("sha256");
+    const stream = createReadStream(filePath);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("end", () => resolve(hash.digest("hex")));
+    stream.on("error", reject);
+  });
+}
+
+/** Verify a file exists and has non-zero size. */
+async function verifyFileNotEmpty(filePath: string, label: string): Promise<number> {
+  const info = await stat(filePath);
+  if (info.size === 0) {
+    throw new Error(`${label} produced an empty file — backup aborted`);
+  }
+  return info.size;
+}
+
 // ---------------------------------------------------------------------------
 // Core: backup a single volume
 // ---------------------------------------------------------------------------
@@ -58,7 +80,7 @@ async function backupVolume(
   storageKey: string,
   storage: BackupStorage,
   logFn: (msg: string) => void,
-): Promise<{ sizeBytes: number }> {
+): Promise<{ sizeBytes: number; checksum: string }> {
   const tmpDir = join(BACKUPS_DIR, `.tmp-${nanoid(8)}`);
   await ensureDir(tmpDir);
   const archiveFile = "volume.tar.gz";
@@ -75,15 +97,20 @@ async function backupVolume(
       { timeout: 600_000 }, // 10 minute timeout
     );
 
+    // Verify archive is not empty
+    const archivePath = join(tmpDir, archiveFile);
+    await verifyFileNotEmpty(archivePath, `Volume ${dockerVolumeName}`);
+
+    // Checksum before upload
+    const checksum = await checksumFile(archivePath);
+    logFn(`Checksum: sha256:${checksum.slice(0, 16)}...`);
+
     // Upload via the storage adapter
     logFn(`Uploading to ${storageKey}`);
-    const { sizeBytes } = await storage.upload(
-      storageKey,
-      join(tmpDir, archiveFile),
-    );
+    const { sizeBytes } = await storage.upload(storageKey, archivePath);
 
     logFn(`Upload complete (${sizeBytes} bytes)`);
-    return { sizeBytes };
+    return { sizeBytes, checksum };
   } finally {
     // Clean up temp files
     try {
@@ -223,7 +250,7 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
 
       try {
         log(`Backing up volume ${vol.name} (Docker: ${dockerVolumeName})`);
-        const { sizeBytes } = await backupVolume(
+        const { sizeBytes, checksum } = await backupVolume(
           dockerVolumeName,
           storageKey,
           storage,
@@ -239,6 +266,7 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
             status: "success",
             sizeBytes,
             storagePath: storageKey,
+            checksum: `sha256:${checksum}`,
             log: logLines.join("\n"),
             finishedAt,
           })
@@ -353,6 +381,13 @@ export async function runSystemBackup(jobId: string): Promise<BackupResult[]> {
       { timeout: 600_000 }, // 10 min
     );
 
+    // Verify dump is not empty (catches broken pipe, missing container, etc.)
+    await verifyFileNotEmpty(dumpFile, "pg_dump");
+
+    // Checksum before upload
+    const checksum = await checksumFile(dumpFile);
+    log(`Checksum: sha256:${checksum.slice(0, 16)}...`);
+
     // Upload via storage adapter
     log(`Uploading to ${storageKey}`);
     const { sizeBytes } = await storage.upload(storageKey, dumpFile);
@@ -367,6 +402,7 @@ export async function runSystemBackup(jobId: string): Promise<BackupResult[]> {
         status: "success",
         sizeBytes,
         storagePath: storageKey,
+        checksum: `sha256:${checksum}`,
         log: logLines.join("\n"),
         finishedAt,
       })
