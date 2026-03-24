@@ -17,7 +17,7 @@ Self-hosted PaaS for managing Docker Compose deployments. Deploy anything with D
 ## Install
 
 ```bash
-curl -fsSL https://get.vardo.run | sudo bash
+curl -fsSL https://vardo.run/install.sh | sudo bash
 ```
 
 Requires Ubuntu 22.04+ or Debian 12+, 1 GB RAM, and a domain with DNS pointing to your server.
