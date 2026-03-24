@@ -41,11 +41,11 @@ const notFor = [
 export function Audience() {
   return (
     <Section>
-      <div className="mb-12 text-center">
-        <h2 className="text-2xl font-bold tracking-tight text-neutral-300 sm:text-3xl">
+      <div className="mb-16 text-center">
+        <h2 className="text-3xl font-extrabold tracking-tight text-white sm:text-4xl lg:text-5xl">
           Right tool, right job.
         </h2>
-        <p className="mx-auto mt-3 max-w-lg text-neutral-500">
+        <p className="mx-auto mt-5 max-w-2xl text-lg text-neutral-400">
           We&apos;d rather be upfront about what Vardo is — and isn&apos;t — than
           waste your afternoon finding out the hard way.
         </p>
