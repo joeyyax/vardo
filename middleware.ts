@@ -33,12 +33,17 @@ function getIp(request: NextRequest): string {
 }
 
 export function middleware(request: NextRequest) {
-  // Only rate limit API mutation routes
+  // Only rate limit API routes
   if (!request.nextUrl.pathname.startsWith("/api/")) {
     return NextResponse.next();
   }
 
-  // Skip GET/HEAD/OPTIONS — only limit mutations and POST reads
+  // Skip health check and monitoring endpoints
+  if (request.nextUrl.pathname === "/api/health") {
+    return NextResponse.next();
+  }
+
+  // Skip OPTIONS/HEAD — only limit actual requests
   const method = request.method.toUpperCase();
   if (method === "OPTIONS" || method === "HEAD") {
     return NextResponse.next();

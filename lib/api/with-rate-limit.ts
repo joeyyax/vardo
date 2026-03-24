@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createHash } from "crypto";
 import { rateLimit } from "./rate-limit";
 
 /**
@@ -7,8 +8,8 @@ import { rateLimit } from "./rate-limit";
  * Tuned for self-hosted operator usage, not public API scale.
  */
 const TIERS = {
-  /** Login, signup, passkey — brute-force protection */
-  auth: { limit: 10, windowMs: 60_000 },
+  /** Login, signup, passkey, invite codes — brute-force protection */
+  auth: { limit: 5, windowMs: 60_000 },
   /** Webhook, mesh join — public but untrusted */
   public: { limit: 30, windowMs: 60_000 },
   /** Deploy, rollback, create/update/delete resources */
@@ -39,21 +40,21 @@ type RouteHandler = (
  * validate it. The route handler does full auth validation.
  */
 function extractIdentifier(request: NextRequest): string {
-  // Check for Bearer token — hash it for the rate limit key
+  // Check for Bearer token — hash for collision-free rate limit key
   const authHeader = request.headers.get("authorization");
   if (authHeader?.startsWith("Bearer ")) {
     const token = authHeader.slice(7).trim();
-    // Use first 16 chars of token as identifier (not full token for privacy)
-    return `token:${token.slice(0, 16)}`;
+    const hash = createHash("sha256").update(token).digest("hex").slice(0, 16);
+    return `token:${hash}`;
   }
 
-  // Check for session cookie — extract user ID if present
+  // Check for session cookie — hash for collision-free key
   const sessionToken =
     request.cookies.get("better-auth.session_token")?.value ||
     request.cookies.get("__Secure-better-auth.session_token")?.value;
   if (sessionToken) {
-    // Use first 16 chars of session token as identifier
-    return `session:${sessionToken.slice(0, 16)}`;
+    const hash = createHash("sha256").update(sessionToken).digest("hex").slice(0, 16);
+    return `session:${hash}`;
   }
 
   // Fallback to IP
@@ -76,12 +77,12 @@ function extractIdentifier(request: NextRequest): string {
  */
 export function withRateLimit(
   handler: RouteHandler,
-  opts: { tier: Tier; key?: string; identifier?: string }
+  opts: { tier: Tier; key?: string }
 ): RouteHandler {
   const config = TIERS[opts.tier];
 
   return async (request, context) => {
-    const identifier = opts.identifier || extractIdentifier(request);
+    const identifier = extractIdentifier(request);
     const tierKey = opts.key || opts.tier;
 
     const limited = await rateLimit(request, {
