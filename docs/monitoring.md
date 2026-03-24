@@ -250,6 +250,14 @@ Confirm Loki is receiving logs:
 curl 'http://localhost:7400/loki/api/v1/labels' | jq .
 ```
 
+## Traefik Router Visibility
+
+> **Planned** — Tracked in [#217](https://github.com/joeyyax/vardo/issues/217)
+
+Vardo will add a Traefik section to the monitoring UI that shows all active routers, middleware chains, and load balancer backends. This provides visibility into how traffic is being routed without enabling the Traefik dashboard directly.
+
+See also: [Admin Guide → Traefik admin UI](admin-guide.md).
+
 ## Grafana Integration
 
 Grafana is not included in Vardo's Docker Compose stack, but you can connect it to the bundled Loki instance for advanced log analysis.

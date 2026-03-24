@@ -1,4 +1,4 @@
-# Host Design System
+# Vardo Design System
 
 Reference documentation extracted from the codebase. Describes what exists today -- not aspirational.
 

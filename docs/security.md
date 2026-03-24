@@ -244,9 +244,22 @@ If Vardo is behind Cloudflare:
 - [ ] Backups are configured and tested
 - [ ] SSH access to the host is restricted (key-only, no password)
 
-## Planned / Not Yet Implemented
+## Planned Features
 
-- **API token authentication** — the API currently requires session cookies. Bearer token support is planned.
-- **Forced 2FA** — admins cannot currently require 2FA for all users.
-- **Audit log** — a structured audit trail of admin and deployment actions is not yet implemented.
-- **IP allowlisting** — no built-in IP allowlist for the admin panel; use a firewall or Cloudflare rule.
+### API token authentication
+
+> **Planned** — Tracked in [#172](https://github.com/joeyyax/vardo/issues/172)
+
+The API currently requires session cookies for authentication. `vardo_`-prefixed API tokens can be created in the dashboard, but Bearer token authentication is not yet wired into the request middleware. Until this ships, use session cookies for programmatic access (see [API Reference](api.md)).
+
+### Forced 2FA
+
+Admins cannot currently require 2FA for all users. Two-factor authentication is opt-in per user. A future release will add an org-level setting to require 2FA before users can access organization resources.
+
+### Audit log
+
+A structured audit trail of admin and deployment actions is not yet implemented. All state-changing operations go through authenticated endpoints, but there is no queryable log of who did what and when.
+
+### IP allowlisting
+
+There is no built-in IP allowlist for the admin panel. Use a firewall rule or Cloudflare Access rule to restrict access to `/admin` by IP.
