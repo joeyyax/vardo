@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
-import { rateLimit } from "@/lib/api/rate-limit";
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { meshPeers } from "@/lib/db/schema";
@@ -27,16 +27,8 @@ const joinSchema = z.object({
  * No session auth — the invite code is the credential.
  * Rate limited: 5 attempts per minute per IP.
  */
-export async function POST(request: NextRequest) {
+async function handler(request: NextRequest) {
   try {
-    // Rate limit — unauthenticated endpoint, brute-force protection
-    const limited = await rateLimit(request, {
-      key: "mesh-join",
-      limit: 5,
-      windowMs: 60_000,
-    });
-    if (limited) return limited;
-
     const body = await request.json();
     const parsed = joinSchema.safeParse(body);
     if (!parsed.success) {
@@ -84,3 +76,5 @@ export async function POST(request: NextRequest) {
     return handleRouteError(error, "Error joining mesh");
   }
 }
+
+export const POST = withRateLimit(handler, { tier: "auth", key: "mesh-join" });
