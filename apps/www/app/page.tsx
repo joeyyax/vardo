@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Nav } from "../components/landing/nav";
 import { Hero } from "../components/landing/hero";
-import { ProductPreview } from "../components/landing/product-preview";
 import { Features } from "../components/landing/features";
 import { HowItWorks } from "../components/landing/how-it-works";
 import { WhyVardo } from "../components/landing/why-vardo";
@@ -22,7 +21,6 @@ export default function HomePage() {
       <Nav />
       <main>
         <Hero />
-        <ProductPreview />
         <Features />
         <HowItWorks />
         <WhyVardo />

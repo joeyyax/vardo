@@ -371,84 +371,146 @@ const features: {
 ];
 
 /* ------------------------------------------------------------------ */
+/*  Feature card component                                             */
+/* ------------------------------------------------------------------ */
+
+function FeatureCard({
+  feature,
+  accent,
+  hero = false,
+}: {
+  feature: (typeof features)[number];
+  accent: (typeof accentColors)[number];
+  hero?: boolean;
+}) {
+  return (
+    <div
+      className={`group relative overflow-hidden rounded-2xl border border-border/50 bg-card transition-all duration-300 hover:border-border hover:shadow-lg dark:hover:shadow-primary/5 ${
+        hero ? "gradient-border p-8 sm:p-10" : "p-7"
+      }`}
+    >
+      {/* Subtle accent glow for hero cards */}
+      {hero && (
+        <div
+          className={`pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full blur-3xl ${accent.iconBg} opacity-20`}
+        />
+      )}
+
+      <div className={hero ? "relative grid gap-8 sm:grid-cols-[1fr_auto]" : "relative"}>
+        <div>
+          {/* Category icon + label */}
+          <div className="mb-4 flex items-center gap-3">
+            <div className={`inline-flex rounded-xl p-2.5 ${accent.iconBg}`}>
+              {feature.icon}
+            </div>
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">
+              {feature.category}
+            </span>
+          </div>
+
+          {/* Title & description */}
+          <h3
+            className={`font-bold text-foreground ${
+              hero ? "text-2xl sm:text-3xl" : "text-lg"
+            }`}
+          >
+            {feature.title}
+          </h3>
+          <p
+            className={`mt-3 leading-relaxed text-muted-foreground ${
+              hero ? "max-w-lg text-base" : "text-sm"
+            }`}
+          >
+            {feature.description}
+          </p>
+
+          {/* Detail list */}
+          <ul className={`mt-5 space-y-2 ${hero ? "columns-1 sm:columns-2 gap-x-8" : ""}`}>
+            {feature.details.map((detail) => (
+              <li
+                key={detail}
+                className="flex items-start gap-2 text-sm text-muted-foreground break-inside-avoid"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="mt-0.5 shrink-0 text-primary/70"
+                >
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+                {detail}
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {/* Tech pills — sidebar on hero, bottom on regular */}
+        <div
+          className={
+            hero
+              ? "flex flex-row flex-wrap gap-1.5 sm:flex-col sm:justify-start sm:pt-14"
+              : "mt-5 flex flex-wrap gap-1.5"
+          }
+        >
+          {feature.techPills.map((pill) => (
+            <TechPillBadge key={pill.name} pill={pill} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Features section                                                  */
 /* ------------------------------------------------------------------ */
 
 export function Features() {
+  // First two features are "hero" features (full width)
+  const heroFeatures = features.slice(0, 2);
+  // Rest are in a tighter grid
+  const gridFeatures = features.slice(2);
+
   return (
     <Section>
-      <div className="mb-16 max-w-3xl">
-        <h2 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl lg:text-[2.75rem] lg:leading-tight">
+      <div className="mb-16 text-center">
+        <h2 className="text-3xl font-extrabold tracking-tight text-foreground sm:text-4xl lg:text-5xl">
           Everything you need to run production apps
         </h2>
-        <p className="mt-4 max-w-2xl text-lg text-muted-foreground">
-          Each feature is built on proven, battle-tested technology. No
-          proprietary formats, no novel protocols, no reinvented wheels.
+        <p className="mx-auto mt-5 max-w-2xl text-lg text-muted-foreground">
+          Built on proven, battle-tested technology. No proprietary formats,
+          no novel protocols, no reinvented wheels.
         </p>
       </div>
-      <div className="grid gap-4 sm:grid-cols-2">
-        {features.map((feature, i) => {
-          const accent = accentColors[i % accentColors.length];
-          return (
-            <div
-              key={feature.category}
-              className={`group relative overflow-hidden rounded-xl border border-border/60 border-l-[3px] ${accent.border} bg-card p-7 transition-all duration-200 hover:border-border hover:shadow-md dark:hover:shadow-none`}
-            >
-              {/* Category icon */}
-              <div className={`mb-5 inline-flex rounded-lg p-2.5 ${accent.iconBg}`}>
-                {feature.icon}
-              </div>
 
-              {/* Category label */}
-              <div className="mb-2">
-                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">
-                  {feature.category}
-                </span>
-              </div>
+      {/* Hero features — full width, more prominent */}
+      <div className="grid gap-5 sm:grid-cols-2">
+        {heroFeatures.map((feature, i) => (
+          <FeatureCard
+            key={feature.category}
+            feature={feature}
+            accent={accentColors[i]}
+            hero
+          />
+        ))}
+      </div>
 
-              {/* Title & description */}
-              <h3 className="text-lg font-semibold text-foreground">
-                {feature.title}
-              </h3>
-              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                {feature.description}
-              </p>
-
-              {/* Detail list */}
-              <ul className="mt-4 space-y-1.5">
-                {feature.details.map((detail) => (
-                  <li
-                    key={detail}
-                    className="flex items-start gap-2 text-sm text-muted-foreground"
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="mt-0.5 shrink-0 text-primary/60"
-                    >
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                    {detail}
-                  </li>
-                ))}
-              </ul>
-
-              {/* Tech pills */}
-              <div className="mt-5 flex flex-wrap gap-1.5">
-                {feature.techPills.map((pill) => (
-                  <TechPillBadge key={pill.name} pill={pill} />
-                ))}
-              </div>
-            </div>
-          );
-        })}
+      {/* Grid features — tighter, 3 columns */}
+      <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        {gridFeatures.map((feature, i) => (
+          <FeatureCard
+            key={feature.category}
+            feature={feature}
+            accent={accentColors[i + 2]}
+          />
+        ))}
       </div>
     </Section>
   );
