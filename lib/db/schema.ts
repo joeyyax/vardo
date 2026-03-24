@@ -1353,6 +1353,35 @@ export const invitationsRelations = relations(invitations, ({ one }) => ({
 // System settings (key-value store for setup wizard + global config)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Notification log — records every delivery attempt + result
+// ---------------------------------------------------------------------------
+
+export const notificationLogs = pgTable(
+  "notification_log",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    channelId: text("channel_id").references(() => notificationChannels.id, {
+      onDelete: "set null",
+    }),
+    channelName: text("channel_name").notNull(),
+    channelType: text("channel_type").notNull(), // email, webhook, push
+    eventType: text("event_type").notNull(), // deploy.success, backup.failed, etc.
+    eventTitle: text("event_title").notNull(),
+    status: text("status").notNull(), // success, failed
+    error: text("error"), // error message if failed
+    attempt: integer("attempt").notNull().default(1),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("notification_log_org_idx").on(t.organizationId),
+    index("notification_log_created_idx").on(t.createdAt),
+  ]
+);
+
 export const systemSettings = pgTable("system_settings", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),
