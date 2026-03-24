@@ -5,9 +5,9 @@ import { TerminalBlock } from "./terminal-block";
 import { useState, useEffect } from "react";
 
 const words = [
-  { text: "Deploy", color: "text-emerald-400", cursor: "bg-emerald-400" },
-  { text: "Ship", color: "text-sky-400", cursor: "bg-sky-400" },
-  { text: "Scale", color: "text-teal-400", cursor: "bg-teal-400" },
+  { text: "Deploy", color: "text-emerald-400" },
+  { text: "Ship", color: "text-sky-400" },
+  { text: "Scale", color: "text-teal-400" },
 ];
 
 function RotatingVerb() {
@@ -53,9 +53,9 @@ function RotatingVerb() {
     <span className={`transition-colors duration-300 ${currentWord.color}`}>
       {text}
       <span
-        className={`inline-block w-[3px] sm:w-[4px] lg:w-[5px] ml-1 transition-colors duration-300 ${
-          currentWord.cursor
-        } ${showCursor ? "opacity-100" : "opacity-0"}`}
+        className={`inline-block w-[3px] sm:w-[4px] lg:w-[5px] ml-1 bg-neutral-500 ${
+          showCursor ? "opacity-100" : "opacity-0"
+        }`}
         style={{ height: "0.8em", verticalAlign: "baseline", marginBottom: "-0.05em" }}
         aria-hidden="true"
       />
