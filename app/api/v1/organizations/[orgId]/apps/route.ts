@@ -3,7 +3,7 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps, projects, domains, organizations, environments, volumes } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { generateSubdomain } from "@/lib/domains/auto-domain";
@@ -66,8 +66,8 @@ const createAppSchema = z
     }
   );
 
-// GET /api/v1/organizations/[orgId]/apps
-export async function GET(_request: NextRequest, { params }: RouteParams) {
+// GET /api/v1/organizations/[orgId]/apps?limit=50&offset=0
+export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const { organization } = await requireOrg();
@@ -76,23 +76,39 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const appList = await db.query.apps.findMany({
-      where: eq(apps.organizationId, orgId),
-      with: {
-        deployments: {
-          columns: { id: true, status: true, startedAt: true },
-          orderBy: (d, { desc }) => [desc(d.startedAt)],
-          limit: 1,
-        },
-        appTags: {
-          with: { tag: true },
-        },
-        project: true,
-      },
-      orderBy: [desc(apps.createdAt)],
-    });
+    const searchParams = request.nextUrl.searchParams;
+    const limit = Math.min(parseInt(searchParams.get("limit") || "50", 10), 100);
+    const offset = Math.max(parseInt(searchParams.get("offset") || "0", 10), 0);
 
-    return NextResponse.json({ apps: appList });
+    const [appList, totalResult] = await Promise.all([
+      db.query.apps.findMany({
+        where: eq(apps.organizationId, orgId),
+        with: {
+          deployments: {
+            columns: { id: true, status: true, startedAt: true },
+            orderBy: (d, { desc }) => [desc(d.startedAt)],
+            limit: 1,
+          },
+          appTags: {
+            with: { tag: true },
+          },
+          project: true,
+        },
+        orderBy: [desc(apps.createdAt)],
+        limit,
+        offset,
+      }),
+      db.select({ count: sql`count(*)::int` })
+        .from(apps)
+        .where(eq(apps.organizationId, orgId)),
+    ]);
+
+    return NextResponse.json({
+      apps: appList,
+      total: totalResult[0]?.count ?? 0,
+      limit,
+      offset,
+    });
   } catch (error) {
     return handleRouteError(error, "Error fetching apps");
   }
