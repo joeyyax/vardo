@@ -192,37 +192,38 @@ export function BackupPage({
       </Card>
 
       {/* Info sections */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="space-y-3">
+          <h3 className="text-sm font-medium">What&apos;s in a backup</h3>
+          <ul className="text-sm space-y-2">
+            <li className="flex items-start gap-2.5">
+              <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
+              <span className="text-muted-foreground">Databases — PostgreSQL, MySQL, SQLite, Redis dumps</span>
+            </li>
+            <li className="flex items-start gap-2.5">
+              <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
+              <span className="text-muted-foreground">Uploads and file storage — anything in persistent volumes</span>
+            </li>
+            <li className="flex items-start gap-2.5">
+              <Info className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
+              <span className="text-muted-foreground">Does not include container images, source code or environment variables</span>
+            </li>
+          </ul>
+        </div>
         <div className="space-y-3">
           <h3 className="text-sm font-medium">How it works</h3>
           <ul className="text-sm space-y-2">
             <li className="flex items-start gap-2.5">
               <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
-              <span className="text-muted-foreground">
-                <span className="font-medium text-foreground">Automatic</span>{" "}
-                — apps with persistent volumes get daily snapshots by default
-              </span>
+              <span className="text-muted-foreground">Snapshots persistent volumes as tar.gz archives</span>
             </li>
             <li className="flex items-start gap-2.5">
               <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
-              <span className="text-muted-foreground">
-                <span className="font-medium text-foreground">Offsite</span>{" "}
-                — snapshots are uploaded to your S3-compatible provider, not stored on this server
-              </span>
+              <span className="text-muted-foreground">Uploaded offsite to your S3-compatible provider</span>
             </li>
             <li className="flex items-start gap-2.5">
               <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
-              <span className="text-muted-foreground">
-                <span className="font-medium text-foreground">Tiered retention</span>{" "}
-                — keep daily, weekly, monthly and yearly snapshots independently per job
-              </span>
-            </li>
-            <li className="flex items-start gap-2.5">
-              <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
-              <span className="text-muted-foreground">
-                <span className="font-medium text-foreground">One-click restore</span>{" "}
-                — any snapshot can be restored directly into the running volume
-              </span>
+              <span className="text-muted-foreground">Tiered retention — daily, weekly, monthly archives</span>
             </li>
           </ul>
         </div>
@@ -235,11 +236,11 @@ export function BackupPage({
             </li>
             <li className="flex items-start gap-2.5">
               <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
-              <span className="text-muted-foreground">Manual backups can be triggered anytime</span>
+              <span className="text-muted-foreground">One-click restore from any snapshot</span>
             </li>
             <li className="flex items-start gap-2.5">
-              <Info className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
-              <span className="text-muted-foreground">Only persistent volumes are backed up — ephemeral data is excluded</span>
+              <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
+              <span className="text-muted-foreground">Manual backups can be triggered anytime</span>
             </li>
           </ul>
         </div>
