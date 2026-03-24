@@ -1,7 +1,6 @@
 "use client";
 
 import { ShieldCheck, Check, Info, CloudUpload } from "lucide-react";
-import { scheduleLabel } from "./constants";
 import { retentionDescription } from "./retention-summary";
 import type { BackupJob, BackupTarget } from "./types";
 
@@ -15,7 +14,7 @@ export function AutoBackupBanner({
   scope: "admin" | "org";
 }) {
   const retention = jobs.length > 0 ? retentionDescription(jobs[0]) : "Default retention";
-  const schedule = jobs.length > 0 ? scheduleLabel(jobs[0].schedule) : "Daily";
+  const schedule = "Daily";
 
   return (
     <div className="squircle rounded-lg border bg-card p-5 space-y-4">
