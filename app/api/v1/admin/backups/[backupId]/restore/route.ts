@@ -5,7 +5,7 @@ import { backups } from "@/lib/db/schema";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { isFeatureEnabled } from "@/lib/config/features";
 import { eq } from "drizzle-orm";
-import { restoreSystemBackup } from "@/lib/backup/engine";
+import { restoreBackup } from "@/lib/backup/engine";
 
 type RouteParams = {
   params: Promise<{ backupId: string }>;
@@ -37,12 +37,12 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
 
     if (backup.appId !== null) {
       return NextResponse.json(
-        { error: "This endpoint only restores system database backups" },
+        { error: "Use the org-scoped restore endpoint for app backups" },
         { status: 400 },
       );
     }
 
-    const result = await restoreSystemBackup(backupId);
+    const result = await restoreBackup(backupId);
 
     return NextResponse.json(result);
   } catch (error) {
