@@ -6,9 +6,11 @@ import {
 } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { createHash } from "crypto";
+import { createReadStream } from "fs";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { mkdir, rm } from "fs/promises";
+import { mkdir, rm, stat } from "fs/promises";
 import { resolve, join } from "path";
 import type { BackupStorage } from "./storage-port";
 import { createBackupStorage } from "./storage-factory";
@@ -17,6 +19,7 @@ import { assertSafeName } from "@/lib/docker/validate";
 const execFileAsync = promisify(execFile);
 
 const BACKUPS_DIR = resolve(process.env.VARDO_BACKUPS_DIR || "./.host/backups");
+const PG_CONTAINER = process.env.VARDO_PG_CONTAINER || "vardo-postgres";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -45,6 +48,43 @@ async function ensureDir(dir: string): Promise<void> {
   await mkdir(dir, { recursive: true });
 }
 
+/** SHA-256 checksum of a file. */
+async function checksumFile(filePath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const hash = createHash("sha256");
+    const stream = createReadStream(filePath);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("end", () => resolve(hash.digest("hex")));
+    stream.on("error", reject);
+  });
+}
+
+const MIN_VALID_GZIP_BYTES = 100; // gzip header alone is 10 bytes; a real dump is several KB
+
+/**
+ * Verify a gzipped archive is valid:
+ * - Not empty or suspiciously small (broken pipe, missing container)
+ * - Passes gzip integrity check (not truncated or corrupted)
+ */
+async function verifyArchive(filePath: string, label: string): Promise<number> {
+  const info = await stat(filePath);
+  if (info.size < MIN_VALID_GZIP_BYTES) {
+    throw new Error(
+      `${label} produced a ${info.size}-byte file — too small to be valid, backup aborted`
+    );
+  }
+
+  // gzip -t validates the entire compressed stream
+  try {
+    await execFileAsync("gzip", ["-t", filePath], { timeout: 300_000 });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`${label} archive is corrupt (gzip -t failed): ${msg}`);
+  }
+
+  return info.size;
+}
+
 // ---------------------------------------------------------------------------
 // Core: backup a single volume
 // ---------------------------------------------------------------------------
@@ -58,7 +98,7 @@ async function backupVolume(
   storageKey: string,
   storage: BackupStorage,
   logFn: (msg: string) => void,
-): Promise<{ sizeBytes: number }> {
+): Promise<{ sizeBytes: number; checksum: string }> {
   const tmpDir = join(BACKUPS_DIR, `.tmp-${nanoid(8)}`);
   await ensureDir(tmpDir);
   const archiveFile = "volume.tar.gz";
@@ -75,15 +115,20 @@ async function backupVolume(
       { timeout: 600_000 }, // 10 minute timeout
     );
 
+    // Verify archive is not empty
+    const archivePath = join(tmpDir, archiveFile);
+    await verifyArchive(archivePath, `Volume ${dockerVolumeName}`);
+
+    // Checksum before upload
+    const checksum = await checksumFile(archivePath);
+    logFn(`Checksum: sha256:${checksum.slice(0, 16)}...`);
+
     // Upload via the storage adapter
     logFn(`Uploading to ${storageKey}`);
-    const { sizeBytes } = await storage.upload(
-      storageKey,
-      join(tmpDir, archiveFile),
-    );
+    const { sizeBytes } = await storage.upload(storageKey, archivePath);
 
     logFn(`Upload complete (${sizeBytes} bytes)`);
-    return { sizeBytes };
+    return { sizeBytes, checksum };
   } finally {
     // Clean up temp files
     try {
@@ -223,7 +268,7 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
 
       try {
         log(`Backing up volume ${vol.name} (Docker: ${dockerVolumeName})`);
-        const { sizeBytes } = await backupVolume(
+        const { sizeBytes, checksum } = await backupVolume(
           dockerVolumeName,
           storageKey,
           storage,
@@ -239,6 +284,7 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
             status: "success",
             sizeBytes,
             storagePath: storageKey,
+            checksum: `sha256:${checksum}`,
             log: logLines.join("\n"),
             finishedAt,
           })
@@ -289,13 +335,165 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
     .where(eq(backupJobs.id, jobId));
 
   try { const hasFailures = results.some((r) => !r.success); const allSuccess = results.every((r) => r.success);
-    if ((hasFailures && job.notifyOnFailure) || (allSuccess && job.notifyOnSuccess)) {
+    if (job.organizationId && ((hasFailures && job.notifyOnFailure) || (allSuccess && job.notifyOnSuccess))) {
       const { emit } = await import("@/lib/notifications/dispatch"); const appNames = job.backupJobApps.map((bja) => bja.app.name).join(", ");
       if (hasFailures) { const failed = results.filter((r) => !r.success); emit(job.organizationId, { type: "backup.failed", title: `Backup failed: ${job.name}`, message: `${failed.length} of ${results.length} backup(s) failed for: ${appNames}`, jobId: job.id, jobName: job.name, failedCount: failed.length, totalCount: results.length, errors: failed.map((r) => `${r.volumeName}: ${r.error}`).join("; ") }); }
       else { emit(job.organizationId, { type: "backup.success", title: `Backup successful: ${job.name}`, message: `${results.length} backup(s) completed for: ${appNames}`, jobId: job.id, jobName: job.name, totalCount: results.length, totalSize: results.reduce((sum, r) => sum + r.sizeBytes, 0) }); }
     }
   } catch (err) { console.error("[notifications] Backup notification error:", err); }
   return results;
+}
+
+// ---------------------------------------------------------------------------
+// System backup: Vardo's own PostgreSQL database
+// ---------------------------------------------------------------------------
+
+/**
+ * Run a pg_dump of Vardo's database and upload it to the storage target.
+ * Used for system backup jobs (isSystem = true).
+ */
+export async function runSystemBackup(jobId: string): Promise<BackupResult[]> {
+  const job = await db.query.backupJobs.findFirst({
+    where: eq(backupJobs.id, jobId),
+    with: { target: true },
+  });
+
+  if (!job) {
+    throw new Error(`System backup job not found: ${jobId}`);
+  }
+
+  const storage = createBackupStorage(job.target);
+  const ts = timestamp();
+  await ensureDir(BACKUPS_DIR);
+
+  const backupId = nanoid();
+  const startedAt = new Date();
+  const logLines: string[] = [];
+  const log = (msg: string) => {
+    logLines.push(`[${new Date().toISOString()}] ${msg}`);
+  };
+
+  const storageKey = `vardo-system/postgres/${ts}.sql.gz`;
+
+  // Create backup record as running
+  await db.insert(backups).values({
+    id: backupId,
+    jobId: job.id,
+    appId: null, // system backup — no app
+    targetId: job.target.id,
+    status: "running",
+    volumeName: "postgres",
+    startedAt,
+  });
+
+  const tmpDir = join(BACKUPS_DIR, `.tmp-${nanoid(8)}`);
+  await ensureDir(tmpDir);
+  const dumpFile = join(tmpDir, "vardo-db.sql.gz");
+
+  try {
+    // Parse DATABASE_URL for credentials (default: host/host)
+    const dbUrl = process.env.DATABASE_URL || "";
+    const dbMatch = dbUrl.match(/^postgresql:\/\/([A-Za-z0-9_-]+):[^@]+@[^/]+\/([A-Za-z0-9_-]+)/);
+    const dbUser = dbMatch?.[1] || "host";
+    const dbName = dbMatch?.[2] || "host";
+
+    // Validate all shell-interpolated values are safe identifiers
+    assertSafeName(PG_CONTAINER);
+    assertSafeName(dbUser);
+    assertSafeName(dbName);
+
+    // Run pg_dump inside the postgres container, pipe to gzip on the host
+    log(`Running pg_dump on ${PG_CONTAINER}`);
+    await execFileAsync(
+      "sh",
+      ["-c", `set -o pipefail; docker exec ${PG_CONTAINER} pg_dump -U ${dbUser} ${dbName} | gzip > "${dumpFile}"`],
+      { timeout: 600_000 }, // 10 min
+    );
+
+    // Verify dump is not empty (catches broken pipe, missing container, etc.)
+    await verifyArchive(dumpFile, "pg_dump");
+
+    // Checksum before upload
+    const checksum = await checksumFile(dumpFile);
+    log(`Checksum: sha256:${checksum.slice(0, 16)}...`);
+
+    // Upload via storage adapter
+    log(`Uploading to ${storageKey}`);
+    const { sizeBytes } = await storage.upload(storageKey, dumpFile);
+
+    const finishedAt = new Date();
+    const durationMs = finishedAt.getTime() - startedAt.getTime();
+    log(`Upload complete (${sizeBytes} bytes, ${durationMs}ms)`);
+
+    await db
+      .update(backups)
+      .set({
+        status: "success",
+        sizeBytes,
+        storagePath: storageKey,
+        checksum: `sha256:${checksum}`,
+        log: logLines.join("\n"),
+        finishedAt,
+      })
+      .where(eq(backups.id, backupId));
+
+    const successResults: BackupResult[] = [{
+      backupId,
+      appId: "",
+      volumeName: "postgres",
+      success: true,
+      sizeBytes,
+      storagePath: storageKey,
+      durationMs,
+    }];
+
+    // System backups have no org channel — log for now
+    // TODO: admin notification channel for system-level events
+    if (job.notifyOnSuccess) {
+      console.log(`[backup] System backup succeeded: ${job.name} (${sizeBytes} bytes)`);
+    }
+
+    return successResults;
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    log(`System backup failed: ${errorMsg}`);
+    const finishedAt = new Date();
+    const durationMs = finishedAt.getTime() - startedAt.getTime();
+
+    await db
+      .update(backups)
+      .set({
+        status: "failed",
+        log: logLines.join("\n"),
+        finishedAt,
+      })
+      .where(eq(backups.id, backupId));
+
+    const failResults: BackupResult[] = [{
+      backupId,
+      appId: "",
+      volumeName: "postgres",
+      success: false,
+      sizeBytes: 0,
+      storagePath: "",
+      error: errorMsg,
+      durationMs,
+    }];
+
+    // System backups have no org channel — log for now
+    // TODO: admin notification channel for system-level events
+    if (job.notifyOnFailure) {
+      console.error(`[backup] System backup FAILED: ${job.name} — ${errorMsg}`);
+    }
+
+    return failResults;
+  } finally {
+    try {
+      await rm(tmpDir, { recursive: true, force: true });
+    } catch {
+      // best effort
+    }
+  }
 }
 
 /**
@@ -341,7 +539,22 @@ export async function restoreBackup(
     await storage.download(backup.storagePath, archivePath);
     log("Download complete");
 
-    // 2. Determine the Docker volume name (try blue first, then green)
+    // 2. Validate archive integrity before restoring
+    await verifyArchive(archivePath, "Downloaded backup");
+    if (backup.checksum) {
+      const downloadChecksum = `sha256:${await checksumFile(archivePath)}`;
+      if (downloadChecksum !== backup.checksum) {
+        throw new Error(
+          `Checksum mismatch — expected ${backup.checksum}, got ${downloadChecksum}. Archive may be corrupt.`
+        );
+      }
+      log("Checksum verified");
+    }
+
+    // 3. Determine the Docker volume name (try blue first, then green)
+    if (!backup.app) {
+      throw new Error("Cannot restore a system backup via volume restore");
+    }
     assertSafeName(backup.app.name);
     assertSafeName(backup.volumeName);
     const blueVolume = `${backup.app.name}-blue_${backup.volumeName}`;
@@ -445,4 +658,76 @@ export async function downloadBackupToTemp(
   const storage = createBackupStorage(backup.target);
   await storage.download(backup.storagePath, destPath);
   return destPath;
+}
+
+/**
+ * Restore a system database backup by downloading the sql.gz and piping
+ * it into psql inside the postgres container.
+ */
+export async function restoreSystemBackup(
+  backupId: string,
+): Promise<{ success: boolean; log: string }> {
+  const backup = await db.query.backups.findFirst({
+    where: eq(backups.id, backupId),
+    with: { target: true },
+  });
+
+  if (!backup) throw new Error(`Backup not found: ${backupId}`);
+  if (!backup.storagePath) throw new Error("Backup has no storage path");
+
+  const storage = createBackupStorage(backup.target);
+  const logLines: string[] = [];
+  const log = (msg: string) => {
+    logLines.push(`[${new Date().toISOString()}] ${msg}`);
+  };
+
+  const tmpDir = join(BACKUPS_DIR, `.tmp-restore-${nanoid(8)}`);
+  await ensureDir(tmpDir);
+  const archivePath = join(tmpDir, "vardo-db.sql.gz");
+
+  try {
+    log(`Downloading backup from ${backup.storagePath}`);
+    await storage.download(backup.storagePath, archivePath);
+    log("Download complete");
+
+    await verifyArchive(archivePath, "Downloaded system backup");
+    if (backup.checksum) {
+      const downloadChecksum = `sha256:${await checksumFile(archivePath)}`;
+      if (downloadChecksum !== backup.checksum) {
+        throw new Error(
+          `Checksum mismatch — expected ${backup.checksum}, got ${downloadChecksum}. Archive may be corrupt.`
+        );
+      }
+      log("Checksum verified");
+    }
+
+    // Parse DATABASE_URL for credentials
+    const dbUrl = process.env.DATABASE_URL || "";
+    const dbMatch = dbUrl.match(/^postgresql:\/\/([A-Za-z0-9_-]+):[^@]+@[^/]+\/([A-Za-z0-9_-]+)/);
+    const dbUser = dbMatch?.[1] || "host";
+    const dbName = dbMatch?.[2] || "host";
+    assertSafeName(PG_CONTAINER);
+    assertSafeName(dbUser);
+    assertSafeName(dbName);
+
+    log(`Restoring to ${PG_CONTAINER} database ${dbName}`);
+    await execFileAsync(
+      "sh",
+      ["-c", `set -o pipefail; gunzip -c "${archivePath}" | docker exec -i ${PG_CONTAINER} psql -U ${dbUser} ${dbName}`],
+      { timeout: 600_000 },
+    );
+    log("Restore complete");
+
+    return { success: true, log: logLines.join("\n") };
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    log(`Restore failed: ${errorMsg}`);
+    return { success: false, log: logLines.join("\n") };
+  } finally {
+    try {
+      await rm(tmpDir, { recursive: true, force: true });
+    } catch {
+      // best effort
+    }
+  }
 }

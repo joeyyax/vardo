@@ -25,12 +25,14 @@ export async function register() {
     // Ensure backup target exists first (sequential dependency for scheduler)
     let backupTargetReady: Promise<void> | undefined;
     try {
-      const { ensureHostBackupTarget } = await import("./lib/backup/auto-backup");
+      const { ensureHostBackupTarget, ensureSystemBackupJob } = await import("./lib/backup/auto-backup");
       const { startBackupScheduler } = await import("./lib/backup/scheduler");
       backupTargetReady = ensureHostBackupTarget()
-        .then((target) => {
+        .then(async (target) => {
           if (target) {
             console.log(`[instrumentation] Host backup target ready: ${target.name} (${target.type})`);
+            // Create system backup job for Vardo's own database
+            await ensureSystemBackupJob(target.id);
           } else {
             console.log("[instrumentation] No backup storage configured (add backup section to vardo.yml or configure in admin settings)");
           }

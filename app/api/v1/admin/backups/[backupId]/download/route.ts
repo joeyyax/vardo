@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { backups } from "@/lib/db/schema";
-import { requireOrg } from "@/lib/auth/session";
+import { requireAppAdmin } from "@/lib/auth/admin";
 import { isFeatureEnabled } from "@/lib/config/features";
 import { eq } from "drizzle-orm";
 import { getBackupDownloadUrl, downloadBackupToTemp } from "@/lib/backup/engine";
@@ -10,41 +10,24 @@ import { createReadStream } from "fs";
 import { rm } from "fs/promises";
 
 type RouteParams = {
-  params: Promise<{ orgId: string; backupId: string }>;
+  params: Promise<{ backupId: string }>;
 };
 
-// GET /api/v1/organizations/[orgId]/backups/[backupId]/download
+// GET /api/v1/admin/backups/[backupId]/download
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     if (!isFeatureEnabled("backups")) {
       return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
     }
-    const { orgId, backupId } = await params;
-    const { organization } = await requireOrg();
+    await requireAppAdmin();
+    const { backupId } = await params;
 
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    // Verify the backup belongs to a project in this org
     const backup = await db.query.backups.findFirst({
       where: eq(backups.id, backupId),
-      with: {
-        app: {
-          columns: { id: true, name: true, organizationId: true },
-        },
-      },
     });
 
-    if (!backup || !backup.app || backup.app.organizationId !== orgId) {
+    if (!backup || backup.status !== "success" || !backup.storagePath) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
-
-    if (backup.status !== "success" || !backup.storagePath) {
-      return NextResponse.json(
-        { error: "Backup is not available for download" },
-        { status: 400 },
-      );
     }
 
     // Try pre-signed URL first (S3 targets)
@@ -55,7 +38,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     // SSH targets: download to temp and stream through server
     const tempPath = await downloadBackupToTemp(backupId);
-    const fileName = `${backup.app?.name ?? "vardo"}-${backup.volumeName ?? "backup"}-${backup.startedAt.toISOString().slice(0, 10)}.tar.gz`;
+    const fileName = `${backup.volumeName ?? "backup"}-${backup.startedAt.toISOString().slice(0, 10)}.tar.gz`;
 
     try {
       const stream = createReadStream(tempPath);
@@ -64,9 +47,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
           stream.on("data", (chunk) => controller.enqueue(chunk));
           stream.on("end", () => {
             controller.close();
-            // Clean up temp file after streaming
             rm(tempPath, { force: true }).catch(() => {});
-            // Also remove parent dir
             const dir = tempPath.substring(0, tempPath.lastIndexOf("/"));
             rm(dir, { recursive: true, force: true }).catch(() => {});
           });
@@ -88,6 +69,6 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       throw new Error("Failed to stream backup file");
     }
   } catch (error) {
-    return handleRouteError(error, "Error generating backup download");
+    return handleRouteError(error, "Error downloading system backup");
   }
 }
