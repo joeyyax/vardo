@@ -41,6 +41,9 @@ const notFor = [
 export function Audience() {
   return (
     <Section>
+      <h2 className="mb-10 text-center text-2xl font-bold tracking-tight text-neutral-500 sm:text-3xl">
+        Right tool, right job.
+      </h2>
       <div className="grid gap-0 lg:grid-cols-2">
         {/* Built for — welcoming, confident */}
         <div className="rounded-2xl rounded-b-none border border-neutral-800 border-b-0 bg-neutral-900/50 p-10 lg:rounded-r-none lg:rounded-l-2xl lg:border-b lg:border-r-0 sm:p-12">
