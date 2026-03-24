@@ -20,7 +20,6 @@ function RotatingVerb() {
   const [showCursor, setShowCursor] = useState(true);
 
   const currentWord = words[wordIndex];
-  const isComplete = !isDeleting && text === currentWord.text;
 
   useEffect(() => {
     const blink = setInterval(() => setShowCursor((v) => !v), 530);
@@ -53,21 +52,12 @@ function RotatingVerb() {
     return () => clearTimeout(timeout);
   }, [text, isDeleting, wordIndex]);
 
-  // Dim version while typing, full color on completion
-  const dimColor = currentWord.color.replace("-400", "-800");
-  const dimBg = dimColor.replace("text-", "bg-");
-  const fullBg = currentWord.color.replace("text-", "bg-");
-
   return (
-    <span
-      className={`transition-colors duration-700 ease-out ${
-        isComplete ? currentWord.color : dimColor
-      }`}
-    >
+    <span className={`transition-colors duration-300 ${currentWord.color}`}>
       {text}
       <span
-        className={`inline-block w-[0.04em] ml-0.5 transition-colors duration-700 ease-out ${
-          isComplete ? fullBg : dimBg
+        className={`inline-block w-[0.04em] ml-0.5 transition-colors duration-300 ${
+          currentWord.color.replace("text-", "bg-")
         } ${showCursor ? "opacity-100" : "opacity-0"}`}
         style={{ height: "0.8em", verticalAlign: "baseline", marginBottom: "-0.05em" }}
         aria-hidden="true"
