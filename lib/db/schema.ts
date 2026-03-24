@@ -406,12 +406,13 @@ export const deployments = pgTable("deployment", {
   // Snapshot fields — captured on successful deploy for rollback
   envSnapshot: text("env_snapshot"), // Encrypted env blob at deploy time (AES-256-GCM)
   configSnapshot: jsonb("config_snapshot").$type<ConfigSnapshot>(),
-  rollbackFromId: text("rollback_from_id"), // If this deploy was a rollback, points to source deployment
+  rollbackFromId: text("rollback_from_id"),
   startedAt: timestamp("started_at").defaultNow().notNull(),
   finishedAt: timestamp("finished_at"),
 },
   (t) => [
     index("deployment_app_id_idx").on(t.appId),
+    index("deployment_app_started_at_idx").on(t.appId, t.startedAt),
   ]
 );
 
@@ -540,19 +541,25 @@ export const apiTokens = pgTable(
 // Host: Activities (audit trail)
 // ---------------------------------------------------------------------------
 
-export const activities = pgTable("activity", {
-  id: text("id").primaryKey(),
-  organizationId: text("organization_id")
-    .notNull()
-    .references(() => organizations.id, { onDelete: "cascade" }),
-  appId: text("app_id").references(() => apps.id, {
-    onDelete: "set null",
-  }),
-  userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
-  action: text("action").notNull(),
-  metadata: jsonb("metadata"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+export const activities = pgTable(
+  "activity",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    appId: text("app_id").references(() => apps.id, {
+      onDelete: "set null",
+    }),
+    userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
+    action: text("action").notNull(),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("activity_org_created_at_idx").on(t.organizationId, t.createdAt),
+  ]
+);
 
 // ---------------------------------------------------------------------------
 // Host: Tags (flat labels for filtering)
@@ -755,17 +762,23 @@ export const volumeLimits = pgTable("volume_limit", {
 // Host: Domain Checks (health monitoring history)
 // ---------------------------------------------------------------------------
 
-export const domainChecks = pgTable("domain_check", {
-  id: text("id").primaryKey(),
-  domainId: text("domain_id")
-    .notNull()
-    .references(() => domains.id, { onDelete: "cascade" }),
-  reachable: boolean("reachable").notNull(),
-  statusCode: integer("status_code"),
-  responseTimeMs: integer("response_time_ms"),
-  error: text("error"),
-  checkedAt: timestamp("checked_at").defaultNow().notNull(),
-});
+export const domainChecks = pgTable(
+  "domain_check",
+  {
+    id: text("id").primaryKey(),
+    domainId: text("domain_id")
+      .notNull()
+      .references(() => domains.id, { onDelete: "cascade" }),
+    reachable: boolean("reachable").notNull(),
+    statusCode: integer("status_code"),
+    responseTimeMs: integer("response_time_ms"),
+    error: text("error"),
+    checkedAt: timestamp("checked_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("domain_check_domain_checked_at_idx").on(t.domainId, t.checkedAt),
+  ]
+);
 
 // ---------------------------------------------------------------------------
 // Host: Templates
