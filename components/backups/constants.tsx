@@ -1,3 +1,5 @@
+"use client";
+
 import { Cloud, Server } from "lucide-react";
 import type { BackupTarget } from "./types";
 

@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { backupTargets } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/config/features";
-import { eq, and } from "drizzle-orm";
+import { eq, and, or, isNull } from "drizzle-orm";
 import { z } from "zod";
 
 type RouteParams = {
@@ -48,7 +48,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const [updated] = await db
       .update(backupTargets)
       .set(updateData)
-      .where(eq(backupTargets.id, targetId))
+      .where(and(
+        eq(backupTargets.id, targetId),
+        or(eq(backupTargets.organizationId, orgId), isNull(backupTargets.organizationId))
+      ))
       .returning();
 
     if (!updated) {
@@ -77,7 +80,10 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
 
     const deleted = await db
       .delete(backupTargets)
-      .where(eq(backupTargets.id, targetId))
+      .where(and(
+        eq(backupTargets.id, targetId),
+        or(eq(backupTargets.organizationId, orgId), isNull(backupTargets.organizationId))
+      ))
       .returning();
 
     if (deleted.length === 0) {
