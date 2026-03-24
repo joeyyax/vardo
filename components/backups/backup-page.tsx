@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Loader2, Plus, Check, Info, Archive } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ShineBorder } from "@/components/ui/shine-border";
 import { AutoBackupBanner } from "./auto-backup-banner";
 import { TargetCard } from "./target-card";
 import { JobCard } from "./job-card";
@@ -154,10 +155,13 @@ export function BackupPage({
                 <p className="text-sm text-muted-foreground text-center">
                   No backup jobs configured. Create one to schedule automatic backups.
                 </p>
-                <Button size="sm" variant="outline" onClick={() => setJobFormOpen(true)}>
-                  <Plus className="mr-1.5 size-4" aria-hidden="true" />
-                  New job
-                </Button>
+                <div className="relative overflow-hidden rounded-lg">
+                  <ShineBorder shineColor={["#6366f1", "#8b5cf6", "#a78bfa"]} duration={8} borderWidth={2} />
+                  <Button size="sm" variant="outline" onClick={() => setJobFormOpen(true)}>
+                    <Plus className="mr-1.5 size-4" aria-hidden="true" />
+                    New job
+                  </Button>
+                </div>
               </div>
             ) : (
               <div className="space-y-2">
