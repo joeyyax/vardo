@@ -171,6 +171,40 @@ function KeyIcon() {
   );
 }
 
+function YamlIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor">
+      <path d="m0 .97 4.111 6.453v4.09h2.638v-4.09L11.053.969H8.214L5.58 5.125 2.965.969Zm12.093.024-4.47 10.544h2.114l.97-2.345h4.775l.804 2.345h2.26L14.255.994Zm1.133 2.225 1.463 3.87h-3.096zm3.06 9.475v10.29H24v-2.199h-5.454v-8.091zm-12.175.002v10.335h2.217v-7.129l2.32 4.792h1.746l2.4-4.96v7.295h2.127V12.696h-2.904L9.44 17.37l-2.455-4.674Z" />
+    </svg>
+  );
+}
+
+function GoogleIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12.48 10.92v3.28h7.84c-.24 1.84-.853 3.187-1.787 4.133-1.147 1.147-2.933 2.4-6.053 2.4-4.827 0-8.6-3.893-8.6-8.72s3.773-8.72 8.6-8.72c2.6 0 4.507 1.027 5.907 2.347l2.307-2.307C18.747 1.44 16.133 0 12.48 0 5.867 0 .307 5.387.307 12s5.56 12 12.173 12c3.573 0 6.267-1.173 8.373-3.36 2.16-2.16 2.84-5.213 2.84-7.667 0-.76-.053-1.467-.173-2.053H12.48z" />
+    </svg>
+  );
+}
+
+function TerminalChipIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="4 17 10 11 4 5" />
+      <line x1="12" y1="19" x2="20" y2="19" />
+    </svg>
+  );
+}
+
+function ApiIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+    </svg>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /*  Tech item type                                                     */
 /* ------------------------------------------------------------------ */
@@ -271,7 +305,7 @@ const features: {
     ],
     icon: <ActivityIcon className="h-6 w-6" />,
     tech: [
-      { name: "cAdvisor", url: "https://github.com/google/cadvisor" },
+      { name: "cAdvisor", url: "https://github.com/google/cadvisor", icon: <GoogleIcon /> },
       { name: "Loki", url: "https://grafana.com/oss/loki", icon: <LokiIcon /> },
     ],
   },
@@ -303,8 +337,7 @@ const features: {
     ],
     icon: <SettingsIcon className="h-6 w-6" />,
     tech: [
-      { name: "YAML" },
-      { name: "Portable" },
+      { name: "YAML", icon: <YamlIcon /> },
     ],
   },
   {
@@ -319,9 +352,9 @@ const features: {
     ],
     icon: <CodeIcon className="h-6 w-6" />,
     tech: [
-      { name: "REST" },
-      { name: "CLI" },
-      { name: "MCP", url: "https://modelcontextprotocol.io" },
+      { name: "REST", icon: <ApiIcon /> },
+      { name: "CLI", icon: <TerminalChipIcon /> },
+      { name: "MCP", url: "https://modelcontextprotocol.io", icon: <ApiIcon /> },
     ],
   },
 ];
