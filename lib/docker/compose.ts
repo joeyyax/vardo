@@ -19,6 +19,7 @@ export type ComposeService = {
   name: string;
   image?: string;
   build?: string | { context: string; dockerfile?: string };
+  restart?: string;
   ports?: string[];
   environment?: Record<string, string>;
   env_file?: string[];
@@ -60,6 +61,7 @@ export function generateComposeForImage(opts: {
   const service: ComposeService = {
     name: projectName,
     image: imageName,
+    restart: "unless-stopped",
   };
 
   // Map exposed ports to host (for non-HTTP services like databases)

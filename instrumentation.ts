@@ -1,6 +1,11 @@
+const globalForInit = globalThis as unknown as { __vardo_initialized?: boolean };
+
 export async function register() {
   // Only run on the server, not during build
   if (process.env.NEXT_RUNTIME === "nodejs") {
+    // Dedup guard — prevents duplicate schedulers on hot reload
+    if (globalForInit.__vardo_initialized) return;
+    globalForInit.__vardo_initialized = true;
     // Check encryption key — must run first, before any other initialization
     const { checkEncryptionKey } = await import("./lib/crypto/encrypt");
     const keyCheck = checkEncryptionKey();
