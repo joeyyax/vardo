@@ -1,0 +1,16 @@
+**/node_modules
+**/.next
+**/.git
+**/.env*
+!.env.example
+**/coverage
+**/test-results
+**/playwright-report
+**/.source
+**/out
+.claude
+docs
+.github
+.screenshots
+*.md
+!apps/console/drizzle/**

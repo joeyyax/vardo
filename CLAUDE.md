@@ -18,7 +18,9 @@ Host -- a self-hosted PaaS for managing Docker Compose deployments. Built on Nex
 
 ```bash
 # Development
-pnpm dev              # Start Next.js dev server
+pnpm dev:console      # Start console dev server
+pnpm dev:www          # Start www (docs) dev server
+pnpm dev:all          # Start all apps in parallel
 pnpm db:push          # Push schema changes to database
 pnpm db:studio        # Open Drizzle Studio
 pnpm db:migrate       # Run migrations
@@ -36,18 +38,22 @@ pnpm test             # Run tests
 ## Architecture
 
 ```
-/app
-  /api
-    /auth/[...all]                 # Better Auth handler
-    /v1/organizations/[orgId]/...  # Versioned REST API (authenticated, org-scoped)
-  /(app)                           # Authenticated routes (projects, settings)
-  /(public)                        # Public routes (login)
-/components
-  /ui                   # shadcn components
-  /layout               # Sidebar, mobile sidebar, org switcher
-/lib
-  /db                   # Drizzle schema + queries
-  /auth                 # Better Auth config
+/apps/console                      # Main console app (Next.js)
+  /app
+    /api
+      /auth/[...all]               # Better Auth handler
+      /v1/organizations/[orgId]/...# Versioned REST API (authenticated, org-scoped)
+    /(app)                         # Authenticated routes (projects, settings)
+    /(public)                      # Public routes (login)
+  /components
+    /ui                 # shadcn components
+    /layout             # Sidebar, mobile sidebar, org switcher
+  /lib
+    /db                 # Drizzle schema + queries
+    /auth               # Better Auth config
+/apps/www                          # Marketing/docs site (Fumadocs)
+/config                            # Loki, Promtail configs
+/docs                              # Source markdown
 ```
 
 ### Key Concepts
