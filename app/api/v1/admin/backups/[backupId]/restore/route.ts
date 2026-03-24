@@ -35,7 +35,7 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    if (backup.volumeName !== "postgres") {
+    if (backup.appId !== null) {
       return NextResponse.json(
         { error: "This endpoint only restores system database backups" },
         { status: 400 },
