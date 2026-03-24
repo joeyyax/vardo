@@ -7,7 +7,7 @@ import { eq, and } from "drizzle-orm";
 import { deployProject } from "@/lib/docker/deploy";
 import { deployGroup } from "@/lib/docker/deploy-group";
 import { createSSEResponse } from "@/lib/api/sse";
-import { rateLimit } from "@/lib/api/rate-limit";
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -15,13 +15,8 @@ type RouteParams = {
 
 // POST /api/v1/organizations/[orgId]/apps/[appId]/deploy
 // Returns SSE stream of deploy log lines, final event is the result
-export async function POST(request: NextRequest, { params }: RouteParams) {
-  // orgId comes from the authenticated URL path — not a header that can be spoofed.
-  // The org membership check below (`organization.id !== orgId`) ensures only the
-  // real org owner can trigger deploys, so this is forgery-resistant.
+async function handler(request: NextRequest, { params }: { params: Promise<{ orgId: string; appId: string }> }) {
   const { orgId, appId } = await params;
-  const limited = await rateLimit(request, { key: "deploy", limit: 10, windowMs: 60000, identifier: orgId });
-  if (limited) return limited;
 
   try {
     const { organization, session } = await requireOrg();
@@ -103,3 +98,5 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error deploying app");
   }
 }
+
+export const POST = withRateLimit(handler, { tier: "critical", key: "deploy" });

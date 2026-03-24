@@ -1,26 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getSession, CURRENT_ORG_COOKIE } from "@/lib/auth/session";
-import { rateLimit } from "@/lib/api/rate-limit";
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { db } from "@/lib/db";
 import { memberships } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 
 // POST /api/v1/organizations/switch
 // Sets the active organization cookie after verifying membership.
-export async function POST(request: NextRequest) {
+async function handler(request: NextRequest) {
   const session = await getSession();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
-  const limited = await rateLimit(request, {
-    key: "org-switch",
-    limit: 20,
-    windowMs: 60_000,
-    identifier: session.user.id,
-  });
-  if (limited) return limited;
 
   const body = await request.json().catch(() => null);
   const orgId = body?.organizationId;
@@ -51,3 +43,5 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ ok: true });
 }
+
+export const POST = withRateLimit(handler, { tier: "mutation", key: "org-switch" });
