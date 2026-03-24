@@ -36,8 +36,8 @@ export function Audience() {
             Built for
           </p>
           <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">
-            <span className="text-neutral-500">Built</span>{" "}
-            <span className="text-white">for</span>
+            <span className="text-neutral-500">Built for</span>{" "}
+            <span className="text-white">you... probably</span>
           </h2>
           <div className="mt-10 space-y-6">
             {builtFor.map((item) => (
@@ -70,8 +70,8 @@ export function Audience() {
             Not for
           </p>
           <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">
-            <span className="text-neutral-700">Not built</span>{" "}
-            <span className="text-neutral-500">for</span>
+            <span className="text-neutral-700">Maybe not for</span>{" "}
+            <span className="text-neutral-500">you, if...</span>
           </h2>
           <div className="mt-10 space-y-8">
             {notFor.map((item) => (
