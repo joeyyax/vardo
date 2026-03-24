@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Loader2, Plus, Check, Info, Archive } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AutoBackupBanner } from "./auto-backup-banner";
 import { TargetCard } from "./target-card";
 import { JobCard } from "./job-card";
@@ -90,99 +91,103 @@ export function BackupPage({
       {/* Two-column: Storage targets + Backup jobs */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Left: Storage targets */}
-        <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-medium">Storage targets</h3>
+        <Card className="squircle">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+            <CardTitle className="text-sm font-medium">Storage targets</CardTitle>
             <Button size="sm" variant="outline" onClick={() => setTargetFormOpen(true)}>
               <Plus className="mr-1.5 size-4" aria-hidden="true" />
               Add target
             </Button>
-          </div>
-
-          {!hasTargets ? (
-            <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-8">
-              <p className="text-sm text-muted-foreground text-center">
-                Add an S3 bucket, Cloudflare R2, Backblaze B2, or SSH server to start backing up.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {systemTargets.map((target) => (
-                <TargetCard
-                  key={target.id}
-                  target={target}
-                  orgId={orgId}
-                  readOnly={scope === "org"}
-                  onRefresh={fetchData}
-                  onEdit={scope === "admin" ? () => setEditingTargetId(target.id) : undefined}
-                />
-              ))}
-              {userTargets.map((target) => (
-                <TargetCard
-                  key={target.id}
-                  target={target}
-                  orgId={orgId}
-                  onRefresh={fetchData}
-                  onEdit={() => setEditingTargetId(target.id)}
-                />
-              ))}
-            </div>
-          )}
-        </section>
+          </CardHeader>
+          <CardContent>
+            {!hasTargets ? (
+              <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-8">
+                <p className="text-sm text-muted-foreground text-center">
+                  Add an S3 bucket, Cloudflare R2, Backblaze B2, or SSH server to start backing up.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {systemTargets.map((target) => (
+                  <TargetCard
+                    key={target.id}
+                    target={target}
+                    orgId={orgId}
+                    readOnly={scope === "org"}
+                    onRefresh={fetchData}
+                    onEdit={scope === "admin" ? () => setEditingTargetId(target.id) : undefined}
+                  />
+                ))}
+                {userTargets.map((target) => (
+                  <TargetCard
+                    key={target.id}
+                    target={target}
+                    orgId={orgId}
+                    onRefresh={fetchData}
+                    onEdit={() => setEditingTargetId(target.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Right: Backup jobs */}
-        <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-medium">Backup jobs</h3>
+        <Card className="squircle">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+            <CardTitle className="text-sm font-medium">Backup jobs</CardTitle>
             <Button size="sm" variant="outline" onClick={() => setJobFormOpen(true)} disabled={!hasTargets}>
               <Plus className="mr-1.5 size-4" aria-hidden="true" />
               New job
             </Button>
-          </div>
-
-          {!hasTargets ? (
-            <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-8">
-              <p className="text-sm text-muted-foreground text-center">
-                Jobs can be added after you add a storage target.
-              </p>
-            </div>
-          ) : jobs.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-8">
-              <Archive className="size-6 text-muted-foreground/50" aria-hidden="true" />
-              <p className="text-sm text-muted-foreground text-center">
-                No backup jobs configured. Create one to schedule automatic backups.
-              </p>
-              <Button size="sm" variant="outline" onClick={() => setJobFormOpen(true)}>
-                <Plus className="mr-1.5 size-4" aria-hidden="true" />
-                New job
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {jobs.map((job) => (
-                <JobCard
-                  key={job.id}
-                  job={job}
-                  orgId={orgId}
-                  readOnly={scope === "org" && job.target.type === "system"}
-                  onRefresh={fetchData}
-                />
-              ))}
-            </div>
-          )}
-        </section>
+          </CardHeader>
+          <CardContent>
+            {!hasTargets ? (
+              <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-8">
+                <p className="text-sm text-muted-foreground text-center">
+                  Jobs can be added after you add a storage target.
+                </p>
+              </div>
+            ) : jobs.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-8">
+                <Archive className="size-6 text-muted-foreground/50" aria-hidden="true" />
+                <p className="text-sm text-muted-foreground text-center">
+                  No backup jobs configured. Create one to schedule automatic backups.
+                </p>
+                <Button size="sm" variant="outline" onClick={() => setJobFormOpen(true)}>
+                  <Plus className="mr-1.5 size-4" aria-hidden="true" />
+                  New job
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {jobs.map((job) => (
+                  <JobCard
+                    key={job.id}
+                    job={job}
+                    orgId={orgId}
+                    readOnly={scope === "org" && job.target.type === "system"}
+                    onRefresh={fetchData}
+                  />
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       {/* Backup history */}
-      <section className="space-y-3">
-        <div>
-          <h2 className="text-lg font-medium">Backup history</h2>
+      <Card className="squircle">
+        <CardHeader>
+          <CardTitle className="text-sm font-medium">Backup history</CardTitle>
           <p className="text-sm text-muted-foreground">
             Recent snapshots across all targets and jobs.
           </p>
-        </div>
-        <BackupHistory history={history} orgId={orgId} onRefresh={fetchData} />
-      </section>
+        </CardHeader>
+        <CardContent>
+          <BackupHistory history={history} orgId={orgId} onRefresh={fetchData} />
+        </CardContent>
+      </Card>
 
       {/* Info sections */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
