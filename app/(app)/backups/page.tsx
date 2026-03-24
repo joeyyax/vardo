@@ -26,6 +26,10 @@ export default async function BackupsPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Backups</h1>
       </PageToolbar>
 
+      <p className="text-sm text-muted-foreground max-w-2xl">
+        Manage backup targets, schedules and retention for your organization. View and restore snapshots from backup history.
+      </p>
+
       <BackupPage scope="org" orgId={orgId} apps={appList} />
     </div>
   );
