@@ -210,7 +210,7 @@ export const memberships = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// Host: Organization Environment Variables (shared across apps)
+// Vardo: Organization Environment Variables (shared across apps)
 // ---------------------------------------------------------------------------
 
 export const orgEnvVars = pgTable(
@@ -231,7 +231,7 @@ export const orgEnvVars = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// Host: Organization Domains (additive domain list)
+// Vardo: Organization Domains (additive domain list)
 // ---------------------------------------------------------------------------
 
 export const orgDomains = pgTable(
@@ -251,7 +251,7 @@ export const orgDomains = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// Host: Deploy Keys
+// Vardo: Deploy Keys
 // ---------------------------------------------------------------------------
 
 export const deployKeys = pgTable("deploy_key", {
@@ -266,7 +266,7 @@ export const deployKeys = pgTable("deploy_key", {
 });
 
 // ---------------------------------------------------------------------------
-// Host: GitHub App Installations
+// Vardo: GitHub App Installations
 // ---------------------------------------------------------------------------
 
 export const githubAppInstallations = pgTable(
@@ -289,7 +289,7 @@ export const githubAppInstallations = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// Host: Projects (groups of related apps)
+// Vardo: Projects (groups of related apps)
 // ---------------------------------------------------------------------------
 
 export const projects = pgTable(
@@ -310,7 +310,7 @@ export const projects = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// Host: Apps (deployable Docker units)
+// Vardo: Apps (deployable Docker units)
 // ---------------------------------------------------------------------------
 
 export const apps = pgTable(
@@ -381,7 +381,7 @@ export const apps = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// Host: Deployments
+// Vardo: Deployments
 // ---------------------------------------------------------------------------
 
 export const deployments = pgTable("deployment", {
@@ -419,7 +419,7 @@ export const deployments = pgTable("deployment", {
 );
 
 // ---------------------------------------------------------------------------
-// Host: Environment Variables
+// Vardo: Environment Variables
 // ---------------------------------------------------------------------------
 
 export const envVars = pgTable(
@@ -442,7 +442,7 @@ export const envVars = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// Host: Domains
+// Vardo: Domains
 // ---------------------------------------------------------------------------
 
 export const domains = pgTable("domain", {
@@ -465,7 +465,7 @@ export const domains = pgTable("domain", {
 );
 
 // ---------------------------------------------------------------------------
-// Host: Group Environments (staging/preview environments spanning a group)
+// Vardo: Group Environments (staging/preview environments spanning a group)
 // ---------------------------------------------------------------------------
 
 export const groupEnvironments = pgTable(
@@ -488,7 +488,7 @@ export const groupEnvironments = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// Host: Environments
+// Vardo: Environments
 // ---------------------------------------------------------------------------
 
 export const environments = pgTable(
@@ -515,7 +515,7 @@ export const environments = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// Host: API Tokens
+// Vardo: API Tokens
 // ---------------------------------------------------------------------------
 
 export const apiTokens = pgTable(
@@ -540,7 +540,7 @@ export const apiTokens = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// Host: Activities (audit trail)
+// Vardo: Activities (audit trail)
 // ---------------------------------------------------------------------------
 
 export const activities = pgTable(
@@ -564,7 +564,7 @@ export const activities = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// Host: Tags (flat labels for filtering)
+// Vardo: Tags (flat labels for filtering)
 // ---------------------------------------------------------------------------
 
 export const tags = pgTable(
@@ -595,7 +595,7 @@ export const appTags = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// Host: Backup Targets (where backups are stored)
+// Vardo: Backup Targets (where backups are stored)
 // ---------------------------------------------------------------------------
 
 export const backupTargetTypeEnum = pgEnum("backup_target_type", [
@@ -637,7 +637,7 @@ export const backupTargets = pgTable("backup_target", {
 });
 
 // ---------------------------------------------------------------------------
-// Host: Backup Jobs (scheduled backup configurations)
+// Vardo: Backup Jobs (scheduled backup configurations)
 // ---------------------------------------------------------------------------
 
 export const backupStatusEnum = pgEnum("backup_status", [
@@ -703,7 +703,7 @@ export const backupJobVolumes = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// Host: Backup History (individual backup runs)
+// Vardo: Backup History (individual backup runs)
 // ---------------------------------------------------------------------------
 
 export const backups = pgTable("backup", {
@@ -727,7 +727,7 @@ export const backups = pgTable("backup", {
 });
 
 // ---------------------------------------------------------------------------
-// Host: Volumes (first-class volume records with integrated limits)
+// Vardo: Volumes (first-class volume records with integrated limits)
 // ---------------------------------------------------------------------------
 
 export const volumes = pgTable(
@@ -777,7 +777,7 @@ export const volumeLimits = pgTable("volume_limit", {
 });
 
 // ---------------------------------------------------------------------------
-// Host: Domain Checks (health monitoring history)
+// Vardo: Domain Checks (health monitoring history)
 // ---------------------------------------------------------------------------
 
 export const domainChecks = pgTable(
@@ -799,7 +799,7 @@ export const domainChecks = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// Host: Templates
+// Vardo: Templates
 // ---------------------------------------------------------------------------
 
 export const templateCategoryEnum = pgEnum("template_category", [
@@ -841,7 +841,7 @@ export const templates = pgTable("template", {
 });
 
 // ---------------------------------------------------------------------------
-// Host: Cron Jobs (scheduled tasks)
+// Vardo: Cron Jobs (scheduled tasks)
 // ---------------------------------------------------------------------------
 
 export const cronJobTypeEnum = pgEnum("cron_job_type", [
@@ -873,7 +873,7 @@ export const cronJobs = pgTable("cron_job", {
 });
 
 // ---------------------------------------------------------------------------
-// Host: Cron Job Runs (execution history)
+// Vardo: Cron Job Runs (execution history)
 // ---------------------------------------------------------------------------
 
 export const cronJobRunStatusEnum = pgEnum("cron_job_run_status", [
@@ -898,7 +898,7 @@ export const cronJobRuns = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// Host: App Transfers (move apps between organizations)
+// Vardo: App Transfers (move apps between organizations)
 // ---------------------------------------------------------------------------
 
 export const appTransfers = pgTable("app_transfer", {
@@ -926,7 +926,7 @@ export const appTransfers = pgTable("app_transfer", {
 });
 
 // ---------------------------------------------------------------------------
-// Host: Notification Channels
+// Vardo: Notification Channels
 // ---------------------------------------------------------------------------
 
 export const notificationChannels = pgTable(
@@ -946,7 +946,7 @@ export const notificationChannels = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// Host: Weekly Digest Settings (per-org)
+// Vardo: Weekly Digest Settings (per-org)
 // ---------------------------------------------------------------------------
 
 export const digestSettings = pgTable("digest_setting", {
@@ -1352,7 +1352,7 @@ export const digestSettingsRelations = relations(digestSettings, ({ one }) => ({
 }));
 
 // ---------------------------------------------------------------------------
-// Host: Invitations
+// Vardo: Invitations
 // ---------------------------------------------------------------------------
 
 export const invitationScopeEnum = pgEnum("invitation_scope", [

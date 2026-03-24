@@ -35,7 +35,7 @@ export function MobileSidebar({ currentOrgId, organizations }: MobileSidebarProp
             <div className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
               <FolderKanban className="size-4" />
             </div>
-            <SheetTitle className="text-lg font-semibold">Host</SheetTitle>
+            <SheetTitle className="text-lg font-semibold">Vardo</SheetTitle>
           </Link>
         </SheetHeader>
 
