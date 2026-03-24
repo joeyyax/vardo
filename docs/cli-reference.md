@@ -5,7 +5,7 @@
 ## Installation
 
 ```bash
-curl -fsSL https://get.vardo.dev/install | sudo bash
+curl -fsSL https://get.vardo.sh | sudo bash
 ```
 
 This is a one-shot command. If Vardo is already installed, re-running it opens the [interactive menu](#interactive-menu) instead.
@@ -137,7 +137,7 @@ export VARDO_DOMAIN=host.example.com
 export VARDO_BASE_DOMAIN=example.com
 export ACME_EMAIL=you@example.com
 
-curl -fsSL https://get.vardo.dev/install | sudo --preserve-env bash -s -- --unattended
+curl -fsSL https://get.vardo.sh | sudo --preserve-env bash -s -- --unattended
 ```
 
 ---
@@ -197,8 +197,8 @@ In development (no `COMPOSE_PROFILES`), only Postgres, Redis, cAdvisor, and Loki
 After installation, the summary screen prints:
 
 ```
-  Dashboard   https://host.example.com
-  Setup       https://host.example.com/onboarding
+  Dashboard   https://vardo.example.com
+  Setup       https://vardo.example.com/onboarding
 ```
 
 The setup wizard walks through:
@@ -208,3 +208,27 @@ The setup wizard walks through:
 3. Optionally connect a GitHub App for repo-based deployments
 
 You can skip the GitHub App setup and configure it later under **Settings → Integrations**.
+
+## Vardo CLI tool
+
+> **Planned** — Tracked in [#298](https://github.com/joeyyax/vardo/issues/298)
+
+A standalone `vardo` CLI is planned — separate from `install.sh` — that wraps the Vardo REST API for use in CI/CD pipelines, deployment scripts, and AI agents.
+
+Unlike `install.sh` (which manages the server infrastructure), the Vardo CLI is designed for day-to-day operations against an already-running instance:
+
+```bash
+# Trigger a deployment
+vardo deploy --app my-app --env production
+
+# Tail deployment logs
+vardo logs --app my-app --follow
+
+# List all apps in an org
+vardo apps list
+
+# Set environment variables
+vardo env set MY_APP --key DATABASE_URL --value "postgres://..."
+```
+
+The CLI will authenticate using API tokens (`vardo_`-prefixed) set via environment variable or a local config file. It is intended to be the primary interface for automated workflows once API token authentication ships (#172).

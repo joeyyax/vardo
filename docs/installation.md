@@ -13,12 +13,12 @@ Docker and Docker Compose are installed automatically by the install script if n
 ## One-Command Install
 
 ```bash
-curl -fsSL https://get.host.joeyyax.dev | sudo bash
+curl -fsSL https://get.vardo.sh | sudo bash
 ```
 
 The installer will prompt for three values:
 
-1. **Dashboard domain** — where the Vardo dashboard will be accessible (e.g. `host.example.com`)
+1. **Dashboard domain** — where the Vardo dashboard will be accessible (e.g. `vardo.example.com`)
 2. **Base domain** — the root domain used for auto-generated app subdomains (e.g. `example.com`)
 3. **ACME email** — the email address used for Let's Encrypt TLS certificates
 
@@ -44,10 +44,12 @@ Before or after installation, create two DNS records pointing to your server's I
 
 | Type | Name | Value |
 |------|------|-------|
-| A | `host.example.com` | `<server-ip>` |
+| A | `vardo.example.com` | `<server-ip>` |
 | A | `*.example.com` | `<server-ip>` |
 
 The first record routes traffic to the Vardo dashboard. The wildcard record allows Vardo to automatically create subdomains for deployed apps (e.g. `myapp.example.com`).
+
+> The dashboard domain (e.g. `vardo.example.com`) and base domain (e.g. `example.com`) can be the same root domain or different domains entirely.
 
 DNS propagation typically takes a few minutes but can take up to 48 hours depending on your provider.
 
@@ -72,19 +74,19 @@ The production Docker Compose stack includes these services:
 
 | Service | Description |
 |---------|-------------|
-| **host** | The Next.js application (port 3000 internal) |
-| **postgres** | PostgreSQL 17 database |
-| **redis** | Redis Stack server |
-| **traefik** | Reverse proxy with automatic TLS via Let's Encrypt |
-| **cadvisor** | Container resource monitoring |
-| **loki** | Log aggregation |
-| **promtail** | Log collector (ships Docker container logs to Loki) |
+| **vardo-frontend** | The Next.js application (port 3000 internal) |
+| **vardo-postgres** | PostgreSQL 17 database |
+| **vardo-redis** | Redis Stack server |
+| **vardo-traefik** | Reverse proxy with automatic TLS via Let's Encrypt |
+| **vardo-cadvisor** | Container resource monitoring |
+| **vardo-loki** | Log aggregation |
+| **vardo-promtail** | Log collector (ships Docker container logs to Loki) |
 
 ## Post-Install
 
 After installation completes:
 
-1. Visit `https://host.example.com` in your browser.
+1. Visit `https://vardo.example.com` in your browser.
 2. Create your account — the first user is automatically promoted to admin.
 3. Walk through the onboarding flow: optionally connect a GitHub App, then create your first organization.
 4. Configure a GitHub App in Settings if you want to deploy from GitHub repositories (optional).
@@ -126,10 +128,10 @@ Run `sudo bash /opt/vardo/install.sh doctor` to check system health. It verifies
 For automated provisioning, set environment variables and pass `--unattended`:
 
 ```bash
-VARDO_DOMAIN=host.example.com \
+VARDO_DOMAIN=vardo.example.com \
 VARDO_BASE_DOMAIN=example.com \
 ACME_EMAIL=you@example.com \
-curl -fsSL https://get.host.joeyyax.dev | sudo bash -s -- --unattended
+curl -fsSL https://get.vardo.sh | sudo bash -s -- --unattended
 ```
 
 ## Backups
@@ -137,8 +139,8 @@ curl -fsSL https://get.host.joeyyax.dev | sudo bash -s -- --unattended
 Back up these items regularly:
 
 - **`.env`** — Contains all secrets (database password, auth secret, encryption key). Located at `/opt/vardo/.env`.
-- **PostgreSQL data** — `docker compose -f /opt/vardo/docker-compose.yml exec -T postgres pg_dumpall -U host > backup.sql`
-- **Docker volumes** — The `host_projects` volume contains deployment data.
+- **PostgreSQL data** — `docker compose -f /opt/vardo/docker-compose.yml exec -T vardo-postgres pg_dumpall -U vardo > backup.sql`
+- **Docker volumes** — The `vardo_projects` volume contains deployment data.
 
 Migrations run automatically on app startup via Drizzle. There is no need to run migrations manually after updates.
 

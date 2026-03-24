@@ -14,6 +14,14 @@ Vardo deploys apps as Docker Compose stacks. Every deploy goes through the same 
 
 If `deployType` is `compose` but no compose file is found, Vardo auto-detects: it checks for a `Dockerfile` first, then falls back to Nixpacks.
 
+### Railpack buildpack support
+
+> **Planned** — Tracked in [#322](https://github.com/joeyyax/vardo/issues/322)
+
+Vardo will add support for [Railpacks](https://railpacks.com/) as an additional buildpack-based deploy type alongside Nixpacks. Railpacks offers faster builds for supported frameworks and first-class support for Ruby on Rails applications.
+
+When implemented, `railpack` will appear as a deploy type option alongside `nixpacks`. Vardo will run the Railpack CLI in the same way it currently invokes the Nixpacks CLI — auto-detecting the framework from the repository and producing a Docker image without requiring a Dockerfile.
+
 ## Source types
 
 **Git repo** — Vardo clones or pulls the repo at deploy time. Supports any git URL. For GitHub, it authenticates via GitHub App token when available, or falls back to an SSH deploy key.
@@ -216,7 +224,7 @@ Volume naming convention: `{appName}-{slot}_{volumeName}` — e.g. `myapp-blue_d
 Volumes are auto-detected:
 - **From compose files**: Named volumes declared in the compose `volumes:` section are registered in the database.
 - **From running containers**: After a successful deploy, Vardo inspects running containers and registers any mounted named volumes it hasn't seen before.
-- **From `host.toml`**: If the repo has a `host.toml` config file, volumes declared there are registered before deploy.
+- **From `vardo.yml`**: If the repo has a `vardo.yml` config file, volumes declared there are registered before deploy.
 
 Host bind mounts (paths starting with `/`, `./`, or `../`) are not allowed by default. The compose validator will reject them unless unsafe compose is explicitly enabled.
 
@@ -258,24 +266,26 @@ Apps in a project can declare dependencies on each other. When you deploy an ent
 
 This ensures that database apps deploy before the web apps that depend on them.
 
-## `host.toml` config file
+## `vardo.yml` config file (per-repo)
 
-Drop a `host.toml` in your repo root to configure deployment behavior as code:
+Drop a `vardo.yml` in your repo root to configure deployment behavior as code. This takes priority over equivalent settings stored in the database.
 
-```toml
-[project]
-rootDirectory = "backend"
+```yaml
+project:
+  rootDirectory: backend
 
-[runtime]
-port = 8080
+runtime:
+  port: 8080
 
-[[volume]]
-name = "data"
-mountPath = "/app/data"
+volumes:
+  - name: data
+    mountPath: /app/data
 
-[[env]]
-key = "NODE_ENV"
-value = "production"
+env:
+  - key: NODE_ENV
+    value: production
 ```
 
-Settings in `host.toml` take effect at deploy time. Env vars from the file only apply if the key isn't already set in the app's env vars (they don't override).
+Settings in `vardo.yml` take effect at deploy time. Env vars from the file only apply if the key isn't already set in the app's env vars (they don't override).
+
+See [Configuration](configuration.md) for the full `vardo.yml` reference.

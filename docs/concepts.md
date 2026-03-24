@@ -194,7 +194,9 @@ Backups can be downloaded directly from the dashboard or via the API. Restoring 
 
 ## Mesh Networking (Multi-Instance)
 
-The mesh feature connects multiple Vardo instances over encrypted tunnels, enabling you to manage apps across multiple servers from a single dashboard.
+> **Planned** — The mesh feature flag exists and the API surface is stubbed, but peer-to-peer WireGuard tunnel management and cross-instance project sync are not yet fully implemented.
+
+The mesh feature connects multiple Vardo instances over encrypted WireGuard tunnels, enabling you to manage apps across multiple servers from a single dashboard.
 
 With mesh enabled, instances can:
 - **Promote** an app from one instance to another (move production workload)
