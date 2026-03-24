@@ -1,5 +1,9 @@
 import type { NextConfig } from "next";
 import { execSync } from "child_process";
+import { config } from "dotenv";
+
+// Load .env from workspace root (env lives at root for docker-compose)
+config({ path: "../../.env" });
 
 let gitSha = "";
 try {
