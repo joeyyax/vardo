@@ -4,7 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { TopNav } from "@/components/layout/top-nav";
 import { CommandPalette } from "@/components/command-palette";
 import { NotificationListener } from "@/components/notification-listener";
-import { getCurrentOrg, getUserOrganizations } from "@/lib/auth/session";
+import { getCurrentOrg, getUserOrganizations, needsSecondFactor } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/config/features";
 import { SessionFooter } from "@/components/layout/session-footer";
 
@@ -31,6 +31,11 @@ export default async function AppLayout({
         </div>
       </div>
     );
+  }
+
+  // Enforce second factor for password-authenticated users
+  if (await needsSecondFactor()) {
+    redirect("/setup-2fa");
   }
 
   const orgData = await getCurrentOrg();

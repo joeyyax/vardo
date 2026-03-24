@@ -110,6 +110,35 @@ export async function requireOrg() {
 }
 
 /**
+ * Check if a password-authenticated user needs to set up TOTP.
+ * Returns true if the user has a credential (password) account but no TOTP.
+ * Passkeys are a separate auth method, not a second factor for passwords.
+ */
+export const needsSecondFactor = cache(async (): Promise<boolean> => {
+  const session = await getSession();
+  if (!session?.user?.id) return false;
+
+  // If the user already has TOTP enabled, they're good
+  if (session.user.twoFactorEnabled) return false;
+
+  const { account } = await import("@/lib/db/schema");
+
+  // Check if user signed up with email+password (credential provider)
+  const credentialAccount = await db.query.account.findFirst({
+    where: and(
+      eq(account.userId, session.user.id),
+      eq(account.providerId, "credential"),
+    ),
+  });
+
+  // No password account — nothing to enforce (magic link, OAuth, passkey)
+  if (!credentialAccount) return false;
+
+  // Password account without TOTP → must set it up
+  return true;
+});
+
+/**
  * Get all organizations the current user has access to.
  * Returns an empty array if not authenticated.
  */
