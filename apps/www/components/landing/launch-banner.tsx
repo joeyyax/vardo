@@ -12,7 +12,7 @@ export function LaunchBanner() {
           href="https://github.com/joeyyax/vardo"
           className="font-medium text-white transition-colors duration-150 hover:text-neutral-300"
         >
-          Follow along &rarr;
+          Follow along on GitHub &rarr;
         </Link>
       </div>
     </div>
