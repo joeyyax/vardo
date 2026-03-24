@@ -63,6 +63,7 @@ import { LogViewer, DeploymentLog, TerminalOutput, highlightLogLine, detectLogLe
 import dynamic from "next/dynamic";
 import { detectAppType } from "@/lib/ui/app-type";
 import { AppMetrics } from "./app-metrics";
+import { AppBackupHistory } from "@/components/backups/app-backup-history";
 
 const AppTerminal = dynamic(
   () => import("./app-terminal").then((m) => m.AppTerminal),
@@ -2049,6 +2050,11 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           <TabsTrigger value="metrics">
             Metrics
           </TabsTrigger>
+          {featureFlags?.backups !== false && (
+            <TabsTrigger value="backups">
+              Backups
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="deployments" className="pt-4 space-y-4">
@@ -2616,6 +2622,15 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         <TabsContent value="metrics" className="pt-4">
           <AppMetrics key={`metrics-${selectedEnvId}`} orgId={orgId} appId={app.id} environmentName={selectedEnv?.name} />
         </TabsContent>
+
+        {featureFlags?.backups !== false && (
+          <TabsContent value="backups" className="pt-4 space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Snapshots of this app&apos;s persistent volumes. Download or restore any backup.
+            </p>
+            <AppBackupHistory orgId={orgId} appId={app.id} />
+          </TabsContent>
+        )}
 
       </Tabs>
 

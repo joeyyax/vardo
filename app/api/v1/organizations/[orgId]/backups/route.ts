@@ -23,16 +23,16 @@ const createJobSchema = z.object({
   appIds: z.array(z.string()).min(1, "At least one app is required"),
   schedule: z.string().default("0 2 * * *"),
   enabled: z.boolean().default(true),
-  keepLast: z.number().int().positive().nullable().optional(),
-  keepDaily: z.number().int().positive().nullable().optional(),
-  keepWeekly: z.number().int().positive().nullable().optional(),
-  keepMonthly: z.number().int().positive().nullable().optional(),
+  keepLast: z.number().int().positive().nullable().default(1),
+  keepDaily: z.number().int().positive().nullable().default(7),
+  keepWeekly: z.number().int().positive().nullable().default(1),
+  keepMonthly: z.number().int().positive().nullable().default(1),
   notifyOnSuccess: z.boolean().default(false),
   notifyOnFailure: z.boolean().default(true),
 });
 
 // GET /api/v1/organizations/[orgId]/backups
-export async function GET(_request: NextRequest, { params }: RouteParams) {
+export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     if (!isFeatureEnabled("backups")) {
       return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
@@ -74,11 +74,15 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     });
 
     // Also fetch recent backup history across all jobs for this org
+    // Optional ?appId= filter for scoped views (project/app detail tabs)
+    const filterAppId = request.nextUrl.searchParams.get("appId");
     const jobIds = jobs.map((j) => j.id);
     const recentHistory =
       jobIds.length > 0
         ? await db.query.backups.findMany({
-            where: inArray(backups.jobId, jobIds),
+            where: filterAppId
+              ? and(inArray(backups.jobId, jobIds), eq(backups.appId, filterAppId))
+              : inArray(backups.jobId, jobIds),
             orderBy: [desc(backups.startedAt)],
             limit: 20,
             with: {

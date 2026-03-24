@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { PageToolbar } from "@/components/page-toolbar";
-import { BackupManager } from "./backup-manager";
+import { BackupPage } from "@/components/backups/backup-page";
 
 export default async function BackupsPage() {
   const orgData = await getCurrentOrg();
@@ -15,7 +15,6 @@ export default async function BackupsPage() {
 
   const orgId = orgData.organization.id;
 
-  // Fetch apps for the job creation form
   const appList = await db.query.apps.findMany({
     where: eq(apps.organizationId, orgId),
     columns: { id: true, name: true, displayName: true },
@@ -27,11 +26,7 @@ export default async function BackupsPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Backups</h1>
       </PageToolbar>
 
-      <p className="text-sm text-muted-foreground max-w-2xl">
-        Backups snapshot your app volumes to remote storage on a schedule. Each snapshot can be restored with one click. Create jobs to select which apps to back up and how often.
-      </p>
-
-      <BackupManager orgId={orgId} apps={appList} />
+      <BackupPage scope="org" orgId={orgId} apps={appList} />
     </div>
   );
 }
