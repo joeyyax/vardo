@@ -119,7 +119,7 @@ export async function buildProjectBundle(
     }));
 
   return {
-    sourceInstanceId: getInstanceId(),
+    sourceInstanceId: await getInstanceId(),
     project: {
       name: project.name,
       displayName: project.displayName,

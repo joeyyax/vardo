@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
     // Bootstrap local WireGuard (generates keypair if needed)
     const localPublicKey = await ensureHubConfig(HUB_IP);
 
-    const instanceId = getInstanceId();
+    const instanceId = await getInstanceId();
     const hostname = process.env.HOSTNAME || process.env.VARDO_DOMAIN || "unknown";
 
     // Generate a token the hub can use to call our API

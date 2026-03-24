@@ -5,7 +5,7 @@ import { twoFactor, magicLink } from "better-auth/plugins";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import * as schema from "@/lib/db/schema";
-import { DEFAULT_APP_NAME } from "@/lib/system-settings";
+import { DEFAULT_APP_NAME } from "@/lib/constants";
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
-import { DEFAULT_APP_NAME } from "@/lib/constants";
+import { DEFAULT_APP_NAME } from "@/lib/app-name";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";

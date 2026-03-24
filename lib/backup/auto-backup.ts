@@ -3,7 +3,7 @@
 //
 // Provides two capabilities:
 // 1. ensureHostBackupTarget() — on app startup, auto-creates a Host-level
-//    backup target from BACKUP_STORAGE_* env vars if none exists.
+//    backup target from config file or DB settings if none exists.
 // 2. ensureAutoBackupJob() — after deploy detects persistent volumes,
 //    auto-creates a daily backup job linked to the app.
 // ---------------------------------------------------------------------------
@@ -12,15 +12,16 @@ import { db } from "@/lib/db";
 import { backupTargets, backupJobs, backupJobApps, volumes } from "@/lib/db/schema";
 import { eq, and, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { getBackupStorageConfig } from "@/lib/system-settings";
 
 // ---------------------------------------------------------------------------
-// 1. Host-level backup target from env vars
+// 1. Host-level backup target from config
 // ---------------------------------------------------------------------------
 
 /**
- * Check if a Host-level backup target exists. If not, but BACKUP_STORAGE_*
- * env vars are configured, auto-create one. This is the global safety-net
- * target that any org can fall back to.
+ * Check if a Host-level backup target exists. If not, but backup storage
+ * is configured (via config file or DB), auto-create one. This is the
+ * global safety-net target that any org can fall back to.
  *
  * Returns the Host-level target if one exists (or was created), null otherwise.
  */
@@ -34,36 +35,29 @@ export async function ensureHostBackupTarget() {
     return existing;
   }
 
-  // Check env vars
-  const storageType = process.env.BACKUP_STORAGE_TYPE;
-  const bucket = process.env.BACKUP_STORAGE_BUCKET;
-  const region = process.env.BACKUP_STORAGE_REGION;
-  const endpoint = process.env.BACKUP_STORAGE_ENDPOINT;
-  const accessKey = process.env.BACKUP_STORAGE_ACCESS_KEY;
-  const secretKey = process.env.BACKUP_STORAGE_SECRET_KEY;
-
-  if (!storageType || !bucket || !accessKey || !secretKey) {
-    // Not enough config to create a target
+  // Use the canonical resolution chain: config file > DB > null
+  const storageConfig = await getBackupStorageConfig();
+  if (!storageConfig?.type || !storageConfig?.bucket || !storageConfig?.accessKey || !storageConfig?.secretKey) {
     return null;
   }
 
   // Validate storage type
   const validTypes = ["s3", "r2", "b2"] as const;
-  const type = storageType.toLowerCase() as (typeof validTypes)[number];
+  const type = storageConfig.type.toLowerCase() as (typeof validTypes)[number];
   if (!validTypes.includes(type)) {
     console.warn(
-      `[auto-backup] Invalid BACKUP_STORAGE_TYPE: ${storageType}. Must be one of: ${validTypes.join(", ")}`
+      `[auto-backup] Invalid backup storage type: ${storageConfig.type}. Must be one of: ${validTypes.join(", ")}`
     );
     return null;
   }
 
   // Build the S3-compatible config
   const config = {
-    bucket,
-    region: region || "auto",
-    accessKeyId: accessKey,
-    secretAccessKey: secretKey,
-    ...(endpoint ? { endpoint } : {}),
+    bucket: storageConfig.bucket,
+    region: storageConfig.region || "auto",
+    accessKeyId: storageConfig.accessKey,
+    secretAccessKey: storageConfig.secretKey,
+    ...(storageConfig.endpoint ? { endpoint: storageConfig.endpoint } : {}),
   } satisfies {
     bucket: string;
     region: string;
@@ -72,7 +66,7 @@ export async function ensureHostBackupTarget() {
     secretAccessKey: string;
   };
 
-  console.log(`[auto-backup] Creating Host-level backup target (${type}://${bucket})`);
+  console.log(`[auto-backup] Creating Host-level backup target (${type}://${storageConfig.bucket})`);
 
   const [target] = await db
     .insert(backupTargets)
