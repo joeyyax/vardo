@@ -9,16 +9,20 @@ const builtFor = [
 
 const notFor = [
   {
-    label: "you need Kubernetes-level orchestration",
-    aside: "We run Compose, not clusters.",
+    label: "you already have a DevOps team",
+    aside: "Then again — Vardo replaces a lot of what they're maintaining by hand.",
   },
   {
-    label: "you're building on serverless or edge",
-    aside: "Your containers stay running. That's the point.",
+    label: "you need scale-to-zero or auto-scaling",
+    aside: "We don't. But your containers are always warm. No cold starts, no spin-up latency.",
   },
   {
-    label: "you need a full CI/CD pipeline",
-    aside: "We deploy. Testing happens before we get involved.",
+    label: "you need a managed database",
+    aside: "Vardo runs apps, not data platforms. Your databases run as containers — but we're not Supabase.",
+  },
+  {
+    label: "you need edge compute",
+    aside: "We run on your servers. Put Cloudflare in front and you're covered for most things.",
   },
 ];
 
