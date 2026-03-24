@@ -1,19 +1,44 @@
+"use client";
+
 import Link from "next/link";
 import { TerminalBlock } from "./terminal-block";
+import { useState, useEffect } from "react";
+
+const verbs = ["Deploy", "Launch", "Build", "Ship", "Stage", "Scale"];
+
+function RotatingVerb() {
+  const [index, setIndex] = useState(0);
+  const [visible, setVisible] = useState(true);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setVisible(false);
+      setTimeout(() => {
+        setIndex((i) => (i + 1) % verbs.length);
+        setVisible(true);
+      }, 200);
+    }, 2500);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <span
+      className={`inline-block text-blue-500 transition-opacity duration-200 ${
+        visible ? "opacity-100" : "opacity-0"
+      }`}
+    >
+      {verbs[index]}
+    </span>
+  );
+}
 
 export function Hero() {
   return (
     <section className="relative overflow-hidden">
-      <div className="relative mx-auto flex min-h-[90vh] max-w-7xl items-center justify-center px-4 sm:px-6 lg:px-8">
-        <div className="w-full max-w-3xl text-center">
+      <div className="relative mx-auto flex min-h-[90vh] items-center justify-center px-4 sm:px-6 lg:px-8">
+        <div className="w-full text-center">
           <h1 className="text-5xl font-extrabold tracking-tight sm:text-6xl lg:text-7xl xl:text-8xl">
-            <span className="block text-white">
-              Deploy on{" "}
-              <span className="text-blue-500">your terms.</span>
-            </span>
-            <span className="mt-2 block text-3xl font-semibold text-neutral-400 sm:text-4xl lg:text-5xl xl:text-6xl">
-              Not someone else&apos;s.
-            </span>
+            <RotatingVerb /> on your terms.
           </h1>
           <p className="mx-auto mt-8 max-w-xl text-lg leading-relaxed text-neutral-300 sm:text-xl">
             Vardo is a self-hosted platform for deploying Docker apps. Push
