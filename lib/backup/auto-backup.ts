@@ -16,6 +16,7 @@ import { eq, and, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { createHash } from "crypto";
 import { getBackupStorageConfig } from "@/lib/system-settings";
+import { assertSafeName } from "@/lib/docker/validate";
 
 // ---------------------------------------------------------------------------
 // 1. Host-level backup target from config
@@ -99,6 +100,9 @@ function buildSystemDumpMeta(): { dumpCmd: string; restoreCmd: string } {
   const dbMatch = dbUrl.match(/^postgresql:\/\/([A-Za-z0-9_-]+):[^@]+@[^/]+\/([A-Za-z0-9_-]+)/);
   const user = dbMatch?.[1] || "host";
   const dbname = dbMatch?.[2] || "host";
+  assertSafeName(container);
+  assertSafeName(user);
+  assertSafeName(dbname);
   return {
     dumpCmd: `docker exec ${container} pg_dump -U ${user} ${dbname}`,
     restoreCmd: `docker exec -i ${container} psql -U ${user} ${dbname}`,

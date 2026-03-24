@@ -10,6 +10,8 @@ import {
   timestamp,
   unique,
   jsonb,
+  primaryKey,
+  check,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import type { ConfigSnapshot } from "@/lib/types/deploy-snapshot";
@@ -683,7 +685,7 @@ export const backupJobApps = pgTable(
       .notNull()
       .references(() => apps.id, { onDelete: "cascade" }),
   },
-  (t) => [unique("backup_job_app_uniq").on(t.backupJobId, t.appId)]
+  (t) => [primaryKey({ columns: [t.backupJobId, t.appId] })]
 );
 
 // Many-to-many: direct volume links for backup jobs (system volumes, etc.)
@@ -697,7 +699,7 @@ export const backupJobVolumes = pgTable(
       .notNull()
       .references(() => volumes.id, { onDelete: "cascade" }),
   },
-  (t) => [unique("backup_job_volume_uniq").on(t.backupJobId, t.volumeId)]
+  (t) => [primaryKey({ columns: [t.backupJobId, t.volumeId] })]
 );
 
 // ---------------------------------------------------------------------------
@@ -757,6 +759,7 @@ export const volumes = pgTable(
     unique("volume_app_mount_uniq").on(t.appId, t.mountPath),
     index("volume_app_id_idx").on(t.appId),
     index("volume_org_id_idx").on(t.organizationId),
+    check("volume_dump_requires_meta", sql`backup_strategy != 'dump' OR backup_meta IS NOT NULL`),
   ]
 );
 

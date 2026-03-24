@@ -158,7 +158,7 @@ async function backupVolumeDump(
   try {
     logFn(`Running dump: ${dumpCmd}`);
     await execFileAsync(
-      "sh",
+      "bash",
       ["-c", `set -o pipefail; ${dumpCmd} | gzip > "${dumpFile}"`],
       { timeout: 600_000 },
     );
@@ -489,7 +489,7 @@ export async function restoreBackup(
 
   const tmpDir = join(BACKUPS_DIR, `.tmp-restore-${nanoid(8)}`);
   await ensureDir(tmpDir);
-  const archivePath = join(tmpDir, strategy === "pg_dump" ? "dump.sql.gz" : "volume.tar.gz");
+  const archivePath = join(tmpDir, strategy === "dump" ? "dump.gz" : "volume.tar.gz");
 
   try {
     // 1. Download archive from storage
@@ -517,7 +517,7 @@ export async function restoreBackup(
       // restoreCmd receives the dump via stdin (e.g. "docker exec -i pg psql -U user db")
       log(`Restoring via: ${vol.backupMeta.restoreCmd}`);
       await execFileAsync(
-        "sh",
+        "bash",
         ["-c", `set -o pipefail; gunzip -c "${archivePath}" | ${vol.backupMeta.restoreCmd}`],
         { timeout: 600_000 },
       );
