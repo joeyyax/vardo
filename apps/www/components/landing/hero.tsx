@@ -16,18 +16,26 @@ function RotatingVerb() {
       setTimeout(() => {
         setIndex((i) => (i + 1) % verbs.length);
         setVisible(true);
-      }, 200);
+      }, 300);
     }, 2500);
     return () => clearInterval(interval);
   }, []);
 
+  // Measure the widest verb to prevent layout shift
   return (
-    <span
-      className={`inline-block text-blue-500 transition-opacity duration-200 ${
-        visible ? "opacity-100" : "opacity-0"
-      }`}
-    >
-      {verbs[index]}
+    <span className="relative inline-block text-blue-500">
+      {/* Invisible widest verb holds the space */}
+      <span className="invisible" aria-hidden="true">
+        {verbs.reduce((a, b) => (a.length >= b.length ? a : b))}
+      </span>
+      {/* Visible verb positioned on top */}
+      <span
+        className={`absolute inset-0 transition-all duration-300 ease-out ${
+          visible ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-2"
+        }`}
+      >
+        {verbs[index]}
+      </span>
     </span>
   );
 }
