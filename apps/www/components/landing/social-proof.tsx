@@ -5,10 +5,10 @@ export function SocialProof() {
   return (
     <Section>
       <div className="mx-auto max-w-2xl text-center">
-        <h2 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
+        <h2 className="text-3xl font-extrabold tracking-tight text-white sm:text-4xl lg:text-5xl">
           Fresh out of the oven
         </h2>
-        <p className="mx-auto mt-4 max-w-lg text-neutral-400">
+        <p className="mx-auto mt-5 max-w-lg text-lg text-neutral-400">
           Vardo just shipped its first release. The core is solid and
           we&apos;re building fast. Good time to jump in.
         </p>
