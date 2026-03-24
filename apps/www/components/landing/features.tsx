@@ -196,11 +196,19 @@ function TerminalChipIcon() {
   );
 }
 
-function ApiIcon() {
+function BracesIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+      <path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5a2 2 0 0 0 2 2h1" />
+      <path d="M16 3h1a2 2 0 0 1 2 2v5a2 2 0 0 0 2 2 2 2 0 0 0-2 2v5a2 2 0 0 1-2 2h-1" />
+    </svg>
+  );
+}
+
+function AnthropicIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor">
+      <path d="M17.3041 3.541h-3.6718l6.696 16.918H24Zm-10.6082 0L0 20.459h3.7442l1.3693-3.5527h7.0052l1.3693 3.5528h3.7442L10.5363 3.5409Zm-.3712 10.2232 2.2914-5.9456 2.2914 5.9456Z" />
     </svg>
   );
 }
@@ -352,9 +360,9 @@ const features: {
     ],
     icon: <CodeIcon className="h-6 w-6" />,
     tech: [
-      { name: "REST", icon: <ApiIcon /> },
+      { name: "REST", icon: <BracesIcon /> },
       { name: "CLI", icon: <TerminalChipIcon /> },
-      { name: "MCP", url: "https://modelcontextprotocol.io", icon: <ApiIcon /> },
+      { name: "MCP", url: "https://modelcontextprotocol.io", icon: <AnthropicIcon /> },
     ],
   },
 ];
