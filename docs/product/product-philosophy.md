@@ -1,6 +1,6 @@
 # Product Philosophy
 
-This product exists to make running applications feel calm, clear, and intentional — for both the developer and their users.
+This product exists to make running applications straightforward. Deploy, monitor, back up, scale — without needing to become an infrastructure specialist.
 
 It treats deployment as a solved problem, not a specialization.
 
@@ -9,8 +9,8 @@ It treats deployment as a solved problem, not a specialization.
 ## Core Belief
 
 **Simplicity builds confidence.
-Structure reduces mistakes.
-Good defaults create better outcomes.**
+Good defaults prevent mistakes.
+Ownership beats convenience.**
 
 Every feature should reinforce these ideas.
 
@@ -19,14 +19,14 @@ Every feature should reinforce these ideas.
 ## What This Product Is
 
 - A complete platform for deploying Docker applications
-- A single source of truth for your infrastructure
-- A calm alternative to managing servers manually
-- A system that respects real-world constraints
+- A single place to manage your apps, domains, backups, and monitoring
+- An alternative to managing servers manually or paying for PaaS lock-in
+- A system that works out of the box and gets out of the way
 
 It is not:
 - A Kubernetes abstraction
-- A noisy DevOps dashboard
-- A replacement for CI/CD pipelines
+- A DevOps dashboard
+- A CI/CD pipeline builder
 - A place to hide complexity behind magic
 
 ---
@@ -42,117 +42,104 @@ Each application follows a clear lifecycle:
 - Monitor
 - Back Up
 
-Apps never skip steps — they only move through them faster.
-
-This protects data, expectations, and uptime.
+Nothing skips a step — it just moves through faster.
 
 ---
 
-### 2. Infrastructure and Applications Are Different Things
+### 2. Infrastructure Disappears
 
-- Infrastructure is the server, the network, the storage
-- Applications are the code, the data, the domains
+Infrastructure should be set up once and forgotten. You shouldn't think about your reverse proxy, your SSL certificates, or your backup schedule after the initial setup.
 
-Infrastructure should be set up once and forgotten.
-Applications should be easy to deploy, update, and roll back.
-
-This separation keeps the system honest.
+Applications are what you care about. Vardo handles the rest.
 
 ---
 
-### 3. Status Is Visible, Not Implied
+### 3. Honest Status
 
 The system never pretends an app is healthy when it isn't.
 
-If something hasn't deployed, it's shown as not deployed.
-If something is failing health checks, it's shown as unhealthy.
-If a backup failed, it's shown as failed.
+If something hasn't deployed, it says so.
+If a health check is failing, it says so.
+If a backup failed, it says so.
 
 No fake green. No hidden errors.
 
 ---
 
-### 4. One Primary Action at a Time
+### 4. One Obvious Next Step
 
-At every stage, there is exactly one obvious next step.
-
-This reduces cognitive load and prevents mistakes.
+At every stage, there's one clear thing to do next.
 
 If a page has multiple competing primary actions, the design has failed.
 
 ---
 
-### 5. Backups Are Byproducts of Running Apps
+### 5. Backups Just Happen
 
-Backups happen because apps are running:
-- Volumes are snapshotted automatically
+Backups are a byproduct of running apps:
+- Volumes get snapshotted automatically
 - Retention policies prune old snapshots
 - Restores are one click
 
-Users do not manage backup infrastructure.
-They see a timeline of snapshots they can restore from.
+You don't manage backup infrastructure. You see a list of snapshots you can restore from.
 
 ---
 
-### 6. Imperfect Configuration Is Normal
+### 6. Start Simple, Refine Later
 
-Projects often start with missing details.
+Apps often start with incomplete configuration. That's fine.
 
 The system:
-- Allows "good enough" configuration to begin
-- Refines details through the setup wizard
-- Never blocks a deploy unnecessarily
-
-Precision is earned through use, not demanded upfront.
+- Lets "good enough" get you running
+- Refines details as you go
+- Doesn't block a deploy over a missing optional field
 
 ---
 
-### 7. Deployment Is Intentional. Rollback Is Instant.
+### 7. Deploy Is Intentional, Rollback Is Instant
 
-Only the operator:
-- Triggers deployments
-- Promotes between environments
-- Rolls back to previous versions
+Deployments require explicit action. Auto-deploy is opt-in.
+Rollbacks are one click and use the previous known-good state.
 
-This prevents accidental deploys and protects production.
+Nothing deploys by accident.
 
 ---
 
-### 8. Monitoring Is Built In, Not Bolted On
+### 8. Monitoring Is Built In
 
-The product does not require external monitoring tools.
+You don't need Grafana, Prometheus, or Datadog to know if your apps are running.
 
-- Metrics are collected automatically
-- Logs are aggregated by default
+- Metrics collected automatically
+- Logs aggregated by default
 - Health checks run continuously
 
-External tools can supplement, but they're not required.
+If you want deeper observability, the data is there to export.
 
 ---
 
-### 9. Migration Should Be Calm
+### 9. Portable by Default
 
-Users own their configuration.
-They can export it at any time.
-Moving to a new server is structured, not adversarial.
+Everything is exportable:
+- Config files for migration
+- Volume snapshots for data
+- API for automation
 
-A good migration is part of a good product.
+Moving to a new server is a documented, supported workflow — not a crisis.
 
 ---
 
-### 10. Automation Supports Judgment, Not Replaces It
+### 10. Automation Handles the Boring Parts
 
 Automation exists to:
-- Reduce busywork
-- Prevent mistakes
-- Improve consistency
+- Renew SSL certificates
+- Run scheduled backups
+- Monitor container health
+- Retry failed notifications
 
-Automation should never:
-- Deploy without intent
+Automation does not:
+- Deploy without your say-so
 - Delete data silently
-- Surprise the operator
-
-Human judgment remains central.
+- Make decisions you should make
 
 ---
 
@@ -160,10 +147,10 @@ Human judgment remains central.
 
 Before adding a feature, ask:
 
-- Does this make the current state clearer?
-- Does this reduce confusion or just add motion?
-- Does this respect real-world constraints?
-- Does this protect future-me from mistakes?
+- Does this make something simpler?
+- Does this reduce a decision the user has to make?
+- Does this work without configuration?
+- Would removing this make the product worse?
 
 If the answer is "no," the feature doesn't belong.
 
@@ -172,9 +159,9 @@ If the answer is "no," the feature doesn't belong.
 ## Summary
 
 This product is designed to make running applications feel:
-- Professional without being complex
+- Simple without being limited
 - Structured without being rigid
-- Calm without being passive
-- Flexible without being fragile
+- Reliable without being expensive
+- Yours without being burdensome
 
-If it ever feels stressful, confusing, or noisy, something has gone wrong.
+If it ever feels like you need to be an infrastructure expert to use it, something has gone wrong.

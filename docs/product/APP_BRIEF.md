@@ -2,11 +2,9 @@
 
 ## Purpose
 
-Vardo is a calm, opinionated platform for deploying and managing Docker applications without the operational overhead.
+Vardo is an opinionated, self-hosted platform for deploying and managing Docker applications. You bring a server, Vardo handles the rest — deployments, SSL, backups, monitoring, and multi-instance networking.
 
-It connects projects, deployments, backups, monitoring, and multi-instance management into a single, predictable workflow — without becoming an infrastructure-heavy tool or a Kubernetes alternative.
-
-Vardo is designed to **reduce operational complexity**, not maximize configurability.
+It does one thing well: **get your apps running and keep them running**, without requiring you to become an infrastructure specialist.
 
 ---
 
@@ -14,11 +12,11 @@ Vardo is designed to **reduce operational complexity**, not maximize configurabi
 
 Vardo is a **self-hosted deployment platform**.
 
-It is built around the reality that running applications follows a sequence:
+It handles the full lifecycle of running applications:
 
 **Set Up → Connect → Deploy → Monitor → Back Up → Scale**
 
-Vardo makes this lifecycle explicit and supports each stage with structure, defaults, and visibility — from the first install to multi-instance mesh networking.
+Each stage has sensible defaults. You configure what you want, skip what you don't. Everything works out of the box.
 
 ---
 
@@ -32,23 +30,23 @@ Vardo is not:
 - a CI/CD pipeline builder
 - a serverless framework
 
-Vardo does not attempt to abstract away Docker or replace existing infrastructure tools.
+Vardo runs Docker Compose on servers you control. It doesn't try to abstract away Docker or replace tools that already work.
 
 ---
 
 ## Core Principles
 
 ### 1. Defaults beat configuration
-Good defaults prevent mistakes better than unlimited options.
+Good defaults prevent mistakes better than unlimited options. Everything works without touching a config file.
 
-### 2. Calm is a feature
-Nothing should surprise, nag, alert unnecessarily, or break silently.
+### 2. You own everything
+Your server, your data, your config. Export it, move it, fork it. No lock-in, no vendor dependency.
 
 ### 3. Explicit beats implicit
-Deployments don't happen until triggered. Backups don't run until configured. Vardo does not assume.
+Deployments don't happen until triggered. Backups don't run until storage is configured. Vardo doesn't assume.
 
-### 4. Automation supports judgment
-Automation removes repetition; it does not replace decision-making.
+### 4. Automation handles the boring parts
+SSL renewal, backup scheduling, health monitoring — automated. Deployment decisions, rollbacks, scaling — yours.
 
 ### 5. Data is sacred
 Backups, logs, and deployment history are never hidden, altered, or removed without explicit intent.
@@ -85,23 +83,23 @@ Automatic HTTPS via Traefik and Let's Encrypt.
 
 - Wildcard DNS for automatic subdomains
 - Custom domains with DNS verification
-- SSL certificates issued and renewed automatically
+- Certificates issued and renewed automatically — zero maintenance
 
 ---
 
 ## Backups
 
-Vardo protects data automatically.
+Vardo handles backups so you don't have to think about them.
 
 ### How It Works
 - Apps with persistent volumes get daily snapshots by default
-- Snapshots are stored offsite in S3-compatible storage
+- Snapshots stored offsite in S3-compatible storage (R2, B2, S3)
 - Tiered retention: daily, weekly, monthly archives
 - One-click restore from any snapshot
 
 ### What's Backed Up
 - Everything in persistent volumes — databases, uploads, file storage
-- Container images are not included — they're pulled from your registry on deploy
+- Container images aren't included — they're pulled from your registry on deploy
 
 Backups run live. No downtime, no container restarts.
 
@@ -120,6 +118,8 @@ Connect multiple Vardo installations over encrypted WireGuard tunnels.
 - **Persistent** (production, staging, homelab) — always on, deploy targets
 - **Dev** (laptops, workstations) — ephemeral, connect outbound to a hub
 
+No Tailscale dependency. Pure WireGuard, self-contained.
+
 ---
 
 ## Configuration
@@ -129,24 +129,24 @@ All non-infrastructure configuration lives in two files:
 - `vardo.yml` — settings (shareable, safe to commit)
 - `vardo.secrets.yml` — keys and passwords (0600 permissions)
 
-Export from one instance, import on another. One portable artifact for migration.
+Export from one instance, import on another. One portable artifact for migration. No vendor lock-in.
 
 ---
 
 ## Monitoring
 
-Built-in observability without external tools.
+Built-in observability. No Grafana stack required.
 
 - Container metrics (CPU, memory, disk) via cAdvisor
 - Log aggregation via Loki
 - System health dashboard (services, resources, runtime)
 - Domain health monitoring with uptime tracking
 
+If you want deeper observability, the metrics are there to feed into your own tools.
+
 ---
 
 ## Notifications
-
-Vardo keeps users informed without being noisy.
 
 - Email, webhook, and push notification channels
 - Per-channel event filtering
@@ -157,7 +157,7 @@ Vardo keeps users informed without being noisy.
 
 ## Authentication
 
-Flexible, modern authentication.
+Modern auth out of the box.
 
 - Passkeys (WebAuthn)
 - Magic link
@@ -182,32 +182,25 @@ Everything in the UI is available programmatically.
 
 Vardo is built for:
 
-- indie developers
-- small teams
-- homelab operators
-- agencies managing client deployments
+- indie developers running their own apps
+- small teams that don't have (or want) a DevOps person
+- homelab operators who want a proper deployment tool
+- agencies managing client deployments across servers
 
-Especially people who:
-
-- want to own their infrastructure
-- are tired of PaaS lock-in
-- need something simpler than Kubernetes
-- want fewer decisions, not more options
+People who know how to build software but don't want to specialize in running it.
 
 ---
 
 ## Design Language
 
-- Quiet
-- Neutral
+- Clean
 - Functional
+- Honest
 - No novelty UI
 - No celebratory UX
 - No gamification
 
-Settings should be boring.
-Deployments should be clear.
-Monitoring may have light visual flair.
+Settings should be boring. Deployments should be obvious. Errors should be clear.
 
 ---
 
@@ -230,7 +223,7 @@ Pricing is:
 
 - predictable
 - flat
-- calm
+- transparent
 
 Vardo does not:
 
@@ -247,14 +240,14 @@ Limits exist only to prevent abuse, not punish growth.
 
 ## Summary
 
-Vardo exists to make deploying applications feel **predictable and contained**.
+Vardo exists to make deploying applications **simple and reliable**.
 
 When Vardo is working well:
 
-- users think less about their infrastructure
-- deployments are easier to reason about
-- backups feel inevitable
-- data feels safe
-- nothing is surprising
+- you think about your product, not your infrastructure
+- deployments are predictable
+- backups happen without you thinking about them
+- your data is safe and portable
+- nothing breaks silently
 
 That is the product.
