@@ -228,7 +228,7 @@ async function postPreviewComment(
       (d) => `| ${d.appName} | https://${d.domain} |`
     ),
     "",
-    "_Deployed by [Host](https://github.com/joeyyax/vardo)_",
+    "_Deployed by [Vardo](https://vardo.run)_",
   ];
 
   const response = await fetch(

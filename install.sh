@@ -4,7 +4,7 @@ set -euo pipefail
 # Vardo — Self-hosted PaaS
 # Install, update, diagnose, and manage your Vardo instance.
 #
-# Fresh install:  curl -fsSL https://get.host.joeyyax.dev | bash
+# Fresh install:  curl -fsSL https://get.vardo.run | bash
 # After install:  sudo bash /opt/vardo/install.sh
 
 # ── Constants ─────────────────────────────────────────────────────────────────
