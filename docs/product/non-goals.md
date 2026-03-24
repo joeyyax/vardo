@@ -109,7 +109,7 @@ It assumes:
 - the server is in your control
 - misuse is rare
 
-Designing primarily for hostile environments degrades the experience for everyone else.
+Designing primarily for abuse degrades the experience for everyone else.
 
 ---
 
