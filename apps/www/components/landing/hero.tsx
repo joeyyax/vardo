@@ -4,22 +4,30 @@ import Link from "next/link";
 import { TerminalBlock } from "./terminal-block";
 import { useState, useEffect } from "react";
 
-const verbs = ["Deploy", "Launch", "Build", "Ship", "Stage", "Scale"];
+const words = [
+  { text: "Deploy", color: "text-emerald-400" },
+  { text: "Launch", color: "text-sky-400" },
+  { text: "Build", color: "text-amber-400" },
+  { text: "Ship", color: "text-violet-400" },
+  { text: "Stage", color: "text-rose-400" },
+  { text: "Scale", color: "text-teal-400" },
+];
 
 function RotatingVerb() {
-  const [text, setText] = useState(verbs[0]);
+  const [text, setText] = useState(words[0].text);
   const [isDeleting, setIsDeleting] = useState(false);
   const [wordIndex, setWordIndex] = useState(0);
   const [showCursor, setShowCursor] = useState(true);
 
-  // Blinking cursor
+  const currentColor = words[wordIndex].color;
+
   useEffect(() => {
     const blink = setInterval(() => setShowCursor((v) => !v), 530);
     return () => clearInterval(blink);
   }, []);
 
   useEffect(() => {
-    const currentWord = verbs[wordIndex];
+    const currentWord = words[wordIndex].text;
 
     if (!isDeleting && text === currentWord) {
       const pause = setTimeout(() => setIsDeleting(true), 5000);
@@ -28,7 +36,7 @@ function RotatingVerb() {
 
     if (isDeleting && text === "") {
       setIsDeleting(false);
-      setWordIndex((i) => (i + 1) % verbs.length);
+      setWordIndex((i) => (i + 1) % words.length);
       return;
     }
 
@@ -45,12 +53,12 @@ function RotatingVerb() {
   }, [text, isDeleting, wordIndex]);
 
   return (
-    <span className="text-emerald-500">
+    <span className={`transition-colors duration-300 ${currentColor}`}>
       {text}
       <span
-        className={`inline-block w-[0.04em] bg-emerald-500 ml-0.5 ${
-          showCursor ? "opacity-100" : "opacity-0"
-        }`}
+        className={`inline-block w-[0.04em] ml-0.5 transition-colors duration-300 ${
+          currentColor.replace("text-", "bg-")
+        } ${showCursor ? "opacity-100" : "opacity-0"}`}
         style={{ height: "0.8em", verticalAlign: "baseline", marginBottom: "-0.05em" }}
         aria-hidden="true"
       />
@@ -64,16 +72,20 @@ export function Hero() {
       <div className="relative mx-auto flex min-h-[90vh] items-center justify-center px-4 sm:px-6 lg:px-8">
         <div className="w-full text-center">
           <h1 className="text-5xl font-extrabold tracking-tight sm:text-6xl lg:text-7xl xl:text-8xl">
-            <RotatingVerb /> on your terms.
+            <RotatingVerb />{" "}
+            <span className="text-neutral-300">on your terms.</span>
           </h1>
-          <p className="mx-auto mt-8 max-w-xl text-lg leading-relaxed text-neutral-300 sm:text-xl">
-            Vardo is a self-hosted platform for deploying Docker apps. Push
-            your code, get HTTPS, backups, and monitoring — without learning
-            Kubernetes or paying for PaaS.
+          <p className="mx-auto mt-8 max-w-2xl text-lg leading-relaxed text-neutral-400 sm:text-xl">
+            Vardo is a self-hosted platform for deploying Docker apps.
+            Push your code, get HTTPS, backups, and monitoring —{" "}
+            <span className="font-mono text-base text-neutral-300">
+              without learning Kubernetes
+            </span>{" "}
+            or paying for PaaS.
           </p>
           <div className="mx-auto mt-14 max-w-xl">
-            <p className="mb-3 text-sm font-medium text-neutral-500">
-              Install on any Ubuntu or Debian server in under five minutes
+            <p className="mb-3 text-sm text-neutral-500 font-mono tracking-wide">
+              ~ one command, five minutes
             </p>
             <TerminalBlock command="curl -fsSL https://vardo.run/install.sh | sudo bash" />
             <p className="mt-4 text-sm text-neutral-600">
