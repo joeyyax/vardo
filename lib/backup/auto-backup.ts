@@ -113,7 +113,7 @@ export async function ensureSystemBackupJob(targetId: string) {
       schedule: staggeredSchedule("vardo-system-db"),
       enabled: true,
       isSystem: true,
-      keepLast: 1,
+      keepLast: 2,
       keepDaily: 7,
       keepWeekly: 4,
       keepMonthly: 3,

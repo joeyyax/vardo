@@ -19,6 +19,7 @@ import { assertSafeName } from "@/lib/docker/validate";
 const execFileAsync = promisify(execFile);
 
 const BACKUPS_DIR = resolve(process.env.VARDO_BACKUPS_DIR || "./.host/backups");
+const PG_CONTAINER = process.env.VARDO_PG_CONTAINER || "vardo-postgres";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -75,7 +76,7 @@ async function verifyArchive(filePath: string, label: string): Promise<number> {
 
   // gzip -t validates the entire compressed stream
   try {
-    await execFileAsync("gzip", ["-t", filePath], { timeout: 60_000 });
+    await execFileAsync("gzip", ["-t", filePath], { timeout: 300_000 });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     throw new Error(`${label} archive is corrupt (gzip -t failed): ${msg}`);
@@ -390,11 +391,22 @@ export async function runSystemBackup(jobId: string): Promise<BackupResult[]> {
   const dumpFile = join(tmpDir, "vardo-db.sql.gz");
 
   try {
+    // Parse DATABASE_URL for credentials (default: host/host)
+    const dbUrl = process.env.DATABASE_URL || "";
+    const dbMatch = dbUrl.match(/^postgresql:\/\/([A-Za-z0-9_-]+):[^@]+@[^/]+\/([A-Za-z0-9_-]+)/);
+    const dbUser = dbMatch?.[1] || "host";
+    const dbName = dbMatch?.[2] || "host";
+
+    // Validate all shell-interpolated values are safe identifiers
+    assertSafeName(PG_CONTAINER);
+    assertSafeName(dbUser);
+    assertSafeName(dbName);
+
     // Run pg_dump inside the postgres container, pipe to gzip on the host
-    log("Running pg_dump on vardo-postgres");
+    log(`Running pg_dump on ${PG_CONTAINER}`);
     await execFileAsync(
       "sh",
-      ["-c", `docker exec vardo-postgres pg_dump -U host host | gzip > "${dumpFile}"`],
+      ["-c", `set -o pipefail; docker exec ${PG_CONTAINER} pg_dump -U ${dbUser} ${dbName} | gzip > "${dumpFile}"`],
       { timeout: 600_000 }, // 10 min
     );
 
@@ -425,7 +437,7 @@ export async function runSystemBackup(jobId: string): Promise<BackupResult[]> {
       })
       .where(eq(backups.id, backupId));
 
-    return [{
+    const successResults: BackupResult[] = [{
       backupId,
       appId: "",
       volumeName: "postgres",
@@ -434,6 +446,14 @@ export async function runSystemBackup(jobId: string): Promise<BackupResult[]> {
       storagePath: storageKey,
       durationMs,
     }];
+
+    // System backups have no org channel — log for now
+    // TODO: admin notification channel for system-level events
+    if (job.notifyOnSuccess) {
+      console.log(`[backup] System backup succeeded: ${job.name} (${sizeBytes} bytes)`);
+    }
+
+    return successResults;
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     log(`System backup failed: ${errorMsg}`);
@@ -449,7 +469,7 @@ export async function runSystemBackup(jobId: string): Promise<BackupResult[]> {
       })
       .where(eq(backups.id, backupId));
 
-    return [{
+    const failResults: BackupResult[] = [{
       backupId,
       appId: "",
       volumeName: "postgres",
@@ -459,6 +479,14 @@ export async function runSystemBackup(jobId: string): Promise<BackupResult[]> {
       error: errorMsg,
       durationMs,
     }];
+
+    // System backups have no org channel — log for now
+    // TODO: admin notification channel for system-level events
+    if (job.notifyOnFailure) {
+      console.error(`[backup] System backup FAILED: ${job.name} — ${errorMsg}`);
+    }
+
+    return failResults;
   } finally {
     try {
       await rm(tmpDir, { recursive: true, force: true });
@@ -630,4 +658,76 @@ export async function downloadBackupToTemp(
   const storage = createBackupStorage(backup.target);
   await storage.download(backup.storagePath, destPath);
   return destPath;
+}
+
+/**
+ * Restore a system database backup by downloading the sql.gz and piping
+ * it into psql inside the postgres container.
+ */
+export async function restoreSystemBackup(
+  backupId: string,
+): Promise<{ success: boolean; log: string }> {
+  const backup = await db.query.backups.findFirst({
+    where: eq(backups.id, backupId),
+    with: { target: true },
+  });
+
+  if (!backup) throw new Error(`Backup not found: ${backupId}`);
+  if (!backup.storagePath) throw new Error("Backup has no storage path");
+
+  const storage = createBackupStorage(backup.target);
+  const logLines: string[] = [];
+  const log = (msg: string) => {
+    logLines.push(`[${new Date().toISOString()}] ${msg}`);
+  };
+
+  const tmpDir = join(BACKUPS_DIR, `.tmp-restore-${nanoid(8)}`);
+  await ensureDir(tmpDir);
+  const archivePath = join(tmpDir, "vardo-db.sql.gz");
+
+  try {
+    log(`Downloading backup from ${backup.storagePath}`);
+    await storage.download(backup.storagePath, archivePath);
+    log("Download complete");
+
+    await verifyArchive(archivePath, "Downloaded system backup");
+    if (backup.checksum) {
+      const downloadChecksum = `sha256:${await checksumFile(archivePath)}`;
+      if (downloadChecksum !== backup.checksum) {
+        throw new Error(
+          `Checksum mismatch — expected ${backup.checksum}, got ${downloadChecksum}. Archive may be corrupt.`
+        );
+      }
+      log("Checksum verified");
+    }
+
+    // Parse DATABASE_URL for credentials
+    const dbUrl = process.env.DATABASE_URL || "";
+    const dbMatch = dbUrl.match(/^postgresql:\/\/([A-Za-z0-9_-]+):[^@]+@[^/]+\/([A-Za-z0-9_-]+)/);
+    const dbUser = dbMatch?.[1] || "host";
+    const dbName = dbMatch?.[2] || "host";
+    assertSafeName(PG_CONTAINER);
+    assertSafeName(dbUser);
+    assertSafeName(dbName);
+
+    log(`Restoring to ${PG_CONTAINER} database ${dbName}`);
+    await execFileAsync(
+      "sh",
+      ["-c", `set -o pipefail; gunzip -c "${archivePath}" | docker exec -i ${PG_CONTAINER} psql -U ${dbUser} ${dbName}`],
+      { timeout: 600_000 },
+    );
+    log("Restore complete");
+
+    return { success: true, log: logLines.join("\n") };
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    log(`Restore failed: ${errorMsg}`);
+    return { success: false, log: logLines.join("\n") };
+  } finally {
+    try {
+      await rm(tmpDir, { recursive: true, force: true });
+    } catch {
+      // best effort
+    }
+  }
 }
