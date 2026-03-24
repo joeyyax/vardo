@@ -7,35 +7,55 @@ import { useState, useEffect } from "react";
 const verbs = ["Deploy", "Launch", "Build", "Ship", "Stage", "Scale"];
 
 function RotatingVerb() {
-  const [index, setIndex] = useState(0);
-  const [visible, setVisible] = useState(true);
+  const [text, setText] = useState(verbs[0]);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [wordIndex, setWordIndex] = useState(0);
+  const [showCursor, setShowCursor] = useState(true);
 
+  // Blinking cursor
   useEffect(() => {
-    const interval = setInterval(() => {
-      setVisible(false);
-      setTimeout(() => {
-        setIndex((i) => (i + 1) % verbs.length);
-        setVisible(true);
-      }, 300);
-    }, 2500);
-    return () => clearInterval(interval);
+    const blink = setInterval(() => setShowCursor((v) => !v), 530);
+    return () => clearInterval(blink);
   }, []);
 
-  // Measure the widest verb to prevent layout shift
+  useEffect(() => {
+    const currentWord = verbs[wordIndex];
+
+    if (!isDeleting && text === currentWord) {
+      // Pause at full word before deleting
+      const pause = setTimeout(() => setIsDeleting(true), 2000);
+      return () => clearTimeout(pause);
+    }
+
+    if (isDeleting && text === "") {
+      // Move to next word
+      setIsDeleting(false);
+      setWordIndex((i) => (i + 1) % verbs.length);
+      return;
+    }
+
+    const speed = isDeleting ? 60 : 100;
+    const timeout = setTimeout(() => {
+      if (isDeleting) {
+        setText(currentWord.slice(0, text.length - 1));
+      } else {
+        setText(currentWord.slice(0, text.length + 1));
+      }
+    }, speed);
+
+    return () => clearTimeout(timeout);
+  }, [text, isDeleting, wordIndex]);
+
   return (
-    <span className="relative inline-block text-blue-500">
-      {/* Invisible widest verb holds the space */}
-      <span className="invisible" aria-hidden="true">
-        {verbs.reduce((a, b) => (a.length >= b.length ? a : b))}
-      </span>
-      {/* Visible verb positioned on top */}
+    <span className="text-blue-500">
+      {text}
       <span
-        className={`absolute inset-0 transition-all duration-300 ease-out ${
-          visible ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-2"
+        className={`inline-block w-[0.04em] bg-blue-500 ml-0.5 ${
+          showCursor ? "opacity-100" : "opacity-0"
         }`}
-      >
-        {verbs[index]}
-      </span>
+        style={{ height: "0.8em", verticalAlign: "baseline", marginBottom: "-0.05em" }}
+        aria-hidden="true"
+      />
     </span>
   );
 }
