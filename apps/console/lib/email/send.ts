@@ -74,8 +74,8 @@ async function sendViaMailpace(
 
   if (!res.ok) {
     const body = await res.text();
-    console.error(`[email] Mailpace error: ${res.status} ${body}`);
-    return { success: false, error: body };
+    console.error(`[email] Mailpace error: ${res.status} ${body.slice(0, 200)}`);
+    return { success: false, error: `Mailpace: ${res.status}` };
   }
 
   return { success: true };
@@ -109,8 +109,8 @@ async function sendViaResend(
 
   if (!res.ok) {
     const body = await res.text();
-    console.error(`[email] Resend error: ${res.status} ${body}`);
-    return { success: false, error: body };
+    console.error(`[email] Resend error: ${res.status} ${body.slice(0, 200)}`);
+    return { success: false, error: `Resend: ${res.status}` };
   }
 
   return { success: true };
@@ -146,8 +146,8 @@ async function sendViaPostmark(
 
   if (!res.ok) {
     const body = await res.text();
-    console.error(`[email] Postmark error: ${res.status} ${body}`);
-    return { success: false, error: body };
+    console.error(`[email] Postmark error: ${res.status} ${body.slice(0, 200)}`);
+    return { success: false, error: `Postmark: ${res.status}` };
   }
 
   return { success: true };
@@ -163,12 +163,15 @@ async function sendViaSmtp(
 ): Promise<SendResult> {
   if (!config.smtpHost) return { success: false, error: "SMTP host not configured" };
 
-  const nodemailer = await import("nodemailer");
+  const nodemailerModule = await import("nodemailer");
+  const nodemailer = nodemailerModule.default ?? nodemailerModule;
 
+  const port = config.smtpPort || 587;
   const transport = nodemailer.createTransport({
     host: config.smtpHost,
-    port: config.smtpPort || 587,
-    secure: config.smtpPort === 465,
+    port,
+    secure: port === 465,
+    requireTLS: port !== 465, // Enforce STARTTLS on non-implicit-TLS ports
     auth: config.smtpUser
       ? { user: config.smtpUser, pass: config.smtpPass }
       : undefined,
