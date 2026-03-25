@@ -993,11 +993,16 @@ generate_env() {
     instance_id="${hex:0:8}-${hex:8:4}-4${hex:13:3}-$(printf '%x' $(( 0x${hex:16:2} & 0x3f | 0x80 )))${hex:18:2}-${hex:20:12}"
   fi
 
+  # Detect Docker group GID for socket access
+  local docker_gid
+  docker_gid=$(getent group docker 2>/dev/null | cut -d: -f3 || echo "999")
+
   if [[ "$VARDO_ROLE" == "development" ]]; then
     # Dev .env — minimal, no TLS/domain config
     cat > "$env_file" <<EOF
 VARDO_ROLE=development
 VARDO_INSTANCE_ID=$instance_id
+DOCKER_GID=$docker_gid
 DB_PASSWORD=$db_pass
 BETTER_AUTH_SECRET=$auth_secret
 ENCRYPTION_MASTER_KEY=$enc_key
@@ -1009,6 +1014,7 @@ EOF
 VARDO_ROLE=staging
 VARDO_INSTANCE_ID=$instance_id
 COMPOSE_PROFILES=production
+DOCKER_GID=$docker_gid
 DB_PASSWORD=$db_pass
 BETTER_AUTH_SECRET=$auth_secret
 ENCRYPTION_MASTER_KEY=$enc_key
@@ -1024,6 +1030,7 @@ EOF
 VARDO_ROLE=${VARDO_ROLE}
 VARDO_INSTANCE_ID=$instance_id
 COMPOSE_PROFILES=production
+DOCKER_GID=$docker_gid
 VARDO_DOMAIN=${VARDO_DOMAIN}
 VARDO_BASE_DOMAIN=${VARDO_BASE_DOMAIN}
 DB_PASSWORD=$db_pass
