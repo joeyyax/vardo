@@ -360,7 +360,7 @@ export function LinkedAccounts() {
 export function NoPasswordNotice() {
   return (
     <Card className="squircle rounded-lg border-dashed">
-      <CardContent className="py-4 px-5">
+      <CardContent className="py-3 px-5">
         <p className="text-sm text-muted-foreground">
           <span className="font-medium text-foreground">Looking for passwords?</span>{" "}
           Vardo uses passwordless authentication only. This platform manages
