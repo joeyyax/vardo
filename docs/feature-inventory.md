@@ -117,6 +117,21 @@ Last updated: 2026-03-25
 - **Docker Compose validation** — syntax checking and compatibility fixes
 - **Git SSH key management** — deploy keys for private repos
 
+## Install Script (install.sh)
+
+- **Supported platforms** — Ubuntu 22.04+, Debian 12+ (full automated package installation via apt)
+- **Dev mode** — macOS with Docker Desktop
+- **Detected but not yet supported** — Fedora, RHEL, Rocky, Alma, Arch, Alpine. The script recognizes these distros and reports tier/version but the package manager adapters are stubbed with warnings. Users on these distros must install Docker and dependencies manually.
+- **WSL** — detected but untested
+- **Instance roles** — production, staging, development
+- **Modes** — install, update, doctor, uninstall (with --purge)
+- **Flags** — `--unattended`, `--yes`, `--purge`, `--dry-run`, `--verbose`
+- **Swap setup** — creates 2 GB swapfile if RAM < 4 GB (Linux only)
+- **Docker log rotation** — 10 MB x 3 files per container
+- **DNS validation** — checks domain resolution before routing
+- **Health checks** — waits up to 60 s for `/api/health`
+- **Template seeding** — loads built-in service templates on first install
+
 ## API Surface
 
 106 endpoints across:
