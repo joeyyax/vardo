@@ -1321,13 +1321,6 @@ run_env_migrations() {
 do_update() {
   [[ "$PLATFORM" != "macos" ]] && check_root
 
-  # --rebuild-only: re-exec'd after git pull to use updated script
-  if [[ "${1:-}" == "--rebuild-only" ]]; then
-    cd "$VARDO_DIR"
-    # Jump straight to rebuild
-    _do_rebuild
-    return
-  fi
 
   echo ""
   warn "The Vardo dashboard will be briefly unavailable during the update."
@@ -1433,11 +1426,8 @@ do_update() {
     fail "git pull failed — resolve conflicts manually in $VARDO_DIR. Run 'cd $VARDO_DIR && git status' to see what went wrong."
   fi
 
-  # Re-exec with updated install.sh to pick up any script changes
-  if [ "${VARDO_REEXEC:-}" != "1" ]; then
-    export VARDO_REEXEC=1
-    exec bash "$VARDO_DIR/install.sh" update --rebuild-only "$@"
-  fi
+  # Run env migrations from the updated code
+  run_env_migrations
 
   _do_rebuild
 }
