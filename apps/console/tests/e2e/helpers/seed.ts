@@ -5,24 +5,21 @@
  *
  * 1. Admin user
  *    - email: admin@host.test (or TEST_USER_EMAIL env var)
- *    - password: TestPassword123! (or TEST_USER_PASSWORD env var)
+ *    - Created via the setup wizard (magic link flow)
  *
  * 2. Organization
  *    - name: "Test Org"
  *    - The admin user must be a member
  *
- * You can create this manually via the onboarding flow, or automate it
- * with a seed script that calls the Better Auth API directly:
+ * Vardo uses passwordless auth (passkey, magic link, GitHub OAuth).
+ * For e2e test automation, a test-mode auth bypass is needed:
  *
- *   POST /api/auth/sign-up/email
- *   { email, password, name }
- *
- * TODO: Implement programmatic seeding via a setup script.
+ * TODO: Implement /api/auth/test-login endpoint that creates a session
+ * directly when NODE_ENV=test. This avoids email dependency in CI.
  */
 
 export const TEST_USER = {
   email: process.env.TEST_USER_EMAIL ?? "admin@host.test",
-  password: process.env.TEST_USER_PASSWORD ?? "TestPassword123!",
   name: "Test Admin",
 };
 

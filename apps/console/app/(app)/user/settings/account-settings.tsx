@@ -9,10 +9,7 @@ import {
   Plus,
   Key,
   KeyRound,
-  Mail,
   Github,
-  ShieldCheck,
-  Info,
 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { Button } from "@/components/ui/button";
@@ -93,51 +90,6 @@ export function AccountInfo() {
         </div>
       </CardContent>
     </Card>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Sign-in Methods + Why No Passwords (informational footer)
-// ---------------------------------------------------------------------------
-
-export function AuthInfo() {
-  return (
-    <div className="space-y-6">
-      <div className="space-y-3">
-        <h3 className="text-sm font-medium">Available sign-in methods</h3>
-        <ul className="text-sm space-y-2">
-          <li className="flex items-start gap-2.5">
-            <KeyRound className="size-4 text-muted-foreground shrink-0 mt-0.5" aria-hidden="true" />
-            <span className="text-muted-foreground">
-              <span className="font-medium text-foreground">Passkey</span>{" "}
-              — Face ID, Touch ID, or a hardware security key
-            </span>
-          </li>
-          <li className="flex items-start gap-2.5">
-            <Mail className="size-4 text-muted-foreground shrink-0 mt-0.5" aria-hidden="true" />
-            <span className="text-muted-foreground">
-              <span className="font-medium text-foreground">Magic link</span>{" "}
-              — a one-time sign-in link sent to your email
-            </span>
-          </li>
-          <li className="flex items-start gap-2.5">
-            <Github className="size-4 text-muted-foreground shrink-0 mt-0.5" aria-hidden="true" />
-            <span className="text-muted-foreground">
-              <span className="font-medium text-foreground">GitHub</span>{" "}
-              — sign in with your GitHub account
-            </span>
-          </li>
-        </ul>
-      </div>
-      <div className="flex gap-2.5">
-        <ShieldCheck className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
-        <p className="text-sm text-muted-foreground">
-          Vardo doesn&apos;t support password authentication. This platform
-          manages infrastructure — containers, secrets, SSH access — so every
-          sign-in method is phishing-resistant by design.
-        </p>
-      </div>
-    </div>
   );
 }
 
@@ -397,6 +349,14 @@ export function LinkedAccounts() {
           </div>
         )}
       </CardContent>
+      <div className="px-6 pb-6 pt-2">
+        <p className="text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">Looking for passwords?</span>{" "}
+          Vardo uses passwordless authentication only. This platform manages
+          infrastructure — containers, secrets, SSH access — so every sign-in
+          method is phishing-resistant by design.
+        </p>
+      </div>
     </Card>
   );
 }
