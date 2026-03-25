@@ -23,11 +23,11 @@ async function handler(request: NextRequest) {
     // Prefer DB config (setup-wizard deployments), then GITHUB_WEBHOOK_SECRET env var.
     // No fallback to BETTER_AUTH_SECRET — secret isolation must be maintained.
     const githubConfig = await getGitHubAppConfig();
-    const secret = githubConfig?.webhookSecret || process.env.GITHUB_WEBHOOK_SECRET;
+    const secret = githubConfig?.webhookSecret;
     if (!secret) {
-      log.error("GITHUB_WEBHOOK_SECRET is not set — webhook endpoint is disabled");
+      log.error("GitHub webhook secret not configured — set it in Settings > GitHub");
       return NextResponse.json(
-        { error: "Webhook not configured: GITHUB_WEBHOOK_SECRET is required" },
+        { error: "Webhook not configured: GitHub webhook secret is required" },
         { status: 500 }
       );
     }

@@ -25,6 +25,7 @@ AUTO_YES=false
 PURGE=false
 DRY_RUN=false
 VERBOSE=false
+FORCE_UPDATE=false
 COMMAND=""
 PLATFORM=""
 VARDO_ROLE=""
@@ -1068,13 +1069,6 @@ ACME_EMAIL=${ACME_EMAIL}
 ZEROSSL_EAB_KID=${ZEROSSL_EAB_KID:-}
 ZEROSSL_EAB_HMAC=${ZEROSSL_EAB_HMAC:-}
 TRAEFIK_DASHBOARD_AUTH=$traefik_auth
-
-# GitHub App (optional — configure in setup wizard or Settings)
-GITHUB_APP_ID=
-GITHUB_APP_SLUG=
-GITHUB_CLIENT_ID=
-GITHUB_CLIENT_SECRET=
-GITHUB_PRIVATE_KEY=
 EOF
   fi
 
@@ -1362,9 +1356,13 @@ do_update() {
   local incoming
   incoming=$(git log HEAD..origin/"$current_branch" --oneline 2>/dev/null || true)
 
-  if [ -z "$incoming" ]; then
-    log "Already up to date"
+  if [ -z "$incoming" ] && ! $FORCE_UPDATE; then
+    log "Already up to date (use --force to rebuild anyway)"
     return
+  fi
+
+  if [ -z "$incoming" ] && $FORCE_UPDATE; then
+    info "No new commits, but --force specified — rebuilding"
   fi
 
   local commit_count
@@ -1907,6 +1905,9 @@ parse_args() {
         ;;
       --verbose)
         VERBOSE=true
+        ;;
+      --force|-f)
+        FORCE_UPDATE=true
         ;;
       --help|-h)
         echo "Usage: install.sh [command] [flags]"
