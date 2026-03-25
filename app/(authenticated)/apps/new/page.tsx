@@ -36,7 +36,7 @@ export default async function NewAppPage({
     color: p.color || "#6366f1",
   }));
 
-  // Strip symbol properties from TOML parser output
+  // Strip non-serialisable properties before passing to client component
   const cleanTemplates = JSON.parse(JSON.stringify(templateList));
 
   return (
