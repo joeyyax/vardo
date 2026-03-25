@@ -30,7 +30,9 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
-RUN addgroup --system --gid 1001 nodejs && \
+# Install runtime dependencies — git for repo cloning, docker-cli for container management
+RUN apk add --no-cache git docker-cli && \
+    addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 --ingroup nodejs nextjs && \
     mkdir -p /var/lib/vardo/projects && \
     chown nextjs:nodejs /var/lib/vardo/projects
