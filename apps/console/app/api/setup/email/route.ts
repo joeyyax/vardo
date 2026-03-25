@@ -6,7 +6,7 @@ import { getEmailProviderConfig, setSystemSetting } from "@/lib/system-settings"
 import { maskSecret, isMasked } from "@/lib/mask-secrets";
 
 const emailSchema = z.object({
-  provider: z.enum(["smtp", "mailpace", "resend"]),
+  provider: z.enum(["smtp", "mailpace", "resend", "postmark"]),
   smtpHost: z.string().optional(),
   smtpPort: z.number().int().positive().optional(),
   smtpUser: z.string().optional(),

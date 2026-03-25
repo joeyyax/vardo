@@ -29,7 +29,7 @@ export type VardoConfig = {
     sessionDurationDays?: number;
   };
   email?: {
-    provider?: "smtp" | "mailpace" | "resend";
+    provider?: "smtp" | "mailpace" | "resend" | "postmark";
     fromEmail?: string;
     fromName?: string;
     smtpHost?: string;

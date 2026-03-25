@@ -19,7 +19,7 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_GIT_SHA: gitSha,
   },
-  serverExternalPackages: ["node-ical"],
+  serverExternalPackages: ["node-ical", "nodemailer"],
   images: {
     remotePatterns: [
       {
