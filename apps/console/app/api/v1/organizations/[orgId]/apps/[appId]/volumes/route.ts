@@ -21,7 +21,7 @@ const volumeSchema = z.object({
   description: z.string().optional(),
   maxSizeBytes: z.number().int().positive().nullable().optional(),
   warnAtPercent: z.number().int().min(1).max(100).optional(),
-});
+}).strict();
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;

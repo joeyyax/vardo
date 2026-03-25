@@ -18,11 +18,11 @@ const createDomainSchema = z.object({
   serviceName: z.string().optional(),
   port: z.number().int().positive().optional(),
   certResolver: z.string().default("le"),
-});
+}).strict();
 
 const deleteDomainSchema = z.object({
   id: z.string().min(1),
-});
+}).strict();
 
 // POST /api/v1/organizations/[orgId]/apps/[appId]/domains
 export async function POST(request: NextRequest, { params }: RouteParams) {
@@ -76,7 +76,7 @@ const updateDomainSchema = z.object({
   id: z.string().min(1),
   domain: z.string().min(1).optional(),
   port: z.number().int().positive().nullable().optional(),
-});
+}).strict();
 
 // PATCH /api/v1/organizations/[orgId]/apps/[appId]/domains
 export async function PATCH(request: NextRequest, { params }: RouteParams) {

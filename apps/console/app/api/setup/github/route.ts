@@ -12,7 +12,7 @@ const githubSchema = z.object({
   clientSecret: z.string().optional(),
   privateKey: z.string().optional(),
   webhookSecret: z.string().optional(),
-});
+}).strict();
 
 export async function GET(request: NextRequest) {
   await requireAdminAuth(request);

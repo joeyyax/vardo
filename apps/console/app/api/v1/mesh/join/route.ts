@@ -19,7 +19,7 @@ const joinSchema = z.object({
   endpoint: z.string().nullable().optional(),
   /** Token the joining instance provides for the hub to call its API. */
   outboundToken: z.string().optional(),
-});
+}).strict();
 
 /**
  * POST /api/v1/mesh/join — join the mesh using an invite code.

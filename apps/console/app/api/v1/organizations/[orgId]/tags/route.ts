@@ -15,7 +15,7 @@ type RouteParams = {
 const createTagSchema = z.object({
   name: z.string().min(1, "Name is required").max(100),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Invalid hex color").optional(),
-});
+}).strict();
 
 // GET /api/v1/organizations/[orgId]/tags
 export async function GET(_request: NextRequest, { params }: RouteParams) {

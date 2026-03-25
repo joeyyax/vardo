@@ -13,7 +13,7 @@ type RouteParams = {
 const patchSchema = z.object({
   ignorePatterns: z.array(z.string().min(1).max(200)).max(100).optional(),
   description: z.string().max(500).optional(),
-});
+}).strict();
 
 /**
  * PATCH — Update volume metadata (ignore patterns, description).

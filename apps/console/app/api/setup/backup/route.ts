@@ -12,7 +12,7 @@ const backupSchema = z.object({
   endpoint: z.string().optional(),
   accessKey: z.string().optional(),
   secretKey: z.string().optional(),
-});
+}).strict();
 
 export async function GET(request: NextRequest) {
   await requireAdminAuth(request);

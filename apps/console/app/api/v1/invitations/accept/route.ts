@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { invitations, memberships } from "@/lib/db/schema";
@@ -6,16 +7,21 @@ import { getSession } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
+const acceptSchema = z.object({ token: z.string().min(1, "Token is required") }).strict();
+
 // POST /api/v1/invitations/accept
 // Accept an invitation by token
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { token } = body;
-
-    if (!token || typeof token !== "string") {
-      return NextResponse.json({ error: "Token is required" }, { status: 400 });
+    const parsed = acceptSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
+        { status: 400 },
+      );
     }
+    const { token } = parsed.data;
 
     const invitation = await db.query.invitations.findFirst({
       where: eq(invitations.token, token),

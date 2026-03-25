@@ -28,7 +28,7 @@ const safePathSchema = z
 const syncSchema = z.object({
   paths: z.array(safePathSchema).min(1).max(1000),
   confirm: z.boolean().optional(),
-});
+}).strict();
 
 /**
  * POST — Sync specific files from the image into the volume.

@@ -9,7 +9,7 @@ import { z } from "zod";
 import { maskChannelConfig } from "@/lib/notifications/mask-config";
 
 type RouteParams = { params: Promise<{ orgId: string }> };
-const createSchema = z.object({ name: z.string().min(1).max(100), type: z.enum(["email", "webhook", "slack"]), config: z.union([z.object({ recipients: z.array(z.string().email()).min(1) }), z.object({ url: z.string().url(), secret: z.string().optional() }), z.object({ webhookUrl: z.string().url() })]), enabled: z.boolean().optional().default(true), subscribedEvents: z.array(z.string()).optional().default([]) });
+const createSchema = z.object({ name: z.string().min(1).max(100), type: z.enum(["email", "webhook", "slack"]), config: z.union([z.object({ recipients: z.array(z.string().email()).min(1) }), z.object({ url: z.string().url(), secret: z.string().optional() }), z.object({ webhookUrl: z.string().url() })]), enabled: z.boolean().optional().default(true), subscribedEvents: z.array(z.string()).optional().default([]) }).strict();
 
 export async function GET(_req: NextRequest, { params }: RouteParams) {
   try {

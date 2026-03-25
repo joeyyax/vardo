@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { db } from "@/lib/db";
 import { organizations, memberships, user } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth/session";
 import { eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
+
+const createOrgSchema = z.object({
+  name: z.string().min(1, "Organization name is required").max(100).trim(),
+  slug: z.string().max(100).regex(/^[a-z0-9-]*$/, "Slug must contain only lowercase letters, numbers, and hyphens").optional(),
+}).strict();
 
 /**
  * GET /api/v1/organizations
@@ -54,16 +60,15 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { name, slug: providedSlug } = body;
-
-    if (!name || typeof name !== "string" || name.trim().length === 0) {
+    const parsed = createOrgSchema.safeParse(body);
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: "Organization name is required" },
-        { status: 400 }
+        { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
+        { status: 400 },
       );
     }
 
-    const trimmedName = name.trim();
+    const { name: trimmedName, slug: providedSlug } = parsed.data;
 
     // Use provided slug or generate from name
     const baseSlug = (providedSlug || trimmedName)

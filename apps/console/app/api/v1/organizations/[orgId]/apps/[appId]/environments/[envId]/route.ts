@@ -18,7 +18,7 @@ const updateEnvironmentSchema = z.object({
     .regex(/^[a-z0-9][a-z0-9-]*[a-z0-9]$/)
     .optional(),
   domain: z.string().nullable().optional(),
-});
+}).strict();
 
 // PATCH /api/v1/organizations/[orgId]/apps/[appId]/environments/[envId]
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
