@@ -13,4 +13,4 @@ docs
 .github
 .screenshots
 *.md
-!apps/console/drizzle/**
+!drizzle/**
