@@ -1,0 +1,51 @@
+version: "1"
+name: mariadb
+displayName: MariaDB
+description: Community-developed fork of MySQL
+icon: https://cdn.simpleicons.org/mariadb/BA7257
+category: database
+source: direct
+deployType: image
+imageName: mariadb:11
+defaultPort: 3306
+diskWriteAlertThreshold: 5368709120 # 5 GB/hour (databases write more)
+
+envVars:
+  - key: MARIADB_ROOT_PASSWORD
+    description: Root password
+    required: true
+  - key: MARIADB_DATABASE
+    description: Default database name
+    required: false
+  - key: MARIADB_USER
+    description: Additional user
+    required: false
+  - key: MARIADB_PASSWORD
+    description: Additional user password
+    required: false
+
+volumes:
+  - name: data
+    mountPath: /var/lib/mysql
+    description: MariaDB data files
+
+connectionInfo:
+  - label: Host
+    value: "${project.name}"
+    copyRef: HOST
+  - label: Port
+    value: "3306"
+  - label: Root Password
+    value: "${MARIADB_ROOT_PASSWORD}"
+    copyRef: MARIADB_ROOT_PASSWORD
+  - label: User
+    value: "${MARIADB_USER}"
+    copyRef: MARIADB_USER
+  - label: Password
+    value: "${MARIADB_PASSWORD}"
+    copyRef: MARIADB_PASSWORD
+  - label: Database
+    value: "${MARIADB_DATABASE}"
+    copyRef: MARIADB_DATABASE
+  - label: Connection URL
+    value: "mysql://${MARIADB_USER}:${MARIADB_PASSWORD}@${project.name}:3306/${MARIADB_DATABASE}"

@@ -1,0 +1,30 @@
+version: "1"
+name: strapi
+displayName: Strapi
+description: Open-source headless CMS
+icon: https://cdn.simpleicons.org/strapi
+category: web
+source: direct
+deployType: image
+imageName: strapi/strapi:latest
+defaultPort: 1337
+
+envVars:
+  - key: DATABASE_CLIENT
+    description: Database type
+    required: false
+    defaultValue: sqlite
+  - key: APP_KEYS
+    description: Application keys (comma-separated)
+    required: true
+  - key: API_TOKEN_SALT
+    description: API token salt
+    required: true
+  - key: ADMIN_JWT_SECRET
+    description: Admin JWT secret
+    required: true
+
+volumes:
+  - name: uploads
+    mountPath: /opt/app/public/uploads
+    description: Media uploads

@@ -1,0 +1,32 @@
+version: "2"
+name: fumadocs
+displayName: Fumadocs
+description: Beautiful documentation site powered by Next.js and Fumadocs
+icon: https://cdn.simpleicons.org/nextdotjs
+category: web
+source: direct
+deployType: dockerfile
+defaultPort: 3000
+
+composeContent: |
+  services:
+    docs:
+      build: .
+      env_file:
+        - .env
+      volumes:
+        - content:/app/content
+
+  volumes:
+    content: {}
+
+envVars:
+  - key: NEXT_PUBLIC_SITE_URL
+    description: Public URL of your docs site
+    required: false
+    defaultValue: "${project.url}"
+
+volumes:
+  - name: content
+    mountPath: /app/content
+    description: MDX content and documentation files
