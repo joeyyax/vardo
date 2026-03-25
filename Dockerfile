@@ -37,7 +37,7 @@ RUN apt-get update -qq && \
     curl -sSL https://nixpacks.com/install.sh | bash && \
     apt-get clean && rm -rf /var/lib/apt/lists/* && \
     groupadd --system --gid 1001 nodejs && \
-    useradd --system --uid 1001 --gid nodejs nextjs && \
+    useradd --system --uid 1001 --gid nodejs --create-home nextjs && \
     mkdir -p /var/lib/vardo/projects && \
     chown nextjs:nodejs /var/lib/vardo/projects
 
