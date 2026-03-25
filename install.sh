@@ -312,6 +312,39 @@ run_cmd() {
   "$@"
 }
 
+# Run a command with a spinner — for long-running operations
+run_with_spinner() {
+  local label="$1"
+  shift
+  if $DRY_RUN; then
+    echo -e "  ${DIM}[dry-run] $*${RESET}"
+    return 0
+  fi
+  if $VERBOSE; then
+    info "$label"
+    "$@"
+    return $?
+  fi
+  log_to_file "CMD (spinner): $*"
+  "$@" >> "${INSTALL_LOG:-/dev/null}" 2>&1 &
+  local pid=$!
+  local chars="⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+  local i=0
+  while kill -0 "$pid" 2>/dev/null; do
+    printf "\r  ${CYAN}%s${RESET} %s" "${chars:i++%${#chars}:1}" "$label"
+    sleep 0.1
+  done
+  wait "$pid"
+  local exit_code=$?
+  printf "\r"
+  if [ $exit_code -eq 0 ]; then
+    log "$label"
+  else
+    fail "$label — failed (exit $exit_code). Check ${INSTALL_LOG:-/var/log/vardo-install.log} for details."
+  fi
+  return $exit_code
+}
+
 confirm() {
   if $UNATTENDED || $AUTO_YES; then return 0; fi
   local prompt="${1:-Continue?}"
@@ -915,7 +948,7 @@ generate_env() {
         read -rp "  Base domain for projects (e.g. example.com): " VARDO_BASE_DOMAIN < /dev/tty
       fi
       if [ -z "${ACME_EMAIL:-}" ]; then
-        read -rp "  Email for Let's Encrypt certificates: " ACME_EMAIL < /dev/tty
+        read -rp "  Email for TLS certificates:" ACME_EMAIL < /dev/tty
       fi
     fi
 
@@ -965,7 +998,7 @@ generate_env() {
       read -rp "  Domain for Vardo dashboard (optional, press Enter to skip): " VARDO_DOMAIN < /dev/tty
       if [ -n "${VARDO_DOMAIN:-}" ]; then
         read -rp "  Base domain for projects: " VARDO_BASE_DOMAIN < /dev/tty
-        read -rp "  Email for Let's Encrypt: " ACME_EMAIL < /dev/tty
+        read -rp "  Email for TLS certificates:" ACME_EMAIL < /dev/tty
       fi
     fi
   fi
@@ -1087,19 +1120,8 @@ build_and_start() {
     info "Starting infrastructure services (Postgres, Redis, Traefik)..."
     run_cmd docker compose -f "$VARDO_DIR/$COMPOSE_FILE" up -d
   else
-    info "Building containers (this may take a few minutes)..."
-    if $VERBOSE; then
-      if ! run_cmd docker compose -f "$VARDO_DIR/$COMPOSE_FILE" build 2>&1 | tee -a "${INSTALL_LOG:-/dev/null}"; then
-        fail "Container build failed. Check the full log at ${INSTALL_LOG:-/var/log/vardo-install.log} for details."
-      fi
-    else
-      if ! run_cmd docker compose -f "$VARDO_DIR/$COMPOSE_FILE" build --quiet 2>&1 | tee -a "${INSTALL_LOG:-/dev/null}"; then
-        fail "Container build failed. Check the full log at ${INSTALL_LOG:-/var/log/vardo-install.log} for details."
-      fi
-    fi
-
-    info "Starting services..."
-    run_cmd docker compose -f "$VARDO_DIR/$COMPOSE_FILE" up -d
+    run_with_spinner "Building containers (this may take a few minutes)" docker compose -f "$VARDO_DIR/$COMPOSE_FILE" build
+    run_with_spinner "Starting services" docker compose -f "$VARDO_DIR/$COMPOSE_FILE" up -d
   fi
 }
 
@@ -1202,7 +1224,7 @@ do_install() {
   generate_env
   build_and_start
   if ! is_dev; then
-    wait_healthy 60 2
+    wait_healthy 90 2 || true
     seed_templates
   fi
   print_install_summary
@@ -1356,16 +1378,7 @@ do_update() {
     info "Migrated acme.json → acme-le.json"
   fi
 
-  info "Building containers..."
-  if $VERBOSE; then
-    if ! run_cmd docker compose -f "$COMPOSE_FILE" build 2>&1 | tee -a "${INSTALL_LOG:-/dev/null}"; then
-      fail "Container build failed. Check the full log at ${INSTALL_LOG:-/var/log/vardo-install.log} for details."
-    fi
-  else
-    if ! run_cmd docker compose -f "$COMPOSE_FILE" build --quiet 2>&1 | tee -a "${INSTALL_LOG:-/dev/null}"; then
-      fail "Container build failed. Check the full log at ${INSTALL_LOG:-/var/log/vardo-install.log} for details."
-    fi
-  fi
+  run_with_spinner "Building containers" docker compose -f "$COMPOSE_FILE" build
 
   info "Restarting services..."
   run_cmd docker compose -f "$COMPOSE_FILE" up -d
@@ -1866,7 +1879,7 @@ parse_args() {
         echo "  VARDO_ROLE         Instance role: production, staging, development"
         echo "  VARDO_DOMAIN       Dashboard domain (production/staging)"
         echo "  VARDO_BASE_DOMAIN  Base domain for projects (production/staging)"
-        echo "  ACME_EMAIL         Let's Encrypt email (production)"
+        echo "  ACME_EMAIL         TLS certificate email (production)"
         exit 0
         ;;
     esac
