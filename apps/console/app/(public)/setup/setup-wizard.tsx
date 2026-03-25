@@ -33,10 +33,10 @@ import { toast } from "@/lib/messenger";
 
 const STEPS = [
   {
-    id: "import",
-    label: "Import config",
-    description: "Restore from a previous installation",
-    icon: Upload,
+    id: "welcome",
+    label: "Welcome",
+    description: "Get started with Vardo",
+    icon: Rocket,
   },
   {
     id: "account",
@@ -83,7 +83,7 @@ const STEPS = [
   },
 ] as const;
 
-type StepId = (typeof STEPS)[number]["id"];
+type StepId = (typeof STEPS)[number]["id"] | "import";
 
 const STORAGE_KEY = "vardo-setup";
 
@@ -109,7 +109,7 @@ function saveProgress(step: StepId, completed: Set<StepId>) {
 export function SetupWizard({ meshEnabled = true }: { meshEnabled?: boolean }) {
   const router = useRouter();
   const steps = meshEnabled ? STEPS : STEPS.filter((s) => s.id !== "instances");
-  const [currentStep, setCurrentStep] = useState<StepId>("account");
+  const [currentStep, setCurrentStep] = useState<StepId>("welcome");
   const [loading, setLoading] = useState(false);
   const [completedSteps, setCompletedSteps] = useState<Set<StepId>>(new Set());
   const [hydrated, setHydrated] = useState(false);
@@ -229,12 +229,55 @@ export function SetupWizard({ meshEnabled = true }: { meshEnabled?: boolean }) {
 
           {/* Right column — current step form */}
           <div className="w-full space-y-6">
-            {currentStep === "import" && (
+            {currentStep === "welcome" && (
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-xl font-semibold">Welcome to Vardo</h2>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Deploy everything. Own everything.
+                  </p>
+                </div>
+                <div className="grid gap-3">
+                  <Button
+                    variant="default"
+                    className="w-full h-14 squircle rounded-lg justify-start px-4"
+                    onClick={() => {
+                      markComplete("welcome");
+                      goNext();
+                    }}
+                  >
+                    <Rocket className="w-5 h-5 mr-3 shrink-0" />
+                    <div className="text-left">
+                      <p className="text-sm font-medium">Fresh install</p>
+                      <p className="text-xs opacity-80">
+                        Create your account and configure services
+                      </p>
+                    </div>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="w-full h-14 squircle rounded-lg justify-start px-4"
+                    onClick={() => {
+                      markComplete("welcome");
+                      setCurrentStep("import" as StepId);
+                    }}
+                  >
+                    <Upload className="w-5 h-5 mr-3 shrink-0" />
+                    <div className="text-left">
+                      <p className="text-sm font-medium">Restore from backup</p>
+                      <p className="text-xs text-muted-foreground">
+                        Import a config from a previous Vardo installation
+                      </p>
+                    </div>
+                  </Button>
+                </div>
+              </div>
+            )}
+            {currentStep === ("import" as StepId) && (
               <ImportStep
                 loading={loading}
                 setLoading={setLoading}
                 onComplete={(importedSections) => {
-                  markComplete("import");
                   // Mark config steps as complete if they were imported
                   const sectionToStep: Record<string, StepId> = {
                     email: "email",
@@ -245,11 +288,10 @@ export function SetupWizard({ meshEnabled = true }: { meshEnabled?: boolean }) {
                     const stepId = sectionToStep[section];
                     if (stepId) markComplete(stepId);
                   }
-                  goNext();
+                  setCurrentStep("account");
                 }}
                 onSkip={() => {
-                  markComplete("import");
-                  goNext();
+                  setCurrentStep("account");
                 }}
               />
             )}
