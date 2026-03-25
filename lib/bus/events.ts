@@ -17,6 +17,7 @@ export const EVENT_CATEGORIES = {
   volume: ["volume.drift"],
   disk: ["disk.write-alert"],
   org: ["org.invitation-sent", "org.invitation-accepted"],
+  security: ["security.file-exposed"],
   system: [
     "system.service-down",
     "system.disk-alert",
@@ -184,6 +185,15 @@ export type SystemUpdateAvailableEvent = {
   localHead: string;
 };
 
+export type SecurityFileExposedEvent = {
+  type: "security.file-exposed";
+  title: string;
+  message: string;
+  appName: string;
+  domain: string;
+  exposedPaths: string[];
+};
+
 export type DigestWeeklyEvent = {
   type: "digest.weekly";
   title: string;
@@ -219,6 +229,7 @@ export type BusEvent =
   | SystemRestartLoopEvent
   | SystemCertExpiringEvent
   | SystemUpdateAvailableEvent
+  | SecurityFileExposedEvent
   | DigestWeeklyEvent;
 
 export type BusEventType = BusEvent["type"];
