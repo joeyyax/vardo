@@ -32,7 +32,7 @@ services:
       REDIS_URL: redis://redis:6379
       NEXT_PUBLIC_BETTER_AUTH_URL: https://${VARDO_DOMAIN:-localhost}
       NEXT_PUBLIC_APP_URL: https://${VARDO_DOMAIN:-localhost}
-      VARDO_PROJECTS_DIR: /var/lib/host/projects
+      VARDO_PROJECTS_DIR: /var/lib/vardo/projects
       CADVISOR_URL: http://cadvisor:8080
       LOKI_URL: http://loki:3100
     healthcheck:
@@ -41,9 +41,11 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+    group_add:
+      - ${DOCKER_GID:-999}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - host_projects:/var/lib/host/projects
+      - vardo_projects:/var/lib/vardo/projects
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.vardo.rule=Host(`${VARDO_DOMAIN:-localhost}`)"
@@ -210,7 +212,7 @@ services:
 volumes:
   postgres_data:
   redis_data:
-  host_projects:
+  vardo_projects:
   letsencrypt:
   loki_data:
   wireguard_config:
