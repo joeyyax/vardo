@@ -4,17 +4,17 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { invitations, user } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
-
-const createInvitationSchema = z.object({
-  email: z.string().email("Invalid email address"),
-  role: z.enum(["admin", "member"]).default("member"),
-});
 import { requireAdmin } from "@/lib/auth/permissions";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import crypto from "crypto";
 import { sendEmail } from "@/lib/email/send";
 import { InviteEmail } from "@/lib/email/templates/invite";
+
+const createInvitationSchema = z.object({
+  email: z.string().email("Invalid email address"),
+  role: z.enum(["admin", "member"]).default("member"),
+}).strict();
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;

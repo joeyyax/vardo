@@ -12,7 +12,7 @@ const pullSchema = z.object({
   orgId: z.string().min(1),
   environment: z.enum(["production", "staging", "development"]).default("development"),
   includeEnvVars: z.boolean().default(false),
-});
+}).strict();
 
 /**
  * POST /api/v1/admin/mesh/pull — pull a project from a source instance.

@@ -7,7 +7,7 @@ import { getSession } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
-const acceptSchema = z.object({ token: z.string().min(1, "Token is required") });
+const acceptSchema = z.object({ token: z.string().min(1, "Token is required") }).strict();
 
 // POST /api/v1/invitations/accept
 // Accept an invitation by token

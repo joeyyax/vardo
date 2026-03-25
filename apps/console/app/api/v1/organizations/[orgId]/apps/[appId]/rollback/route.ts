@@ -4,17 +4,17 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps, deployments } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
-
-const rollbackSchema = z.object({
-  deploymentId: z.string().min(1, "deploymentId is required"),
-  includeEnvVars: z.boolean().default(false),
-});
 import { eq, and } from "drizzle-orm";
 import { deployProject } from "@/lib/docker/deploy";
 import { createSSEResponse } from "@/lib/api/sse";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { decrypt, encrypt } from "@/lib/crypto/encrypt";
 import type { ConfigSnapshot } from "@/lib/types/deploy-snapshot";
+
+const rollbackSchema = z.object({
+  deploymentId: z.string().min(1, "deploymentId is required"),
+  includeEnvVars: z.boolean().default(false),
+}).strict();
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;

@@ -12,7 +12,7 @@ const updateOrgSchema = z.object({
     z.literal(""),
     z.null(),
   ]).optional(),
-}).refine(data => Object.keys(data).length > 0, { message: "No valid updates provided" });
+}).strict().refine(data => Object.keys(data).length > 0, { message: "No valid updates provided" });
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;

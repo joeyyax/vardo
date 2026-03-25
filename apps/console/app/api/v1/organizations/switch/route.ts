@@ -9,7 +9,7 @@ import { eq, and } from "drizzle-orm";
 
 const switchOrgSchema = z.object({
   organizationId: z.string().min(1, "organizationId is required"),
-});
+}).strict();
 
 // POST /api/v1/organizations/switch
 // Sets the active organization cookie after verifying membership.

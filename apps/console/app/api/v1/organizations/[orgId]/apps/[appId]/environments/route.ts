@@ -106,7 +106,7 @@ const createEnvironmentSchema = z.object({
       })
     )
     .optional(),
-});
+}).strict();
 
 // POST /api/v1/organizations/[orgId]/apps/[appId]/environments
 export async function POST(request: NextRequest, { params }: RouteParams) {

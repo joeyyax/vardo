@@ -11,7 +11,7 @@ const promoteSchema = z.object({
   environment: z.enum(["production", "staging", "development"]),
   orgId: z.string().min(1),
   includeEnvVars: z.boolean().default(false),
-});
+}).strict();
 
 /**
  * POST /api/v1/admin/mesh/promote — promote a project to a target instance.

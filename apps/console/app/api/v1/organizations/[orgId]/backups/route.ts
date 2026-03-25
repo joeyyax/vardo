@@ -29,7 +29,7 @@ const createJobSchema = z.object({
   keepMonthly: z.number().int().positive().nullable().default(1),
   notifyOnSuccess: z.boolean().default(false),
   notifyOnFailure: z.boolean().default(true),
-});
+}).strict();
 
 // GET /api/v1/organizations/[orgId]/backups
 export async function GET(request: NextRequest, { params }: RouteParams) {

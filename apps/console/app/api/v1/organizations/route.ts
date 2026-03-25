@@ -8,8 +8,8 @@ import { nanoid } from "nanoid";
 
 const createOrgSchema = z.object({
   name: z.string().min(1, "Organization name is required").max(100).trim(),
-  slug: z.string().max(100).optional(),
-});
+  slug: z.string().max(100).regex(/^[a-z0-9-]*$/, "Slug must contain only lowercase letters, numbers, and hyphens").optional(),
+}).strict();
 
 /**
  * GET /api/v1/organizations

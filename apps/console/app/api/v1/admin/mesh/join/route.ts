@@ -4,14 +4,14 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { decodeInviteToken } from "@/lib/mesh/invite";
 import { generateMeshToken } from "@/lib/mesh/auth";
-
-const joinSchema = z.object({ token: z.string().min(1, "Invite token is required") });
 import { ensureHubConfig, HUB_IP } from "@/lib/mesh";
 import { getInstanceId } from "@/lib/constants";
 import { db } from "@/lib/db";
 import { meshPeers } from "@/lib/db/schema";
 import { nanoid } from "nanoid";
 import { allocateIp, toCidr } from "@/lib/mesh/ip-allocator";
+
+const joinSchema = z.object({ token: z.string().min(1, "Invite token is required") }).strict();
 
 /**
  * POST /api/v1/admin/mesh/join — join a mesh using an invite token.

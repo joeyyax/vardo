@@ -4,13 +4,13 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { user } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { nanoid } from "nanoid";
+import { requireAppAdmin } from "@/lib/auth/admin";
 
 const createUserSchema = z.object({
   email: z.string().email("Invalid email address"),
-  name: z.string().max(100).optional(),
-});
-import { nanoid } from "nanoid";
-import { requireAppAdmin } from "@/lib/auth/admin";
+  name: z.string().min(1).max(100).optional(),
+}).strict();
 
 // GET /api/v1/admin/users
 // List all users (admin only)

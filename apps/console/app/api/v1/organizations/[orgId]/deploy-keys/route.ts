@@ -4,14 +4,14 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { deployKeys } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
-
-const createKeySchema = z.object({ name: z.string().min(1, "Name is required").max(100).trim() });
-const deleteKeySchema = z.object({ id: z.string().min(1, "Deploy key ID is required") });
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { generateDeployKeypair } from "@/lib/crypto/ssh-keygen";
 import { encrypt, decrypt } from "@/lib/crypto/encrypt";
 import { recordActivity } from "@/lib/activity";
+
+const createKeySchema = z.object({ name: z.string().min(1, "Name is required").max(100).trim() }).strict();
+const deleteKeySchema = z.object({ id: z.string().min(1, "Deploy key ID is required") }).strict();
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;

@@ -67,7 +67,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
 const putSchema = z.object({
   content: z.string(),
-});
+}).strict();
 
 // PUT /api/v1/organizations/[orgId]/apps/[appId]/env-vars
 // Save the entire env file content (encrypted)

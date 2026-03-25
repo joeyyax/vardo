@@ -11,7 +11,7 @@ import { nanoid } from "nanoid";
 const addMemberSchema = z.object({
   email: z.string().email("Invalid email address"),
   role: z.enum(["admin", "member"]).default("member"),
-});
+}).strict();
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;

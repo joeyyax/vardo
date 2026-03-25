@@ -2,14 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-
-const createTokenSchema = z.object({ name: z.string().min(1, "Name is required").max(100).trim() });
-const deleteTokenSchema = z.object({ id: z.string().min(1, "Token ID is required") });
 import { apiTokens } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { createHash, randomBytes } from "crypto";
+
+const createTokenSchema = z.object({ name: z.string().min(1, "Name is required").max(100).trim() }).strict();
+const deleteTokenSchema = z.object({ id: z.string().min(1, "Token ID is required") }).strict();
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
