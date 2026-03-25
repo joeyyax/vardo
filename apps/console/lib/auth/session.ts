@@ -1,19 +1,78 @@
 import { cache } from "react";
 import { headers, cookies } from "next/headers";
+import { createHash } from "crypto";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { memberships } from "@/lib/db/schema";
+import { memberships, apiTokens, user } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 
 export const CURRENT_ORG_COOKIE = "host_current_org";
 
 /**
  * Get the current session on the server.
+ *
+ * Resolution order:
+ *  1. `Authorization: Bearer <token>` header — resolves to the token owner's session
+ *  2. Session cookie via Better Auth
+ *
  * Returns null if not authenticated.
  */
 export const getSession = cache(async () => {
+  const reqHeaders = await headers();
+
+  // Check for Bearer token first (API token auth)
+  const authHeader = reqHeaders.get("authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    const rawToken = authHeader.slice(7).trim();
+    if (rawToken) {
+      const tokenHash = createHash("sha256").update(rawToken).digest("hex");
+      const token = await db.query.apiTokens.findFirst({
+        where: eq(apiTokens.tokenHash, tokenHash),
+        columns: { id: true, userId: true, organizationId: true },
+      });
+
+      if (token) {
+        const tokenUser = await db.query.user.findFirst({
+          where: eq(user.id, token.userId),
+        });
+
+        if (tokenUser) {
+          // Update lastUsedAt in the background
+          db.update(apiTokens)
+            .set({ lastUsedAt: new Date() })
+            .where(eq(apiTokens.id, token.id))
+            .catch(() => {});
+
+          // Return a session-like object compatible with Better Auth's shape
+          return {
+            user: {
+              id: tokenUser.id,
+              name: tokenUser.name,
+              email: tokenUser.email,
+              emailVerified: tokenUser.emailVerified,
+              image: tokenUser.image,
+              isAppAdmin: tokenUser.isAppAdmin,
+              twoFactorEnabled: tokenUser.twoFactorEnabled,
+            },
+            session: {
+              id: `token:${token.id}`,
+              token: token.id,
+              userId: tokenUser.id,
+              expiresAt: new Date(Date.now() + 86400000),
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            },
+            // Stash the token's org for getCurrentOrg to use
+            _tokenOrgId: token.organizationId,
+          };
+        }
+      }
+    }
+  }
+
+  // Fall back to session cookie
   return auth.api.getSession({
-    headers: await headers(),
+    headers: reqHeaders,
   });
 });
 
@@ -29,9 +88,12 @@ export const getCurrentOrg = cache(async () => {
     return null;
   }
 
-  // Check for org preference in cookie
+  // If authenticated via API token, use the token's bound org
+  const tokenOrgId = (session as Record<string, unknown>)?._tokenOrgId as string | undefined;
+
+  // Check for org preference: token org > cookie > first membership
   const cookieStore = await cookies();
-  const preferredOrgId = cookieStore.get(CURRENT_ORG_COOKIE)?.value;
+  const preferredOrgId = tokenOrgId || cookieStore.get(CURRENT_ORG_COOKIE)?.value;
 
   // If there's a preferred org, verify user has access to it
   if (preferredOrgId) {
