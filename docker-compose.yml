@@ -59,11 +59,17 @@ services:
       - "traefik.http.routers.vardo-http.middlewares=vardo-https-redirect"
       - "traefik.http.middlewares.vardo-https-redirect.redirectscheme.scheme=https"
       - "traefik.http.middlewares.vardo-https-redirect.redirectscheme.permanent=true"
-      # Fallback router — catch-all on HTTP for IP access (setup before DNS)
+      # Fallback routers — catch-all for IP access (setup before DNS)
       - "traefik.http.routers.vardo-fallback.rule=PathPrefix(`/`)"
       - "traefik.http.routers.vardo-fallback.entrypoints=web"
       - "traefik.http.routers.vardo-fallback.priority=1"
       - "traefik.http.routers.vardo-fallback.service=vardo"
+      # HTTPS fallback — self-signed cert (Traefik default), user accepts warning
+      - "traefik.http.routers.vardo-fallback-https.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.vardo-fallback-https.entrypoints=websecure"
+      - "traefik.http.routers.vardo-fallback-https.priority=1"
+      - "traefik.http.routers.vardo-fallback-https.tls=true"
+      - "traefik.http.routers.vardo-fallback-https.service=vardo"
     networks:
       - internal
       - vardo-network
