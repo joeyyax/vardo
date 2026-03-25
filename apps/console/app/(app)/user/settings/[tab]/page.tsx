@@ -4,6 +4,7 @@ import {
   AccountInfo,
   PasskeyManager,
   LinkedAccounts,
+  NoPasswordNotice,
   ActiveSessions,
   ApiTokens,
 } from "../account-settings";
@@ -67,6 +68,7 @@ function TabContent({ tab, orgId }: { tab: ValidTab; orgId: string | null }) {
             <PasskeyManager />
             <LinkedAccounts />
           </div>
+          <NoPasswordNotice />
           <ActiveSessions />
         </div>
       );
