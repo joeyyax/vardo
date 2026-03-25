@@ -30,7 +30,7 @@ function isMaskedValue(value: string): boolean {
 }
 
 export function EmailSettings() {
-  const [provider, setProvider] = useState("smtp");
+  const [provider, setProvider] = useState("resend");
   const [smtpHost, setSmtpHost] = useState("");
   const [smtpPort, setSmtpPort] = useState("587");
   const [smtpUser, setSmtpUser] = useState("");
@@ -140,15 +140,21 @@ export function EmailSettings() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="smtp">SMTP</SelectItem>
-                <SelectItem value="mailpace">Mailpace</SelectItem>
                 <SelectItem value="resend">Resend</SelectItem>
+                <SelectItem value="postmark">Postmark</SelectItem>
+                <SelectItem value="mailpace">Mailpace</SelectItem>
+                <SelectItem value="smtp">SMTP</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           {provider === "smtp" && (
             <>
+              <p className="text-xs text-muted-foreground bg-muted/50 rounded-lg px-3 py-2">
+                SMTP provides no delivery tracking or bounce detection. If a
+                notification fails to send, you won&apos;t know. We recommend
+                Resend, Postmark, or Mailpace for reliable delivery.
+              </p>
               <div className="grid grid-cols-3 gap-2">
                 <div className="col-span-2 space-y-2">
                   <Label htmlFor="sys-smtpHost">SMTP host</Label>
@@ -297,6 +303,68 @@ export function EmailSettings() {
                   type="password"
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
+                  required
+                />
+              )}
+            </div>
+          )}
+
+          {provider === "postmark" && (
+            <div className="space-y-2">
+              <Label htmlFor="sys-postmark-apiKey">Postmark server token</Label>
+              {isMaskedValue(apiKey) && !editingApiKey ? (
+                <div className="flex gap-2">
+                  <Input
+                    id="sys-postmark-apiKey"
+                    value={toDisplay(apiKey)}
+                    disabled
+                    className="font-mono"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="squircle shrink-0"
+                    aria-label="Edit Postmark server token"
+                    onClick={() => {
+                      setEditingApiKey(true);
+                      setApiKey("");
+                    }}
+                  >
+                    Edit
+                  </Button>
+                </div>
+              ) : editingApiKey ? (
+                <div className="flex gap-2">
+                  <Input
+                    id="sys-postmark-apiKey"
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                    required
+                    autoFocus
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="squircle shrink-0"
+                    onClick={() => {
+                      setEditingApiKey(false);
+                      setApiKey(maskedApiKey.current);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              ) : (
+                <Input
+                  id="sys-postmark-apiKey"
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
                   required
                 />
               )}
