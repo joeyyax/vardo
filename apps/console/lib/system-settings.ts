@@ -151,7 +151,7 @@ export async function getGitHubAppConfig(): Promise<GitHubAppConfig | null> {
 // ---------------------------------------------------------------------------
 
 export type EmailProviderConfig = {
-  provider: "smtp" | "mailpace" | "resend";
+  provider: "smtp" | "mailpace" | "resend" | "postmark";
   smtpHost?: string;
   smtpPort?: number;
   smtpUser?: string;
