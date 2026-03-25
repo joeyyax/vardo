@@ -57,3 +57,7 @@ next-env.d.ts
 # worktrees
 .worktrees/
 .host/
+.claude/worktrees/
+
+# node compile cache
+node-compile-cache/
