@@ -124,7 +124,7 @@ export function AuthInfo() {
             <Github className="size-4 text-muted-foreground shrink-0 mt-0.5" aria-hidden="true" />
             <span className="text-muted-foreground">
               <span className="font-medium text-foreground">GitHub</span>{" "}
-              — also enables repo imports and auto-deploy
+              — sign in with your GitHub account
             </span>
           </li>
         </ul>
