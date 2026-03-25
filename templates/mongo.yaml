@@ -1,0 +1,39 @@
+version: "1"
+name: mongo
+displayName: MongoDB
+description: Document-oriented NoSQL database
+icon: https://cdn.simpleicons.org/mongodb/47A248
+category: database
+source: direct
+deployType: image
+imageName: mongo:7
+defaultPort: 27017
+diskWriteAlertThreshold: 5368709120 # 5 GB/hour (databases write more)
+
+envVars:
+  - key: MONGO_INITDB_ROOT_USERNAME
+    description: Root username
+    required: true
+  - key: MONGO_INITDB_ROOT_PASSWORD
+    description: Root password
+    required: true
+
+volumes:
+  - name: data
+    mountPath: /data/db
+    description: MongoDB data files
+
+connectionInfo:
+  - label: Host
+    value: "${project.name}"
+    copyRef: HOST
+  - label: Port
+    value: "27017"
+  - label: Username
+    value: "${MONGO_INITDB_ROOT_USERNAME}"
+    copyRef: MONGO_INITDB_ROOT_USERNAME
+  - label: Password
+    value: "${MONGO_INITDB_ROOT_PASSWORD}"
+    copyRef: MONGO_INITDB_ROOT_PASSWORD
+  - label: Connection URL
+    value: "mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@${project.name}:27017"

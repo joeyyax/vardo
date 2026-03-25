@@ -1,0 +1,51 @@
+version: "1"
+name: mysql
+displayName: MySQL
+description: Popular open-source relational database
+icon: https://cdn.simpleicons.org/mysql/4479A1
+category: database
+source: direct
+deployType: image
+imageName: mysql:8
+defaultPort: 3306
+diskWriteAlertThreshold: 5368709120 # 5 GB/hour (databases write more)
+
+envVars:
+  - key: MYSQL_ROOT_PASSWORD
+    description: Root password
+    required: true
+  - key: MYSQL_DATABASE
+    description: Default database name
+    required: false
+  - key: MYSQL_USER
+    description: Additional user
+    required: false
+  - key: MYSQL_PASSWORD
+    description: Additional user password
+    required: false
+
+volumes:
+  - name: data
+    mountPath: /var/lib/mysql
+    description: MySQL data files
+
+connectionInfo:
+  - label: Host
+    value: "${project.name}"
+    copyRef: HOST
+  - label: Port
+    value: "3306"
+  - label: Root Password
+    value: "${MYSQL_ROOT_PASSWORD}"
+    copyRef: MYSQL_ROOT_PASSWORD
+  - label: User
+    value: "${MYSQL_USER}"
+    copyRef: MYSQL_USER
+  - label: Password
+    value: "${MYSQL_PASSWORD}"
+    copyRef: MYSQL_PASSWORD
+  - label: Database
+    value: "${MYSQL_DATABASE}"
+    copyRef: MYSQL_DATABASE
+  - label: Connection URL
+    value: "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@${project.name}:3306/${MYSQL_DATABASE}"

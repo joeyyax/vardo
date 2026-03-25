@@ -1,0 +1,23 @@
+version: "1"
+name: n8n
+displayName: n8n
+description: Workflow automation tool
+icon: https://cdn.simpleicons.org/n8n
+category: tool
+source: direct
+deployType: image
+imageName: n8nio/n8n:latest
+defaultPort: 5678
+
+envVars:
+  - key: N8N_BASIC_AUTH_USER
+    description: Basic auth username
+    required: false
+  - key: N8N_BASIC_AUTH_PASSWORD
+    description: Basic auth password
+    required: false
+
+volumes:
+  - name: data
+    mountPath: /home/node/.n8n
+    description: n8n workflows and credentials
