@@ -38,6 +38,7 @@ export function EmailSettings() {
   const [apiKey, setApiKey] = useState("");
   const [fromEmail, setFromEmail] = useState("");
   const [fromName, setFromName] = useState(DEFAULT_APP_NAME);
+  const [allowSmtp, setAllowSmtp] = useState(true);
 
   const [editingSmtpPass, setEditingSmtpPass] = useState(false);
   const [editingApiKey, setEditingApiKey] = useState(false);
@@ -48,6 +49,7 @@ export function EmailSettings() {
 
   const onLoad = useCallback(
     (data: Record<string, unknown>) => {
+      setAllowSmtp(data.allowSmtp !== false);
       setProvider((data.provider as string) || "smtp");
       setSmtpHost((data.smtpHost as string) || "");
       setSmtpPort(data.smtpPort?.toString() || "587");
@@ -133,6 +135,12 @@ export function EmailSettings() {
             </p>
           )}
 
+          {!allowSmtp && provider === "smtp" && (
+            <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              SMTP is restricted on this instance. Switch to Resend, Postmark, or Mailpace to continue sending email.
+            </div>
+          )}
+
           <div className="max-w-md space-y-2">
             <Label htmlFor="sys-email-provider">Provider</Label>
             <Select value={provider} onValueChange={handleProviderChange}>
@@ -143,12 +151,12 @@ export function EmailSettings() {
                 <SelectItem value="resend">Resend</SelectItem>
                 <SelectItem value="postmark">Postmark</SelectItem>
                 <SelectItem value="mailpace">Mailpace</SelectItem>
-                <SelectItem value="smtp">SMTP</SelectItem>
+                {allowSmtp && <SelectItem value="smtp">SMTP</SelectItem>}
               </SelectContent>
             </Select>
           </div>
 
-          {provider === "smtp" && (
+          {provider === "smtp" && allowSmtp && (
             <>
               <p className="text-xs text-muted-foreground bg-muted/50 rounded-lg px-3 py-2">
                 SMTP provides no delivery tracking or bounce detection. If a
@@ -456,7 +464,7 @@ export function EmailSettings() {
             </div>
           </div>
 
-          <Button type="submit" className="squircle" disabled={saving} aria-label="Save email settings">
+          <Button type="submit" className="squircle" disabled={saving || (!allowSmtp && provider === "smtp")} aria-label="Save email settings">
             {saving && <Loader2 className="size-4 animate-spin" />}
             Save
           </Button>

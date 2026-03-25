@@ -4,6 +4,7 @@ import { requireAdminAuth } from "@/lib/auth/admin";
 import { needsSetup } from "@/lib/setup";
 import { getEmailProviderConfig, setSystemSetting } from "@/lib/system-settings";
 import { maskSecret, isMasked } from "@/lib/mask-secrets";
+import { isSmtpAllowed } from "@/lib/config/provider-restrictions";
 
 const emailSchema = z.object({
   provider: z.enum(["smtp", "mailpace", "resend", "postmark"]),
@@ -21,11 +22,12 @@ export async function GET(request: NextRequest) {
 
   const config = await getEmailProviderConfig();
   if (!config) {
-    return NextResponse.json({ configured: false });
+    return NextResponse.json({ configured: false, allowSmtp: isSmtpAllowed() });
   }
 
   return NextResponse.json({
     configured: true,
+    allowSmtp: isSmtpAllowed(),
     provider: config.provider,
     smtpHost: config.smtpHost ?? null,
     smtpPort: config.smtpPort ?? null,
@@ -53,6 +55,14 @@ export async function POST(request: NextRequest) {
   }
 
   const { provider, smtpHost, smtpPort, smtpUser, smtpPass, apiKey, fromEmail, fromName } = parsed.data;
+
+  // Reject SMTP if restricted by deployment config
+  if (provider === "smtp" && !isSmtpAllowed()) {
+    return NextResponse.json(
+      { error: "SMTP is not available on this instance" },
+      { status: 403 },
+    );
+  }
 
   // Keep secrets the user didn't change (sentinel-prefixed values).
   // Empty/null means the user cleared the field intentionally.
