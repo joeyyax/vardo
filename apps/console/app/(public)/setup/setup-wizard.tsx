@@ -570,7 +570,7 @@ function EmailStep({
   onComplete: () => void;
   onSkip: () => void;
 }) {
-  const [provider, setProvider] = useState("smtp");
+  const [provider, setProvider] = useState("resend");
   const [smtpHost, setSmtpHost] = useState("");
   const [smtpPort, setSmtpPort] = useState("587");
   const [smtpUser, setSmtpUser] = useState("");
@@ -616,15 +616,21 @@ function EmailStep({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="smtp">SMTP</SelectItem>
-            <SelectItem value="mailpace">Mailpace</SelectItem>
             <SelectItem value="resend">Resend</SelectItem>
+            <SelectItem value="postmark">Postmark</SelectItem>
+            <SelectItem value="mailpace">Mailpace</SelectItem>
+            <SelectItem value="smtp">SMTP</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
       {provider === "smtp" && (
         <>
+          <p className="text-xs text-muted-foreground bg-muted/50 rounded-lg px-3 py-2">
+            SMTP provides no delivery tracking or bounce detection. If a
+            notification fails to send, you won&apos;t know. We recommend
+            Resend, Postmark, or Mailpace for reliable delivery.
+          </p>
           <div className="grid grid-cols-3 gap-2">
             <div className="col-span-2 space-y-2">
               <Label htmlFor="smtpHost">SMTP Host</Label>
@@ -675,6 +681,19 @@ function EmailStep({
             type="password"
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
+            required
+          />
+        </div>
+      )}
+      {provider === "postmark" && (
+        <div className="space-y-2">
+          <Label htmlFor="apiKey">Postmark Server Token</Label>
+          <Input
+            id="apiKey"
+            type="password"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
             required
           />
         </div>
