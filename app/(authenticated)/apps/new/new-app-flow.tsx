@@ -149,6 +149,8 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], default
   const [gitBranch, setGitBranch] = useState("main");
   const [imageName, setImageName] = useState("");
   const [composeContent, setComposeContent] = useState("");
+  const [composeFilePath, setComposeFilePath] = useState("docker-compose.yml");
+  const [dockerfilePath, setDockerfilePath] = useState("Dockerfile");
   const [contentMode, setContentMode] = useState<"paste" | "url">("paste");
   const [rootDirectory, setRootDirectory] = useState("");
   const [containerPort, setContainerPort] = useState("");
@@ -434,6 +436,12 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], default
       }
 
       if (deployType === "image") body.imageName = imageName;
+      if (deployType === "compose" && composeFilePath && composeFilePath !== "docker-compose.yml") {
+        body.composeFilePath = composeFilePath;
+      }
+      if (deployType === "dockerfile" && dockerfilePath && dockerfilePath !== "Dockerfile") {
+        body.dockerfilePath = dockerfilePath;
+      }
       if (source === "direct" && deployType === "compose") {
         body.composeContent = composeContent || undefined;
       }
@@ -842,6 +850,62 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], default
                     <div className="grid gap-2">
                       <Input placeholder="main" value={gitBranch} onChange={(e) => setGitBranch(e.target.value)} />
                     </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Deploy Type — for GitHub and compose sources */}
+            {(selectedSource === "github" || selectedSource === "compose") && (
+              <div className="grid gap-4">
+                <div className="grid gap-2 sm:w-1/2">
+                  <Label>Deploy Type</Label>
+                  <Select value={deployType} onValueChange={(v) => setDeployType(v as DeployType)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="compose">Auto-detect (Compose → Dockerfile → Nixpacks)</SelectItem>
+                      <SelectItem value="dockerfile">Dockerfile</SelectItem>
+                      <SelectItem value="nixpacks">Nixpacks</SelectItem>
+                      <SelectItem value="railpack">Railpack</SelectItem>
+                      <SelectItem value="static">Static</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    {deployType === "compose"
+                      ? "Looks for a compose file first, then Dockerfile, then Nixpacks."
+                      : deployType === "dockerfile"
+                      ? "Builds from a Dockerfile in the repo."
+                      : deployType === "nixpacks"
+                      ? "Auto-detects language and builds with Nixpacks."
+                      : deployType === "railpack"
+                      ? "Builds with Railway's Railpack buildpack."
+                      : "Serves static files."}
+                  </p>
+                </div>
+                {deployType === "compose" && selectedSource !== "compose" && (
+                  <div className="grid gap-2 sm:w-1/2">
+                    <Label htmlFor="compose-file-path">Compose File</Label>
+                    <Input
+                      id="compose-file-path"
+                      placeholder="docker-compose.yml"
+                      value={composeFilePath}
+                      onChange={(e) => setComposeFilePath(e.target.value)}
+                      className="font-mono text-sm"
+                    />
+                  </div>
+                )}
+                {deployType === "dockerfile" && (
+                  <div className="grid gap-2 sm:w-1/2">
+                    <Label htmlFor="dockerfile-path">Dockerfile</Label>
+                    <Input
+                      id="dockerfile-path"
+                      placeholder="Dockerfile"
+                      value={dockerfilePath}
+                      onChange={(e) => setDockerfilePath(e.target.value)}
+                      className="font-mono text-sm"
+                    />
                   </div>
                 )}
               </div>
