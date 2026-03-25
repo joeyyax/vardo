@@ -63,6 +63,9 @@ export function TargetForm({
   const [sshPrivateKey, setSshPrivateKey] = useState(config.privateKey ?? "");
   const [sshPath, setSshPath] = useState(config.path ?? "");
 
+  // Local
+  const [localPath, setLocalPath] = useState(config.path ?? "");
+
   function reset() {
     setName("");
     setType("s3");
@@ -77,6 +80,7 @@ export function TargetForm({
     setSshUsername("");
     setSshPrivateKey("");
     setSshPath("");
+    setLocalPath("");
   }
 
   function isValid(): boolean {
@@ -90,6 +94,8 @@ export function TargetForm({
         return !!(bucket.trim() && region.trim() && accessKeyId.trim() && secretAccessKey.trim());
       case "ssh":
         return !!(sshHost.trim() && sshUsername.trim() && sshPath.trim());
+      case "local":
+        return !!localPath.trim();
     }
   }
 
@@ -124,6 +130,8 @@ export function TargetForm({
           ...(sshPrivateKey.trim() && { privateKey: sshPrivateKey.trim() }),
           path: sshPath.trim(),
         };
+      case "local":
+        return { path: localPath.trim() };
     }
   }
 
@@ -187,6 +195,7 @@ export function TargetForm({
                   <SelectItem value="r2">Cloudflare R2</SelectItem>
                   <SelectItem value="b2">Backblaze B2</SelectItem>
                   {allowLocalBackups && <SelectItem value="ssh">SSH / SFTP</SelectItem>}
+                  {allowLocalBackups && <SelectItem value="local">Local filesystem</SelectItem>}
                 </SelectContent>
               </Select>
             </div>
@@ -242,6 +251,28 @@ export function TargetForm({
                   <Label htmlFor="target-ssh-path">Remote path</Label>
                   <Input id="target-ssh-path" placeholder="/var/backups" className="font-mono" value={sshPath} onChange={(e) => setSshPath(e.target.value)} />
                 </div>
+              </>
+            )}
+
+            {type === "local" && (
+              <>
+                <div className="grid gap-2">
+                  <Label htmlFor="target-local-path">Directory path</Label>
+                  <Input
+                    id="target-local-path"
+                    placeholder="/opt/vardo/backups"
+                    className="font-mono"
+                    value={localPath}
+                    onChange={(e) => setLocalPath(e.target.value)}
+                  />
+                </div>
+                <div className="rounded-md border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+                  Local backups don&apos;t protect against disk failure. Use S3 or R2 for production.
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Backups will be stored on the server&apos;s local filesystem.
+                  The directory must exist and be writable by the Vardo process.
+                </p>
               </>
             )}
           </div>

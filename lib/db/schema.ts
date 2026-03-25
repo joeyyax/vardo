@@ -604,6 +604,7 @@ export const backupTargetTypeEnum = pgEnum("backup_target_type", [
   "r2",
   "b2",
   "ssh",
+  "local",
 ]);
 
 export const backupTargets = pgTable("backup_target", {
@@ -629,6 +630,9 @@ export const backupTargets = pgTable("backup_target", {
           port?: number;
           username: string;
           privateKey?: string;
+          path: string;
+        }
+      | {
           path: string;
         }
     >(),
