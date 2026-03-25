@@ -1089,9 +1089,13 @@ build_and_start() {
   else
     info "Building containers (this may take a few minutes)..."
     if $VERBOSE; then
-      run_cmd docker compose -f "$VARDO_DIR/$COMPOSE_FILE" build
+      if ! run_cmd docker compose -f "$VARDO_DIR/$COMPOSE_FILE" build 2>&1 | tee -a "${INSTALL_LOG:-/dev/null}"; then
+        fail "Container build failed. Check the full log at ${INSTALL_LOG:-/var/log/vardo-install.log} for details."
+      fi
     else
-      run_cmd docker compose -f "$VARDO_DIR/$COMPOSE_FILE" build --quiet
+      if ! run_cmd docker compose -f "$VARDO_DIR/$COMPOSE_FILE" build --quiet 2>&1 | tee -a "${INSTALL_LOG:-/dev/null}"; then
+        fail "Container build failed. Check the full log at ${INSTALL_LOG:-/var/log/vardo-install.log} for details."
+      fi
     fi
 
     info "Starting services..."
@@ -1354,9 +1358,13 @@ do_update() {
 
   info "Building containers..."
   if $VERBOSE; then
-    run_cmd docker compose -f "$COMPOSE_FILE" build
+    if ! run_cmd docker compose -f "$COMPOSE_FILE" build 2>&1 | tee -a "${INSTALL_LOG:-/dev/null}"; then
+      fail "Container build failed. Check the full log at ${INSTALL_LOG:-/var/log/vardo-install.log} for details."
+    fi
   else
-    run_cmd docker compose -f "$COMPOSE_FILE" build --quiet
+    if ! run_cmd docker compose -f "$COMPOSE_FILE" build --quiet 2>&1 | tee -a "${INSTALL_LOG:-/dev/null}"; then
+      fail "Container build failed. Check the full log at ${INSTALL_LOG:-/var/log/vardo-install.log} for details."
+    fi
   fi
 
   info "Restarting services..."
