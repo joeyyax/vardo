@@ -4,7 +4,6 @@ import {
   AccountInfo,
   PasskeyManager,
   LinkedAccounts,
-  AuthInfo,
   ActiveSessions,
   ApiTokens,
 } from "../account-settings";
@@ -64,10 +63,11 @@ function TabContent({ tab, orgId }: { tab: ValidTab; orgId: string | null }) {
               Manage how you sign in and protect your account.
             </p>
           </div>
-          <PasskeyManager />
-          <LinkedAccounts />
+          <div className="grid gap-6 lg:grid-cols-2">
+            <PasskeyManager />
+            <LinkedAccounts />
+          </div>
           <ActiveSessions />
-          <AuthInfo />
         </div>
       );
     case "tokens":
