@@ -1031,6 +1031,8 @@ BETTER_AUTH_SECRET=$auth_secret
 ENCRYPTION_MASTER_KEY=$enc_key
 GITHUB_WEBHOOK_SECRET=$webhook_secret
 ACME_EMAIL=${ACME_EMAIL}
+ZEROSSL_EAB_KID=${ZEROSSL_EAB_KID:-}
+ZEROSSL_EAB_HMAC=${ZEROSSL_EAB_HMAC:-}
 TRAEFIK_DASHBOARD_AUTH=$traefik_auth
 
 # GitHub App (optional — configure in setup wizard or Settings)
@@ -1334,6 +1336,14 @@ do_update() {
 
   # Rebuild
   step "Rebuilding"
+
+  # Migrate ACME storage from single file to per-resolver files
+  local acme_vol
+  acme_vol=$(docker volume inspect vardo_letsencrypt --format '{{ .Mountpoint }}' 2>/dev/null || true)
+  if [ -n "$acme_vol" ] && [ -f "$acme_vol/acme.json" ] && [ ! -f "$acme_vol/acme-le.json" ]; then
+    cp "$acme_vol/acme.json" "$acme_vol/acme-le.json"
+    info "Migrated acme.json → acme-le.json"
+  fi
 
   info "Building containers..."
   if $VERBOSE; then
