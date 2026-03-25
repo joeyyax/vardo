@@ -1,0 +1,18 @@
+version: "1"
+name: minio
+displayName: MinIO
+description: S3-compatible object storage
+icon: https://cdn.simpleicons.org/minio/C72E49
+category: tool
+source: direct
+deployType: image
+imageName: minio/minio:latest
+defaultPort: 9000
+
+envVars:
+  - key: MINIO_ROOT_USER
+    description: Root access key
+    required: true
+  - key: MINIO_ROOT_PASSWORD
+    description: Root secret key
+    required: true

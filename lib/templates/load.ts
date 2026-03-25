@@ -1,6 +1,6 @@
 import { readdir, readFile } from "fs/promises";
 import { join, resolve } from "path";
-import TOML from "@iarna/toml";
+import YAML from "yaml";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("templates");
@@ -48,7 +48,7 @@ export async function loadTemplates(): Promise<Template[]> {
 
   let files: string[];
   try {
-    files = (await readdir(TEMPLATES_DIR)).filter((f) => f.endsWith(".toml"));
+    files = (await readdir(TEMPLATES_DIR)).filter((f) => f.endsWith(".yaml"));
   } catch {
     return [];
   }
@@ -58,7 +58,7 @@ export async function loadTemplates(): Promise<Template[]> {
   for (const file of files) {
     try {
       const content = await readFile(join(TEMPLATES_DIR, file), "utf-8");
-      const raw = TOML.parse(content) as Record<string, unknown>;
+      const raw = YAML.parse(content) as Record<string, unknown>;
 
       templates.push({
         id: `builtin-${raw.name as string}`,

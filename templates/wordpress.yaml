@@ -1,0 +1,71 @@
+version: "1"
+name: wordpress
+displayName: WordPress + MySQL
+description: WordPress CMS with a dedicated MySQL 8 database
+icon: https://cdn.simpleicons.org/wordpress/21759B
+category: web
+source: direct
+deployType: compose
+defaultPort: 80
+
+composeContent: |
+  services:
+    wordpress:
+      image: wordpress:latest
+      depends_on:
+        - mysql
+      env_file:
+        - .env
+      volumes:
+        - wp-content:/var/www/html/wp-content
+
+    mysql:
+      image: mysql:8
+      env_file:
+        - .env
+      volumes:
+        - mysql-data:/var/lib/mysql
+
+  volumes:
+    wp-content: {}
+    mysql-data: {}
+
+envVars:
+  - key: WORDPRESS_DB_HOST
+    description: Database hostname (compose service name)
+    required: true
+    defaultValue: mysql
+  - key: WORDPRESS_DB_USER
+    description: Database username
+    required: true
+    defaultValue: wordpress
+  - key: WORDPRESS_DB_PASSWORD
+    description: Database password
+    required: true
+  - key: WORDPRESS_DB_NAME
+    description: Database name
+    required: true
+    defaultValue: wordpress
+  - key: MYSQL_ROOT_PASSWORD
+    description: MySQL root password
+    required: true
+  - key: MYSQL_DATABASE
+    description: MySQL database to create on startup
+    required: false
+    defaultValue: wordpress
+  - key: MYSQL_USER
+    description: MySQL user to create on startup
+    required: false
+    defaultValue: wordpress
+  - key: MYSQL_PASSWORD
+    description: "MySQL user password (should match WORDPRESS_DB_PASSWORD)"
+    required: false
+    defaultValue: "${WORDPRESS_DB_PASSWORD}"
+
+volumes:
+  - name: wp-content
+    mountPath: /var/www/html/wp-content
+    description: WordPress themes, plugins, and uploads
+  - name: mysql-data
+    mountPath: /var/lib/mysql
+    description: MySQL data files

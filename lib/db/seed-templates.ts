@@ -3,7 +3,7 @@ import { templates } from "@/lib/db/schema";
 import { nanoid } from "nanoid";
 import { readdir, readFile } from "fs/promises";
 import { join, resolve } from "path";
-import TOML from "@iarna/toml";
+import YAML from "yaml";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("seed");
@@ -32,7 +32,7 @@ type TemplateFile = {
 export async function seedTemplates() {
   let files: string[];
   try {
-    files = (await readdir(TEMPLATES_DIR)).filter((f) => f.endsWith(".toml"));
+    files = (await readdir(TEMPLATES_DIR)).filter((f) => f.endsWith(".yaml"));
   } catch {
     log.info("No templates directory found at", TEMPLATES_DIR);
     return;
@@ -43,7 +43,7 @@ export async function seedTemplates() {
   for (const file of files) {
     try {
       const content = await readFile(join(TEMPLATES_DIR, file), "utf-8");
-      const tmpl = TOML.parse(content) as unknown as TemplateFile;
+      const tmpl = YAML.parse(content) as TemplateFile;
 
       await db
         .insert(templates)

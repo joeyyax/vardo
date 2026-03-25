@@ -1,0 +1,10 @@
+version: "1"
+name: nginx
+displayName: Nginx
+description: High-performance web server and reverse proxy
+icon: https://cdn.simpleicons.org/nginx/009639
+category: web
+source: direct
+deployType: image
+imageName: nginx:alpine
+defaultPort: 80

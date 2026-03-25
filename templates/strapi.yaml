@@ -1,0 +1,88 @@
+version: "1"
+name: strapi
+displayName: Strapi + Postgres
+description: Headless CMS with a dedicated PostgreSQL 17 database
+icon: https://cdn.simpleicons.org/strapi/4945FF
+category: web
+source: direct
+deployType: compose
+defaultPort: 1337
+
+composeContent: |
+  services:
+    strapi:
+      image: strapi/strapi:latest
+      depends_on:
+        - postgres
+      env_file:
+        - .env
+      volumes:
+        - strapi-uploads:/opt/app/public/uploads
+
+    postgres:
+      image: postgres:17
+      env_file:
+        - .env
+      volumes:
+        - postgres-data:/var/lib/postgresql/data
+
+  volumes:
+    strapi-uploads: {}
+    postgres-data: {}
+
+envVars:
+  - key: DATABASE_CLIENT
+    description: Database client type
+    required: true
+    defaultValue: postgres
+  - key: DATABASE_HOST
+    description: Database hostname (compose service name)
+    required: true
+    defaultValue: postgres
+  - key: DATABASE_PORT
+    description: Database port
+    required: false
+    defaultValue: "5432"
+  - key: DATABASE_NAME
+    description: Database name
+    required: true
+    defaultValue: strapi
+  - key: DATABASE_USERNAME
+    description: Database username
+    required: true
+    defaultValue: strapi
+  - key: DATABASE_PASSWORD
+    description: Database password
+    required: true
+  - key: APP_KEYS
+    description: Strapi application keys (comma-separated)
+    required: true
+  - key: API_TOKEN_SALT
+    description: Salt for API token generation
+    required: true
+  - key: ADMIN_JWT_SECRET
+    description: Secret for admin JWT tokens
+    required: true
+  - key: JWT_SECRET
+    description: Secret for user JWT tokens
+    required: true
+  - key: POSTGRES_DB
+    description: PostgreSQL database to create on startup
+    required: false
+    defaultValue: strapi
+  - key: POSTGRES_USER
+    description: PostgreSQL superuser name
+    required: false
+    defaultValue: strapi
+  - key: POSTGRES_PASSWORD
+    description: "PostgreSQL superuser password (should match DATABASE_PASSWORD)"
+    required: false
+    defaultValue: "${DATABASE_PASSWORD}"
+
+volumes:
+  - name: strapi-uploads
+    mountPath: /opt/app/public/uploads
+    description: Strapi media uploads
+  - name: postgres-data
+    mountPath: /var/lib/postgresql/data
+    description: PostgreSQL data files

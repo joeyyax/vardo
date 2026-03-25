@@ -1,0 +1,47 @@
+version: "1"
+name: postgres
+displayName: PostgreSQL
+description: Powerful open-source relational database
+icon: https://cdn.simpleicons.org/postgresql/4169E1
+category: database
+source: direct
+deployType: image
+imageName: postgres:16
+defaultPort: 5432
+diskWriteAlertThreshold: 5368709120 # 5 GB/hour (databases write more)
+
+envVars:
+  - key: POSTGRES_PASSWORD
+    description: Superuser password
+    required: true
+  - key: POSTGRES_USER
+    description: Superuser name
+    required: false
+    defaultValue: postgres
+  - key: POSTGRES_DB
+    description: Default database name
+    required: false
+    defaultValue: postgres
+
+volumes:
+  - name: data
+    mountPath: /var/lib/postgresql/data
+    description: PostgreSQL data files
+
+connectionInfo:
+  - label: Host
+    value: "${project.name}"
+    copyRef: HOST
+  - label: Port
+    value: "5432"
+  - label: Username
+    value: "${POSTGRES_USER}"
+    copyRef: POSTGRES_USER
+  - label: Password
+    value: "${POSTGRES_PASSWORD}"
+    copyRef: POSTGRES_PASSWORD
+  - label: Database
+    value: "${POSTGRES_DB}"
+    copyRef: POSTGRES_DB
+  - label: Connection URL
+    value: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${project.name}:5432/${POSTGRES_DB}"
