@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { handleRouteError } from "@/lib/api/error-response";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { decodeInviteToken } from "@/lib/mesh/invite";
 import { generateMeshToken } from "@/lib/mesh/auth";
+
+const joinSchema = z.object({ token: z.string().min(1, "Invite token is required") });
 import { ensureHubConfig, HUB_IP } from "@/lib/mesh";
 import { getInstanceId } from "@/lib/constants";
 import { db } from "@/lib/db";
@@ -22,15 +25,16 @@ export async function POST(request: NextRequest) {
   try {
     await requireAppAdmin();
 
-    const { token } = await request.json();
-    if (!token || typeof token !== "string") {
+    const body = await request.json();
+    const parsed = joinSchema.safeParse(body);
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: "Invite token is required" },
-        { status: 400 }
+        { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
+        { status: 400 },
       );
     }
 
-    const decoded = decodeInviteToken(token.trim());
+    const decoded = decodeInviteToken(parsed.data.token.trim());
     if (!decoded) {
       return NextResponse.json(
         { error: "Invalid invite token" },

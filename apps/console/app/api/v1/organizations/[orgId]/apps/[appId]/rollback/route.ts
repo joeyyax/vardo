@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps, deployments } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
+
+const rollbackSchema = z.object({
+  deploymentId: z.string().min(1, "deploymentId is required"),
+  includeEnvVars: z.boolean().default(false),
+});
 import { eq, and } from "drizzle-orm";
 import { deployProject } from "@/lib/docker/deploy";
 import { createSSEResponse } from "@/lib/api/sse";
@@ -35,11 +41,14 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
       return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
 
-    const { deploymentId, includeEnvVars = false } = body;
-
-    if (!deploymentId || typeof deploymentId !== "string") {
-      return NextResponse.json({ error: "deploymentId is required" }, { status: 400 });
+    const parsed = rollbackSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
+        { status: 400 },
+      );
     }
+    const { deploymentId, includeEnvVars } = parsed.data;
 
     // Fetch the app
     const app = await db.query.apps.findFirst({

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { memberships, user } from "@/lib/db/schema";
@@ -6,6 +7,11 @@ import { requireOrg } from "@/lib/auth/session";
 import { requireAdmin } from "@/lib/auth/permissions";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
+
+const addMemberSchema = z.object({
+  email: z.string().email("Invalid email address"),
+  role: z.enum(["admin", "member"]).default("member"),
+});
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -62,15 +68,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     requireAdmin(membership.role);
 
     const body = await request.json();
-    const { email, role = "member" } = body;
-
-    if (!email || typeof email !== "string") {
-      return NextResponse.json({ error: "Email is required" }, { status: 400 });
+    const parsed = addMemberSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
+        { status: 400 },
+      );
     }
 
-    if (role !== "admin" && role !== "member") {
-      return NextResponse.json({ error: "Role must be 'admin' or 'member'" }, { status: 400 });
-    }
+    const { email, role } = parsed.data;
 
     // Find the user by email
     const targetUser = await db.query.user.findFirst({

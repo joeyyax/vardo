@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
+
+const createTokenSchema = z.object({ name: z.string().min(1, "Name is required").max(100).trim() });
+const deleteTokenSchema = z.object({ id: z.string().min(1, "Token ID is required") });
 import { apiTokens } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
@@ -67,10 +71,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     const body = await request.json();
-    const { name } = body;
-
-    if (!name || typeof name !== "string" || name.trim().length === 0) {
-      return NextResponse.json({ error: "Name is required" }, { status: 400 });
+    const parsed = createTokenSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
+        { status: 400 },
+      );
     }
 
     // Generate a random token
@@ -81,7 +87,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       id: nanoid(),
       userId: session.user.id,
       organizationId: orgId,
-      name: name.trim(),
+      name: parsed.data.name,
       tokenHash,
     });
 
@@ -104,11 +110,15 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     }
 
     const body = await request.json();
-    const { id } = body;
-
-    if (!id || typeof id !== "string") {
-      return NextResponse.json({ error: "Token ID is required" }, { status: 400 });
+    const parsed = deleteTokenSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
+        { status: 400 },
+      );
     }
+
+    const { id } = parsed.data;
 
     // Ensure the token belongs to this user and org
     const token = await db.query.apiTokens.findFirst({
