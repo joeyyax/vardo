@@ -19,7 +19,9 @@ export async function GET() {
     }
 
     const state = createInstallationState(session.user.id);
-    const url = `https://github.com/apps/${slug}/installations/new?state=${encodeURIComponent(state)}`;
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    const redirectUri = `${appUrl}/api/v1/github/callback`;
+    const url = `https://github.com/apps/${slug}/installations/new?state=${encodeURIComponent(state)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
 
     return NextResponse.json({ url });
   } catch (error) {
