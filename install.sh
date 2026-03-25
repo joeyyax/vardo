@@ -1161,6 +1161,44 @@ seed_templates() {
   " 2>/dev/null || true
 }
 
+install_shortcut() {
+  if $DRY_RUN; then return 0; fi
+  # Create a vardo wrapper script in /usr/local/bin
+  cat > /usr/local/bin/vardo <<'WRAPPER'
+#!/usr/bin/env bash
+VARDO_DIR="${VARDO_DIR:-/opt/vardo}"
+COMPOSE_FILE="docker-compose.yml"
+
+case "${1:-}" in
+  logs)     shift; docker compose -f "$VARDO_DIR/$COMPOSE_FILE" logs -f "$@" ;;
+  restart)  docker compose -f "$VARDO_DIR/$COMPOSE_FILE" restart ;;
+  stop)     docker compose -f "$VARDO_DIR/$COMPOSE_FILE" stop ;;
+  start)    docker compose -f "$VARDO_DIR/$COMPOSE_FILE" up -d ;;
+  ps)       docker compose -f "$VARDO_DIR/$COMPOSE_FILE" ps ;;
+  update)   bash "$VARDO_DIR/install.sh" update ;;
+  doctor)   bash "$VARDO_DIR/install.sh" doctor ;;
+  uninstall) bash "$VARDO_DIR/install.sh" uninstall "$@" ;;
+  shell)    shift; docker compose -f "$VARDO_DIR/$COMPOSE_FILE" exec frontend "${@:-sh}" ;;
+  *)
+    echo "Usage: vardo <command>"
+    echo ""
+    echo "Commands:"
+    echo "  logs [service]   View logs (follows)"
+    echo "  restart          Restart all services"
+    echo "  stop             Stop all services"
+    echo "  start            Start all services"
+    echo "  ps               Show running containers"
+    echo "  update           Pull latest and rebuild"
+    echo "  doctor           Run health checks"
+    echo "  shell [cmd]      Open shell in frontend container"
+    echo "  uninstall        Remove Vardo"
+    ;;
+esac
+WRAPPER
+  chmod +x /usr/local/bin/vardo
+  log "Installed 'vardo' command"
+}
+
 print_install_summary() {
   local version
   version=$(get_version)
@@ -1205,10 +1243,11 @@ print_install_summary() {
   [[ "$PLATFORM" != "macos" ]] && sudo_prefix="sudo "
 
   echo -e "  ${BOLD}Commands${RESET}"
-  dimln "  View logs       docker compose -f $VARDO_DIR/$COMPOSE_FILE logs -f"
-  dimln "  Restart         docker compose -f $VARDO_DIR/$COMPOSE_FILE restart"
-  dimln "  Update          ${sudo_prefix}bash $VARDO_DIR/install.sh update"
-  dimln "  Health check    ${sudo_prefix}bash $VARDO_DIR/install.sh doctor"
+  dimln "  vardo logs           View logs (follows)"
+  dimln "  vardo ps             Show running containers"
+  dimln "  vardo restart        Restart all services"
+  dimln "  vardo update         Pull latest and rebuild"
+  dimln "  vardo doctor         Run health checks"
   echo ""
 }
 
@@ -1226,6 +1265,7 @@ do_install() {
   if ! is_dev; then
     wait_healthy 90 2 || true
     seed_templates
+    install_shortcut
   fi
   print_install_summary
 }
