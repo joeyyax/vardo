@@ -313,7 +313,7 @@ run_cmd() {
   "$@"
 }
 
-# Run a command with progress dots — for long-running operations
+# Run a command with elapsed timer — for long-running operations
 run_with_spinner() {
   local label="$1"
   shift
@@ -327,15 +327,29 @@ run_with_spinner() {
     return $?
   fi
   log_to_file "CMD: $*"
+
+  # Start a timer in a background subshell that updates every 5s
+  local start_time=$SECONDS
+  (
+    while true; do
+      sleep 5
+      local elapsed=$(( SECONDS - start_time ))
+      printf "\r  ${CYAN}·${RESET} %s (%ds)  " "$label" "$elapsed" > /dev/tty
+    done
+  ) &
+  local timer_pid=$!
+
   printf "  ${CYAN}·${RESET} %s" "$label" > /dev/tty
 
-  # Run foreground, capture output to log, print dots for progress
+  # Run foreground
   local exit_code=0
   if "$@" >> "${INSTALL_LOG:-/dev/null}" 2>&1; then
-    printf "\r  ${GREEN}✓${RESET} %s\n" "$label" > /dev/tty
+    kill $timer_pid 2>/dev/null; wait $timer_pid 2>/dev/null
+    printf "\r  ${GREEN}✓${RESET} %s (%ds)\n" "$label" "$(( SECONDS - start_time ))" > /dev/tty
   else
     exit_code=$?
-    printf "\r  ${RED}✗${RESET} %s\n" "$label" > /dev/tty
+    kill $timer_pid 2>/dev/null; wait $timer_pid 2>/dev/null
+    printf "\r  ${RED}✗${RESET} %s (%ds)\n" "$label" "$(( SECONDS - start_time ))" > /dev/tty
     fail "$label — failed (exit $exit_code). Check ${INSTALL_LOG:-/var/log/vardo-install.log} for details."
   fi
   return $exit_code
