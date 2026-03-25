@@ -51,7 +51,7 @@ export default async function OrgSettingsTabPage({
       return (
         <OrgDomainEditor
           orgId={orgId}
-          defaultDomain={process.env.VARDO_BASE_DOMAIN || "example.org"}
+          defaultDomain={process.env.VARDO_BASE_DOMAIN || "localhost"}
           sslEnabled={orgData.organization.sslEnabled ?? true}
           serverIP={process.env.VARDO_SERVER_IP}
         />
