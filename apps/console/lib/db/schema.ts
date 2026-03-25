@@ -1,6 +1,7 @@
 import {
   bigint,
   boolean,
+  foreignKey,
   index,
   integer,
   pgEnum,
@@ -377,6 +378,7 @@ export const apps = pgTable(
     unique("app_org_name_uniq").on(t.organizationId, t.name),
     index("app_org_id_idx").on(t.organizationId),
     index("app_parent_app_id_idx").on(t.parentAppId),
+    foreignKey({ columns: [t.parentAppId], foreignColumns: [t.id] }).onDelete("set null"),
   ]
 );
 
@@ -415,6 +417,8 @@ export const deployments = pgTable("deployment", {
   (t) => [
     index("deployment_app_id_idx").on(t.appId),
     index("deployment_app_started_at_idx").on(t.appId, t.startedAt),
+    index("deployment_rollback_from_id_idx").on(t.rollbackFromId),
+    foreignKey({ columns: [t.rollbackFromId], foreignColumns: [t.id] }).onDelete("set null"),
   ]
 );
 
@@ -511,7 +515,10 @@ export const environments = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
-  (t) => [unique("env_app_name_uniq").on(t.appId, t.name)]
+  (t) => [
+    unique("env_app_name_uniq").on(t.appId, t.name),
+    foreignKey({ columns: [t.clonedFromId], foreignColumns: [t.id] }).onDelete("set null"),
+  ]
 );
 
 // ---------------------------------------------------------------------------
