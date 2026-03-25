@@ -30,8 +30,13 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# Install runtime dependencies — git for repo cloning, docker-cli for container management
-RUN apk add --no-cache git docker-cli && \
+# Install runtime dependencies
+# - git: repo cloning during deploys
+# - docker-cli: container management, compose operations
+# - curl: health checks, API calls
+# - nixpacks: buildpack deploys (auto-detect language, build image)
+RUN apk add --no-cache git docker-cli curl && \
+    curl -sSL https://nixpacks.com/install.sh | bash && \
     addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 --ingroup nodejs nextjs && \
     mkdir -p /var/lib/vardo/projects && \
