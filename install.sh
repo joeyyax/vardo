@@ -23,9 +23,18 @@ RESET="\033[0m"
 UNATTENDED=false
 AUTO_YES=false
 PURGE=false
+DRY_RUN=false
+VERBOSE=false
 COMMAND=""
 PLATFORM=""
 VARDO_ROLE=""
+PKG_MGR=""
+DISTRO_ID=""
+DISTRO_VERSION=""
+DISTRO_TIER=0    # 1=bulletproof, 2=supported, 3=best-effort
+INSTALL_LOG=""
+STEP_CURRENT=0
+STEP_TOTAL=0
 
 # ── Platform detection ────────────────────────────────────────────────────────
 
@@ -50,14 +59,258 @@ detect_platform() {
   fi
 }
 
+# ── Distro detection & package manager abstraction ───────────────────────────
+
+detect_distro() {
+  if [[ "$PLATFORM" == "macos" ]]; then
+    DISTRO_ID="macos"
+    DISTRO_VERSION=$(sw_vers -productVersion 2>/dev/null || echo "unknown")
+    PKG_MGR="brew"
+    DISTRO_TIER=2
+    return
+  fi
+
+  if [ -f /etc/os-release ]; then
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    DISTRO_ID="${ID:-unknown}"
+    DISTRO_VERSION="${VERSION_ID:-0}"
+  else
+    DISTRO_ID="unknown"
+    DISTRO_VERSION="0"
+  fi
+
+  # Determine package manager
+  if command -v apt-get &>/dev/null; then
+    PKG_MGR="apt"
+  elif command -v dnf &>/dev/null; then
+    PKG_MGR="dnf"
+  elif command -v pacman &>/dev/null; then
+    PKG_MGR="pacman"
+  elif command -v apk &>/dev/null; then
+    PKG_MGR="apk"
+  elif command -v zypper &>/dev/null; then
+    PKG_MGR="zypper"
+  else
+    PKG_MGR="unknown"
+  fi
+
+  # Assign tier
+  case "$DISTRO_ID" in
+    ubuntu)
+      local major
+      major=$(echo "$DISTRO_VERSION" | cut -d. -f1)
+      if [ "${major:-0}" -ge 22 ] 2>/dev/null; then
+        DISTRO_TIER=1
+      else
+        DISTRO_TIER=3
+      fi
+      ;;
+    debian)
+      local major
+      major=$(echo "$DISTRO_VERSION" | cut -d. -f1)
+      if [ "${major:-0}" -ge 12 ] 2>/dev/null; then
+        DISTRO_TIER=1
+      else
+        DISTRO_TIER=3
+      fi
+      ;;
+    fedora)
+      DISTRO_TIER=2
+      ;;
+    rhel|rocky|almalinux|centos)
+      DISTRO_TIER=2
+      ;;
+    arch|manjaro)
+      DISTRO_TIER=2
+      ;;
+    alpine)
+      DISTRO_TIER=2
+      ;;
+    *)
+      DISTRO_TIER=3
+      ;;
+  esac
+}
+
+# Map generic package names to distro-specific names
+pkg_name() {
+  local name="$1"
+  case "$PKG_MGR" in
+    apt)
+      case "$name" in
+        dnsutils) echo "dnsutils" ;;
+        *) echo "$name" ;;
+      esac
+      ;;
+    dnf)
+      case "$name" in
+        dnsutils) echo "bind-utils" ;;
+        *) echo "$name" ;;
+      esac
+      ;;
+    pacman)
+      case "$name" in
+        dnsutils) echo "bind" ;;
+        *) echo "$name" ;;
+      esac
+      ;;
+    apk)
+      case "$name" in
+        dnsutils) echo "bind-tools" ;;
+        *) echo "$name" ;;
+      esac
+      ;;
+    zypper)
+      case "$name" in
+        dnsutils) echo "bind-utils" ;;
+        *) echo "$name" ;;
+      esac
+      ;;
+    *) echo "$name" ;;
+  esac
+}
+
+pkg_update() {
+  case "$PKG_MGR" in
+    apt)
+      if $VERBOSE; then
+        run_cmd apt-get update -qq
+      else
+        run_cmd apt-get update -qq > /dev/null 2>&1
+      fi
+      ;;
+    dnf)
+      warn "Package installation for $PKG_MGR is not yet supported. Run 'dnf check-update' manually."
+      return 1
+      ;;
+    pacman)
+      warn "Package installation for $PKG_MGR is not yet supported. Run 'pacman -Sy' manually."
+      return 1
+      ;;
+    apk)
+      warn "Package installation for $PKG_MGR is not yet supported. Run 'apk update' manually."
+      return 1
+      ;;
+    zypper)
+      warn "Package installation for $PKG_MGR is not yet supported. Run 'zypper refresh' manually."
+      return 1
+      ;;
+    *)
+      warn "Cannot update packages: unknown package manager."
+      return 1
+      ;;
+  esac
+}
+
+pkg_install() {
+  case "$PKG_MGR" in
+    apt)
+      if $VERBOSE; then
+        run_cmd apt-get install -y -qq "$@"
+      else
+        run_cmd apt-get install -y -qq "$@" > /dev/null 2>&1
+      fi
+      ;;
+    dnf)
+      warn "Package installation for $PKG_MGR is not yet supported. Install manually: $*"
+      return 1
+      ;;
+    pacman)
+      warn "Package installation for $PKG_MGR is not yet supported. Install manually: $*"
+      return 1
+      ;;
+    apk)
+      warn "Package installation for $PKG_MGR is not yet supported. Install manually: $*"
+      return 1
+      ;;
+    zypper)
+      warn "Package installation for $PKG_MGR is not yet supported. Install manually: $*"
+      return 1
+      ;;
+    *)
+      warn "Cannot install packages: unknown package manager. Install manually: $*"
+      return 1
+      ;;
+  esac
+}
+
+pkg_check() {
+  local pkg="$1"
+  case "$PKG_MGR" in
+    apt) dpkg -s "$pkg" &>/dev/null ;;
+    dnf) rpm -q "$pkg" &>/dev/null ;;
+    pacman) pacman -Q "$pkg" &>/dev/null ;;
+    apk) apk info -e "$pkg" &>/dev/null ;;
+    zypper) rpm -q "$pkg" &>/dev/null ;;
+    *)
+      warn "Cannot check package status for $PKG_MGR."
+      return 1
+      ;;
+  esac
+}
+
+# ── Logging ──────────────────────────────────────────────────────────────────
+
+setup_logging() {
+  if [[ "$PLATFORM" == "macos" ]]; then
+    INSTALL_LOG="$HOME/vardo-install.log"
+  else
+    INSTALL_LOG="/var/log/vardo-install.log"
+  fi
+
+  # Ensure log file is writable
+  if touch "$INSTALL_LOG" 2>/dev/null; then
+    chmod 600 "$INSTALL_LOG" 2>/dev/null || true
+    exec > >(tee -a "$INSTALL_LOG") 2>&1
+    log_to_file "Session started"
+  else
+    # Fall back to home directory if /var/log isn't writable
+    INSTALL_LOG="$HOME/vardo-install.log"
+    if touch "$INSTALL_LOG" 2>/dev/null; then
+      chmod 600 "$INSTALL_LOG" 2>/dev/null || true
+      exec > >(tee -a "$INSTALL_LOG") 2>&1
+      log_to_file "Session started"
+    else
+      INSTALL_LOG=""
+    fi
+  fi
+}
+
+log_to_file() {
+  if [ -n "${INSTALL_LOG:-}" ] && [ -w "$INSTALL_LOG" ]; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$INSTALL_LOG"
+  fi
+}
+
 # ── Utilities ─────────────────────────────────────────────────────────────────
 
 log()     { echo -e "  ${GREEN}✓${RESET} $1"; }
 warn()    { echo -e "  ${YELLOW}!${RESET} $1"; }
 fail()    { echo -e "  ${RED}✗${RESET} $1"; exit 1; }
 info()    { echo -e "  ${CYAN}·${RESET} $1"; }
-step()    { echo -e "\n${BOLD}  $1${RESET}"; }
 dimln()   { echo -e "  ${DIM}$1${RESET}"; }
+
+step() {
+  if [ "$STEP_TOTAL" -gt 0 ]; then
+    STEP_CURRENT=$((STEP_CURRENT + 1))
+    echo -e "\n${BOLD}  [${STEP_CURRENT}/${STEP_TOTAL}] $1${RESET}"
+  else
+    echo -e "\n${BOLD}  $1${RESET}"
+  fi
+  log_to_file "STEP: $1"
+}
+
+# Execute a command, respecting --dry-run and --verbose modes
+run_cmd() {
+  if $DRY_RUN; then
+    echo -e "  ${DIM}[dry-run] $*${RESET}"
+    log_to_file "[dry-run] $*"
+    return 0
+  fi
+  log_to_file "CMD: $*"
+  "$@"
+}
 
 confirm() {
   if $UNATTENDED || $AUTO_YES; then return 0; fi
@@ -156,69 +409,26 @@ get_ram_mb() {
   fi
 }
 
-preflight_checks() {
-  step "System checks"
+# ── Disk space check ─────────────────────────────────────────────────────────
 
-  # OS
+check_disk_space() {
+  local check_path="/"
   if [[ "$PLATFORM" == "macos" ]]; then
-    local macos_ver
-    macos_ver=$(sw_vers -productVersion 2>/dev/null || echo "unknown")
-    log "macOS $macos_ver"
-  elif [[ "$PLATFORM" == "wsl" ]]; then
-    log "WSL2 (Windows Subsystem for Linux)"
-  elif [ -f /etc/os-release ]; then
-    . /etc/os-release
-    case "$ID" in
-      ubuntu)
-        local major; major=$(echo "$VERSION_ID" | cut -d. -f1)
-        if [ "$major" -lt 22 ] 2>/dev/null; then
-          warn "Ubuntu $VERSION_ID — 22.04+ recommended"
-        else
-          log "Ubuntu $VERSION_ID"
-        fi
-        ;;
-      debian)
-        local major; major=$(echo "$VERSION_ID" | cut -d. -f1)
-        if [ "$major" -lt 12 ] 2>/dev/null; then
-          warn "Debian $VERSION_ID — 12+ recommended"
-        else
-          log "Debian $VERSION_ID"
-        fi
-        ;;
-      *)
-        warn "$PRETTY_NAME — tested on Ubuntu 22.04+ and Debian 12+"
-        ;;
-    esac
-  else
-    warn "Unknown OS — tested on Ubuntu 22.04+ and Debian 12+"
+    check_path="$HOME"
   fi
 
-  # RAM
-  local ram_mb
-  ram_mb=$(get_ram_mb)
-  if [ "$ram_mb" -gt 0 ] 2>/dev/null; then
-    if [ "$ram_mb" -lt 1024 ]; then
-      fail "Insufficient RAM: ${ram_mb}MB (minimum 1GB)"
-    elif [ "$ram_mb" -lt 2048 ]; then
-      warn "RAM: ${ram_mb}MB — 2GB+ recommended"
-    else
-      log "RAM: ${ram_mb}MB"
-    fi
-  fi
+  local disk_avail_kb
+  disk_avail_kb=$(df -k "$check_path" 2>/dev/null | tail -1 | awk '{print $4}')
+  local disk_avail_mb=$(( ${disk_avail_kb:-0} / 1024 ))
 
-  # Disk
-  local disk_kb disk_gb
-  disk_kb=$(df / 2>/dev/null | tail -1 | awk '{print $4}')
-  disk_gb=$((disk_kb / 1048576))
-  if [ "$disk_gb" -lt 20 ] 2>/dev/null; then
-    warn "Disk: ${disk_gb}GB free — 20GB+ recommended"
-  else
-    log "Disk: ${disk_gb}GB free"
+  if [ "$disk_avail_mb" -lt 2048 ] 2>/dev/null; then
+    fail "Insufficient disk space: ${disk_avail_mb}MB available (minimum 2GB required). Free up space on $(df "$check_path" | tail -1 | awk '{print $1}') and retry."
+  elif [ "$disk_avail_mb" -lt 5120 ] 2>/dev/null; then
+    warn "Disk: ${disk_avail_mb}MB free — 5GB+ recommended for Docker images and builds. Consider freeing space before continuing."
   fi
-
-  # Ports
-  check_ports
 }
+
+# ── Port conflict detection ──────────────────────────────────────────────────
 
 check_port_in_use() {
   local port="$1"
@@ -226,6 +436,41 @@ check_port_in_use() {
     lsof -iTCP:"$port" -sTCP:LISTEN -t &>/dev/null
   else
     ss -tlnp "sport = :$port" 2>/dev/null | grep -q LISTEN
+  fi
+}
+
+get_port_process() {
+  local port="$1"
+  if [[ "$PLATFORM" == "macos" ]]; then
+    local pid
+    pid=$(lsof -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null | head -1)
+    if [ -n "$pid" ]; then
+      ps -p "$pid" -o comm= 2>/dev/null || echo "unknown (pid $pid)"
+    fi
+  else
+    ss -tlnp "sport = :$port" 2>/dev/null | grep -oP 'users:\(\("\K[^"]+' | head -1 || echo "unknown"
+  fi
+}
+
+check_critical_ports() {
+  local ports_to_check=("80" "443" "3000")
+  local conflicts=0
+
+  for port in "${ports_to_check[@]}"; do
+    if check_port_in_use "$port"; then
+      local process_name
+      process_name=$(get_port_process "$port")
+      if [ -n "$process_name" ]; then
+        warn "Port $port is in use by $process_name. This may conflict with Vardo services."
+      else
+        warn "Port $port is in use. This may conflict with Vardo services."
+      fi
+      conflicts=$((conflicts + 1))
+    fi
+  done
+
+  if [ "$conflicts" -gt 0 ]; then
+    warn "Stop conflicting services or they will prevent Vardo from starting."
   fi
 }
 
@@ -248,7 +493,9 @@ check_ports() {
   if is_production; then
     for port in 80 443; do
       if check_port_in_use "$port"; then
-        fail "Port $port is in use — Traefik needs it for TLS. Free the port and retry."
+        local proc
+        proc=$(get_port_process "$port")
+        fail "Port $port is in use by ${proc:-unknown process} — Traefik needs it for TLS. Stop the conflicting service (e.g. 'systemctl stop nginx' or 'systemctl stop apache2') and retry."
       fi
     done
   fi
@@ -286,6 +533,116 @@ check_ports() {
   fi
 }
 
+preflight_checks() {
+  step "System checks"
+
+  # Distro + tier info
+  if [[ "$PLATFORM" == "macos" ]]; then
+    log "macOS $DISTRO_VERSION"
+  elif [[ "$PLATFORM" == "wsl" ]]; then
+    log "WSL2 (Windows Subsystem for Linux)"
+  elif [ -f /etc/os-release ]; then
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    local tier_label=""
+    case "$DISTRO_TIER" in
+      1) tier_label="tier 1 — fully supported" ;;
+      2) tier_label="tier 2 — supported, may need manual steps" ;;
+      3) tier_label="tier 3 — best-effort, not tested" ;;
+    esac
+
+    case "$DISTRO_ID" in
+      ubuntu)
+        local major
+        major=$(echo "$DISTRO_VERSION" | cut -d. -f1)
+        if [ "${major:-0}" -lt 22 ] 2>/dev/null; then
+          warn "Ubuntu $DISTRO_VERSION ($tier_label) — 22.04+ recommended. Older versions may have outdated Docker packages."
+        else
+          log "Ubuntu $DISTRO_VERSION ($tier_label)"
+        fi
+        ;;
+      debian)
+        local major
+        major=$(echo "$DISTRO_VERSION" | cut -d. -f1)
+        if [ "${major:-0}" -lt 12 ] 2>/dev/null; then
+          warn "Debian $DISTRO_VERSION ($tier_label) — 12+ recommended."
+        else
+          log "Debian $DISTRO_VERSION ($tier_label)"
+        fi
+        ;;
+      fedora)
+        log "Fedora $DISTRO_VERSION ($tier_label)"
+        ;;
+      rhel|rocky|almalinux|centos)
+        log "${PRETTY_NAME:-$DISTRO_ID $DISTRO_VERSION} ($tier_label)"
+        ;;
+      arch|manjaro)
+        log "${PRETTY_NAME:-Arch Linux} ($tier_label)"
+        ;;
+      alpine)
+        log "Alpine $DISTRO_VERSION ($tier_label)"
+        ;;
+      *)
+        warn "${PRETTY_NAME:-$DISTRO_ID $DISTRO_VERSION} ($tier_label) — tested on Ubuntu 22.04+ and Debian 12+."
+        if ! $UNATTENDED; then
+          if ! confirm "This OS is not tested. Continue at your own risk?"; then
+            fail "Installation cancelled. Use Ubuntu 22.04+, Debian 12+, or another supported distro."
+          fi
+        fi
+        ;;
+    esac
+
+    if [ "$DISTRO_TIER" -eq 2 ]; then
+      warn "This distro is tier 2 — Docker install via get.docker.com should work, but package installation may require manual steps."
+    fi
+  else
+    warn "Unknown OS — tested on Ubuntu 22.04+ and Debian 12+. Install may fail on unsupported systems."
+    if ! $UNATTENDED; then
+      if ! confirm "Unknown OS detected. Continue at your own risk?"; then
+        fail "Installation cancelled. Use a supported Linux distribution."
+      fi
+    fi
+  fi
+
+  # Package manager
+  if [[ "$PLATFORM" != "macos" ]]; then
+    if [ "$PKG_MGR" = "unknown" ]; then
+      warn "No recognized package manager found. You will need to install dependencies manually."
+    else
+      log "Package manager: $PKG_MGR"
+    fi
+  fi
+
+  # RAM
+  local ram_mb
+  ram_mb=$(get_ram_mb)
+  if [ "$ram_mb" -gt 0 ] 2>/dev/null; then
+    if [ "$ram_mb" -lt 1024 ]; then
+      fail "Insufficient RAM: ${ram_mb}MB (minimum 1GB required). Upgrade your server or add swap space."
+    elif [ "$ram_mb" -lt 2048 ]; then
+      warn "RAM: ${ram_mb}MB — 2GB+ recommended for stable operation. Consider upgrading or adding swap."
+    else
+      log "RAM: ${ram_mb}MB"
+    fi
+  fi
+
+  # Disk space (2GB minimum, 5GB warning)
+  check_disk_space
+
+  # General disk display
+  local disk_kb disk_gb
+  disk_kb=$(df / 2>/dev/null | tail -1 | awk '{print $4}')
+  disk_gb=$((disk_kb / 1048576))
+  if [ "$disk_gb" -lt 20 ] 2>/dev/null; then
+    warn "Disk: ${disk_gb}GB free — 20GB+ recommended for images and builds."
+  else
+    log "Disk: ${disk_gb}GB free"
+  fi
+
+  # Ports
+  check_ports
+}
+
 setup_swap() {
   # macOS manages its own swap
   [[ "$PLATFORM" == "macos" ]] && return
@@ -296,10 +653,10 @@ setup_swap() {
   if [ "$ram_mb" -gt 0 ] && [ "$ram_mb" -lt 4096 ]; then
     if ! swapon --show 2>/dev/null | grep -q .; then
       info "Creating 2GB swap file..."
-      fallocate -l 2G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none
-      chmod 600 /swapfile
-      mkswap /swapfile > /dev/null
-      if swapon /swapfile 2>/dev/null; then
+      run_cmd fallocate -l 2G /swapfile 2>/dev/null || run_cmd dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none
+      run_cmd chmod 600 /swapfile
+      run_cmd mkswap /swapfile > /dev/null
+      if run_cmd swapon /swapfile 2>/dev/null; then
         grep -q '/swapfile' /etc/fstab 2>/dev/null || echo '/swapfile none swap sw 0 0' >> /etc/fstab
         log "Swap enabled: 2GB"
       else
@@ -317,7 +674,7 @@ install_packages_macos() {
   if command -v git &>/dev/null; then
     log "Git: $(git --version 2>/dev/null)"
   else
-    fail "Git not found. Run: xcode-select --install"
+    fail "Git not found. Install Xcode command line tools: xcode-select --install"
   fi
 
   # Docker Desktop
@@ -325,9 +682,9 @@ install_packages_macos() {
     log "Docker: $(docker --version 2>/dev/null | head -1)"
   else
     if [ -d "/Applications/Docker.app" ]; then
-      fail "Docker Desktop is installed but not running. Start it and try again."
+      fail "Docker Desktop is installed but not running. Open Docker Desktop from Applications and wait for it to start, then retry."
     else
-      fail "Docker Desktop not found. Install it from https://docker.com/products/docker-desktop"
+      fail "Docker Desktop not found. Download and install it from https://docker.com/products/docker-desktop then retry."
     fi
   fi
 
@@ -335,7 +692,7 @@ install_packages_macos() {
   if docker compose version &>/dev/null; then
     log "Compose: $(docker compose version 2>/dev/null | sed 's/Docker Compose version //')"
   else
-    fail "Docker Compose not available"
+    fail "Docker Compose not available. Update Docker Desktop to the latest version."
   fi
 }
 
@@ -346,11 +703,13 @@ install_packages_linux() {
   command -v curl &>/dev/null || to_install+=("curl")
   command -v git &>/dev/null || to_install+=("git")
 
-  # Unattended upgrades
+  # Unattended upgrades (apt-only)
   local needs_unattended=false
-  if ! dpkg -s unattended-upgrades &>/dev/null 2>&1; then
-    to_install+=("unattended-upgrades")
-    needs_unattended=true
+  if [[ "$PKG_MGR" == "apt" ]]; then
+    if ! pkg_check "unattended-upgrades"; then
+      to_install+=("unattended-upgrades")
+      needs_unattended=true
+    fi
   fi
 
   # Docker
@@ -367,7 +726,7 @@ install_packages_linux() {
 
   # Show what will be installed
   if [ ${#to_install[@]} -gt 0 ]; then
-    info "Will install via apt: ${to_install[*]}"
+    info "Will install via $PKG_MGR: ${to_install[*]}"
   fi
   if $needs_docker; then
     info "Will install: Docker Engine + Compose plugin"
@@ -376,17 +735,17 @@ install_packages_linux() {
   if ! $UNATTENDED && ! $AUTO_YES; then
     echo ""
     if ! confirm "Install these packages?"; then
-      fail "Cannot continue without required packages."
+      fail "Cannot continue without required packages. Install them manually and retry."
     fi
     echo ""
   fi
 
-  # apt packages
+  # System packages
   if [ ${#to_install[@]} -gt 0 ]; then
-    apt-get update -qq > /dev/null 2>&1
-    apt-get install -y -qq "${to_install[@]}" > /dev/null 2>&1
-    if $needs_unattended; then
-      dpkg-reconfigure -f noninteractive unattended-upgrades > /dev/null 2>&1
+    pkg_update || true
+    pkg_install "${to_install[@]}" || fail "Failed to install packages: ${to_install[*]}. Check your package manager configuration and network connectivity."
+    if $needs_unattended && [[ "$PKG_MGR" == "apt" ]]; then
+      run_cmd dpkg-reconfigure -f noninteractive unattended-upgrades > /dev/null 2>&1 || true
     fi
     log "Installed: ${to_install[*]}"
   fi
@@ -394,9 +753,13 @@ install_packages_linux() {
   # Docker
   if $needs_docker; then
     info "Installing Docker (this may take a minute)..."
-    curl -fsSL https://get.docker.com | sh > /dev/null 2>&1
-    systemctl enable docker > /dev/null 2>&1
-    systemctl start docker
+    if $DRY_RUN; then
+      echo -e "  ${DIM}[dry-run] curl -fsSL https://get.docker.com | sh${RESET}"
+    else
+      curl -fsSL https://get.docker.com | sh > /dev/null 2>&1 || fail "Docker installation failed. Check https://docs.docker.com/engine/install/ for manual installation instructions."
+    fi
+    run_cmd systemctl enable docker > /dev/null 2>&1 || true
+    run_cmd systemctl start docker || fail "Failed to start Docker daemon. Run 'systemctl status docker' to check for errors."
     log "Docker installed"
   else
     log "Docker: $(docker --version | head -1)"
@@ -404,7 +767,7 @@ install_packages_linux() {
 
   # Compose check
   if ! docker compose version &>/dev/null; then
-    fail "Docker Compose plugin not found"
+    fail "Docker Compose plugin not found. Install it with: apt-get install docker-compose-plugin (or see https://docs.docker.com/compose/install/)"
   fi
 
   # Log rotation (Linux only — Docker Desktop manages its own)
@@ -441,13 +804,16 @@ c['log-opts'].setdefault('max-file','3')
 print(json.dumps(c,indent=2))
 " "$daemon" 2>/dev/null || true)
       if [ -n "$merged" ]; then
-        echo "$merged" > "$daemon"
+        if ! $DRY_RUN; then
+          echo "$merged" > "$daemon"
+        fi
         needs_restart=true
       fi
     fi
   else
-    mkdir -p /etc/docker
-    cat > "$daemon" <<'EOF'
+    if ! $DRY_RUN; then
+      mkdir -p /etc/docker
+      cat > "$daemon" <<'EOF'
 {
   "log-driver": "json-file",
   "log-opts": {
@@ -456,17 +822,20 @@ print(json.dumps(c,indent=2))
   }
 }
 EOF
+    fi
     needs_restart=true
   fi
 
   if $needs_restart; then
-    systemctl restart docker 2>/dev/null || true
+    run_cmd systemctl restart docker 2>/dev/null || true
     local wait=0
     while [ $wait -lt 30 ]; do
       docker info > /dev/null 2>&1 && break
       sleep 1; wait=$((wait + 1))
     done
-    [ $wait -ge 30 ] && fail "Docker daemon did not start within 30s"
+    if [ $wait -ge 30 ]; then
+      fail "Docker daemon did not start within 30s after log rotation config. Run 'journalctl -u docker' to diagnose."
+    fi
   fi
 }
 
@@ -478,13 +847,15 @@ clone_repo() {
     cd "$VARDO_DIR"
     if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
       warn "Local changes detected, stashing..."
-      git stash --quiet
+      run_cmd git stash --quiet
     fi
-    git pull --quiet
+    if ! run_cmd git pull --quiet; then
+      fail "git pull failed in $VARDO_DIR. This may be caused by merge conflicts or authentication issues. Run 'cd $VARDO_DIR && git status' to inspect."
+    fi
     log "Updated to latest"
   else
     info "Cloning to $VARDO_DIR..."
-    git clone --depth 1 "$REPO_URL" "$VARDO_DIR"
+    run_cmd git clone --depth 1 "$REPO_URL" "$VARDO_DIR"
     cd "$VARDO_DIR"
     log "Installed to $VARDO_DIR"
   fi
@@ -513,7 +884,7 @@ generate_env() {
       echo -e "    ${BOLD}3)${RESET} Development   Local development"
       echo ""
       local role_choice
-      read -p "  Choose [1]: " role_choice < /dev/tty
+      read -rp "  Choose [1]: " role_choice < /dev/tty
       case "${role_choice:-1}" in
         1) VARDO_ROLE="production" ;;
         2) VARDO_ROLE="staging" ;;
@@ -530,19 +901,19 @@ generate_env() {
   # Domain prompts — only for production and staging (optional for staging)
   if [[ "$VARDO_ROLE" == "production" ]]; then
     if $UNATTENDED; then
-      [ -n "${VARDO_DOMAIN:-}" ] || fail "VARDO_DOMAIN is required in --unattended mode"
-      [ -n "${VARDO_BASE_DOMAIN:-}" ] || fail "VARDO_BASE_DOMAIN is required in --unattended mode"
-      [ -n "${ACME_EMAIL:-}" ] || fail "ACME_EMAIL is required in --unattended mode"
+      [ -n "${VARDO_DOMAIN:-}" ] || fail "VARDO_DOMAIN is required in --unattended mode. Set it as an environment variable: VARDO_DOMAIN=host.example.com"
+      [ -n "${VARDO_BASE_DOMAIN:-}" ] || fail "VARDO_BASE_DOMAIN is required in --unattended mode. Set it as an environment variable: VARDO_BASE_DOMAIN=example.com"
+      [ -n "${ACME_EMAIL:-}" ] || fail "ACME_EMAIL is required in --unattended mode. Set it as an environment variable: ACME_EMAIL=you@example.com"
     else
       if [ -z "${VARDO_DOMAIN:-}" ]; then
         echo ""
-        read -p "  Domain for Vardo dashboard (e.g. host.example.com): " VARDO_DOMAIN < /dev/tty
+        read -rp "  Domain for Vardo dashboard (e.g. host.example.com): " VARDO_DOMAIN < /dev/tty
       fi
       if [ -z "${VARDO_BASE_DOMAIN:-}" ]; then
-        read -p "  Base domain for projects (e.g. example.com): " VARDO_BASE_DOMAIN < /dev/tty
+        read -rp "  Base domain for projects (e.g. example.com): " VARDO_BASE_DOMAIN < /dev/tty
       fi
       if [ -z "${ACME_EMAIL:-}" ]; then
-        read -p "  Email for Let's Encrypt certificates: " ACME_EMAIL < /dev/tty
+        read -rp "  Email for Let's Encrypt certificates: " ACME_EMAIL < /dev/tty
       fi
     fi
 
@@ -550,7 +921,7 @@ generate_env() {
     for var_name in VARDO_DOMAIN VARDO_BASE_DOMAIN ACME_EMAIL; do
       local val="${!var_name}"
       if [[ "$val" =~ [[:space:]\;\|\&\$\`\\\"\'\<\>] ]]; then
-        fail "$var_name contains invalid characters"
+        fail "$var_name contains invalid characters. Use only alphanumeric characters, dots, hyphens, and @ symbols."
       fi
     done
 
@@ -561,7 +932,11 @@ generate_env() {
       info "Server IP: $server_ip"
 
       if [[ "$PLATFORM" != "macos" ]]; then
-        command -v dig &>/dev/null || apt-get install -y -qq dnsutils > /dev/null 2>&1 || true
+        if ! command -v dig &>/dev/null; then
+          local dns_pkg
+          dns_pkg=$(pkg_name "dnsutils")
+          pkg_install "$dns_pkg" 2>/dev/null || true
+        fi
       fi
 
       local domain_ip=""
@@ -585,14 +960,19 @@ generate_env() {
     # Staging — domain is optional (may be behind existing reverse proxy)
     if [ -z "${VARDO_DOMAIN:-}" ] && ! $UNATTENDED; then
       echo ""
-      read -p "  Domain for Vardo dashboard (optional, press Enter to skip): " VARDO_DOMAIN < /dev/tty
+      read -rp "  Domain for Vardo dashboard (optional, press Enter to skip): " VARDO_DOMAIN < /dev/tty
       if [ -n "${VARDO_DOMAIN:-}" ]; then
-        read -p "  Base domain for projects: " VARDO_BASE_DOMAIN < /dev/tty
-        read -p "  Email for Let's Encrypt: " ACME_EMAIL < /dev/tty
+        read -rp "  Base domain for projects: " VARDO_BASE_DOMAIN < /dev/tty
+        read -rp "  Email for Let's Encrypt: " ACME_EMAIL < /dev/tty
       fi
     fi
   fi
   # Development role: no domain prompts at all
+
+  if $DRY_RUN; then
+    info "[dry-run] Would generate .env at $env_file"
+    return
+  fi
 
   # Generate secrets + instance identity
   local db_pass auth_secret enc_key webhook_secret instance_id
@@ -686,18 +1066,25 @@ EOF
 build_and_start() {
   step "Starting Vardo"
 
-  docker network create vardo-network 2>/dev/null || true
+  # Pre-start port conflict check
+  check_critical_ports
+
+  run_cmd docker network create vardo-network 2>/dev/null || true
 
   if is_dev; then
     # Dev mode: start infrastructure only (no frontend profile)
     info "Starting infrastructure services (Postgres, Redis, Traefik)..."
-    docker compose -f "$VARDO_DIR/$COMPOSE_FILE" up -d
+    run_cmd docker compose -f "$VARDO_DIR/$COMPOSE_FILE" up -d
   else
     info "Building containers (this may take a few minutes)..."
-    docker compose -f "$VARDO_DIR/$COMPOSE_FILE" build --quiet
+    if $VERBOSE; then
+      run_cmd docker compose -f "$VARDO_DIR/$COMPOSE_FILE" build
+    else
+      run_cmd docker compose -f "$VARDO_DIR/$COMPOSE_FILE" build --quiet
+    fi
 
     info "Starting services..."
-    docker compose -f "$VARDO_DIR/$COMPOSE_FILE" up -d
+    run_cmd docker compose -f "$VARDO_DIR/$COMPOSE_FILE" up -d
   fi
 }
 
@@ -706,6 +1093,11 @@ wait_healthy() {
   local interval="${2:-2}"
   local elapsed=0
   local container="${3:-frontend}"
+
+  if $DRY_RUN; then
+    info "[dry-run] Would wait for health check"
+    return 0
+  fi
 
   info "Waiting for Vardo to become healthy..."
   while [ $elapsed -lt "$timeout" ]; do
@@ -718,11 +1110,12 @@ wait_healthy() {
     elapsed=$((elapsed + interval))
   done
 
-  warn "Health check timed out after ${timeout}s — may still be starting"
+  warn "Health check timed out after ${timeout}s — may still be starting. Check logs with: docker compose -f $VARDO_DIR/$COMPOSE_FILE logs frontend"
   return 1
 }
 
 seed_templates() {
+  if $DRY_RUN; then return 0; fi
   docker compose -f "$VARDO_DIR/$COMPOSE_FILE" exec -T frontend node -e "
     fetch('http://localhost:3000/api/v1/templates/seed', { method: 'POST' })
       .then(r => r.json())
@@ -742,6 +1135,10 @@ print_install_summary() {
   echo -e "  ${BOLD}Role${RESET}        $VARDO_ROLE"
   echo -e "  ${BOLD}Version${RESET}     $version"
   echo -e "  ${BOLD}Directory${RESET}   $VARDO_DIR"
+
+  if [ -n "${INSTALL_LOG:-}" ]; then
+    echo -e "  ${BOLD}Log${RESET}         $INSTALL_LOG"
+  fi
 
   if is_dev; then
     echo ""
@@ -779,6 +1176,9 @@ print_install_summary() {
 }
 
 do_install() {
+  STEP_TOTAL=7
+  STEP_CURRENT=0
+
   [[ "$PLATFORM" != "macos" ]] && check_root
   preflight_checks
   setup_swap
@@ -843,12 +1243,12 @@ do_update() {
 
   step "Preflight"
 
-  [ -d "$VARDO_DIR" ] || fail "Vardo not found at $VARDO_DIR"
-  [ -f "$VARDO_DIR/$COMPOSE_FILE" ] || fail "No $COMPOSE_FILE in $VARDO_DIR"
-  [ -f "$VARDO_DIR/.env" ] || fail "No .env in $VARDO_DIR"
-  command -v docker &>/dev/null || fail "Docker is not installed"
-  docker compose version &>/dev/null || fail "Docker Compose plugin not found"
-  [ -d "$VARDO_DIR/.git" ] || fail "$VARDO_DIR is not a git repository"
+  [ -d "$VARDO_DIR" ] || fail "Vardo not found at $VARDO_DIR. Run 'bash install.sh' to install first."
+  [ -f "$VARDO_DIR/$COMPOSE_FILE" ] || fail "No $COMPOSE_FILE in $VARDO_DIR. The installation may be corrupted — try reinstalling."
+  [ -f "$VARDO_DIR/.env" ] || fail "No .env in $VARDO_DIR. Run 'bash install.sh' to regenerate configuration."
+  command -v docker &>/dev/null || fail "Docker is not installed. Install Docker first: https://docs.docker.com/engine/install/"
+  docker compose version &>/dev/null || fail "Docker Compose plugin not found. Install it: https://docs.docker.com/compose/install/"
+  [ -d "$VARDO_DIR/.git" ] || fail "$VARDO_DIR is not a git repository. Cannot update without git history."
 
   cd "$VARDO_DIR"
 
@@ -864,7 +1264,7 @@ do_update() {
   run_env_migrations
 
   # Ensure network
-  docker network create vardo-network 2>/dev/null || true
+  run_cmd docker network create vardo-network 2>/dev/null || true
 
   # Check for updates
   step "Checking for updates"
@@ -898,7 +1298,8 @@ do_update() {
   step "Backup"
 
   local backup_dir="$VARDO_DIR/backups"
-  local backup_file="$backup_dir/pre-update-$(date +%Y%m%d%H%M%S).sql"
+  local backup_file
+  backup_file="$backup_dir/pre-update-$(date +%Y%m%d%H%M%S).sql"
   mkdir -p "$backup_dir"
 
   info "Dumping database..."
@@ -908,7 +1309,7 @@ do_update() {
     backup_size=$(du -h "$backup_file" | cut -f1)
     log "Backup: $backup_file ($backup_size)"
   else
-    warn "Database backup failed — continuing without backup"
+    warn "Database backup failed — continuing without backup. Check that the postgres container is running."
     rm -f "$backup_file"
     backup_file=""
   fi
@@ -918,25 +1319,29 @@ do_update() {
 
   if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
     warn "Local changes detected, stashing..."
-    git stash --quiet
+    run_cmd git stash --quiet
   fi
 
-  if git pull origin "$current_branch" --quiet; then
+  if run_cmd git pull origin "$current_branch" --quiet; then
     local new_version
     new_version=$(get_version)
     log "Updated: $current_version → $new_version"
   else
-    fail "git pull failed — resolve conflicts manually in $VARDO_DIR"
+    fail "git pull failed — resolve conflicts manually in $VARDO_DIR. Run 'cd $VARDO_DIR && git status' to see what went wrong."
   fi
 
   # Rebuild
   step "Rebuilding"
 
   info "Building containers..."
-  docker compose -f "$COMPOSE_FILE" build --quiet
+  if $VERBOSE; then
+    run_cmd docker compose -f "$COMPOSE_FILE" build
+  else
+    run_cmd docker compose -f "$COMPOSE_FILE" build --quiet
+  fi
 
   info "Restarting services..."
-  docker compose -f "$COMPOSE_FILE" up -d
+  run_cmd docker compose -f "$COMPOSE_FILE" up -d
 
   wait_healthy 90 3
 
@@ -976,14 +1381,25 @@ do_doctor() {
 
   step "System"
 
-  # OS
+  # OS + tier
   if [[ "$PLATFORM" == "macos" ]]; then
     doctor_pass "macOS $(sw_vers -productVersion 2>/dev/null || echo 'unknown')"
   elif [[ "$PLATFORM" == "wsl" ]]; then
     doctor_pass "WSL2"
   elif [ -f /etc/os-release ]; then
+    # shellcheck disable=SC1091
     . /etc/os-release
-    doctor_pass "$PRETTY_NAME"
+    local tier_label=""
+    case "$DISTRO_TIER" in
+      1) tier_label="tier 1" ;;
+      2) tier_label="tier 2" ;;
+      3) tier_label="tier 3" ;;
+    esac
+    if [ "$DISTRO_TIER" -le 2 ]; then
+      doctor_pass "$PRETTY_NAME ($tier_label)"
+    else
+      doctor_warn "$PRETTY_NAME ($tier_label — not officially supported)"
+    fi
   else
     doctor_warn "Unknown OS"
   fi
@@ -1025,7 +1441,7 @@ do_doctor() {
   elif [ "$disk_gb" -ge 10 ]; then
     doctor_warn "Disk: ${disk_gb}GB free (20GB+ recommended)"
   else
-    doctor_fail "Disk: ${disk_gb}GB free (critically low)"
+    doctor_fail "Disk: ${disk_gb}GB free (critically low — free space immediately)"
   fi
 
   # ── Installation ────────────────────────────────────────────────────────
@@ -1282,7 +1698,7 @@ do_uninstall() {
 
   # Stop containers
   info "Stopping containers..."
-  docker compose -f "$VARDO_DIR/$COMPOSE_FILE" down 2>/dev/null || true
+  run_cmd docker compose -f "$VARDO_DIR/$COMPOSE_FILE" down 2>/dev/null || true
   log "Containers stopped"
 
   if $PURGE; then
@@ -1303,14 +1719,16 @@ do_uninstall() {
     sleep 5
 
     info "Removing Docker volumes..."
-    docker compose -f "$VARDO_DIR/$COMPOSE_FILE" down -v 2>/dev/null || true
+    run_cmd docker compose -f "$VARDO_DIR/$COMPOSE_FILE" down -v 2>/dev/null || true
     log "Volumes removed"
 
     info "Removing $VARDO_DIR..."
-    rm -rf "$VARDO_DIR"
+    if ! $DRY_RUN; then
+      rm -rf "$VARDO_DIR"
+    fi
     log "Installation directory removed"
 
-    docker network rm vardo-network 2>/dev/null || true
+    run_cmd docker network rm vardo-network 2>/dev/null || true
     log "Network removed"
 
     echo ""
@@ -1348,7 +1766,7 @@ show_menu() {
   echo ""
 
   local choice
-  read -p "  Choose [1]: " choice < /dev/tty
+  read -rp "  Choose [1]: " choice < /dev/tty
   choice="${choice:-1}"
 
   case "$choice" in
@@ -1391,6 +1809,12 @@ parse_args() {
       --purge)
         PURGE=true
         ;;
+      --dry-run)
+        DRY_RUN=true
+        ;;
+      --verbose)
+        VERBOSE=true
+        ;;
       --help|-h)
         echo "Usage: install.sh [command] [flags]"
         echo ""
@@ -1404,6 +1828,8 @@ parse_args() {
         echo "  --unattended   Skip all prompts"
         echo "  --yes, -y      Auto-confirm prompts"
         echo "  --purge        Remove all data with uninstall"
+        echo "  --dry-run      Show what would be done without making changes"
+        echo "  --verbose      Show full command output"
         echo "  --help, -h     Show this help"
         echo ""
         echo "Environment variables (for unattended install):"
@@ -1420,8 +1846,17 @@ parse_args() {
 
 main() {
   detect_platform
+  detect_distro
   parse_args "$@"
+  setup_logging
   print_banner
+
+  if $DRY_RUN; then
+    info "Dry-run mode — no changes will be made"
+  fi
+  if $VERBOSE; then
+    info "Verbose mode — showing full command output"
+  fi
 
   # Internal flag: "start fresh" copies script to /tmp then exec's with this flag
   if [ "${1:-}" = "--fresh-reinstall" ]; then
