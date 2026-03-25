@@ -34,6 +34,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # Build tools (nixpacks, railpack) run as separate containers, not installed here
 RUN apt-get update -qq && \
     apt-get install -y --no-install-recommends git docker.io curl ca-certificates && \
+    curl -sSL https://nixpacks.com/install.sh | bash && \
     apt-get clean && rm -rf /var/lib/apt/lists/* && \
     groupadd --system --gid 1001 nodejs && \
     useradd --system --uid 1001 --gid nodejs nextjs && \
