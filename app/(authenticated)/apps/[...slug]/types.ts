@@ -76,6 +76,7 @@ export type App = {
   gitBranch: string | null;
   imageName: string | null;
   composeFilePath: string | null;
+  dockerfilePath: string | null;
   rootDirectory: string | null;
   containerPort: number | null;
   autoTraefikLabels: boolean | null;
