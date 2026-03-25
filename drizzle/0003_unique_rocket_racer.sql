@@ -1,1 +1,0 @@
-ALTER TABLE "notification_channel" ADD COLUMN "subscribed_events" text[] DEFAULT '{}' NOT NULL;

@@ -1130,10 +1130,15 @@ wait_healthy() {
     return 0
   fi
 
-  info "Waiting for Vardo to become healthy..."
+  local attempts=$((timeout / interval))
+  local attempt=0
+
   while [ $elapsed -lt "$timeout" ]; do
+    attempt=$((attempt + 1))
+    printf "\r  ${CYAN}⠹${RESET} Waiting for healthy... (attempt %d/%d, %ds/%ds)" "$attempt" "$attempts" "$elapsed" "$timeout"
     if docker compose -f "$VARDO_DIR/$COMPOSE_FILE" exec -T "$container" \
       curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
+      printf "\r"
       log "Vardo is healthy"
       return 0
     fi
@@ -1141,6 +1146,7 @@ wait_healthy() {
     elapsed=$((elapsed + interval))
   done
 
+  printf "\r"
   warn "Health check timed out after ${timeout}s — may still be starting. Check logs with: docker compose -f $VARDO_DIR/$COMPOSE_FILE logs frontend"
   return 1
 }
