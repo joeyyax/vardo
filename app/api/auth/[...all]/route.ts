@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { auth, ensureGitHubCredentials } from "@/lib/auth";
 import { toNextJsHandler } from "better-auth/next-js";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { isPasswordAuthAllowed } from "@/lib/config/provider-restrictions";
 import { isFeatureEnabled } from "@/lib/config/features";
 
-const { GET: _GET, POST: _POST } = toNextJsHandler(auth);
+const handler = toNextJsHandler(auth);
 
-// GET (session checks) passes through unrated — low abuse risk
-export const GET = _GET;
+// Wrap GET to ensure DB-stored GitHub credentials are loaded before first use
+export async function GET(request: NextRequest) {
+  await ensureGitHubCredentials();
+  return handler.GET(request);
+}
 
 // Paths that require password auth to be allowed
 const PASSWORD_AUTH_PATHS = ["/sign-in/email", "/sign-up/email"];
@@ -36,8 +39,12 @@ async function guardPasswordAuth(request: NextRequest) {
     }
   }
 
-  return _POST(request);
+  return handler.POST(request);
 }
 
 // POST (login, signup, passkey) gets strict auth-tier rate limiting
-export const POST = withRateLimit(guardPasswordAuth, { tier: "auth" });
+async function guardPasswordAuthWithCredentials(request: NextRequest) {
+  await ensureGitHubCredentials();
+  return guardPasswordAuth(request);
+}
+export const POST = withRateLimit(guardPasswordAuthWithCredentials, { tier: "auth" });
