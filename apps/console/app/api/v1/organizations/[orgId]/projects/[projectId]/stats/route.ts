@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps, projects } from "@/lib/db/schema";
-import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { fetchAllContainerMetrics } from "@/lib/metrics/cadvisor";
 import { isMetricsEnabled } from "@/lib/metrics/config";
+import { verifyOrgAccess } from "@/lib/api/verify-access";
 type RouteParams = {
   params: Promise<{ orgId: string; projectId: string }>;
 };
@@ -14,11 +14,8 @@ type RouteParams = {
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, projectId } = await params;
-    const { organization } = await requireOrg();
-
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     if (!isMetricsEnabled()) {
       return NextResponse.json({ apps: [], timestamp: new Date().toISOString() });

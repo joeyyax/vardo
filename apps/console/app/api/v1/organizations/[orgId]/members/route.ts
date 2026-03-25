@@ -3,10 +3,10 @@ import { z } from "zod";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { memberships, user } from "@/lib/db/schema";
-import { requireOrg } from "@/lib/auth/session";
 import { requireAdmin } from "@/lib/auth/permissions";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 const addMemberSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -22,11 +22,8 @@ type RouteParams = {
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { organization } = await requireOrg();
-
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const orgMemberships = await db.query.memberships.findMany({
       where: eq(memberships.organizationId, orgId),
@@ -59,13 +56,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { organization, membership } = await requireOrg();
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    requireAdmin(membership.role);
+    requireAdmin(org.membership.role);
 
     const body = await request.json();
     const parsed = addMemberSchema.safeParse(body);

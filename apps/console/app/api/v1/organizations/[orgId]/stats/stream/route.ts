@@ -2,7 +2,6 @@ import { NextRequest } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
-import { requireOrg } from "@/lib/auth/session";
 import { eq } from "drizzle-orm";
 import { isCollectorRunning, startCollector } from "@/lib/metrics/collector";
 import { getLatestProjectDiskUsage } from "@/lib/metrics/store";
@@ -10,6 +9,7 @@ import { createSSEResponse } from "@/lib/api/sse";
 import { isMetricsEnabled } from "@/lib/metrics/config";
 import { subscribe } from "@/lib/metrics/broadcast";
 import { aggregateContainers, containerToPoint } from "@/lib/metrics/aggregate";
+import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -19,11 +19,8 @@ type RouteParams = {
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { organization } = await requireOrg();
-
-    if (organization.id !== orgId) {
-      return new Response("Forbidden", { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return new Response("Forbidden", { status: 403 });
 
     if (!isMetricsEnabled()) {
       return new Response(null, { status: 204 });

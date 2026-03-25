@@ -3,12 +3,12 @@ import { z } from "zod";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { deployKeys } from "@/lib/db/schema";
-import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { generateDeployKeypair } from "@/lib/crypto/ssh-keygen";
 import { encrypt, decrypt } from "@/lib/crypto/encrypt";
 import { recordActivity } from "@/lib/activity";
+import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 const createKeySchema = z.object({ name: z.string().min(1, "Name is required").max(100).trim() }).strict();
 const deleteKeySchema = z.object({ id: z.string().min(1, "Deploy key ID is required") }).strict();
@@ -22,11 +22,8 @@ type RouteParams = {
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { organization } = await requireOrg();
-
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const keys = await db.query.deployKeys.findMany({
       where: eq(deployKeys.organizationId, orgId),
@@ -59,11 +56,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { session, organization } = await requireOrg();
-
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();
     const parsed = createKeySchema.safeParse(body);
@@ -94,7 +88,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     recordActivity({
       organizationId: orgId,
       action: "deploy_key.created",
-      userId: session.user.id,
+      userId: org.session.user.id,
       metadata: { deployKeyId: id, name: name.trim() },
     }).catch(() => {});
 
@@ -117,11 +111,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { session, organization } = await requireOrg();
-
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();
     const parsed = deleteKeySchema.safeParse(body);
@@ -151,7 +142,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     recordActivity({
       organizationId: orgId,
       action: "deploy_key.deleted",
-      userId: session.user.id,
+      userId: org.session.user.id,
       metadata: { deployKeyId: id, name: key.name },
     }).catch(() => {});
 

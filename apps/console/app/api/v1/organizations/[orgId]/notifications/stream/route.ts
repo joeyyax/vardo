@@ -1,8 +1,8 @@
 import { NextRequest } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
-import { requireOrg } from "@/lib/auth/session";
 import { on } from "@/lib/bus";
 import type { BusEvent } from "@/lib/bus/events";
+import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -13,11 +13,8 @@ type RouteParams = {
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { organization } = await requireOrg();
-
-    if (organization.id !== orgId) {
-      return new Response("Forbidden", { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return new Response("Forbidden", { status: 403 });
 
     const encoder = new TextEncoder();
 

@@ -3,13 +3,13 @@ import { z } from "zod";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps, deployments } from "@/lib/db/schema";
-import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { deployProject } from "@/lib/docker/deploy";
 import { createSSEResponse } from "@/lib/api/sse";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { decrypt, encrypt } from "@/lib/crypto/encrypt";
 import type { ConfigSnapshot } from "@/lib/types/deploy-snapshot";
+import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 const rollbackSchema = z.object({
   deploymentId: z.string().min(1, "deploymentId is required"),
@@ -27,11 +27,8 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
   const { orgId, appId } = await params;
 
   try {
-    const { organization, session } = await requireOrg();
-
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     // Parse body
     let body: { deploymentId?: string; includeEnvVars?: boolean };
@@ -114,7 +111,7 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
         appId,
         organizationId: orgId,
         trigger: "rollback",
-        triggeredBy: session.user.id,
+        triggeredBy: org.session.user.id,
         onLog: (line) => sendEvent("log", line),
         onStage: (stg, status) => sendEvent("stage", { stage: stg, status }),
         signal: request.signal,
@@ -172,11 +169,8 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
-    const { organization } = await requireOrg();
-
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const deploymentId = request.nextUrl.searchParams.get("deploymentId");
     if (!deploymentId) {

@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { invitations, user } from "@/lib/db/schema";
-import { requireOrg } from "@/lib/auth/session";
 import { requireAdmin } from "@/lib/auth/permissions";
 import { eq, and } from "drizzle-orm";
 import { sendEmail } from "@/lib/email/send";
 import { InviteEmail } from "@/lib/email/templates/invite";
+import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 type RouteParams = {
   params: Promise<{ orgId: string; invitationId: string }>;
@@ -20,13 +20,10 @@ export async function DELETE(
 ) {
   try {
     const { orgId, invitationId } = await params;
-    const { organization, membership } = await requireOrg();
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    requireAdmin(membership.role);
+    requireAdmin(org.membership.role);
 
     const invitation = await db.query.invitations.findFirst({
       where: and(
@@ -68,13 +65,10 @@ export async function PATCH(
 ) {
   try {
     const { orgId, invitationId } = await params;
-    const { organization, membership, session } = await requireOrg();
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    requireAdmin(membership.role);
+    requireAdmin(org.membership.role);
 
     const invitation = await db.query.invitations.findFirst({
       where: and(
@@ -95,7 +89,7 @@ export async function PATCH(
     }
 
     const inviter = await db.query.user.findFirst({
-      where: eq(user.id, session.user.id),
+      where: eq(user.id, org.session.user.id),
       columns: { name: true },
     });
 
@@ -104,10 +98,10 @@ export async function PATCH(
 
     await sendEmail({
       to: invitation.email,
-      subject: `You've been invited to ${organization.name}`,
+      subject: `You've been invited to ${org.organization.name}`,
       template: InviteEmail({
         email: invitation.email,
-        orgName: organization.name,
+        orgName: org.organization.name,
         inviterName: inviter?.name ?? undefined,
         inviteUrl,
       }),

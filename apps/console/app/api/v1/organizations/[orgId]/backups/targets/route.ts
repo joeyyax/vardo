@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { backupTargets } from "@/lib/db/schema";
-import { requireOrg } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/config/features";
 import { eq, or, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
+import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -63,11 +63,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
     }
     const { orgId } = await params;
-    const { organization } = await requireOrg();
-
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     // Return both org-level targets and app-level targets (organizationId IS NULL)
     const targets = await db.query.backupTargets.findMany({
@@ -96,11 +93,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
     }
     const { orgId } = await params;
-    const { organization } = await requireOrg();
-
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();
     const parsed = createTargetSchema.safeParse(body);

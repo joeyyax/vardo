@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps, appTransfers } from "@/lib/db/schema";
-import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { initiateTransfer, analyzeTransfer, rejectTransfer } from "@/lib/transfers/engine";
 import { recordActivity } from "@/lib/activity";
+import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -22,13 +22,10 @@ const initiateTransferSchema = z.object({
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
-    const { organization, membership, session } = await requireOrg();
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    if (membership.role !== "owner" && membership.role !== "admin") {
+    if (org.membership.role !== "owner" && org.membership.role !== "admin") {
       return NextResponse.json(
         { error: "Only owners and admins can initiate transfers" },
         { status: 403 },
@@ -89,7 +86,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       appId: appId,
       sourceOrgId: orgId,
       destinationOrgId,
-      initiatedBy: session.user.id,
+      initiatedBy: org.session.user.id,
       note,
     });
 
@@ -97,7 +94,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       organizationId: orgId,
       action: "transfer.initiated",
       appId,
-      userId: session.user.id,
+      userId: org.session.user.id,
       metadata: {
         transferId,
         destinationOrgId,
@@ -126,11 +123,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
-    const { organization, session } = await requireOrg();
-
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     // Find the pending transfer for this app
     const transfer = await db.query.appTransfers.findFirst({
@@ -148,20 +142,20 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    if (transfer.initiatedBy !== session.user.id) {
+    if (transfer.initiatedBy !== org.session.user.id) {
       return NextResponse.json(
         { error: "Only the initiator can cancel a transfer" },
         { status: 403 },
       );
     }
 
-    await rejectTransfer(transfer.id, session.user.id, "cancelled");
+    await rejectTransfer(transfer.id, org.session.user.id, "cancelled");
 
     recordActivity({
       organizationId: orgId,
       action: "transfer.cancelled",
       appId,
-      userId: session.user.id,
+      userId: org.session.user.id,
       metadata: { transferId: transfer.id },
     });
 

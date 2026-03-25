@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
-import { requireOrg } from "@/lib/auth/session";
 import {
   queryBusinessMetric,
   getLatestBusinessMetric,
   type BusinessMetricName,
 } from "@/lib/metrics/store";
+import { verifyOrgAccess } from "@/lib/api/verify-access";
 type RouteParams = {
   params: Promise<{ orgId: string }>;
 };
@@ -29,11 +29,8 @@ const VALID_METRICS: BusinessMetricName[] = [
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { organization } = await requireOrg();
-
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const searchParams = request.nextUrl.searchParams;
     const from = searchParams.get("from");
