@@ -38,7 +38,7 @@ const EVENT_LABELS: Record<BusEventType, string> = {
   "org.invitation-accepted": "Invitation accepted",
   "system.service-down": "Service down",
   "system.disk-alert": "Disk space alert",
-  "system.restart-loop": "Host restarted",
+  "system.restart-loop": "Vardo restarted",
   "system.cert-expiring": "Certificate expiring",
   "system.update-available": "Update available",
   "digest.weekly": "Weekly digest",

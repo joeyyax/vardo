@@ -37,7 +37,7 @@ export function AdminSystem() {
     <div className="space-y-4">
       {/* Runtime — always has data from process.* (instant) */}
       <div className="squircle rounded-lg border bg-card p-4">
-        <p className="text-xs text-muted-foreground mb-3">Host Runtime</p>
+        <p className="text-xs text-muted-foreground mb-3">Server Runtime</p>
         {data ? (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div>
