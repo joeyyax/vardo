@@ -3,8 +3,8 @@ import { execSync } from "child_process";
 import { resolve } from "path";
 import { config } from "dotenv";
 
-// Load .env from workspace root (env lives at root for docker-compose)
-config({ path: "../../.env", quiet: true });
+// Load .env from repo root
+config({ path: "./.env", quiet: true });
 
 let gitSha = "";
 try {
@@ -15,7 +15,7 @@ try {
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  outputFileTracingRoot: resolve(__dirname, "../.."),
+  outputFileTracingRoot: resolve(__dirname),
   env: {
     NEXT_PUBLIC_GIT_SHA: gitSha,
   },
