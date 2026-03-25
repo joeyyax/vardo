@@ -74,7 +74,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // Generate a random token
-    const rawToken = `host_${randomBytes(32).toString("hex")}`;
+    const rawToken = `vardo_${randomBytes(32).toString("hex")}`;
     const tokenHash = hashToken(rawToken);
 
     await db.insert(apiTokens).values({
