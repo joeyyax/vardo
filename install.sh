@@ -313,7 +313,7 @@ run_cmd() {
   "$@"
 }
 
-# Run a command with a spinner — for long-running operations
+# Run a command with progress dots — for long-running operations
 run_with_spinner() {
   local label="$1"
   shift
@@ -326,21 +326,16 @@ run_with_spinner() {
     "$@"
     return $?
   fi
-  log_to_file "CMD (spinner): $*"
-  "$@" >> "${INSTALL_LOG:-/dev/null}" 2>&1 &
-  local pid=$!
-  local chars="⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-  local i=0
-  while kill -0 "$pid" 2>/dev/null; do
-    printf "\r  ${CYAN}%s${RESET} %s" "${chars:i++%${#chars}:1}" "$label" > /dev/tty
-    sleep 0.1
-  done
-  wait "$pid"
-  local exit_code=$?
-  printf "\r                                                              \r" > /dev/tty
-  if [ $exit_code -eq 0 ]; then
-    log "$label"
+  log_to_file "CMD: $*"
+  printf "  ${CYAN}·${RESET} %s" "$label" > /dev/tty
+
+  # Run foreground, capture output to log, print dots for progress
+  local exit_code=0
+  if "$@" >> "${INSTALL_LOG:-/dev/null}" 2>&1; then
+    printf "\r  ${GREEN}✓${RESET} %s\n" "$label" > /dev/tty
   else
+    exit_code=$?
+    printf "\r  ${RED}✗${RESET} %s\n" "$label" > /dev/tty
     fail "$label — failed (exit $exit_code). Check ${INSTALL_LOG:-/var/log/vardo-install.log} for details."
   fi
   return $exit_code
