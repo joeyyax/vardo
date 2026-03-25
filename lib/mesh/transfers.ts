@@ -28,7 +28,7 @@ export type AppBundle = {
   displayName: string;
   description: string | null;
   source: "git" | "direct";
-  deployType: "compose" | "dockerfile" | "image" | "static" | "nixpacks";
+  deployType: "compose" | "dockerfile" | "image" | "static" | "nixpacks" | "railpack";
   gitUrl: string | null;
   gitBranch: string | null;
   imageName: string | null;
