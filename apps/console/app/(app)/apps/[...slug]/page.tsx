@@ -2,7 +2,7 @@ import { redirect, notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { apps, projects, tags, orgEnvVars, environments } from "@/lib/db/schema";
 import { getCurrentOrg } from "@/lib/auth/session";
-import { eq, and, asc, or } from "drizzle-orm";
+import { eq, and, asc, desc, or, type AnyColumn } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { AppDetail } from "./app-detail";
 import { getFeatureFlags } from "@/lib/config/features";
@@ -71,7 +71,7 @@ export default async function AppDetailPage({ params }: PageProps) {
 
   const appWith = {
     deployments: {
-      orderBy: (d: any, { desc }: any) => [desc(d.startedAt)],
+      orderBy: (d: { startedAt: AnyColumn }) => [desc(d.startedAt)],
       limit: 10,
       columns: {
         id: true,

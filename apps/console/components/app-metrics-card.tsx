@@ -303,5 +303,6 @@ export function useAppMetrics(orgId: string) {
     };
   }, [orgId]);
 
+  // eslint-disable-next-line react-hooks/refs
   return { metrics, history: historyRef.current, historyTick };
 }

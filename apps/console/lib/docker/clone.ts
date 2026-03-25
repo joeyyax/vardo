@@ -182,7 +182,7 @@ export async function createGroupEnvironment(
     // Clone vars with cross-app ref updates
     let clonedCount = 0;
     for (const sourceVar of sourceVars) {
-      let clonedValue = sourceVar.value;
+      const clonedValue = sourceVar.value;
 
       // Update cross-app refs to point to cloned environment services
       // (the refs themselves don't change, resolution at deploy time will

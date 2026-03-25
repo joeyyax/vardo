@@ -81,6 +81,7 @@ export function SystemAlertsPanel() {
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    await Promise.resolve();
     setError(null);
     try {
       const [alertsRes, healthRes] = await Promise.all([
@@ -108,8 +109,38 @@ export function SystemAlertsPanel() {
   }, []);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    const controller = new AbortController();
+    const run = async () => {
+      await Promise.resolve();
+      setError(null);
+      setLoading(true);
+      try {
+        const [alertsRes, healthRes] = await Promise.all([
+          fetch("/api/v1/system/alerts", { signal: controller.signal }),
+          fetch("/api/health/system", { signal: controller.signal }),
+        ]);
+        if (alertsRes.ok) {
+          setAlertsData(await alertsRes.json());
+        } else {
+          setError(`Failed to load alerts (${alertsRes.status})`);
+        }
+        if (healthRes.ok) {
+          const data = await healthRes.json();
+          setHealthData({ services: data.services ?? [], resources: data.resources ?? [] });
+        } else {
+          setError((prev) => prev ?? `Failed to load system health (${healthRes.status})`);
+        }
+      } catch (err) {
+        if (!controller.signal.aborted) {
+          setError(err instanceof Error ? err.message : "Failed to load system status");
+        }
+      }
+      if (!controller.signal.aborted) setLoading(false);
+    };
+    void run();
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleRefresh = async () => {
     setRefreshing(true);

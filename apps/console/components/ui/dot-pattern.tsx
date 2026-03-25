@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useEffect, useId, useRef, useState } from "react"
+import React, { useEffect, useId, useMemo, useRef, useState } from "react"
 import { motion } from "motion/react"
 
 import { cn } from "@/lib/utils"
@@ -90,22 +90,27 @@ export function DotPattern({
     return () => window.removeEventListener("resize", updateDimensions)
   }, [])
 
-  const dots = Array.from(
-    {
-      length:
-        Math.ceil(dimensions.width / width) *
-        Math.ceil(dimensions.height / height),
-    },
-    (_, i) => {
-      const col = i % Math.ceil(dimensions.width / width)
-      const row = Math.floor(i / Math.ceil(dimensions.width / width))
-      return {
-        x: col * width + cx,
-        y: row * height + cy,
-        delay: Math.random() * 5,
-        duration: Math.random() * 3 + 2,
-      }
-    }
+  const dots = useMemo(
+    () =>
+      Array.from(
+        {
+          length:
+            Math.ceil(dimensions.width / width) *
+            Math.ceil(dimensions.height / height),
+        },
+        (_, i) => {
+          const col = i % Math.ceil(dimensions.width / width)
+          const row = Math.floor(i / Math.ceil(dimensions.width / width))
+          return {
+            x: col * width + cx,
+            y: row * height + cy,
+            delay: Math.random() * 5,
+            duration: Math.random() * 3 + 2,
+          }
+        }
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [dimensions.width, dimensions.height, width, height, cx, cy]
   )
 
   return (

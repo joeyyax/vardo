@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
+import nextPkg from "next/package.json";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -240,8 +241,7 @@ export async function getSystemHealth(): Promise<SystemHealth> {
   };
 
   const mem = process.memoryUsage();
-  let nextVersion = "unknown";
-  try { nextVersion = require("next/package.json").version; } catch { /* skip */ }
+  const nextVersion: string = nextPkg.version ?? "unknown";
 
   const runtime: RuntimeInfo = {
     nodeVersion: process.version,
