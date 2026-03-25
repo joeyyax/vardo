@@ -787,15 +787,9 @@ install_packages_linux() {
 
   # Docker
   if $needs_docker; then
-    info "Installing Docker (this may take a minute)..."
-    if $DRY_RUN; then
-      echo -e "  ${DIM}[dry-run] curl -fsSL https://get.docker.com | sh${RESET}"
-    else
-      curl -fsSL https://get.docker.com | sh > /dev/null 2>&1 || fail "Docker installation failed. Check https://docs.docker.com/engine/install/ for manual installation instructions."
-    fi
+    run_with_spinner "Installing Docker" bash -c "curl -fsSL https://get.docker.com | sh > /dev/null 2>&1" || fail "Docker installation failed. Check https://docs.docker.com/engine/install/ for manual installation instructions."
     run_cmd systemctl enable docker > /dev/null 2>&1 || true
     run_cmd systemctl start docker || fail "Failed to start Docker daemon. Run 'systemctl status docker' to check for errors."
-    log "Docker installed"
   else
     log "Docker: $(docker --version | head -1)"
   fi
@@ -936,13 +930,13 @@ generate_env() {
   # Domain prompts — only for production and staging (optional for staging)
   if [[ "$VARDO_ROLE" == "production" ]]; then
     if $UNATTENDED; then
-      [ -n "${VARDO_DOMAIN:-}" ] || fail "VARDO_DOMAIN is required in --unattended mode. Set it as an environment variable: VARDO_DOMAIN=host.example.com"
+      [ -n "${VARDO_DOMAIN:-}" ] || fail "VARDO_DOMAIN is required in --unattended mode. Set it as an environment variable: VARDO_DOMAIN=vardo.example.com"
       [ -n "${VARDO_BASE_DOMAIN:-}" ] || fail "VARDO_BASE_DOMAIN is required in --unattended mode. Set it as an environment variable: VARDO_BASE_DOMAIN=example.com"
       [ -n "${ACME_EMAIL:-}" ] || fail "ACME_EMAIL is required in --unattended mode. Set it as an environment variable: ACME_EMAIL=you@example.com"
     else
       if [ -z "${VARDO_DOMAIN:-}" ]; then
         echo ""
-        read -rp "  Domain for Vardo dashboard (e.g. host.example.com): " VARDO_DOMAIN < /dev/tty
+        read -rp "  Domain for Vardo dashboard (e.g. vardo.example.com): " VARDO_DOMAIN < /dev/tty
       fi
       if [ -z "${VARDO_BASE_DOMAIN:-}" ]; then
         read -rp "  Base domain for projects (e.g. example.com): " VARDO_BASE_DOMAIN < /dev/tty
@@ -1113,7 +1107,7 @@ build_and_start() {
   # Pre-start port conflict check
   check_critical_ports
 
-  run_cmd docker network create vardo-network 2>/dev/null || true
+  run_cmd docker network create vardo-network > /dev/null 2>&1 || true
 
   if is_dev; then
     # Dev mode: start infrastructure only (no frontend profile)
@@ -1301,7 +1295,7 @@ do_update() {
   run_env_migrations
 
   # Ensure network
-  run_cmd docker network create vardo-network 2>/dev/null || true
+  run_cmd docker network create vardo-network > /dev/null 2>&1 || true
 
   # Check for updates
   step "Checking for updates"
