@@ -106,9 +106,22 @@ services:
       - "--entrypoints.web.http.redirections.entrypoint.permanent=true"
       - "--entrypoints.websecure.address=:443"
       - "--entrypoints.websecure.http.tls=true"
+      # Let's Encrypt (default, always available)
       - "--certificatesresolvers.le.acme.tlschallenge=true"
       - "--certificatesresolvers.le.acme.email=${ACME_EMAIL:-}"
-      - "--certificatesresolvers.le.acme.storage=/letsencrypt/acme.json"
+      - "--certificatesresolvers.le.acme.storage=/letsencrypt/acme-le.json"
+      # Google Trust Services (free, no EAB required)
+      - "--certificatesresolvers.google.acme.tlschallenge=true"
+      - "--certificatesresolvers.google.acme.email=${ACME_EMAIL:-}"
+      - "--certificatesresolvers.google.acme.caserver=https://dv.acme-v02.api.pki.goog/directory"
+      - "--certificatesresolvers.google.acme.storage=/letsencrypt/acme-google.json"
+      # ZeroSSL (requires EAB credentials — non-functional until configured)
+      - "--certificatesresolvers.zerossl.acme.tlschallenge=true"
+      - "--certificatesresolvers.zerossl.acme.email=${ACME_EMAIL:-}"
+      - "--certificatesresolvers.zerossl.acme.caserver=https://acme.zerossl.com/v2/DV90"
+      - "--certificatesresolvers.zerossl.acme.eab.kid=${ZEROSSL_EAB_KID:-}"
+      - "--certificatesresolvers.zerossl.acme.eab.hmacencoded=${ZEROSSL_EAB_HMAC:-}"
+      - "--certificatesresolvers.zerossl.acme.storage=/letsencrypt/acme-zerossl.json"
       - "--log.level=${TRAEFIK_LOG_LEVEL:-WARN}"
     ports:
       - "80:80"

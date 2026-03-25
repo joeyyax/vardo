@@ -47,6 +47,9 @@ export type VardoConfig = {
     appSlug?: string;
     clientId?: string;
   };
+  ssl?: {
+    defaultIssuer?: "le" | "google" | "zerossl";
+  };
   features?: Record<string, boolean>;
 };
 
@@ -67,6 +70,10 @@ export type VardoSecrets = {
     privateKey?: string;
     webhookSecret?: string;
   };
+  zerossl?: {
+    eabKid?: string;
+    eabHmac?: string;
+  };
 };
 
 /** Config + secrets merged for internal use. */
@@ -76,6 +83,7 @@ export type VardoFullConfig = {
   email?: VardoConfig["email"] & VardoSecrets["email"];
   backup?: VardoConfig["backup"] & VardoSecrets["backup"];
   github?: VardoConfig["github"] & VardoSecrets["github"];
+  ssl?: VardoConfig["ssl"] & { zerossl?: VardoSecrets["zerossl"] };
   features?: VardoConfig["features"];
   secrets?: {
     encryptionKey?: string;
@@ -163,6 +171,7 @@ export async function readVardoConfig(): Promise<VardoFullConfig | null> {
     email: { ...config.email, ...secrets?.email },
     backup: { ...config.backup, ...secrets?.backup },
     github: { ...config.github, ...secrets?.github },
+    ssl: { ...config.ssl, zerossl: secrets?.zerossl },
     features: config.features,
     secrets: {
       encryptionKey: secrets?.encryptionKey,
@@ -216,16 +225,18 @@ export async function systemSettingsToVardoConfig(): Promise<{
     getEmailProviderConfig,
     getBackupStorageConfig,
     getGitHubAppConfig,
+    getSslConfig,
     getFeatureFlagsConfig,
   } = await import("@/lib/system-settings");
   const { getInstanceId } = await import("@/lib/constants");
 
-  const [instance, auth, email, backup, github, features] = await Promise.all([
+  const [instance, auth, email, backup, github, ssl, features] = await Promise.all([
     getInstanceConfig(),
     getAuthConfig(),
     getEmailProviderConfig(),
     getBackupStorageConfig(),
     getGitHubAppConfig(),
+    getSslConfig(),
     getFeatureFlagsConfig(),
   ]);
 
@@ -273,6 +284,11 @@ export async function systemSettingsToVardoConfig(): Promise<{
         clientId: github.clientId,
       },
     }),
+    ...(ssl.defaultIssuer !== "le" && {
+      ssl: {
+        defaultIssuer: ssl.defaultIssuer,
+      },
+    }),
     ...(features && { features }),
   };
 
@@ -297,6 +313,12 @@ export async function systemSettingsToVardoConfig(): Promise<{
         clientSecret: github.clientSecret,
         privateKey: github.privateKey,
         webhookSecret: github.webhookSecret,
+      },
+    }),
+    ...((ssl.zerosslEabKid || ssl.zerosslEabHmac) && {
+      zerossl: {
+        eabKid: ssl.zerosslEabKid,
+        eabHmac: ssl.zerosslEabHmac,
       },
     }),
   };
@@ -361,6 +383,15 @@ export async function importVardoConfig(
   if (full.github) {
     await setSystemSetting("github_app", JSON.stringify(full.github));
     imported.push("github");
+  }
+
+  if (full.ssl) {
+    await setSystemSetting("ssl_config", JSON.stringify({
+      defaultIssuer: full.ssl.defaultIssuer ?? "le",
+      zerosslEabKid: full.ssl.zerossl?.eabKid,
+      zerosslEabHmac: full.ssl.zerossl?.eabHmac,
+    }));
+    imported.push("ssl");
   }
 
   if (full.features) {
