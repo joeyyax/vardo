@@ -40,7 +40,7 @@ const updateAppSchema = z.object({
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   cloneStrategy: z.enum(["clone", "clone_data", "empty", "skip"]).optional(),
   dependsOn: z.array(z.string()).nullable().optional(),
-});
+}).strict();
 
 // GET /api/v1/organizations/[orgId]/apps/[appId]
 export async function GET(_request: NextRequest, { params }: RouteParams) {

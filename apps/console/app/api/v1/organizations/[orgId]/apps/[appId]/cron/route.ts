@@ -20,7 +20,7 @@ const createCronSchema = z.object({
   schedule: z.string().min(1, "Schedule is required"),
   command: z.string().min(1, "Command is required"),
   enabled: z.boolean().optional().default(true),
-});
+}).strict();
 
 const updateCronSchema = z.object({
   id: z.string().min(1),
@@ -29,11 +29,11 @@ const updateCronSchema = z.object({
   schedule: z.string().min(1).optional(),
   command: z.string().min(1).optional(),
   enabled: z.boolean().optional(),
-});
+}).strict();
 
 const deleteCronSchema = z.object({
   id: z.string().min(1),
-});
+}).strict();
 
 // GET /api/v1/organizations/[orgId]/apps/[appId]/cron
 export async function GET(_request: NextRequest, { params }: RouteParams) {
@@ -168,7 +168,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     if (!parsed.success) {
       return NextResponse.json(
-        { error: parsed.error.issues[0].message },
+        { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
         { status: 400 }
       );
     }

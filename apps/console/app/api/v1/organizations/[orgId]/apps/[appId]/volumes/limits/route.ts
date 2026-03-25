@@ -20,7 +20,7 @@ const volumeLimitSchema = z.object({
     .min(MIN_SIZE_BYTES, `Minimum size is 10 MB`)
     .max(MAX_SIZE_BYTES, `Maximum size is 100 GB`),
   warnAtPercent: z.number().int().min(1).max(100).default(80),
-});
+}).strict();
 
 // GET — return the aggregate volume limit for an app
 // (reads maxSizeBytes/warnAtPercent from the first volume that has a limit set)

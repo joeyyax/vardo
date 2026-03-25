@@ -15,7 +15,7 @@ const updateTargetSchema = z.object({
   name: z.string().min(1).optional(),
   config: z.record(z.string(), z.unknown()).optional(),
   isDefault: z.boolean().optional(),
-});
+}).strict();
 
 // PATCH /api/v1/organizations/[orgId]/backups/targets/[targetId]
 export async function PATCH(request: NextRequest, { params }: RouteParams) {

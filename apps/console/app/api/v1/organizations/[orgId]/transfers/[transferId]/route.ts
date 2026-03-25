@@ -14,7 +14,7 @@ type RouteParams = {
 
 const respondSchema = z.object({
   action: z.enum(["accept", "reject"]),
-});
+}).strict();
 
 // POST /api/v1/organizations/[orgId]/transfers/[transferId]
 // Accept or reject a transfer (only owners/admins of the destination org)

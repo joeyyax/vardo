@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { cookies } from "next/headers";
 import { getSession, CURRENT_ORG_COOKIE } from "@/lib/auth/session";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { db } from "@/lib/db";
 import { memberships } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
+
+const switchOrgSchema = z.object({
+  organizationId: z.string().min(1, "organizationId is required"),
+}).strict();
 
 // POST /api/v1/organizations/switch
 // Sets the active organization cookie after verifying membership.
@@ -15,10 +20,11 @@ async function handler(request: NextRequest) {
   }
 
   const body = await request.json().catch(() => null);
-  const orgId = body?.organizationId;
-  if (!orgId || typeof orgId !== "string") {
+  const parsed = switchOrgSchema.safeParse(body);
+  if (!parsed.success) {
     return NextResponse.json({ error: "organizationId is required" }, { status: 400 });
   }
+  const orgId = parsed.data.organizationId;
 
   // Verify the user is a member of this org
   const membership = await db.query.memberships.findFirst({

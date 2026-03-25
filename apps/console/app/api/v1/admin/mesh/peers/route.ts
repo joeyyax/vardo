@@ -16,7 +16,7 @@ const addPeerSchema = z.object({
   type: z.enum(["persistent", "dev"]).default("persistent"),
   publicKey: z.string().regex(WG_KEY_RE, "Invalid WireGuard public key"),
   endpoint: z.string().nullable().optional(),
-});
+}).strict();
 
 /** GET /api/v1/admin/mesh/peers — list all mesh peers */
 export async function GET() {

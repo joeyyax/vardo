@@ -22,7 +22,7 @@ const cloneSchema = z.object({
     ),
   type: z.enum(["production", "staging", "preview"]).optional(),
   domain: z.string().optional(),
-});
+}).strict();
 
 // POST /api/v1/organizations/[orgId]/apps/[appId]/environments/[envId]/clone
 export async function POST(request: NextRequest, { params }: RouteParams) {

@@ -12,7 +12,7 @@ type RouteParams = {
 
 const tagActionSchema = z.object({
   tagId: z.string().min(1, "Tag ID is required"),
-});
+}).strict();
 
 // POST /api/v1/organizations/[orgId]/apps/[appId]/tags
 export async function POST(request: NextRequest, { params }: RouteParams) {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { deployKeys } from "@/lib/db/schema";
@@ -8,6 +9,9 @@ import { nanoid } from "nanoid";
 import { generateDeployKeypair } from "@/lib/crypto/ssh-keygen";
 import { encrypt, decrypt } from "@/lib/crypto/encrypt";
 import { recordActivity } from "@/lib/activity";
+
+const createKeySchema = z.object({ name: z.string().min(1, "Name is required").max(100).trim() }).strict();
+const deleteKeySchema = z.object({ id: z.string().min(1, "Deploy key ID is required") }).strict();
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -62,15 +66,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     const body = await request.json();
-    const { name } = body;
-
-    if (!name || typeof name !== "string" || name.trim().length === 0) {
-      return NextResponse.json({ error: "Name is required" }, { status: 400 });
+    const parsed = createKeySchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
+        { status: 400 },
+      );
     }
-
-    if (name.trim().length > 100) {
-      return NextResponse.json({ error: "Name must be 100 characters or less" }, { status: 400 });
-    }
+    const { name } = parsed.data;
 
     // Generate Ed25519 keypair
     const comment = `host/${name.trim()}`;
@@ -121,11 +124,14 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     }
 
     const body = await request.json();
-    const { id } = body;
-
-    if (!id || typeof id !== "string") {
-      return NextResponse.json({ error: "Deploy key ID is required" }, { status: 400 });
+    const parsed = deleteKeySchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
+        { status: 400 },
+      );
     }
+    const { id } = parsed.data;
 
     // Ensure the key belongs to this org
     const key = await db.query.deployKeys.findFirst({
