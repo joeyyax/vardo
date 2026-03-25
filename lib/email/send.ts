@@ -31,7 +31,7 @@ export async function sendEmail({ to, subject, template, from, replyTo }: SendEm
   const fromAddress = from || (config.fromName && config.fromEmail
     ? `${config.fromName} <${config.fromEmail}>`
     : config.fromEmail || "Vardo <noreply@vardo.run>");
-  const replyToAddress = replyTo || config.replyTo;
+  const replyToAddress = replyTo;
 
   switch (config.provider) {
     case "mailpace":
