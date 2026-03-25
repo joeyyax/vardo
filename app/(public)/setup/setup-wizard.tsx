@@ -127,17 +127,53 @@ export function SetupWizard({
   const [completedSteps, setCompletedSteps] = useState<Set<StepId>>(new Set());
   const [hydrated, setHydrated] = useState(false);
 
-  // Restore progress from localStorage on mount
+  // Restore progress: DB is source of truth, localStorage is fallback
   useEffect(() => {
-    const id = requestAnimationFrame(() => {
-      const saved = loadProgress();
-      if (saved) {
-        setCompletedSteps(new Set(saved.completed));
-        setCurrentStep(saved.step);
+    let cancelled = false;
+
+    async function hydrate() {
+      const local = loadProgress();
+      const dbCompleted: Set<StepId> = new Set();
+
+      try {
+        const res = await fetch("/api/setup/progress");
+        if (res.ok) {
+          const data: Record<string, boolean> = await res.json();
+          for (const [stepId, done] of Object.entries(data)) {
+            if (done) dbCompleted.add(stepId as StepId);
+          }
+        }
+      } catch {
+        // Network failure — fall through to localStorage only
       }
+
+      if (cancelled) return;
+
+      // Merge: DB wins for step completion, union with localStorage
+      const merged = new Set<StepId>([
+        ...dbCompleted,
+        ...(local?.completed ?? []),
+      ]);
+
+      // "welcome" is always implicitly complete if account exists
+      if (dbCompleted.has("account" as StepId)) {
+        merged.add("welcome");
+      }
+
+      setCompletedSteps(merged);
+
+      // Resume at the first incomplete step
+      const firstIncomplete = steps.find((s) => !merged.has(s.id));
+      setCurrentStep(firstIncomplete?.id ?? "done");
+
       setHydrated(true);
-    });
-    return () => cancelAnimationFrame(id);
+    }
+
+    hydrate();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Persist progress on every change
@@ -391,7 +427,12 @@ export function SetupWizard({
               />
             )}
             {currentStep === "done" && (
-              <DoneStep onFinish={() => router.push("/projects")} />
+              <DoneStep
+                onFinish={() => {
+                  localStorage.removeItem(STORAGE_KEY);
+                  router.push("/projects");
+                }}
+              />
             )}
           </div>
         </div>
