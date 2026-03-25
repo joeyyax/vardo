@@ -3,7 +3,7 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { apps, projects, tags } from "@/lib/db/schema";
 import { getCurrentOrg, getUserOrganizations } from "@/lib/auth/session";
-import { eq, desc, asc, sql, isNull, and } from "drizzle-orm";
+import { eq, desc, asc, sql, isNull, and, type AnyColumn } from "drizzle-orm";
 import { Plus } from "lucide-react";
 import { PageToolbar } from "@/components/page-toolbar";
 import { Button } from "@/components/ui/button";
@@ -30,7 +30,7 @@ export default async function ProjectsPage() {
         },
         deployments: {
           columns: { id: true, status: true, startedAt: true, finishedAt: true },
-          orderBy: (d: any, { desc }: any) => [desc(d.startedAt)],
+          orderBy: (d: { startedAt: AnyColumn }) => [desc(d.startedAt)],
           limit: 1,
         },
         appTags: {

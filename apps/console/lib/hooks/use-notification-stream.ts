@@ -26,7 +26,9 @@ export function useNotificationStream(
   const { orgId, enabled = true, onEvent } = options;
   const [connected, setConnected] = useState(false);
   const onEventRef = useRef(onEvent);
-  onEventRef.current = onEvent;
+  useEffect(() => {
+    onEventRef.current = onEvent;
+  });
 
   const connect = useCallback(() => {
     if (!orgId) return null;

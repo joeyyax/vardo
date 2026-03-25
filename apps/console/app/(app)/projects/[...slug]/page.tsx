@@ -2,7 +2,7 @@ import { redirect, notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { projects, projectInstances } from "@/lib/db/schema";
 import { getCurrentOrg } from "@/lib/auth/session";
-import { eq, and, or } from "drizzle-orm";
+import { eq, and, or, desc, type AnyColumn } from "drizzle-orm";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { ProjectDetail } from "./project-detail";
 import type { MeshPeerSummary, ProjectInstanceSummary } from "@/lib/mesh/types";
@@ -77,7 +77,7 @@ export default async function ProjectDetailPage({
               startedAt: true,
               finishedAt: true,
             },
-            orderBy: (d: any, { desc }: any) => [desc(d.startedAt)],
+            orderBy: (d: { startedAt: AnyColumn }) => [desc(d.startedAt)],
             limit: 10,
             with: {
               triggeredByUser: {

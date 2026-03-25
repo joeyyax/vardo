@@ -116,12 +116,15 @@ export function SetupWizard({ meshEnabled = true }: { meshEnabled?: boolean }) {
 
   // Restore progress from localStorage on mount
   useEffect(() => {
-    const saved = loadProgress();
-    if (saved) {
-      setCompletedSteps(new Set(saved.completed));
-      setCurrentStep(saved.step);
-    }
-    setHydrated(true);
+    const id = requestAnimationFrame(() => {
+      const saved = loadProgress();
+      if (saved) {
+        setCompletedSteps(new Set(saved.completed));
+        setCurrentStep(saved.step);
+      }
+      setHydrated(true);
+    });
+    return () => cancelAnimationFrame(id);
   }, []);
 
   // Persist progress on every change
