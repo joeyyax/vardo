@@ -21,6 +21,7 @@ const CATEGORY_LABELS: Record<EventCategory, string> = {
   volume: "Volume",
   disk: "Disk",
   org: "Organization",
+  security: "Security",
   system: "System",
   digest: "Digest",
 };
@@ -36,6 +37,7 @@ const EVENT_LABELS: Record<BusEventType, string> = {
   "disk.write-alert": "High disk writes",
   "org.invitation-sent": "Invitation sent",
   "org.invitation-accepted": "Invitation accepted",
+  "security.file-exposed": "Sensitive file exposed",
   "system.service-down": "Service down",
   "system.disk-alert": "Disk space alert",
   "system.restart-loop": "Vardo restarted",
