@@ -448,7 +448,7 @@ When a BottomSheet is open, `globals.css` scales main content to 97% and applies
 </html>
 ```
 
-### Authenticated App Layout (`app/(app)/layout.tsx`)
+### Authenticated App Layout (`app/(authenticated)/layout.tsx`)
 
 ```
 flex flex-col h-dvh bg-sidebar

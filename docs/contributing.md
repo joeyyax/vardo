@@ -104,7 +104,7 @@ If you are adding a new critical path (deploy trigger, backup target, auth metho
 
 ```
 app/
-  (app)/              # Authenticated routes
+  (authenticated)/              # Authenticated routes
     projects/         # Project list + detail
     apps/             # App list + detail
     backups/          # Backup management
@@ -246,10 +246,10 @@ Squash granular commits before merge.
 
 ## How to Add a New Settings Page
 
-Settings pages live under `app/(app)/settings/[tab]/` (org settings) or `app/(app)/user/settings/[tab]/` (user settings). Admin settings are under `app/(app)/admin/settings/[tab]/`.
+Settings pages live under `app/(authenticated)/settings/[tab]/` (org settings) or `app/(authenticated)/user/settings/[tab]/` (user settings). Admin settings are under `app/(authenticated)/admin/settings/[tab]/`.
 
 1. Add the tab to the settings nav in `components/layout/settings-nav.tsx`
-2. Create `app/(app)/settings/[tab]/page.tsx`
+2. Create `app/(authenticated)/settings/[tab]/page.tsx`
 3. Use Server Components to load initial data, Client Components for interactive forms
 4. Mutations go through Server Actions or API routes
 5. Use `toast` from `sonner` for success/error feedback
