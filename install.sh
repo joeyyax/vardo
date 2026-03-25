@@ -448,7 +448,7 @@ get_port_process() {
       ps -p "$pid" -o comm= 2>/dev/null || echo "unknown (pid $pid)"
     fi
   else
-    ss -tlnp "sport = :$port" 2>/dev/null | grep -oP 'users:\(\("\K[^"]+' | head -1 || echo "unknown"
+    ss -tlnp "sport = :$port" 2>/dev/null | sed -n 's/.*users:(("\([^"]*\)".*/\1/p' | head -1
   fi
 }
 
@@ -657,7 +657,9 @@ setup_swap() {
       run_cmd chmod 600 /swapfile
       run_cmd mkswap /swapfile > /dev/null
       if run_cmd swapon /swapfile 2>/dev/null; then
-        grep -q '/swapfile' /etc/fstab 2>/dev/null || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+        if ! grep -q '/swapfile' /etc/fstab 2>/dev/null; then
+          run_cmd bash -c "echo '/swapfile none swap sw 0 0' >> /etc/fstab"
+        fi
         log "Swap enabled: 2GB"
       else
         rm -f /swapfile
@@ -1720,16 +1722,18 @@ do_uninstall() {
 
     info "Removing Docker volumes..."
     run_cmd docker compose -f "$VARDO_DIR/$COMPOSE_FILE" down -v 2>/dev/null || true
-    log "Volumes removed"
+    if ! $DRY_RUN; then log "Volumes removed"; fi
 
     info "Removing $VARDO_DIR..."
     if ! $DRY_RUN; then
       rm -rf "$VARDO_DIR"
+      log "Installation directory removed"
+    else
+      echo -e "  ${DIM}[dry-run] rm -rf $VARDO_DIR${RESET}"
     fi
-    log "Installation directory removed"
 
     run_cmd docker network rm vardo-network 2>/dev/null || true
-    log "Network removed"
+    if ! $DRY_RUN; then log "Network removed"; fi
 
     echo ""
     echo -e "  ${GREEN}${BOLD}Vardo has been completely removed.${RESET}"
