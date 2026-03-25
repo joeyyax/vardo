@@ -2,6 +2,9 @@ import { notFound, redirect } from "next/navigation";
 import { getCurrentOrg } from "@/lib/auth/session";
 import {
   AccountInfo,
+  PasskeyManager,
+  LinkedAccounts,
+  AuthInfo,
   ActiveSessions,
   ApiTokens,
 } from "../account-settings";
@@ -61,7 +64,10 @@ function TabContent({ tab, orgId }: { tab: ValidTab; orgId: string | null }) {
               Manage how you sign in and protect your account.
             </p>
           </div>
+          <PasskeyManager />
+          <LinkedAccounts />
           <ActiveSessions />
+          <AuthInfo />
         </div>
       );
     case "tokens":
