@@ -53,6 +53,7 @@ export const apps = pgTable(
     imageName: text("image_name"),
     composeContent: text("compose_content"),
     composeFilePath: text("compose_file_path").default("docker-compose.yml"),
+    dockerfilePath: text("dockerfile_path").default("Dockerfile"),
     rootDirectory: text("root_directory"),
     autoTraefikLabels: boolean("auto_traefik_labels").default(false),
     containerPort: integer("container_port"),
