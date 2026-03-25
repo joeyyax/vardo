@@ -18,6 +18,9 @@ import { nanoid } from "nanoid";
 import { createChannel } from "./factory";
 import { toLegacyEvent } from "@/lib/bus";
 import type { BusEvent } from "@/lib/bus";
+import { logger } from "@/lib/logger";
+
+const log = logger.child("notifications");
 
 const RETRY_KEY = "vardo:notification:retry";
 const MAX_ATTEMPTS = 3;
@@ -109,15 +112,15 @@ export async function tickNotificationRetries(): Promise<void> {
 
       if (entry.attempt >= MAX_ATTEMPTS) {
         // Exhausted all retries
-        console.error(
-          `[notifications] Channel "${entry.channelName}" permanently failed after ${entry.attempt} attempts:`,
+        log.error(
+          `Channel "${entry.channelName}" permanently failed after ${entry.attempt} attempts:`,
           error
         );
         await logAttempt(entry, "failed", error);
       } else {
         // Re-enqueue for another retry
-        console.warn(
-          `[notifications] Channel "${entry.channelName}" attempt ${entry.attempt}/${MAX_ATTEMPTS} failed, will retry`
+        log.warn(
+          `Channel "${entry.channelName}" attempt ${entry.attempt}/${MAX_ATTEMPTS} failed, will retry`
         );
         await enqueueRetry(entry, entry.attempt);
       }

@@ -1,4 +1,7 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
+
+const log = logger.child("api");
 
 /**
  * Standard error response for API route catch blocks.
@@ -12,7 +15,7 @@ export function handleRouteError(error: unknown, context?: string) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   if (context) {
-    console.error(`${context}:`, error);
+    log.error(`${context}:`, error);
   }
   return NextResponse.json(
     { error: "Internal server error" },

@@ -11,8 +11,11 @@ import { db } from "@/lib/db";
 import { systemSettings } from "@/lib/db/schema";
 import { decryptSystemOrFallback, encryptSystem } from "@/lib/crypto/encrypt";
 import { eq } from "drizzle-orm";
+import { logger } from "@/lib/logger";
 
 import { DEFAULT_APP_NAME } from "@/lib/constants";
+
+const log = logger.child("system-settings");
 
 // Dynamic import to avoid pulling fs (via vardo-config.ts) into client bundles.
 // system-settings re-exports DEFAULT_APP_NAME which client components use,
@@ -83,7 +86,7 @@ function parseJson<T>(raw: string, label: string): T | null {
   try {
     return JSON.parse(raw) as T;
   } catch {
-    console.error(`[system-settings] Failed to parse ${label}`);
+    log.error(`Failed to parse ${label}`);
     return null;
   }
 }

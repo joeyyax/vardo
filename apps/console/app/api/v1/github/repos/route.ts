@@ -5,6 +5,9 @@ import { requireSession } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { listInstallationRepos, createRepo } from "@/lib/github/app";
 import { z } from "zod";
+import { logger } from "@/lib/logger";
+
+const log = logger.child("github:repos");
 
 // GET /api/v1/github/repos?installationId=X — List repos for a user's installation
 export async function GET(request: NextRequest) {
@@ -41,7 +44,7 @@ export async function GET(request: NextRequest) {
     if (error instanceof Error && error.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    console.error("Error fetching GitHub repos:", error);
+    log.error("Error fetching GitHub repos:", error);
     return NextResponse.json(
       { error: "Failed to fetch repositories from GitHub" },
       { status: 502 }
@@ -100,7 +103,7 @@ export async function POST(request: NextRequest) {
     if (error instanceof Error && error.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    console.error("Error creating GitHub repo:", error);
+    log.error("Error creating GitHub repo:", error);
     return NextResponse.json(
       { error: "Failed to create repository" },
       { status: 502 }

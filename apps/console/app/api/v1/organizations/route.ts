@@ -5,6 +5,9 @@ import { organizations, memberships, user } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth/session";
 import { eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { logger } from "@/lib/logger";
+
+const log = logger.child("api:organizations");
 
 const createOrgSchema = z.object({
   name: z.string().min(1, "Organization name is required").max(100).trim(),
@@ -39,7 +42,7 @@ export async function GET() {
 
     return NextResponse.json({ organizations: orgs });
   } catch (error) {
-    console.error("Error fetching organizations:", error);
+    log.error("Error fetching organizations:", error);
     return NextResponse.json(
       { error: "Failed to fetch organizations" },
       { status: 500 }
@@ -113,7 +116,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ organization: org, isAppAdmin: isFirstOrg }, { status: 201 });
   } catch (error) {
-    console.error("Error creating organization:", error);
+    log.error("Error creating organization:", error);
     return NextResponse.json(
       { error: "Failed to create organization" },
       { status: 500 }

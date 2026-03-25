@@ -3,6 +3,9 @@ import { digestSettings } from "@/lib/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { emit } from "@/lib/notifications/dispatch";
 import { collectDigestData } from "./collector";
+import { logger } from "@/lib/logger";
+
+const log = logger.child("digest");
 
 /**
  * Check all orgs with digest settings and fire the digest for any that are due.
@@ -40,15 +43,15 @@ export async function tickDigestJobs(): Promise<void> {
           .returning({ id: digestSettings.id });
 
         if (claimed.length === 0) {
-          console.log(
-            `[digest] Skipping org ${setting.organizationId} — already claimed by another process`,
+          log.info(
+            `Skipping org ${setting.organizationId} — already claimed by another process`,
           );
           return;
         }
 
         const org = setting.organization;
 
-        console.log(`[digest] Sending weekly digest to org "${org.name}" (${org.id})`);
+        log.info(`Sending weekly digest to org "${org.name}" (${org.id})`);
 
         const data = await collectDigestData(org.id, org.name);
 
@@ -67,10 +70,10 @@ export async function tickDigestJobs(): Promise<void> {
           cronFailed: data.cron.totalFailures,
         });
 
-        console.log(`[digest] Digest sent for org "${org.name}"`);
+        log.info(`Digest sent for org "${org.name}"`);
       } catch (err) {
-        console.error(
-          `[digest] Error sending digest for org ${setting.organizationId}:`,
+        log.error(
+          `Error sending digest for org ${setting.organizationId}:`,
           err,
         );
       }

@@ -15,6 +15,9 @@ import { resolve, join } from "path";
 import type { BackupStorage } from "./storage-port";
 import { createBackupStorage } from "./storage-factory";
 import { assertSafeName } from "@/lib/docker/validate";
+import { logger } from "@/lib/logger";
+
+const log = logger.child("backup");
 
 const execFileAsync = promisify(execFile);
 
@@ -426,13 +429,13 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
       // System-level job — log to console
       const hasFailures = results.some((r) => !r.success);
       if (hasFailures && job.notifyOnFailure) {
-        console.error(`[backup] ${job.name} FAILED — ${results.filter((r) => !r.success).map((r) => `${r.volumeName}: ${r.error}`).join("; ")}`);
+        log.error(`${job.name} FAILED — ${results.filter((r) => !r.success).map((r) => `${r.volumeName}: ${r.error}`).join("; ")}`);
       } else if (!hasFailures && job.notifyOnSuccess) {
-        console.log(`[backup] ${job.name} succeeded (${results.reduce((s, r) => s + r.sizeBytes, 0)} bytes)`);
+        log.info(`${job.name} succeeded (${results.reduce((s, r) => s + r.sizeBytes, 0)} bytes)`);
       }
     }
   } catch (err) {
-    console.error("[notifications] Backup notification error:", err);
+    log.error("Backup notification error:", err);
   }
 
   return results;

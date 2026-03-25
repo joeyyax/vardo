@@ -12,6 +12,9 @@
 
 import { publishEvent, subscribe, orgChannel } from "@/lib/events";
 import type { BusEvent } from "./events";
+import { logger } from "@/lib/logger";
+
+const log = logger.child("bus");
 
 export type { BusEvent, BusEventType } from "./events";
 export { EVENT_CATEGORIES, ALL_EVENT_TYPES } from "./events";
@@ -60,7 +63,7 @@ export function emit(orgId: string, event: BusEvent): void {
     ...event,
     timestamp: Date.now(),
   }).catch((err) => {
-    console.error("[bus] emit failed:", err);
+    log.error("emit failed:", err);
   });
 
   // Run local hooks
@@ -68,7 +71,7 @@ export function emit(orgId: string, event: BusEvent): void {
     try {
       hook(orgId, event);
     } catch (err) {
-      console.error("[bus] emit hook error:", err);
+      log.error("emit hook error:", err);
     }
   }
 }
