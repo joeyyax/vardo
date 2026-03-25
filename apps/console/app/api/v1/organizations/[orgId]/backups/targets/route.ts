@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { backupTargets } from "@/lib/db/schema";
 import { requireOrg } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/config/features";
+import { isLocalBackupsAllowed } from "@/lib/config/provider-restrictions";
 import { eq, or, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
@@ -83,7 +84,10 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       isAppLevel: t.organizationId === null,
     }));
 
-    return NextResponse.json({ targets: enriched });
+    return NextResponse.json({
+      targets: enriched,
+      allowLocalBackups: isLocalBackupsAllowed(),
+    });
   } catch (error) {
     return handleRouteError(error, "Error fetching backup targets");
   }
@@ -113,6 +117,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     const data = parsed.data;
+
+    // Reject SSH/local targets if restricted by deployment config
+    if (data.type === "ssh" && !isLocalBackupsAllowed()) {
+      return NextResponse.json(
+        { error: "SSH/local backup targets are not available on this instance" },
+        { status: 403 },
+      );
+    }
 
     const [target] = await db
       .insert(backupTargets)

@@ -26,6 +26,7 @@ export function BackupPage({
   const [targets, setTargets] = useState<BackupTarget[]>([]);
   const [jobs, setJobs] = useState<BackupJob[]>([]);
   const [history, setHistory] = useState<RecentBackup[]>([]);
+  const [allowLocalBackups, setAllowLocalBackups] = useState(true);
   const [targetFormOpen, setTargetFormOpen] = useState(false);
   const [jobFormOpen, setJobFormOpen] = useState(false);
   const [editingTargetId, setEditingTargetId] = useState<string | null>(null);
@@ -44,6 +45,9 @@ export function BackupPage({
       if (targetsRes.ok) {
         const data = await targetsRes.json();
         setTargets(data.targets || []);
+        if (data.allowLocalBackups !== undefined) {
+          setAllowLocalBackups(data.allowLocalBackups);
+        }
       }
     } catch {
       // silent
@@ -258,6 +262,7 @@ export function BackupPage({
           fetchData();
         }}
         editTarget={editingTargetId ? targets.find((t) => t.id === editingTargetId) ?? null : null}
+        allowLocalBackups={allowLocalBackups}
       />
 
       <JobForm
