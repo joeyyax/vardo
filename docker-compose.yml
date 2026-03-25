@@ -48,10 +48,22 @@ services:
       - vardo_projects:/var/lib/vardo/projects
     labels:
       - "traefik.enable=true"
+      # Primary router — domain with TLS
       - "traefik.http.routers.vardo.rule=Host(`${VARDO_DOMAIN:-localhost}`)"
       - "traefik.http.routers.vardo.entrypoints=websecure"
       - "traefik.http.routers.vardo.tls.certresolver=le"
       - "traefik.http.services.vardo.loadbalancer.server.port=3000"
+      # HTTP→HTTPS redirect for the domain (not for IP)
+      - "traefik.http.routers.vardo-http.rule=Host(`${VARDO_DOMAIN:-localhost}`)"
+      - "traefik.http.routers.vardo-http.entrypoints=web"
+      - "traefik.http.routers.vardo-http.middlewares=vardo-https-redirect"
+      - "traefik.http.middlewares.vardo-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.vardo-https-redirect.redirectscheme.permanent=true"
+      # Fallback router — catch-all on HTTP for IP access (setup before DNS)
+      - "traefik.http.routers.vardo-fallback.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.vardo-fallback.entrypoints=web"
+      - "traefik.http.routers.vardo-fallback.priority=1"
+      - "traefik.http.routers.vardo-fallback.service=vardo"
     networks:
       - internal
       - vardo-network
@@ -103,9 +115,6 @@ services:
       - "--providers.docker.exposedbydefault=false"
       - "--providers.docker.network=vardo-network"
       - "--entrypoints.web.address=:80"
-      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
-      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
-      - "--entrypoints.web.http.redirections.entrypoint.permanent=true"
       - "--entrypoints.websecure.address=:443"
       - "--entrypoints.websecure.http.tls=true"
       # Let's Encrypt (default, always available)
