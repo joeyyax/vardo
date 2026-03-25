@@ -331,12 +331,12 @@ run_with_spinner() {
   local chars="⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
   local i=0
   while kill -0 "$pid" 2>/dev/null; do
-    printf "\r  ${CYAN}%s${RESET} %s" "${chars:i++%${#chars}:1}" "$label"
+    printf "\r  ${CYAN}%s${RESET} %s" "${chars:i++%${#chars}:1}" "$label" > /dev/tty
     sleep 0.1
   done
   wait "$pid"
   local exit_code=$?
-  printf "\r"
+  printf "\r                                                              \r" > /dev/tty
   if [ $exit_code -eq 0 ]; then
     log "$label"
   else
@@ -1135,10 +1135,10 @@ wait_healthy() {
 
   while [ $elapsed -lt "$timeout" ]; do
     attempt=$((attempt + 1))
-    printf "\r  ${CYAN}⠹${RESET} Waiting for healthy... (attempt %d/%d, %ds/%ds)" "$attempt" "$attempts" "$elapsed" "$timeout"
+    printf "\r  ${CYAN}⠹${RESET} Waiting for healthy... (attempt %d/%d, %ds/%ds)" "$attempt" "$attempts" "$elapsed" "$timeout" > /dev/tty
     if docker compose -f "$VARDO_DIR/$COMPOSE_FILE" exec -T "$container" \
       curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
-      printf "\r"
+      printf "\r                                                              \r" > /dev/tty
       log "Vardo is healthy"
       return 0
     fi
