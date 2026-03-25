@@ -142,7 +142,7 @@ export function ProjectMetrics({ orgId, projectId, apps }: ProjectMetricsProps) 
             <XAxis dataKey="time" tick={chartTickStyle} />
             <YAxis width={45} tickFormatter={(v) => `${v}%`} tick={chartTickStyle} />
             <Tooltip content={<CpuTooltip />} />
-            <Area type="monotone" dataKey="cpu" stroke={CHART_COLORS.cpu} fill="url(#projCpuGradient)" />
+            <Area isAnimationActive={false} type="monotone" dataKey="cpu" stroke={CHART_COLORS.cpu} fill="url(#projCpuGradient)" />
           </AreaChart>
         </ResponsiveContainer>
       </ChartCard>
@@ -160,7 +160,7 @@ export function ProjectMetrics({ orgId, projectId, apps }: ProjectMetricsProps) 
             <XAxis dataKey="time" tick={chartTickStyle} />
             <YAxis width={65} tickFormatter={formatBytesShort} tick={chartTickStyle} />
             <Tooltip content={<MemTooltip />} />
-            <Area type="monotone" dataKey="memory" stroke={CHART_COLORS.memory} fill="url(#projMemGradient)" />
+            <Area isAnimationActive={false} type="monotone" dataKey="memory" stroke={CHART_COLORS.memory} fill="url(#projMemGradient)" />
           </AreaChart>
         </ResponsiveContainer>
       </ChartCard>
@@ -182,8 +182,8 @@ export function ProjectMetrics({ orgId, projectId, apps }: ProjectMetricsProps) 
             <XAxis dataKey="time" tick={chartTickStyle} />
             <YAxis width={65} tickFormatter={(v) => `${formatBytesShort(v)}/s`} tick={chartTickStyle} />
             <Tooltip content={<NetTooltip />} />
-            <Area type="monotone" dataKey="networkRxRate" stroke={CHART_COLORS.networkRx} fill="url(#projNetRxGradient)" />
-            <Area type="monotone" dataKey="networkTxRate" stroke={CHART_COLORS.networkTx} fill="url(#projNetTxGradient)" />
+            <Area isAnimationActive={false} type="monotone" dataKey="networkRxRate" stroke={CHART_COLORS.networkRx} fill="url(#projNetRxGradient)" />
+            <Area isAnimationActive={false} type="monotone" dataKey="networkTxRate" stroke={CHART_COLORS.networkTx} fill="url(#projNetTxGradient)" />
           </AreaChart>
         </ResponsiveContainer>
       </ChartCard>

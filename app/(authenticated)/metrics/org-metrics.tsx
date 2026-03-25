@@ -411,7 +411,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
                   <XAxis dataKey="time" tick={chartTickStyle} />
                   <YAxis width={45} tickFormatter={(v) => `${v}%`} tick={chartTickStyle} />
                   <Tooltip content={<CpuTooltip />} />
-                  <Area type="monotone" dataKey="cpu" stroke={CHART_COLORS.cpu} fill="url(#orgCpuGradient)" />
+                  <Area isAnimationActive={false} type="monotone" dataKey="cpu" stroke={CHART_COLORS.cpu} fill="url(#orgCpuGradient)" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -434,7 +434,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
                   <XAxis dataKey="time" tick={chartTickStyle} />
                   <YAxis width={65} tickFormatter={formatBytesShort} tick={chartTickStyle} />
                   <Tooltip content={<MemTooltip />} />
-                  <Area type="monotone" dataKey="memory" stroke={CHART_COLORS.memory} fill="url(#orgMemGradient)" />
+                  <Area isAnimationActive={false} type="monotone" dataKey="memory" stroke={CHART_COLORS.memory} fill="url(#orgMemGradient)" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -461,8 +461,8 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
                   <XAxis dataKey="time" tick={chartTickStyle} />
                   <YAxis width={65} tickFormatter={(v) => `${formatBytesShort(v)}/s`} tick={chartTickStyle} />
                   <Tooltip content={<NetTooltip />} />
-                  <Area type="monotone" dataKey="networkRxRate" stroke={CHART_COLORS.networkRx} fill="url(#orgNetRxGradient)" />
-                  <Area type="monotone" dataKey="networkTxRate" stroke={CHART_COLORS.networkTx} fill="url(#orgNetTxGradient)" />
+                  <Area isAnimationActive={false} type="monotone" dataKey="networkRxRate" stroke={CHART_COLORS.networkRx} fill="url(#orgNetRxGradient)" />
+                  <Area isAnimationActive={false} type="monotone" dataKey="networkTxRate" stroke={CHART_COLORS.networkTx} fill="url(#orgNetTxGradient)" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -485,7 +485,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
                   <XAxis dataKey="time" tick={chartTickStyle} />
                   <YAxis width={65} tickFormatter={formatBytesShort} tick={chartTickStyle} />
                   <Tooltip content={<DiskTooltip />} />
-                  <Area type="monotone" dataKey="diskTotal" stroke={CHART_COLORS.disk} fill="url(#orgDiskGradient)" />
+                  <Area isAnimationActive={false} type="monotone" dataKey="diskTotal" stroke={CHART_COLORS.disk} fill="url(#orgDiskGradient)" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>

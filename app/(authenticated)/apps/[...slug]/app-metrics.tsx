@@ -254,7 +254,7 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
             <XAxis dataKey="time" tick={chartTickStyle} />
             <YAxis width={45} tickFormatter={(v) => `${v}%`} tick={chartTickStyle} />
             <Tooltip content={<CpuTooltip />} />
-            <Area type="monotone" dataKey="cpu" stroke={CHART_COLORS.cpu} fill="url(#appCpuGradient)" />
+            <Area isAnimationActive={false} type="monotone" dataKey="cpu" stroke={CHART_COLORS.cpu} fill="url(#appCpuGradient)" />
           </AreaChart>
         </ResponsiveContainer>
       </ChartCard>
@@ -283,7 +283,7 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
               domain={[0, latestMemoryLimit > 0 ? latestMemoryLimit * 1.1 : "auto"]}
             />
             <Tooltip content={<MemTooltip />} />
-            <Area type="monotone" dataKey="memory" stroke={CHART_COLORS.memory} fill="url(#appMemGradient)" />
+            <Area isAnimationActive={false} type="monotone" dataKey="memory" stroke={CHART_COLORS.memory} fill="url(#appMemGradient)" />
           </AreaChart>
         </ResponsiveContainer>
       </ChartCard>
@@ -306,8 +306,8 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
             <XAxis dataKey="time" tick={chartTickStyle} />
             <YAxis width={75} tickFormatter={(v) => `${formatBytesShort(v)}/s`} tick={chartTickStyle} />
             <Tooltip content={<NetTooltip />} />
-            <Area type="monotone" dataKey="networkRxRate" stroke={CHART_COLORS.networkRx} fill="url(#appNetRxGradient)" />
-            <Area type="monotone" dataKey="networkTxRate" stroke={CHART_COLORS.networkTx} fill="url(#appNetTxGradient)" />
+            <Area isAnimationActive={false} type="monotone" dataKey="networkRxRate" stroke={CHART_COLORS.networkRx} fill="url(#appNetRxGradient)" />
+            <Area isAnimationActive={false} type="monotone" dataKey="networkTxRate" stroke={CHART_COLORS.networkTx} fill="url(#appNetTxGradient)" />
           </AreaChart>
         </ResponsiveContainer>
       </ChartCard>
