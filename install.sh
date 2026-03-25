@@ -1178,8 +1178,8 @@ case "${1:-}" in
   stop)     docker compose -f "$VARDO_DIR/$COMPOSE_FILE" stop ;;
   start)    docker compose -f "$VARDO_DIR/$COMPOSE_FILE" up -d ;;
   ps)       docker compose -f "$VARDO_DIR/$COMPOSE_FILE" ps ;;
-  update)   bash "$VARDO_DIR/install.sh" update ;;
-  doctor)   bash "$VARDO_DIR/install.sh" doctor ;;
+  update)   shift; bash "$VARDO_DIR/install.sh" update "$@" ;;
+  doctor)   shift; bash "$VARDO_DIR/install.sh" doctor "$@" ;;
   uninstall) bash "$VARDO_DIR/install.sh" uninstall "$@" ;;
   shell)    shift; docker compose -f "$VARDO_DIR/$COMPOSE_FILE" exec frontend "${@:-sh}" ;;
   *)
