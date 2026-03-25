@@ -18,7 +18,7 @@ import { KeyRound, Mail, Lock, Loader2, Eye, EyeOff } from "lucide-react";
 
 type SignInMethod = "passkey" | "password" | "magic";
 
-function LoginForm() {
+function LoginForm({ allowPasswordAuth = true }: { allowPasswordAuth?: boolean }) {
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") ?? "/projects";
 
@@ -27,7 +27,7 @@ function LoginForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState<string | null>(null);
   const [magicLinkSent, setMagicLinkSent] = useState(false);
-  const [method, setMethod] = useState<SignInMethod>("password");
+  const [method, setMethod] = useState<SignInMethod>(allowPasswordAuth ? "password" : "magic");
   const [error, setError] = useState<string | null>(null);
 
   const handlePasskeySignIn = async () => {
@@ -198,7 +198,7 @@ function LoginForm() {
         </div>
 
         {/* Email + password or magic link */}
-        {method === "password" ? (
+        {method === "password" && allowPasswordAuth ? (
           <form onSubmit={handlePasswordSignIn} className="space-y-3">
             <div className="space-y-2">
               <Label htmlFor="email">Email address</Label>
@@ -284,20 +284,22 @@ function LoginForm() {
           </form>
         )}
 
-        <div className="text-center">
-          <button
-            type="button"
-            onClick={() => {
-              setMethod(method === "password" ? "magic" : "password");
-              setError(null);
-            }}
-            className="text-xs text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
-          >
-            {method === "password"
-              ? "Use magic link instead"
-              : "Use password instead"}
-          </button>
-        </div>
+        {allowPasswordAuth && (
+          <div className="text-center">
+            <button
+              type="button"
+              onClick={() => {
+                setMethod(method === "password" ? "magic" : "password");
+                setError(null);
+              }}
+              className="text-xs text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
+            >
+              {method === "password"
+                ? "Use magic link instead"
+                : "Use password instead"}
+            </button>
+          </div>
+        )}
 
       </CardContent>
     </Card>
@@ -319,11 +321,11 @@ function LoginSkeleton() {
   );
 }
 
-export function LoginPageClient() {
+export function LoginPageClient({ allowPasswordAuth = true }: { allowPasswordAuth?: boolean }) {
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-muted/30">
       <Suspense fallback={<LoginSkeleton />}>
-        <LoginForm />
+        <LoginForm allowPasswordAuth={allowPasswordAuth} />
       </Suspense>
     </div>
   );

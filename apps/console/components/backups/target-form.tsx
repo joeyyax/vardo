@@ -31,6 +31,7 @@ export function TargetForm({
   isFirstTarget,
   onCreated,
   editTarget,
+  allowLocalBackups = true,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -38,6 +39,7 @@ export function TargetForm({
   isFirstTarget: boolean;
   onCreated: () => void;
   editTarget?: BackupTarget | null;
+  allowLocalBackups?: boolean;
 }) {
   const isEditing = !!editTarget;
   const config = (editTarget?.config ?? {}) as Record<string, string>;
@@ -184,7 +186,7 @@ export function TargetForm({
                   <SelectItem value="s3">Amazon S3</SelectItem>
                   <SelectItem value="r2">Cloudflare R2</SelectItem>
                   <SelectItem value="b2">Backblaze B2</SelectItem>
-                  <SelectItem value="ssh">SSH / SFTP</SelectItem>
+                  {allowLocalBackups && <SelectItem value="ssh">SSH / SFTP</SelectItem>}
                 </SelectContent>
               </Select>
             </div>

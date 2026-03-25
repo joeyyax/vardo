@@ -6,6 +6,7 @@ import { isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { requireAppAdmin } from "@/lib/auth/admin";
+import { isLocalBackupsAllowed } from "@/lib/config/provider-restrictions";
 
 const s3ConfigSchema = z.object({
   bucket: z.string().min(1),
@@ -60,7 +61,7 @@ export async function GET() {
       where: isNull(backupTargets.organizationId),
     });
 
-    return NextResponse.json({ targets });
+    return NextResponse.json({ targets, allowLocalBackups: isLocalBackupsAllowed() });
   } catch (error) {
     if (error instanceof Error && error.message === "Forbidden") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -85,6 +86,14 @@ export async function POST(request: NextRequest) {
     }
 
     const data = parsed.data;
+
+    // Reject SSH/local targets if restricted by deployment config
+    if (data.type === "ssh" && !isLocalBackupsAllowed()) {
+      return NextResponse.json(
+        { error: "SSH/local backup targets are not available on this instance" },
+        { status: 403 },
+      );
+    }
 
     const [target] = await db
       .insert(backupTargets)
