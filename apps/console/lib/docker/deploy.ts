@@ -255,7 +255,7 @@ export async function runDeployment(
 
       // Build authenticated clone URL/env for private repos
       let cloneUrl = app.gitUrl;
-      let gitEnv: Record<string, string> = {};
+      const gitEnv: Record<string, string> = {};
       let sshKeyFile: string | null = null;
 
       // Strategy 1: GitHub App token (for github.com URLs)

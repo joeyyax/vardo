@@ -25,10 +25,7 @@ const TIERS = {
 type Tier = keyof typeof TIERS;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type RouteHandler = (
-  request: NextRequest,
-  context: any
-) => Promise<Response | NextResponse>;
+type RouteHandler = (request: NextRequest, context: any) => Promise<Response | NextResponse>;
 
 /**
  * Extract a rate limit identifier from the request.

@@ -78,27 +78,60 @@ function DiskTooltip(props: { active?: boolean; payload?: Array<{ dataKey?: stri
   );
 }
 
-export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsProps) {
-  if (!adminMode && apps.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
-        <Activity className="size-8 text-muted-foreground/50" />
-        <div className="text-center space-y-1">
-          <p className="text-sm font-medium">No apps deployed yet</p>
-          <p className="text-sm text-muted-foreground">
-            Deploy an app to start seeing CPU, memory, network, and disk metrics.
-          </p>
-        </div>
-        <Button size="sm" asChild>
-          <Link href="/projects">
-            <Box className="mr-1.5 size-4" />
-            Go to projects
-          </Link>
-        </Button>
-      </div>
-    );
-  }
+type Slice = { label: string; value: number; color: string; detail?: string };
 
+function HalfDonut({ title, subtitle, slices, centerLabel, centerSub }: {
+  title: string; subtitle?: string; slices: Slice[]; centerLabel: string; centerSub?: string;
+}) {
+  const total = slices.reduce((s, sl) => s + sl.value, 0) || 1;
+  return (
+    <div className="squircle rounded-lg border bg-card overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-2 border-b">
+        <h3 className="text-sm font-medium">{title}</h3>
+        {subtitle && <span className="text-[10px] text-muted-foreground">{subtitle}</span>}
+      </div>
+      <div className="flex justify-center pt-4 pb-2">
+        <svg viewBox="0 0 120 68" className="w-28">
+          {slices.reduce<{ paths: React.ReactNode[]; angle: number }>(
+            ({ paths, angle }, sl) => {
+              const r = 48, cx = 60, cy = 58;
+              const ang = (sl.value / total) * Math.PI;
+              const x1 = cx + r * Math.cos(angle), y1 = cy + r * Math.sin(angle);
+              const nextAngle = angle + ang;
+              const x2 = cx + r * Math.cos(nextAngle), y2 = cy + r * Math.sin(nextAngle);
+              return {
+                paths: [...paths, (
+                  <path key={sl.label} d={`M${cx} ${cy}L${x1} ${y1}A${r} ${r} 0 ${ang > Math.PI ? 1 : 0} 1 ${x2} ${y2}Z`}
+                    fill={sl.color} opacity={0.85} />
+                )],
+                angle: nextAngle,
+              };
+            },
+            { paths: [], angle: Math.PI }
+          ).paths}
+          <text x="60" y="52" textAnchor="middle" fill="currentColor" fontSize="16" fontWeight="600">{centerLabel}</text>
+          {centerSub && <text x="60" y="63" textAnchor="middle" fill="currentColor" opacity={0.5} fontSize="8">{centerSub}</text>}
+        </svg>
+      </div>
+      <div className="px-4 pb-3 space-y-1">
+        {slices.map((sl) => (
+          <div key={sl.label} className="flex items-center justify-between py-0.5">
+            <span className="inline-flex items-center gap-1.5 text-xs truncate">
+              <span className="size-2 rounded-full shrink-0" style={{ backgroundColor: sl.color }} />
+              {sl.label}
+            </span>
+            <span className="text-xs tabular-nums text-muted-foreground shrink-0 ml-2">
+              {sl.detail ?? sl.value}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsProps) {
+  const isEmpty = !adminMode && apps.length === 0;
   const [timeRange, setTimeRange] = useState<TimeRange>("1h");
 
   const historyUrl = adminMode
@@ -208,6 +241,26 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
   const diskSparkData = useMemo(() => points.map((p) => p.diskTotal), [points]);
   const netRxSparkData = useMemo(() => points.map((p) => p.networkRx), [points]);
   const netTxSparkData = useMemo(() => points.map((p) => p.networkTx), [points]);
+
+  if (isEmpty) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
+        <Activity className="size-8 text-muted-foreground/50" />
+        <div className="text-center space-y-1">
+          <p className="text-sm font-medium">No apps deployed yet</p>
+          <p className="text-sm text-muted-foreground">
+            Deploy an app to start seeing CPU, memory, network, and disk metrics.
+          </p>
+        </div>
+        <Button size="sm" asChild>
+          <Link href="/projects">
+            <Box className="mr-1.5 size-4" />
+            Go to projects
+          </Link>
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -488,54 +541,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
         const cpuApps = topN(allActive, "cpu");
         const netApps = topN(allActive, "network");
 
-        type Slice = { label: string; value: number; color: string; detail?: string };
 
-        function HalfDonut({ title, subtitle, slices, centerLabel, centerSub }: {
-          title: string; subtitle?: string; slices: Slice[]; centerLabel: string; centerSub?: string;
-        }) {
-          const total = slices.reduce((s, sl) => s + sl.value, 0) || 1;
-          return (
-            <div className="squircle rounded-lg border bg-card overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-2 border-b">
-                <h3 className="text-sm font-medium">{title}</h3>
-                {subtitle && <span className="text-[10px] text-muted-foreground">{subtitle}</span>}
-              </div>
-              <div className="flex justify-center pt-4 pb-2">
-                <svg viewBox="0 0 120 68" className="w-28">
-                  {(() => {
-                    const r = 48, cx = 60, cy = 58;
-                    let a = Math.PI;
-                    return slices.map((sl) => {
-                      const ang = (sl.value / total) * Math.PI;
-                      const x1 = cx + r * Math.cos(a), y1 = cy + r * Math.sin(a);
-                      a += ang;
-                      const x2 = cx + r * Math.cos(a), y2 = cy + r * Math.sin(a);
-                      return (
-                        <path key={sl.label} d={`M${cx} ${cy}L${x1} ${y1}A${r} ${r} 0 ${ang > Math.PI ? 1 : 0} 1 ${x2} ${y2}Z`}
-                          fill={sl.color} opacity={0.85} />
-                      );
-                    });
-                  })()}
-                  <text x="60" y="52" textAnchor="middle" fill="currentColor" fontSize="16" fontWeight="600">{centerLabel}</text>
-                  {centerSub && <text x="60" y="63" textAnchor="middle" fill="currentColor" opacity={0.5} fontSize="8">{centerSub}</text>}
-                </svg>
-              </div>
-              <div className="px-4 pb-3 space-y-1">
-                {slices.map((sl) => (
-                  <div key={sl.label} className="flex items-center justify-between py-0.5">
-                    <span className="inline-flex items-center gap-1.5 text-xs truncate">
-                      <span className="size-2 rounded-full shrink-0" style={{ backgroundColor: sl.color }} />
-                      {sl.label}
-                    </span>
-                    <span className="text-xs tabular-nums text-muted-foreground shrink-0 ml-2">
-                      {sl.detail ?? sl.value}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          );
-        }
 
         return (
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">

@@ -32,7 +32,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    let setting = await db.query.digestSettings.findFirst({
+    const setting = await db.query.digestSettings.findFirst({
       where: eq(digestSettings.organizationId, orgId),
     });
 

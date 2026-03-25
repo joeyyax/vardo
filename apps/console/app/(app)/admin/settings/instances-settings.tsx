@@ -270,7 +270,7 @@ export function InstancesSettings() {
           <h2 className="text-lg font-medium">Instances</h2>
           <p className="text-sm text-muted-foreground max-w-2xl">
             Run Vardo on multiple servers and keep them in sync. Each server is
-            an "instance" — this page lets you link them together over an encrypted
+            an &quot;instance&quot; — this page lets you link them together over an encrypted
             WireGuard tunnel so they share project data automatically.
           </p>
         </div>
@@ -457,7 +457,7 @@ export function InstancesSettings() {
                   <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
                   <span className="text-muted-foreground">
                     <span className="font-medium text-foreground">Project sync</span>{" "}
-                    — manifests replicate so each node knows what's deployed where
+                    — manifests replicate so each node knows what&apos;s deployed where
                   </span>
                 </li>
                 <li className="flex items-start gap-2.5">
@@ -488,11 +488,11 @@ export function InstancesSettings() {
               <ul className="text-sm space-y-2">
                 <li className="flex items-start gap-2.5">
                   <Info className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
-                  <span className="text-muted-foreground">Not a VPN — doesn't route internet traffic</span>
+                  <span className="text-muted-foreground">Not a VPN — doesn&apos;t route internet traffic</span>
                 </li>
                 <li className="flex items-start gap-2.5">
                   <Info className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
-                  <span className="text-muted-foreground">Doesn't expose ports or replace SSH</span>
+                  <span className="text-muted-foreground">Doesn&apos;t expose ports or replace SSH</span>
                 </li>
                 <li className="flex items-start gap-2.5">
                   <Info className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
@@ -532,7 +532,7 @@ export function InstancesSettings() {
               <DialogHeader>
                 <DialogTitle>Invite token</DialogTitle>
                 <DialogDescription>
-                  Copy this token and paste it into the "Join mesh" dialog on the other
+                  Copy this token and paste it into the &quot;Join mesh&quot; dialog on the other
                   instance. Expires in 15 minutes, one-time use.
                 </DialogDescription>
               </DialogHeader>

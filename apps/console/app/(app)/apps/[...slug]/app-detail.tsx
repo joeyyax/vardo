@@ -510,9 +510,12 @@ function Timer({ since, className }: { since: number; className?: string }) {
       if (s < 60) setElapsed(`${s}s`);
       else setElapsed(`${Math.floor(s / 60)}m ${s % 60}s`);
     };
-    tick();
     const interval = setInterval(tick, 1000);
-    return () => clearInterval(interval);
+    const id = requestAnimationFrame(tick);
+    return () => {
+      clearInterval(interval);
+      cancelAnimationFrame(id);
+    };
   }, [since]);
   if (!elapsed) return null;
   return <span className={`tabular-nums ${className || ""}`}>{elapsed}</span>;
@@ -521,9 +524,13 @@ function Timer({ since, className }: { since: number; className?: string }) {
 function Uptime({ since }: { since: Date }) {
   const [text, setText] = useState<string | null>(null);
   useEffect(() => {
-    setText(formatUptime(since));
-    const interval = setInterval(() => setText(formatUptime(since)), 1000);
-    return () => clearInterval(interval);
+    const update = () => setText(formatUptime(since));
+    const interval = setInterval(update, 1000);
+    const id = requestAnimationFrame(update);
+    return () => {
+      clearInterval(interval);
+      cancelAnimationFrame(id);
+    };
   }, [since]);
   if (!text) return null;
   return (
@@ -3016,7 +3023,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                     </p>
                     {status === "not-configured" && (
                       <p className="text-sm text-status-warning">
-                        The service isn't responding. Make sure the app is running and the container is healthy.
+                        The service isn&apos;t responding. Make sure the app is running and the container is healthy.
                       </p>
                     )}
                   </div>

@@ -728,7 +728,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], default
                   <p className="text-xs text-destructive">This slug is already in use</p>
                 )}
                 {!slugTaken && generateDomain && name && isReservedSlug(name) && (
-                  <p className="text-xs text-destructive">"{name}" is reserved</p>
+                  <p className="text-xs text-destructive">&quot;{name}&quot; is reserved</p>
                 )}
               </div>
             </div>

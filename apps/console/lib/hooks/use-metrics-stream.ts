@@ -65,7 +65,9 @@ export function useMetricsStream(
   // Keep timeRange in a ref so the SSE effect can read the latest value
   // without re-opening the connection when the range changes.
   const timeRangeRef = useRef(timeRange);
-  timeRangeRef.current = timeRange;
+  useEffect(() => {
+    timeRangeRef.current = timeRange;
+  });
 
   // ---- Historical fetch ----
   // Re-fetches whenever the time range or history URL changes.
@@ -75,7 +77,7 @@ export function useMetricsStream(
     const from = now - RANGE_MS[timeRange];
     const bucket = BUCKET_MS[timeRange];
 
-    setLoading(true);
+    const id = requestAnimationFrame(() => setLoading(true));
 
     const separator = historyUrl.includes("?") ? "&" : "?";
     const url = `${historyUrl}${separator}from=${from}&to=${now}&bucket=${bucket}`;
@@ -99,6 +101,7 @@ export function useMetricsStream(
 
     return () => {
       cancelled = true;
+      cancelAnimationFrame(id);
     };
   }, [historyUrl, timeRange]);
 
