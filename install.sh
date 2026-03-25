@@ -1137,7 +1137,7 @@ wait_healthy() {
     attempt=$((attempt + 1))
     printf "\r  ${CYAN}⠹${RESET} Waiting for healthy... (attempt %d/%d, %ds/%ds)" "$attempt" "$attempts" "$elapsed" "$timeout" > /dev/tty
     if docker compose -f "$VARDO_DIR/$COMPOSE_FILE" exec -T "$container" \
-      curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
+      wget -q -O /dev/null http://localhost:3000/api/health 2>/dev/null; then
       printf "\r                                                              \r" > /dev/tty
       log "Vardo is healthy"
       return 0
@@ -1263,7 +1263,7 @@ do_install() {
   generate_env
   build_and_start
   if ! is_dev; then
-    wait_healthy 90 2 || true
+    wait_healthy 120 2 || true
     seed_templates
     install_shortcut
   fi
@@ -1434,7 +1434,7 @@ do_update() {
   info "Restarting services..."
   run_cmd docker compose -f "$COMPOSE_FILE" up -d
 
-  wait_healthy 90 3
+  wait_healthy 120 3 || true
 
   # Summary
   local new_version
