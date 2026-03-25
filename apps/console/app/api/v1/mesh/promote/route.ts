@@ -12,7 +12,7 @@ const promoteSchema = z.object({
   }),
   environment: z.enum(["production", "staging", "development"]),
   orgId: z.string().min(1),
-});
+}).strict();
 
 /**
  * POST /api/v1/mesh/promote — receive a project bundle and deploy it.

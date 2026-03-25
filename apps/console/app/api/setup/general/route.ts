@@ -8,7 +8,7 @@ const generalSchema = z.object({
   instanceName: z.string().min(1).max(100),
   baseDomain: z.string().optional(),
   serverIp: z.string().optional(),
-});
+}).strict();
 
 export async function GET(request: NextRequest) {
   await requireAdminAuth(request);

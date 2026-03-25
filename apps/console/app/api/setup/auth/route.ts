@@ -7,7 +7,7 @@ import { getAuthConfig, setSystemSetting } from "@/lib/system-settings";
 const authSchema = z.object({
   registrationMode: z.enum(["closed", "open", "approval"]),
   sessionDurationDays: z.number().int().min(1).max(365),
-});
+}).strict();
 
 export async function GET(request: NextRequest) {
   await requireAdminAuth(request);

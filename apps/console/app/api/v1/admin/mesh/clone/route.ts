@@ -12,7 +12,7 @@ const cloneSchema = z.object({
   orgId: z.string().min(1),
   /** Optional: clone to a different peer instead of locally. */
   targetPeerId: z.string().optional(),
-});
+}).strict();
 
 /**
  * POST /api/v1/admin/mesh/clone — clone a project from a source instance.

@@ -54,7 +54,7 @@ const createRepoSchema = z.object({
   name: z.string().min(1).regex(/^[a-zA-Z0-9._-]+$/, "Invalid repo name"),
   description: z.string().optional(),
   isPrivate: z.boolean().default(true),
-});
+}).strict();
 
 // POST /api/v1/github/repos — Create a new repository
 export async function POST(request: NextRequest) {

@@ -17,7 +17,7 @@ const createEnvSchema = z.object({
     .min(1, "Name is required")
     .regex(/^[a-z0-9][a-z0-9-]*$/, "Name must be lowercase alphanumeric with hyphens"),
   type: z.enum(["staging", "preview"]).default("staging"),
-});
+}).strict();
 
 // GET /api/v1/organizations/[orgId]/projects/[projectId]/environments
 export async function GET(_request: NextRequest, { params }: RouteParams) {

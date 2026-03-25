@@ -19,7 +19,7 @@ const createProjectSchema = z.object({
   displayName: z.string().min(1, "Display name is required"),
   description: z.string().optional(),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
-});
+}).strict();
 
 // GET /api/v1/organizations/[orgId]/projects
 // Lists projects (groups) in the org with their apps

@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { user } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { requireAppAdmin } from "@/lib/auth/admin";
+
+const createUserSchema = z.object({
+  email: z.string().email("Invalid email address"),
+  name: z.string().min(1).max(100).optional(),
+}).strict();
 
 // GET /api/v1/admin/users
 // List all users (admin only)
@@ -51,12 +57,15 @@ export async function POST(request: NextRequest) {
     await requireAppAdmin();
 
     const body = await request.json();
-    const { email, name } = body;
-
-    if (!email || typeof email !== "string") {
-      return NextResponse.json({ error: "Email is required" }, { status: 400 });
+    const parsed = createUserSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
+        { status: 400 },
+      );
     }
 
+    const { email, name } = parsed.data;
     const normalizedEmail = email.trim().toLowerCase();
 
     // Check if user already exists

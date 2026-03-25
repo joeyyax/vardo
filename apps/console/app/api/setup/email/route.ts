@@ -14,7 +14,7 @@ const emailSchema = z.object({
   apiKey: z.string().optional(),
   fromEmail: z.string().email("Invalid from email"),
   fromName: z.string().optional(),
-});
+}).strict();
 
 export async function GET(request: NextRequest) {
   await requireAdminAuth(request);

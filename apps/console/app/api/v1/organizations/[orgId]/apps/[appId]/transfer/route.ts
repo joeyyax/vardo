@@ -15,7 +15,7 @@ type RouteParams = {
 const initiateTransferSchema = z.object({
   destinationOrgId: z.string().min(1, "Destination org ID is required"),
   note: z.string().optional(),
-});
+}).strict();
 
 // POST /api/v1/organizations/[orgId]/apps/[appId]/transfer
 // Initiate an app transfer to another organization

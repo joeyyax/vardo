@@ -11,7 +11,7 @@ const cloneSchema = z.object({
     transferType: z.literal("clone"),
   }),
   orgId: z.string().min(1),
-});
+}).strict();
 
 /**
  * POST /api/v1/mesh/clone — receive a project bundle as a fresh clone.

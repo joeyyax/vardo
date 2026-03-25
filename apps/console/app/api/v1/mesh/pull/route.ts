@@ -7,7 +7,7 @@ import { buildProjectBundle } from "@/lib/mesh/transfers";
 const pullSchema = z.object({
   projectId: z.string().min(1),
   includeEnvVars: z.boolean().default(false),
-});
+}).strict();
 
 /**
  * POST /api/v1/mesh/pull — return a project bundle to the requesting peer.

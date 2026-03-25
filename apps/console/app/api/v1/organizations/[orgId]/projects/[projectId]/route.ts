@@ -81,7 +81,7 @@ const updateSchema = z.object({
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/)
     .optional(),
-});
+}).strict();
 
 // PATCH /api/v1/organizations/[orgId]/projects/[projectId]
 // Updates a project's displayName, description, or color

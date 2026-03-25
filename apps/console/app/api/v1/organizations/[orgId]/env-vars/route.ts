@@ -18,7 +18,7 @@ const createSchema = z.object({
   value: z.string(),
   description: z.string().optional(),
   isSecret: z.boolean().default(false),
-});
+}).strict();
 
 const bulkSchema = z.object({
   content: z.string().optional(),
@@ -28,7 +28,7 @@ const bulkSchema = z.object({
     description: z.string().optional(),
     isSecret: z.boolean().default(false),
   })).optional(),
-}).refine((d) => d.content !== undefined || d.vars !== undefined, {
+}).strict().refine((d) => d.content !== undefined || d.vars !== undefined, {
   message: "Either content or vars required",
 });
 

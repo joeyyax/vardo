@@ -1,8 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { db } from "@/lib/db";
 import { organizations, memberships } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
+
+const updateOrgSchema = z.object({
+  name: z.string().min(1, "Organization name cannot be empty").max(100).trim().optional(),
+  baseDomain: z.union([
+    z.string().regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/, "Invalid domain format").transform(s => s.toLowerCase()),
+    z.literal(""),
+    z.null(),
+  ]).optional(),
+}).strict().refine(data => Object.keys(data).length > 0, { message: "No valid updates provided" });
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -62,25 +72,18 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     const body = await request.json();
-    const updates: Partial<typeof organizations.$inferInsert> = {};
-
-    if (body.name !== undefined) {
-      if (typeof body.name !== "string" || body.name.trim().length === 0) {
-        return NextResponse.json({ error: "Organization name cannot be empty" }, { status: 400 });
-      }
-      updates.name = body.name.trim();
+    const parsed = updateOrgSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
+        { status: 400 },
+      );
     }
 
-    if (body.baseDomain !== undefined) {
-      if (body.baseDomain === null || body.baseDomain === "") {
-        updates.baseDomain = null;
-      } else if (typeof body.baseDomain === "string") {
-        const domain = body.baseDomain.trim().toLowerCase();
-        if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(domain)) {
-          return NextResponse.json({ error: "Invalid domain format" }, { status: 400 });
-        }
-        updates.baseDomain = domain;
-      }
+    const updates: Partial<typeof organizations.$inferInsert> = {};
+    if (parsed.data.name !== undefined) updates.name = parsed.data.name;
+    if (parsed.data.baseDomain !== undefined) {
+      updates.baseDomain = parsed.data.baseDomain === "" ? null : parsed.data.baseDomain;
     }
 
     if (Object.keys(updates).length === 0) {

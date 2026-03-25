@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { invitations, user } from "@/lib/db/schema";
@@ -9,6 +10,11 @@ import { nanoid } from "nanoid";
 import crypto from "crypto";
 import { sendEmail } from "@/lib/email/send";
 import { InviteEmail } from "@/lib/email/templates/invite";
+
+const createInvitationSchema = z.object({
+  email: z.string().email("Invalid email address"),
+  role: z.enum(["admin", "member"]).default("member"),
+}).strict();
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -58,20 +64,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     requireAdmin(membership.role);
 
     const body = await request.json();
-    const { email, role = "member" } = body;
-
-    if (!email || typeof email !== "string") {
-      return NextResponse.json({ error: "Email is required" }, { status: 400 });
-    }
-
-    const normalizedEmail = email.trim().toLowerCase();
-
-    if (!["admin", "member"].includes(role)) {
+    const parsed = createInvitationSchema.safeParse(body);
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: "Role must be 'admin' or 'member'" },
-        { status: 400 }
+        { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
+        { status: 400 },
       );
     }
+
+    const { email, role } = parsed.data;
+    const normalizedEmail = email.trim().toLowerCase();
 
     // scope and targetId are always derived from the route — never from the request body
     const scope = "org";

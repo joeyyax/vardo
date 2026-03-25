@@ -25,12 +25,12 @@ const addSchema = z.object({
         ),
       { message: "Invalid domain format" }
     ),
-});
+}).strict();
 
 const patchSchema = z.object({
   id: z.string().min(1),
   enabled: z.boolean(),
-});
+}).strict();
 
 // GET — list all org domains (includes default even if not yet in table)
 export async function GET(_request: NextRequest, { params }: RouteParams) {
