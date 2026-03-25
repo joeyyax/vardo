@@ -4,6 +4,8 @@ import {
   AccountInfo,
   PasswordManagement,
   TwoFactorAuth,
+  PasskeyManager,
+  LinkedAccounts,
   ActiveSessions,
   ApiTokens,
 } from "../account-settings";
@@ -62,6 +64,10 @@ function TabContent({ tab, orgId }: { tab: ValidTab; orgId: string | null }) {
             <p className="text-sm text-muted-foreground">
               Manage how you sign in and protect your account.
             </p>
+          </div>
+          <div className="grid gap-6 lg:grid-cols-2">
+            <PasskeyManager />
+            <LinkedAccounts />
           </div>
           <PasswordManagement />
           <TwoFactorAuth />
