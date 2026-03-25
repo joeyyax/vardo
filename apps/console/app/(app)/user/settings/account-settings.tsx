@@ -349,14 +349,25 @@ export function LinkedAccounts() {
           </div>
         )}
       </CardContent>
-      <div className="px-6 pb-6 pt-2">
-        <p className="text-xs text-muted-foreground">
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// No Password Notice
+// ---------------------------------------------------------------------------
+
+export function NoPasswordNotice() {
+  return (
+    <Card className="squircle rounded-lg border-dashed">
+      <CardContent className="pt-6 pb-6">
+        <p className="text-sm text-muted-foreground">
           <span className="font-medium text-foreground">Looking for passwords?</span>{" "}
           Vardo uses passwordless authentication only. This platform manages
           infrastructure — containers, secrets, SSH access — so every sign-in
           method is phishing-resistant by design.
         </p>
-      </div>
+      </CardContent>
     </Card>
   );
 }
