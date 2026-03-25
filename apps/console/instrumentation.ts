@@ -1,3 +1,7 @@
+import { logger } from "./lib/logger";
+
+const log = logger.child("init");
+
 const globalForInit = globalThis as unknown as { __vardo_initialized?: boolean };
 
 export async function register() {
@@ -10,16 +14,16 @@ export async function register() {
     // returns real values instead of defaults for the rest of startup
     const { loadFeatureFlags } = await import("./lib/config/features");
     await loadFeatureFlags().catch((err) =>
-      console.warn("[instrumentation] Failed to load feature flags:", err)
+      log.warn("Failed to load feature flags:", err)
     );
 
     // Check encryption key — must run first, before any other initialization
     const { checkEncryptionKey } = await import("./lib/crypto/encrypt");
     const keyCheck = checkEncryptionKey();
     if (!keyCheck.ok) {
-      console.warn(`[instrumentation] ⚠️  ${keyCheck.error}`);
+      log.warn(keyCheck.error!);
     } else {
-      console.log("[instrumentation] Encryption key configured");
+      log.info("Encryption key configured");
     }
 
     // Ensure backup target exists first (sequential dependency for scheduler)
@@ -30,20 +34,20 @@ export async function register() {
       backupTargetReady = ensureHostBackupTarget()
         .then(async (target) => {
           if (target) {
-            console.log(`[instrumentation] Host backup target ready: ${target.name} (${target.type})`);
+            log.info(`Host backup target ready: ${target.name} (${target.type})`);
             // Create system backup job for Vardo's own database
             await ensureSystemBackupJob(target.id);
           } else {
-            console.log("[instrumentation] No backup storage configured (add backup section to vardo.yml or configure in admin settings)");
+            log.info("No backup storage configured (add backup section to vardo.yml or configure in admin settings)");
           }
           startBackupScheduler();
-          console.log("[instrumentation] Backup scheduler started");
+          log.info("Backup scheduler started");
         })
         .catch((err) => {
-          console.error("[instrumentation] Backup setup failed:", err);
+          log.error("Backup setup failed:", err);
         });
     } catch (err) {
-      console.error("[instrumentation] Failed to import backup modules:", err);
+      log.error("Failed to import backup modules:", err);
     }
 
     // Fire all independent startup tasks in parallel
@@ -57,39 +61,40 @@ export async function register() {
       import("./lib/metrics/collector")
         .then(({ startCollector }) => {
           startCollector();
-          console.log("[instrumentation] Metrics collector started");
+          log.info("Metrics collector started");
         })
-        .catch((err) => console.error("[instrumentation] Failed to start collector:", err)),
+        .catch((err) => log.error("Failed to start collector:", err)),
 
       import("./lib/cron/scheduler")
         .then(({ startCronScheduler }) => {
           startCronScheduler();
-          console.log("[instrumentation] Cron scheduler started");
+          log.info("Cron scheduler started");
         })
-        .catch((err) => console.error("[instrumentation] Failed to start cron scheduler:", err)),
+        .catch((err) => log.error("Failed to start cron scheduler:", err)),
 
       import("./lib/notifications/scheduler")
         .then(({ startNotificationRetryScheduler }) => {
           startNotificationRetryScheduler();
-          console.log("[instrumentation] Notification retry scheduler started");
+          log.info("Notification retry scheduler started");
         })
-        .catch((err) => console.error("[instrumentation] Failed to start notification retry scheduler:", err)),
+        .catch((err) => log.error("Failed to start notification retry scheduler:", err)),
 
       import("./lib/system-alerts/monitor")
         .then(({ startSystemAlertMonitor }) => {
           startSystemAlertMonitor();
-          console.log("[instrumentation] System health monitor started");
+          log.info("System health monitor started");
         })
-        .catch((err) => console.error("[instrumentation] Failed to start system health monitor:", err)),
+        .catch((err) => log.error("Failed to start system health monitor:", err)),
 
       import("./lib/digest/scheduler")
         .then(({ startDigestScheduler }) => {
           startDigestScheduler();
-          console.log("[instrumentation] Digest scheduler started");
+          log.info("Digest scheduler started");
         })
-        .catch((err) => console.error("[instrumentation] Failed to start digest scheduler:", err)),
+        .catch((err) => log.error("Failed to start digest scheduler:", err)),
 
       Promise.resolve().then(() => {
+        const domainLog = logger.child("domain-monitor");
         let ticking = false;
         setInterval(async () => {
           if (ticking) return;
@@ -98,19 +103,19 @@ export async function register() {
             const { checkAllDomains } = await import("./lib/domains/monitor");
             await checkAllDomains();
           } catch (err) {
-            console.error("[domain-monitor] Error:", err);
+            domainLog.error("Error:", err);
           } finally {
             ticking = false;
           }
         }, 5 * 60 * 1000);
-        console.log("[instrumentation] Domain monitor started (every 5 minutes)");
+        log.info("Domain monitor started (every 5 minutes)");
       }),
     );
 
     const results = await Promise.allSettled(tasks);
     const failed = results.filter((r) => r.status === "rejected").length;
     if (failed > 0) {
-      console.error(`[instrumentation] ${failed} startup task(s) failed`);
+      log.error(`${failed} startup task(s) failed`);
     }
   }
 }

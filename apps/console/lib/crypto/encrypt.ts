@@ -1,4 +1,7 @@
 import { createCipheriv, createDecipheriv, randomBytes, hkdfSync } from "crypto";
+import { logger } from "@/lib/logger";
+
+const log = logger.child("crypto");
 
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12;
@@ -152,7 +155,7 @@ export function decryptOrFallback(
     return { content: decrypt(value, orgId), wasEncrypted: true };
   } catch {
     // Decryption failed — wrong key or corrupted data
-    console.error(`[crypto] Decryption failed for org ${orgId} — wrong key or corrupted data`);
+    log.error(`Decryption failed for org ${orgId} — wrong key or corrupted data`);
     return { content: "", wasEncrypted: true, decryptFailed: true };
   }
 }
@@ -234,7 +237,7 @@ export function decryptSystemOrFallback(value: string): { content: string; wasEn
   try {
     return { content: decryptSystem(value), wasEncrypted: true };
   } catch {
-    console.error("[crypto] System setting decryption failed — wrong key or corrupted data");
+    log.error("System setting decryption failed — wrong key or corrupted data");
     return { content: "", wasEncrypted: true, decryptFailed: true };
   }
 }

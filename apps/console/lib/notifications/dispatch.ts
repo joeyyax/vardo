@@ -7,6 +7,9 @@ import { createChannel } from "./factory";
 import { enqueueRetry } from "./retry";
 import { emit, onEmit, toBusEvent, toLegacyEvent } from "@/lib/bus";
 import type { BusEvent, BusEventType } from "@/lib/bus";
+import { logger } from "@/lib/logger";
+
+const log = logger.child("notifications");
 
 /**
  * Check whether a channel's subscribedEvents filter allows this event.
@@ -60,8 +63,8 @@ function dispatchToChannels(orgId: string, event: BusEvent): void {
               // Don't let logging failures break dispatch
             }
           } catch (err) {
-            console.warn(
-              `[notifications] Channel "${row.name}" failed, enqueuing retry:`,
+            log.warn(
+              `Channel "${row.name}" failed, enqueuing retry:`,
               err instanceof Error ? err.message : err,
             );
 
@@ -97,7 +100,7 @@ function dispatchToChannels(orgId: string, event: BusEvent): void {
         }),
       );
     } catch (err) {
-      console.error("[notifications] Dispatch error:", err);
+      log.error("Dispatch error:", err);
     }
   });
 }

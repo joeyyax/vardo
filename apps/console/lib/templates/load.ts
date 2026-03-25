@@ -1,6 +1,9 @@
 import { readdir, readFile } from "fs/promises";
 import { join, resolve } from "path";
 import TOML from "@iarna/toml";
+import { logger } from "@/lib/logger";
+
+const log = logger.child("templates");
 
 const TEMPLATES_DIR = resolve(process.cwd(), "templates");
 
@@ -83,7 +86,7 @@ export async function loadTemplates(): Promise<Template[]> {
         isBuiltIn: true,
       });
     } catch (err) {
-      console.error(`[templates] Failed to load ${file}:`, err);
+      log.error(`Failed to load ${file}:`, err);
     }
   }
 

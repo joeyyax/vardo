@@ -4,6 +4,9 @@
 
 import { db } from "@/lib/db";
 import { systemSettings } from "@/lib/db/schema";
+import { logger } from "@/lib/logger";
+
+const log = logger.child("system-alerts");
 
 export type AlertType =
   | "service-degraded"
@@ -64,7 +67,7 @@ async function persistToDb(): Promise<void> {
       });
   } catch (err) {
     // Best-effort — never let a DB write block alert logic
-    console.error("[system-alerts] Failed to persist alert state:", err);
+    log.error("Failed to persist alert state:", err);
   }
 }
 
@@ -84,9 +87,9 @@ export async function loadAlertState(): Promise<void> {
     for (const [k, v] of Object.entries(parsed)) {
       state.set(k, { lastFired: new Date(v.lastFired), count: v.count });
     }
-    console.log(`[system-alerts] Loaded ${state.size} alert state entries from DB`);
+    log.info(`Loaded ${state.size} alert state entries from DB`);
   } catch (err) {
-    console.error("[system-alerts] Failed to load alert state from DB:", err);
+    log.error("Failed to load alert state from DB:", err);
   }
 }
 

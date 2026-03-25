@@ -6,6 +6,9 @@ import { user } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { requireAppAdmin } from "@/lib/auth/admin";
+import { logger } from "@/lib/logger";
+
+const log = logger.child("admin");
 
 const createUserSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -105,7 +108,7 @@ export async function POST(request: NextRequest) {
       });
       emailSent = true;
     } catch (emailError) {
-      console.log("[admin] Email sending skipped or failed:", emailError);
+      log.info("Email sending skipped or failed:", emailError);
     }
 
     return NextResponse.json(

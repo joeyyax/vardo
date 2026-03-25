@@ -1,4 +1,7 @@
 import Redis from "ioredis";
+import { logger } from "@/lib/logger";
+
+const log = logger.child("events");
 
 const url = process.env.REDIS_URL || "redis://localhost:7200";
 
@@ -74,7 +77,7 @@ function getOrCreateState(): SubscriberState {
   });
 
   client.on("error", (err) => {
-    console.error("[events] Redis subscriber error:", err.message);
+    log.error("Redis subscriber error:", err.message);
   });
 
   const state: SubscriberState = {
@@ -126,8 +129,8 @@ export function subscribe(
   state.subscriberCount++;
 
   if (state.subscriberCount >= WARN_THRESHOLD) {
-    console.warn(
-      `[events] Approaching subscriber cap: ${state.subscriberCount}/${MAX_SUBSCRIBERS}`,
+    log.warn(
+      `Approaching subscriber cap: ${state.subscriberCount}/${MAX_SUBSCRIBERS}`,
     );
   }
 
@@ -144,8 +147,8 @@ export function subscribe(
   if (!state.patterns.has(pattern)) {
     state.patterns.add(pattern);
     state.client.psubscribe(pattern).catch((err) => {
-      console.error(
-        `[events] Failed to PSUBSCRIBE to ${pattern}:`,
+      log.error(
+        `Failed to PSUBSCRIBE to ${pattern}:`,
         err.message,
       );
     });

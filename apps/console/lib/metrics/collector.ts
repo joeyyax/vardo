@@ -1,3 +1,4 @@
+import { logger } from "@/lib/logger";
 import { isMetricsEnabled } from "./config";
 import { fetchAllContainerMetrics } from "./cadvisor";
 import { storeMetrics, storeDiskUsage, storeDiskWrite, storeProjectDisk, storeBusinessMetric, storeOrgBusinessMetric } from "./store";
@@ -6,6 +7,8 @@ import { getSystemDiskUsage, getPerProjectDiskUsage } from "@/lib/docker/client"
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { loadTemplates } from "@/lib/templates/load";
+
+const log = logger.child("collector");
 
 let timeout: ReturnType<typeof setTimeout> | null = null;
 let started = false;
@@ -26,12 +29,12 @@ export function isCollectorRunning() {
 export function startCollector() {
   if (started) return;
   if (!isMetricsEnabled()) {
-    console.log("[collector] Metrics collection disabled (METRICS_ENABLED=false)");
+    log.info("Metrics collection disabled (METRICS_ENABLED=false)");
     return;
   }
   started = true;
   tickCount = 0;
-  console.log("[collector] Starting metrics collection (fast warmup: 5s × 20, then 30s)");
+  log.info("Starting metrics collection (fast warmup: 5s × 20, then 30s)");
   scheduleTick();
 }
 
@@ -63,10 +66,10 @@ async function collect() {
     );
     const failed = results.filter((r) => r.status === "rejected").length;
     if (failed > 0) {
-      console.error(`[collector] ${results.length - failed} stored, ${failed} failed:`, (results.find((r) => r.status === "rejected") as PromiseRejectedResult)?.reason);
+      log.error(`${results.length - failed} stored, ${failed} failed:`, (results.find((r) => r.status === "rejected") as PromiseRejectedResult)?.reason);
     }
   } catch (err) {
-    console.error("[collector] Error:", (err as Error).message);
+    log.error("Error:", (err as Error).message);
   }
 
   // Disk write alert check: every 6th tick after warmup (~3 min at 30s interval)
@@ -75,7 +78,7 @@ async function collect() {
     try {
       await checkDiskWriteAlerts(metrics);
     } catch (err) {
-      console.error("[collector] Disk write alert check error:", (err as Error).message);
+      log.error("Disk write alert check error:", (err as Error).message);
     }
   }
 
@@ -91,7 +94,7 @@ async function collect() {
         total: diskUsage.total,
       });
     } catch (err) {
-      console.error("[collector] Disk error:", (err as Error).message);
+      log.error("Disk error:", (err as Error).message);
     }
 
     try {
@@ -103,7 +106,7 @@ async function collect() {
         )
       );
     } catch (err) {
-      console.error("[collector] Per-project disk error:", (err as Error).message);
+      log.error("Per-project disk error:", (err as Error).message);
     }
 
     // Business metrics (entity counts)
@@ -156,7 +159,7 @@ async function collect() {
         ])
       );
     } catch (err) {
-      console.error("[collector] Business metrics error:", (err as Error).message);
+      log.error("Business metrics error:", (err as Error).message);
     }
   }
 }

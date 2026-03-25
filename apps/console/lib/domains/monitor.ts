@@ -3,6 +3,9 @@ import { domainChecks } from "@/lib/db/schema";
 import { desc, sql, inArray } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import pLimit from "p-limit";
+import { logger } from "@/lib/logger";
+
+const log = logger.child("domain-monitor");
 
 const MAX_CONCURRENCY = 5;
 
@@ -141,8 +144,8 @@ async function probeDomain(
 
   // State transition detection — compare against previous check (queried before probes started)
   if (!reachable && (!prevCheck || prevCheck.reachable)) {
-    console.log(
-      `[domain-monitor] WARNING: ${d.domain} (app: ${d.app.name}) is unreachable` +
+    log.warn(
+      `${d.domain} (app: ${d.app.name}) is unreachable` +
         (error ? ` — ${error}` : "") +
         (statusCode ? ` (HTTP ${statusCode})` : ""),
     );
