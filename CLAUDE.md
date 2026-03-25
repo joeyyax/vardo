@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Host -- a self-hosted PaaS for managing Docker Compose deployments. Built on Next.js with a PostgreSQL + Redis backend.
+Vardo — a self-hosted PaaS for managing Docker Compose deployments. Built on Next.js with a PostgreSQL + Redis backend.
 
 ## Tech Stack
 

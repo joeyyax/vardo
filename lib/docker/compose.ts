@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Docker Compose generation and manipulation for Host projects.
+// Docker Compose generation and manipulation for Vardo projects.
 //
 // NOTE: This module includes a minimal YAML serializer/parser sufficient for
 // Docker Compose files. For production hardening, install `yaml` or `js-yaml`
