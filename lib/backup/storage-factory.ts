@@ -7,11 +7,12 @@
 // ---------------------------------------------------------------------------
 
 import type { BackupStorage } from "./storage-port";
+import { LocalBackupStorage, type LocalStorageConfig } from "./storage-local";
 import { S3BackupStorage, type S3StorageConfig } from "./storage-s3";
 import { SshBackupStorage, type SshConfig } from "./storage-ssh";
 
 type BackupTargetLike = {
-  type: "s3" | "r2" | "b2" | "ssh";
+  type: "s3" | "r2" | "b2" | "ssh" | "local";
   config: Record<string, unknown>;
 };
 
@@ -56,6 +57,11 @@ function validateSshConfig(config: Record<string, unknown>): SshConfig {
   return result;
 }
 
+function validateLocalConfig(config: Record<string, unknown>): LocalStorageConfig {
+  const path = requireString(config, "path", "Local");
+  return { path };
+}
+
 function validateS3Config(config: Record<string, unknown>): S3StorageConfig {
   const bucket = requireString(config, "bucket", "S3");
   const region = requireString(config, "region", "S3");
@@ -81,6 +87,9 @@ function validateS3Config(config: Record<string, unknown>): S3StorageConfig {
 export function createBackupStorage(target: BackupTargetLike): BackupStorage {
   if (target.type === "ssh") {
     return new SshBackupStorage(validateSshConfig(target.config));
+  }
+  if (target.type === "local") {
+    return new LocalBackupStorage(validateLocalConfig(target.config));
   }
   // s3, r2, and b2 all use S3-compatible APIs
   return new S3BackupStorage(validateS3Config(target.config));

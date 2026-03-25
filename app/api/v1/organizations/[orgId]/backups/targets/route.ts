@@ -30,6 +30,10 @@ const sshConfigSchema = z.object({
   path: z.string().min(1),
 });
 
+const localConfigSchema = z.object({
+  path: z.string().min(1, "Path is required"),
+});
+
 const createTargetSchema = z.discriminatedUnion("type", [
   z.object({
     name: z.string().min(1, "Name is required"),
@@ -53,6 +57,12 @@ const createTargetSchema = z.discriminatedUnion("type", [
     name: z.string().min(1, "Name is required"),
     type: z.literal("ssh"),
     config: sshConfigSchema,
+    isDefault: z.boolean().default(false),
+  }),
+  z.object({
+    name: z.string().min(1, "Name is required"),
+    type: z.literal("local"),
+    config: localConfigSchema,
     isDefault: z.boolean().default(false),
   }),
 ]);
@@ -118,6 +128,26 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         { error: "SSH/local backup targets are not available on this instance" },
         { status: 403 },
       );
+    }
+
+    if (data.type === "local" && !isLocalBackupsAllowed()) {
+      return NextResponse.json(
+        { error: "Local backup targets are not available on this instance" },
+        { status: 403 },
+      );
+    }
+
+    // Validate the local path is writable before saving
+    if (data.type === "local") {
+      try {
+        const fs = await import("fs/promises");
+        await fs.access(data.config.path, fs.constants.W_OK);
+      } catch {
+        return NextResponse.json(
+          { error: `Directory "${data.config.path}" does not exist or is not writable` },
+          { status: 400 },
+        );
+      }
     }
 
     const [target] = await db

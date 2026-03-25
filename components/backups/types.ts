@@ -50,7 +50,7 @@ export type RecentBackup = {
   app: App;
 };
 
-export type TargetType = "s3" | "r2" | "b2" | "ssh";
+export type TargetType = "s3" | "r2" | "b2" | "ssh" | "local";
 
 export type TargetWithJobs = BackupTarget & {
   jobs: BackupJob[];
