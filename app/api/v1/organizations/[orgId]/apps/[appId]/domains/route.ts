@@ -76,6 +76,7 @@ const updateDomainSchema = z.object({
   id: z.string().min(1),
   domain: z.string().min(1).optional(),
   port: z.number().int().positive().nullable().optional(),
+  certResolver: z.string().optional(),
 }).strict();
 
 // PATCH /api/v1/organizations/[orgId]/apps/[appId]/domains

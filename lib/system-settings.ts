@@ -240,6 +240,35 @@ export async function getFeatureFlagsConfig(): Promise<Record<string, boolean> |
 }
 
 // ---------------------------------------------------------------------------
+// SSL / ACME certificate issuer
+// ---------------------------------------------------------------------------
+
+export type SslConfig = {
+  defaultIssuer: "le" | "google" | "zerossl";
+  zerosslEabKid?: string;
+  zerosslEabHmac?: string;
+};
+
+const VALID_ISSUERS = ["le", "google", "zerossl"] as const;
+
+export async function getSslConfig(): Promise<SslConfig> {
+  const fileConfig = await getVardoConfig();
+  const dbConfig = await getSystemSettingRaw("ssl_config")
+    .then((raw) => raw ? parseJson<SslConfig>(raw, "ssl_config") : null);
+
+  const fileIssuer = fileConfig?.ssl?.defaultIssuer;
+  const validIssuer = fileIssuer && VALID_ISSUERS.includes(fileIssuer)
+    ? fileIssuer
+    : undefined;
+
+  return {
+    defaultIssuer: validIssuer ?? dbConfig?.defaultIssuer ?? "le",
+    zerosslEabKid: fileConfig?.ssl?.zerossl?.eabKid ?? dbConfig?.zerosslEabKid,
+    zerosslEabHmac: fileConfig?.ssl?.zerossl?.eabHmac ?? dbConfig?.zerosslEabHmac,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Authentication config
 // ---------------------------------------------------------------------------
 

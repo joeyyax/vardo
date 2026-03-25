@@ -52,14 +52,27 @@ export function AppNetworking({
   const [domainSaving, setDomainSaving] = useState(false);
   const [newDomain, setNewDomain] = useState("");
   const [newDomainPort, setNewDomainPort] = useState("");
+  const [newDomainResolver, setNewDomainResolver] = useState("");
   const [deletingDomainId, setDeletingDomainId] = useState<string | null>(null);
   const [editingDomainId, setEditingDomainId] = useState<string | null>(null);
   const [editDomainValue, setEditDomainValue] = useState("");
   const [editDomainPort, setEditDomainPort] = useState("");
+  const [editDomainResolver, setEditDomainResolver] = useState("");
+  const [availableIssuers, setAvailableIssuers] = useState<string[]>(["le", "google"]);
   const [dnsDomainId, setDnsDomainId] = useState<string | null>(null);
   const [domainStatuses, setDomainStatuses] = useState<Record<string, "checking" | "resolving" | "not-configured">>({});
   const [domainCheckTick, setDomainCheckTick] = useState(0);
   const [serverIP, setServerIP] = useState<string | null>(null);
+
+  // Fetch available issuers
+  useEffect(() => {
+    fetch("/api/setup/ssl")
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (data?.availableIssuers) setAvailableIssuers(data.availableIssuers);
+      })
+      .catch(() => { /* best effort */ });
+  }, []);
 
   function openDomainSheet(domainId: string) {
     setDnsDomainId(domainId);
@@ -150,6 +163,7 @@ export function AppNetworking({
           body: JSON.stringify({
             domain: newDomain.trim(),
             port: newDomainPort ? parseInt(newDomainPort, 10) : undefined,
+            ...(newDomainResolver && { certResolver: newDomainResolver }),
           }),
         }
       );
@@ -162,6 +176,7 @@ export function AppNetworking({
       setDomainOpen(false);
       setNewDomain("");
       setNewDomainPort("");
+      setNewDomainResolver("");
       router.refresh();
     } catch {
       toast.error("Failed to add domain");
@@ -208,6 +223,7 @@ export function AppNetworking({
             id,
             domain: editDomainValue.trim(),
             port: editDomainPort ? parseInt(editDomainPort, 10) : null,
+            ...(editDomainResolver !== undefined && { certResolver: editDomainResolver || "le" }),
           }),
         }
       );
@@ -242,6 +258,7 @@ export function AppNetworking({
             onClick={() => {
               setNewDomain("");
               setNewDomainPort("");
+              setNewDomainResolver("");
               setDomainOpen(!domainOpen);
             }}
           >
@@ -273,6 +290,19 @@ export function AppNetworking({
                 onKeyDown={(e) => { if (e.key === "Enter") handleDomainAdd(); }}
                 className="h-9 w-24 rounded-md border bg-background px-3 text-sm font-mono"
               />
+            </div>
+            <div className="grid gap-1.5">
+              <label className="text-xs text-muted-foreground">SSL issuer</label>
+              <select
+                value={newDomainResolver}
+                onChange={(e) => setNewDomainResolver(e.target.value)}
+                className="h-9 rounded-md border bg-background px-2 text-sm"
+              >
+                <option value="">Default</option>
+                {availableIssuers.includes("le") && <option value="le">Let&apos;s Encrypt</option>}
+                {availableIssuers.includes("google") && <option value="google">Google</option>}
+                {availableIssuers.includes("zerossl") && <option value="zerossl">ZeroSSL</option>}
+              </select>
             </div>
             <Button size="sm" onClick={handleDomainAdd} disabled={domainSaving || !newDomain.trim()}>
               {domainSaving ? <Loader2 className="size-3.5 animate-spin" /> : "Add"}
@@ -323,6 +353,19 @@ export function AppNetworking({
                           onKeyDown={(e) => { if (e.key === "Enter") handleDomainUpdate(domain.id); if (e.key === "Escape") setEditingDomainId(null); }}
                           className="h-9 w-24 rounded-md border bg-background px-3 text-sm font-mono"
                         />
+                      </div>
+                      <div className="grid gap-1.5">
+                        <label className="text-xs text-muted-foreground">SSL issuer</label>
+                        <select
+                          value={editDomainResolver}
+                          onChange={(e) => setEditDomainResolver(e.target.value)}
+                          className="h-9 rounded-md border bg-background px-2 text-sm"
+                        >
+                          <option value="">Default</option>
+                          {availableIssuers.includes("le") && <option value="le">Let&apos;s Encrypt</option>}
+                          {availableIssuers.includes("google") && <option value="google">Google</option>}
+                          {availableIssuers.includes("zerossl") && <option value="zerossl">ZeroSSL</option>}
+                        </select>
                       </div>
                       <Button size="sm" onClick={() => handleDomainUpdate(domain.id)} disabled={domainSaving || !editDomainValue.trim()}>
                         {domainSaving ? <Loader2 className="size-3.5 animate-spin" /> : "Save"}
@@ -395,6 +438,7 @@ export function AppNetworking({
                         setEditingDomainId(domain.id);
                         setEditDomainValue(domain.domain);
                         setEditDomainPort(domain.port?.toString() || "");
+                        setEditDomainResolver(domain.certResolver || "");
                       }}
                     >
                       <Pencil className="size-3.5" />
