@@ -1,0 +1,1 @@
+ALTER TYPE "public"."backup_target_type" ADD VALUE 'local';
