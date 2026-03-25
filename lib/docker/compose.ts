@@ -163,6 +163,7 @@ export function injectTraefikLabels(
     labels[`traefik.http.middlewares.${projectName}-https-redirect.redirectscheme.scheme`] = "https";
     labels[`traefik.http.middlewares.${projectName}-https-redirect.redirectscheme.permanent`] = "true";
     labels[`traefik.http.routers.${projectName}-http.middlewares`] = `${projectName}-https-redirect`;
+    labels[`traefik.http.routers.${projectName}-http.service`] = opts.appName || projectName;
   } else {
     // HTTP only — web entrypoint, no TLS
     labels[`traefik.http.routers.${projectName}.entrypoints`] = "web";
