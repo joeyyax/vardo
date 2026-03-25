@@ -1,0 +1,1 @@
+ALTER TABLE "app" ADD COLUMN "dockerfile_path" text DEFAULT 'Dockerfile';
