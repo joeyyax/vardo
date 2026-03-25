@@ -143,13 +143,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       }
 
       const orgAccess = await verifyOrgAccess(orgId);
+      if (!orgAccess) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       const result = await createGroupEnvironment({
         projectId: appRecord.projectId,
         organizationId: orgId,
         name: parsed.data.name,
         type: parsed.data.type as "staging" | "preview",
         appOverrides: parsed.data.appOverrides,
-        createdBy: orgAccess!.session.user.id,
+        createdBy: orgAccess.session.user.id,
       });
 
       return NextResponse.json(result, { status: 201 });
