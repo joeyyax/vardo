@@ -1318,6 +1318,17 @@ run_env_migrations() {
 do_update() {
   [[ "$PLATFORM" != "macos" ]] && check_root
 
+  echo ""
+  warn "The Vardo dashboard will be briefly unavailable during the update."
+  dimln "            Your deployed apps are not affected — they continue running."
+  echo ""
+  if ! $UNATTENDED && ! $AUTO_YES; then
+    if ! confirm "Continue with update?"; then
+      echo "  Update cancelled."
+      exit 0
+    fi
+  fi
+
   step "Preflight"
 
   [ -d "$VARDO_DIR" ] || fail "Vardo not found at $VARDO_DIR. Run 'bash install.sh' to install first."
