@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -73,10 +73,10 @@ import { BranchSelect } from "@/components/branch-select";
 import { Uptime } from "./timer";
 import { DependencySelector } from "./dependency-selector";
 import { AppDeployPanel } from "./app-deploy-panel";
+import type { AppDeployPanelHandle } from "./app-deploy-panel";
 import { AppNetworking } from "./app-networking";
 import { AppConnect } from "./app-connect";
 import { AppSettingsDialog } from "./app-settings-dialog";
-import { useDeploy } from "./hooks/use-deploy";
 
 import type { AppDetailProps, Environment } from "./types";
 
@@ -177,14 +177,14 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
   // Note: the deploy hook handles the "don't re-attach if already deploying" logic internally
   const serverRunningDeploy = app.deployments.find((d) => d.status === "running" || d.status === "queued") ?? null;
 
-  // Deploy hook
-  const deploy = useDeploy({
-    orgId,
-    appId: app.id,
-    selectedEnvId,
-    setActiveTab,
-    serverRunningDeploy,
-  });
+  // Deploy panel ref + parent-side state synced via callbacks
+  const deployPanelRef = useRef<AppDeployPanelHandle>(null);
+  const [deploying, setDeploying] = useState(false);
+  const [deployAnnouncement, setDeployAnnouncement] = useState("");
+
+  const handleDeploy = useCallback(() => {
+    deployPanelRef.current?.handleDeploy();
+  }, []);
 
   // Real-time updates via SSE (Redis pub/sub), with polling fallback
   useEffect(() => {
@@ -379,7 +379,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     <div className="space-y-6">
       {/* Visually-hidden live region for deploy outcome announcements */}
       <span className="sr-only" aria-live="assertive" aria-atomic="true">
-        {deploy.deployAnnouncement}
+        {deployAnnouncement}
       </span>
       <PageToolbar
         actions={
@@ -407,7 +407,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem disabled={deploy.deploying} onClick={deploy.handleDeploy}>
+                  <DropdownMenuItem disabled={deploying} onClick={handleDeploy}>
                     <Rocket className="mr-2 size-4" />
                     Redeploy
                   </DropdownMenuItem>
@@ -437,8 +437,8 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : (
-              <Button size="sm" disabled={deploy.deploying} onClick={deploy.handleDeploy}>
-                {deploy.deploying ? (
+              <Button size="sm" disabled={deploying} onClick={handleDeploy}>
+                {deploying ? (
                   <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
                 ) : (
                   <><Rocket className="mr-1.5 size-4" />{app.status === "error" ? "Retry" : "Deploy"}</>
@@ -610,7 +610,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
               {failedDeploy && (
                 <button
                   type="button"
-                  onClick={() => { setActiveTab("deployments"); deploy.setViewingLogId(failedDeploy.id); }}
+                  onClick={() => { setActiveTab("deployments"); deployPanelRef.current?.setViewingLogId(failedDeploy.id); }}
                   className="text-xs underline underline-offset-2 opacity-80 hover:opacity-100"
                 >
                   View log
@@ -618,8 +618,8 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
               )}
               <button
                 type="button"
-                disabled={deploy.deploying}
-                onClick={deploy.handleDeploy}
+                disabled={deploying}
+                onClick={handleDeploy}
                 className="text-xs underline underline-offset-2 opacity-80 hover:opacity-100"
               >
                 Retry
@@ -834,32 +834,19 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
 
         <TabsContent value="deployments">
           <AppDeployPanel
+            ref={deployPanelRef}
+            orgId={orgId}
+            appId={app.id}
+            selectedEnvId={selectedEnvId}
             filteredDeployments={filteredDeployments}
-            deploying={deploy.deploying}
-            serverRunningDeploy={!deploy.deploying ? serverRunningDeploy : null}
-            deployStages={deploy.deployStages}
-            deployLog={deploy.deployLog}
-            deployStartTime={deploy.deployStartTime}
-            expandedDeployLog={deploy.expandedDeployLog}
-            setExpandedDeployLog={deploy.setExpandedDeployLog}
-            deployAbort={deploy.deployAbort}
+            serverRunningDeploy={serverRunningDeploy}
             appStatus={app.status}
             gitUrl={app.gitUrl}
             source={app.source}
             autoDeploy={app.autoDeploy}
-            orgId={orgId}
-            appId={app.id}
-            viewingLogId={deploy.viewingLogId}
-            setViewingLogId={deploy.setViewingLogId}
-            handleRollbackPreview={deploy.handleRollbackPreview}
-            rollbackTarget={deploy.rollbackTarget}
-            setRollbackTarget={deploy.setRollbackTarget}
-            rollbackPreview={deploy.rollbackPreview}
-            setRollbackPreview={deploy.setRollbackPreview}
-            rollbackIncludeEnv={deploy.rollbackIncludeEnv}
-            setRollbackIncludeEnv={deploy.setRollbackIncludeEnv}
-            rollbackLoading={deploy.rollbackLoading}
-            handleRollbackConfirm={deploy.handleRollbackConfirm}
+            onDeployStarted={() => setActiveTab("deployments")}
+            onDeployingChange={setDeploying}
+            onAnnouncement={setDeployAnnouncement}
           />
         </TabsContent>
 
@@ -1047,7 +1034,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         open={editOpen}
         onOpenChange={setEditOpen}
         allParentApps={allParentApps}
-        handleDeploy={deploy.handleDeploy}
+        handleDeploy={handleDeploy}
       />
 
       {/* Stop Confirmation */}

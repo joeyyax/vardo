@@ -53,6 +53,17 @@ export type Tag = {
   color: string;
 };
 
+export type RollbackPreview = {
+  deploymentId: string;
+  gitSha: string | null;
+  gitMessage: string | null;
+  deployedAt: string;
+  hasEnvSnapshot: boolean;
+  hasConfigSnapshot: boolean;
+  configChanges: { field: string; from: string | null; to: string | null }[];
+  envKeyChanges: { added: string[]; removed: string[]; changed: string[] } | null;
+};
+
 export type App = {
   id: string;
   name: string;

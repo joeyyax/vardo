@@ -1,27 +1,42 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "@/lib/messenger";
 import { formatDuration } from "@/components/app-status";
 
-import type { Deployment } from "../types";
+import type { Deployment, RollbackPreview } from "../types";
 
 export function useDeploy({
   orgId,
   appId,
   selectedEnvId,
-  setActiveTab,
   serverRunningDeploy,
+  onDeployStarted,
+  onDeployingChange,
+  onAnnouncement,
 }: {
   orgId: string;
   appId: string;
   selectedEnvId: string | undefined;
-  setActiveTab: (tab: string) => void;
   serverRunningDeploy: Deployment | null | undefined;
+  onDeployStarted?: () => void;
+  onDeployingChange?: (deploying: boolean) => void;
+  onAnnouncement?: (message: string) => void;
 }) {
+  // Keep stable refs for callbacks to avoid re-triggering effects
+  const onDeployStartedRef = useRef(onDeployStarted);
+  onDeployStartedRef.current = onDeployStarted;
+  const onDeployingChangeRef = useRef(onDeployingChange);
+  onDeployingChangeRef.current = onDeployingChange;
+  const onAnnouncementRef = useRef(onAnnouncement);
+  onAnnouncementRef.current = onAnnouncement;
   const router = useRouter();
-  const [deploying, setDeploying] = useState(false);
+  const [deploying, setDeployingRaw] = useState(false);
+  const setDeploying = useCallback((value: boolean) => {
+    setDeployingRaw(value);
+    onDeployingChangeRef.current?.(value);
+  }, []);
   const [deployLog, setDeployLog] = useState<string[]>([]);
   const [deployStartTime, setDeployStartTime] = useState<number | null>(null);
   const [deployStages, setDeployStages] = useState<
@@ -30,20 +45,15 @@ export function useDeploy({
   const [expandedDeployLog, setExpandedDeployLog] = useState(false);
   const [deployAbort, setDeployAbort] = useState<AbortController | null>(null);
   const [deployAnnouncement, setDeployAnnouncement] = useState("");
+  const announce = useCallback((message: string) => {
+    setDeployAnnouncement(message);
+    onAnnouncementRef.current?.(message);
+  }, []);
   const [viewingLogId, setViewingLogId] = useState<string | null>(null);
 
   // Rollback state
   const [rollbackTarget, setRollbackTarget] = useState<string | null>(null);
-  const [rollbackPreview, setRollbackPreview] = useState<{
-    deploymentId: string;
-    gitSha: string | null;
-    gitMessage: string | null;
-    deployedAt: string;
-    hasEnvSnapshot: boolean;
-    hasConfigSnapshot: boolean;
-    configChanges: { field: string; from: string | null; to: string | null }[];
-    envKeyChanges: { added: string[]; removed: string[]; changed: string[] } | null;
-  } | null>(null);
+  const [rollbackPreview, setRollbackPreview] = useState<RollbackPreview | null>(null);
   const [rollbackIncludeEnv, setRollbackIncludeEnv] = useState(false);
   const [rollbackLoading, setRollbackLoading] = useState(false);
 
@@ -53,7 +63,7 @@ export function useDeploy({
     if (!serverRunningDeploy || deploying) return;
     setDeploying(true);
     setDeployStartTime(new Date(serverRunningDeploy.startedAt).getTime());
-    setActiveTab("deployments");
+    onDeployStartedRef.current?.();
     setExpandedDeployLog(true);
 
     // Connect to the deploy stream SSE endpoint for real-time logs
@@ -85,10 +95,10 @@ export function useDeploy({
         finished = true;
         if (data.success) {
           toast.success(data.durationMs ? `Deployed in ${formatDuration(data.durationMs)}` : "Deployed");
-          setDeployAnnouncement("Deployment succeeded.");
+          announce("Deployment succeeded.");
         } else {
           toast.error(data.error || "Deployment failed");
-          setDeployAnnouncement(`Deployment failed. ${data.error || ""}`);
+          announce(`Deployment failed. ${data.error || ""}`);
         }
         if (data.deploymentId) {
           setViewingLogId(data.deploymentId);
@@ -161,9 +171,9 @@ export function useDeploy({
   }, [serverRunningDeploy?.id]);
 
   const handleDeploy = useCallback(async () => {
-    setDeployAnnouncement("");
+    announce("");
     setDeploying(true);
-    setActiveTab("deployments");
+    onDeployStartedRef.current?.();
     setDeployLog([]);
     setDeployStages({});
     setExpandedDeployLog(false);
@@ -235,7 +245,7 @@ export function useDeploy({
               const result = data as { deploymentId: string; success: boolean; durationMs: number; error?: string };
               if (result.success) {
                 toast.success(`Deployed in ${formatDuration(result.durationMs)}`);
-                setDeployAnnouncement("Deployment succeeded.");
+                announce("Deployment succeeded.");
               } else {
                 toast.error(result.error || "Deployment failed");
                 setDeployAnnouncement(`Deployment failed. ${result.error || ""}`);
@@ -261,7 +271,7 @@ export function useDeploy({
       setDeploying(false);
       setDeployAbort(null);
     }
-  }, [orgId, appId, selectedEnvId, setActiveTab, router]);
+  }, [orgId, appId, selectedEnvId, setDeploying, announce, router]);
 
   async function handleRollbackPreview(deploymentId: string) {
     setRollbackTarget(deploymentId);
@@ -297,7 +307,7 @@ export function useDeploy({
 
     // Reuse the same SSE deploy flow
     setDeploying(true);
-    setActiveTab("deployments");
+    onDeployStartedRef.current?.();
     setDeployLog([]);
     setDeployStages({});
     setExpandedDeployLog(false);

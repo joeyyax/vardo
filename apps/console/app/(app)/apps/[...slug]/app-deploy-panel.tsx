@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { forwardRef, useImperativeHandle } from "react";
 import {
   Loader2,
   Rocket,
@@ -8,7 +8,6 @@ import {
   RotateCcw,
   History,
 } from "lucide-react";
-import { toast } from "@/lib/messenger";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -25,73 +24,80 @@ import { DeploymentLog } from "@/components/log-viewer";
 import { DeploymentStatusBadge, formatDuration } from "@/components/app-status";
 import { Uptime } from "./timer";
 import { InProgressDeployCard } from "./in-progress-deploy-card";
+import { useDeploy } from "./hooks/use-deploy";
 
 import type { Deployment } from "./types";
 
-export function AppDeployPanel({
-  filteredDeployments,
-  deploying,
-  serverRunningDeploy,
-  deployStages,
-  deployLog,
-  deployStartTime,
-  expandedDeployLog,
-  setExpandedDeployLog,
-  deployAbort,
-  appStatus,
-  gitUrl,
-  source,
-  autoDeploy,
-  orgId,
-  appId,
-  viewingLogId,
-  setViewingLogId,
-  handleRollbackPreview,
-  rollbackTarget,
-  setRollbackTarget,
-  rollbackPreview,
-  setRollbackPreview,
-  rollbackIncludeEnv,
-  setRollbackIncludeEnv,
-  rollbackLoading,
-  handleRollbackConfirm,
-}: {
+export interface AppDeployPanelProps {
+  orgId: string;
+  appId: string;
+  selectedEnvId: string | undefined;
   filteredDeployments: Deployment[];
-  deploying: boolean;
   serverRunningDeploy: Deployment | null | undefined;
-  deployStages: Record<string, "running" | "success" | "failed" | "skipped">;
-  deployLog: string[];
-  deployStartTime: number | null;
-  expandedDeployLog: boolean;
-  setExpandedDeployLog: (v: boolean) => void;
-  deployAbort: AbortController | null;
   appStatus: string;
   gitUrl: string | null;
   source: string;
   autoDeploy: boolean | null;
-  orgId: string;
-  appId: string;
-  viewingLogId: string | null;
+  onDeployStarted?: () => void;
+  onDeployingChange?: (deploying: boolean) => void;
+  onAnnouncement?: (message: string) => void;
+}
+
+export interface AppDeployPanelHandle {
+  handleDeploy: () => Promise<void>;
   setViewingLogId: (id: string | null) => void;
-  handleRollbackPreview: (deploymentId: string) => void;
-  rollbackTarget: string | null;
-  setRollbackTarget: (id: string | null) => void;
-  rollbackPreview: {
-    deploymentId: string;
-    gitSha: string | null;
-    gitMessage: string | null;
-    deployedAt: string;
-    hasEnvSnapshot: boolean;
-    hasConfigSnapshot: boolean;
-    configChanges: { field: string; from: string | null; to: string | null }[];
-    envKeyChanges: { added: string[]; removed: string[]; changed: string[] } | null;
-  } | null;
-  setRollbackPreview: (v: null) => void;
-  rollbackIncludeEnv: boolean;
-  setRollbackIncludeEnv: (v: boolean) => void;
-  rollbackLoading: boolean;
-  handleRollbackConfirm: () => void;
-}) {
+}
+
+export const AppDeployPanel = forwardRef<AppDeployPanelHandle, AppDeployPanelProps>(function AppDeployPanel({
+  orgId,
+  appId,
+  selectedEnvId,
+  filteredDeployments,
+  serverRunningDeploy,
+  appStatus,
+  gitUrl,
+  source,
+  autoDeploy,
+  onDeployStarted,
+  onDeployingChange,
+  onAnnouncement,
+}, ref) {
+  const deploy = useDeploy({
+    orgId,
+    appId,
+    selectedEnvId,
+    serverRunningDeploy,
+    onDeployStarted,
+    onDeployingChange,
+    onAnnouncement,
+  });
+
+  const {
+    deploying,
+    deployStages,
+    deployLog,
+    deployStartTime,
+    expandedDeployLog,
+    setExpandedDeployLog,
+    deployAbort,
+    viewingLogId,
+    setViewingLogId,
+    handleRollbackPreview,
+    rollbackTarget,
+    setRollbackTarget,
+    rollbackPreview,
+    setRollbackPreview,
+    rollbackIncludeEnv,
+    setRollbackIncludeEnv,
+    rollbackLoading,
+    handleRollbackConfirm,
+  } = deploy;
+
+  useImperativeHandle(ref, () => ({
+    handleDeploy: deploy.handleDeploy,
+    setViewingLogId: deploy.setViewingLogId,
+  }), [deploy.handleDeploy, deploy.setViewingLogId]);
+
   return (
     <>
       <div className="pt-4 space-y-4">
@@ -109,7 +115,6 @@ export function AppDeployPanel({
           </div>
         ) : (
           <div className="space-y-2">
-            {/* In-progress deployment (client-side SSE stream) */}
             {deploying && (
               <InProgressDeployCard
                 stages={deployStages}
@@ -121,7 +126,6 @@ export function AppDeployPanel({
                 canAbort
               />
             )}
-            {/* In-progress deployment detected from server data (e.g. arrived mid-deploy) */}
             {!deploying && serverRunningDeploy && (
               <InProgressDeployCard
                 stages={{}}
@@ -229,7 +233,6 @@ export function AppDeployPanel({
                         })()}
                       </p>
                       {(deployment.status === "failed" || isErrored) && deployment.log && (() => {
-                        // Extract the last ERROR line from the deploy log
                         const lines = deployment.log.split("\n");
                         const errorLine = [...lines].reverse().find(
                           (l) => l.includes("ERROR") || l.includes("FATAL") || l.includes("failed") || l.includes("crashed")
@@ -260,7 +263,6 @@ export function AppDeployPanel({
                     <span>
                       {new Date(deployment.startedAt).toLocaleDateString()}
                     </span>
-                    {/* Restore button — only on past successful deploys, not the active one */}
                     {deployment.status === "success" && !isActive && !deploying && (
                       <Button
                         variant="ghost"
@@ -293,7 +295,6 @@ export function AppDeployPanel({
         )}
       </div>
 
-      {/* Rollback Confirmation Dialog */}
       <BottomSheet open={!!rollbackTarget} onOpenChange={(open) => { if (!open) { setRollbackTarget(null); setRollbackPreview(null); } }}>
         <BottomSheetContent>
           <BottomSheetHeader>
@@ -325,8 +326,6 @@ export function AppDeployPanel({
                     </div>
                   </div>
                 </div>
-
-                {/* Config changes diff */}
                 {rollbackPreview.configChanges.length > 0 && (
                   <div className="space-y-2">
                     <p className="text-sm font-medium">Config changes</p>
@@ -344,12 +343,9 @@ export function AppDeployPanel({
                     </div>
                   </div>
                 )}
-
                 {rollbackPreview.configChanges.length === 0 && rollbackPreview.hasConfigSnapshot && (
                   <p className="text-xs text-muted-foreground">No config changes detected.</p>
                 )}
-
-                {/* Env var changes */}
                 {rollbackPreview.hasEnvSnapshot && (
                   <div className="space-y-3">
                     <div className="flex items-center gap-3">
@@ -391,7 +387,6 @@ export function AppDeployPanel({
                     )}
                   </div>
                 )}
-
                 {!rollbackPreview.hasEnvSnapshot && (
                   <p className="text-xs text-muted-foreground">
                     No environment variable snapshot available for this deployment.
@@ -420,4 +415,4 @@ export function AppDeployPanel({
       </BottomSheet>
     </>
   );
-}
+});
