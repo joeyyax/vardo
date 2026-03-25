@@ -408,19 +408,22 @@ export async function runDeployment(
         "compose.yaml",
       ];
 
+      // Only look for compose files when deploy type is "compose" (auto-detect)
       let composeContent: string | null = null;
-      for (const candidate of composeCandidates) {
-        try {
-          composeContent = await readFile(join(root, candidate), "utf-8");
-          log(`[deploy] Found ${candidate}`);
-          break;
-        } catch { /* try next */ }
+      if (app.deployType === "compose") {
+        for (const candidate of composeCandidates) {
+          try {
+            composeContent = await readFile(join(root, candidate), "utf-8");
+            log(`[deploy] Found ${candidate}`);
+            break;
+          } catch { /* try next */ }
+        }
       }
 
       stage("clone", "success");
       stage("build", "running");
 
-      if (composeContent && app.deployType !== "nixpacks" && app.deployType !== "railpack" && app.deployType !== "dockerfile") {
+      if (composeContent && app.deployType === "compose") {
         compose = parseCompose(composeContent);
 
         // Detect declared volumes from compose YAML before deploy starts
@@ -463,10 +466,11 @@ export async function runDeployment(
 
         // Auto-detect: if deploy type is compose but no compose file found, try Dockerfile then Nixpacks
         if (buildType === "compose" && !composeContent) {
+          const dockerfileToCheck = app.dockerfilePath || "Dockerfile";
           try {
-            await readFile(join(root, "Dockerfile"), "utf-8");
+            await readFile(join(root, dockerfileToCheck), "utf-8");
             buildType = "dockerfile";
-            log(`[deploy] No compose file, found Dockerfile`);
+            log(`[deploy] No compose file, found ${dockerfileToCheck}`);
           } catch {
             buildType = "nixpacks";
             log(`[deploy] No compose file or Dockerfile, falling back to Nixpacks`);
@@ -483,8 +487,9 @@ export async function runDeployment(
         }
 
         // First build attempt
+        const customDockerfile = app.dockerfilePath && app.dockerfilePath !== "Dockerfile" ? app.dockerfilePath : undefined;
         try {
-          await buildFromRepo(root, imageName, buildType, logs, envMap);
+          await buildFromRepo(root, imageName, buildType, logs, envMap, customDockerfile);
         } catch (buildErr) {
           const errMsg = buildErr instanceof Error ? buildErr.message : String(buildErr);
 
@@ -497,7 +502,7 @@ export async function runDeployment(
             }
             log(`[compat] Retrying with fixes applied...`);
             Object.assign(envMap, applyCompatFixes(envMap, fixes));
-            await buildFromRepo(root, imageName, buildType, logs, envMap);
+            await buildFromRepo(root, imageName, buildType, logs, envMap, customDockerfile);
           } else {
             throw buildErr;
           }
@@ -1276,7 +1281,8 @@ async function buildFromRepo(
   imageName: string,
   deployType: string,
   logs: { push: (line: string) => void },
-  envVars?: Record<string, string>
+  envVars?: Record<string, string>,
+  dockerfilePath?: string
 ): Promise<void> {
   // Build environment for the child process
   const buildEnv = { ...process.env, ...envVars };
@@ -1312,9 +1318,10 @@ async function buildFromRepo(
     return;
   }
 
-  logs.push(`[build] Building with Dockerfile...`);
+  const dfPath = dockerfilePath || "Dockerfile";
+  logs.push(`[build] Building with Dockerfile (${dfPath})...`);
 
-  const args = ["build", "-t", imageName];
+  const args = ["build", "-t", imageName, "-f", join(repoPath, dfPath)];
   if (envVars) {
     for (const [k, v] of Object.entries(envVars)) {
       args.push("--build-arg", `${k}=${v}`);

@@ -59,6 +59,9 @@ export function AppSettingsDialog({
   );
   const [autoDeploy, setAutoDeploy] = useState(app.autoDeploy ?? false);
   const [gitBranch, setGitBranch] = useState(app.gitBranch || "");
+  const [editDeployType, setEditDeployType] = useState(app.deployType);
+  const [editComposeFilePath, setEditComposeFilePath] = useState(app.composeFilePath || "docker-compose.yml");
+  const [editDockerfilePath, setEditDockerfilePath] = useState(app.dockerfilePath || "Dockerfile");
   const [rootDirectory, setRootDirectory] = useState(app.rootDirectory || "");
   const [editParentId, setEditParentId] = useState<string | null>(app.projectId ?? null);
   const [cpuLimit, setCpuLimit] = useState(app.cpuLimit?.toString() || "");
@@ -80,6 +83,13 @@ export function AppSettingsDialog({
         body.containerPort = parseInt(containerPort, 10);
       } else {
         body.containerPort = null;
+      }
+      body.deployType = editDeployType;
+      if (editDeployType === "compose") {
+        body.composeFilePath = editComposeFilePath || "docker-compose.yml";
+      }
+      if (editDeployType === "dockerfile") {
+        body.dockerfilePath = editDockerfilePath || "Dockerfile";
       }
       if (app.source === "git") {
         body.gitBranch = gitBranch;
@@ -104,6 +114,7 @@ export function AppSettingsDialog({
 
       // Detect whether any redeploy-required fields changed
       const redeployFieldChanged = (
+        (body.deployType !== app.deployType) ||
         (body.gitBranch !== undefined && body.gitBranch !== (app.gitBranch || "")) ||
         (body.imageName !== undefined && body.imageName !== (app.imageName || "")) ||
         (body.containerPort !== app.containerPort) ||
@@ -221,6 +232,51 @@ export function AppSettingsDialog({
                 </div>
               </div>
             )}
+
+            {/* Deploy Type */}
+            <div className="grid gap-4">
+              <div className="grid gap-2 sm:w-1/2">
+                <Label>Deploy Type</Label>
+                <Select value={editDeployType} onValueChange={(v) => setEditDeployType(v as typeof editDeployType)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="compose">Compose</SelectItem>
+                    <SelectItem value="dockerfile">Dockerfile</SelectItem>
+                    <SelectItem value="image">Image</SelectItem>
+                    <SelectItem value="nixpacks">Nixpacks</SelectItem>
+                    <SelectItem value="railpack">Railpack</SelectItem>
+                    <SelectItem value="static">Static</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Requires a redeploy to take effect.</p>
+              </div>
+              {editDeployType === "compose" && (
+                <div className="grid gap-2 sm:w-1/2">
+                  <Label htmlFor="edit-compose-file-path">Compose File</Label>
+                  <Input
+                    id="edit-compose-file-path"
+                    placeholder="docker-compose.yml"
+                    value={editComposeFilePath}
+                    onChange={(e) => setEditComposeFilePath(e.target.value)}
+                    className="font-mono text-sm"
+                  />
+                </div>
+              )}
+              {editDeployType === "dockerfile" && (
+                <div className="grid gap-2 sm:w-1/2">
+                  <Label htmlFor="edit-dockerfile-path">Dockerfile</Label>
+                  <Input
+                    id="edit-dockerfile-path"
+                    placeholder="Dockerfile"
+                    value={editDockerfilePath}
+                    onChange={(e) => setEditDockerfilePath(e.target.value)}
+                    className="font-mono text-sm"
+                  />
+                </div>
+              )}
+            </div>
 
             {/* Port */}
             <div className="grid gap-2 sm:w-1/2">
