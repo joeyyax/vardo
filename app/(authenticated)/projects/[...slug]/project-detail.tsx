@@ -57,7 +57,7 @@ import { Uptime, StatusIndicator, AppIcon, DeploymentStatusBadge, formatDuration
 import { EndpointsPopover } from "@/components/endpoints-popover";
 import { LogViewer, DeploymentLog } from "@/components/log-viewer";
 import { EnvEditor } from "@/components/env-editor";
-import { AppMetrics } from "@/app/(app)/apps/[...slug]/app-metrics";
+import { AppMetrics } from "@/app/(authenticated)/apps/[...slug]/app-metrics";
 import { ProjectMetrics } from "./project-metrics";
 import { ProjectInstances } from "@/components/mesh/project-instances";
 import { AppBackupHistory } from "@/components/backups/app-backup-history";
