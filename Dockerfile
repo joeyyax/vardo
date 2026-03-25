@@ -36,11 +36,9 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # without running as root. If the host's docker group uses a different GID,
 # override at runtime with: --group-add <host-docker-gid>
 RUN addgroup --system --gid 1001 nodejs && \
-    addgroup --system --gid 999 docker && \
     adduser --system --uid 1001 --ingroup nodejs nextjs && \
-    adduser nextjs docker && \
-    mkdir -p /var/lib/host/projects && \
-    chown nextjs:nodejs /var/lib/host/projects
+    mkdir -p /var/lib/vardo/projects && \
+    chown nextjs:nodejs /var/lib/vardo/projects
 
 # Copy standalone output (includes only needed node_modules)
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
