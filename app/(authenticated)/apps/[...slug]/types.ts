@@ -25,6 +25,7 @@ export type Domain = {
   domain: string;
   serviceName: string | null;
   port: number | null;
+  certResolver: string | null;
   isPrimary: boolean | null;
 };
 

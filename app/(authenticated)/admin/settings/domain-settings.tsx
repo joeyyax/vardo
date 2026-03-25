@@ -1,9 +1,16 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Check, X, Loader2, RefreshCw } from "lucide-react";
 import {
   Card,
@@ -12,6 +19,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { MASK_SENTINEL } from "@/lib/mask-secrets";
+import { useSystemSetting } from "./use-system-setting";
 
 type DnsCheck = {
   domain: string;
@@ -25,6 +34,19 @@ type InstanceData = {
   serverIp: string;
 };
 
+const ISSUER_LABELS: Record<string, string> = {
+  le: "Let's Encrypt",
+  google: "Google Trust Services",
+  zerossl: "ZeroSSL",
+};
+
+function toDisplay(value: string): string {
+  if (value.startsWith(MASK_SENTINEL)) {
+    return `••••${value.slice(MASK_SENTINEL.length)}`;
+  }
+  return value;
+}
+
 export function DomainSettings() {
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(false);
@@ -32,6 +54,22 @@ export function DomainSettings() {
   const [hostDomain, setHostDomain] = useState("");
   const [acmeEmail, setAcmeEmail] = useState("");
   const [dnsChecks, setDnsChecks] = useState<DnsCheck[]>([]);
+
+  // SSL issuer settings
+  const [sslIssuer, setSslIssuer] = useState<string>("le");
+  const [zerosslKid, setZerosslKid] = useState("");
+  const [zerosslHmac, setZerosslHmac] = useState("");
+
+  const onSslLoad = useCallback((data: Record<string, unknown>) => {
+    setSslIssuer((data.defaultIssuer as string) || "le");
+    setZerosslKid((data.zerosslEabKid as string) || "");
+    setZerosslHmac((data.zerosslEabHmac as string) || "");
+  }, []);
+
+  const { loading: sslLoading, saving: sslSaving, save: saveSsl } = useSystemSetting(
+    "/api/setup/ssl",
+    { label: "SSL settings", onLoad: onSslLoad },
+  );
 
   useEffect(() => {
     (async () => {
@@ -154,9 +192,95 @@ export function DomainSettings() {
                 className="bg-muted"
               />
               <p className="text-xs text-muted-foreground">
-                Used for SSL certificate issuance with Let&apos;s Encrypt.
+                Used for SSL certificate issuance with {ISSUER_LABELS[sslIssuer] || "Let's Encrypt"}.
               </p>
             </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* SSL certificate issuer */}
+      <Card className="squircle rounded-lg">
+        <CardHeader>
+          <CardTitle className="text-sm">SSL certificate issuer</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {sslLoading ? (
+            <div className="flex items-center gap-2 py-2">
+              <Loader2 className="size-4 animate-spin text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">Loading...</span>
+            </div>
+          ) : (
+            <>
+              <div className="max-w-md space-y-2">
+                <Label htmlFor="ssl-issuer">Default issuer</Label>
+                <Select value={sslIssuer} onValueChange={setSslIssuer}>
+                  <SelectTrigger id="ssl-issuer" className="squircle">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="le">Let&apos;s Encrypt</SelectItem>
+                    <SelectItem value="google">Google Trust Services</SelectItem>
+                    <SelectItem value="zerossl">ZeroSSL</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Certificate authority used for new domains. Can be overridden per domain.
+                </p>
+              </div>
+
+              {(sslIssuer === "zerossl" || zerosslKid) && (
+                <div className="max-w-md space-y-4 rounded-lg border bg-muted/30 p-4">
+                  <p className="text-xs font-medium">
+                    ZeroSSL requires External Account Binding (EAB) credentials.{" "}
+                    <a
+                      href="https://app.zerossl.com/developer"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary underline"
+                    >
+                      Get credentials
+                    </a>
+                  </p>
+                  <div className="space-y-2">
+                    <Label htmlFor="zerossl-kid">EAB Key ID</Label>
+                    <Input
+                      id="zerossl-kid"
+                      value={toDisplay(zerosslKid)}
+                      onChange={(e) => setZerosslKid(e.target.value)}
+                      placeholder="EAB Key ID from ZeroSSL dashboard"
+                      className="font-mono text-sm"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="zerossl-hmac">EAB HMAC Key</Label>
+                    <Input
+                      id="zerossl-hmac"
+                      value={toDisplay(zerosslHmac)}
+                      onChange={(e) => setZerosslHmac(e.target.value)}
+                      placeholder="EAB HMAC Key from ZeroSSL dashboard"
+                      className="font-mono text-sm"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <Button
+                className="squircle"
+                onClick={() => saveSsl({
+                  defaultIssuer: sslIssuer,
+                  zerosslEabKid: zerosslKid || undefined,
+                  zerosslEabHmac: zerosslHmac || undefined,
+                })}
+                disabled={sslSaving}
+              >
+                {sslSaving ? (
+                  <><Loader2 className="mr-2 size-4 animate-spin" />Saving...</>
+                ) : (
+                  "Save"
+                )}
+              </Button>
+            </>
           )}
         </CardContent>
       </Card>
@@ -241,9 +365,9 @@ export function DomainSettings() {
             </div>
           </div>
           <p className="text-xs text-muted-foreground">
-            HTTPS will activate automatically once DNS propagates and Let&apos;s
-            Encrypt issues certificates. The wildcard A record enables automatic
-            subdomains for deployed apps.
+            HTTPS will activate automatically once DNS propagates and your
+            certificate authority issues certificates. The wildcard A record
+            enables automatic subdomains for deployed apps.
           </p>
         </CardContent>
       </Card>
