@@ -1,4 +1,4 @@
-FROM node:22-alpine AS base
+FROM node:22-slim AS base
 RUN corepack enable
 
 # Dependencies
@@ -30,16 +30,13 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# Install runtime dependencies
-# - git: repo cloning during deploys
-# - docker-cli: container management, compose operations
-# - curl: health checks, API calls
-# - nixpacks: buildpack deploys (auto-detect language, build image)
-RUN apk add --no-cache git docker-cli curl bash && \
+# Runtime dependencies for the deploy engine
+RUN apt-get update -qq && \
+    apt-get install -y --no-install-recommends git docker.io curl && \
     curl -sSL https://nixpacks.com/install.sh | bash && \
-    apk del bash && \
-    addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 --ingroup nodejs nextjs && \
+    apt-get clean && rm -rf /var/lib/apt/lists/* && \
+    groupadd --system --gid 1001 nodejs && \
+    useradd --system --uid 1001 --gid nodejs nextjs && \
     mkdir -p /var/lib/vardo/projects && \
     chown nextjs:nodejs /var/lib/vardo/projects
 
