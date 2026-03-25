@@ -14,7 +14,6 @@ try {
 }
 
 const nextConfig: NextConfig = {
-  output: "standalone",
   outputFileTracingRoot: resolve(__dirname),
   env: {
     NEXT_PUBLIC_GIT_SHA: gitSha,
