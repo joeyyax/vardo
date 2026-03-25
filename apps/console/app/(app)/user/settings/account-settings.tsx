@@ -12,6 +12,8 @@ import {
   Copy,
   Plus,
   Key,
+  KeyRound,
+  Github,
 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { Button } from "@/components/ui/button";
@@ -19,7 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { authClient, useSession } from "@/lib/auth/client";
+import { authClient, useSession, passkey as passkeyMethods } from "@/lib/auth/client";
 
 // ---------------------------------------------------------------------------
 // Account Info
@@ -435,6 +437,265 @@ export function TwoFactorAuth() {
                 )}
               </Button>
             </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Passkey Management
+// ---------------------------------------------------------------------------
+
+type PasskeyInfo = {
+  id: string;
+  name: string | null;
+  createdAt: string | Date | null;
+};
+
+export function PasskeyManager() {
+  const [passkeys, setPasskeys] = useState<PasskeyInfo[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
+
+  const fetchPasskeys = useCallback(async () => {
+    try {
+      const res = await fetch("/api/auth/passkey/list-user-passkeys");
+      if (res.ok) {
+        const data = await res.json();
+        setPasskeys(data as PasskeyInfo[]);
+      }
+    } catch {
+      // Passkey list may fail silently on first load
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchPasskeys();
+  }, [fetchPasskeys]);
+
+  async function handleAdd() {
+    setAdding(true);
+    try {
+      await passkeyMethods.addPasskey({
+        name: `Passkey ${passkeys.length + 1}`,
+      });
+      toast.success("Passkey registered");
+      fetchPasskeys();
+    } catch {
+      toast.error(
+        "Passkey registration failed. Your browser may not support passkeys.",
+      );
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  async function handleDelete(id: string) {
+    setDeleting(id);
+    try {
+      await fetch("/api/auth/passkey/delete-passkey", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      setPasskeys((prev) => prev.filter((p) => p.id !== id));
+      toast.success("Passkey removed");
+    } catch {
+      toast.error("Failed to remove passkey");
+    } finally {
+      setDeleting(null);
+    }
+  }
+
+  return (
+    <Card className="squircle rounded-lg">
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle>Passkeys</CardTitle>
+            <CardDescription>
+              Register passkeys for fast, secure sign-in. You can have multiple
+              passkeys across devices.
+            </CardDescription>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleAdd}
+            disabled={adding}
+          >
+            {adding ? (
+              <Loader2 className="mr-1.5 size-4 animate-spin" />
+            ) : (
+              <Plus className="mr-1.5 size-4" />
+            )}
+            Add passkey
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <div className="flex items-center justify-center p-8">
+            <Loader2 className="size-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : passkeys.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-2 p-8">
+            <KeyRound className="size-8 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">
+              No passkeys registered. Add one for instant sign-in.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {passkeys.map((pk) => (
+              <div
+                key={pk.id}
+                className="flex items-center justify-between rounded-lg border p-3"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <KeyRound className="size-4 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">
+                      {pk.name || "Unnamed passkey"}
+                    </p>
+                    {pk.createdAt && (
+                      <p className="text-xs text-muted-foreground">
+                        Added{" "}
+                        {new Date(pk.createdAt).toLocaleDateString()}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => handleDelete(pk.id)}
+                  disabled={deleting === pk.id}
+                >
+                  {deleting === pk.id ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="size-4 text-destructive" />
+                  )}
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Linked Accounts (OAuth providers)
+// ---------------------------------------------------------------------------
+
+type LinkedAccount = {
+  id: string;
+  providerId: string;
+  accountId: string;
+  createdAt: string;
+};
+
+const PROVIDER_LABELS: Record<string, { label: string; icon: typeof Github }> = {
+  github: { label: "GitHub", icon: Github },
+};
+
+export function LinkedAccounts() {
+  const [accounts, setAccounts] = useState<LinkedAccount[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchAccounts = useCallback(async () => {
+    try {
+      const res = await fetch("/api/auth/list-accounts");
+      if (res.ok) {
+        const data = await res.json();
+        const socialAccounts = (data as LinkedAccount[]).filter(
+          (a) => a.providerId !== "credential",
+        );
+        setAccounts(socialAccounts);
+      }
+    } catch {
+      // Silently fail
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchAccounts();
+  }, [fetchAccounts]);
+
+  return (
+    <Card className="squircle rounded-lg">
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle>Linked accounts</CardTitle>
+            <CardDescription>
+              External accounts you can use to sign in.
+            </CardDescription>
+          </div>
+          {!accounts.some((a) => a.providerId === "github") && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                window.location.href = `/api/auth/sign-in/social?provider=github&callbackURL=${encodeURIComponent(window.location.href)}`;
+              }}
+            >
+              <Github className="mr-1.5 size-4" />
+              Link GitHub
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <div className="flex items-center justify-center p-8">
+            <Loader2 className="size-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : accounts.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-2 p-8">
+            <Github className="size-8 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">
+              No linked accounts. Link GitHub for one-click sign-in.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {accounts.map((acct) => {
+              const provider = PROVIDER_LABELS[acct.providerId];
+              const Icon = provider?.icon ?? Github;
+              return (
+                <div
+                  key={acct.id}
+                  className="flex items-center justify-between rounded-lg border p-3"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <Icon className="size-4 shrink-0 text-muted-foreground" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">
+                        {provider?.label ?? acct.providerId}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Connected{" "}
+                        {new Date(acct.createdAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                  </div>
+                  <Badge variant="secondary" className="text-xs">
+                    Connected
+                  </Badge>
+                </div>
+              );
+            })}
           </div>
         )}
       </CardContent>
