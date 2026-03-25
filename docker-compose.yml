@@ -117,6 +117,7 @@ services:
     image: traefik:v3
     restart: unless-stopped
     command:
+      - "--api.insecure=true"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--providers.docker.network=vardo-network"
