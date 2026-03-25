@@ -7,11 +7,11 @@ import {
   backupTargets,
   backups,
 } from "@/lib/db/schema";
-import { requireOrg } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/config/features";
 import { eq, and, or, desc, inArray, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
+import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -39,11 +39,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const { orgId } = await params;
-    const { organization } = await requireOrg();
-
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const jobs = await db.query.backupJobs.findMany({
       where: eq(backupJobs.organizationId, orgId),
@@ -108,11 +105,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     const { orgId } = await params;
-    const { organization } = await requireOrg();
-
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();
     const parsed = createJobSchema.safeParse(body);

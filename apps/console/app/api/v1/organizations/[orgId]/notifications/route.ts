@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { notificationChannels } from "@/lib/db/schema";
-import { requireOrg } from "@/lib/auth/session";
+import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { eq, asc } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
@@ -14,8 +14,8 @@ const createSchema = z.object({ name: z.string().min(1).max(100), type: z.enum([
 export async function GET(_req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { organization } = await requireOrg();
-    if (organization.id !== orgId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const channels = await db.query.notificationChannels.findMany({ where: eq(notificationChannels.organizationId, orgId), orderBy: [asc(notificationChannels.createdAt)] });
     const masked = channels.map(maskChannelConfig);
     return NextResponse.json({ channels: masked });
@@ -25,8 +25,8 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 export async function POST(req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { organization } = await requireOrg();
-    if (organization.id !== orgId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const parsed = createSchema.safeParse(await req.json());
     if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
     const [channel] = await db.insert(notificationChannels).values({ id: nanoid(), organizationId: orgId, name: parsed.data.name, type: parsed.data.type, config: parsed.data.config, enabled: parsed.data.enabled, subscribedEvents: parsed.data.subscribedEvents }).returning();

@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { backupTargets } from "@/lib/db/schema";
-import { requireOrg } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/config/features";
 import { eq, and, or, isNull } from "drizzle-orm";
 import { z } from "zod";
+import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 type RouteParams = {
   params: Promise<{ orgId: string; targetId: string }>;
@@ -25,11 +25,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     const { orgId, targetId } = await params;
-    const { organization } = await requireOrg();
-
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();
     const parsed = updateTargetSchema.safeParse(body);
@@ -72,11 +69,8 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     }
 
     const { orgId, targetId } = await params;
-    const { organization } = await requireOrg();
-
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const deleted = await db
       .delete(backupTargets)

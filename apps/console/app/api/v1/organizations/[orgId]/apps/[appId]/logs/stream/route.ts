@@ -2,13 +2,13 @@ import { NextRequest } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
-import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { spawn } from "child_process";
 import { resolve } from "path";
 import { readFile } from "fs/promises";
 import { createSSEResponse } from "@/lib/api/sse";
 import { isLokiAvailable, queryRange, tailLogs, buildLogQLQuery } from "@/lib/loki/client";
+import { verifyOrgAccess } from "@/lib/api/verify-access";
 const PROJECTS_DIR = resolve(process.env.VARDO_PROJECTS_DIR || "./.host/projects");
 
 type RouteParams = {
@@ -19,11 +19,8 @@ type RouteParams = {
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
-    const { organization } = await requireOrg();
-
-    if (organization.id !== orgId) {
-      return new Response("Forbidden", { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return new Response("Forbidden", { status: 403 });
 
     const app = await db.query.apps.findFirst({
       where: and(

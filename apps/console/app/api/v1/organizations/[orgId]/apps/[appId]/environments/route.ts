@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { environments, envVars, apps, groupEnvironments } from "@/lib/db/schema";
-import { requireOrg } from "@/lib/auth/session";
+import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { eq, and, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
@@ -142,14 +142,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         );
       }
 
-      const { organization: _org, session: sess } = await requireOrg();
+      const orgAccess = await verifyOrgAccess(orgId);
       const result = await createGroupEnvironment({
         projectId: appRecord.projectId,
         organizationId: orgId,
         name: parsed.data.name,
         type: parsed.data.type as "staging" | "preview",
         appOverrides: parsed.data.appOverrides,
-        createdBy: sess.user.id,
+        createdBy: orgAccess!.session.user.id,
       });
 
       return NextResponse.json(result, { status: 201 });

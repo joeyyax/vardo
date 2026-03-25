@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { memberships } from "@/lib/db/schema";
-import { requireOrg } from "@/lib/auth/session";
 import { requireAdmin } from "@/lib/auth/permissions";
 import { eq, and } from "drizzle-orm";
+import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 type RouteParams = {
   params: Promise<{ orgId: string; userId: string }>;
@@ -14,13 +14,10 @@ type RouteParams = {
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, userId } = await params;
-    const { organization, membership } = await requireOrg();
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    requireAdmin(membership.role);
+    requireAdmin(org.membership.role);
 
     const body = await request.json();
     const { role } = body;
@@ -75,13 +72,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, userId } = await params;
-    const { session, organization, membership } = await requireOrg();
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    requireAdmin(membership.role);
+    requireAdmin(org.membership.role);
 
     // Find target membership
     const targetMembership = await db.query.memberships.findFirst({
@@ -105,7 +99,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    if (userId === session.user.id) {
+    if (userId === org.session.user.id) {
       return NextResponse.json(
         { error: "Cannot remove yourself" },
         { status: 400 }
