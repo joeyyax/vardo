@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { Loader2, Pause, Play, ArrowDown, X, Copy, Check, Database, HardDrive } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { useVisibilityKey } from "@/lib/hooks/use-visible";
+import { useVisibilityKey } from "@/hooks/use-visible";
 
 type LogLine = {
   id: number;
