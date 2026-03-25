@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminAuth } from "@/lib/auth/admin";
+import { refreshGitHubOAuthCredentials } from "@/lib/auth";
 import { needsSetup } from "@/lib/setup";
 import { getGitHubAppConfig, setSystemSetting } from "@/lib/system-settings";
 import { maskSecret, isMasked } from "@/lib/mask-secrets";
@@ -57,14 +58,22 @@ export async function POST(request: NextRequest) {
     return incoming ?? undefined;
   }
 
+  const resolvedClientSecret = resolveSecret(clientSecret, existing?.clientSecret) ?? "";
+
   await setSystemSetting("github_app", JSON.stringify({
     appId,
     appSlug,
     clientId,
-    clientSecret: resolveSecret(clientSecret, existing?.clientSecret),
+    clientSecret: resolvedClientSecret,
     privateKey: resolveSecret(privateKey, existing?.privateKey),
     webhookSecret: resolveSecret(webhookSecret, existing?.webhookSecret),
   }));
+
+  // Rebuild the Better Auth instance with updated GitHub OAuth credentials
+  // so GitHub login works immediately without a server restart.
+  if (clientId && resolvedClientSecret) {
+    refreshGitHubOAuthCredentials(clientId, resolvedClientSecret);
+  }
 
   return NextResponse.json({ ok: true });
 }

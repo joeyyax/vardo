@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import nextPkg from "next/package.json";
+import { getGitHubAppConfig } from "@/lib/system-settings";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -232,10 +233,11 @@ export async function getSystemHealth(): Promise<SystemHealth> {
     getResourceStatuses(),
   ]);
 
+  const githubConfig = await getGitHubAppConfig();
   const auth: AuthConfig = {
     passkeys: true,
     magicLink: true,
-    github: !!(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET),
+    github: !!(githubConfig?.clientId && githubConfig?.clientSecret),
     passwords: false,
     twoFactor: true,
   };
