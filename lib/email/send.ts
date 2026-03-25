@@ -30,8 +30,8 @@ export async function sendEmail({ to, subject, template, from, replyTo }: SendEm
 
   const fromAddress = from || (config.fromName && config.fromEmail
     ? `${config.fromName} <${config.fromEmail}>`
-    : config.fromEmail || process.env.EMAIL_FROM || "Vardo <noreply@vardo.run>");
-  const replyToAddress = replyTo || process.env.EMAIL_REPLY_TO;
+    : config.fromEmail || "Vardo <noreply@vardo.run>");
+  const replyToAddress = replyTo || config.replyTo;
 
   switch (config.provider) {
     case "mailpace":
