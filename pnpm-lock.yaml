@@ -97,9 +97,6 @@ importers:
       drizzle-orm:
         specifier: ^0.45.1
         version: 0.45.1(kysely@0.28.11)(postgres@3.4.8)
-      framer-motion:
-        specifier: ^12.31.0
-        version: 12.31.0(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       ioredis:
         specifier: ^5.9.2
         version: 5.9.2
