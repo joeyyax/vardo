@@ -30,7 +30,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { generateWordPair, getBaseDomain } from "@/lib/domains/auto-domain";
+import { generateWordPair } from "@/lib/domains/auto-domain";
 import { isReservedSlug } from "@/lib/domains/reserved";
 import { EnvEditor } from "@/components/env-editor";
 import { BranchSelect } from "@/components/branch-select";
@@ -95,6 +95,7 @@ type Props = {
   orgSlug: string;
   templates: Template[];
   parentApps?: ParentAppOption[];
+  baseDomain?: string;
   defaultParentId?: string;
   defaultProjectId?: string;
   defaultName?: string;
@@ -128,7 +129,7 @@ function generatePassword(length = 24): string {
 import { isSecretKey } from "@/lib/env/is-secret-key";
 import { slugify } from "@/lib/ui/slugify";
 
-export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], defaultParentId, defaultProjectId, defaultName, defaultImage, defaultTemplate }: Props) {
+export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDomain: baseDomainProp, defaultParentId, defaultProjectId, defaultName, defaultImage, defaultTemplate }: Props) {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
   const [slugEdited, setSlugEdited] = useState(false);
@@ -172,7 +173,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], default
   // Domain
   const [generateDomain, setGenerateDomain] = useState(true);
   const [wordPair, setWordPair] = useState(() => generateWordPair());
-  const baseDomain = getBaseDomain();
+  const baseDomain = baseDomainProp || "example.com";
 
   // Environment variables as raw .env content
   const [envContent, setEnvContent] = useState("");

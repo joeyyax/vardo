@@ -114,7 +114,6 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
         triggeredBy: org.session.user.id,
         onLog: (line) => sendEvent("log", line),
         onStage: (stg, status) => sendEvent("stage", { stage: stg, status }),
-        signal: request.signal,
       });
 
       // Tag the new deployment with rollback source
