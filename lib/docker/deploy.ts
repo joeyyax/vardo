@@ -420,7 +420,7 @@ export async function runDeployment(
       stage("clone", "success");
       stage("build", "running");
 
-      if (composeContent && app.deployType !== "nixpacks" && app.deployType !== "dockerfile") {
+      if (composeContent && app.deployType !== "nixpacks" && app.deployType !== "railpack" && app.deployType !== "dockerfile") {
         compose = parseCompose(composeContent);
 
         // Detect declared volumes from compose YAML before deploy starts
@@ -1272,6 +1272,22 @@ async function buildFromRepo(
 
     await spawnStream("nixpacks", args, { cwd: repoPath, env: buildEnv }, logs, "[build][nixpacks]");
     logs.push(`[build] Nixpacks build complete: ${imageName}`);
+    return;
+  }
+
+  if (deployType === "railpack") {
+    logs.push(`[build] Building with Railpack...`);
+
+    const args = ["build", "--name", imageName];
+    if (envVars) {
+      for (const [k, v] of Object.entries(envVars)) {
+        args.push("--env", `${k}=${v}`);
+      }
+    }
+    args.push(repoPath);
+
+    await spawnStream("railpack", args, { cwd: repoPath, env: buildEnv }, logs, "[build][railpack]");
+    logs.push(`[build] Railpack build complete: ${imageName}`);
     return;
   }
 

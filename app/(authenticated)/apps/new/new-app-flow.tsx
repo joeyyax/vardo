@@ -36,7 +36,7 @@ import { EnvEditor } from "@/components/env-editor";
 import { BranchSelect } from "@/components/branch-select";
 
 type Source = "git" | "direct";
-type DeployType = "compose" | "dockerfile" | "image" | "static";
+type DeployType = "compose" | "dockerfile" | "image" | "static" | "nixpacks" | "railpack";
 type GitMode = "github" | "manual";
 
 type Template = {
