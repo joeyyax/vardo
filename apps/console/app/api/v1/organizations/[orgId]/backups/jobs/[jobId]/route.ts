@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { backupJobs, backupJobApps } from "@/lib/db/schema";
-import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { isFeatureEnabled } from "@/lib/config/features";
+import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 type RouteParams = {
   params: Promise<{ orgId: string; jobId: string }>;
@@ -33,11 +33,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     }
 
     const { orgId, jobId } = await params;
-    const { organization } = await requireOrg();
-
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const job = await db.query.backupJobs.findFirst({
       where: and(
@@ -77,11 +74,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
     }
     const { orgId, jobId } = await params;
-    const { organization } = await requireOrg();
-
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();
     const parsed = updateJobSchema.safeParse(body);
@@ -138,13 +132,10 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
     }
     const { orgId, jobId } = await params;
-    const { organization, membership } = await requireOrg();
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    if (membership.role !== "owner" && membership.role !== "admin") {
+    if (org.membership.role !== "owner" && org.membership.role !== "admin") {
       return NextResponse.json(
         { error: "Only owners and admins can delete backup jobs" },
         { status: 403 }

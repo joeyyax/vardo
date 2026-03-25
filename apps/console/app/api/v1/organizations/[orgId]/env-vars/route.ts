@@ -2,12 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { orgEnvVars } from "@/lib/db/schema";
-import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { parseEnvContent } from "@/lib/env/parse-env-content";
 import { encrypt, decryptOrFallback } from "@/lib/crypto/encrypt";
+import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -36,10 +36,8 @@ const bulkSchema = z.object({
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { organization } = await requireOrg();
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const vars = await db.query.orgEnvVars.findMany({
       where: eq(orgEnvVars.organizationId, orgId),
@@ -61,10 +59,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { organization } = await requireOrg();
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();
     const parsed = createSchema.safeParse(body);
@@ -98,10 +94,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { organization } = await requireOrg();
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();
     const parsed = bulkSchema.safeParse(body);
@@ -173,10 +167,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { organization } = await requireOrg();
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { id } = await request.json();
     const [deleted] = await db.delete(orgEnvVars)

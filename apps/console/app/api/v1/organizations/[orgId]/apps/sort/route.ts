@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
-import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
+import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -14,11 +14,8 @@ type RouteParams = {
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { organization } = await requireOrg();
-
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { order } = await request.json() as { order: string[] };
 

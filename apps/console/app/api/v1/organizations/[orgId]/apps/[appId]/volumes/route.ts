@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps, volumes } from "@/lib/db/schema";
-import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { listContainers, inspectContainer } from "@/lib/docker/client";
 import { z } from "zod";
 import { nanoid } from "nanoid";
 import { exec } from "child_process";
 import { promisify } from "util";
+import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 const execAsync = promisify(exec);
 
@@ -47,10 +47,8 @@ type VolumeInfo = {
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
-    const { organization } = await requireOrg();
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const app = await db.query.apps.findFirst({
       where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
@@ -169,10 +167,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
-    const { organization } = await requireOrg();
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();
     const parsed = z.array(volumeSchema).safeParse(body.volumes);
