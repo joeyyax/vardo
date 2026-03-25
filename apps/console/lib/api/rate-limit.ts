@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { redis } from "@/lib/redis";
+import { logger } from "@/lib/logger";
+
+const log = logger.child("rate-limit");
 
 // Lua script: sliding window using a sorted set of request timestamps.
 // Arguments: key, now (ms), windowMs, limit, ttlSeconds
@@ -73,7 +76,7 @@ export async function rateLimit(
     count = Number(result);
   } catch (err) {
     // Redis unavailable — fail open so a Redis outage doesn't block the API
-    console.error("[rate-limit] Redis error, failing open:", err);
+    log.error("Redis error, failing open:", err);
     return null;
   }
 

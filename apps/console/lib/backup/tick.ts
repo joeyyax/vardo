@@ -4,6 +4,9 @@ import { eq, and } from "drizzle-orm";
 import { runBackup } from "./engine";
 import { shouldRunNow } from "@/lib/cron/parse";
 import { acquireLock } from "@/lib/redis-lock";
+import { logger } from "@/lib/logger";
+
+const log = logger.child("backup");
 
 // ---------------------------------------------------------------------------
 // Public tick
@@ -36,8 +39,8 @@ export async function tickBackupJobs(): Promise<void> {
       });
 
       if (runningBackup) {
-        console.log(
-          `[backup] Skipping job "${job.name}" — already running (backup ${runningBackup.id})`,
+        log.info(
+          `Skipping job "${job.name}" — already running (backup ${runningBackup.id})`,
         );
         continue;
       }
@@ -48,18 +51,18 @@ export async function tickBackupJobs(): Promise<void> {
         .set({ lastRunAt: now, updatedAt: now })
         .where(eq(backupJobs.id, job.id));
 
-      console.log(`[backup] Running job "${job.name}" (${job.id})`);
+      log.info(`Running job "${job.name}" (${job.id})`);
 
       const results = await runBackup(job.id);
 
       const succeeded = results.filter((r) => r.success).length;
       const failed = results.filter((r) => !r.success).length;
 
-      console.log(
-        `[backup] Job "${job.name}" finished: ${succeeded} succeeded, ${failed} failed`,
+      log.info(
+        `Job "${job.name}" finished: ${succeeded} succeeded, ${failed} failed`,
       );
     } catch (err) {
-      console.error(`[backup] Job "${job.name}" (${job.id}) error:`, err);
+      log.error(`Job "${job.name}" (${job.id}) error:`, err);
       // Continue to next job — don't let one failure crash the whole tick
     }
   }

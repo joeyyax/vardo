@@ -1,5 +1,7 @@
 # Contributing
 
+For first-time setup, prerequisites, and development workflow, see [docs/contributing.md](../docs/contributing.md).
+
 ## Branch Conventions
 
 | Prefix | Purpose |

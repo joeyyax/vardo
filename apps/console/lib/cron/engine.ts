@@ -7,6 +7,9 @@ import { promisify } from "util";
 import { listContainers } from "@/lib/docker/client";
 import { shouldRunNow } from "./parse";
 import { acquireLock } from "@/lib/redis-lock";
+import { logger } from "@/lib/logger";
+
+const log = logger.child("cron");
 
 const execFileAsync = promisify(execFile);
 
@@ -170,8 +173,8 @@ export async function tickCronJobs(): Promise<void> {
       )
     );
 
-    console.log(
-      `[cron] ${job.name} (${job.app.name}): ${result.success ? "OK" : "FAILED"} in ${result.durationMs}ms`
+    log.info(
+      `${job.name} (${job.app.name}): ${result.success ? "OK" : "FAILED"} in ${result.durationMs}ms`
     );
 
     if (!result.success) {
@@ -188,7 +191,7 @@ export async function tickCronJobs(): Promise<void> {
           durationMs: result.durationMs,
         });
       } catch (err) {
-        console.error(`[cron] Failed to send notification for ${job.name}:`, err);
+        log.error(`Failed to send notification for ${job.name}:`, err);
       }
     }
   }

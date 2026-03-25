@@ -3,6 +3,7 @@ import { deployments, apps, orgEnvVars, organizations, environments, volumes } f
 import { encrypt, decryptOrFallback } from "@/lib/crypto/encrypt";
 import { parseEnvToMap } from "@/lib/env/parse-env";
 import { eq, and, isNull } from "drizzle-orm";
+import { logger } from "@/lib/logger";
 import { resolveAllEnvVars, type ResolveContext } from "@/lib/env/resolve";
 import { nanoid } from "nanoid";
 import { publishEvent, appChannel } from "@/lib/events";
@@ -1237,7 +1238,7 @@ async function sendDeployNotification(
         errorMessage,
       });
     }
-  } catch (err) { console.error("[notifications] Deploy notification error:", err); }
+  } catch (err) { logger.child("notifications").error("Deploy notification error:", err); }
 }
 
 export async function deployProject(opts: DeployOpts): Promise<DeployResult> {

@@ -4,6 +4,9 @@ import { githubAppInstallations } from "@/lib/db/schema";
 import { requireSession } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { getInstallationOctokit } from "@/lib/github/app";
+import { logger } from "@/lib/logger";
+
+const log = logger.child("github:env-scan");
 
 const ENV_CANDIDATES = [".env.example", ".env.sample", ".env.template"];
 
@@ -135,7 +138,7 @@ export async function GET(request: NextRequest) {
     if (error instanceof Error && error.message === "Unauthorized") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    console.error("Error scanning for env files:", error);
+    log.error("Error scanning for env files:", error);
     return NextResponse.json(
       { error: "Failed to scan repository for env files" },
       { status: 502 }

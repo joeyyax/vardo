@@ -6,6 +6,9 @@ import { db } from "@/lib/db";
 import { systemSettings } from "@/lib/db/schema";
 import { exec } from "child_process";
 import { promisify } from "util";
+import { logger } from "@/lib/logger";
+
+const log = logger.child("system-alerts");
 
 const execAsync = promisify(exec);
 
@@ -31,7 +34,7 @@ async function emitAll(event: BusEvent): Promise<void> {
   );
   for (const result of results) {
     if (result.status === "rejected") {
-      console.error("[system-alerts] emitAll error:", result.reason);
+      log.error("emitAll error:", result.reason);
     }
   }
 }
@@ -64,7 +67,7 @@ async function checkServiceAlerts(health: Awaited<ReturnType<typeof getSystemHea
       }
     }
   } catch (err) {
-    console.error("[system-alerts] Service check error:", err);
+    log.error("Service check error:", err);
   }
 }
 
@@ -101,7 +104,7 @@ async function checkDiskAlerts(health: Awaited<ReturnType<typeof getSystemHealth
       }
     }
   } catch (err) {
-    console.error("[system-alerts] Disk check error:", err);
+    log.error("Disk check error:", err);
   }
 }
 
@@ -152,7 +155,7 @@ async function checkHostRestart(): Promise<void> {
       uptimeSeconds,
     });
   } catch (err) {
-    console.error("[system-alerts] Host restart check error:", err);
+    log.error("Host restart check error:", err);
   }
 
   // Always update last_known_uptime
@@ -290,7 +293,7 @@ export async function tickSystemAlerts(): Promise<void> {
   try {
     health = await getSystemHealth();
   } catch (err) {
-    console.error("[system-alerts] Health fetch error:", err);
+    log.error("Health fetch error:", err);
   }
 
   const checks: Promise<void>[] = [checkHostRestart(), checkCertAlerts(), checkUpdateAlert()];
@@ -319,25 +322,25 @@ export function startSystemAlertMonitor(): void {
     .then(() => {
       setTimeout(() => {
         tickSystemAlerts().catch((err) => {
-          console.error("[system-alerts] Initial tick error:", err);
+          log.error("Initial tick error:", err);
         });
       }, 10_000);
     })
     .catch((err) => {
-      console.error("[system-alerts] Failed to load alert state:", err);
+      log.error("Failed to load alert state:", err);
     });
 
-  console.log("[system-alerts] Monitor started (60s interval)");
+  log.info("Monitor started (60s interval)");
   interval = setInterval(async () => {
     if (ticking) {
-      console.warn("[system-alerts] Previous tick still running — skipping");
+      log.warn("Previous tick still running — skipping");
       return;
     }
     ticking = true;
     try {
       await tickSystemAlerts();
     } catch (err) {
-      console.error("[system-alerts] Tick error:", err);
+      log.error("Tick error:", err);
     } finally {
       ticking = false;
     }
@@ -348,7 +351,7 @@ export function stopSystemAlertMonitor(): void {
   if (interval) {
     clearInterval(interval);
     interval = null;
-    console.log("[system-alerts] Monitor stopped");
+    log.info("Monitor stopped");
   }
 }
 
@@ -361,7 +364,7 @@ export function stopSystemAlertMonitor(): void {
 // Note: SIGUSR2 is not handled here — if you use it for hot reloads (e.g.
 // nodemon) call stopSystemAlertMonitor() in your reload handler manually.
 function onShutdown(signal: string) {
-  console.log(`[system-alerts] Received ${signal} — stopping monitor`);
+  log.info(`Received ${signal} — stopping monitor`);
   stopSystemAlertMonitor();
 }
 

@@ -14,6 +14,9 @@ import {
   destroyGroupEnvironment,
 } from "./clone";
 import { deployGroup } from "./deploy-group";
+import { logger } from "@/lib/logger";
+
+const log = logger.child("preview");
 
 // ---------------------------------------------------------------------------
 // Types
@@ -102,7 +105,7 @@ export async function createPreview(
         groupEnvironmentId: existing.id,
       });
     } catch (err) {
-      console.error(`[preview] Re-deploy failed for PR #${opts.prNumber}:`, err);
+      log.error(`Re-deploy failed for PR #${opts.prNumber}:`, err);
     }
 
     return {
@@ -134,7 +137,7 @@ export async function createPreview(
     });
     deployed = true;
   } catch (err) {
-    console.error(`[preview] Deploy failed for PR #${opts.prNumber}:`, err);
+    log.error(`Deploy failed for PR #${opts.prNumber}:`, err);
   }
 
   // Collect domains
@@ -219,9 +222,9 @@ export async function cleanupExpiredPreviews(): Promise<number> {
       try {
         await destroyGroupEnvironment(env.id, env.project.organizationId);
         cleaned++;
-        console.log(`[preview] Cleaned up expired preview: ${env.name}`);
+        log.info(`Cleaned up expired preview: ${env.name}`);
       } catch (err) {
-        console.error(`[preview] Cleanup failed for ${env.name}:`, err);
+        log.error(`Cleanup failed for ${env.name}:`, err);
       }
     }
   }

@@ -17,6 +17,9 @@ import { nanoid } from "nanoid";
 import { createHash } from "crypto";
 import { getBackupStorageConfig } from "@/lib/system-settings";
 import { assertSafeName } from "@/lib/docker/validate";
+import { logger } from "@/lib/logger";
+
+const log = logger.child("auto-backup");
 
 // ---------------------------------------------------------------------------
 // 1. Host-level backup target from config
@@ -49,8 +52,8 @@ export async function ensureHostBackupTarget() {
   const validTypes = ["s3", "r2", "b2"] as const;
   const type = storageConfig.type.toLowerCase() as (typeof validTypes)[number];
   if (!validTypes.includes(type)) {
-    console.warn(
-      `[auto-backup] Invalid backup storage type: ${storageConfig.type}. Must be one of: ${validTypes.join(", ")}`
+    log.warn(
+      `Invalid backup storage type: ${storageConfig.type}. Must be one of: ${validTypes.join(", ")}`
     );
     return null;
   }
@@ -70,7 +73,7 @@ export async function ensureHostBackupTarget() {
     secretAccessKey: string;
   };
 
-  console.log(`[auto-backup] Creating Host-level backup target (${type}://${storageConfig.bucket})`);
+  log.info(`Creating Host-level backup target (${type}://${storageConfig.bucket})`);
 
   const [target] = await db
     .insert(backupTargets)
@@ -140,7 +143,7 @@ export async function ensureSystemBackupJob(targetId: string) {
       backupStrategy: "dump",
       backupMeta: meta,
     });
-    console.log(`[auto-backup] Created system volume for Vardo database (dump)`);
+    log.info("Created system volume for Vardo database (dump)");
   }
 
   // Check if a backup job is already linked to this volume
@@ -179,7 +182,7 @@ export async function ensureSystemBackupJob(targetId: string) {
     volumeId,
   });
 
-  console.log(`[auto-backup] Created system backup job for Vardo database`);
+  log.info("Created system backup job for Vardo database");
   return job;
 }
 

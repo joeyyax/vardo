@@ -7,6 +7,9 @@ import { join, resolve } from "path";
 import { listContainers, inspectContainer } from "./client";
 import { publishEvent, appChannel } from "@/lib/events";
 import { recordActivity } from "@/lib/activity";
+import { logger } from "@/lib/logger";
+
+const log = logger.child("rollback-monitor");
 
 const execFileAsync = promisify(execFile);
 const PROJECTS_DIR = resolve(process.env.VARDO_PROJECTS_DIR || "./.host/projects");
@@ -44,8 +47,8 @@ export function startRollbackMonitor(opts: RollbackMonitorOpts): void {
 
   // Guard: skip if this app is already being monitored (e.g. rapid re-deploy)
   if (activeMonitors.has(opts.appId)) {
-    console.log(
-      `[rollback-monitor] Monitor already active for ${opts.appName}, skipping`
+    log.info(
+      `Monitor already active for ${opts.appName}, skipping`
     );
     return;
   }
@@ -77,8 +80,8 @@ export function startRollbackMonitor(opts: RollbackMonitorOpts): void {
         const crashed = await isContainerCrashed(appName, envName, slotProjectName);
 
         if (crashed) {
-          console.log(
-            `[rollback-monitor] Container crashed within grace period for ${appName}, rolling back`
+          log.info(
+            `Container crashed within grace period for ${appName}, rolling back`
           );
 
           await performRollback({
@@ -95,13 +98,13 @@ export function startRollbackMonitor(opts: RollbackMonitorOpts): void {
       }
 
       // Grace period passed without crash -- deploy is stable
-      console.log(
-        `[rollback-monitor] Grace period passed for ${appName} -- deploy is stable`
+      log.info(
+        `Grace period passed for ${appName} -- deploy is stable`
       );
     } catch (err) {
       // Monitor itself failed -- log but never crash the process
-      console.error(
-        `[rollback-monitor] Monitor error for ${appName}:`,
+      log.error(
+        `Monitor error for ${appName}:`,
         err instanceof Error ? err.message : err
       );
     } finally {
@@ -184,8 +187,8 @@ async function performRollback(opts: PerformRollbackOpts): Promise<void> {
       { cwd: crashedSlotDir, timeout: 30000 }
     );
   } catch (err) {
-    console.error(
-      `[rollback-monitor] Failed to tear down crashing slot:`,
+    log.error(
+      "Failed to tear down crashing slot:",
       err instanceof Error ? err.message : err
     );
   }
@@ -203,8 +206,8 @@ async function performRollback(opts: PerformRollbackOpts): Promise<void> {
     );
   } catch (err) {
     // Previous slot also failed -- just alert, don't recurse
-    console.error(
-      `[rollback-monitor] Failed to restore previous slot -- manual intervention required:`,
+    log.error(
+      "Failed to restore previous slot -- manual intervention required:",
       err instanceof Error ? err.message : err
     );
 
@@ -273,7 +276,7 @@ async function sendRollbackNotification(
       rollbackSuccess: success,
     });
   } catch (err) {
-    console.error("[rollback-monitor] Notification error:", err);
+    log.error("Notification error:", err);
   }
 }
 

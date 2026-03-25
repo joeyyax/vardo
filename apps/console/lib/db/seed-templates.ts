@@ -4,6 +4,9 @@ import { nanoid } from "nanoid";
 import { readdir, readFile } from "fs/promises";
 import { join, resolve } from "path";
 import TOML from "@iarna/toml";
+import { logger } from "@/lib/logger";
+
+const log = logger.child("seed");
 
 const TEMPLATES_DIR = resolve(process.cwd(), "templates");
 
@@ -31,11 +34,11 @@ export async function seedTemplates() {
   try {
     files = (await readdir(TEMPLATES_DIR)).filter((f) => f.endsWith(".toml"));
   } catch {
-    console.log("[seed] No templates directory found at", TEMPLATES_DIR);
+    log.info("No templates directory found at", TEMPLATES_DIR);
     return;
   }
 
-  console.log(`[seed] Found ${files.length} template files`);
+  log.info(`Found ${files.length} template files`);
 
   for (const file of files) {
     try {
@@ -85,9 +88,9 @@ export async function seedTemplates() {
           },
         });
 
-      console.log(`[seed] ${tmpl.name} ✓`);
+      log.info(`${tmpl.name} done`);
     } catch (err) {
-      console.error(`[seed] Failed to process ${file}:`, err);
+      log.error(`Failed to process ${file}:`, err);
     }
   }
 }
