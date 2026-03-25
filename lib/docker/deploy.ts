@@ -1282,44 +1282,32 @@ async function buildFromRepo(
   const buildEnv = { ...process.env, ...envVars };
 
   if (deployType === "nixpacks") {
-    logs.push(`[build] Building with Nixpacks (container)...`);
+    logs.push(`[build] Building with Nixpacks...`);
 
-    // Run nixpacks as a container — mount repo dir and Docker socket
-    const args = [
-      "run", "--rm",
-      "-v", `${repoPath}:/workspace`,
-      "-v", "/var/run/docker.sock:/var/run/docker.sock",
-      "ghcr.io/railwayapp/nixpacks:latest",
-      "build", "/workspace", "--name", imageName,
-    ];
+    const args = ["build", repoPath, "--name", imageName];
     if (envVars) {
       for (const [k, v] of Object.entries(envVars)) {
         args.push("--env", `${k}=${v}`);
       }
     }
 
-    await spawnStream("docker", args, { env: buildEnv }, logs, "[build][nixpacks]");
+    await spawnStream("nixpacks", args, { cwd: repoPath, env: buildEnv }, logs, "[build][nixpacks]");
     logs.push(`[build] Nixpacks build complete: ${imageName}`);
     return;
   }
 
   if (deployType === "railpack") {
-    logs.push(`[build] Building with Railpack (container)...`);
+    logs.push(`[build] Building with Railpack...`);
 
-    const args = [
-      "run", "--rm",
-      "-v", `${repoPath}:/workspace`,
-      "-v", "/var/run/docker.sock:/var/run/docker.sock",
-      "ghcr.io/railwayapp/railpack:latest",
-      "build", "--name", imageName, "/workspace",
-    ];
+    const args = ["build", "--name", imageName];
     if (envVars) {
       for (const [k, v] of Object.entries(envVars)) {
         args.push("--env", `${k}=${v}`);
       }
     }
+    args.push(repoPath);
 
-    await spawnStream("docker", args, { env: buildEnv }, logs, "[build][railpack]");
+    await spawnStream("railpack", args, { cwd: repoPath, env: buildEnv }, logs, "[build][railpack]");
     logs.push(`[build] Railpack build complete: ${imageName}`);
     return;
   }
