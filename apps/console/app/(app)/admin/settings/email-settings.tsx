@@ -464,7 +464,7 @@ export function EmailSettings() {
             </div>
           </div>
 
-          <Button type="submit" className="squircle" disabled={saving} aria-label="Save email settings">
+          <Button type="submit" className="squircle" disabled={saving || (!allowSmtp && provider === "smtp")} aria-label="Save email settings">
             {saving && <Loader2 className="size-4 animate-spin" />}
             Save
           </Button>
