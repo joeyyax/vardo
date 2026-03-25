@@ -1307,6 +1307,14 @@ run_env_migrations() {
 do_update() {
   [[ "$PLATFORM" != "macos" ]] && check_root
 
+  # --rebuild-only: re-exec'd after git pull to use updated script
+  if [[ "${1:-}" == "--rebuild-only" ]]; then
+    cd "$VARDO_DIR"
+    # Jump straight to rebuild
+    _do_rebuild
+    return
+  fi
+
   echo ""
   warn "The Vardo dashboard will be briefly unavailable during the update."
   dimln "            Your deployed apps are not affected — they continue running."
@@ -1411,7 +1419,16 @@ do_update() {
     fail "git pull failed — resolve conflicts manually in $VARDO_DIR. Run 'cd $VARDO_DIR && git status' to see what went wrong."
   fi
 
-  # Rebuild
+  # Re-exec with updated install.sh to pick up any script changes
+  if [ "${VARDO_REEXEC:-}" != "1" ]; then
+    export VARDO_REEXEC=1
+    exec bash "$VARDO_DIR/install.sh" update --rebuild-only "$@"
+  fi
+
+  _do_rebuild
+}
+
+_do_rebuild() {
   step "Rebuilding"
 
   # Migrate ACME storage from single file to per-resolver files
@@ -1439,14 +1456,6 @@ do_update() {
   echo ""
   echo -e "  ${BOLD}Dashboard${RESET}   https://${VARDO_DOMAIN:-localhost}"
   echo -e "  ${BOLD}Version${RESET}     $new_version"
-  [ -n "${backup_file:-}" ] && echo -e "  ${BOLD}Backup${RESET}      $backup_file"
-  echo ""
-
-  dimln "Rollback:"
-  dimln "  cd $VARDO_DIR"
-  dimln "  git checkout $previous_commit"
-  dimln "  docker compose build && docker compose up -d"
-  [ -n "${backup_file:-}" ] && dimln "  cat $backup_file | docker compose exec -T postgres psql -U host host"
   echo ""
 }
 
