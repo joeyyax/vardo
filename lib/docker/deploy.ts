@@ -598,6 +598,7 @@ export async function runDeployment(
       const port = domain.port || containerPort;
       compose = injectTraefikLabels(compose, {
         projectName: `${app.name}-${domain.id.slice(0, 6)}`,
+        appName: app.name,
         domain: domain.domain,
         containerPort: port,
         certResolver: domain.certResolver || "le",

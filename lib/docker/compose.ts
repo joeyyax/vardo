@@ -115,6 +115,7 @@ export function injectTraefikLabels(
     domain: string;
     containerPort: number;
     serviceName?: string;
+    appName?: string;
     certResolver?: string;
     ssl?: boolean;
   },
@@ -136,8 +137,11 @@ export function injectTraefikLabels(
     ...existing.labels,
     "traefik.enable": "true",
     [`traefik.http.routers.${projectName}.rule`]: `Host(\`${domain}\`)`,
-    [`traefik.http.services.${projectName}.loadbalancer.server.port`]:
+    // All domains share one Traefik service — keyed by app name, not per-domain router name
+    [`traefik.http.services.${opts.appName || projectName}.loadbalancer.server.port`]:
       String(containerPort),
+    // Explicitly link this router to the shared service
+    [`traefik.http.routers.${projectName}.service`]: opts.appName || projectName,
   };
 
   if (ssl) {
