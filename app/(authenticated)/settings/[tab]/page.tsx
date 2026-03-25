@@ -7,7 +7,7 @@ import { OrgEnvVarsEditor } from "../org-env-vars";
 import { OrgDomainEditor } from "../org-domain-editor";
 import { NotificationChannelsEditor } from "../notification-channels";
 import { DigestSettingsEditor } from "../digest-settings";
-import { TeamMembers } from "@/app/(app)/team/team-members";
+import { TeamMembers } from "@/app/(authenticated)/team/team-members";
 import { InvitationsPanel } from "../invitations";
 import { OrgGeneralSettings } from "../org-general-settings";
 import { BackupPage } from "@/components/backups/backup-page";
