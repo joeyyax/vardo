@@ -10,27 +10,16 @@ The web dashboard uses session-based authentication managed by Better Auth. Sess
 
 ### API Tokens
 
-> **Planned** — Tracked in [#172](https://github.com/joeyyax/vardo/issues/172)
+Create a token from **Settings → API Tokens**. Each token is scoped to a specific organization and user, stored as a SHA-256 hash, and shown only once at creation time.
 
-API token authentication is partially implemented. Token creation and management endpoints are available (`/api/v1/organizations/{orgId}/tokens`), and tokens are stored as SHA-256 hashes with a `vardo_` prefix. However, token-based request authentication is not yet wired into the middleware — tokens cannot be used to authenticate API requests yet.
-
-When fully implemented, you will be able to create a long-lived API token from **Settings → API Tokens** and use it as a Bearer token:
+Use the token as a Bearer header:
 
 ```bash
-curl -s https://vardo.example.com/api/v1/organizations \
-  -H "Authorization: Bearer vardo_<your-token>"
+curl -s https://vardo.example.com/api/v1/organizations/{orgId}/apps \
+  -H "Authorization: Bearer host_<your-token>"
 ```
 
-Tokens will be scoped to a specific organization and user, and displayed only once at creation time.
-
-### Programmatic Access (Current Workaround)
-
-Until token auth is wired up, use session cookies. Sign in via the browser, copy the session cookie:
-
-```bash
-curl -s https://vardo.example.com/api/v1/organizations \
-  -H "Cookie: better-auth.session_token=<your-session-token>"
-```
+Tokens authenticate all API endpoints the same way session cookies do. The token's organization determines which resources are accessible — no org-switching cookie is needed.
 
 ## Base URL
 
