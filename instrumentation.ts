@@ -34,7 +34,7 @@ export async function register() {
       backupTargetReady = ensureHostBackupTarget()
         .then(async (target) => {
           if (target) {
-            log.info(`Host backup target ready: ${target.name} (${target.type})`);
+            log.info(`Vardo backup target ready: ${target.name} (${target.type})`);
             // Create system backup job for Vardo's own database
             await ensureSystemBackupJob(target.id);
           } else {

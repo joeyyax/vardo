@@ -43,7 +43,7 @@ function alertTypeLabel(type: string): string {
   const labels: Record<string, string> = {
     "service-degraded": "Service Degraded",
     "disk-space": "Disk Space",
-    "host-restarted": "Host Restarted",
+    "host-restarted": "Vardo Restarted",
     "cert-expiring": "Certificate Expiring",
     "update-available": "Update Available",
   };

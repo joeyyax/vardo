@@ -2,7 +2,7 @@
 // Auto-Backup Configuration
 //
 // Provides three capabilities:
-// 1. ensureHostBackupTarget() — on app startup, auto-creates a Host-level
+// 1. ensureHostBackupTarget() — on app startup, auto-creates a system-level
 //    backup target from config file or DB settings if none exists.
 // 2. ensureSystemBackupJob() — creates a backup job for Vardo's own
 //    PostgreSQL database, linked via a system volume with pg_dump strategy.
@@ -22,18 +22,18 @@ import { logger } from "@/lib/logger";
 const log = logger.child("auto-backup");
 
 // ---------------------------------------------------------------------------
-// 1. Host-level backup target from config
+// 1. System-level backup target from config
 // ---------------------------------------------------------------------------
 
 /**
- * Check if a Host-level backup target exists. If not, but backup storage
+ * Check if a system-level backup target exists. If not, but backup storage
  * is configured (via config file or DB), auto-create one. This is the
  * global safety-net target that any org can fall back to.
  *
- * Returns the Host-level target if one exists (or was created), null otherwise.
+ * Returns the system-level target if one exists (or was created), null otherwise.
  */
 export async function ensureHostBackupTarget() {
-  // Check if a Host-level target already exists (organizationId IS NULL)
+  // Check if a system-level target already exists (organizationId IS NULL)
   const existing = await db.query.backupTargets.findFirst({
     where: isNull(backupTargets.organizationId),
   });
@@ -73,13 +73,13 @@ export async function ensureHostBackupTarget() {
     secretAccessKey: string;
   };
 
-  log.info(`Creating Host-level backup target (${type}://${storageConfig.bucket})`);
+  log.info(`Creating system-level backup target (${type}://${storageConfig.bucket})`);
 
   const [target] = await db
     .insert(backupTargets)
     .values({
       id: nanoid(),
-      organizationId: null, // Host-level
+      organizationId: null, // system-level
       name: "System default",
       type,
       config,
@@ -208,7 +208,7 @@ function staggeredSchedule(seed: string): string {
 /**
  * Resolve the best backup target for an organization:
  * 1. Org-level default target (takes precedence)
- * 2. Host-level target (fallback safety net)
+ * 2. System-level target (fallback safety net)
  * Returns null if no target is configured anywhere.
  */
 export async function resolveBackupTarget(organizationId: string) {
@@ -239,7 +239,7 @@ export async function resolveBackupTarget(organizationId: string) {
 
 /**
  * After a deploy detects persistent volumes, check if the app already has a
- * backup job. If not and a backup target exists (org-level or Host-level),
+ * backup job. If not and a backup target exists (org-level or system-level),
  * auto-create a daily backup job.
  *
  * Returns the created job ID, or null if skipped.

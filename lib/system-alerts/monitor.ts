@@ -92,7 +92,7 @@ async function checkDiskAlerts(health: Awaited<ReturnType<typeof getSystemHealth
         await emitAll({
           type: "system.disk-alert",
           title: `Disk usage at ${Math.round(disk.percent)}%`,
-          message: `Host disk usage has reached ${Math.round(disk.percent)}% (threshold: ${threshold}%). Free up space to prevent service disruption.`,
+          message: `Vardo disk usage has reached ${Math.round(disk.percent)}% (threshold: ${threshold}%). Free up space to prevent service disruption.`,
           percent: disk.percent,
           threshold,
           severity: isCritical ? "critical" : "warning",
@@ -109,7 +109,7 @@ async function checkDiskAlerts(health: Awaited<ReturnType<typeof getSystemHealth
 }
 
 // ---------------------------------------------------------------------------
-// Host restart detection
+// Restart detection
 // ---------------------------------------------------------------------------
 
 // Process-level flag: only evaluate once per process lifetime to prevent
@@ -150,12 +150,12 @@ async function checkHostRestart(): Promise<void> {
 
     await emitAll({
       type: "system.restart-loop",
-      title: "Host restarted",
-      message: `The host process restarted. Current uptime: ${Math.round(uptimeSeconds)}s. All services are reinitializing.`,
+      title: "Vardo restarted",
+      message: `The Vardo process restarted. Current uptime: ${Math.round(uptimeSeconds)}s. All services are reinitializing.`,
       uptimeSeconds,
     });
   } catch (err) {
-    log.error("Host restart check error:", err);
+    log.error("Restart check error:", err);
   }
 
   // Always update last_known_uptime
@@ -272,8 +272,8 @@ async function checkUpdateAlert(): Promise<void> {
 
     await emitAll({
       type: "system.update-available",
-      title: "Host update available",
-      message: `A new version of Host is available. Remote: ${remoteHead.slice(0, 8)} — Local: ${localHead.slice(0, 8)}. Pull and redeploy when ready.`,
+      title: "Vardo update available",
+      message: `A new version of Vardo is available. Remote: ${remoteHead.slice(0, 8)} — Local: ${localHead.slice(0, 8)}. Pull and redeploy when ready.`,
       remoteHead: remoteHead.slice(0, 8),
       localHead: localHead.slice(0, 8),
     });

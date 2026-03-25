@@ -16,6 +16,6 @@ labels: bug
 3.
 
 ## Environment
-- Host version:
+- Vardo version:
 - OS:
 - Browser (if UI):
