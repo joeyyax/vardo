@@ -63,7 +63,6 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
             sendEvent("stage", { app: appName, stage, status }),
           onTier: (tier, appNames) =>
             sendEvent("tier", { tier, apps: appNames }),
-          signal: request.signal,
         });
         sendEvent("done", {
           success: result.success,
@@ -74,6 +73,13 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
     }
 
     // Single app deploy (deployProject resolves default environment if not specified)
+    //
+    // NOTE: Do NOT pass request.signal to deployProject. The request signal
+    // fires when the SSE connection drops (client navigates away, reconnects,
+    // or hits backpressure), which is not the same as the user pressing
+    // "abort". Passing it through caused first deploys to report "aborted"
+    // because the SSE connection would briefly reset after the build step.
+    // Deploys should always run to completion once started.
     return createSSEResponse(request, async (sendEvent) => {
       const result = await deployProject({
         appId: appId,
@@ -83,7 +89,6 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
         environmentId,
         onLog: (line) => sendEvent("log", line),
         onStage: (stg, status) => sendEvent("stage", { stage: stg, status }),
-        signal: request.signal,
       });
       sendEvent("done", {
         deploymentId: result.deploymentId,

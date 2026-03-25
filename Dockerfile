@@ -31,10 +31,15 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # Runtime dependencies — git for cloning, docker-cli for orchestrating builds/deploys
-# Build tools (nixpacks, railpack) run as separate containers, not installed here
 RUN apt-get update -qq && \
     apt-get install -y --no-install-recommends git docker.io curl ca-certificates && \
     curl -sSL https://nixpacks.com/install.sh | bash && \
+    ARCH=$(uname -m) && \
+    if [ "$ARCH" = "aarch64" ]; then RAILPACK_ARCH="arm64"; else RAILPACK_ARCH="x86_64"; fi && \
+    RAILPACK_VERSION=$(curl -sSL https://api.github.com/repos/railwayapp/railpack/releases/latest | grep '"tag_name"' | cut -d'"' -f4) && \
+    curl -sSL "https://github.com/railwayapp/railpack/releases/download/${RAILPACK_VERSION}/railpack-${RAILPACK_VERSION}-${RAILPACK_ARCH}-unknown-linux-musl.tar.gz" \
+      | tar xz -C /usr/local/bin railpack && \
+    chmod +x /usr/local/bin/railpack && \
     mkdir -p /usr/local/lib/docker/cli-plugins && \
     curl -sSL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m)" -o /usr/local/lib/docker/cli-plugins/docker-compose && \
     chmod +x /usr/local/lib/docker/cli-plugins/docker-compose && \

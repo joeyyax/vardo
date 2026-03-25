@@ -390,7 +390,7 @@ Base path for all file references: `/Users/joeyyax/Projects/Sites/joeyyax/host/`
 
 **Invitations tab** (`[tab]/page.tsx:110-144`): Lists invitations with id, email, role, status (pending/accepted/expired), createdAt, expiresAt, inviter info.
 
-**Domains tab** (`[tab]/page.tsx:50-58`): Passes `defaultDomain` from `VARDO_BASE_DOMAIN` env var (fallback "joeyyax.dev"), `sslEnabled`, `serverIP` from `VARDO_SERVER_IP`.
+**Domains tab** (`[tab]/page.tsx:50-58`): Passes `defaultDomain` from `VARDO_BASE_DOMAIN` env var (fallback "localhost"), `sslEnabled`, `serverIP` from `VARDO_SERVER_IP`.
 
 ### 4.2 User Settings (`app/(authenticated)/user/settings/layout.tsx`)
 

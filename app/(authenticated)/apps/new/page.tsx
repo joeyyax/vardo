@@ -4,6 +4,7 @@ import { projects } from "@/lib/db/schema";
 import { getCurrentOrg } from "@/lib/auth/session";
 import { eq, asc } from "drizzle-orm";
 import { loadTemplates } from "@/lib/templates/load";
+import { getInstanceConfig } from "@/lib/system-settings";
 import { NewAppFlow } from "./new-app-flow";
 
 export default async function NewAppPage({
@@ -20,7 +21,7 @@ export default async function NewAppPage({
 
   const orgId = orgData.organization.id;
 
-  const [templateList, parentAppList] = await Promise.all([
+  const [templateList, parentAppList, instanceConfig] = await Promise.all([
     loadTemplates(),
     // Load projects for grouping
     db.query.projects.findMany({
@@ -28,6 +29,7 @@ export default async function NewAppPage({
       columns: { id: true, name: true, color: true },
       orderBy: [asc(projects.name)],
     }),
+    getInstanceConfig(),
   ]);
 
   const parentOptions = parentAppList.map((p) => ({
@@ -45,6 +47,7 @@ export default async function NewAppPage({
       orgSlug={orgData.organization.slug}
       templates={cleanTemplates}
       parentApps={parentOptions}
+      baseDomain={instanceConfig.baseDomain}
       defaultParentId={preselectedParentId}
       defaultProjectId={preselectedProjectId}
       defaultName={prefilledName}
