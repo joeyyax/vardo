@@ -9,6 +9,18 @@ import { eq, and } from "drizzle-orm";
 export const CURRENT_ORG_COOKIE = "host_current_org";
 
 /**
+ * Auth method discriminator for session results.
+ * Token auth stashes the bound orgId so getCurrentOrg can use it
+ * without relying on cookies.
+ */
+type TokenAuthMeta = { authMethod: "token"; tokenOrgId: string };
+type SessionAuthMeta = { authMethod: "session" };
+type AuthMeta = TokenAuthMeta | SessionAuthMeta;
+
+// Augmented session type returned by getSession
+type SessionResult = Awaited<ReturnType<typeof auth.api.getSession>> & AuthMeta;
+
+/**
  * Get the current session on the server.
  *
  * Resolution order:
@@ -17,7 +29,7 @@ export const CURRENT_ORG_COOKIE = "host_current_org";
  *
  * Returns null if not authenticated.
  */
-export const getSession = cache(async () => {
+export const getSession = cache(async (): Promise<SessionResult | null> => {
   const reqHeaders = await headers();
 
   // Check for Bearer token first (API token auth)
@@ -43,7 +55,6 @@ export const getSession = cache(async () => {
             .where(eq(apiTokens.id, token.id))
             .catch(() => {});
 
-          // Return a session-like object compatible with Better Auth's shape
           return {
             user: {
               id: tokenUser.id,
@@ -62,24 +73,30 @@ export const getSession = cache(async () => {
               createdAt: new Date(),
               updatedAt: new Date(),
             },
-            // Stash the token's org for getCurrentOrg to use
-            _tokenOrgId: token.organizationId,
-          };
+            authMethod: "token",
+            tokenOrgId: token.organizationId,
+          } as SessionResult;
         }
       }
     }
   }
 
   // Fall back to session cookie
-  return auth.api.getSession({
+  const sessionResult = await auth.api.getSession({
     headers: reqHeaders,
   });
+
+  if (!sessionResult) return null;
+
+  return {
+    ...sessionResult,
+    authMethod: "session",
+  } as SessionResult;
 });
 
 /**
  * Get the current user's organization.
- * Checks for a stored org preference cookie first,
- * then falls back to the user's first organization.
+ * Token auth uses the token's bound org. Session auth uses cookie preference.
  */
 export const getCurrentOrg = cache(async () => {
   const session = await getSession();
@@ -88,12 +105,10 @@ export const getCurrentOrg = cache(async () => {
     return null;
   }
 
-  // If authenticated via API token, use the token's bound org
-  const tokenOrgId = (session as Record<string, unknown>)?._tokenOrgId as string | undefined;
-
-  // Check for org preference: token org > cookie > first membership
-  const cookieStore = await cookies();
-  const preferredOrgId = tokenOrgId || cookieStore.get(CURRENT_ORG_COOKIE)?.value;
+  // Determine preferred org: token's bound org > cookie > first membership
+  const preferredOrgId =
+    (session.authMethod === "token" ? session.tokenOrgId : undefined) ||
+    (await cookies()).get(CURRENT_ORG_COOKIE)?.value;
 
   // If there's a preferred org, verify user has access to it
   if (preferredOrgId) {
