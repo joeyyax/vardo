@@ -1,6 +1,9 @@
 import { render } from "@react-email/components";
 import type { ReactElement } from "react";
 import { getEmailProviderConfig, type EmailProviderConfig } from "@/lib/system-settings";
+import { logger } from "@/lib/logger";
+
+const log = logger.child("email");
 
 type SendEmailOpts = {
   to: string;
@@ -16,9 +19,9 @@ export async function sendEmail({ to, subject, template, from, replyTo }: SendEm
   const config = await getEmailProviderConfig();
 
   if (!config) {
-    console.log(`[email] Email provider not configured — would send to ${to}: ${subject}`);
+    log.info(`Email provider not configured — would send to ${to}: ${subject}`);
     const html = await render(template);
-    console.log(`[email] Preview:\n${html.slice(0, 500)}...`);
+    log.info(`Preview:\n${html.slice(0, 500)}...`);
     return { success: true, dev: true };
   }
 
@@ -40,7 +43,7 @@ export async function sendEmail({ to, subject, template, from, replyTo }: SendEm
     case "smtp":
       return sendViaSmtp(config, { to, subject, html, text, from: fromAddress, replyTo: replyToAddress });
     default:
-      console.error(`[email] Unknown provider: ${(config as EmailProviderConfig).provider}`);
+      log.error(`Unknown provider: ${(config as EmailProviderConfig).provider}`);
       return { success: false, error: `Unknown email provider` };
   }
 }
@@ -74,7 +77,7 @@ async function sendViaMailpace(
 
   if (!res.ok) {
     const body = await res.text();
-    console.error(`[email] Mailpace error: ${res.status} ${body.slice(0, 200)}`);
+    log.error(`Mailpace error: ${res.status} ${body.slice(0, 200)}`);
     return { success: false, error: `Mailpace: ${res.status}` };
   }
 
@@ -109,7 +112,7 @@ async function sendViaResend(
 
   if (!res.ok) {
     const body = await res.text();
-    console.error(`[email] Resend error: ${res.status} ${body.slice(0, 200)}`);
+    log.error(`Resend error: ${res.status} ${body.slice(0, 200)}`);
     return { success: false, error: `Resend: ${res.status}` };
   }
 
@@ -146,7 +149,7 @@ async function sendViaPostmark(
 
   if (!res.ok) {
     const body = await res.text();
-    console.error(`[email] Postmark error: ${res.status} ${body.slice(0, 200)}`);
+    log.error(`Postmark error: ${res.status} ${body.slice(0, 200)}`);
     return { success: false, error: `Postmark: ${res.status}` };
   }
 
@@ -189,7 +192,7 @@ async function sendViaSmtp(
     return { success: true };
   } catch (err) {
     const message = err instanceof Error ? err.message : "SMTP send failed";
-    console.error(`[email] SMTP error: ${message}`);
+    log.error(`SMTP error: ${message}`);
     return { success: false, error: message };
   }
 }

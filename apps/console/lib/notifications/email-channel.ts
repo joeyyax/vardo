@@ -1,6 +1,9 @@
 import { createElement } from "react";
 import type { NotificationChannel, NotificationEvent } from "./port";
 import { sendEmail } from "@/lib/email/send";
+import { logger } from "@/lib/logger";
+
+const log = logger.child("notifications");
 import { DeploySuccessEmail } from "@/lib/email/templates/deploy-success";
 import { DeployFailedEmail } from "@/lib/email/templates/deploy-failed";
 import { BackupSuccessEmail } from "@/lib/email/templates/backup-success";
@@ -25,8 +28,8 @@ export class EmailNotificationChannel implements NotificationChannel {
           await sendEmail({ to: recipient, subject: event.title, template });
         }
       } catch (err) {
-        console.error(
-          `[notifications] Failed to send email to ${recipient}:`,
+        log.error(
+          `Failed to send email to ${recipient}:`,
           err,
         );
       }

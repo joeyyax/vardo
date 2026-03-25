@@ -4,6 +4,9 @@ import { eq } from "drizzle-orm";
 import { emit } from "@/lib/notifications/dispatch";
 import { queryDiskWriteRange } from "./store";
 import type { ContainerMetrics } from "./cadvisor";
+import { logger } from "@/lib/logger";
+
+const log = logger.child("disk-write-alert");
 
 // Default threshold: 1 GB/hour
 const DEFAULT_THRESHOLD_BYTES = 1_073_741_824;
@@ -117,15 +120,15 @@ export async function checkDiskWriteAlerts(
               window: "1h",
             });
 
-            console.warn(
-              `[disk-write-alert] ${appName} (${container.containerName}): ` +
+            log.warn(
+              `${appName} (${container.containerName}): ` +
               `${formatBytes(writtenInHour)}/hour exceeds ${formatThreshold(threshold)} threshold`,
             );
           }
         }
       } catch (err) {
-        console.error(
-          `[disk-write-alert] Error checking ${container.containerName}:`,
+        log.error(
+          `Error checking ${container.containerName}:`,
           (err as Error).message,
         );
       }

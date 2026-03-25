@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { redis } from "@/lib/redis";
 import { sql } from "drizzle-orm";
+import { logger } from "@/lib/logger";
+
+const log = logger.child("health");
 
 const TIMEOUT_MS = 5_000;
 
@@ -26,8 +29,8 @@ export async function GET() {
   } catch (err) {
     healthy = false;
     services.postgres = "error";
-    console.error(
-      "[health] postgres check failed:",
+    log.error(
+      "postgres check failed:",
       err instanceof Error ? err.message : err,
     );
   }
@@ -40,8 +43,8 @@ export async function GET() {
   } catch (err) {
     healthy = false;
     services.redis = "error";
-    console.error(
-      "[health] redis check failed:",
+    log.error(
+      "redis check failed:",
       err instanceof Error ? err.message : err,
     );
   }

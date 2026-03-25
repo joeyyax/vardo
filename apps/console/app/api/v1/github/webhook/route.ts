@@ -6,8 +6,11 @@ import { eq, and } from "drizzle-orm";
 import { deployProject } from "@/lib/docker/deploy";
 import { createPreview, destroyPreview } from "@/lib/docker/preview";
 import { getGitHubAppConfig } from "@/lib/system-settings";
+import { logger } from "@/lib/logger";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+
+const log = logger.child("webhook");
 
 // POST /api/v1/github/webhook — GitHub App webhook receiver
 async function handler(request: NextRequest) {
@@ -22,14 +25,14 @@ async function handler(request: NextRequest) {
     const githubConfig = await getGitHubAppConfig();
     const secret = githubConfig?.webhookSecret || process.env.GITHUB_WEBHOOK_SECRET;
     if (!secret) {
-      console.error("[webhook] GITHUB_WEBHOOK_SECRET is not set — webhook endpoint is disabled");
+      log.error("GITHUB_WEBHOOK_SECRET is not set — webhook endpoint is disabled");
       return NextResponse.json(
         { error: "Webhook not configured: GITHUB_WEBHOOK_SECRET is required" },
         { status: 500 }
       );
     }
     if (!signature) {
-      console.error("[webhook] Missing signature header");
+      log.error("Missing signature header");
       return NextResponse.json({ error: "Missing signature" }, { status: 401 });
     }
     const expected = "sha256=" + createHmac("sha256", secret).update(body).digest("hex");
@@ -37,7 +40,7 @@ async function handler(request: NextRequest) {
       signature.length !== expected.length ||
       !timingSafeEqual(Buffer.from(signature), Buffer.from(expected))
     ) {
-      console.error("[webhook] Invalid signature");
+      log.error("Invalid signature");
       return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
     }
 
@@ -55,7 +58,7 @@ async function handler(request: NextRequest) {
 
     return NextResponse.json({ ok: true, skipped: event });
   } catch (error) {
-    console.error("[webhook] Error:", error);
+    log.error("Error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
@@ -72,7 +75,7 @@ async function handlePush(payload: Record<string, unknown>): Promise<NextRespons
     return NextResponse.json({ ok: true, skipped: "missing repo or branch" });
   }
 
-  console.log(`[webhook] Push to ${repoFullName}:${branch} by ${pusher} — ${commitSha?.slice(0, 7)} ${commitMessage?.split("\n")[0]}`);
+  log.info(`Push to ${repoFullName}:${branch} by ${pusher} — ${commitSha?.slice(0, 7)} ${commitMessage?.split("\n")[0]}`);
 
   // Find all apps that match this repo + branch with autoDeploy enabled
   const gitUrl = `https://github.com/${repoFullName}.git`;
@@ -89,14 +92,14 @@ async function handlePush(payload: Record<string, unknown>): Promise<NextRespons
   );
 
   if (matching.length === 0) {
-    console.log(`[webhook] No auto-deploy apps for ${repoFullName}:${branch}`);
+    log.info(`No auto-deploy apps for ${repoFullName}:${branch}`);
     return NextResponse.json({ ok: true, skipped: "no matching apps" });
   }
 
   // Trigger deploys
   const results = [];
   for (const app of matching) {
-    console.log(`[webhook] Auto-deploying ${app.displayName} (${app.name})`);
+    log.info(`Auto-deploying ${app.displayName} (${app.name})`);
     try {
       const result = await deployProject({
         appId: app.id,
@@ -134,7 +137,7 @@ async function handlePullRequest(payload: Record<string, unknown>): Promise<Next
   const branch = (pr.head as Record<string, unknown>)?.ref as string;
   const author = (pr.user as Record<string, unknown>)?.login as string;
 
-  console.log(`[webhook] PR #${prNumber} ${action} on ${repoFullName}:${branch} by ${author}`);
+  log.info(`PR #${prNumber} ${action} on ${repoFullName}:${branch} by ${author}`);
 
   if (action === "opened" || action === "reopened" || action === "synchronize") {
     // Create or update preview
@@ -148,7 +151,7 @@ async function handlePullRequest(payload: Record<string, unknown>): Promise<Next
       });
 
       if (!result) {
-        console.log(`[webhook] No grouped project found for ${repoFullName}:${branch}`);
+        log.info(`No grouped project found for ${repoFullName}:${branch}`);
         return NextResponse.json({ ok: true, skipped: "no grouped project" });
       }
 
@@ -157,7 +160,7 @@ async function handlePullRequest(payload: Record<string, unknown>): Promise<Next
         try {
           await postPreviewComment(repoFullName, prNumber, result.domains);
         } catch (err) {
-          console.error("[webhook] Failed to post PR comment:", err);
+          log.error("Failed to post PR comment:", err);
         }
       }
 
@@ -170,7 +173,7 @@ async function handlePullRequest(payload: Record<string, unknown>): Promise<Next
         },
       });
     } catch (err) {
-      console.error(`[webhook] Preview creation failed for PR #${prNumber}:`, err);
+      log.error(`Preview creation failed for PR #${prNumber}:`, err);
       return NextResponse.json({ ok: true, error: "Preview creation failed" });
     }
   }
@@ -179,10 +182,10 @@ async function handlePullRequest(payload: Record<string, unknown>): Promise<Next
     // Destroy preview
     try {
       const destroyed = await destroyPreview(repoFullName, prNumber);
-      console.log(`[webhook] Preview for PR #${prNumber} ${destroyed ? "destroyed" : "not found"}`);
+      log.info(`Preview for PR #${prNumber} ${destroyed ? "destroyed" : "not found"}`);
       return NextResponse.json({ ok: true, destroyed });
     } catch (err) {
-      console.error(`[webhook] Preview cleanup failed for PR #${prNumber}:`, err);
+      log.error(`Preview cleanup failed for PR #${prNumber}:`, err);
       return NextResponse.json({ ok: true, error: "Preview cleanup failed" });
     }
   }
@@ -215,7 +218,7 @@ async function postPreviewComment(
   }
 
   if (!token) {
-    console.log("[webhook] No GitHub token available for PR comment");
+    log.info("No GitHub token available for PR comment");
     return;
   }
 

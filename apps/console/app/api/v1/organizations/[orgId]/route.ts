@@ -4,6 +4,9 @@ import { db } from "@/lib/db";
 import { organizations, memberships } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
+import { logger } from "@/lib/logger";
+
+const log = logger.child("api:organizations");
 
 const updateOrgSchema = z.object({
   name: z.string().min(1, "Organization name cannot be empty").max(100).trim().optional(),
@@ -53,7 +56,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       membership: { id: membership.id, role: membership.role },
     });
   } catch (error) {
-    console.error("Error fetching organization:", error);
+    log.error("Error fetching organization:", error);
     return NextResponse.json({ error: "Failed to fetch organization" }, { status: 500 });
   }
 }
@@ -100,7 +103,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ organization: org });
   } catch (error) {
-    console.error("Error updating organization:", error);
+    log.error("Error updating organization:", error);
     return NextResponse.json({ error: "Failed to update organization" }, { status: 500 });
   }
 }

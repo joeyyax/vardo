@@ -1,4 +1,7 @@
 import { tickDigestJobs } from "./tick";
+import { logger } from "@/lib/logger";
+
+const log = logger.child("digest");
 
 let interval: NodeJS.Timeout | null = null;
 let ticking = false;
@@ -6,17 +9,17 @@ let ticking = false;
 export function startDigestScheduler(): void {
   if (interval) return; // Already running
 
-  console.log("[digest] Scheduler started (60s interval)");
+  log.info("Scheduler started (60s interval)");
   interval = setInterval(async () => {
     if (ticking) {
-      console.log("[digest] Previous tick still running, skipping");
+      log.info("Previous tick still running, skipping");
       return;
     }
     ticking = true;
     try {
       await tickDigestJobs();
     } catch (err) {
-      console.error("[digest] Tick error:", err);
+      log.error("Tick error:", err);
     } finally {
       ticking = false;
     }
@@ -27,6 +30,6 @@ export function stopDigestScheduler(): void {
   if (interval) {
     clearInterval(interval);
     interval = null;
-    console.log("[digest] Scheduler stopped");
+    log.info("Scheduler stopped");
   }
 }

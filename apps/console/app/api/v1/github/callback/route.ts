@@ -4,6 +4,9 @@ import { githubAppInstallations } from "@/lib/db/schema";
 import { requireSession } from "@/lib/auth/session";
 import { getAppOctokit, verifyInstallationState } from "@/lib/github/app";
 import { nanoid } from "nanoid";
+import { logger } from "@/lib/logger";
+
+const log = logger.child("github-callback");
 
 // GET /api/v1/github/callback — GitHub redirects here after app installation
 export async function GET(request: NextRequest) {
@@ -17,7 +20,7 @@ export async function GET(request: NextRequest) {
   const setupAction = searchParams.get("setup_action");
   const state = searchParams.get("state");
 
-  console.log("[GitHub Callback] params:", {
+  log.info("params:", {
     installation_id: installationId,
     setup_action: setupAction,
     state: state ? "present" : "missing",
@@ -25,14 +28,14 @@ export async function GET(request: NextRequest) {
   });
 
   if (!installationId || !state) {
-    console.error("[GitHub Callback] Missing installation_id or state");
+    log.error("Missing installation_id or state");
     return NextResponse.redirect(`${baseUrl}/user/settings/connections?github=error`);
   }
 
   // Verify HMAC state
   const stateData = verifyInstallationState(state);
   if (!stateData) {
-    console.error("[GitHub Callback] Invalid or expired state");
+    log.error("Invalid or expired state");
     return NextResponse.redirect(`${baseUrl}/user/settings/connections?github=error`);
   }
 
@@ -41,12 +44,12 @@ export async function GET(request: NextRequest) {
   try {
     const session = await requireSession();
     if (session.user.id !== stateData.userId) {
-      console.error("[GitHub Callback] Session user mismatch");
+      log.error("Session user mismatch");
       return NextResponse.redirect(`${baseUrl}/user/settings/connections?github=error`);
     }
     userId = session.user.id;
   } catch {
-    console.error("[GitHub Callback] Not authenticated");
+    log.error("Not authenticated");
     return NextResponse.redirect(`${baseUrl}/user/settings/connections?github=error`);
   }
 
@@ -64,7 +67,7 @@ export async function GET(request: NextRequest) {
 
     const account = installation.account;
     if (!account) {
-      console.error("[GitHub Callback] No account on installation");
+      log.error("No account on installation");
       return NextResponse.redirect(`${baseUrl}/user/settings/connections?github=error`);
     }
 
@@ -99,13 +102,13 @@ export async function GET(request: NextRequest) {
         },
       });
 
-    console.log(
-      `[GitHub Callback] Saved installation ${installationId} for user ${userId} (${accountLogin})`
+    log.info(
+      `Saved installation ${installationId} for user ${userId} (${accountLogin})`
     );
 
     return NextResponse.redirect(`${baseUrl}/user/settings/connections?github=connected`);
   } catch (error) {
-    console.error("[GitHub Callback] Error:", error);
+    log.error("Error:", error);
     return NextResponse.redirect(`${baseUrl}/user/settings/connections?github=error`);
   }
 }
