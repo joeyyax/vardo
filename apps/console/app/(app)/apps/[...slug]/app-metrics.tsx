@@ -10,7 +10,7 @@ import { formatBytes, formatBytesShort, formatMemLimit, formatBytesRate, formatT
 import { CHART_COLORS, chartTickStyle, TIME_RANGES, type TimeRange } from "@/lib/metrics/constants";
 import { MetricsTooltip } from "@/components/metrics-chart";
 import type { ContainerPoint } from "@/lib/metrics/types";
-import { useMetricsStream } from "@/lib/hooks/use-metrics-stream";
+import { useMetricsStream } from "@/hooks/use-metrics-stream";
 
 type AppMetricsProps = {
   orgId: string;

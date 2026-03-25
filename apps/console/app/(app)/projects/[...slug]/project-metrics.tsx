@@ -10,7 +10,7 @@ import { ChartCard } from "@/components/app-status";
 import { formatBytes, formatBytesShort, formatTime } from "@/lib/metrics/format";
 import { CHART_COLORS, chartTickStyle, TIME_RANGES, type TimeRange } from "@/lib/metrics/constants";
 import { MetricsTooltip } from "@/components/metrics-chart";
-import { useMetricsStream } from "@/lib/hooks/use-metrics-stream";
+import { useMetricsStream } from "@/hooks/use-metrics-stream";
 
 type AppInfo = {
   id: string;

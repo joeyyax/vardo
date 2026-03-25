@@ -9,7 +9,7 @@ import { Activity, Box, Cpu, HardDrive, MemoryStick, Network, Loader2, RefreshCw
 import { Button } from "@/components/ui/button";
 import { formatBytes, formatBytesShort, formatMemLimit, formatTime } from "@/lib/metrics/format";
 import { CHART_COLORS, chartTickStyle, type TimeRange } from "@/lib/metrics/constants";
-import { useMetricsStream } from "@/lib/hooks/use-metrics-stream";
+import { useMetricsStream } from "@/hooks/use-metrics-stream";
 import { Sparkline } from "@/components/app-metrics-card";
 import { MetricsTooltip } from "@/components/metrics-chart";
 
