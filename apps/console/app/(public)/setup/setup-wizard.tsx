@@ -30,6 +30,7 @@ import {
   Upload,
 } from "lucide-react";
 import { toast } from "@/lib/messenger";
+import type { ProviderRestrictions } from "@/lib/config/provider-restrictions";
 
 const STEPS = [
   {
@@ -106,7 +107,19 @@ function saveProgress(step: StepId, completed: Set<StepId>) {
   } catch {}
 }
 
-export function SetupWizard({ meshEnabled = true }: { meshEnabled?: boolean }) {
+const DEFAULT_RESTRICTIONS: ProviderRestrictions = {
+  allowSmtp: true,
+  allowLocalBackups: true,
+  allowPasswordAuth: true,
+};
+
+export function SetupWizard({
+  meshEnabled = true,
+  providerRestrictions = DEFAULT_RESTRICTIONS,
+}: {
+  meshEnabled?: boolean;
+  providerRestrictions?: ProviderRestrictions;
+}) {
   const router = useRouter();
   const steps = meshEnabled ? STEPS : STEPS.filter((s) => s.id !== "instances");
   const [currentStep, setCurrentStep] = useState<StepId>("welcome");
@@ -312,6 +325,7 @@ export function SetupWizard({ meshEnabled = true }: { meshEnabled?: boolean }) {
               <EmailStep
                 loading={loading}
                 setLoading={setLoading}
+                allowSmtp={providerRestrictions.allowSmtp}
                 onComplete={() => {
                   markComplete("email");
                   goNext();
@@ -565,11 +579,13 @@ function AccountStep({
 function EmailStep({
   loading,
   setLoading,
+  allowSmtp = true,
   onComplete,
   onSkip,
 }: {
   loading: boolean;
   setLoading: (v: boolean) => void;
+  allowSmtp?: boolean;
   onComplete: () => void;
   onSkip: () => void;
 }) {
@@ -622,12 +638,12 @@ function EmailStep({
             <SelectItem value="resend">Resend</SelectItem>
             <SelectItem value="postmark">Postmark</SelectItem>
             <SelectItem value="mailpace">Mailpace</SelectItem>
-            <SelectItem value="smtp">SMTP</SelectItem>
+            {allowSmtp && <SelectItem value="smtp">SMTP</SelectItem>}
           </SelectContent>
         </Select>
       </div>
 
-      {provider === "smtp" && (
+      {provider === "smtp" && allowSmtp && (
         <>
           <p className="text-xs text-muted-foreground bg-muted/50 rounded-lg px-3 py-2">
             SMTP provides no delivery tracking or bounce detection. If a
