@@ -16,7 +16,7 @@ Use the token as a Bearer header:
 
 ```bash
 curl -s https://vardo.example.com/api/v1/organizations/{orgId}/apps \
-  -H "Authorization: Bearer host_<your-token>"
+  -H "Authorization: Bearer vardo_<your-token>"
 ```
 
 Tokens authenticate all API endpoints the same way session cookies do. The token's organization determines which resources are accessible — no org-switching cookie is needed.
