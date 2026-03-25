@@ -28,6 +28,7 @@ export const deployTypeEnum = pgEnum("deploy_type", [
   "image",
   "static",
   "nixpacks",
+  "railpack",
 ]);
 
 export const appStatusEnum = pgEnum("app_status", [
