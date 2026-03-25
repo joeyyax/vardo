@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps, projects } from "@/lib/db/schema";
-import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { stopProject } from "@/lib/docker/deploy";
 import { recordActivity } from "@/lib/activity";
+import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -46,11 +46,8 @@ const updateAppSchema = z.object({
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
-    const { organization } = await requireOrg();
-
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const app = await db.query.apps.findFirst({
       where: and(
@@ -83,11 +80,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
-    const { organization, session } = await requireOrg();
-
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();
     const parsed = updateAppSchema.safeParse(body);
@@ -146,7 +140,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       organizationId: orgId,
       action: "app.updated",
       appId,
-      userId: session.user.id,
+      userId: org.session.user.id,
       metadata: { changes: Object.keys(parsed.data) },
     });
 
@@ -160,13 +154,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
-    const { organization, membership, session } = await requireOrg();
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    if (membership.role !== "owner" && membership.role !== "admin") {
+    if (org.membership.role !== "owner" && org.membership.role !== "admin") {
       return NextResponse.json(
         { error: "Only owners and admins can delete apps" },
         { status: 403 }
@@ -207,7 +198,7 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     recordActivity({
       organizationId: orgId,
       action: "app.deleted",
-      userId: session.user.id,
+      userId: org.session.user.id,
       metadata: { name: app.name },
     });
 

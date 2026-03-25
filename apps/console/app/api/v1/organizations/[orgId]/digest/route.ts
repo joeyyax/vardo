@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { digestSettings, notificationChannels, organizations } from "@/lib/db/schema";
-import { requireOrg } from "@/lib/auth/session";
 import { requireAdmin } from "@/lib/auth/permissions";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { collectDigestData } from "@/lib/digest/collector";
 import { createChannel } from "@/lib/notifications/factory";
+import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 type RouteParams = { params: Promise<{ orgId: string }> };
 
@@ -27,10 +27,8 @@ const patchSchema = z
 export async function GET(_req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { organization } = await requireOrg();
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const setting = await db.query.digestSettings.findFirst({
       where: eq(digestSettings.organizationId, orgId),
@@ -66,10 +64,8 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 export async function PATCH(req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { organization } = await requireOrg();
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const parsed = patchSchema.safeParse(await req.json());
     if (!parsed.success) {
@@ -122,31 +118,28 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 export async function POST(_req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { organization, membership } = await requireOrg();
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    requireAdmin(org.membership.role);
 
-    requireAdmin(membership.role);
-
-    const org = await db.query.organizations.findFirst({
+    const orgRecord = await db.query.organizations.findFirst({
       where: eq(organizations.id, orgId),
       columns: { id: true, name: true },
     });
 
-    if (!org) {
+    if (!orgRecord) {
       return NextResponse.json({ error: "Organization not found" }, { status: 404 });
     }
 
-    const data = await collectDigestData(org.id, org.name);
+    const data = await collectDigestData(orgRecord.id, orgRecord.name);
 
     const event = {
       type: "weekly-digest" as const,
-      title: `Weekly Digest — ${org.name}`,
-      message: `Weekly health summary for ${org.name}: ${data.deploys.total} deploys, ${data.deploys.failed} failures.`,
+      title: `Weekly Digest — ${orgRecord.name}`,
+      message: `Weekly health summary for ${orgRecord.name}: ${data.deploys.total} deploys, ${data.deploys.failed} failures.`,
       metadata: {
-        orgName: org.name,
+        orgName: orgRecord.name,
         weekLabel: data.weekLabel,
         deploysTotal: String(data.deploys.total),
         deploysSucceeded: String(data.deploys.succeeded),

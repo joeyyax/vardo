@@ -3,13 +3,13 @@ import { z } from "zod";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { invitations, user } from "@/lib/db/schema";
-import { requireOrg } from "@/lib/auth/session";
 import { requireAdmin } from "@/lib/auth/permissions";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import crypto from "crypto";
 import { sendEmail } from "@/lib/email/send";
 import { InviteEmail } from "@/lib/email/templates/invite";
+import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 const createInvitationSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -25,11 +25,8 @@ type RouteParams = {
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { organization } = await requireOrg();
-
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const pending = await db.query.invitations.findMany({
       where: and(
@@ -55,13 +52,10 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { organization, membership, session } = await requireOrg();
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    requireAdmin(membership.role);
+    requireAdmin(org.membership.role);
 
     const body = await request.json();
     const parsed = createInvitationSchema.safeParse(body);
@@ -81,7 +75,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     // Fetch inviter name for the email (outside transaction — read-only)
     const inviter = await db.query.user.findFirst({
-      where: eq(user.id, session.user.id),
+      where: eq(user.id, org.session.user.id),
       columns: { name: true },
     });
 
@@ -112,7 +106,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           targetId,
           role,
           token,
-          invitedBy: session.user.id,
+          invitedBy: org.session.user.id,
           expiresAt,
         })
         .returning();
@@ -132,10 +126,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     await sendEmail({
       to: normalizedEmail,
-      subject: `You've been invited to ${organization.name}`,
+      subject: `You've been invited to ${org.organization.name}`,
       template: InviteEmail({
         email: normalizedEmail,
-        orgName: organization.name,
+        orgName: org.organization.name,
         inviterName: inviter?.name ?? undefined,
         inviteUrl,
       }),

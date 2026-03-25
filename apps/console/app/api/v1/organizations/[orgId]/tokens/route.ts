@@ -3,10 +3,10 @@ import { z } from "zod";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apiTokens } from "@/lib/db/schema";
-import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { createHash, randomBytes } from "crypto";
+import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 const createTokenSchema = z.object({ name: z.string().min(1, "Name is required").max(100).trim() }).strict();
 const deleteTokenSchema = z.object({ id: z.string().min(1, "Token ID is required") }).strict();
@@ -24,15 +24,12 @@ function hashToken(token: string): string {
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { session, organization } = await requireOrg();
-
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const tokens = await db.query.apiTokens.findMany({
       where: and(
-        eq(apiTokens.userId, session.user.id),
+        eq(apiTokens.userId, org.session.user.id),
         eq(apiTokens.organizationId, orgId)
       ),
       columns: {
@@ -64,11 +61,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { session, organization } = await requireOrg();
-
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();
     const parsed = createTokenSchema.safeParse(body);
@@ -85,7 +79,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     await db.insert(apiTokens).values({
       id: nanoid(),
-      userId: session.user.id,
+      userId: org.session.user.id,
       organizationId: orgId,
       name: parsed.data.name,
       tokenHash,
@@ -103,11 +97,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { session, organization } = await requireOrg();
-
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();
     const parsed = deleteTokenSchema.safeParse(body);
@@ -124,7 +115,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     const token = await db.query.apiTokens.findFirst({
       where: and(
         eq(apiTokens.id, id),
-        eq(apiTokens.userId, session.user.id),
+        eq(apiTokens.userId, org.session.user.id),
         eq(apiTokens.organizationId, orgId)
       ),
     });

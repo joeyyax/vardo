@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps, projects, domains, organizations, environments, volumes } from "@/lib/db/schema";
-import { requireOrg } from "@/lib/auth/session";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
@@ -10,6 +9,7 @@ import { generateSubdomain } from "@/lib/domains/auto-domain";
 import { allocatePorts } from "@/lib/docker/ports";
 import { recordActivity } from "@/lib/activity";
 import { isReservedSlug } from "@/lib/domains/reserved";
+import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -70,11 +70,8 @@ const createAppSchema = z
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { organization } = await requireOrg();
-
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const searchParams = request.nextUrl.searchParams;
     const limit = Math.min(parseInt(searchParams.get("limit") || "50", 10), 100);
@@ -118,11 +115,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const { organization, session } = await requireOrg();
-
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();
     const parsed = createAppSchema.safeParse(body);
@@ -141,7 +135,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       // Allow admins to bypass
       const { user: userTable } = await import("@/lib/db/schema");
       const dbUser = await db.query.user.findFirst({
-        where: eq(userTable.id, session.user.id),
+        where: eq(userTable.id, org.session.user.id),
         columns: { isAppAdmin: true },
       });
       if (!dbUser?.isAppAdmin) {
@@ -153,7 +147,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     // Fetch org for baseDomain
-    const org = await db.query.organizations.findFirst({
+    const orgRecord = await db.query.organizations.findFirst({
       where: eq(organizations.id, orgId),
       columns: { slug: true, baseDomain: true },
     });
@@ -239,7 +233,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     // Auto-create domain if requested
     if (data.generateDomain) {
-      const autoDomain = generateSubdomain(data.name, org?.baseDomain);
+      const autoDomain = generateSubdomain(data.name, orgRecord?.baseDomain);
       await db.insert(domains).values({
         id: nanoid(),
         appId,
@@ -253,7 +247,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       organizationId: orgId,
       action: "app.created",
       appId,
-      userId: session.user.id,
+      userId: org.session.user.id,
       metadata: { name: data.name, displayName: data.displayName },
     });
 

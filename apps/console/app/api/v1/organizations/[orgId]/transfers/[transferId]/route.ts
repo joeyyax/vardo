@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { appTransfers, memberships } from "@/lib/db/schema";
-import { requireOrg } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { acceptTransfer, rejectTransfer } from "@/lib/transfers/engine";
 import { recordActivity } from "@/lib/activity";
+import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 type RouteParams = {
   params: Promise<{ orgId: string; transferId: string }>;
@@ -21,11 +21,8 @@ const respondSchema = z.object({
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, transferId } = await params;
-    const { organization, session } = await requireOrg();
-
-    if (organization.id !== orgId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();
     const parsed = respondSchema.safeParse(body);
@@ -66,7 +63,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // Verify the current user is an owner/admin of the destination org
     const destMembership = await db.query.memberships.findFirst({
       where: and(
-        eq(memberships.userId, session.user.id),
+        eq(memberships.userId, org.session.user.id),
         eq(memberships.organizationId, orgId),
       ),
     });
@@ -84,14 +81,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const { action } = parsed.data;
 
     if (action === "accept") {
-      await acceptTransfer(transferId, session.user.id);
+      await acceptTransfer(transferId, org.session.user.id);
 
       // Record activity on both orgs
       recordActivity({
         organizationId: transfer.destinationOrgId,
         action: "transfer.accepted",
         appId: transfer.appId,
-        userId: session.user.id,
+        userId: org.session.user.id,
         metadata: {
           transferId,
           sourceOrgId: transfer.sourceOrgId,
@@ -102,7 +99,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         organizationId: transfer.sourceOrgId,
         action: "transfer.accepted",
         appId: transfer.appId,
-        userId: session.user.id,
+        userId: org.session.user.id,
         metadata: {
           transferId,
           destinationOrgId: transfer.destinationOrgId,
@@ -112,13 +109,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
       return NextResponse.json({ success: true, status: "accepted" });
     } else {
-      await rejectTransfer(transferId, session.user.id, "rejected");
+      await rejectTransfer(transferId, org.session.user.id, "rejected");
 
       recordActivity({
         organizationId: transfer.destinationOrgId,
         action: "transfer.rejected",
         appId: transfer.appId,
-        userId: session.user.id,
+        userId: org.session.user.id,
         metadata: {
           transferId,
           sourceOrgId: transfer.sourceOrgId,
@@ -129,7 +126,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         organizationId: transfer.sourceOrgId,
         action: "transfer.rejected",
         appId: transfer.appId,
-        userId: session.user.id,
+        userId: org.session.user.id,
         metadata: {
           transferId,
           destinationOrgId: transfer.destinationOrgId,

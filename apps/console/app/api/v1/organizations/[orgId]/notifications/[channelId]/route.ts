@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { notificationChannels } from "@/lib/db/schema";
-import { requireOrg } from "@/lib/auth/session";
+import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { maskChannelConfig } from "@/lib/notifications/mask-config";
@@ -13,8 +13,8 @@ const updateSchema = z.object({ name: z.string().min(1).max(100).optional(), con
 export async function GET(_req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, channelId } = await params;
-    const { organization } = await requireOrg();
-    if (organization.id !== orgId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const channel = await db.query.notificationChannels.findFirst({ where: and(eq(notificationChannels.id, channelId), eq(notificationChannels.organizationId, orgId)) });
     if (!channel) return NextResponse.json({ error: "Channel not found" }, { status: 404 });
     return NextResponse.json({ channel: maskChannelConfig(channel) });
@@ -24,8 +24,8 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 export async function PATCH(req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, channelId } = await params;
-    const { organization } = await requireOrg();
-    if (organization.id !== orgId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const parsed = updateSchema.safeParse(await req.json());
     if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
     const updates: Record<string, unknown> = { updatedAt: new Date() };
@@ -42,8 +42,8 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 export async function DELETE(_req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, channelId } = await params;
-    const { organization } = await requireOrg();
-    if (organization.id !== orgId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const [deleted] = await db.delete(notificationChannels).where(and(eq(notificationChannels.id, channelId), eq(notificationChannels.organizationId, orgId))).returning({ id: notificationChannels.id });
     if (!deleted) return NextResponse.json({ error: "Channel not found" }, { status: 404 });
     return NextResponse.json({ success: true });
