@@ -23,9 +23,13 @@ export function formatUptime(date: Date): string {
 export function Uptime({ since }: { since: Date }) {
   const [text, setText] = useState<string | null>(null);
   useEffect(() => {
-    setText(formatUptime(since));
-    const interval = setInterval(() => setText(formatUptime(since)), 1000);
-    return () => clearInterval(interval);
+    const update = () => setText(formatUptime(since));
+    const interval = setInterval(update, 1000);
+    const id = requestAnimationFrame(update);
+    return () => {
+      clearInterval(interval);
+      cancelAnimationFrame(id);
+    };
   }, [since]);
   if (!text) return null;
   return <span className="tabular-nums">{text}</span>;

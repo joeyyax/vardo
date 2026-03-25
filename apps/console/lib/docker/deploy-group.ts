@@ -226,7 +226,7 @@ export async function deployGroup(
   }
 
   // Resolve which app-level environmentId to use for each app
-  let appEnvironmentIds: Map<string, string | undefined> = new Map();
+  const appEnvironmentIds: Map<string, string | undefined> = new Map();
   if (opts.groupEnvironmentId) {
     // Find app-level environments linked to this group environment
     const envs = await db.query.environments.findMany({
