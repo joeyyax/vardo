@@ -1,6 +1,6 @@
 "use client";
 
-import { OrgMetrics } from "@/app/(app)/metrics/org-metrics";
+import { OrgMetrics } from "@/app/(authenticated)/metrics/org-metrics";
 
 export function AdminMetrics({ orgId }: { orgId: string }) {
   return (

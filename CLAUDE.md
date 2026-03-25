@@ -40,7 +40,7 @@ pnpm test             # Run tests
   /api
     /auth/[...all]                 # Better Auth handler
     /v1/organizations/[orgId]/...  # Versioned REST API (authenticated, org-scoped)
-  /(app)                           # Authenticated routes (projects, settings)
+  /(authenticated)                  # Authenticated routes (projects, settings)
   /(public)                        # Public routes (login)
 /components
   /ui                              # shadcn components
