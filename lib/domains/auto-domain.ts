@@ -1,4 +1,7 @@
-export const DEFAULT_BASE_DOMAIN = process.env.VARDO_BASE_DOMAIN || "joeyyax.dev";
+// Server-side only — reads from VARDO_BASE_DOMAIN env var.
+// Client components should receive baseDomain as a prop from the server
+// (via getInstanceConfig().baseDomain) rather than calling this directly.
+export const DEFAULT_BASE_DOMAIN = process.env.VARDO_BASE_DOMAIN || "";
 
 const ADJECTIVES = [
   "spicy",
