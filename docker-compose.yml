@@ -35,7 +35,7 @@ services:
       VARDO_PROJECTS_DIR: /var/lib/vardo/projects
       CADVISOR_URL: http://cadvisor:8080
       LOKI_URL: http://loki:3100
-      WIREGUARD_GATEWAY: 172.30.0.2
+      WIREGUARD_GATEWAY: 10.88.0.2
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:3000/api/health"]
       interval: 30s
@@ -81,7 +81,7 @@ services:
     networks:
       internal:
       mesh:
-        ipv4_address: 172.30.0.3
+        ipv4_address: 10.88.0.3
       vardo-network:
 
   postgres:
@@ -246,7 +246,7 @@ services:
     networks:
       internal:
       mesh:
-        ipv4_address: 172.30.0.2
+        ipv4_address: 10.88.0.2
       vardo-network:
     mem_limit: 64m
 
@@ -280,6 +280,6 @@ networks:
   mesh:
     ipam:
       config:
-        - subnet: 172.30.0.0/24
+        - subnet: 10.88.0.0/24
   vardo-network:
     external: true
