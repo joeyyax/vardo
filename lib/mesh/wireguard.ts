@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { generateKeyPairSync } from "node:crypto";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -28,6 +29,34 @@ function validatePeer(peer: WgPeer): void {
   if (peer.endpoint && !ENDPOINT_RE.test(peer.endpoint)) {
     throw new Error(`Invalid endpoint format: ${peer.endpoint}`);
   }
+}
+
+/**
+ * Generate a WireGuard-compatible X25519 keypair using Node.js built-in crypto.
+ *
+ * Use this in dev mode where the WireGuard container is not available.
+ * RFC 7748 clamping is applied to the private key so it is accepted by wg-quick.
+ */
+export function generateKeypairNative(): { privateKey: string; publicKey: string } {
+  const { privateKey: privDer, publicKey: pubDer } = generateKeyPairSync("x25519", {
+    privateKeyEncoding: { type: "pkcs8", format: "der" },
+    publicKeyEncoding: { type: "spki", format: "der" },
+  });
+
+  // PKCS#8 X25519: raw private key seed starts at byte 16
+  // SPKI X25519: raw public key starts at byte 12
+  const privRaw = Buffer.from(privDer).subarray(16);
+  const pubRaw = Buffer.from(pubDer).subarray(12);
+
+  // Apply RFC 7748 clamping — required by WireGuard
+  privRaw[0] &= 248;
+  privRaw[31] &= 127;
+  privRaw[31] |= 64;
+
+  return {
+    privateKey: privRaw.toString("base64"),
+    publicKey: pubRaw.toString("base64"),
+  };
 }
 
 /** Generate a WireGuard keypair inside the sidecar container. */
@@ -78,6 +107,38 @@ export function buildWgConfig(
     lines.push("PersistentKeepalive = 25");
     lines.push("");
   }
+
+  return lines.join("\n");
+}
+
+/**
+ * Build a vardo0.conf string for a dev machine joining the mesh.
+ *
+ * The dev machine acts as a WireGuard client — no ListenPort, one peer (the hub).
+ * AllowedIPs covers the full mesh subnet so all peer-to-peer traffic routes through
+ * the tunnel regardless of which instance is on the other end.
+ */
+export function buildDevWgConfig(
+  privateKey: string,
+  tunnelIp: string,
+  hub: { publicKey: string; endpoint: string }
+): string {
+  if (!WG_KEY_RE.test(privateKey)) {
+    throw new Error("Invalid WireGuard private key format");
+  }
+
+  const lines = [
+    "[Interface]",
+    `PrivateKey = ${privateKey}`,
+    `Address = ${tunnelIp}/24`,
+    "",
+    "[Peer]",
+    `PublicKey = ${hub.publicKey}`,
+    `Endpoint = ${hub.endpoint}`,
+    "AllowedIPs = 10.99.0.0/24",
+    "PersistentKeepalive = 25",
+    "",
+  ];
 
   return lines.join("\n");
 }
