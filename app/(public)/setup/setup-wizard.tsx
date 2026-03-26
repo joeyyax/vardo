@@ -101,7 +101,7 @@ const STEPS = [
   },
 ] as const;
 
-type StepId = (typeof STEPS)[number]["id"] | "import";
+type StepId = (typeof STEPS)[number]["id"] | "import" | "join-mesh";
 
 const STORAGE_KEY = "vardo-setup";
 
@@ -339,15 +339,48 @@ export function SetupWizard({
                       </p>
                     </div>
                   </Button>
+                  {meshEnabled && (
+                    <Button
+                      variant="outline"
+                      className="w-full h-14 squircle rounded-lg justify-start px-4"
+                      onClick={() => {
+                        markComplete("welcome");
+                        setCurrentStep("join-mesh" as StepId);
+                      }}
+                    >
+                      <Network className="w-5 h-5 mr-3 shrink-0" />
+                      <div className="text-left">
+                        <p className="text-sm font-medium">Join existing network</p>
+                        <p className="text-xs text-muted-foreground">
+                          Connect to another Vardo instance and inherit its config
+                        </p>
+                      </div>
+                    </Button>
+                  )}
                 </div>
               </div>
+            )}
+            {currentStep === ("join-mesh" as StepId) && (
+              <JoinMeshStep
+                loading={loading}
+                setLoading={setLoading}
+                onComplete={(inherited) => {
+                  markComplete("instances");
+                  if (inherited?.email) markComplete("email");
+                  if (inherited?.backup) markComplete("backup");
+                  if (inherited?.github) markComplete("github");
+                  setCurrentStep("account");
+                }}
+                onBack={() => {
+                  setCurrentStep("welcome");
+                }}
+              />
             )}
             {currentStep === ("import" as StepId) && (
               <ImportStep
                 loading={loading}
                 setLoading={setLoading}
                 onComplete={(importedSections) => {
-                  // Mark config steps as complete if they were imported
                   const sectionToStep: Record<string, StepId> = {
                     email: "email",
                     backup: "backup",
@@ -1323,6 +1356,105 @@ function DomainStep({
           )}
         </Button>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Join Mesh (welcome path — before account creation)
+// ---------------------------------------------------------------------------
+
+function JoinMeshStep({
+  loading,
+  setLoading,
+  onComplete,
+  onBack,
+}: {
+  loading: boolean;
+  setLoading: (v: boolean) => void;
+  onComplete: (inherited?: { email?: boolean; backup?: boolean; github?: boolean }) => void;
+  onBack: () => void;
+}) {
+  const [token, setToken] = useState("");
+
+  async function handleJoin(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const res = await fetch("/api/v1/admin/mesh/join", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: token.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to join");
+      }
+      const inherited = data.inheritedConfig;
+      const parts: string[] = [];
+      if (inherited?.email) parts.push("email");
+      if (inherited?.backup) parts.push("backup");
+      if (inherited?.github) parts.push("GitHub");
+      if (parts.length > 0) {
+        toast.success(`Connected — inherited ${parts.join(", ")} config`);
+      } else {
+        toast.success("Connected to instance");
+      }
+      onComplete(inherited);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to join mesh");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-xl font-semibold">Join existing network</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          Connect to another Vardo instance over an encrypted WireGuard tunnel.
+          Settings like email, backups, and GitHub will carry over so you
+          don&apos;t have to configure them again.
+        </p>
+      </div>
+
+      <form onSubmit={handleJoin} className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="meshToken">Invite token</Label>
+          <textarea
+            id="meshToken"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            placeholder="Paste an invite token from the other instance"
+            required
+            rows={3}
+            className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 font-mono"
+          />
+          <p className="text-xs text-muted-foreground">
+            On the instance you want to connect to, go to Settings &rarr;
+            Instances and generate an invite token.
+          </p>
+        </div>
+
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            className="squircle flex-1"
+            onClick={onBack}
+          >
+            Back
+          </Button>
+          <Button
+            type="submit"
+            className="squircle flex-1"
+            disabled={loading || !token.trim()}
+          >
+            {loading ? <Loader2 className="size-4 animate-spin" /> : "Join"}
+          </Button>
+        </div>
+      </form>
     </div>
   );
 }
