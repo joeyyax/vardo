@@ -197,32 +197,18 @@ function parseInspectPorts(
 // Containers
 // ---------------------------------------------------------------------------
 
-export async function listContainers(projectLabel?: string, environmentLabel?: string): Promise<ContainerInfo[]> {
-  const filters: Record<string, string[]> = {};
-  if (projectLabel) {
-    filters.label = [`host.project=${projectLabel}`];
-    if (environmentLabel) {
-      filters.label.push(`host.environment=${environmentLabel}`);
-    }
-  }
+type RawContainer = {
+  Id: string;
+  Names: string[];
+  Image: string;
+  State: string;
+  Status: string;
+  Ports: { PrivatePort: number; PublicPort?: number; Type: string }[];
+  Labels: Record<string, string>;
+};
 
-  const query = Object.keys(filters).length
-    ? `?filters=${encodeURIComponent(JSON.stringify(filters))}`
-    : "";
-
-  const containers = await dockerRequest<
-    {
-      Id: string;
-      Names: string[];
-      Image: string;
-      State: string;
-      Status: string;
-      Ports: { PrivatePort: number; PublicPort?: number; Type: string }[];
-      Labels: Record<string, string>;
-    }[]
-  >("GET", `/containers/json${query}`);
-
-  return containers.map((c) => ({
+function mapRawContainer(c: RawContainer): ContainerInfo {
+  return {
     id: c.Id,
     name: (c.Names[0] ?? "").replace(/^\//, ""),
     image: c.Image,
@@ -230,7 +216,32 @@ export async function listContainers(projectLabel?: string, environmentLabel?: s
     status: c.Status,
     ports: parseListPorts(c.Ports),
     labels: c.Labels ?? {},
-  }));
+  };
+}
+
+export async function listContainers(projectLabel?: string, environmentLabel?: string): Promise<ContainerInfo[]> {
+  if (!projectLabel) {
+    const containers = await dockerRequest<RawContainer[]>("GET", "/containers/json");
+    return containers.map(mapRawContainer);
+  }
+
+  // Query both vardo.* (new) and host.* (legacy) label prefixes and deduplicate by ID
+  // to support containers deployed before the label rename.
+  const results = await Promise.all(
+    ["vardo", "host"].map((prefix) => {
+      const labels = [`${prefix}.project=${projectLabel}`];
+      if (environmentLabel) labels.push(`${prefix}.environment=${environmentLabel}`);
+      const query = `?filters=${encodeURIComponent(JSON.stringify({ label: labels }))}`;
+      return dockerRequest<RawContainer[]>("GET", `/containers/json${query}`);
+    })
+  );
+
+  const seen = new Set<string>();
+  return results.flat().filter((c) => {
+    if (seen.has(c.Id)) return false;
+    seen.add(c.Id);
+    return true;
+  }).map(mapRawContainer);
 }
 
 export async function inspectContainer(id: string): Promise<ContainerInspect> {
@@ -450,7 +461,7 @@ export async function getContainerStats(containerId: string): Promise<ContainerS
 
 /**
  * List all running containers that belong to a project.
- * Uses the `host.project` label set during deploy.
+ * Uses the `vardo.project` label set during deploy.
  */
 export async function getProjectContainers(projectName: string): Promise<ContainerInfo[]> {
   return listContainers(projectName);
@@ -537,7 +548,7 @@ export async function getPerProjectDiskUsage(): Promise<Map<string, number>> {
 
   // Containers: writable layer + image size (deduplicated per project)
   for (const c of raw.Containers || []) {
-    const project = c.Labels?.["host.project"];
+    const project = c.Labels?.["vardo.project"] || c.Labels?.["host.project"];
     if (!project) continue;
 
     // Container writable layer
@@ -556,13 +567,13 @@ export async function getPerProjectDiskUsage(): Promise<Map<string, number>> {
     }
   }
 
-  // Build a map from compose project name -> host project name using container labels
+  // Build a map from compose project name -> vardo project name using container labels
   const composeToProject = new Map<string, string>();
   for (const c of raw.Containers || []) {
-    const hostProject = c.Labels?.["host.project"];
+    const vardoProject = c.Labels?.["vardo.project"] || c.Labels?.["host.project"];
     const composeProject = c.Labels?.["com.docker.compose.project"];
-    if (hostProject && composeProject) {
-      composeToProject.set(composeProject, hostProject);
+    if (vardoProject && composeProject) {
+      composeToProject.set(composeProject, vardoProject);
     }
   }
 
