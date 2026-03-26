@@ -15,6 +15,13 @@
       "when": 1774474788488,
       "tag": "0001_funny_wildside",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1774488267893,
+      "tag": "0002_ordinary_black_widow",
+      "breakpoints": true
     }
   ]
 }

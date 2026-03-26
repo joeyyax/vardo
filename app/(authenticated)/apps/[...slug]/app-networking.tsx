@@ -11,6 +11,7 @@ import {
   Star,
   Copy,
   Info,
+  ArrowRight,
 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { Button } from "@/components/ui/button";
@@ -53,11 +54,15 @@ export function AppNetworking({
   const [newDomain, setNewDomain] = useState("");
   const [newDomainPort, setNewDomainPort] = useState("");
   const [newDomainResolver, setNewDomainResolver] = useState("");
+  const [newDomainRedirectTo, setNewDomainRedirectTo] = useState("");
+  const [newDomainRedirectCode, setNewDomainRedirectCode] = useState("301");
   const [deletingDomainId, setDeletingDomainId] = useState<string | null>(null);
   const [editingDomainId, setEditingDomainId] = useState<string | null>(null);
   const [editDomainValue, setEditDomainValue] = useState("");
   const [editDomainPort, setEditDomainPort] = useState("");
   const [editDomainResolver, setEditDomainResolver] = useState("");
+  const [editDomainRedirectTo, setEditDomainRedirectTo] = useState("");
+  const [editDomainRedirectCode, setEditDomainRedirectCode] = useState("301");
   const [availableIssuers, setAvailableIssuers] = useState<string[]>(["le", "google"]);
   const [dnsDomainId, setDnsDomainId] = useState<string | null>(null);
   const [domainStatuses, setDomainStatuses] = useState<Record<string, "checking" | "resolving" | "not-configured">>({});
@@ -164,6 +169,10 @@ export function AppNetworking({
             domain: newDomain.trim(),
             port: newDomainPort ? parseInt(newDomainPort, 10) : undefined,
             ...(newDomainResolver && { certResolver: newDomainResolver }),
+            ...(newDomainRedirectTo.trim() && {
+              redirectTo: newDomainRedirectTo.trim(),
+              redirectCode: parseInt(newDomainRedirectCode, 10),
+            }),
           }),
         }
       );
@@ -177,6 +186,8 @@ export function AppNetworking({
       setNewDomain("");
       setNewDomainPort("");
       setNewDomainResolver("");
+      setNewDomainRedirectTo("");
+      setNewDomainRedirectCode("301");
       router.refresh();
     } catch {
       toast.error("Failed to add domain");
@@ -224,6 +235,10 @@ export function AppNetworking({
             domain: editDomainValue.trim(),
             port: editDomainPort ? parseInt(editDomainPort, 10) : null,
             ...(editDomainResolver !== undefined && { certResolver: editDomainResolver || "le" }),
+            redirectTo: editDomainRedirectTo.trim() || null,
+            ...(editDomainRedirectTo.trim() && {
+              redirectCode: parseInt(editDomainRedirectCode, 10) as 301 | 302,
+            }),
           }),
         }
       );
@@ -259,6 +274,8 @@ export function AppNetworking({
               setNewDomain("");
               setNewDomainPort("");
               setNewDomainResolver("");
+              setNewDomainRedirectTo("");
+              setNewDomainRedirectCode("301");
               setDomainOpen(!domainOpen);
             }}
           >
@@ -304,6 +321,30 @@ export function AppNetworking({
                 {availableIssuers.includes("zerossl") && <option value="zerossl">ZeroSSL</option>}
               </select>
             </div>
+            <div className="grid gap-1.5 flex-1">
+              <label className="text-xs text-muted-foreground">Redirect to</label>
+              <input
+                type="url"
+                placeholder="https://example.com"
+                value={newDomainRedirectTo}
+                onChange={(e) => setNewDomainRedirectTo(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleDomainAdd(); }}
+                className="h-9 rounded-md border bg-background px-3 text-sm font-mono"
+              />
+            </div>
+            {newDomainRedirectTo.trim() && (
+              <div className="grid gap-1.5">
+                <label className="text-xs text-muted-foreground">Code</label>
+                <select
+                  value={newDomainRedirectCode}
+                  onChange={(e) => setNewDomainRedirectCode(e.target.value)}
+                  className="h-9 rounded-md border bg-background px-2 text-sm"
+                >
+                  <option value="301">301 Permanent</option>
+                  <option value="302">302 Temporary</option>
+                </select>
+              </div>
+            )}
             <Button size="sm" onClick={handleDomainAdd} disabled={domainSaving || !newDomain.trim()}>
               {domainSaving ? <Loader2 className="size-3.5 animate-spin" /> : "Add"}
             </Button>
@@ -367,6 +408,30 @@ export function AppNetworking({
                           {availableIssuers.includes("zerossl") && <option value="zerossl">ZeroSSL</option>}
                         </select>
                       </div>
+                      <div className="grid gap-1.5 flex-1">
+                        <label className="text-xs text-muted-foreground">Redirect to</label>
+                        <input
+                          type="url"
+                          placeholder="https://example.com"
+                          value={editDomainRedirectTo}
+                          onChange={(e) => setEditDomainRedirectTo(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") handleDomainUpdate(domain.id); if (e.key === "Escape") setEditingDomainId(null); }}
+                          className="h-9 rounded-md border bg-background px-3 text-sm font-mono"
+                        />
+                      </div>
+                      {editDomainRedirectTo.trim() && (
+                        <div className="grid gap-1.5">
+                          <label className="text-xs text-muted-foreground">Code</label>
+                          <select
+                            value={editDomainRedirectCode}
+                            onChange={(e) => setEditDomainRedirectCode(e.target.value)}
+                            className="h-9 rounded-md border bg-background px-2 text-sm"
+                          >
+                            <option value="301">301 Permanent</option>
+                            <option value="302">302 Temporary</option>
+                          </select>
+                        </div>
+                      )}
                       <Button size="sm" onClick={() => handleDomainUpdate(domain.id)} disabled={domainSaving || !editDomainValue.trim()}>
                         {domainSaving ? <Loader2 className="size-3.5 animate-spin" /> : "Save"}
                       </Button>
@@ -425,9 +490,16 @@ export function AppNetworking({
                         Primary
                       </Badge>
                     )}
-                    {domain.port && (
+                    {domain.redirectTo ? (
+                      <Badge variant="outline" className="text-xs gap-1 shrink-0">
+                        <ArrowRight className="size-3" />
+                        {domain.redirectCode ?? 301}
+                        {" "}
+                        {(() => { try { return new URL(domain.redirectTo).hostname; } catch { return domain.redirectTo; } })()}
+                      </Badge>
+                    ) : domain.port ? (
                       <span className="text-xs text-muted-foreground">:{domain.port}</span>
-                    )}
+                    ) : null}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <Button
@@ -439,6 +511,8 @@ export function AppNetworking({
                         setEditDomainValue(domain.domain);
                         setEditDomainPort(domain.port?.toString() || "");
                         setEditDomainResolver(domain.certResolver || "");
+                        setEditDomainRedirectTo(domain.redirectTo || "");
+                        setEditDomainRedirectCode(String(domain.redirectCode ?? 301));
                       }}
                     >
                       <Pencil className="size-3.5" />

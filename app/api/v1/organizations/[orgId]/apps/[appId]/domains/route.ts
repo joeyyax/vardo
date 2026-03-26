@@ -20,6 +20,8 @@ const createDomainSchema = z.object({
   serviceName: z.string().optional(),
   port: z.number().int().positive().optional(),
   certResolver: z.string().default("le"),
+  redirectTo: z.string().url("Must be a valid URL").optional(),
+  redirectCode: z.union([z.literal(301), z.literal(302)]).optional(),
 }).strict();
 
 const deleteDomainSchema = z.object({
@@ -46,6 +48,21 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    // Validate: redirect domains cannot be self-referencing
+    if (parsed.data.redirectTo) {
+      try {
+        const targetHost = new URL(parsed.data.redirectTo).hostname;
+        if (targetHost === parsed.data.domain) {
+          return NextResponse.json(
+            { error: "Redirect target cannot be the same domain (infinite redirect loop)" },
+            { status: 400 }
+          );
+        }
+      } catch {
+        // URL parsing handled by zod
+      }
+    }
+
     const [created] = await db
       .insert(domains)
       .values({
@@ -55,6 +72,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         serviceName: parsed.data.serviceName,
         port: parsed.data.port,
         certResolver: parsed.data.certResolver,
+        redirectTo: parsed.data.redirectTo,
+        redirectCode: parsed.data.redirectCode,
       })
       .returning();
 
@@ -83,6 +102,8 @@ const updateDomainSchema = z.object({
   domain: z.string().min(1).optional(),
   port: z.number().int().positive().nullable().optional(),
   certResolver: z.string().optional(),
+  redirectTo: z.string().url("Must be a valid URL").nullable().optional(),
+  redirectCode: z.union([z.literal(301), z.literal(302)]).optional(),
 }).strict();
 
 // PATCH /api/v1/organizations/[orgId]/apps/[appId]/domains

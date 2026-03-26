@@ -118,6 +118,8 @@ export function injectTraefikLabels(
     appName?: string;
     certResolver?: string;
     ssl?: boolean;
+    redirectTo?: string;
+    redirectCode?: number;
   },
 ): ComposeFile {
   const { projectName, domain, containerPort, certResolver = "le", ssl = true } = opts;
@@ -132,17 +134,30 @@ export function injectTraefikLabels(
 
   const existing = compose.services[serviceName];
   const isLocal = domain.endsWith(".localhost") || domain === "localhost";
+  const isRedirect = !!opts.redirectTo;
+  const permanent = (opts.redirectCode ?? 301) === 301;
 
   const labels: Record<string, string> = {
     ...existing.labels,
     "traefik.enable": "true",
     [`traefik.http.routers.${projectName}.rule`]: `Host(\`${domain}\`)`,
-    // All domains share one Traefik service — keyed by app name, not per-domain router name
-    [`traefik.http.services.${opts.appName || projectName}.loadbalancer.server.port`]:
-      String(containerPort),
-    // Explicitly link this router to the shared service
-    [`traefik.http.routers.${projectName}.service`]: opts.appName || projectName,
   };
+
+  if (isRedirect) {
+    // Redirect domain — use redirectregex middleware instead of routing to the app service.
+    // The router still needs TLS termination so Traefik can serve the redirect over HTTPS.
+    labels[`traefik.http.middlewares.${projectName}-redirect.redirectregex.regex`] = "^(.*)$";
+    labels[`traefik.http.middlewares.${projectName}-redirect.redirectregex.replacement`] = `${opts.redirectTo}\${1}`;
+    labels[`traefik.http.middlewares.${projectName}-redirect.redirectregex.permanent`] = String(permanent);
+    labels[`traefik.http.routers.${projectName}.middlewares`] = `${projectName}-redirect`;
+    // Redirect routers still need a service reference — point to the app's shared service
+    labels[`traefik.http.routers.${projectName}.service`] = opts.appName || projectName;
+  } else {
+    // Normal domain — route to the app container
+    labels[`traefik.http.services.${opts.appName || projectName}.loadbalancer.server.port`] =
+      String(containerPort);
+    labels[`traefik.http.routers.${projectName}.service`] = opts.appName || projectName;
+  }
 
   if (ssl) {
     // HTTPS — websecure entrypoint with TLS
@@ -155,18 +170,26 @@ export function injectTraefikLabels(
       labels[`traefik.http.routers.${projectName}.tls.certresolver`] = certResolver;
     }
 
-    // HTTP redirect router — catches port-80 traffic and sends it to HTTPS.
-    // The global Traefik redirect handles the Vardo app itself; user projects
-    // need their own per-router redirect so the correct Host rule matches.
+    // HTTP redirect router — catches port-80 traffic and sends it to HTTPS
+    // (or to the domain redirect target, if this is a redirect domain).
     labels[`traefik.http.routers.${projectName}-http.rule`] = `Host(\`${domain}\`)`;
     labels[`traefik.http.routers.${projectName}-http.entrypoints`] = "web";
-    labels[`traefik.http.middlewares.${projectName}-https-redirect.redirectscheme.scheme`] = "https";
-    labels[`traefik.http.middlewares.${projectName}-https-redirect.redirectscheme.permanent`] = "true";
-    labels[`traefik.http.routers.${projectName}-http.middlewares`] = `${projectName}-https-redirect`;
     labels[`traefik.http.routers.${projectName}-http.service`] = opts.appName || projectName;
+
+    if (isRedirect) {
+      // For redirect domains, the HTTP router also applies the domain redirect
+      labels[`traefik.http.routers.${projectName}-http.middlewares`] = `${projectName}-redirect`;
+    } else {
+      labels[`traefik.http.middlewares.${projectName}-https-redirect.redirectscheme.scheme`] = "https";
+      labels[`traefik.http.middlewares.${projectName}-https-redirect.redirectscheme.permanent`] = "true";
+      labels[`traefik.http.routers.${projectName}-http.middlewares`] = `${projectName}-https-redirect`;
+    }
   } else {
     // HTTP only — web entrypoint, no TLS
     labels[`traefik.http.routers.${projectName}.entrypoints`] = "web";
+    if (isRedirect) {
+      labels[`traefik.http.routers.${projectName}.middlewares`] = `${projectName}-redirect`;
+    }
   }
 
   // Remove host port bindings — Traefik handles external access
