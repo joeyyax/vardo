@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { memberships, userNotificationPreferences } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import type { BusEventType } from "@/lib/bus";
 import { CHANNEL_TYPE_DEFAULTS } from "./channel-defaults";
 
@@ -28,12 +28,37 @@ export async function fetchOrgMembers(
   });
 }
 
+export type EventPref = { channelId: string; userId: string; enabled: boolean };
+
+/**
+ * Fetch all user notification preferences for a given org and event type,
+ * scoped to current org members. Called once per dispatch, before the
+ * per-channel loop, to eliminate the per-channel prefs query.
+ *
+ * The userId IN (...) filter excludes stale rows left behind by ex-members.
+ */
+export async function fetchEventPrefs(
+  orgId: string,
+  eventType: BusEventType,
+  memberIds: string[],
+): Promise<EventPref[]> {
+  if (memberIds.length === 0) return [];
+  return db.query.userNotificationPreferences.findMany({
+    where: and(
+      eq(userNotificationPreferences.organizationId, orgId),
+      eq(userNotificationPreferences.eventType, eventType),
+      inArray(userNotificationPreferences.userId, memberIds),
+    ),
+    columns: { channelId: true, userId: true, enabled: true },
+  });
+}
+
 /**
  * Determine whether a notification channel should fire for a given event,
  * based on org member preferences.
  *
- * Accepts pre-fetched `members` so the caller can hoist that query out of
- * the per-channel loop (avoids the N+1 of querying members once per channel).
+ * Accepts pre-fetched `members` and `prefs` so both queries are hoisted out
+ * of the per-channel loop. No DB calls are made here.
  *
  * Rules:
  * - Critical events always send, bypassing all preferences.
@@ -42,13 +67,13 @@ export async function fetchOrgMembers(
  * - If any member has the event enabled, the channel fires.
  * - If all members have explicitly disabled it, the channel is skipped.
  */
-export async function resolveRecipients(
-  orgId: string,
+export function resolveRecipients(
   channelId: string,
   channelType: string,
   eventType: BusEventType,
   members: Array<{ userId: string }>,
-): Promise<{ shouldSend: boolean }> {
+  prefs: EventPref[],
+): { shouldSend: boolean } {
   if (CRITICAL_EVENT_TYPES.has(eventType)) {
     return { shouldSend: true };
   }
@@ -59,16 +84,8 @@ export async function resolveRecipients(
     return { shouldSend: channelDefault };
   }
 
-  const prefs = await db.query.userNotificationPreferences.findMany({
-    where: and(
-      eq(userNotificationPreferences.organizationId, orgId),
-      eq(userNotificationPreferences.channelId, channelId),
-      eq(userNotificationPreferences.eventType, eventType),
-    ),
-    columns: { userId: true, enabled: true },
-  });
-
-  const prefByUser = new Map(prefs.map((p) => [p.userId, p.enabled]));
+  const channelPrefs = prefs.filter((p) => p.channelId === channelId);
+  const prefByUser = new Map(channelPrefs.map((p) => [p.userId, p.enabled]));
 
   for (const { userId } of members) {
     const pref = prefByUser.get(userId);
