@@ -12,7 +12,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2 } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { useVerify } from "@/hooks/use-verify";
 import { Card, CardContent } from "@/components/ui/card";
 import { MASK_SENTINEL } from "@/lib/mask-secrets";
 import { useSystemSetting } from "./use-system-setting";
@@ -68,12 +69,15 @@ export function EmailSettings() {
     [],
   );
 
+  const { verify, verifying, result: verifyResult, reset: resetVerify } = useVerify("/api/setup/email/verify");
+
   const { loading, saving, configured, save } = useSystemSetting("/api/setup/email", {
     label: "Email settings",
     onLoad,
     onSaved: () => {
       setEditingSmtpPass(false);
       setEditingApiKey(false);
+      resetVerify();
     },
   });
 
@@ -464,10 +468,39 @@ export function EmailSettings() {
             </div>
           </div>
 
-          <Button type="submit" className="squircle" disabled={saving || (!allowSmtp && provider === "smtp")} aria-label="Save email settings">
-            {saving && <Loader2 className="size-4 animate-spin" />}
-            Save
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button type="submit" className="squircle" disabled={saving || (!allowSmtp && provider === "smtp")} aria-label="Save email settings">
+              {saving && <Loader2 className="size-4 animate-spin" />}
+              Save
+            </Button>
+            {configured && (
+              <Button
+                type="button"
+                variant="outline"
+                className="squircle"
+                disabled={verifying}
+                onClick={verify}
+                aria-label="Test email connection"
+              >
+                {verifying && <Loader2 className="size-4 animate-spin" />}
+                Test connection
+              </Button>
+            )}
+          </div>
+          {verifyResult && (
+            <div
+              className={`flex items-center gap-2 text-sm ${verifyResult.ok ? "text-status-success" : "text-destructive"}`}
+              role="status"
+              aria-live="polite"
+            >
+              {verifyResult.ok ? (
+                <CheckCircle2 className="size-4 shrink-0" />
+              ) : (
+                <XCircle className="size-4 shrink-0" />
+              )}
+              <span>{verifyResult.message}</span>
+            </div>
+          )}
         </form>
       </CardContent>
     </Card>
