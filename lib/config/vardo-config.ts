@@ -251,7 +251,7 @@ export async function systemSettingsToVardoConfig(): Promise<{
     instance: {
       id: instanceId,
       name: instance.instanceName,
-      domain: process.env.VARDO_DOMAIN || undefined,
+      domain: instance.domain || undefined,
       baseDomain: instance.baseDomain || undefined,
       serverIp: instance.serverIp || undefined,
     },

@@ -3,16 +3,18 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { createInvite } from "@/lib/mesh/invite";
 import { ensureHubConfig, HUB_IP } from "@/lib/mesh";
+import { getInstanceConfig } from "@/lib/system-settings";
 
 /** POST /api/v1/admin/mesh/invite — generate an invite code for a new peer */
 export async function POST() {
   try {
     await requireAppAdmin();
 
-    const serverIp = process.env.VARDO_SERVER_IP || process.env.VARDO_DOMAIN;
+    const config = await getInstanceConfig();
+    const serverIp = config.serverIp || config.domain;
     if (!serverIp) {
       return NextResponse.json(
-        { error: "VARDO_SERVER_IP or VARDO_DOMAIN must be set" },
+        { error: "Server IP or primary domain must be configured in admin settings" },
         { status: 503 }
       );
     }
@@ -23,7 +25,7 @@ export async function POST() {
     const port = process.env.WIREGUARD_PORT || "51820";
     const endpoint = `${serverIp}:${port}`;
 
-    const domain = process.env.VARDO_DOMAIN || serverIp;
+    const domain = config.domain || serverIp;
     const protocol = domain === "localhost" ? "http" : "https";
     const apiUrl = `${protocol}://${domain}`;
 

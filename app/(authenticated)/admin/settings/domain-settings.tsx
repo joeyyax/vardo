@@ -32,6 +32,8 @@ type DnsCheck = {
 type InstanceData = {
   baseDomain: string;
   serverIp: string;
+  domain: string;
+  instanceName: string;
 };
 
 const ISSUER_LABELS: Record<string, string> = {
@@ -49,9 +51,9 @@ function toDisplay(value: string): string {
 
 export function DomainSettings() {
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [checking, setChecking] = useState(false);
-  const [instance, setInstance] = useState<InstanceData>({ baseDomain: "", serverIp: "" });
-  const [hostDomain, setHostDomain] = useState("");
+  const [instance, setInstance] = useState<InstanceData>({ baseDomain: "", serverIp: "", domain: "", instanceName: "" });
   const [acmeEmail, setAcmeEmail] = useState("");
   const [dnsChecks, setDnsChecks] = useState<DnsCheck[]>([]);
 
@@ -84,6 +86,8 @@ export function DomainSettings() {
           setInstance({
             baseDomain: data.baseDomain ?? "",
             serverIp: data.serverIp ?? "",
+            domain: data.domain ?? "",
+            instanceName: data.instanceName ?? "",
           });
         }
 
@@ -91,7 +95,7 @@ export function DomainSettings() {
           const data = await dnsRes.json();
           setDnsChecks(data.checks ?? []);
           if (data.serverIp) {
-            setInstance((prev) => ({ ...prev, serverIp: data.serverIp }));
+            setInstance((prev) => ({ ...prev, serverIp: prev.serverIp || data.serverIp }));
           }
         }
       } catch {
@@ -101,11 +105,37 @@ export function DomainSettings() {
       }
     })();
 
-    // These are only available server-side via env vars, so we infer from
-    // the general endpoint or accept them as empty in dev
-    setHostDomain(typeof window !== "undefined" ? window.location.hostname : "");
     setAcmeEmail(process.env.NEXT_PUBLIC_ACME_EMAIL ?? "");
   }, []);
+
+  async function saveDomainSettings() {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/setup/general", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          instanceName: instance.instanceName,
+          baseDomain: instance.baseDomain,
+          serverIp: instance.serverIp,
+          domain: instance.domain,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to save");
+      }
+      const { toast } = await import("sonner");
+      toast.success("Domain settings saved");
+      // Re-check DNS with updated values
+      recheckDns();
+    } catch (err) {
+      const { toast } = await import("sonner");
+      toast.error(err instanceof Error ? err.message : "Failed to save domain settings");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function recheckDns() {
     setChecking(true);
@@ -140,7 +170,7 @@ export function DomainSettings() {
         </p>
       </div>
 
-      {/* Domain configuration (read-only) */}
+      {/* Domain configuration */}
       <Card className="squircle rounded-lg">
         <CardHeader>
           <CardTitle className="text-sm">Domain info</CardTitle>
@@ -150,12 +180,12 @@ export function DomainSettings() {
             <Label htmlFor="sys-host-domain">Primary domain</Label>
             <Input
               id="sys-host-domain"
-              value={hostDomain || "Not configured"}
-              disabled
-              className="bg-muted"
+              value={instance.domain}
+              onChange={(e) => setInstance((prev) => ({ ...prev, domain: e.target.value }))}
+              placeholder="vardo.example.com"
             />
             <p className="text-xs text-muted-foreground">
-              Set at install time via the VARDO_DOMAIN environment variable.
+              The domain where this Vardo instance is accessible.
             </p>
           </div>
 
@@ -163,9 +193,9 @@ export function DomainSettings() {
             <Label htmlFor="sys-base-domain-dns">Base domain</Label>
             <Input
               id="sys-base-domain-dns"
-              value={instance.baseDomain || "Not configured"}
-              disabled
-              className="bg-muted"
+              value={instance.baseDomain}
+              onChange={(e) => setInstance((prev) => ({ ...prev, baseDomain: e.target.value }))}
+              placeholder="example.com"
             />
             <p className="text-xs text-muted-foreground">
               Wildcard domain used for auto-generated app subdomains.
@@ -176,10 +206,13 @@ export function DomainSettings() {
             <Label htmlFor="sys-server-ip-dns">Server IP</Label>
             <Input
               id="sys-server-ip-dns"
-              value={instance.serverIp || "Not configured"}
-              disabled
-              className="bg-muted"
+              value={instance.serverIp}
+              onChange={(e) => setInstance((prev) => ({ ...prev, serverIp: e.target.value }))}
+              placeholder="203.0.113.1"
             />
+            <p className="text-xs text-muted-foreground">
+              Public IP address of this server. DNS A records should point here.
+            </p>
           </div>
 
           {acmeEmail && (
@@ -196,6 +229,18 @@ export function DomainSettings() {
               </p>
             </div>
           )}
+
+          <Button
+            className="squircle"
+            onClick={saveDomainSettings}
+            disabled={saving}
+          >
+            {saving ? (
+              <><Loader2 className="mr-2 size-4 animate-spin" />Saving...</>
+            ) : (
+              "Save"
+            )}
+          </Button>
         </CardContent>
       </Card>
 

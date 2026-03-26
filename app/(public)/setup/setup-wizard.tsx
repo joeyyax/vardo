@@ -1084,16 +1084,83 @@ function DomainStep({
   onComplete: () => void;
   onSkip: () => void;
 }) {
+  const [domain, setDomain] = useState("");
+  const [baseDomain, setBaseDomain] = useState("");
+  const [serverIp, setServerIp] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      // Fetch existing config to preserve instanceName
+      const existing = await fetch("/api/setup/general").then((r) => r.json()).catch(() => ({}));
+      const res = await fetch("/api/setup/general", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          instanceName: existing.instanceName || "Vardo",
+          domain: domain || undefined,
+          baseDomain: baseDomain || undefined,
+          serverIp: serverIp || undefined,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to save");
+      onComplete();
+    } catch {
+      toast.error("Failed to save domain settings");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
+      <div className="space-y-3">
+        <div className="space-y-2">
+          <Label htmlFor="setup-domain">Primary domain</Label>
+          <Input
+            id="setup-domain"
+            value={domain}
+            onChange={(e) => setDomain(e.target.value)}
+            placeholder="vardo.example.com"
+          />
+          <p className="text-xs text-muted-foreground">
+            The domain where this Vardo instance will be accessible.
+          </p>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="setup-base-domain">Base domain</Label>
+          <Input
+            id="setup-base-domain"
+            value={baseDomain}
+            onChange={(e) => setBaseDomain(e.target.value)}
+            placeholder="example.com"
+          />
+          <p className="text-xs text-muted-foreground">
+            Wildcard domain for auto-generated app subdomains.
+          </p>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="setup-server-ip">Server IP</Label>
+          <Input
+            id="setup-server-ip"
+            value={serverIp}
+            onChange={(e) => setServerIp(e.target.value)}
+            placeholder="203.0.113.1"
+          />
+          <p className="text-xs text-muted-foreground">
+            Public IP of this server. Point your DNS A records here.
+          </p>
+        </div>
+      </div>
       <div className="rounded-lg border p-4 space-y-3">
         <div className="text-sm font-medium">Required DNS records</div>
         <div className="space-y-1 font-mono text-xs text-muted-foreground">
           <div>
-            A &nbsp;&nbsp; your-domain.com &nbsp;&nbsp; → &nbsp; this server IP
+            A &nbsp;&nbsp; {baseDomain || "your-domain.com"} &nbsp;&nbsp; → &nbsp; {serverIp || "your server IP"}
           </div>
           <div>
-            A &nbsp;&nbsp; *.your-domain.com → &nbsp; this server IP
+            A &nbsp;&nbsp; *.{baseDomain || "your-domain.com"} → &nbsp; {serverIp || "your server IP"}
           </div>
         </div>
         <p className="text-xs text-muted-foreground">
@@ -1109,8 +1176,16 @@ function DomainStep({
         >
           Skip
         </Button>
-        <Button className="squircle flex-1" onClick={onComplete}>
-          DNS is configured
+        <Button
+          className="squircle flex-1"
+          onClick={handleSave}
+          disabled={saving}
+        >
+          {saving ? (
+            <><Loader2 className="mr-2 size-4 animate-spin" />Saving...</>
+          ) : (
+            "Save & continue"
+          )}
         </Button>
       </div>
     </div>

@@ -7,6 +7,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { registerPeer } from "@/lib/mesh/peers";
 import { listInvites } from "@/lib/mesh/invite";
+import { getInstanceConfig } from "@/lib/system-settings";
 
 const WG_KEY_RE = /^[A-Za-z0-9+/]{43}=$/;
 
@@ -23,7 +24,8 @@ export async function GET() {
   try {
     await requireAppAdmin();
 
-    const serverIp = process.env.VARDO_SERVER_IP || process.env.VARDO_DOMAIN || "localhost";
+    const config = await getInstanceConfig();
+    const serverIp = config.serverIp || config.domain || "localhost";
     const protocol = serverIp === "localhost" ? "http" : "https";
     const apiUrl = `${protocol}://${serverIp}`;
 
