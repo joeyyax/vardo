@@ -4,7 +4,7 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps, deployments } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { deployProject } from "@/lib/docker/deploy";
+import { requestDeploy } from "@/lib/docker/deploy-cancel";
 import { createSSEResponse } from "@/lib/api/sse";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { decrypt, encrypt } from "@/lib/crypto/encrypt";
@@ -107,7 +107,7 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
     // Config and env changes are applied AFTER the deploy succeeds
     // to avoid leaving the app record in an inconsistent state on failure.
     return createSSEResponse(request, async (sendEvent) => {
-      const result = await deployProject({
+      const result = await requestDeploy({
         appId,
         organizationId: orgId,
         trigger: "rollback",

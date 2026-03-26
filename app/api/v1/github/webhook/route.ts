@@ -3,7 +3,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { deployProject } from "@/lib/docker/deploy";
+import { requestDeploy } from "@/lib/docker/deploy-cancel";
 import { createPreview, destroyPreview } from "@/lib/docker/preview";
 import { getGitHubAppConfig } from "@/lib/system-settings";
 import { logger } from "@/lib/logger";
@@ -101,7 +101,7 @@ async function handlePush(payload: Record<string, unknown>): Promise<NextRespons
   for (const app of matching) {
     log.info(`Auto-deploying ${app.displayName} (${app.name})`);
     try {
-      const result = await deployProject({
+      const result = await requestDeploy({
         appId: app.id,
         organizationId: app.organizationId,
         trigger: "webhook",

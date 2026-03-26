@@ -3,7 +3,7 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { deployProject } from "@/lib/docker/deploy";
+import { requestDeploy } from "@/lib/docker/deploy-cancel";
 import { deployGroup } from "@/lib/docker/deploy-group";
 import { createSSEResponse } from "@/lib/api/sse";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -72,16 +72,17 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
       });
     }
 
-    // Single app deploy (deployProject resolves default environment if not specified)
+    // Single app deploy. requestDeploy handles cancel-and-replace: if a build
+    // is already in progress for this app, it is cancelled (pre-build stages)
+    // or waited on (post-build stages) before the new deploy starts.
     //
-    // NOTE: Do NOT pass request.signal to deployProject. The request signal
+    // NOTE: Do NOT pass request.signal to requestDeploy. The request signal
     // fires when the SSE connection drops (client navigates away, reconnects,
     // or hits backpressure), which is not the same as the user pressing
-    // "abort". Passing it through caused first deploys to report "aborted"
-    // because the SSE connection would briefly reset after the build step.
-    // Deploys should always run to completion once started.
+    // "abort". Passing it through caused deploys to report "aborted" when the
+    // SSE connection briefly reset after the build step.
     return createSSEResponse(request, async (sendEvent) => {
-      const result = await deployProject({
+      const result = await requestDeploy({
         appId: appId,
         organizationId: orgId,
         trigger: "manual",

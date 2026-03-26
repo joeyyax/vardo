@@ -15,7 +15,7 @@ import {
 } from "@/lib/db/schema";
 import { eq, and, isNull, inArray, or } from "drizzle-orm";
 import { extractExpressions, validateExpression } from "@/lib/env/resolve";
-import { deployProject, createDeployment, runDeployment } from "./deploy";
+import { requestDeploy } from "./deploy-cancel";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -274,7 +274,7 @@ export async function deployGroup(
         const node = graph.get(appName)!;
         const envId = appEnvironmentIds.get(node.id);
 
-        const result = await deployProject({
+        const result = await requestDeploy({
           appId: node.id,
           organizationId: opts.organizationId,
           trigger: opts.trigger,
