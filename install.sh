@@ -1144,6 +1144,7 @@ build_and_start() {
     info "Starting infrastructure services (Postgres, Redis, Traefik)..."
     run_cmd docker compose -f "$VARDO_DIR/$COMPOSE_FILE" up -d
   else
+    export GIT_SHA=$(git -C "$VARDO_DIR" rev-parse --short HEAD 2>/dev/null || true)
     run_with_spinner "Building containers (this may take a few minutes)" docker compose -f "$VARDO_DIR/$COMPOSE_FILE" build
     run_with_spinner "Starting services" docker compose -f "$VARDO_DIR/$COMPOSE_FILE" up -d
   fi
@@ -1196,9 +1197,10 @@ seed_templates() {
 install_shortcut() {
   if $DRY_RUN; then return 0; fi
   # Create a vardo wrapper script in /usr/local/bin
-  cat > /usr/local/bin/vardo <<'WRAPPER'
-#!/usr/bin/env bash
-VARDO_DIR="${VARDO_DIR:-/opt/vardo}"
+  # Write the shebang + VARDO_DIR (interpolated now so the actual path is baked in),
+  # then append the rest of the script with a quoted heredoc so $@ etc. are preserved.
+  printf '#!/usr/bin/env bash\nVARDO_DIR="%s"\n' "$VARDO_DIR" > /usr/local/bin/vardo
+  cat >> /usr/local/bin/vardo <<'WRAPPER'
 COMPOSE_FILE="docker-compose.yml"
 
 case "${1:-}" in
@@ -1475,6 +1477,7 @@ _do_rebuild() {
     info "Migrated acme.json → acme-le.json"
   fi
 
+  export GIT_SHA=$(git -C "$VARDO_DIR" rev-parse --short HEAD 2>/dev/null || true)
   run_with_spinner "Building containers" docker compose -f "$COMPOSE_FILE" build
 
   info "Restarting services..."
