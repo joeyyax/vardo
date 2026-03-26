@@ -172,7 +172,7 @@ export function StatusBadge({ status }: { status: string }) {
 // DeploymentStatusBadge
 // ---------------------------------------------------------------------------
 
-export function DeploymentStatusBadge({ status }: { status: "queued" | "running" | "success" | "failed" | "cancelled" | "rolled_back" }) {
+export function DeploymentStatusBadge({ status }: { status: "queued" | "running" | "success" | "failed" | "cancelled" | "rolled_back" | "superseded" }) {
   switch (status) {
     case "success":
       return <Badge className="border-transparent bg-status-success-muted text-status-success">Success</Badge>;
@@ -184,6 +184,8 @@ export function DeploymentStatusBadge({ status }: { status: "queued" | "running"
       return <Badge className="border-transparent bg-status-warning-muted text-status-warning">Rolled back</Badge>;
     case "cancelled":
       return <Badge variant="secondary">Cancelled</Badge>;
+    case "superseded":
+      return <Badge variant="secondary">Superseded</Badge>;
     default:
       return <Badge variant="secondary">Queued</Badge>;
   }

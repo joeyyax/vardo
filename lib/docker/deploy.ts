@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { redis } from "@/lib/redis";
 import { deployments, apps, orgEnvVars, organizations, environments, volumes } from "@/lib/db/schema";
 import { encrypt, decryptOrFallback } from "@/lib/crypto/encrypt";
 import { parseEnvToMap } from "@/lib/env/parse-env";
@@ -60,7 +61,7 @@ export type DeployOpts = {
   signal?: AbortSignal;
 };
 
-export type { DeployStage };
+export type { DeployOpts, DeployResult, DeployStage };
 
 export type DeployResult = {
   deploymentId: string;
@@ -113,6 +114,10 @@ export async function runDeployment(
 
   function stage(s: DeployStage, status: "running" | "success" | "failed" | "skipped") {
     opts.onStage?.(s, status);
+
+    // Track current stage in Redis so cancel logic can make two-tier decisions.
+    // Key expires after 11 minutes (slightly longer than max deploy duration).
+    redis.set(`deploy:stage:${opts.appId}`, s, "EX", 660).catch(() => {});
 
     // Broadcast stage change via Redis pub/sub for live viewers
     publishEvent(appChannel(opts.appId), {
@@ -492,9 +497,12 @@ export async function runDeployment(
         // First build attempt
         const customDockerfile = app.dockerfilePath && app.dockerfilePath !== "Dockerfile" ? app.dockerfilePath : undefined;
         try {
-          await buildFromRepo(root, imageName, buildType, logs, envMap, customDockerfile);
+          await buildFromRepo(root, imageName, buildType, logs, envMap, customDockerfile, opts.signal);
         } catch (buildErr) {
           const errMsg = buildErr instanceof Error ? buildErr.message : String(buildErr);
+
+          // If aborted, propagate immediately — no retry
+          if (opts.signal?.aborted) throw buildErr;
 
           // Detect issues from error output and retry with fixes
           const fixes = detectCompatIssues(errMsg);
@@ -505,7 +513,7 @@ export async function runDeployment(
             }
             log(`[compat] Retrying with fixes applied...`);
             Object.assign(envMap, applyCompatFixes(envMap, fixes));
-            await buildFromRepo(root, imageName, buildType, logs, envMap, customDockerfile);
+            await buildFromRepo(root, imageName, buildType, logs, envMap, customDockerfile, opts.signal);
           } else {
             throw buildErr;
           }
@@ -1175,8 +1183,38 @@ export async function runDeployment(
     return { deploymentId, success: true, log: logLines.join("\n"), durationMs };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    log(`[deploy] ERROR: ${message}`);
     const durationMs = Date.now() - startTime;
+
+    // Check if this deploy was superseded by a newer one (cancel-and-replace).
+    // The AbortController in deploy-cancel.ts passes { supersededBy } as the abort reason.
+    if (opts.signal?.aborted) {
+      const reason = opts.signal.reason as { supersededBy?: string } | undefined;
+      const supersededById = reason?.supersededBy;
+      if (supersededById) {
+        log(`[deploy] Superseded by deployment ${supersededById}`);
+        await db
+          .update(deployments)
+          .set({
+            status: "superseded",
+            supersededBy: supersededById,
+            log: logLines.join("\n"),
+            durationMs,
+            finishedAt: new Date(),
+          })
+          .where(eq(deployments.id, deploymentId));
+
+        publishEvent(appChannel(opts.appId), {
+          event: "deploy:superseded",
+          appId: opts.appId,
+          deploymentId,
+          supersededBy: supersededById,
+        }).catch(() => {});
+
+        return { deploymentId, success: false, log: logLines.join("\n"), durationMs };
+      }
+    }
+
+    log(`[deploy] ERROR: ${message}`);
 
     await db
       .update(deployments)
@@ -1211,6 +1249,9 @@ export async function runDeployment(
     ).catch(() => {});
 
     return { deploymentId, success: false, log: logLines.join("\n"), durationMs };
+  } finally {
+    // Always clean up the Redis stage key for this app
+    redis.del(`deploy:stage:${opts.appId}`).catch(() => {});
   }
 }
 
@@ -1299,7 +1340,8 @@ async function buildFromRepo(
   deployType: string,
   logs: { push: (line: string) => void },
   envVars?: Record<string, string>,
-  dockerfilePath?: string
+  dockerfilePath?: string,
+  signal?: AbortSignal,
 ): Promise<void> {
   // Build environment for the child process
   const buildEnv = { ...process.env, ...envVars };
@@ -1314,7 +1356,7 @@ async function buildFromRepo(
       }
     }
 
-    await spawnStream("nixpacks", args, { cwd: repoPath, env: buildEnv }, logs, "[build][nixpacks]");
+    await spawnStream("nixpacks", args, { cwd: repoPath, env: buildEnv, signal }, logs, "[build][nixpacks]");
     logs.push(`[build] Nixpacks build complete: ${imageName}`);
     return;
   }
@@ -1330,7 +1372,7 @@ async function buildFromRepo(
     }
     args.push(repoPath);
 
-    await spawnStream("railpack", args, { cwd: repoPath, env: buildEnv }, logs, "[build][railpack]");
+    await spawnStream("railpack", args, { cwd: repoPath, env: buildEnv, signal }, logs, "[build][railpack]");
     logs.push(`[build] Railpack build complete: ${imageName}`);
     return;
   }
@@ -1346,14 +1388,14 @@ async function buildFromRepo(
   }
   args.push(repoPath);
 
-  await spawnStream("docker", args, { cwd: repoPath }, logs, "[build][docker]");
+  await spawnStream("docker", args, { cwd: repoPath, signal }, logs, "[build][docker]");
   logs.push(`[build] Docker build complete: ${imageName}`);
 }
 
 function spawnStream(
   cmd: string,
   args: string[],
-  opts: { cwd?: string; env?: NodeJS.ProcessEnv },
+  opts: { cwd?: string; env?: NodeJS.ProcessEnv; signal?: AbortSignal },
   logs: { push: (line: string) => void },
   prefix: string
 ): Promise<void> {
@@ -1362,9 +1404,32 @@ function spawnStream(
       cwd: opts.cwd,
       env: opts.env || process.env,
       stdio: ["ignore", "pipe", "pipe"],
+      // Spawn in its own process group so we can kill(-pid) to terminate
+      // the entire tree (e.g. docker build + child processes) on cancel.
+      detached: true,
     });
 
     let stderrBuf = "";
+    let killed = false;
+
+    function killProcessGroup() {
+      if (killed || proc.pid === undefined) return;
+      killed = true;
+      try {
+        process.kill(-proc.pid, "SIGTERM");
+      } catch {
+        // Process may have already exited — ignore
+      }
+    }
+
+    // Terminate process group when the abort signal fires
+    if (opts.signal) {
+      if (opts.signal.aborted) {
+        killProcessGroup();
+      } else {
+        opts.signal.addEventListener("abort", killProcessGroup, { once: true });
+      }
+    }
 
     proc.stdout.on("data", (chunk: Buffer) => {
       for (const line of chunk.toString().split("\n")) {
@@ -1380,17 +1445,26 @@ function spawnStream(
     });
 
     proc.on("close", (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`${cmd} failed (exit ${code}): ${stderrBuf.slice(-500)}`));
+      if (code === 0) {
+        resolve();
+      } else if (killed && opts.signal?.aborted) {
+        // Killed by abort signal — propagate as an abort error so callers
+        // can distinguish cancellation from a genuine build failure.
+        reject(new Error("Deployment aborted"));
+      } else {
+        reject(new Error(`${cmd} failed (exit ${code}): ${stderrBuf.slice(-500)}`));
+      }
     });
 
     proc.on("error", (err) => reject(err));
 
     // 5 minute timeout
-    setTimeout(() => {
-      proc.kill();
+    const timeout = setTimeout(() => {
+      killProcessGroup();
       reject(new Error(`${cmd} timed out after 300s`));
     }, 300000);
+
+    proc.on("close", () => clearTimeout(timeout));
   });
 }
 
