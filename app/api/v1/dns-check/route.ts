@@ -5,6 +5,13 @@ import { networkInterfaces } from "os";
 const BASE_DOMAIN = process.env.VARDO_BASE_DOMAIN || "localhost";
 
 function getServerIPs(): string[] {
+  // Use the configured public IP when available (production / Docker).
+  // os.networkInterfaces() inside a container returns internal Docker IPs
+  // (172.x.x.x) which will never match external A records.
+  const serverIp = process.env.VARDO_SERVER_IP;
+  if (serverIp) return [serverIp];
+
+  // Fallback for local dev where the env var isn't set
   const ips: string[] = [];
   const nets = networkInterfaces();
   for (const interfaces of Object.values(nets)) {

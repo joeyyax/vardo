@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { domains } from "@/lib/db/schema";
+import { logger } from "@/lib/logger";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { verifyAppAccess } from "@/lib/api/verify-access";
+import { regenerateAppRouteConfig } from "@/lib/traefik/generate-config";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -55,6 +57,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         certResolver: parsed.data.certResolver,
       })
       .returning();
+
+    // Regenerate Traefik file-provider config so the new domain takes effect
+    // immediately without a redeploy
+    regenerateAppRouteConfig(appId).catch((err) => logger.child("traefik").error("Failed to regenerate route config:", err));
 
     return NextResponse.json({ domain: created }, { status: 201 });
   } catch (error) {
@@ -111,6 +117,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    // Regenerate Traefik config so domain changes take effect immediately
+    regenerateAppRouteConfig(appId).catch((err) => logger.child("traefik").error("Failed to regenerate route config:", err));
+
     return NextResponse.json({ domain: updated });
   } catch (error) {
     return handleRouteError(error, "Error updating domain");
@@ -150,6 +159,9 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     if (!deleted) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+
+    // Regenerate Traefik config (removes the deleted domain's routing)
+    regenerateAppRouteConfig(appId).catch((err) => logger.child("traefik").error("Failed to regenerate route config:", err));
 
     return NextResponse.json({ success: true });
   } catch (error) {

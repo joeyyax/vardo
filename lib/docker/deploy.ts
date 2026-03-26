@@ -30,6 +30,7 @@ import { githubAppInstallations, memberships } from "@/lib/db/schema";
 import { detectPreventiveFixes, detectCompatIssues, applyCompatFixes } from "./compat";
 import { syncComposeServices } from "./compose-sync";
 import { recordActivity } from "@/lib/activity";
+import { regenerateAppRouteConfig } from "@/lib/traefik/generate-config";
 import {
   getDecryptedPrivateKey,
   writeTemporaryKeyFile,
@@ -609,6 +610,13 @@ export async function runDeployment(
       log(`[deploy] Traefik: ${domain.domain} → :${port}${(domain.sslEnabled ?? true) ? " (TLS)" : ""}`);
     }
     compose = injectNetwork(compose, NETWORK_NAME);
+
+    // Also write Traefik file-provider config so routing stays in sync with
+    // the database. The file provider takes precedence (priority 100) over
+    // Docker labels, ensuring domains added between deploys are reflected.
+    regenerateAppRouteConfig(app.id).catch((err) =>
+      log(`[deploy] Warning: failed to write Traefik dynamic config — ${err}`)
+    );
 
     // Step 3: Add app labels
     for (const [svcName, svc] of Object.entries(compose.services)) {
