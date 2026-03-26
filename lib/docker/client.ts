@@ -1,4 +1,21 @@
 import http from "node:http";
+import { execFileSync } from "node:child_process";
+
+// Detect the Docker daemon's API version at startup.
+// Falls back to 1.47 if detection fails.
+let DOCKER_API_VERSION = "1.47";
+try {
+  const out = execFileSync("docker", ["version", "--format", "{{.Server.APIVersion}}"], {
+    encoding: "utf-8",
+    timeout: 5000,
+  });
+  const ver = out.trim();
+  if (/^\d+\.\d+$/.test(ver)) {
+    DOCKER_API_VERSION = ver;
+  }
+} catch {
+  // Docker not available or detection failed — use fallback
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -57,7 +74,7 @@ export async function dockerRequest<T = unknown>(
     const req = http.request(
       {
         ...conn,
-        path: `/v1.47${path}`,
+        path: `/v${DOCKER_API_VERSION}${path}`,
         method,
         headers: {
           ...(payload
