@@ -1,6 +1,8 @@
 export {
   generateKeypair,
+  generateKeypairNative,
   buildWgConfig,
+  buildDevWgConfig,
   writeWgConfig,
   syncConfig,
   isWireguardRunning,
@@ -9,6 +11,7 @@ export {
   ensureHubConfig,
 } from "./wireguard";
 export type { WgPeer } from "./wireguard";
+export { isRunningInContainer, isDevMode } from "./env";
 export { allocateIp, toCidr, HUB_IP, HUB_CIDR } from "./ip-allocator";
 export { generateMeshToken, hashMeshToken, requireMeshPeer } from "./auth";
 export { createInvite, redeemInvite, decodeInviteToken, listInvites, cancelInvite } from "./invite";
