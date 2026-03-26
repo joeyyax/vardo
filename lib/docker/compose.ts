@@ -347,7 +347,6 @@ function parsePortString(
 // ---------------------------------------------------------------------------
 
 import YAML from "yaml";
-import { isFeatureEnabled } from "@/lib/config/features";
 
 /**
  * Serialize a ComposeFile to a YAML string.
@@ -468,10 +467,22 @@ export function parseCompose(yamlString: string): ComposeFile {
 const SERVICE_NAME_RE = /^[a-z][a-z0-9-]*$/;
 const PORT_RE = /^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:)?(\d+:)?\d+(\/\w+)?$/;
 
+const DENIED_MOUNT_PATHS = [
+  "/etc",
+  "/proc",
+  "/sys",
+  "/var/run/docker.sock",
+  "/root",
+];
+
+type ValidateOptions = {
+  allowBindMounts?: boolean;
+};
+
 /**
  * Basic validation of a ComposeFile structure.
  */
-export function validateCompose(compose: ComposeFile): {
+export function validateCompose(compose: ComposeFile, opts?: ValidateOptions): {
   valid: boolean;
   errors: string[];
 } {
@@ -510,12 +521,21 @@ export function validateCompose(compose: ComposeFile): {
       }
     }
 
-    if (svc.volumes && !isFeatureEnabled("bindMounts")) {
+    if (svc.volumes) {
       for (const vol of svc.volumes) {
-        if (vol.startsWith("/") || vol.startsWith("./") || vol.startsWith("../")) {
+        const isBindMount = vol.startsWith("/") || vol.startsWith("./") || vol.startsWith("../");
+        if (isBindMount && !opts?.allowBindMounts) {
           errors.push(
             `Service "${name}" uses host bind mount "${vol}" — enable the Bind Mounts feature flag to allow this`,
           );
+        }
+        if (isBindMount && opts?.allowBindMounts) {
+          const mountSource = vol.split(":")[0];
+          if (DENIED_MOUNT_PATHS.some((p) => mountSource === p || mountSource.startsWith(p + "/"))) {
+            errors.push(
+              `Service "${name}" mounts denied path "${mountSource}" — this path is blocked for security`,
+            );
+          }
         }
       }
     }
@@ -526,18 +546,28 @@ export function validateCompose(compose: ComposeFile): {
 
 /**
  * Strip host bind mounts from compose, keeping only named volumes.
- * Used when allowUnsafeCompose is false.
+ * Returns the compose unchanged if allowBindMounts is true.
+ * When stripping, returns the list of removed mounts for logging.
  */
-export function sanitizeCompose(compose: ComposeFile): ComposeFile {
-  if (isFeatureEnabled("bindMounts")) return compose;
+export function sanitizeCompose(compose: ComposeFile, opts?: { allowBindMounts?: boolean }): {
+  compose: ComposeFile;
+  strippedMounts: string[];
+} {
+  if (opts?.allowBindMounts) return { compose, strippedMounts: [] };
+  const strippedMounts: string[] = [];
   const sanitized = { ...compose, services: { ...compose.services } };
   for (const [name, svc] of Object.entries(sanitized.services)) {
     if (svc.volumes) {
-      const safe = svc.volumes.filter(
-        (v) => !v.startsWith("/") && !v.startsWith("./") && !v.startsWith("../")
-      );
+      const safe: string[] = [];
+      for (const v of svc.volumes) {
+        if (v.startsWith("/") || v.startsWith("./") || v.startsWith("../")) {
+          strippedMounts.push(`${name}: ${v}`);
+        } else {
+          safe.push(v);
+        }
+      }
       sanitized.services[name] = { ...svc, volumes: safe };
     }
   }
-  return sanitized;
+  return { compose: sanitized, strippedMounts };
 }

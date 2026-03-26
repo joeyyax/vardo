@@ -23,6 +23,7 @@ import {
   type ComposeFile,
 } from "./compose";
 import { ensureNetwork, detectExposedPorts, listContainers, inspectContainer } from "./client";
+import { isFeatureEnabled } from "@/lib/config/features";
 import { assertSafeName, assertSafeBranch } from "./validate";
 import { DeployBlockedError } from "./errors";
 import { volumeThreshold } from "@/lib/volumes/threshold";
@@ -432,7 +433,12 @@ export async function runDeployment(
 
       if (composeContent && app.deployType === "compose") {
         compose = parseCompose(composeContent);
-        compose = sanitizeCompose(compose);
+        const bindMountsEnabled = isFeatureEnabled("bindMounts");
+        const sanitized = sanitizeCompose(compose, { allowBindMounts: bindMountsEnabled });
+        compose = sanitized.compose;
+        if (sanitized.strippedMounts.length > 0) {
+          log(`[deploy] Stripped ${sanitized.strippedMounts.length} bind mount(s): ${sanitized.strippedMounts.join(", ")}`);
+        }
 
         // Detect declared volumes from compose YAML before deploy starts
         if (compose.volumes && Object.keys(compose.volumes).length > 0) {
@@ -532,7 +538,12 @@ export async function runDeployment(
     } else if (app.composeContent) {
       // Direct compose content
       compose = parseCompose(app.composeContent);
-      compose = sanitizeCompose(compose);
+      const bindMountsEnabled = isFeatureEnabled("bindMounts");
+      const sanitized = sanitizeCompose(compose, { allowBindMounts: bindMountsEnabled });
+      compose = sanitized.compose;
+      if (sanitized.strippedMounts.length > 0) {
+        log(`[deploy] Stripped ${sanitized.strippedMounts.length} bind mount(s): ${sanitized.strippedMounts.join(", ")}`);
+      }
       log(`[deploy] Parsed compose content`);
 
       // Detect declared volumes from compose YAML before deploy starts
@@ -606,13 +617,13 @@ export async function runDeployment(
     }
 
     // Step 3: Inject Traefik labels + shared network
-    const primaryServiceName = Object.keys(compose.services).find(
-      (name) => name === app.name
-    ) ?? Object.keys(compose.services)[0];
-    const primaryService = compose.services[primaryServiceName];
-    const hasCustomNetworkMode = primaryService?.network_mode && primaryService.network_mode !== "bridge";
+    // Check if any service uses a custom network mode (host, service:X, container:X)
+    const servicesWithCustomNetwork = Object.entries(compose.services)
+      .filter(([, svc]) => svc.network_mode && svc.network_mode !== "bridge")
+      .map(([name, svc]) => `${name} (${svc.network_mode})`);
+    const allServicesCustomNetwork = servicesWithCustomNetwork.length === Object.keys(compose.services).length;
 
-    if (!hasCustomNetworkMode) {
+    if (!allServicesCustomNetwork) {
       for (const domain of app.domains) {
         const port = domain.port || containerPort;
         compose = injectTraefikLabels(compose, {
@@ -636,7 +647,7 @@ export async function runDeployment(
         log(`[deploy] Warning: failed to write Traefik dynamic config — ${err}`)
       );
     } else {
-      log(`[deploy] Skipping Traefik labels — service uses network_mode: ${primaryService.network_mode}`);
+      log(`[deploy] Skipping Traefik labels — all services use custom network modes: ${servicesWithCustomNetwork.join(", ")}`);
     }
     compose = injectNetwork(compose, NETWORK_NAME);
 
