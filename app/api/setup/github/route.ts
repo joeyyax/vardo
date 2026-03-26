@@ -4,7 +4,7 @@ import { requireAdminAuth } from "@/lib/auth/admin";
 import { refreshGitHubOAuthCredentials } from "@/lib/auth";
 import { needsSetup } from "@/lib/setup";
 import { getGitHubAppConfig, setSystemSetting } from "@/lib/system-settings";
-import { maskSecret, isMasked } from "@/lib/mask-secrets";
+import { maskSecret, resolveSecret } from "@/lib/mask-secrets";
 
 const githubSchema = z.object({
   appId: z.string().min(1, "App ID is required"),
@@ -52,11 +52,6 @@ export async function POST(request: NextRequest) {
   const { appId, appSlug, clientId, clientSecret, privateKey, webhookSecret } = parsed.data;
 
   const existing = await getGitHubAppConfig();
-
-  function resolveSecret(incoming: string | undefined | null, existingVal: string | undefined | null): string | undefined {
-    if (isMasked(incoming)) return existingVal ?? undefined;
-    return incoming ?? undefined;
-  }
 
   const resolvedClientSecret = resolveSecret(clientSecret, existing?.clientSecret) ?? "";
 

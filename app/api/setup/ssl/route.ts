@@ -1,17 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminAuth } from "@/lib/auth/admin";
-import { getSslConfig, setSystemSetting } from "@/lib/system-settings";
-import { maskSecret, isMasked } from "@/lib/mask-secrets";
-
-const ISSUER_LABELS: Record<string, string> = {
-  le: "Let's Encrypt",
-  google: "Google Trust Services",
-  zerossl: "ZeroSSL",
-};
+import { getSslConfig, setSystemSetting, ISSUER_LABELS } from "@/lib/system-settings";
+import { maskSecret, resolveSecret } from "@/lib/mask-secrets";
 
 const sslSchema = z.object({
-  defaultIssuer: z.enum(["le", "google", "zerossl"]),
+  activeIssuers: z.array(z.enum(["le", "google", "zerossl"])).min(1, "At least one issuer must be enabled"),
+  concurrentIssuers: z.number().int().min(1).max(3).default(1),
   zerosslEabKid: z.string().optional(),
   zerosslEabHmac: z.string().optional(),
 }).strict();
@@ -21,18 +16,16 @@ export async function GET(request: NextRequest) {
 
   const config = await getSslConfig();
 
-  // Always-available issuers
-  const availableIssuers = ["le", "google"];
-  if (config.zerosslEabKid && config.zerosslEabHmac) {
-    availableIssuers.push("zerossl");
-  }
+  // ZeroSSL requires EAB credentials — only report it as configured when they exist
+  const zerosslConfigured = !!(config.zerosslEabKid && config.zerosslEabHmac);
 
   return NextResponse.json({
     configured: true,
-    defaultIssuer: config.defaultIssuer,
+    activeIssuers: config.activeIssuers,
+    concurrentIssuers: config.concurrentIssuers,
     zerosslEabKid: maskSecret(config.zerosslEabKid),
     zerosslEabHmac: maskSecret(config.zerosslEabHmac),
-    availableIssuers,
+    zerosslConfigured,
     issuerLabels: ISSUER_LABELS,
   });
 }
@@ -49,20 +42,25 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { defaultIssuer, zerosslEabKid, zerosslEabHmac } = parsed.data;
+  const { activeIssuers, concurrentIssuers, zerosslEabKid, zerosslEabHmac } = parsed.data;
 
-  // Keep secrets the user didn't change (sentinel-prefixed values)
   const existing = await getSslConfig();
 
-  function resolveSecret(incoming: string | undefined, existingVal: string | undefined): string | undefined {
-    if (isMasked(incoming)) return existingVal;
-    return incoming;
+  const resolvedKid = resolveSecret(zerosslEabKid, existing.zerosslEabKid);
+  const resolvedHmac = resolveSecret(zerosslEabHmac, existing.zerosslEabHmac);
+
+  if (activeIssuers.includes("zerossl") && (!resolvedKid || !resolvedHmac)) {
+    return NextResponse.json(
+      { error: "ZeroSSL EAB Key ID and HMAC Key are required to enable ZeroSSL" },
+      { status: 400 },
+    );
   }
 
   await setSystemSetting("ssl_config", JSON.stringify({
-    defaultIssuer,
-    zerosslEabKid: resolveSecret(zerosslEabKid, existing.zerosslEabKid),
-    zerosslEabHmac: resolveSecret(zerosslEabHmac, existing.zerosslEabHmac),
+    activeIssuers,
+    concurrentIssuers,
+    zerosslEabKid: resolvedKid,
+    zerosslEabHmac: resolvedHmac,
   }));
 
   return NextResponse.json({ ok: true });

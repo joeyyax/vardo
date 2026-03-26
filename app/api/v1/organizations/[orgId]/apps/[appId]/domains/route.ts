@@ -8,6 +8,7 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { verifyAppAccess } from "@/lib/api/verify-access";
 import { regenerateAppRouteConfig } from "@/lib/traefik/generate-config";
+import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -19,7 +20,7 @@ const createDomainSchema = z.object({
   domain: z.string().min(1, "Domain is required").regex(HOSTNAME_RE, "Invalid domain name"),
   serviceName: z.string().optional(),
   port: z.number().int().positive().optional(),
-  certResolver: z.string().default("le"),
+  certResolver: z.string().optional(),
   redirectTo: z.string().url("Must be a valid URL").optional(),
   redirectCode: z.union([z.literal(301), z.literal(302)]).optional(),
 }).strict();
@@ -63,6 +64,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       }
     }
 
+    // Use the caller-specified resolver, or fall back to the system primary issuer
+    const certResolver = parsed.data.certResolver
+      ?? getPrimaryIssuer(await getSslConfig());
+
     const [created] = await db
       .insert(domains)
       .values({
@@ -71,7 +76,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         domain: parsed.data.domain,
         serviceName: parsed.data.serviceName,
         port: parsed.data.port,
-        certResolver: parsed.data.certResolver,
+        certResolver,
         redirectTo: parsed.data.redirectTo,
         redirectCode: parsed.data.redirectCode,
       })
