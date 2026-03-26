@@ -84,7 +84,10 @@ export function ImportDialog({
     fetch(`/api/v1/organizations/${orgId}/discover/containers/${container.id}`, {
       signal: controller.signal,
     })
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error("Failed to fetch container details");
+        return r.json();
+      })
       .then((d: ContainerDetail) => {
         setDetail(d);
         // Pre-fill env vars from container inspect
@@ -254,8 +257,8 @@ export function ImportDialog({
               )}
               {envVars.length > 0 && (
                 <div className="max-h-48 overflow-y-auto space-y-1.5 rounded-lg border p-2">
-                  {envVars.map((v) => (
-                    <div key={v.key} className="flex items-center gap-2 text-xs font-mono">
+                  {envVars.map((v, i) => (
+                    <div key={i} className="flex items-center gap-2 text-xs font-mono">
                       <span className="text-muted-foreground min-w-0 flex-1 truncate">
                         {v.key}
                       </span>

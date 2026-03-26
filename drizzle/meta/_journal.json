@@ -50,6 +50,13 @@
       "when": 1774900000000,
       "tag": "0006_add_imported_container_id",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1774900100000,
+      "tag": "0007_imported_container_id_unique",
+      "breakpoints": true
     }
   ]
 }

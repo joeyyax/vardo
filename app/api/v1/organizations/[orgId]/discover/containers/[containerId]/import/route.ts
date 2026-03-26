@@ -16,39 +16,29 @@ type RouteParams = {
   params: Promise<{ orgId: string; containerId: string }>;
 };
 
-const importSchema = z
-  .object({
-    projectId: z.string().nullable().optional(),
-    newProjectName: z.string().min(1).optional(),
-    displayName: z.string().min(1, "Display name is required"),
-    name: z
-      .string()
-      .min(1, "Name is required")
-      .regex(/^[a-z0-9-]+$/, "Name must be lowercase alphanumeric with hyphens"),
-    envVars: z.array(z.object({ key: z.string(), value: z.string() })).default([]),
-    importVolumes: z.boolean().default(true),
-  })
-  .superRefine((data, ctx) => {
-    if (data.projectId === "new" && !data.newProjectName) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["newProjectName"],
-        message: "Required when creating a new project",
-      });
-    }
-  });
+const importSchema = z.object({
+  projectId: z.string().nullable().optional(),
+  newProjectName: z.string().min(1).optional(),
+  displayName: z.string().min(1, "Display name is required"),
+  name: z
+    .string()
+    .min(1, "Name is required")
+    .regex(/^[a-z0-9-]+$/, "Name must be lowercase alphanumeric with hyphens"),
+  envVars: z.array(z.object({ key: z.string(), value: z.string() })).default([]),
+  importVolumes: z.boolean().default(true),
+});
 
 // POST /api/v1/organizations/[orgId]/discover/containers/[containerId]/import
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, containerId } = await params;
 
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
     if (!/^[a-zA-Z0-9_.-]+$/.test(containerId)) {
       return NextResponse.json({ error: "Invalid container ID" }, { status: 400 });
     }
-
-    const org = await verifyOrgAccess(orgId);
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();
     const parsed = importSchema.safeParse(body);
@@ -80,34 +70,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         { error: "Container not found or is Vardo-managed" },
         { status: 404 }
       );
-    }
-
-    // Resolve projectId — create new project if requested
-    let resolvedProjectId: string | null = data.projectId ?? null;
-
-    if (data.newProjectName) {
-      const newProjectId = nanoid();
-      const newProjectSlug = data.newProjectName
-        .toLowerCase()
-        .replace(/[^a-z0-9-]/g, "-")
-        .replace(/-+/g, "-")
-        .replace(/^-|-$/g, "");
-      await db.insert(projects).values({
-        id: newProjectId,
-        organizationId: orgId,
-        name: newProjectSlug,
-        displayName: data.newProjectName,
-      });
-      resolvedProjectId = newProjectId;
-    } else if (resolvedProjectId) {
-      // Verify the project belongs to this org
-      const project = await db.query.projects.findFirst({
-        where: and(eq(projects.id, resolvedProjectId), eq(projects.organizationId, orgId)),
-        columns: { id: true },
-      });
-      if (!project) {
-        return NextResponse.json({ error: "Project not found" }, { status: 400 });
-      }
     }
 
     // Determine container port — prefer Traefik-detected, then first exposed port
@@ -151,63 +113,106 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       envContent = encrypt(envLines, orgId);
     }
 
-    // Insert app record
-    const appId = nanoid();
-    const [app] = await db
-      .insert(apps)
-      .values({
-        id: appId,
-        organizationId: orgId,
-        name: data.name,
-        displayName: data.displayName,
-        source: "direct",
-        deployType: "image",
-        imageName: detail.image,
-        composeContent,
-        containerPort: containerPort ?? undefined,
-        autoTraefikLabels: false,
-        projectId: resolvedProjectId,
-        envContent,
-        importedContainerId: containerId,
-        status: "active",
-      })
-      .returning();
+    let result: { app: (typeof apps)["$inferSelect"] };
+    try {
+      result = await db.transaction(async (tx) => {
+        // Resolve projectId — create new project if requested
+        let resolvedProjectId: string | null = data.projectId ?? null;
 
-    // Auto-create production environment
-    await db.insert(environments).values({
-      id: nanoid(),
-      appId,
-      name: "production",
-      type: "production",
-      isDefault: true,
-    });
+        if (data.newProjectName) {
+          const newProjectId = nanoid();
+          const newProjectSlug = data.newProjectName
+            .toLowerCase()
+            .replace(/[^a-z0-9-]/g, "-")
+            .replace(/-+/g, "-")
+            .replace(/^-|-$/g, "");
+          await tx.insert(projects).values({
+            id: newProjectId,
+            organizationId: orgId,
+            name: newProjectSlug,
+            displayName: data.newProjectName,
+          });
+          resolvedProjectId = newProjectId;
+        } else if (resolvedProjectId) {
+          // Verify the project belongs to this org
+          const project = await tx.query.projects.findFirst({
+            where: and(eq(projects.id, resolvedProjectId), eq(projects.organizationId, orgId)),
+            columns: { id: true },
+          });
+          if (!project) {
+            throw new Error("PROJECT_NOT_FOUND");
+          }
+        }
 
-    // Create domain record if Traefik domain was found
-    if (detail.domain && containerPort) {
-      await db.insert(domains).values({
-        id: nanoid(),
-        appId,
-        domain: detail.domain,
-        port: containerPort,
-        certResolver: getPrimaryIssuer(sslConfig),
-        isPrimary: true,
-      });
-    }
+        // Insert app record
+        const appId = nanoid();
+        const [app] = await tx
+          .insert(apps)
+          .values({
+            id: appId,
+            organizationId: orgId,
+            name: data.name,
+            displayName: data.displayName,
+            source: "direct",
+            deployType: "image",
+            imageName: detail.image,
+            composeContent,
+            containerPort: containerPort ?? undefined,
+            autoTraefikLabels: false,
+            projectId: resolvedProjectId,
+            envContent,
+            importedContainerId: containerId,
+            status: "active",
+          })
+          .returning();
 
-    // Create volume records
-    if (data.importVolumes && detail.mounts.length > 0) {
-      for (const mount of detail.mounts) {
-        await db.insert(volumes).values({
+        // Auto-create production environment
+        await tx.insert(environments).values({
           id: nanoid(),
           appId,
-          organizationId: orgId,
-          name: mount.source || mount.destination.replace(/\//g, "-").replace(/^-/, ""),
-          mountPath: mount.destination,
-          // Bind mounts are flagged as non-persistent — Vardo can't manage host paths
-          persistent: mount.type !== "bind",
+          name: "production",
+          type: "production",
+          isDefault: true,
         });
+
+        // Create domain record if Traefik domain was found
+        if (detail.domain && containerPort) {
+          await tx.insert(domains).values({
+            id: nanoid(),
+            appId,
+            domain: detail.domain,
+            port: containerPort,
+            certResolver: getPrimaryIssuer(sslConfig),
+            isPrimary: true,
+          });
+        }
+
+        // Create volume records
+        if (data.importVolumes && detail.mounts.length > 0) {
+          for (const mount of detail.mounts) {
+            await tx.insert(volumes).values({
+              id: nanoid(),
+              appId,
+              organizationId: orgId,
+              name: mount.source || mount.destination.replace(/\//g, "-").replace(/^-/, ""),
+              mountPath: mount.destination,
+              // Bind mounts are flagged as non-persistent — Vardo can't manage host paths
+              persistent: mount.type !== "bind",
+            });
+          }
+        }
+
+        return { app };
+      });
+    } catch (txError) {
+      if (txError instanceof Error && txError.message === "PROJECT_NOT_FOUND") {
+        return NextResponse.json({ error: "Project not found" }, { status: 400 });
       }
+      throw txError;
     }
+
+    const { app } = result;
+    const appId = app.id;
 
     const warnings: string[] = [];
 

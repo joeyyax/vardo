@@ -17,7 +17,6 @@ export type DiscoveredContainer = {
   envCount: number;
   composeProject: string | null;
   networkMode: string;
-  labels: Record<string, string>;
 };
 
 export type DiscoveryResponse = {
@@ -97,7 +96,6 @@ function rawToDiscovered(
     envCount,
     composeProject: labels["com.docker.compose.project"] ?? null,
     networkMode,
-    labels,
   };
 }
 
@@ -184,7 +182,6 @@ export async function getContainerDetail(containerId: string): Promise<Container
     envCount: data.env.length,
     composeProject: data.labels["com.docker.compose.project"] ?? null,
     networkMode,
-    labels: data.labels,
     env: data.env,
     restartPolicy: "unless-stopped",
     networks: data.networks,
