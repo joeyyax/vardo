@@ -30,7 +30,12 @@ import {
   backupJobVolumes,
   backups,
 } from "./backups";
-import { notificationChannels, digestSettings } from "./notifications";
+import {
+  notificationChannels,
+  digestSettings,
+  userNotificationPreferences,
+  userDigestPreferences,
+} from "./notifications";
 import { cronJobs, cronJobRuns } from "./cron";
 import { meshPeers, projectInstances } from "./mesh";
 import { activities } from "./monitoring";
@@ -49,6 +54,8 @@ export const userRelations = relations(user, ({ many }) => ({
   githubAppInstallations: many(githubAppInstallations),
   initiatedTransfers: many(appTransfers, { relationName: "initiatedByUser" }),
   respondedTransfers: many(appTransfers, { relationName: "respondedByUser" }),
+  notificationPreferences: many(userNotificationPreferences),
+  digestPreferences: many(userDigestPreferences),
 }));
 
 export const organizationsRelations = relations(organizations, ({ many, one }) => ({
@@ -71,6 +78,8 @@ export const organizationsRelations = relations(organizations, ({ many, one }) =
     fields: [organizations.id],
     references: [digestSettings.organizationId],
   }),
+  userNotificationPreferences: many(userNotificationPreferences),
+  userDigestPreferences: many(userDigestPreferences),
 }));
 
 export const membershipsRelations = relations(memberships, ({ one }) => ({
@@ -412,7 +421,48 @@ export const appTransfersRelations = relations(
   })
 );
 
-export const notificationChannelsRelations = relations(notificationChannels, ({ one }) => ({ organization: one(organizations, { fields: [notificationChannels.organizationId], references: [organizations.id] }) }));
+export const notificationChannelsRelations = relations(
+  notificationChannels,
+  ({ one, many }) => ({
+    organization: one(organizations, {
+      fields: [notificationChannels.organizationId],
+      references: [organizations.id],
+    }),
+    userPreferences: many(userNotificationPreferences),
+  })
+);
+
+export const userNotificationPreferencesRelations = relations(
+  userNotificationPreferences,
+  ({ one }) => ({
+    user: one(user, {
+      fields: [userNotificationPreferences.userId],
+      references: [user.id],
+    }),
+    organization: one(organizations, {
+      fields: [userNotificationPreferences.organizationId],
+      references: [organizations.id],
+    }),
+    channel: one(notificationChannels, {
+      fields: [userNotificationPreferences.channelId],
+      references: [notificationChannels.id],
+    }),
+  })
+);
+
+export const userDigestPreferencesRelations = relations(
+  userDigestPreferences,
+  ({ one }) => ({
+    user: one(user, {
+      fields: [userDigestPreferences.userId],
+      references: [user.id],
+    }),
+    organization: one(organizations, {
+      fields: [userDigestPreferences.organizationId],
+      references: [organizations.id],
+    }),
+  })
+);
 
 export const digestSettingsRelations = relations(digestSettings, ({ one }) => ({
   organization: one(organizations, {
