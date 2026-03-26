@@ -255,6 +255,8 @@ export type SslConfig = {
    * so Traefik can issue certificates from any of them.
    */
   activeIssuers: SslIssuer[];
+  /** How many issuers to try in parallel when obtaining a certificate. */
+  concurrentIssuers: number;
   zerosslEabKid?: string;
   zerosslEabHmac?: string;
 };
@@ -274,6 +276,7 @@ export async function getSslConfig(): Promise<SslConfig> {
 
   type StoredSslConfig = {
     activeIssuers?: string[];
+    concurrentIssuers?: number;
     /** Legacy field — migrated on read */
     defaultIssuer?: string;
     zerosslEabKid?: string;
@@ -298,8 +301,12 @@ export async function getSslConfig(): Promise<SslConfig> {
     activeIssuers = ["le"];
   }
 
+  const rawConcurrent = fileConfig?.ssl?.concurrentIssuers ?? dbConfig?.concurrentIssuers ?? 1;
+  const concurrentIssuers = Math.max(1, Math.min(rawConcurrent, activeIssuers.length || 1));
+
   return {
     activeIssuers,
+    concurrentIssuers,
     zerosslEabKid: fileConfig?.ssl?.zerossl?.eabKid ?? dbConfig?.zerosslEabKid,
     zerosslEabHmac: fileConfig?.ssl?.zerossl?.eabHmac ?? dbConfig?.zerosslEabHmac,
   };

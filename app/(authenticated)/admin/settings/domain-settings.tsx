@@ -68,6 +68,7 @@ export function DomainSettings() {
 
   // SSL issuer settings
   const [activeIssuers, setActiveIssuers] = useState<SslIssuer[]>(["le"]);
+  const [concurrentIssuers, setConcurrentIssuers] = useState(1);
   const [zerosslKid, setZerosslKid] = useState("");
   const [zerosslHmac, setZerosslHmac] = useState("");
 
@@ -76,6 +77,7 @@ export function DomainSettings() {
   const onSslLoad = useCallback((data: Record<string, unknown>) => {
     const loaded = data.activeIssuers as SslIssuer[] | undefined;
     setActiveIssuers(loaded && loaded.length > 0 ? loaded : ["le"]);
+    setConcurrentIssuers(typeof data.concurrentIssuers === "number" ? data.concurrentIssuers : 1);
     setZerosslKid((data.zerosslEabKid as string) || "");
     setZerosslHmac((data.zerosslEabHmac as string) || "");
   }, []);
@@ -269,6 +271,10 @@ export function DomainSettings() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Vardo automatically issues and renews TLS certificates for your domains.
+            Enable multiple issuers for redundancy — if one fails, Vardo tries the next.
+          </p>
           {sslLoading ? (
             <div className="flex items-center gap-2 py-2">
               <Loader2 className="size-4 animate-spin text-muted-foreground" />
@@ -276,11 +282,6 @@ export function DomainSettings() {
             </div>
           ) : (
             <>
-              <p className="text-xs text-muted-foreground">
-                Enable one or more certificate authorities. The first enabled issuer is used as the
-                default for new domains. Multiple issuers can be active simultaneously.
-              </p>
-
               <div className="space-y-3">
                 {ALL_ISSUERS.map((issuer) => {
                   const isEnabled = activeIssuers.includes(issuer);
@@ -366,6 +367,27 @@ export function DomainSettings() {
                 })}
               </div>
 
+              {activeIssuers.length > 1 && (
+                <div className="max-w-xs space-y-2">
+                  <Label htmlFor="ssl-concurrent">Concurrent issuers</Label>
+                  <Input
+                    id="ssl-concurrent"
+                    type="number"
+                    min={1}
+                    max={activeIssuers.length}
+                    value={concurrentIssuers}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      if (!isNaN(val)) setConcurrentIssuers(Math.max(1, Math.min(val, activeIssuers.length)));
+                    }}
+                    className="w-24"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    How many issuers to try simultaneously when obtaining a certificate.
+                  </p>
+                </div>
+              )}
+
               <div className="flex items-center gap-3">
                 <Button
                   className="squircle"
@@ -373,6 +395,7 @@ export function DomainSettings() {
                     resetSslVerify();
                     saveSsl({
                       activeIssuers,
+                      concurrentIssuers,
                       zerosslEabKid: zerosslKid || undefined,
                       zerosslEabHmac: zerosslHmac || undefined,
                     });

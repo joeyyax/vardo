@@ -53,6 +53,8 @@ export type VardoConfig = {
      * domains. Replaces the legacy `defaultIssuer` single-value field.
      */
     activeIssuers?: ("le" | "google" | "zerossl")[];
+    /** How many issuers to try in parallel when obtaining a certificate. */
+    concurrentIssuers?: number;
     /** @deprecated Use activeIssuers instead. Migrated on read. */
     defaultIssuer?: "le" | "google" | "zerossl";
   };
@@ -290,9 +292,10 @@ export async function systemSettingsToVardoConfig(): Promise<{
         clientId: github.clientId,
       },
     }),
-    ...((ssl.activeIssuers.length > 1 || ssl.activeIssuers[0] !== "le") && {
+    ...((ssl.activeIssuers.length > 1 || ssl.activeIssuers[0] !== "le" || ssl.concurrentIssuers > 1) && {
       ssl: {
         activeIssuers: ssl.activeIssuers,
+        ...(ssl.concurrentIssuers > 1 && { concurrentIssuers: ssl.concurrentIssuers }),
       },
     }),
     ...(features && { features }),
@@ -401,6 +404,7 @@ export async function importVardoConfig(
 
     await setSystemSetting("ssl_config", JSON.stringify({
       activeIssuers,
+      concurrentIssuers: full.ssl.concurrentIssuers ?? 1,
       zerosslEabKid: full.ssl.zerossl?.eabKid,
       zerosslEabHmac: full.ssl.zerossl?.eabHmac,
     }));

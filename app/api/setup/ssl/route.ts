@@ -12,6 +12,7 @@ const ISSUER_LABELS: Record<string, string> = {
 
 const sslSchema = z.object({
   activeIssuers: z.array(z.enum(["le", "google", "zerossl"])).min(1, "At least one issuer must be enabled"),
+  concurrentIssuers: z.number().int().min(1).max(3).default(1),
   zerosslEabKid: z.string().optional(),
   zerosslEabHmac: z.string().optional(),
 }).strict();
@@ -27,6 +28,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     configured: true,
     activeIssuers: config.activeIssuers,
+    concurrentIssuers: config.concurrentIssuers,
     zerosslEabKid: maskSecret(config.zerosslEabKid),
     zerosslEabHmac: maskSecret(config.zerosslEabHmac),
     zerosslConfigured,
@@ -47,7 +49,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { activeIssuers, zerosslEabKid, zerosslEabHmac } = parsed.data;
+  const { activeIssuers, concurrentIssuers, zerosslEabKid, zerosslEabHmac } = parsed.data;
 
   // If ZeroSSL is enabled, EAB credentials are required
   if (activeIssuers.includes("zerossl")) {
@@ -72,6 +74,7 @@ export async function POST(request: NextRequest) {
 
   await setSystemSetting("ssl_config", JSON.stringify({
     activeIssuers,
+    concurrentIssuers,
     zerosslEabKid: resolveSecret(zerosslEabKid, existing.zerosslEabKid),
     zerosslEabHmac: resolveSecret(zerosslEabHmac, existing.zerosslEabHmac),
   }));
