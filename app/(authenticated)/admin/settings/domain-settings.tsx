@@ -11,7 +11,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Check, X, Loader2, RefreshCw } from "lucide-react";
+import { Check, X, Loader2, RefreshCw, CheckCircle2, XCircle } from "lucide-react";
+import { useVerify } from "@/hooks/use-verify";
 import {
   Card,
   CardAction,
@@ -64,6 +65,8 @@ export function DomainSettings() {
   const [sslIssuer, setSslIssuer] = useState<string>("le");
   const [zerosslKid, setZerosslKid] = useState("");
   const [zerosslHmac, setZerosslHmac] = useState("");
+
+  const { verify: verifySsl, verifying: verifyingSsl, result: sslVerifyResult, reset: resetSslVerify } = useVerify("/api/setup/ssl/verify");
 
   const onSslLoad = useCallback((data: Record<string, unknown>) => {
     setSslIssuer((data.defaultIssuer as string) || "le");
@@ -313,21 +316,51 @@ export function DomainSettings() {
                 </div>
               )}
 
-              <Button
-                className="squircle"
-                onClick={() => saveSsl({
-                  defaultIssuer: sslIssuer,
-                  zerosslEabKid: zerosslKid || undefined,
-                  zerosslEabHmac: zerosslHmac || undefined,
-                })}
-                disabled={sslSaving}
-              >
-                {sslSaving ? (
-                  <><Loader2 className="mr-2 size-4 animate-spin" />Saving...</>
-                ) : (
-                  "Save"
-                )}
-              </Button>
+              <div className="flex items-center gap-3">
+                <Button
+                  className="squircle"
+                  onClick={() => {
+                    resetSslVerify();
+                    saveSsl({
+                      defaultIssuer: sslIssuer,
+                      zerosslEabKid: zerosslKid || undefined,
+                      zerosslEabHmac: zerosslHmac || undefined,
+                    });
+                  }}
+                  disabled={sslSaving}
+                >
+                  {sslSaving ? (
+                    <><Loader2 className="mr-2 size-4 animate-spin" />Saving...</>
+                  ) : (
+                    "Save"
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="squircle"
+                  disabled={verifyingSsl}
+                  onClick={verifySsl}
+                  aria-label="Test SSL configuration"
+                >
+                  {verifyingSsl && <Loader2 className="size-4 animate-spin" />}
+                  Test
+                </Button>
+              </div>
+              {sslVerifyResult && (
+                <div
+                  className={`flex items-center gap-2 text-sm ${sslVerifyResult.ok ? "text-status-success" : "text-destructive"}`}
+                  role="status"
+                  aria-live="polite"
+                >
+                  {sslVerifyResult.ok ? (
+                    <CheckCircle2 className="size-4 shrink-0" />
+                  ) : (
+                    <XCircle className="size-4 shrink-0" />
+                  )}
+                  <span>{sslVerifyResult.message}</span>
+                </div>
+              )}
             </>
           )}
         </CardContent>
