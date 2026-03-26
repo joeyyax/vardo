@@ -9,7 +9,7 @@ import { nanoid } from "nanoid";
 import { publishEvent, appChannel } from "@/lib/events";
 import { execFile, spawn as nodeSpawn} from "child_process";
 import { promisify } from "util";
-import { mkdir, writeFile, readFile } from "fs/promises";
+import { mkdir, writeFile, readFile, rm } from "fs/promises";
 import { join, resolve } from "path";
 import {
   generateComposeForImage,
@@ -328,6 +328,8 @@ export async function runDeployment(
           await execFileAsync("git", ["-C", repoDir, "reset", "--hard", `origin/${branch}`], execOpts);
           log(`[deploy] Pulled latest from ${branch}`);
         } catch {
+          // Remove stale repo directory left behind by a previously failed clone
+          await rm(repoDir, { recursive: true, force: true });
           // Fresh clone
           await execFileAsync("git", ["clone", "--depth", "1", "--branch", branch, cloneUrl, repoDir], execOpts);
           log(`[deploy] Cloned repo (${branch})`);
