@@ -38,7 +38,8 @@ export function AccountInfo() {
     }
   }, [sessionData]);
 
-  async function handleSaveName() {
+  async function handleSaveName(e: React.FormEvent) {
+    e.preventDefault();
     if (!name.trim()) return;
     setSaving(true);
     try {
@@ -67,31 +68,31 @@ export function AccountInfo() {
     <Card className="squircle rounded-lg">
       <CardHeader>
         <CardTitle>Account</CardTitle>
-        <CardDescription>Name saves automatically on blur or Enter.</CardDescription>
+        <CardDescription>Update your display name.</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="grid gap-2">
-            <Label htmlFor="profile-name">Name</Label>
-            <div className="flex gap-2">
+        <form onSubmit={handleSaveName} className="space-y-3 max-w-sm">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-2">
+              <Label htmlFor="profile-name">Name</Label>
               <Input
                 id="profile-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                onBlur={() => {
-                  if (name.trim() && name !== sessionData?.user?.name) handleSaveName();
-                }}
-                onKeyDown={(e) => { if (e.key === "Enter") handleSaveName(); }}
               />
-              {saving && <Loader2 className="size-4 animate-spin text-muted-foreground mt-2.5" />}
+            </div>
+
+            <div className="grid gap-2">
+              <Label>Email</Label>
+              <Input value={sessionData?.user?.email || ""} disabled />
             </div>
           </div>
 
-          <div className="grid gap-2">
-            <Label>Email</Label>
-            <Input value={sessionData?.user?.email || ""} disabled />
-          </div>
-        </div>
+          <Button type="submit" size="sm" disabled={saving}>
+            {saving && <Loader2 className="mr-1.5 size-4 animate-spin" />}
+            Save
+          </Button>
+        </form>
       </CardContent>
     </Card>
   );
