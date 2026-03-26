@@ -29,6 +29,7 @@ export const deploymentStatusEnum = pgEnum("deployment_status", [
   "failed",
   "cancelled",
   "rolled_back",
+  "superseded",
 ]);
 
 export const deploymentTriggerEnum = pgEnum("deployment_trigger", [

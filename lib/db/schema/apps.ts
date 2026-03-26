@@ -130,6 +130,8 @@ export const deployments = pgTable("deployment", {
   envSnapshot: text("env_snapshot"), // Encrypted env blob at deploy time (AES-256-GCM)
   configSnapshot: jsonb("config_snapshot").$type<ConfigSnapshot>(),
   rollbackFromId: text("rollback_from_id"),
+  // ID of the deployment that superseded this one (set when status = "superseded")
+  supersededBy: text("superseded_by"),
   startedAt: timestamp("started_at").defaultNow().notNull(),
   finishedAt: timestamp("finished_at"),
 },
