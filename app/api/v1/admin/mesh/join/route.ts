@@ -121,10 +121,14 @@ export async function POST(request: NextRequest) {
     });
 
     // Rebuild WireGuard config with the hub as a peer
+    // (joiner inserts the hub directly, not via registerPeer, so sync here)
     try {
-      await rebuildAndSync();
-    } catch {
-      // WireGuard sync failure shouldn't fail the join
+      const { isWireguardRunning } = await import("@/lib/mesh/wireguard");
+      if (await isWireguardRunning()) {
+        await rebuildAndSync();
+      }
+    } catch (err) {
+      console.warn(`[mesh] WireGuard sync failed after joining hub: ${err}`);
     }
 
     // Pull shareable config from the hub (best-effort)

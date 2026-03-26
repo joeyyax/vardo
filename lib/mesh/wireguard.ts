@@ -132,6 +132,9 @@ export async function rebuildAndSync(): Promise<void> {
     "cat /config/wg_confs/wg0.conf | grep Address | cut -d= -f2- | tr -d ' ' | cut -d/ -f1",
   ]);
   const address = addrOut.trim();
+  if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(address)) {
+    throw new Error(`Invalid WireGuard address from config: ${address}`);
+  }
 
   // Get all peers from the database
   const allPeers = await db.query.meshPeers.findMany({
