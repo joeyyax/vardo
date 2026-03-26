@@ -313,6 +313,15 @@ run_cmd() {
   "$@"
 }
 
+# Returns true if a usable controlling terminal is available.
+# Checks each standard fd first (fast path), then tries to open /dev/tty.
+# [ -e /dev/tty ] && [ -w /dev/tty ] is not sufficient — the device node
+# always exists and always has write permission bits set, even when there is
+# no controlling terminal (e.g. ssh host 'cmd' without -t).
+has_tty() {
+  [ -t 0 ] || [ -t 1 ] || [ -t 2 ] || { [ -e /dev/tty ] && { : < /dev/tty; } 2>/dev/null; }
+}
+
 # Run a command with elapsed timer — for long-running operations
 run_with_spinner() {
   local label="$1"
@@ -321,7 +330,7 @@ run_with_spinner() {
     echo -e "  ${DIM}[dry-run] $*${RESET}"
     return 0
   fi
-  if $VERBOSE; then
+  if $VERBOSE || ! has_tty; then
     info "$label"
     "$@"
     return $?
@@ -329,8 +338,7 @@ run_with_spinner() {
   log_to_file "CMD: $*"
 
   # Determine output target for progress: /dev/tty when available, stderr otherwise
-  local tty_out
-  if [ -e /dev/tty ] && [ -w /dev/tty ]; then tty_out="/dev/tty"; else tty_out="/dev/stderr"; fi
+  local tty_out="/dev/tty"
 
   # Start a timer in a background subshell that updates every 5s
   local start_time=$SECONDS
@@ -365,7 +373,7 @@ confirm() {
   local default="${2:-n}"
   local yn
   # No TTY available — honour the default rather than crashing
-  if ! [ -t 0 ] && ! [ -e /dev/tty ]; then
+  if ! has_tty; then
     [[ "$default" == "y" ]]
     return
   fi
@@ -932,7 +940,7 @@ generate_env() {
       echo -e "    ${BOLD}3)${RESET} Development   Local development"
       echo ""
       local role_choice
-      if ! [ -t 0 ] && ! [ -e /dev/tty ]; then role_choice=1
+      if ! has_tty; then role_choice=1
       else read -rp "  Choose [1]: " role_choice < /dev/tty; fi
       case "${role_choice:-1}" in
         1) VARDO_ROLE="production" ;;
@@ -954,7 +962,7 @@ generate_env() {
       [ -n "${VARDO_BASE_DOMAIN:-}" ] || fail "VARDO_BASE_DOMAIN is required in --unattended mode. Set it as an environment variable: VARDO_BASE_DOMAIN=example.com"
       [ -n "${ACME_EMAIL:-}" ] || fail "ACME_EMAIL is required in --unattended mode. Set it as an environment variable: ACME_EMAIL=you@example.com"
     else
-      if ! [ -t 0 ] && ! [ -e /dev/tty ]; then
+      if ! has_tty; then
         [ -n "${VARDO_DOMAIN:-}" ] || fail "No TTY available. Set VARDO_DOMAIN as an environment variable: VARDO_DOMAIN=vardo.example.com"
         [ -n "${VARDO_BASE_DOMAIN:-}" ] || fail "No TTY available. Set VARDO_BASE_DOMAIN as an environment variable: VARDO_BASE_DOMAIN=example.com"
         [ -n "${ACME_EMAIL:-}" ] || fail "No TTY available. Set ACME_EMAIL as an environment variable: ACME_EMAIL=you@example.com"
@@ -1014,7 +1022,7 @@ generate_env() {
   elif [[ "$VARDO_ROLE" == "staging" ]]; then
     # Staging — domain is optional (may be behind existing reverse proxy)
     if [ -z "${VARDO_DOMAIN:-}" ] && ! $UNATTENDED; then
-      if [ -t 0 ] || [ -e /dev/tty ]; then
+      if has_tty; then
         echo ""
         read -rp "  Domain for Vardo dashboard (optional, press Enter to skip): " VARDO_DOMAIN < /dev/tty
         if [ -n "${VARDO_DOMAIN:-}" ]; then
@@ -1154,7 +1162,7 @@ wait_healthy() {
   local attempts=$((timeout / interval))
   local attempt=0
   local tty_out
-  if [ -e /dev/tty ] && [ -w /dev/tty ]; then tty_out="/dev/tty"; else tty_out="/dev/stderr"; fi
+  if has_tty; then tty_out="/dev/tty"; else tty_out="/dev/stderr"; fi
 
   while [ $elapsed -lt "$timeout" ]; do
     attempt=$((attempt + 1))
@@ -1888,7 +1896,7 @@ show_menu() {
   echo ""
 
   local choice
-  if ! [ -t 0 ] && ! [ -e /dev/tty ]; then choice=1
+  if ! has_tty; then choice=1
   else read -rp "  Choose [1]: " choice < /dev/tty; fi
   choice="${choice:-1}"
 
