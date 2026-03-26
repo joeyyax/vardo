@@ -656,12 +656,12 @@ export async function runDeployment(
         ...svc,
         labels: {
           ...svc.labels,
-          "host.project": app.name,
-          "host.project.id": app.id,
-          "host.organization": opts.organizationId,
-          "host.deployment.id": deploymentId,
-          "host.environment": envName,
-          "host.managed": "true",
+          "vardo.project": app.name,
+          "vardo.project.id": app.id,
+          "vardo.organization": opts.organizationId,
+          "vardo.deployment.id": deploymentId,
+          "vardo.environment": envName,
+          "vardo.managed": "true",
         },
       };
     }
