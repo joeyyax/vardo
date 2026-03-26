@@ -27,9 +27,18 @@ export type ComposeService = {
   labels?: Record<string, string>;
   networks?: string[];
   depends_on?: string[];
+  network_mode?: string;
+  runtime?: string;
   deploy?: {
     resources?: {
       limits?: ResourceLimits;
+      reservations?: {
+        devices?: Array<{
+          driver?: string;
+          count?: number | string;
+          capabilities?: string[];
+        }>;
+      };
     };
   };
 };
@@ -223,6 +232,10 @@ export function injectNetwork(
 ): ComposeFile {
   const updatedServices: Record<string, ComposeService> = {};
   for (const [key, svc] of Object.entries(compose.services)) {
+    if (svc.network_mode) {
+      updatedServices[key] = svc;
+      continue;
+    }
     const existingNetworks = svc.networks ?? [];
     updatedServices[key] = {
       ...svc,
@@ -334,6 +347,7 @@ function parsePortString(
 // ---------------------------------------------------------------------------
 
 import YAML from "yaml";
+import { isFeatureEnabled } from "@/lib/config/features";
 
 /**
  * Serialize a ComposeFile to a YAML string.
@@ -419,6 +433,8 @@ export function parseCompose(yamlString: string): ComposeFile {
         svc.depends_on = Object.keys(raw.depends_on);
       }
     }
+    if (raw.network_mode && typeof raw.network_mode === "string") svc.network_mode = raw.network_mode;
+    if (raw.runtime && typeof raw.runtime === "string") svc.runtime = raw.runtime;
     if (
       raw.deploy &&
       typeof raw.deploy === "object" &&
@@ -494,12 +510,11 @@ export function validateCompose(compose: ComposeFile): {
       }
     }
 
-    // Check for host bind mounts (paths starting with / or ./)
-    if (svc.volumes) {
+    if (svc.volumes && !isFeatureEnabled("bindMounts")) {
       for (const vol of svc.volumes) {
         if (vol.startsWith("/") || vol.startsWith("./") || vol.startsWith("../")) {
           errors.push(
-            `Service "${name}" uses host bind mount "${vol}" — only named volumes are allowed`,
+            `Service "${name}" uses host bind mount "${vol}" — enable the Bind Mounts feature flag to allow this`,
           );
         }
       }
@@ -514,6 +529,7 @@ export function validateCompose(compose: ComposeFile): {
  * Used when allowUnsafeCompose is false.
  */
 export function sanitizeCompose(compose: ComposeFile): ComposeFile {
+  if (isFeatureEnabled("bindMounts")) return compose;
   const sanitized = { ...compose, services: { ...compose.services } };
   for (const [name, svc] of Object.entries(sanitized.services)) {
     if (svc.volumes) {
