@@ -231,8 +231,6 @@ services:
     environment:
       - PUID=1000
       - PGID=1000
-      - POST_UP=iptables -t nat -A POSTROUTING -o wg0 -j MASQUERADE
-      - POST_DOWN=iptables -t nat -D POSTROUTING -o wg0 -j MASQUERADE
     ports:
       - "${WIREGUARD_PORT:-51820}:51820/udp"
     volumes:
