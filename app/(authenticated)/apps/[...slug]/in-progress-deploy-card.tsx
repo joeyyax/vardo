@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, Check, X, ChevronDown, Square } from "lucide-react";
+import { Loader2, Check, X, ChevronDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TerminalOutput, highlightLogLine, detectLogLevel } from "@/components/log-viewer";
@@ -96,11 +96,10 @@ export function InProgressDeployCard({
           {canAbort && onAbort && (
             <Button
               size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
+              variant="destructive"
               onClick={(e) => { e.stopPropagation(); onAbort(); }}
             >
-              <Square className="mr-1 size-3" />
+              <X className="mr-1 size-3" />
               Abort
             </Button>
           )}
