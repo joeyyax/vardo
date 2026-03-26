@@ -23,6 +23,7 @@ export type ContainerInspect = {
   env: string[];
   labels: Record<string, string>;
   networks: string[];
+  networkMode: string;
   mounts: { source: string; destination: string; type: string }[];
 };
 
@@ -256,6 +257,7 @@ export async function inspectContainer(id: string): Promise<ContainerInspect> {
     };
     HostConfig: {
       PortBindings?: Record<string, { HostPort: string }[] | null>;
+      NetworkMode?: string;
     };
     NetworkSettings: {
       Networks?: Record<string, unknown>;
@@ -276,6 +278,7 @@ export async function inspectContainer(id: string): Promise<ContainerInspect> {
     env: data.Config.Env ?? [],
     labels: data.Config.Labels ?? {},
     networks: Object.keys(data.NetworkSettings.Networks ?? {}),
+    networkMode: data.HostConfig.NetworkMode ?? "bridge",
     mounts: (data.Mounts ?? []).map((m) => ({
       source: m.Source,
       destination: m.Destination,
