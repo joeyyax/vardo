@@ -17,5 +17,6 @@ export { generateMeshToken, hashMeshToken, requireMeshPeer } from "./auth";
 export { createInvite, redeemInvite, decodeInviteToken, listInvites, cancelInvite } from "./invite";
 export { registerPeer } from "./peers";
 export { meshFetch, meshJsonFetch, MeshClientError } from "./client";
+export { sendHeartbeatToPeer } from "./heartbeat";
 export { buildProjectBundle, importProjectBundle, canTransferVolumes } from "./transfers";
 export type { ProjectBundle, AppBundle } from "./transfers";
