@@ -207,12 +207,20 @@ function buildAuth() {
 
 // Lazy singleton — rebuilt when GitHub credentials change via refreshGitHubOAuthCredentials()
 type AuthInstance = ReturnType<typeof buildAuth>;
+
+function getAuthInstance(): AuthInstance {
+  if (!_authInstance) {
+    _authInstance = buildAuth();
+  }
+  return _authInstance;
+}
+
 export const auth = new Proxy({} as AuthInstance, {
-  get(_target, prop, receiver) {
-    if (!_authInstance) {
-      _authInstance = buildAuth();
-    }
-    return Reflect.get(_authInstance, prop, receiver);
+  get(_target, prop) {
+    return Reflect.get(getAuthInstance(), prop, getAuthInstance());
+  },
+  has(_target, prop) {
+    return Reflect.has(getAuthInstance(), prop);
   },
 });
 
