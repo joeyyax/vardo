@@ -64,6 +64,12 @@ const STEPS = [
     required: true,
   },
   {
+    id: "instances",
+    label: "Instances",
+    description: "Connect to other Vardo instances",
+    icon: Network,
+  },
+  {
     id: "email",
     label: "Email provider",
     description: "SMTP, Mailpace, or Resend",
@@ -86,12 +92,6 @@ const STEPS = [
     label: "Domain & DNS",
     description: "Verify DNS records for HTTPS",
     icon: Globe,
-  },
-  {
-    id: "instances",
-    label: "Instances",
-    description: "Connect to other Vardo instances",
-    icon: Network,
   },
   {
     id: "done",
@@ -142,6 +142,7 @@ export function SetupWizard({
   const [currentStep, setCurrentStep] = useState<StepId>("welcome");
   const [loading, setLoading] = useState(false);
   const [completedSteps, setCompletedSteps] = useState<Set<StepId>>(new Set());
+  const [inheritedSteps, setInheritedSteps] = useState<Set<StepId>>(new Set());
   const [hydrated, setHydrated] = useState(false);
 
   // Restore progress: DB is source of truth, localStorage is fallback
@@ -374,11 +375,38 @@ export function SetupWizard({
                 }}
               />
             )}
+            {currentStep === "instances" && (
+              <InstancesStep
+                loading={loading}
+                setLoading={setLoading}
+                onComplete={(inherited) => {
+                  markComplete("instances");
+                  if (inherited?.email) {
+                    markComplete("email");
+                    setInheritedSteps((prev) => new Set([...prev, "email"]));
+                  }
+                  if (inherited?.backup) {
+                    markComplete("backup");
+                    setInheritedSteps((prev) => new Set([...prev, "backup"]));
+                  }
+                  if (inherited?.github) {
+                    markComplete("github");
+                    setInheritedSteps((prev) => new Set([...prev, "github"]));
+                  }
+                  goNext();
+                }}
+                onSkip={() => {
+                  markComplete("instances");
+                  goNext();
+                }}
+              />
+            )}
             {currentStep === "email" && (
               <EmailStep
                 loading={loading}
                 setLoading={setLoading}
                 allowSmtp={providerRestrictions.allowSmtp}
+                inherited={inheritedSteps.has("email")}
                 onComplete={() => {
                   markComplete("email");
                   goNext();
@@ -393,6 +421,7 @@ export function SetupWizard({
               <BackupStep
                 loading={loading}
                 setLoading={setLoading}
+                inherited={inheritedSteps.has("backup")}
                 onComplete={() => {
                   markComplete("backup");
                   goNext();
@@ -407,6 +436,7 @@ export function SetupWizard({
               <GithubStep
                 loading={loading}
                 setLoading={setLoading}
+                inherited={inheritedSteps.has("github")}
                 onComplete={() => {
                   markComplete("github");
                   goNext();
@@ -425,20 +455,6 @@ export function SetupWizard({
                 }}
                 onSkip={() => {
                   markComplete("domain");
-                  goNext();
-                }}
-              />
-            )}
-            {currentStep === "instances" && (
-              <InstancesStep
-                loading={loading}
-                setLoading={setLoading}
-                onComplete={() => {
-                  markComplete("instances");
-                  goNext();
-                }}
-                onSkip={() => {
-                  markComplete("instances");
                   goNext();
                 }}
               />
@@ -638,12 +654,14 @@ function EmailStep({
   loading,
   setLoading,
   allowSmtp = true,
+  inherited = false,
   onComplete,
   onSkip,
 }: {
   loading: boolean;
   setLoading: (v: boolean) => void;
   allowSmtp?: boolean;
+  inherited?: boolean;
   onComplete: () => void;
   onSkip: () => void;
 }) {
@@ -655,6 +673,23 @@ function EmailStep({
   const [apiKey, setApiKey] = useState("");
   const [fromEmail, setFromEmail] = useState("");
   const [fromName, setFromName] = useState(DEFAULT_APP_NAME);
+
+  useEffect(() => {
+    if (!inherited) return;
+    fetch("/api/setup/email")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.provider) setProvider(data.provider);
+        if (data.smtpHost) setSmtpHost(data.smtpHost);
+        if (data.smtpPort) setSmtpPort(String(data.smtpPort));
+        if (data.smtpUser) setSmtpUser(data.smtpUser);
+        if (data.smtpPass) setSmtpPass(data.smtpPass);
+        if (data.apiKey) setApiKey(data.apiKey);
+        if (data.fromEmail) setFromEmail(data.fromEmail);
+        if (data.fromName) setFromName(data.fromName);
+      })
+      .catch(() => {});
+  }, [inherited]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -688,6 +723,13 @@ function EmailStep({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {inherited && (
+        <div className="rounded-lg border border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950 p-3">
+          <p className="text-xs text-green-700 dark:text-green-300">
+            Inherited from connected instance. Review or skip.
+          </p>
+        </div>
+      )}
       <div className="space-y-2">
         <Label>Provider</Label>
         <Select value={provider} onValueChange={setProvider}>
@@ -867,11 +909,13 @@ function EmailStep({
 function BackupStep({
   loading,
   setLoading,
+  inherited = false,
   onComplete,
   onSkip,
 }: {
   loading: boolean;
   setLoading: (v: boolean) => void;
+  inherited?: boolean;
   onComplete: () => void;
   onSkip: () => void;
 }) {
@@ -881,6 +925,21 @@ function BackupStep({
   const [endpoint, setEndpoint] = useState("");
   const [accessKey, setAccessKey] = useState("");
   const [secretKey, setSecretKey] = useState("");
+
+  useEffect(() => {
+    if (!inherited) return;
+    fetch("/api/setup/backup")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.type) setType(data.type);
+        if (data.bucket) setBucket(data.bucket);
+        if (data.region) setRegion(data.region);
+        if (data.endpoint) setEndpoint(data.endpoint);
+        if (data.accessKey) setAccessKey(data.accessKey);
+        if (data.secretKey) setSecretKey(data.secretKey);
+      })
+      .catch(() => {});
+  }, [inherited]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -912,6 +971,13 @@ function BackupStep({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {inherited && (
+        <div className="rounded-lg border border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950 p-3">
+          <p className="text-xs text-green-700 dark:text-green-300">
+            Inherited from connected instance. Review or skip.
+          </p>
+        </div>
+      )}
       <div className="space-y-2">
         <Label>Storage type</Label>
         <Select value={type} onValueChange={setType}>
@@ -1023,11 +1089,13 @@ function BackupStep({
 function GithubStep({
   loading,
   setLoading,
+  inherited = false,
   onComplete,
   onSkip,
 }: {
   loading: boolean;
   setLoading: (v: boolean) => void;
+  inherited?: boolean;
   onComplete: () => void;
   onSkip: () => void;
 }) {
@@ -1037,6 +1105,21 @@ function GithubStep({
   const [clientSecret, setClientSecret] = useState("");
   const [privateKey, setPrivateKey] = useState("");
   const [webhookSecret, setWebhookSecret] = useState(() => crypto.randomUUID());
+
+  useEffect(() => {
+    if (!inherited) return;
+    fetch("/api/setup/github")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.appId) setAppId(data.appId);
+        if (data.appSlug) setAppSlug(data.appSlug);
+        if (data.clientId) setClientId(data.clientId);
+        if (data.clientSecret) setClientSecret(data.clientSecret);
+        if (data.privateKey) setPrivateKey(data.privateKey);
+        if (data.webhookSecret) setWebhookSecret(data.webhookSecret);
+      })
+      .catch(() => {});
+  }, [inherited]);
 
   const appUrl = typeof window !== "undefined" ? window.location.origin : "";
   const webhookUrl = getWebhookUrl(appUrl);
@@ -1073,6 +1156,13 @@ function GithubStep({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {inherited && (
+        <div className="rounded-lg border border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950 p-3">
+          <p className="text-xs text-green-700 dark:text-green-300">
+            Inherited from connected instance. Review or skip.
+          </p>
+        </div>
+      )}
       <ProviderGuide title="How to create a GitHub App" defaultOpen>
         <StepList steps={GITHUB_GUIDE.steps} />
         <PermissionList permissions={GITHUB_GUIDE.permissions} />
@@ -1339,7 +1429,7 @@ function InstancesStep({
 }: {
   loading: boolean;
   setLoading: (v: boolean) => void;
-  onComplete: () => void;
+  onComplete: (inherited?: { email?: boolean; backup?: boolean; github?: boolean }) => void;
   onSkip: () => void;
 }) {
   const [token, setToken] = useState("");
@@ -1360,9 +1450,19 @@ function InstancesStep({
         try { message = JSON.parse(text).error || message; } catch {}
         throw new Error(message);
       }
-      toast.success("Connected to instance");
+      const data = await res.json();
+      const inherited = data.inheritedConfig;
+      const parts: string[] = [];
+      if (inherited?.email) parts.push("email");
+      if (inherited?.backup) parts.push("backup");
+      if (inherited?.github) parts.push("GitHub");
+      if (parts.length > 0) {
+        toast.success(`Connected — inherited ${parts.join(", ")} config`);
+      } else {
+        toast.success("Connected to instance");
+      }
       setJoined(true);
-      onComplete();
+      onComplete(inherited);
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : "Failed to join mesh",
@@ -1375,11 +1475,11 @@ function InstancesStep({
   return (
     <div className="space-y-4">
       <div className="rounded-lg border p-4 space-y-2">
-        <div className="text-sm font-medium">What are instances?</div>
+        <div className="text-sm font-medium">Join an existing network</div>
         <p className="text-xs text-muted-foreground">
-          Connect multiple Vardo installations over encrypted WireGuard
-          tunnels. Manage projects across dev, staging and production
-          from a single dashboard.
+          If you have another Vardo instance running, connect to it here.
+          Settings like email, backups, and GitHub will carry over
+          automatically so you don&apos;t have to set them up again.
         </p>
       </div>
 
