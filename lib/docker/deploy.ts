@@ -18,10 +18,22 @@ import {
   injectNetwork,
   injectResourceLimits,
   parseCompose,
+  sanitizeCompose,
   composeToYaml,
   type ComposeFile,
 } from "./compose";
 import { ensureNetwork, detectExposedPorts, listContainers, inspectContainer } from "./client";
+import { isFeatureEnabled } from "@/lib/config/features";
+
+function parseAndSanitize(yaml: string, log: (msg: string) => void): ComposeFile {
+  const compose = parseCompose(yaml);
+  const bindMountsEnabled = isFeatureEnabled("bindMounts");
+  const sanitized = sanitizeCompose(compose, { allowBindMounts: bindMountsEnabled });
+  if (sanitized.strippedMounts.length > 0) {
+    log(`[deploy] Stripped ${sanitized.strippedMounts.length} bind mount(s): ${sanitized.strippedMounts.join(", ")}`);
+  }
+  return sanitized.compose;
+}
 import { assertSafeName, assertSafeBranch } from "./validate";
 import { DeployBlockedError } from "./errors";
 import { volumeThreshold } from "@/lib/volumes/threshold";
@@ -31,7 +43,7 @@ import { githubAppInstallations, memberships } from "@/lib/db/schema";
 import { detectPreventiveFixes, detectCompatIssues, applyCompatFixes } from "./compat";
 import { syncComposeServices } from "./compose-sync";
 import { recordActivity } from "@/lib/activity";
-import { regenerateAppRouteConfig } from "@/lib/traefik/generate-config";
+import { regenerateAppRouteConfig, removeAppRouteConfig } from "@/lib/traefik/generate-config";
 import {
   getDecryptedPrivateKey,
   writeTemporaryKeyFile,
@@ -430,7 +442,7 @@ export async function runDeployment(
       stage("build", "running");
 
       if (composeContent && app.deployType === "compose") {
-        compose = parseCompose(composeContent);
+        compose = parseAndSanitize(composeContent, log);
 
         // Detect declared volumes from compose YAML before deploy starts
         if (compose.volumes && Object.keys(compose.volumes).length > 0) {
@@ -529,7 +541,7 @@ export async function runDeployment(
       }
     } else if (app.composeContent) {
       // Direct compose content
-      compose = parseCompose(app.composeContent);
+      compose = parseAndSanitize(app.composeContent, log);
       log(`[deploy] Parsed compose content`);
 
       // Detect declared volumes from compose YAML before deploy starts
@@ -603,32 +615,40 @@ export async function runDeployment(
     }
 
     // Step 3: Inject Traefik labels + shared network
-    for (const domain of app.domains) {
-      const port = domain.port || containerPort;
-      compose = injectTraefikLabels(compose, {
-        projectName: `${app.name}-${domain.id.slice(0, 6)}`,
-        appName: app.name,
-        domain: domain.domain,
-        containerPort: port,
-        certResolver: domain.certResolver || "le",
-        ssl: domain.sslEnabled ?? true,
-        redirectTo: domain.redirectTo ?? undefined,
-        redirectCode: domain.redirectCode ?? 301,
-      });
-      if (domain.redirectTo) {
-        log(`[deploy] Traefik: ${domain.domain} → redirect ${domain.redirectCode ?? 301} ${domain.redirectTo}`);
-      } else {
-        log(`[deploy] Traefik: ${domain.domain} → :${port}${(domain.sslEnabled ?? true) ? " (TLS)" : ""}`);
+    // Check if any service uses a custom network mode (host, service:X, container:X)
+    const servicesWithCustomNetwork = Object.entries(compose.services)
+      .filter(([, svc]) => svc.network_mode && svc.network_mode !== "bridge")
+      .map(([name, svc]) => `${name} (${svc.network_mode})`);
+    const allServicesCustomNetwork = servicesWithCustomNetwork.length === Object.keys(compose.services).length;
+
+    if (!allServicesCustomNetwork) {
+      for (const domain of app.domains) {
+        const port = domain.port || containerPort;
+        compose = injectTraefikLabels(compose, {
+          projectName: `${app.name}-${domain.id.slice(0, 6)}`,
+          appName: app.name,
+          domain: domain.domain,
+          containerPort: port,
+          certResolver: domain.certResolver || "le",
+          ssl: domain.sslEnabled ?? true,
+          redirectTo: domain.redirectTo ?? undefined,
+          redirectCode: domain.redirectCode ?? 301,
+        });
+        if (domain.redirectTo) {
+          log(`[deploy] Traefik: ${domain.domain} → redirect ${domain.redirectCode ?? 301} ${domain.redirectTo}`);
+        } else {
+          log(`[deploy] Traefik: ${domain.domain} → :${port}${(domain.sslEnabled ?? true) ? " (TLS)" : ""}`);
+        }
       }
+
+      regenerateAppRouteConfig(app.id).catch((err) =>
+        log(`[deploy] Warning: failed to write Traefik dynamic config — ${err}`)
+      );
+    } else {
+      log(`[deploy] Skipping Traefik labels — all services use custom network modes: ${servicesWithCustomNetwork.join(", ")}`);
+      removeAppRouteConfig(app.name).catch(() => {});
     }
     compose = injectNetwork(compose, NETWORK_NAME);
-
-    // Also write Traefik file-provider config so routing stays in sync with
-    // the database. The file provider takes precedence (priority 100) over
-    // Docker labels, ensuring domains added between deploys are reflected.
-    regenerateAppRouteConfig(app.id).catch((err) =>
-      log(`[deploy] Warning: failed to write Traefik dynamic config — ${err}`)
-    );
 
     // Step 3: Add app labels
     for (const [svcName, svc] of Object.entries(compose.services)) {

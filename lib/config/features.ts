@@ -17,11 +17,13 @@ export type FeatureFlag =
   | "backups"
   | "cron"
   | "passwordAuth"
-  | "mesh";
+  | "mesh"
+  | "bindMounts";
 
 type FlagConfig = {
   label: string;
   description: string;
+  defaultValue?: boolean;
 };
 
 const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
@@ -55,6 +57,12 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
     description:
       "Connect multiple Vardo instances over encrypted WireGuard tunnels. Enables promote, pull and clone between instances.",
   },
+  bindMounts: {
+    label: "Bind Mounts",
+    description:
+      "Allow host path mounts in compose definitions. Required for homelab services with local config or NFS mounts. Disabled by default for security on shared instances.",
+    defaultValue: false,
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -80,7 +88,7 @@ export async function loadFeatureFlags(): Promise<void> {
  */
 export function isFeatureEnabled(flag: FeatureFlag): boolean {
   if (flagCache && flag in flagCache) return flagCache[flag];
-  return true; // default enabled
+  return FLAG_CONFIG[flag].defaultValue ?? true;
 }
 
 /**
@@ -96,7 +104,7 @@ export async function isFeatureEnabledAsync(flag: FeatureFlag): Promise<boolean>
   if (flags) flagCache = { ...flagCache, ...flags };
 
   if (flags && flag in flags) return flags[flag];
-  return true; // default enabled
+  return FLAG_CONFIG[flag].defaultValue ?? true;
 }
 
 /**
