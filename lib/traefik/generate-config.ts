@@ -81,7 +81,6 @@ export async function regenerateAppRouteConfig(appId: string): Promise<void> {
       domain.domain.endsWith(".localhost") || domain.domain === "localhost";
     const ssl = domain.sslEnabled ?? true;
     const certResolver = domain.certResolver || "le";
-    const port = domain.port || app.containerPort || 3000;
 
     // The Docker provider service already knows the port from labels set at
     // deploy time. For file-provider-only routing (e.g. domain added after
