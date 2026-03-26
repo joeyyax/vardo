@@ -158,7 +158,15 @@ export async function rebuildAndSync(overrideAddress?: string): Promise<void> {
   const port = parseInt(process.env.WIREGUARD_PORT || "51820", 10);
   const config = buildWgConfig(privateKey, port, address, wgPeers);
   await writeWgConfig(config);
-  await syncConfig();
+
+  if (overrideAddress) {
+    // Address changed — syncconf can't update the interface address, need full restart
+    await execFileAsync("docker", [
+      "exec", WG_CONTAINER, "sh", "-c", "wg-quick down wg0; wg-quick up wg0",
+    ]);
+  } else {
+    await syncConfig();
+  }
 }
 
 /** Check if the WireGuard container is running. */
