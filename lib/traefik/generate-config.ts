@@ -29,6 +29,11 @@ type TraefikMiddlewareConfig = {
     scheme: string;
     permanent: boolean;
   };
+  redirectRegex?: {
+    regex: string;
+    replacement: string;
+    permanent: boolean;
+  };
 };
 
 type TraefikDynamicConfig = {
@@ -81,13 +86,66 @@ export async function regenerateAppRouteConfig(appId: string): Promise<void> {
       domain.domain.endsWith(".localhost") || domain.domain === "localhost";
     const ssl = domain.sslEnabled ?? true;
     const certResolver = domain.certResolver || "le";
+    const isRedirect = !!domain.redirectTo;
+    const permanent = (domain.redirectCode ?? 301) === 301;
 
-    // The Docker provider service already knows the port from labels set at
-    // deploy time. For file-provider-only routing (e.g. domain added after
-    // deploy), we also define a file-provider service as a fallback pointing
-    // at the container on the Docker network.
-    // However, referencing the Docker service is cleaner and avoids duplication.
+    // If this is a redirect domain, create a redirectRegex middleware
+    if (isRedirect) {
+      const redirectMw = `${routerName}-redirect`;
+      middlewares[redirectMw] = {
+        redirectRegex: {
+          regex: "^https?://[^/]+(.*)$",
+          replacement: `${domain.redirectTo}\${1}`,
+          permanent,
+        },
+      };
 
+      if (ssl && !isLocal) {
+        routers[routerName] = {
+          rule: `Host(\`${domain.domain}\`)`,
+          service: dockerServiceRef,
+          entryPoints: ["websecure"],
+          tls: { certResolver },
+          middlewares: [redirectMw],
+          priority: 100,
+        };
+        // HTTP router also redirects (no need for https-redirect, the domain redirect handles it)
+        routers[`${routerName}-http`] = {
+          rule: `Host(\`${domain.domain}\`)`,
+          service: dockerServiceRef,
+          entryPoints: ["web"],
+          middlewares: [redirectMw],
+          priority: 100,
+        };
+      } else if (ssl && isLocal) {
+        routers[routerName] = {
+          rule: `Host(\`${domain.domain}\`)`,
+          service: dockerServiceRef,
+          entryPoints: ["websecure"],
+          tls: {},
+          middlewares: [redirectMw],
+          priority: 100,
+        };
+        routers[`${routerName}-http`] = {
+          rule: `Host(\`${domain.domain}\`)`,
+          service: dockerServiceRef,
+          entryPoints: ["web"],
+          middlewares: [redirectMw],
+          priority: 100,
+        };
+      } else {
+        routers[routerName] = {
+          rule: `Host(\`${domain.domain}\`)`,
+          service: dockerServiceRef,
+          entryPoints: ["web"],
+          middlewares: [redirectMw],
+          priority: 100,
+        };
+      }
+      continue;
+    }
+
+    // Normal (non-redirect) domain routing
     if (ssl && !isLocal) {
       // HTTPS router
       routers[routerName] = {

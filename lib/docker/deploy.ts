@@ -606,8 +606,14 @@ export async function runDeployment(
         containerPort: port,
         certResolver: domain.certResolver || "le",
         ssl: domain.sslEnabled ?? true,
+        redirectTo: domain.redirectTo ?? undefined,
+        redirectCode: domain.redirectCode ?? 301,
       });
-      log(`[deploy] Traefik: ${domain.domain} → :${port}${(domain.sslEnabled ?? true) ? " (TLS)" : ""}`);
+      if (domain.redirectTo) {
+        log(`[deploy] Traefik: ${domain.domain} → redirect ${domain.redirectCode ?? 301} ${domain.redirectTo}`);
+      } else {
+        log(`[deploy] Traefik: ${domain.domain} → :${port}${(domain.sslEnabled ?? true) ? " (TLS)" : ""}`);
+      }
     }
     compose = injectNetwork(compose, NETWORK_NAME);
 
