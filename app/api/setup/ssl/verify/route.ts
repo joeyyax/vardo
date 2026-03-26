@@ -23,7 +23,7 @@ async function checkIssuer(
         issuer,
         label,
         ok: false,
-        message: `${label} requires an ACME email — set NEXT_PUBLIC_ACME_EMAIL in your environment`,
+        message: `${label} requires an ACME email — set ACME_EMAIL in your environment`,
       };
     }
     return {
@@ -87,7 +87,7 @@ export async function POST() {
   }
 
   const config = await getSslConfig();
-  const acmeEmail = process.env.NEXT_PUBLIC_ACME_EMAIL;
+  const acmeEmail = process.env.ACME_EMAIL;
 
   // DNS challenge — verify token and ACME email, skip per-issuer HTTP checks
   if (config.challengeType === "dns") {
@@ -100,9 +100,31 @@ export async function POST() {
     if (!acmeEmail) {
       return NextResponse.json({
         ok: false,
-        message: "DNS challenge requires an ACME email — set NEXT_PUBLIC_ACME_EMAIL in your environment",
+        message: "DNS challenge requires an ACME email — set ACME_EMAIL in your environment",
       });
     }
+
+    // ZeroSSL + DNS-01 requires EAB credentials in addition to the API token
+    if (config.activeIssuers.includes("zerossl")) {
+      if (!config.zerosslEabKid || !config.zerosslEabHmac) {
+        return NextResponse.json({
+          ok: false,
+          message: "ZeroSSL + DNS challenge requires EAB Key ID and HMAC Key — add them above and save first",
+        });
+      }
+    }
+
+    // CF_DNS_API_TOKEN must be set in the environment — it's what Traefik reads.
+    // The token stored in the DB is for UI management only; it does not propagate
+    // to Traefik automatically. Without this env var, Traefik cannot issue certs.
+    const envToken = process.env.CF_DNS_API_TOKEN;
+    if (!envToken) {
+      return NextResponse.json({
+        ok: false,
+        message: "CF_DNS_API_TOKEN is not set in your environment — update .env and restart Traefik",
+      });
+    }
+
     return NextResponse.json({
       ok: true,
       message: `DNS challenge configured (Cloudflare, ACME email: ${acmeEmail}) — restart Traefik to activate`,
