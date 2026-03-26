@@ -128,6 +128,20 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     const { id, ...updates } = parsed.data;
 
+    // Prevent self-redirect
+    if (updates.redirectTo) {
+      const existing = await db.query.domains.findFirst({
+        where: and(eq(domains.id, id), eq(domains.appId, appId)),
+        columns: { domain: true },
+      });
+      if (existing) {
+        const redirectHost = new URL(updates.redirectTo).hostname;
+        if (redirectHost === existing.domain) {
+          return NextResponse.json({ error: "Cannot redirect a domain to itself" }, { status: 400 });
+        }
+      }
+    }
+
     const [updated] = await db
       .update(domains)
       .set(updates)

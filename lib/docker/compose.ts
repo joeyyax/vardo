@@ -146,7 +146,7 @@ export function injectTraefikLabels(
   if (isRedirect) {
     // Redirect domain — use redirectregex middleware instead of routing to the app service.
     // The router still needs TLS termination so Traefik can serve the redirect over HTTPS.
-    labels[`traefik.http.middlewares.${projectName}-redirect.redirectregex.regex`] = "^(.*)$";
+    labels[`traefik.http.middlewares.${projectName}-redirect.redirectregex.regex`] = "^https?://[^/]+(.*)$";
     labels[`traefik.http.middlewares.${projectName}-redirect.redirectregex.replacement`] = `${opts.redirectTo}\${1}`;
     labels[`traefik.http.middlewares.${projectName}-redirect.redirectregex.permanent`] = String(permanent);
     labels[`traefik.http.routers.${projectName}.middlewares`] = `${projectName}-redirect`;

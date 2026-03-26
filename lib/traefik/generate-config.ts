@@ -94,7 +94,7 @@ export async function regenerateAppRouteConfig(appId: string): Promise<void> {
       const redirectMw = `${routerName}-redirect`;
       middlewares[redirectMw] = {
         redirectRegex: {
-          regex: "^(.*)$",
+          regex: "^https?://[^/]+(.*)$",
           replacement: `${domain.redirectTo}\${1}`,
           permanent,
         },
