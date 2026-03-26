@@ -4,14 +4,13 @@ import { db } from "@/lib/db";
 import { meshPeers } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { requireMeshPeer } from "@/lib/mesh/auth";
-import { getInstanceId } from "@/lib/constants";
 
 /**
  * POST /api/v1/mesh/heartbeat — peer health check.
  *
- * Authenticated via mesh bearer token. Marks the calling peer as online and
- * returns this instance's ID so the caller can update the peer's status on
- * their side too, enabling bidirectional liveness tracking.
+ * Authenticated via mesh bearer token. Marks the calling peer as online in the
+ * local DB. The caller marks this instance online on their side when they
+ * receive the 200 — that's the bidirectional liveness tracking.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -26,9 +25,7 @@ export async function POST(request: NextRequest) {
       })
       .where(eq(meshPeers.id, peer.id));
 
-    const instanceId = await getInstanceId();
-
-    return NextResponse.json({ ok: true, instanceId });
+    return NextResponse.json({ ok: true });
   } catch (error) {
     return handleRouteError(error, "Error processing heartbeat");
   }
