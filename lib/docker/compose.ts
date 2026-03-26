@@ -346,6 +346,7 @@ function parsePortString(
 // YAML serialization (minimal, sufficient for Docker Compose)
 // ---------------------------------------------------------------------------
 
+import { resolve } from "path";
 import YAML from "yaml";
 
 /**
@@ -530,7 +531,7 @@ export function validateCompose(compose: ComposeFile, opts?: ValidateOptions): {
           );
         }
         if (isBindMount && opts?.allowBindMounts) {
-          const mountSource = vol.split(":")[0];
+          const mountSource = resolve(vol.split(":")[0]);
           if (DENIED_MOUNT_PATHS.some((p) => mountSource === p || mountSource.startsWith(p + "/"))) {
             errors.push(
               `Service "${name}" mounts denied path "${mountSource}" — this path is blocked for security`,
