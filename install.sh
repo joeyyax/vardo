@@ -1435,6 +1435,9 @@ do_update() {
 _do_rebuild() {
   step "Rebuilding"
 
+  # Refresh the /usr/local/bin/vardo wrapper so it picks up new commands/fixes
+  install_shortcut
+
   # Migrate ACME storage from single file to per-resolver files
   local acme_vol
   acme_vol=$(docker volume inspect vardo_letsencrypt --format '{{ .Mountpoint }}' 2>/dev/null || true)
