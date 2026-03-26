@@ -437,8 +437,9 @@ export function DomainSettings() {
           </p>
           {dnsChecks.some((c) => c.proxyProvider === "cloudflare") && (
             <div className="text-xs text-muted-foreground">
-              Disable the proxy (gray cloud) on the wildcard record —{" "}
-              <GuideLink href="https://dash.cloudflare.com">Cloudflare&apos;s proxy breaks wildcard SSL.</GuideLink>
+              Cloudflare proxy works for single-level subdomains (*.domain.com).
+              For nested subdomains (e.g. staging.app.domain.com), set that
+              record to DNS-only (gray cloud) so Traefik can issue the cert.
             </div>
           )}
         </CardContent>
