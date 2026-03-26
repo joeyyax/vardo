@@ -48,6 +48,12 @@ export type VardoConfig = {
     clientId?: string;
   };
   ssl?: {
+    /**
+     * Ordered list of active ACME issuers. First entry is the default for new
+     * domains. Replaces the legacy `defaultIssuer` single-value field.
+     */
+    activeIssuers?: ("le" | "google" | "zerossl")[];
+    /** @deprecated Use activeIssuers instead. Migrated on read. */
     defaultIssuer?: "le" | "google" | "zerossl";
   };
   features?: Record<string, boolean>;
@@ -284,9 +290,9 @@ export async function systemSettingsToVardoConfig(): Promise<{
         clientId: github.clientId,
       },
     }),
-    ...(ssl.defaultIssuer !== "le" && {
+    ...((ssl.activeIssuers.length > 1 || ssl.activeIssuers[0] !== "le") && {
       ssl: {
-        defaultIssuer: ssl.defaultIssuer,
+        activeIssuers: ssl.activeIssuers,
       },
     }),
     ...(features && { features }),
@@ -386,8 +392,15 @@ export async function importVardoConfig(
   }
 
   if (full.ssl) {
+    // Resolve active issuers: prefer explicit array, fall back to legacy field
+    const activeIssuers = full.ssl.activeIssuers?.length
+      ? full.ssl.activeIssuers
+      : full.ssl.defaultIssuer
+        ? [full.ssl.defaultIssuer]
+        : ["le"];
+
     await setSystemSetting("ssl_config", JSON.stringify({
-      defaultIssuer: full.ssl.defaultIssuer ?? "le",
+      activeIssuers,
       zerosslEabKid: full.ssl.zerossl?.eabKid,
       zerosslEabHmac: full.ssl.zerossl?.eabHmac,
     }));

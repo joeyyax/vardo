@@ -246,26 +246,60 @@ export async function getFeatureFlagsConfig(): Promise<Record<string, boolean> |
 // SSL / ACME certificate issuer
 // ---------------------------------------------------------------------------
 
+export type SslIssuer = "le" | "google" | "zerossl";
+
 export type SslConfig = {
-  defaultIssuer: "le" | "google" | "zerossl";
+  /**
+   * Ordered list of active issuers. The first entry is used as the default
+   * cert resolver for new domains. Multiple issuers can be active at once
+   * so Traefik can issue certificates from any of them.
+   */
+  activeIssuers: SslIssuer[];
   zerosslEabKid?: string;
   zerosslEabHmac?: string;
 };
 
-const VALID_ISSUERS = ["le", "google", "zerossl"] as const;
+export const VALID_ISSUERS = ["le", "google", "zerossl"] as const satisfies readonly SslIssuer[];
+
+/**
+ * The primary issuer — the first active issuer, or "le" as a safe default.
+ * Use this when a single cert resolver value is needed (e.g. new domain defaults).
+ */
+export function getPrimaryIssuer(config: SslConfig): SslIssuer {
+  return config.activeIssuers[0] ?? "le";
+}
 
 export async function getSslConfig(): Promise<SslConfig> {
   const fileConfig = await getVardoConfig();
-  const dbConfig = await getSystemSettingRaw("ssl_config")
-    .then((raw) => raw ? parseJson<SslConfig>(raw, "ssl_config") : null);
 
-  const fileIssuer = fileConfig?.ssl?.defaultIssuer;
-  const validIssuer = fileIssuer && VALID_ISSUERS.includes(fileIssuer)
-    ? fileIssuer
-    : undefined;
+  type StoredSslConfig = {
+    activeIssuers?: string[];
+    /** Legacy field — migrated on read */
+    defaultIssuer?: string;
+    zerosslEabKid?: string;
+    zerosslEabHmac?: string;
+  };
+
+  const dbConfig = await getSystemSettingRaw("ssl_config")
+    .then((raw) => raw ? parseJson<StoredSslConfig>(raw, "ssl_config") : null);
+
+  // Resolve active issuers: config file > DB > legacy defaultIssuer field > default
+  let activeIssuers: SslIssuer[];
+
+  const fileIssuers = fileConfig?.ssl?.activeIssuers;
+  if (fileIssuers && fileIssuers.length > 0) {
+    activeIssuers = fileIssuers.filter((i): i is SslIssuer => VALID_ISSUERS.includes(i as SslIssuer));
+  } else if (dbConfig?.activeIssuers && dbConfig.activeIssuers.length > 0) {
+    activeIssuers = dbConfig.activeIssuers.filter((i): i is SslIssuer => VALID_ISSUERS.includes(i as SslIssuer));
+  } else if (dbConfig?.defaultIssuer && VALID_ISSUERS.includes(dbConfig.defaultIssuer as SslIssuer)) {
+    // Migrate legacy single-issuer config to array format
+    activeIssuers = [dbConfig.defaultIssuer as SslIssuer];
+  } else {
+    activeIssuers = ["le"];
+  }
 
   return {
-    defaultIssuer: validIssuer ?? dbConfig?.defaultIssuer ?? "le",
+    activeIssuers,
     zerosslEabKid: fileConfig?.ssl?.zerossl?.eabKid ?? dbConfig?.zerosslEabKid,
     zerosslEabHmac: fileConfig?.ssl?.zerossl?.eabHmac ?? dbConfig?.zerosslEabHmac,
   };
