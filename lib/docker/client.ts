@@ -57,7 +57,7 @@ export async function dockerRequest<T = unknown>(
     const req = http.request(
       {
         ...conn,
-        path: `/v1.43${path}`,
+        path: `/v1.47${path}`,
         method,
         headers: {
           ...(payload
