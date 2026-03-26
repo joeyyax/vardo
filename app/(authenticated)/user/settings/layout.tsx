@@ -7,6 +7,7 @@ const NAV_ITEMS = [
   { label: "Authentication", href: "/user/settings/auth" },
   { label: "API tokens", href: "/user/settings/tokens" },
   { label: "Connections", href: "/user/settings/connections" },
+  { label: "Notifications", href: "/user/settings/notifications" },
 ];
 
 export default async function UserSettingsLayout({
