@@ -28,9 +28,26 @@ import {
   Rocket,
   Container,
   Upload,
+  RefreshCw,
 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import type { ProviderRestrictions } from "@/lib/config/provider-restrictions";
+import {
+  ProviderGuide,
+  StepList,
+  GuideLink,
+  CopyableField,
+  FieldHint,
+  PermissionList,
+} from "@/components/setup/provider-guide";
+import {
+  GITHUB_GUIDE,
+  getWebhookUrl,
+  EMAIL_PROVIDER_GUIDES,
+  SMTP_PRESETS,
+  BACKUP_PROVIDER_GUIDES,
+  getDnsRecords,
+} from "@/lib/setup/provider-guides";
 
 const STEPS = [
   {
@@ -667,6 +684,8 @@ function EmailStep({
     }
   }
 
+  const guide = EMAIL_PROVIDER_GUIDES[provider];
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-2">
@@ -684,6 +703,20 @@ function EmailStep({
         </Select>
       </div>
 
+      {guide && provider !== "smtp" && (
+        <ProviderGuide title={`How to get your ${guide.name} API key`} description={guide.description}>
+          <StepList steps={[
+            `Sign up or log in at ${guide.name}`,
+            guide.keyLocation,
+            "Paste the key into the field below",
+          ]} />
+          <div className="flex gap-3">
+            <GuideLink href={guide.signupUrl}>Sign up</GuideLink>
+            <GuideLink href={guide.dashboardUrl}>Dashboard</GuideLink>
+          </div>
+        </ProviderGuide>
+      )}
+
       {provider === "smtp" && allowSmtp && (
         <>
           <p className="text-xs text-muted-foreground bg-muted/50 rounded-lg px-3 py-2">
@@ -691,6 +724,19 @@ function EmailStep({
             notification fails to send, you won&apos;t know. We recommend
             Resend, Postmark, or Mailpace for reliable delivery.
           </p>
+          <ProviderGuide title="Common SMTP settings">
+            <div className="space-y-2">
+              {SMTP_PRESETS.map((preset) => (
+                <div key={preset.label} className="flex items-center justify-between text-xs">
+                  <div>
+                    <span className="font-medium">{preset.label}</span>
+                    <span className="text-muted-foreground ml-2">{preset.host}:{preset.port}</span>
+                  </div>
+                  <span className="text-muted-foreground text-[11px]">{preset.note}</span>
+                </div>
+              ))}
+            </div>
+          </ProviderGuide>
           <div className="grid grid-cols-3 gap-2">
             <div className="col-span-2 space-y-2">
               <Label htmlFor="smtpHost">SMTP Host</Label>
@@ -743,6 +789,7 @@ function EmailStep({
             onChange={(e) => setApiKey(e.target.value)}
             required
           />
+          <FieldHint>{EMAIL_PROVIDER_GUIDES.mailpace.keyLocation}</FieldHint>
         </div>
       )}
       {provider === "postmark" && (
@@ -756,6 +803,7 @@ function EmailStep({
             placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
             required
           />
+          <FieldHint>{EMAIL_PROVIDER_GUIDES.postmark.keyLocation}</FieldHint>
         </div>
       )}
       {provider === "resend" && (
@@ -769,6 +817,7 @@ function EmailStep({
             placeholder="re_..."
             required
           />
+          <FieldHint>{EMAIL_PROVIDER_GUIDES.resend.keyLocation}</FieldHint>
         </div>
       )}
 
@@ -859,6 +908,8 @@ function BackupStep({
     }
   }
 
+  const backupGuide = BACKUP_PROVIDER_GUIDES[type];
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-2">
@@ -874,6 +925,24 @@ function BackupStep({
           </SelectContent>
         </Select>
       </div>
+
+      {backupGuide && (
+        <ProviderGuide title={`Setting up ${backupGuide.name}`} description={backupGuide.bucketSettings}>
+          <div className="space-y-2">
+            <div className="text-xs text-muted-foreground">
+              <span className="font-medium">Credentials:</span> {backupGuide.credentialSteps}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              <span className="font-medium">Permissions needed:</span> {backupGuide.requiredPermissions}
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <GuideLink href={backupGuide.createBucketUrl}>Create bucket</GuideLink>
+            <GuideLink href={backupGuide.consoleUrl}>Console</GuideLink>
+          </div>
+        </ProviderGuide>
+      )}
+
       <div className="space-y-2">
         <Label htmlFor="bucket">Bucket name</Label>
         <Input
@@ -893,6 +962,7 @@ function BackupStep({
             placeholder={type === "r2" ? "auto" : "us-east-1"}
             required
           />
+          {type === "r2" && <FieldHint>Use &quot;auto&quot; for R2 — it handles region routing automatically.</FieldHint>}
         </div>
         <div className="space-y-2">
           <Label htmlFor="endpoint">Endpoint</Label>
@@ -902,6 +972,8 @@ function BackupStep({
             onChange={(e) => setEndpoint(e.target.value)}
             placeholder={type === "s3" ? "Leave blank for AWS" : ""}
           />
+          {type === "r2" && <FieldHint>https://&lt;account-id&gt;.r2.cloudflarestorage.com</FieldHint>}
+          {type === "b2" && <FieldHint>https://s3.&lt;region&gt;.backblazeb2.com</FieldHint>}
         </div>
       </div>
       <div className="space-y-2">
@@ -964,7 +1036,14 @@ function GithubStep({
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
   const [privateKey, setPrivateKey] = useState("");
-  const [webhookSecret, setWebhookSecret] = useState("");
+  const [webhookSecret, setWebhookSecret] = useState(() => crypto.randomUUID());
+
+  const appUrl = typeof window !== "undefined" ? window.location.origin : "";
+  const webhookUrl = getWebhookUrl(appUrl);
+
+  function regenerateWebhookSecret() {
+    setWebhookSecret(crypto.randomUUID());
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -994,6 +1073,19 @@ function GithubStep({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      <ProviderGuide title="How to create a GitHub App" defaultOpen>
+        <StepList steps={GITHUB_GUIDE.steps} />
+        <PermissionList permissions={GITHUB_GUIDE.permissions} />
+        <GuideLink href={GITHUB_GUIDE.createAppUrl}>Create GitHub App</GuideLink>
+      </ProviderGuide>
+
+      {webhookUrl && (
+        <div className="space-y-2">
+          <CopyableField label="Webhook URL (paste into GitHub)" value={webhookUrl} />
+          <CopyableField label="Webhook secret (paste into GitHub)" value={webhookSecret} />
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-2">
         <div className="space-y-2">
           <Label htmlFor="appId">App ID</Label>
@@ -1003,6 +1095,7 @@ function GithubStep({
             onChange={(e) => setAppId(e.target.value)}
             required
           />
+          <FieldHint>{GITHUB_GUIDE.fieldHints.appId}</FieldHint>
         </div>
         <div className="space-y-2">
           <Label htmlFor="appSlug">App slug</Label>
@@ -1012,6 +1105,7 @@ function GithubStep({
             onChange={(e) => setAppSlug(e.target.value)}
             required
           />
+          <FieldHint>{GITHUB_GUIDE.fieldHints.appSlug}</FieldHint>
         </div>
       </div>
       <div className="grid grid-cols-2 gap-2">
@@ -1023,6 +1117,7 @@ function GithubStep({
             onChange={(e) => setClientId(e.target.value)}
             required
           />
+          <FieldHint>{GITHUB_GUIDE.fieldHints.clientId}</FieldHint>
         </div>
         <div className="space-y-2">
           <Label htmlFor="ghClientSecret">Client secret</Label>
@@ -1033,6 +1128,7 @@ function GithubStep({
             onChange={(e) => setClientSecret(e.target.value)}
             required
           />
+          <FieldHint>{GITHUB_GUIDE.fieldHints.clientSecret}</FieldHint>
         </div>
       </div>
       <div className="space-y-2">
@@ -1045,16 +1141,28 @@ function GithubStep({
           placeholder="-----BEGIN RSA PRIVATE KEY-----"
           required
         />
+        <FieldHint>{GITHUB_GUIDE.fieldHints.privateKey}</FieldHint>
       </div>
       <div className="space-y-2">
-        <Label htmlFor="webhookSecret">Webhook secret</Label>
+        <div className="flex items-center gap-2">
+          <Label htmlFor="webhookSecret">Webhook secret</Label>
+          <button
+            type="button"
+            onClick={regenerateWebhookSecret}
+            className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+          >
+            <RefreshCw className="size-3" />
+            Regenerate
+          </button>
+        </div>
         <Input
           id="webhookSecret"
-          type="password"
           value={webhookSecret}
           onChange={(e) => setWebhookSecret(e.target.value)}
           required
+          className="font-mono text-sm"
         />
+        <FieldHint>{GITHUB_GUIDE.fieldHints.webhookSecret}</FieldHint>
       </div>
       <div className="flex gap-2">
         <Button
@@ -1088,6 +1196,28 @@ function DomainStep({
   const [baseDomain, setBaseDomain] = useState("");
   const [serverIp, setServerIp] = useState("");
   const [saving, setSaving] = useState(false);
+  const [loadingIp, setLoadingIp] = useState(true);
+
+  // Pre-fill server IP from existing config
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/setup/general");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.serverIp) setServerIp(data.serverIp);
+          if (data.baseDomain) setBaseDomain(data.baseDomain);
+          if (data.domain) setDomain(data.domain);
+        }
+      } catch {
+        // best effort
+      } finally {
+        setLoadingIp(false);
+      }
+    })();
+  }, []);
+
+  const dnsRecords = getDnsRecords(baseDomain, serverIp);
 
   async function handleSave() {
     setSaving(true);
@@ -1115,6 +1245,26 @@ function DomainStep({
 
   return (
     <div className="space-y-4">
+      <ProviderGuide title="DNS setup instructions" defaultOpen>
+        <div className="space-y-2 text-xs text-muted-foreground">
+          <p>
+            Point your domain to this server so Vardo can issue SSL certificates
+            and route traffic to your apps. You need two A records:
+          </p>
+          <div className="rounded border bg-muted/30 p-2 font-mono space-y-1">
+            {dnsRecords.map((r) => (
+              <div key={r.name}>
+                {r.type} &nbsp; {r.name} &nbsp; → &nbsp; {r.value}
+              </div>
+            ))}
+          </div>
+          <p>
+            The wildcard record (*.domain) enables automatic subdomains for every
+            app you deploy. HTTPS activates automatically once DNS propagates.
+          </p>
+        </div>
+      </ProviderGuide>
+
       <div className="space-y-3">
         <div className="space-y-2">
           <Label htmlFor="setup-domain">Primary domain</Label>
@@ -1124,9 +1274,7 @@ function DomainStep({
             onChange={(e) => setDomain(e.target.value)}
             placeholder="vardo.example.com"
           />
-          <p className="text-xs text-muted-foreground">
-            The domain where this Vardo instance will be accessible.
-          </p>
+          <FieldHint>The domain where this Vardo instance will be accessible.</FieldHint>
         </div>
         <div className="space-y-2">
           <Label htmlFor="setup-base-domain">Base domain</Label>
@@ -1136,38 +1284,25 @@ function DomainStep({
             onChange={(e) => setBaseDomain(e.target.value)}
             placeholder="example.com"
           />
-          <p className="text-xs text-muted-foreground">
-            Wildcard domain for auto-generated app subdomains.
-          </p>
+          <FieldHint>Wildcard domain for auto-generated app subdomains.</FieldHint>
         </div>
         <div className="space-y-2">
           <Label htmlFor="setup-server-ip">Server IP</Label>
           <Input
             id="setup-server-ip"
-            value={serverIp}
+            value={loadingIp ? "" : serverIp}
             onChange={(e) => setServerIp(e.target.value)}
-            placeholder="203.0.113.1"
+            placeholder={loadingIp ? "Detecting..." : "203.0.113.1"}
+            disabled={loadingIp}
           />
-          <p className="text-xs text-muted-foreground">
-            Public IP of this server. Point your DNS A records here.
-          </p>
+          <FieldHint>
+            {serverIp
+              ? `Detected: ${serverIp} — this is the IP your DNS A records should point to.`
+              : "Public IP of this server. Point your DNS A records here."}
+          </FieldHint>
         </div>
       </div>
-      <div className="rounded-lg border p-4 space-y-3">
-        <div className="text-sm font-medium">Required DNS records</div>
-        <div className="space-y-1 font-mono text-xs text-muted-foreground">
-          <div>
-            A &nbsp;&nbsp; {baseDomain || "your-domain.com"} &nbsp;&nbsp; → &nbsp; {serverIp || "your server IP"}
-          </div>
-          <div>
-            A &nbsp;&nbsp; *.{baseDomain || "your-domain.com"} → &nbsp; {serverIp || "your server IP"}
-          </div>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          HTTPS will activate automatically once DNS propagates and Let&apos;s
-          Encrypt issues certificates.
-        </p>
-      </div>
+
       <div className="flex gap-2">
         <Button
           variant="outline"

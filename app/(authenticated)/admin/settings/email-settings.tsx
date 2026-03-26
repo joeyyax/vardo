@@ -16,6 +16,15 @@ import { Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { MASK_SENTINEL } from "@/lib/mask-secrets";
 import { useSystemSetting } from "./use-system-setting";
+import {
+  ProviderGuide,
+  StepList,
+  GuideLink,
+} from "@/components/setup/provider-guide";
+import {
+  EMAIL_PROVIDER_GUIDES,
+  SMTP_PRESETS,
+} from "@/lib/setup/provider-guides";
 
 /** Convert sentinel-prefixed value to display-friendly mask. */
 function toDisplay(value: string): string {
@@ -156,6 +165,23 @@ export function EmailSettings() {
             </Select>
           </div>
 
+          {provider !== "smtp" && EMAIL_PROVIDER_GUIDES[provider] && (
+            <ProviderGuide
+              title={`How to get your ${EMAIL_PROVIDER_GUIDES[provider].name} API key`}
+              description={EMAIL_PROVIDER_GUIDES[provider].description}
+            >
+              <StepList steps={[
+                `Sign up or log in at ${EMAIL_PROVIDER_GUIDES[provider].name}`,
+                EMAIL_PROVIDER_GUIDES[provider].keyLocation,
+                "Paste the key into the field below",
+              ]} />
+              <div className="flex gap-3">
+                <GuideLink href={EMAIL_PROVIDER_GUIDES[provider].signupUrl}>Sign up</GuideLink>
+                <GuideLink href={EMAIL_PROVIDER_GUIDES[provider].dashboardUrl}>Dashboard</GuideLink>
+              </div>
+            </ProviderGuide>
+          )}
+
           {provider === "smtp" && allowSmtp && (
             <>
               <p className="text-xs text-muted-foreground bg-muted/50 rounded-lg px-3 py-2">
@@ -163,6 +189,19 @@ export function EmailSettings() {
                 notification fails to send, you won&apos;t know. We recommend
                 Resend, Postmark, or Mailpace for reliable delivery.
               </p>
+              <ProviderGuide title="Common SMTP settings">
+                <div className="space-y-2">
+                  {SMTP_PRESETS.map((preset) => (
+                    <div key={preset.label} className="flex items-center justify-between text-xs">
+                      <div>
+                        <span className="font-medium">{preset.label}</span>
+                        <span className="text-muted-foreground ml-2">{preset.host}:{preset.port}</span>
+                      </div>
+                      <span className="text-muted-foreground text-[11px]">{preset.note}</span>
+                    </div>
+                  ))}
+                </div>
+              </ProviderGuide>
               <div className="grid grid-cols-3 gap-2">
                 <div className="col-span-2 space-y-2">
                   <Label htmlFor="sys-smtpHost">SMTP host</Label>

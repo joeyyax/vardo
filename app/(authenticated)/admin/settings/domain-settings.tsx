@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/card";
 import { MASK_SENTINEL } from "@/lib/mask-secrets";
 import { useSystemSetting } from "./use-system-setting";
+import { GuideLink, FieldHint } from "@/components/setup/provider-guide";
 
 type DnsCheck = {
   domain: string;
@@ -418,17 +419,35 @@ export function DomainSettings() {
         <CardContent className="space-y-3">
           <div className="space-y-1 font-mono text-xs text-muted-foreground">
             <div>
-              A &nbsp;&nbsp; your-domain.com &nbsp;&nbsp; → &nbsp; {instance.serverIp || "your server IP"}
+              A &nbsp;&nbsp; {instance.baseDomain || "your-domain.com"} &nbsp;&nbsp; → &nbsp; {instance.serverIp || "your server IP"}
             </div>
             <div>
-              A &nbsp;&nbsp; *.your-domain.com → &nbsp; {instance.serverIp || "your server IP"}
+              A &nbsp;&nbsp; *.{instance.baseDomain || "your-domain.com"} → &nbsp; {instance.serverIp || "your server IP"}
             </div>
           </div>
+          {instance.serverIp && (
+            <FieldHint>
+              Your server IP is <span className="font-mono font-medium text-foreground">{instance.serverIp}</span> — both A records should point here.
+            </FieldHint>
+          )}
           <p className="text-xs text-muted-foreground">
             HTTPS will activate automatically once DNS propagates and your
             certificate authority issues certificates. The wildcard A record
             enables automatic subdomains for deployed apps.
           </p>
+          {dnsChecks.length > 0 && (() => {
+            const cfCheck = dnsChecks.find((c) => c.proxyProvider === "cloudflare");
+            if (cfCheck) {
+              return (
+                <div className="text-xs text-muted-foreground">
+                  Looks like you&apos;re using Cloudflare.{" "}
+                  <GuideLink href="https://dash.cloudflare.com">Open Cloudflare Dashboard</GuideLink>
+                  {" "} — set the proxy status to &quot;DNS Only&quot; (gray cloud) for the wildcard record if you experience issues.
+                </div>
+              );
+            }
+            return null;
+          })()}
         </CardContent>
       </Card>
     </div>
