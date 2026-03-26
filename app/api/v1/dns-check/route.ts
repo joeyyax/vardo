@@ -1,29 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolve4, resolveCname } from "dns/promises";
-import { networkInterfaces } from "os";
+import { getServerIP } from "@/lib/server-ip";
+import { isCloudflareIp } from "@/lib/cloudflare-ips";
 
 const BASE_DOMAIN = process.env.VARDO_BASE_DOMAIN || "localhost";
-
-function getServerIPs(): string[] {
-  // Use the configured public IP when available (production / Docker).
-  // os.networkInterfaces() inside a container returns internal Docker IPs
-  // (172.x.x.x) which will never match external A records.
-  const serverIp = process.env.VARDO_SERVER_IP;
-  if (serverIp) return [serverIp];
-
-  // Fallback for local dev where the env var isn't set
-  const ips: string[] = [];
-  const nets = networkInterfaces();
-  for (const interfaces of Object.values(nets)) {
-    if (!interfaces) continue;
-    for (const iface of interfaces) {
-      if (!iface.internal && iface.family === "IPv4") {
-        ips.push(iface.address);
-      }
-    }
-  }
-  return ips;
-}
 
 // GET /api/v1/dns-check?domain=example.com&expected=auto-generated.localhost
 export async function GET(request: NextRequest) {
@@ -95,19 +75,39 @@ export async function GET(request: NextRequest) {
       (expected && (r === expected || r === `${expected}.`))
     );
 
-    // Check if A record points to one of this server's IPs
-    const serverIPs = getServerIPs();
-    const aCorrect = aRecords.some((ip) => serverIPs.includes(ip));
+    // Check if A record points to this server's IP
+    const serverIp = await getServerIP();
+    const aCorrect = serverIp ? aRecords.some((ip) => ip === serverIp) : false;
 
-    const configured = cnameCorrect || aCorrect;
+    // Check for Cloudflare proxy
+    const allCloudflare = aRecords.length > 0 && aRecords.every(isCloudflareIp);
+
+    let reachable = false;
+    if (!aCorrect && !cnameCorrect && aRecords.length > 0) {
+      try {
+        await fetch(`https://${domain}`, {
+          method: "HEAD",
+          signal: AbortSignal.timeout(5000),
+          redirect: "manual",
+        });
+        reachable = true;
+      } catch {
+        // Domain didn't respond
+      }
+    }
+
+    const configured = cnameCorrect || aCorrect || (allCloudflare && reachable);
 
     return NextResponse.json({
       domain,
       status: configured ? "configured" : "wrong-target",
       resolves: hasRecords,
       configured,
+      proxied: allCloudflare,
+      reachable: aCorrect || cnameCorrect || reachable,
+      proxyProvider: allCloudflare ? "cloudflare" : null,
       records: { a: aRecords, cname: cnameRecords },
-      serverIPs: serverIPs,
+      serverIp,
     });
   } catch {
     return NextResponse.json({
