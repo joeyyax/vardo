@@ -13,16 +13,28 @@ scrape_configs:
       - host: unix:///var/run/docker.sock
         refresh_interval: 5s
     relabel_configs:
-      # Only scrape containers with the host.managed label
-      - source_labels: ["__meta_docker_container_label_host_managed"]
-        regex: "true"
+      # Only scrape containers with vardo.managed=true or host.managed=true (legacy)
+      - source_labels: ["__meta_docker_container_label_vardo_managed", "__meta_docker_container_label_host_managed"]
+        separator: ""
+        regex: ".*true.*"
         action: keep
-      # Extract Host labels
+      # Extract project label — vardo.project takes priority, fall back to host.project
       - source_labels: ["__meta_docker_container_label_host_project"]
         target_label: project
+      - source_labels: ["__meta_docker_container_label_vardo_project"]
+        regex: "(.+)"
+        target_label: project
+      # Extract project_id label — vardo.project.id takes priority, fall back to host.project.id
       - source_labels: ["__meta_docker_container_label_host_project_id"]
         target_label: project_id
+      - source_labels: ["__meta_docker_container_label_vardo_project_id"]
+        regex: "(.+)"
+        target_label: project_id
+      # Extract environment label — vardo.environment takes priority, fall back to host.environment
       - source_labels: ["__meta_docker_container_label_host_environment"]
+        target_label: environment
+      - source_labels: ["__meta_docker_container_label_vardo_environment"]
+        regex: "(.+)"
         target_label: environment
       # Compose metadata
       - source_labels: ["__meta_docker_container_label_com_docker_compose_service"]
