@@ -121,7 +121,7 @@ services:
       - "--api.insecure=true"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
-      - "--providers.docker.network=vardo-network"
+      - "--providers.docker.network=${TRAEFIK_DOCKER_NETWORK:-vardo-network}"
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
       - "--entrypoints.websecure.http.tls=true"
