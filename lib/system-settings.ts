@@ -325,7 +325,7 @@ export async function getSslConfig(): Promise<SslConfig> {
   return {
     activeIssuers,
     concurrentIssuers,
-    challengeType: validChallengeType ?? dbConfig?.challengeType ?? "http",
+    challengeType: (validChallengeType ?? dbConfig?.challengeType ?? "http") as "http" | "dns",
     dnsProvider: fileConfig?.ssl?.dnsProvider ?? dbConfig?.dnsProvider,
     dnsApiToken: fileConfig?.ssl?.dnsApiToken ?? dbConfig?.dnsApiToken,
     zerosslEabKid: fileConfig?.ssl?.zerossl?.eabKid ?? dbConfig?.zerosslEabKid,
