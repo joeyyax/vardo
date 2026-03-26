@@ -31,8 +31,14 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # Runtime dependencies — git for cloning, docker-cli for orchestrating builds/deploys
+# Install Docker CLI from official Docker repo (docker.io from apt is too old for modern daemons)
 RUN apt-get update -qq && \
-    apt-get install -y --no-install-recommends git docker.io curl ca-certificates && \
+    apt-get install -y --no-install-recommends git curl ca-certificates gnupg && \
+    install -m 0755 -d /etc/apt/keyrings && \
+    curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian bookworm stable" > /etc/apt/sources.list.d/docker.list && \
+    apt-get update -qq && \
+    apt-get install -y --no-install-recommends docker-ce-cli && \
     curl -sSL https://nixpacks.com/install.sh | bash && \
     ARCH=$(uname -m) && \
     if [ "$ARCH" = "aarch64" ]; then RAILPACK_ARCH="arm64"; else RAILPACK_ARCH="x86_64"; fi && \
