@@ -66,7 +66,9 @@ export function parseTraefikPort(labels: Record<string, string>): number | null 
  * from discovery. Checks both the new vardo.* and legacy host.* label prefixes.
  */
 function isManagedContainer(labels: Record<string, string>): boolean {
-  return !!(labels["vardo.project"] || labels["host.project"]);
+  if (labels["vardo.project"] || labels["host.project"]) return true;
+  if (labels["com.docker.compose.project"] === "vardo") return true;
+  return false;
 }
 
 // ---------------------------------------------------------------------------
