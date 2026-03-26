@@ -35,7 +35,7 @@ const cache = new Map<string, { value: string | null; expiresAt: number }>();
  * Read a system_settings row and decrypt its value.
  * Returns null if the row does not exist. Results are cached for 30s.
  */
-async function getSystemSettingRaw(key: string): Promise<string | null> {
+export async function getSystemSettingRaw(key: string): Promise<string | null> {
   const cached = cache.get(key);
   if (cached && Date.now() < cached.expiresAt) {
     return cached.value;
