@@ -3,9 +3,10 @@ import { useState, useEffect, useCallback } from "react";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "@/lib/messenger";
-import { Loader2, Bell } from "lucide-react";
+import { Loader2, Bell, AlertCircle } from "lucide-react";
 import { EVENT_CATEGORIES, type BusEventType, type EventCategory } from "@/lib/bus/events";
 import { CRITICAL_EVENT_TYPES } from "@/lib/notifications/resolve-recipients";
+import { CHANNEL_TYPE_DEFAULTS } from "@/lib/notifications/channel-defaults";
 
 type Channel = {
   id: string;
@@ -53,13 +54,6 @@ const EVENT_LABELS: Record<BusEventType, string> = {
   "digest.weekly": "Weekly digest",
 };
 
-// Default enabled state per channel type when no preference exists
-const CHANNEL_TYPE_DEFAULTS: Record<string, boolean> = {
-  email: true,
-  slack: false,
-  webhook: false,
-};
-
 function getEffectiveEnabled(
   channelId: string,
   channelType: string,
@@ -78,9 +72,11 @@ export function UserNotificationPreferences({ orgId }: { orgId: string }) {
   const [prefs, setPrefs] = useState<Preference[]>([]);
   const [digestEnabled, setDigestEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [saving, setSaving] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    setLoadError(false);
     try {
       const res = await fetch(
         `/api/v1/user/notification-preferences?orgId=${orgId}`,
@@ -90,9 +86,11 @@ export function UserNotificationPreferences({ orgId }: { orgId: string }) {
         setChannels(data.channels ?? []);
         setPrefs(data.preferences ?? []);
         setDigestEnabled(data.digestEnabled ?? false);
+      } else {
+        setLoadError(true);
       }
     } catch {
-      // silent — loading state handles UX
+      setLoadError(true);
     }
     setLoading(false);
   }, [orgId]);
@@ -113,6 +111,7 @@ export function UserNotificationPreferences({ orgId }: { orgId: string }) {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          type: "preference",
           orgId,
           channelId: channel.id,
           eventType,
@@ -153,7 +152,7 @@ export function UserNotificationPreferences({ orgId }: { orgId: string }) {
       const res = await fetch("/api/v1/user/notification-preferences", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orgId, digestEnabled: enabled }),
+        body: JSON.stringify({ type: "digest", orgId, digestEnabled: enabled }),
       });
       if (!res.ok) {
         const d = await res.json();
@@ -173,6 +172,21 @@ export function UserNotificationPreferences({ orgId }: { orgId: string }) {
       <div className="flex items-center gap-2 text-muted-foreground py-8">
         <Loader2 className="h-4 w-4 animate-spin" />
         Loading...
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 border border-dashed border-border rounded-lg p-12">
+        <AlertCircle className="size-8 text-destructive/50" />
+        <div className="text-center space-y-1">
+          <p className="text-sm font-medium">Failed to load preferences</p>
+          <p className="text-sm text-muted-foreground">
+            Could not load your notification preferences. Try refreshing the
+            page.
+          </p>
+        </div>
       </div>
     );
   }
