@@ -15,6 +15,9 @@ export function TraefikSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [config, setConfig] = useState<TraefikConfig>({ externalRouting: false });
+  const [restartPending, setRestartPending] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+  const [restarted, setRestarted] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -41,7 +44,9 @@ export function TraefikSettings() {
         body: JSON.stringify(config),
       });
       if (!res.ok) throw new Error("Failed to save");
-      toast.success("Traefik settings saved — restart the Traefik container to apply");
+      toast.success("Settings saved. Restart Traefik to apply.");
+      setRestartPending(true);
+      setRestarted(false);
     } catch {
       toast.error("Failed to save Traefik settings");
     } finally {
@@ -49,10 +54,19 @@ export function TraefikSettings() {
     }
   }
 
-  const envValue = config.externalRouting ? "" : "vardo-network";
-  const envLine = config.externalRouting
-    ? "TRAEFIK_DOCKER_NETWORK="
-    : "TRAEFIK_DOCKER_NETWORK=vardo-network";
+  async function handleRestart() {
+    setRestarting(true);
+    try {
+      const res = await fetch("/api/v1/admin/traefik/restart", { method: "POST" });
+      if (!res.ok) throw new Error("Failed to restart");
+      setRestarted(true);
+      setRestartPending(false);
+    } catch {
+      toast.error("Failed to restart Traefik");
+    } finally {
+      setRestarting(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -100,32 +114,36 @@ export function TraefikSettings() {
         </Button>
       </form>
 
-      <div className="rounded-lg border p-4 space-y-3">
-        <div className="space-y-0.5">
-          <p className="text-sm font-medium">Applying changes</p>
+      {restartPending && (
+        <div className="rounded-lg border p-4 flex items-center justify-between gap-4">
+          <div className="space-y-0.5">
+            <p className="text-sm font-medium">Traefik restart required to apply changes</p>
+            <p className="text-xs text-muted-foreground">
+              Settings are saved. The running container won&apos;t pick them up until you restart.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            className="squircle shrink-0"
+            onClick={handleRestart}
+            disabled={restarting}
+            aria-label="Restart Traefik now"
+          >
+            {restarting && <Loader2 className="size-4 animate-spin" />}
+            {restarting ? "Restarting..." : "Restart now"}
+          </Button>
+        </div>
+      )}
+
+      {restarted && (
+        <div className="rounded-lg border p-4">
+          <p className="text-sm font-medium">Traefik restart initiated</p>
           <p className="text-xs text-muted-foreground">
-            Traefik reads its provider configuration at startup.{" "}
-            <strong>Saving here updates the database only</strong> — you must also update your{" "}
-            <code className="font-mono">.env</code> file and restart the Traefik container for
-            the change to take effect.
+            The container is restarting and will be back up momentarily.
           </p>
         </div>
-        <div className="space-y-1">
-          <p className="text-xs text-muted-foreground font-medium">Run in your Vardo directory:</p>
-          <pre className="text-xs bg-muted rounded px-3 py-2 font-mono overflow-x-auto select-all">
-            {`${envLine}\ndocker compose up -d traefik`}
-          </pre>
-        </div>
-        <div className="space-y-1">
-          <p className="text-xs text-muted-foreground font-medium">
-            Current <code className="font-mono">TRAEFIK_DOCKER_NETWORK</code> value for{" "}
-            {config.externalRouting ? "external routing (no filter)" : "vardo-network only"}:
-          </p>
-          <pre className="text-xs bg-muted rounded px-3 py-2 font-mono overflow-x-auto select-all">
-            {envValue === "" ? "(empty — no network filter)" : envValue}
-          </pre>
-        </div>
-      </div>
+      )}
 
       {config.externalRouting && (
         <div className="rounded-lg border p-4 space-y-3">
