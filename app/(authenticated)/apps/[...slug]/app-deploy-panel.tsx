@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useImperativeHandle } from "react";
+import { forwardRef, useImperativeHandle, useState } from "react";
 import {
   Loader2,
   Rocket,
@@ -93,6 +93,8 @@ export const AppDeployPanel = forwardRef<AppDeployPanelHandle, AppDeployPanelPro
     handleRollbackConfirm,
   } = deploy;
 
+  const [expandedServerDeploy, setExpandedServerDeploy] = useState(false);
+
   useImperativeHandle(ref, () => ({
     handleDeploy: deploy.handleDeploy,
     setViewingLogId: deploy.setViewingLogId,
@@ -129,10 +131,10 @@ export const AppDeployPanel = forwardRef<AppDeployPanelHandle, AppDeployPanelPro
             {!deploying && serverRunningDeploy && (
               <InProgressDeployCard
                 stages={{}}
-                log={[]}
+                log={serverRunningDeploy.log ? serverRunningDeploy.log.split("\n") : []}
                 startTime={new Date(serverRunningDeploy.startedAt).getTime()}
-                expanded={false}
-                onToggleExpand={() => {}}
+                expanded={expandedServerDeploy}
+                onToggleExpand={() => setExpandedServerDeploy((prev) => !prev)}
                 trigger={serverRunningDeploy.trigger}
               />
             )}
