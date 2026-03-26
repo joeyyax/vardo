@@ -27,6 +27,8 @@ export type Domain = {
   port: number | null;
   certResolver: string | null;
   isPrimary: boolean | null;
+  redirectTo: string | null;
+  redirectCode: number | null;
 };
 
 export type EnvVar = {
