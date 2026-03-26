@@ -3,6 +3,8 @@ import { meshPeers } from "@/lib/db/schema";
 import { nanoid } from "nanoid";
 import { allocateIp, toCidr } from "./ip-allocator";
 import { generateMeshToken } from "./auth";
+import { rebuildAndSync, isWireguardRunning } from "./wireguard";
+import { logger } from "@/lib/logger";
 
 interface RegisterPeerInput {
   instanceId: string;
@@ -48,6 +50,15 @@ export async function registerPeer(
   };
 
   await db.insert(meshPeers).values(peer);
+
+  // Rebuild WireGuard config with the new peer
+  try {
+    if (await isWireguardRunning()) {
+      await rebuildAndSync();
+    }
+  } catch (err) {
+    logger.warn(`[mesh] WireGuard sync failed after registering peer ${peer.name}: ${err}`);
+  }
 
   return { peer, token };
 }
