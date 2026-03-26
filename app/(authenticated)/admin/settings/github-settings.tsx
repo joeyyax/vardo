@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2 } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { useVerify } from "@/hooks/use-verify";
 import { Card, CardContent } from "@/components/ui/card";
 import { MASK_SENTINEL } from "@/lib/mask-secrets";
 import { useSystemSetting } from "./use-system-setting";
@@ -58,6 +59,8 @@ export function GitHubSettings() {
     [],
   );
 
+  const { verify, verifying, result: verifyResult, reset: resetVerify } = useVerify("/api/setup/github/verify");
+
   const { loading, saving, configured, save } = useSystemSetting("/api/setup/github", {
     label: "GitHub App settings",
     onLoad,
@@ -65,6 +68,7 @@ export function GitHubSettings() {
       setEditingClientSecret(false);
       setEditingPrivateKey(false);
       setEditingWebhookSecret(false);
+      resetVerify();
     },
   });
 
@@ -309,10 +313,39 @@ export function GitHubSettings() {
             )}
           </div>
 
-          <Button type="submit" className="squircle" disabled={saving} aria-label="Save GitHub App settings">
-            {saving && <Loader2 className="size-4 animate-spin" />}
-            Save
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button type="submit" className="squircle" disabled={saving} aria-label="Save GitHub App settings">
+              {saving && <Loader2 className="size-4 animate-spin" />}
+              Save
+            </Button>
+            {configured && (
+              <Button
+                type="button"
+                variant="outline"
+                className="squircle"
+                disabled={verifying}
+                onClick={verify}
+                aria-label="Test GitHub App connection"
+              >
+                {verifying && <Loader2 className="size-4 animate-spin" />}
+                Test connection
+              </Button>
+            )}
+          </div>
+          {verifyResult && (
+            <div
+              className={`flex items-center gap-2 text-sm ${verifyResult.ok ? "text-status-success" : "text-destructive"}`}
+              role="status"
+              aria-live="polite"
+            >
+              {verifyResult.ok ? (
+                <CheckCircle2 className="size-4 shrink-0" />
+              ) : (
+                <XCircle className="size-4 shrink-0" />
+              )}
+              <span>{verifyResult.message}</span>
+            </div>
+          )}
         </form>
       </CardContent>
     </Card>
