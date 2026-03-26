@@ -59,11 +59,17 @@ export function buildWgConfig(
     throw new Error("Invalid WireGuard private key format");
   }
 
+  // Frontend container IP on the mesh Docker network (fixed in docker-compose.yml)
+  const FRONTEND_MESH_IP = "10.88.0.3";
+
   const lines = [
     "[Interface]",
     `PrivateKey = ${privateKey}`,
     `ListenPort = ${listenPort}`,
     `Address = ${address}/24`,
+    // Forward incoming mesh traffic to the frontend container
+    `PostUp = iptables -t nat -A POSTROUTING -o wg0 -j MASQUERADE; iptables -t nat -A PREROUTING -i wg0 -p tcp --dport 3000 -j DNAT --to-destination ${FRONTEND_MESH_IP}:3000; iptables -A FORWARD -i wg0 -p tcp --dport 3000 -j ACCEPT`,
+    `PostDown = iptables -t nat -D POSTROUTING -o wg0 -j MASQUERADE; iptables -t nat -D PREROUTING -i wg0 -p tcp --dport 3000 -j DNAT --to-destination ${FRONTEND_MESH_IP}:3000; iptables -D FORWARD -i wg0 -p tcp --dport 3000 -j ACCEPT`,
     "",
   ];
 
