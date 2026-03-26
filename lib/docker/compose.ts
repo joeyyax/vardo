@@ -27,9 +27,18 @@ export type ComposeService = {
   labels?: Record<string, string>;
   networks?: string[];
   depends_on?: string[];
+  network_mode?: string;
+  runtime?: string;
   deploy?: {
     resources?: {
       limits?: ResourceLimits;
+      reservations?: {
+        devices?: Array<{
+          driver?: string;
+          count?: number | string;
+          capabilities?: string[];
+        }>;
+      };
     };
   };
 };
@@ -223,6 +232,10 @@ export function injectNetwork(
 ): ComposeFile {
   const updatedServices: Record<string, ComposeService> = {};
   for (const [key, svc] of Object.entries(compose.services)) {
+    if (svc.network_mode) {
+      updatedServices[key] = svc;
+      continue;
+    }
     const existingNetworks = svc.networks ?? [];
     updatedServices[key] = {
       ...svc,
@@ -232,15 +245,18 @@ export function injectNetwork(
     };
   }
 
+  const anyServiceUsesNetwork = Object.values(updatedServices).some(
+    (svc) => svc.networks?.includes(networkName)
+  );
+
   const existingNetworks = (compose.networks ?? {}) as Record<string, unknown>;
 
   return {
     ...compose,
     services: updatedServices,
-    networks: {
-      ...existingNetworks,
-      [networkName]: { external: true },
-    },
+    networks: anyServiceUsesNetwork
+      ? { ...existingNetworks, [networkName]: { external: true } }
+      : existingNetworks,
   };
 }
 
@@ -333,6 +349,7 @@ function parsePortString(
 // YAML serialization (minimal, sufficient for Docker Compose)
 // ---------------------------------------------------------------------------
 
+import { resolve } from "path";
 import YAML from "yaml";
 
 /**
@@ -419,6 +436,15 @@ export function parseCompose(yamlString: string): ComposeFile {
         svc.depends_on = Object.keys(raw.depends_on);
       }
     }
+    if (raw.network_mode && typeof raw.network_mode === "string") {
+      const nm = raw.network_mode;
+      if (ALLOWED_NETWORK_MODES.some((p) => nm === p || nm.startsWith(p + ":"))) {
+        svc.network_mode = nm;
+      }
+    }
+    if (raw.runtime && typeof raw.runtime === "string" && ALLOWED_RUNTIMES.includes(raw.runtime)) {
+      svc.runtime = raw.runtime;
+    }
     if (
       raw.deploy &&
       typeof raw.deploy === "object" &&
@@ -452,10 +478,25 @@ export function parseCompose(yamlString: string): ComposeFile {
 const SERVICE_NAME_RE = /^[a-z][a-z0-9-]*$/;
 const PORT_RE = /^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:)?(\d+:)?\d+(\/\w+)?$/;
 
+const ALLOWED_NETWORK_MODES = ["host", "bridge", "none", "service", "container"];
+const ALLOWED_RUNTIMES = ["runc", "nvidia", "sysbox"];
+
+const DENIED_MOUNT_PATHS = [
+  "/etc",
+  "/proc",
+  "/sys",
+  "/var/run/docker.sock",
+  "/root",
+];
+
+type ValidateOptions = {
+  allowBindMounts?: boolean;
+};
+
 /**
  * Basic validation of a ComposeFile structure.
  */
-export function validateCompose(compose: ComposeFile): {
+export function validateCompose(compose: ComposeFile, opts?: ValidateOptions): {
   valid: boolean;
   errors: string[];
 } {
@@ -494,13 +535,21 @@ export function validateCompose(compose: ComposeFile): {
       }
     }
 
-    // Check for host bind mounts (paths starting with / or ./)
     if (svc.volumes) {
       for (const vol of svc.volumes) {
-        if (vol.startsWith("/") || vol.startsWith("./") || vol.startsWith("../")) {
+        const isBindMount = vol.startsWith("/") || vol.startsWith("./") || vol.startsWith("../");
+        if (isBindMount && !opts?.allowBindMounts) {
           errors.push(
-            `Service "${name}" uses host bind mount "${vol}" — only named volumes are allowed`,
+            `Service "${name}" uses host bind mount "${vol}" — enable the Bind Mounts feature flag to allow this`,
           );
+        }
+        if (isBindMount && opts?.allowBindMounts) {
+          const mountSource = resolve(vol.split(":")[0]);
+          if (DENIED_MOUNT_PATHS.some((p) => mountSource === p || mountSource.startsWith(p + "/"))) {
+            errors.push(
+              `Service "${name}" mounts denied path "${mountSource}" — this path is blocked for security`,
+            );
+          }
         }
       }
     }
@@ -511,17 +560,28 @@ export function validateCompose(compose: ComposeFile): {
 
 /**
  * Strip host bind mounts from compose, keeping only named volumes.
- * Used when allowUnsafeCompose is false.
+ * Returns the compose unchanged if allowBindMounts is true.
+ * When stripping, returns the list of removed mounts for logging.
  */
-export function sanitizeCompose(compose: ComposeFile): ComposeFile {
+export function sanitizeCompose(compose: ComposeFile, opts?: { allowBindMounts?: boolean }): {
+  compose: ComposeFile;
+  strippedMounts: string[];
+} {
+  if (opts?.allowBindMounts) return { compose, strippedMounts: [] };
+  const strippedMounts: string[] = [];
   const sanitized = { ...compose, services: { ...compose.services } };
   for (const [name, svc] of Object.entries(sanitized.services)) {
     if (svc.volumes) {
-      const safe = svc.volumes.filter(
-        (v) => !v.startsWith("/") && !v.startsWith("./") && !v.startsWith("../")
-      );
+      const safe: string[] = [];
+      for (const v of svc.volumes) {
+        if (v.startsWith("/") || v.startsWith("./") || v.startsWith("../")) {
+          strippedMounts.push(`${name}: ${v}`);
+        } else {
+          safe.push(v);
+        }
+      }
       sanitized.services[name] = { ...svc, volumes: safe };
     }
   }
-  return sanitized;
+  return { compose: sanitized, strippedMounts };
 }
