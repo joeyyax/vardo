@@ -9,6 +9,7 @@ import { getInstanceId } from "@/lib/constants";
 import { getInstanceConfig } from "@/lib/system-settings";
 import { needsSetup } from "@/lib/setup";
 import { inheritConfigFromHub, validateHubUrl } from "@/lib/mesh/config-inheritance";
+import { rebuildAndSync } from "@/lib/mesh/wireguard";
 import { db } from "@/lib/db";
 import { meshPeers } from "@/lib/db/schema";
 import { nanoid } from "nanoid";
@@ -118,6 +119,17 @@ export async function POST(request: NextRequest) {
       status: "online",
       lastSeenAt: new Date(),
     });
+
+    // Rebuild WireGuard config with the hub as a peer
+    // (joiner inserts the hub directly, not via registerPeer, so sync here)
+    try {
+      const { isWireguardRunning } = await import("@/lib/mesh/wireguard");
+      if (await isWireguardRunning()) {
+        await rebuildAndSync();
+      }
+    } catch (err) {
+      console.warn(`[mesh] WireGuard sync failed after joining hub: ${err}`);
+    }
 
     // Pull shareable config from the hub (best-effort)
     let inheritedConfig = { email: false, backup: false, github: false };
