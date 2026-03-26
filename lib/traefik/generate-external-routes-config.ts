@@ -83,7 +83,7 @@ export async function regenerateExternalRoutesConfig(): Promise<void> {
   const serversTransports: Record<string, TraefikServersTransportConfig> = {};
 
   for (const route of routes) {
-    const safeName = route.hostname.replace(/[^a-zA-Z0-9-]/g, "-");
+    const safeName = `${route.hostname.replace(/[^a-zA-Z0-9-]/g, "-")}-${route.id.replace(/[^a-zA-Z0-9-]/g, "-")}`;
 
     // Redirect route — no upstream service needed
     if (route.redirectUrl) {
