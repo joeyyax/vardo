@@ -15,7 +15,6 @@ export function TraefikSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [config, setConfig] = useState<TraefikConfig>({ externalRouting: false });
-  const [saved, setSaved] = useState<TraefikConfig | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -24,7 +23,6 @@ export function TraefikSettings() {
         if (!res.ok) throw new Error("Failed to fetch");
         const data = await res.json();
         setConfig(data);
-        setSaved(data);
       } catch {
         // keep defaults
       } finally {
@@ -43,17 +41,13 @@ export function TraefikSettings() {
         body: JSON.stringify(config),
       });
       if (!res.ok) throw new Error("Failed to save");
-      setSaved(config);
-      toast.success("Traefik settings saved");
+      toast.success("Traefik settings saved — restart the Traefik container to apply");
     } catch {
       toast.error("Failed to save Traefik settings");
     } finally {
       setSaving(false);
     }
   }
-
-  const restartRequired =
-    saved !== null && saved.externalRouting !== config.externalRouting;
 
   const envValue = config.externalRouting ? "" : "vardo-network";
   const envLine = config.externalRouting
@@ -110,9 +104,10 @@ export function TraefikSettings() {
         <div className="space-y-0.5">
           <p className="text-sm font-medium">Applying changes</p>
           <p className="text-xs text-muted-foreground">
-            Traefik reads its provider configuration at startup. After saving, set{" "}
-            <code className="font-mono">{envLine}</code> in your <code className="font-mono">.env</code> file
-            and recreate the Traefik container to apply.
+            Traefik reads its provider configuration at startup.{" "}
+            <strong>Saving here updates the database only</strong> — you must also update your{" "}
+            <code className="font-mono">.env</code> file and restart the Traefik container for
+            the change to take effect.
           </p>
         </div>
         <div className="space-y-1">
@@ -131,6 +126,43 @@ export function TraefikSettings() {
           </pre>
         </div>
       </div>
+
+      {config.externalRouting && (
+        <div className="rounded-lg border p-4 space-y-3">
+          <div className="space-y-0.5">
+            <p className="text-sm font-medium">Making external containers reachable</p>
+            <p className="text-xs text-muted-foreground">
+              When the network filter is removed, Traefik can <em>discover</em> any container
+              with <code className="font-mono">traefik.enable=true</code>. But to actually{" "}
+              <em>route traffic</em> to them, Traefik must share a network with the target
+              container. The simplest approach: add <code className="font-mono">vardo-network</code>{" "}
+              to your external compose services.
+            </p>
+          </div>
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground font-medium">
+              Add to your external <code className="font-mono">docker-compose.yml</code>:
+            </p>
+            <pre className="text-xs bg-muted rounded px-3 py-2 font-mono overflow-x-auto select-all whitespace-pre">
+{`services:
+  your-service:
+    networks:
+      - vardo-network
+    # ... rest of service config
+
+networks:
+  vardo-network:
+    external: true`}
+            </pre>
+          </div>
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground font-medium">Then restart your service:</p>
+            <pre className="text-xs bg-muted rounded px-3 py-2 font-mono overflow-x-auto select-all">
+              docker compose up -d your-service
+            </pre>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
