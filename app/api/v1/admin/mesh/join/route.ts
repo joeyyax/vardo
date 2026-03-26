@@ -4,7 +4,7 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { decodeInviteToken } from "@/lib/mesh/invite";
 import { generateMeshToken } from "@/lib/mesh/auth";
-import { ensureHubConfig, HUB_IP } from "@/lib/mesh";
+import { ensureHubConfig } from "@/lib/mesh";
 import { getInstanceId } from "@/lib/constants";
 import { getInstanceConfig } from "@/lib/system-settings";
 import { needsSetup } from "@/lib/setup";
@@ -13,7 +13,7 @@ import { rebuildAndSync } from "@/lib/mesh/wireguard";
 import { db } from "@/lib/db";
 import { meshPeers } from "@/lib/db/schema";
 import { nanoid } from "nanoid";
-import { allocateIp, toCidr } from "@/lib/mesh/ip-allocator";
+import { toCidr } from "@/lib/mesh/ip-allocator";
 
 const joinSchema = z.object({ token: z.string().min(1, "Invite token is required") }).strict();
 
@@ -57,12 +57,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: urlCheck.error }, { status: 400 });
     }
 
-    // Bootstrap local WireGuard (generates keypair if needed)
-    const localPublicKey = await ensureHubConfig(HUB_IP);
+    // Bootstrap local WireGuard with a temporary address (just to get the keypair).
+    // The correct address will be set by rebuildAndSync after the hub assigns our IP.
+    const localPublicKey = await ensureHubConfig("10.99.0.254");
 
     const instanceId = await getInstanceId();
     const instanceConfig = await getInstanceConfig();
-    const hostname = process.env.HOSTNAME || instanceConfig.domain || "unknown";
+    const hostname = instanceConfig.instanceName || instanceConfig.domain || "unknown";
 
     // Generate a token the hub can use to call our API
     const { raw: ourToken, hash: ourTokenHash } = generateMeshToken();
@@ -98,12 +99,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Register the hub as a peer on our side so we can call its API
-    const allPeers = await db.query.meshPeers.findMany({
-      columns: { internalIp: true },
-    });
-    const internalIp = allocateIp(allPeers.map((p) => p.internalIp));
+    // The hub allocated an IP for us: joinData.peer.internalIp
+    // The hub's own mesh IP: joinData.hub.internalIp
+    // The hub's WireGuard endpoint: joinData.hub.endpoint (IP:port for UDP)
+    const ourMeshIp = joinData.peer.internalIp;
 
+    // Register the hub as a peer on our side
     await db.insert(meshPeers).values({
       id: nanoid(),
       instanceId: joinData.peer.instanceId,
@@ -112,7 +113,7 @@ export async function POST(request: NextRequest) {
       publicKey: joinData.hub.publicKey,
       endpoint: joinData.hub.endpoint,
       allowedIps: toCidr(joinData.hub.internalIp),
-      internalIp,
+      internalIp: joinData.hub.internalIp,
       apiUrl: decoded.hubApiUrl,
       tokenHash: ourTokenHash,
       outboundToken: joinData.token,
@@ -120,12 +121,11 @@ export async function POST(request: NextRequest) {
       lastSeenAt: new Date(),
     });
 
-    // Rebuild WireGuard config with the hub as a peer
-    // (joiner inserts the hub directly, not via registerPeer, so sync here)
+    // Rebuild WireGuard config with the hub as a peer and our correct mesh IP
     try {
       const { isWireguardRunning } = await import("@/lib/mesh/wireguard");
       if (await isWireguardRunning()) {
-        await rebuildAndSync();
+        await rebuildAndSync(ourMeshIp);
       }
     } catch (err) {
       console.warn(`[mesh] WireGuard sync failed after joining hub: ${err}`);
