@@ -48,7 +48,7 @@ const HEALTH_CHECK_INTERVAL_MS = 2000;
 
 type DeployStage = "clone" | "build" | "deploy" | "healthcheck" | "routing" | "cleanup" | "done";
 
-type DeployOpts = {
+export type DeployOpts = {
   appId: string;
   organizationId: string;
   trigger: "manual" | "webhook" | "api" | "rollback";
@@ -62,7 +62,7 @@ type DeployOpts = {
 
 export type { DeployStage };
 
-type DeployResult = {
+export type DeployResult = {
   deploymentId: string;
   success: boolean;
   log: string;
