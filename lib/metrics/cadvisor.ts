@@ -83,12 +83,13 @@ export async function fetchAllContainerMetrics(): Promise<ContainerMetrics[]> {
 
     // Get project name and org from labels
     const projectName =
+      spec.labels?.["vardo.project"] ||
       spec.labels?.["host.project"] ||
       spec.labels?.["com.docker.compose.project"] ||
       "";
     if (!projectName) continue;
 
-    const organizationId = spec.labels?.["host.organization"] || null;
+    const organizationId = spec.labels?.["vardo.organization"] || spec.labels?.["host.organization"] || null;
 
     const prev = statEntries[statEntries.length - 2];
     const curr = statEntries[statEntries.length - 1];

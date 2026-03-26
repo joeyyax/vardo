@@ -348,7 +348,7 @@ export async function queryMetrics(
 
 /**
  * Query historical metrics for an organization (all projects in the org).
- * Requires containers to have the `host.organization` label.
+ * Requires containers to have the `vardo.organization` label.
  */
 export async function queryByOrg(
   orgId: string,
