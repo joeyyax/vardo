@@ -36,7 +36,7 @@ import { toast } from "@/lib/messenger";
 type ExternalRoute = {
   id: string;
   hostname: string;
-  targetUrl: string;
+  targetUrl: string | null;
   tls: boolean;
   insecureSkipVerify: boolean;
   redirectUrl: string | null;
@@ -66,7 +66,7 @@ const defaultForm: RouteFormState = {
 function routeToForm(route: ExternalRoute): RouteFormState {
   return {
     hostname: route.hostname,
-    targetUrl: route.targetUrl,
+    targetUrl: route.targetUrl ?? "",
     tls: route.tls,
     insecureSkipVerify: route.insecureSkipVerify,
     redirectUrl: route.redirectUrl ?? "",
@@ -472,7 +472,7 @@ function RouteFormFields({ form, onChange, error }: RouteFormFieldsProps) {
           required={!isRedirect}
         />
         <p className="text-xs text-muted-foreground">
-          The upstream service URL. Leave empty if using a redirect instead.
+          The upstream service URL. Leave empty if using a redirect instead. Only point external routes at services you own.
         </p>
       </div>
 
@@ -496,7 +496,7 @@ function RouteFormFields({ form, onChange, error }: RouteFormFieldsProps) {
             Enable TLS
           </Label>
           <p className="text-xs text-muted-foreground">
-            Use Let&apos;s Encrypt to issue a certificate for this hostname.
+            Issue a certificate for this hostname using the configured certificate authority.
           </p>
         </div>
         <Switch

@@ -3,7 +3,7 @@ import { boolean, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 export const externalRoutes = pgTable("external_routes", {
   id: text("id").primaryKey(),
   hostname: text("hostname").notNull().unique(),
-  targetUrl: text("target_url").notNull(),
+  targetUrl: text("target_url"),
   tls: boolean("tls").notNull().default(false),
   insecureSkipVerify: boolean("insecure_skip_verify").notNull().default(false),
   redirectUrl: text("redirect_url"),

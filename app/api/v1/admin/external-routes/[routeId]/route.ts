@@ -3,12 +3,17 @@ import { z } from "zod";
 import { handleRouteError } from "@/lib/api/error-response";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { db } from "@/lib/db";
-import { externalRoutes } from "@/lib/db/schema";
+import { externalRoutes, domains } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { regenerateExternalRoutesConfig } from "@/lib/traefik/generate-external-routes-config";
 
+const hostnameSchema = z
+  .string()
+  .min(1)
+  .regex(/^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$/, "Hostname must be a valid domain");
+
 const updateExternalRouteSchema = z.object({
-  hostname: z.string().min(1).regex(/^[a-zA-Z0-9.-]+$/, "Hostname must be a valid domain").optional(),
+  hostname: hostnameSchema.optional(),
   targetUrl: z.string().url("Target must be a valid URL").optional().or(z.literal("")),
   tls: z.boolean().optional(),
   insecureSkipVerify: z.boolean().optional(),
@@ -71,12 +76,22 @@ export async function PATCH(
 
     // Check hostname uniqueness if it's being changed
     if (updates.hostname && updates.hostname !== existing.hostname) {
-      const conflict = await db.query.externalRoutes.findFirst({
-        where: (t, { eq }) => eq(t.hostname, updates.hostname!),
+      const conflictRoute = await db.query.externalRoutes.findFirst({
+        where: (t, { eq: eqOp }) => eqOp(t.hostname, updates.hostname!),
       });
-      if (conflict) {
+      if (conflictRoute) {
         return NextResponse.json(
           { error: "A route for this hostname already exists" },
+          { status: 409 }
+        );
+      }
+
+      const conflictDomain = await db.query.domains.findFirst({
+        where: eq(domains.domain, updates.hostname),
+      });
+      if (conflictDomain) {
+        return NextResponse.json(
+          { error: "This hostname is already managed as a domain" },
           { status: 409 }
         );
       }

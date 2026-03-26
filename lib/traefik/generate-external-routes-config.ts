@@ -1,8 +1,9 @@
 import { db } from "@/lib/db";
-import { writeFile, unlink, mkdir } from "fs/promises";
+import { writeFile, unlink, mkdir, rename } from "fs/promises";
 import { join } from "path";
 import YAML from "yaml";
 import { logger } from "@/lib/logger";
+import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
 
 const TRAEFIK_DYNAMIC_DIR =
   process.env.TRAEFIK_DYNAMIC_DIR || "/etc/traefik/dynamic";
@@ -48,6 +49,18 @@ type TraefikDynamicConfig = {
 };
 
 /**
+ * Escape bare `$` characters in a redirect URL so they are not misinterpreted
+ * as Traefik regex replacement group references. A literal `$` in a query
+ * parameter (e.g. `?token=$abc`) would otherwise produce malformed replacement
+ * syntax. We only escape `$` that are NOT already part of a valid `${N}` or
+ * `$N` capture group reference.
+ */
+function sanitizeRedirectReplacement(url: string): string {
+  // Replace any `$` not followed by `{` or a digit with `$$`
+  return url.replace(/\$(?!\{|\d)/g, "$$$$");
+}
+
+/**
  * Regenerate the Traefik file-provider config for all external routes.
  *
  * Writes a single YAML file into the shared volume. Traefik watches the
@@ -60,6 +73,9 @@ export async function regenerateExternalRoutesConfig(): Promise<void> {
     await removeExternalRouteConfig();
     return;
   }
+
+  const sslConfig = await getSslConfig();
+  const certResolver = getPrimaryIssuer(sslConfig);
 
   const routers: Record<string, TraefikRouterConfig> = {};
   const services: Record<string, TraefikServiceConfig> = {};
@@ -75,7 +91,7 @@ export async function regenerateExternalRoutesConfig(): Promise<void> {
       middlewares[middlewareName] = {
         redirectRegex: {
           regex: "^https?://[^/]+(.*)$",
-          replacement: `${route.redirectUrl}\${1}`,
+          replacement: `${sanitizeRedirectReplacement(route.redirectUrl)}\${1}`,
           permanent: route.redirectPermanent,
         },
       };
@@ -85,7 +101,7 @@ export async function regenerateExternalRoutesConfig(): Promise<void> {
           rule: `Host(\`${route.hostname}\`)`,
           service: "noop@internal",
           entryPoints: ["websecure"],
-          tls: { certResolver: "le" },
+          tls: { certResolver },
           middlewares: [middlewareName],
         };
         routers[`ext-${safeName}-http`] = {
@@ -106,6 +122,8 @@ export async function regenerateExternalRoutesConfig(): Promise<void> {
     }
 
     // Normal proxy route
+    if (!route.targetUrl) continue;
+
     const serviceName = `ext-${safeName}`;
     const transportName = `ext-${safeName}-transport`;
 
@@ -127,7 +145,7 @@ export async function regenerateExternalRoutesConfig(): Promise<void> {
         rule: `Host(\`${route.hostname}\`)`,
         service: serviceName,
         entryPoints: ["websecure"],
-        tls: { certResolver: "le" },
+        tls: { certResolver },
       };
       // HTTP router redirects to HTTPS
       const redirectMw = `ext-${safeName}-https-redirect`;
@@ -164,17 +182,22 @@ export async function regenerateExternalRoutesConfig(): Promise<void> {
 
   try {
     await mkdir(TRAEFIK_DYNAMIC_DIR, { recursive: true });
-  } catch {
-    // Directory may already exist
+  } catch (err: unknown) {
+    if (err && typeof err === "object" && "code" in err && (err as NodeJS.ErrnoException).code !== "EEXIST") {
+      throw err;
+    }
   }
 
+  const filePath = join(TRAEFIK_DYNAMIC_DIR, EXTERNAL_ROUTES_FILE);
+  const tmpPath = `${filePath}.tmp`;
+
   try {
-    const filePath = join(TRAEFIK_DYNAMIC_DIR, EXTERNAL_ROUTES_FILE);
-    await writeFile(filePath, YAML.stringify(config), "utf-8");
+    await writeFile(tmpPath, YAML.stringify(config), "utf-8");
+    await rename(tmpPath, filePath);
     logger.info(`[traefik] Wrote external routes config (${routes.length} route(s))`);
   } catch (err: unknown) {
     // Not running in an environment with /etc/traefik/dynamic — skip silently
-    if (err && typeof err === "object" && "code" in err && err.code === "ENOENT") {
+    if (err && typeof err === "object" && "code" in err && (err as NodeJS.ErrnoException).code === "ENOENT") {
       return;
     }
     throw err;
@@ -190,10 +213,9 @@ export async function removeExternalRouteConfig(): Promise<void> {
     await unlink(filePath);
     logger.info(`[traefik] Removed external routes config`);
   } catch (err: unknown) {
-    if (err && typeof err === "object" && "code" in err && err.code !== "ENOENT") {
+    if (err && typeof err === "object" && "code" in err && (err as NodeJS.ErrnoException).code !== "ENOENT") {
       throw err;
     }
     // File doesn't exist — nothing to remove
   }
 }
-

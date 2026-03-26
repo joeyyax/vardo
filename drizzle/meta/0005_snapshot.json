@@ -1,5 +1,5 @@
 {
-  "id": "fd217540-0c46-4d50-afc2-a2d7914688cc",
+  "id": "546f0209-693a-48b3-b360-51d295df5a08",
   "prevId": "b4c9e8f4-5447-422c-bd77-78fd7784a632",
   "version": "7",
   "dialect": "postgresql",
@@ -659,12 +659,6 @@
         },
         "rollback_from_id": {
           "name": "rollback_from_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "superseded_by": {
-          "name": "superseded_by",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -4564,6 +4558,86 @@
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
+    },
+    "public.external_routes": {
+      "name": "external_routes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "hostname": {
+          "name": "hostname",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "target_url": {
+          "name": "target_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tls": {
+          "name": "tls",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "insecure_skip_verify": {
+          "name": "insecure_skip_verify",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "redirect_url": {
+          "name": "redirect_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "redirect_permanent": {
+          "name": "redirect_permanent",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "external_routes_hostname_unique": {
+          "name": "external_routes_hostname_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "hostname"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
     }
   },
   "enums": {
@@ -4655,8 +4729,7 @@
         "success",
         "failed",
         "cancelled",
-        "rolled_back",
-        "superseded"
+        "rolled_back"
       ]
     },
     "public.deployment_trigger": {
