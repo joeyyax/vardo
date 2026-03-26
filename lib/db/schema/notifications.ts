@@ -6,9 +6,11 @@ import {
   pgTable,
   text,
   timestamp,
+  unique,
 } from "drizzle-orm/pg-core";
 import { notificationChannelTypeEnum } from "./enums";
 import { organizations } from "./organizations";
+import { user } from "./auth";
 
 // ---------------------------------------------------------------------------
 // Notification Channels
@@ -49,6 +51,65 @@ export const digestSettings = pgTable("digest_setting", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+// ---------------------------------------------------------------------------
+// User Notification Preferences (per-user, per-org, per-channel, per-event)
+// ---------------------------------------------------------------------------
+
+export const userNotificationPreferences = pgTable(
+  "user_notification_preference",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    channelId: text("channel_id")
+      .notNull()
+      .references(() => notificationChannels.id, { onDelete: "cascade" }),
+    eventType: text("event_type").notNull(),
+    enabled: boolean("enabled").default(true).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    unique("unq_user_notification_pref").on(
+      t.userId,
+      t.organizationId,
+      t.channelId,
+      t.eventType,
+    ),
+    index("user_notification_pref_user_idx").on(t.userId),
+    index("user_notification_pref_channel_idx").on(t.channelId),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// User Digest Preferences (per-user, per-org)
+// Weekly digest opt-in — additive to real-time notifications.
+// ---------------------------------------------------------------------------
+
+export const userDigestPreferences = pgTable(
+  "user_digest_preference",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    enabled: boolean("enabled").default(false).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    unique("unq_user_digest_pref").on(t.userId, t.organizationId),
+    index("user_digest_pref_user_idx").on(t.userId),
+  ]
+);
 
 // ---------------------------------------------------------------------------
 // Notification log — records every delivery attempt + result
