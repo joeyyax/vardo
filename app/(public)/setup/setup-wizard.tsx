@@ -1297,7 +1297,7 @@ function DomainStep({
           />
           <FieldHint>
             {serverIp
-              ? `Detected: ${serverIp} — this is the IP your DNS A records should point to.`
+              ? `Detected: ${serverIp} — point your DNS A records here.`
               : "Public IP of this server. Point your DNS A records here."}
           </FieldHint>
         </div>

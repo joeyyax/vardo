@@ -440,9 +440,8 @@ export function DomainSettings() {
             if (cfCheck) {
               return (
                 <div className="text-xs text-muted-foreground">
-                  Looks like you&apos;re using Cloudflare.{" "}
-                  <GuideLink href="https://dash.cloudflare.com">Open Cloudflare Dashboard</GuideLink>
-                  {" "} — set the proxy status to &quot;DNS Only&quot; (gray cloud) for the wildcard record if you experience issues.
+                  Disable the proxy (gray cloud) on the wildcard record —{" "}
+                  <GuideLink href="https://dash.cloudflare.com">Cloudflare&apos;s proxy breaks wildcard SSL.</GuideLink>
                 </div>
               );
             }

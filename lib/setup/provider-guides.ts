@@ -56,14 +56,14 @@ export const EMAIL_PROVIDER_GUIDES: Record<string, EmailProviderGuide> = {
     signupUrl: "https://resend.com/signup",
     dashboardUrl: "https://resend.com/api-keys",
     keyLocation: "Dashboard → API Keys → Create API Key",
-    description: "Modern email API with built-in analytics, bounce tracking, and deliverability insights.",
+    description: "API-first email with bounce handling and delivery analytics.",
   },
   postmark: {
     name: "Postmark",
     signupUrl: "https://account.postmarkapp.com/sign_up",
     dashboardUrl: "https://account.postmarkapp.com/servers",
     keyLocation: "Select your Server → API Tokens tab → copy the Server API Token",
-    description: "Transactional email service with excellent delivery rates and detailed message streams.",
+    description: "Fast transactional email — reliable delivery and per-message logging.",
   },
   mailpace: {
     name: "Mailpace",
@@ -84,7 +84,7 @@ export const EMAIL_PROVIDER_GUIDES: Record<string, EmailProviderGuide> = {
 export const SMTP_PRESETS = [
   { label: "Gmail", host: "smtp.gmail.com", port: "587", note: "Requires an App Password — google.com/apppasswords" },
   { label: "Fastmail", host: "smtp.fastmail.com", port: "465", note: "Use an app-specific password from Settings → Privacy & Security" },
-  { label: "Outlook", host: "smtp.office365.com", port: "587", note: "Your Microsoft 365 or Outlook.com credentials" },
+  { label: "Outlook", host: "smtp.office365.com", port: "587", note: "Requires an app password — account.microsoft.com/security" },
 ] as const;
 
 // ---------------------------------------------------------------------------

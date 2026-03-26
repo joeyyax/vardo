@@ -110,7 +110,7 @@ export function GitHubSettings() {
       </ProviderGuide>
 
       {webhookUrl && (
-        <CopyableField label="Webhook URL (set in your GitHub App settings)" value={webhookUrl} />
+        <CopyableField label="Webhook URL (paste into GitHub)" value={webhookUrl} />
       )}
 
     <Card className="squircle rounded-lg">
