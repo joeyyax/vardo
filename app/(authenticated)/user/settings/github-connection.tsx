@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
-import { Github, Loader2, ExternalLink, Trash2, RefreshCw } from "lucide-react";
+import { Github, Loader2, ExternalLink, Trash2 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -23,7 +23,6 @@ export function GitHubConnection() {
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
-  const [syncing, setSyncing] = useState(false);
 
   // Show toast based on callback result
   useEffect(() => {
@@ -58,10 +57,30 @@ export function GitHubConnection() {
   async function handleConnect() {
     setConnecting(true);
     try {
+      // Phase 1: if no installations yet, try syncing existing ones first
+      if (installations.length === 0) {
+        try {
+          const syncRes = await fetch("/api/v1/github/installations/sync");
+          if (syncRes.ok) {
+            const syncData = await syncRes.json();
+            if (syncData.synced > 0) {
+              setInstallations(syncData.installations || []);
+              toast.success(`Found ${syncData.synced} existing installation(s)`);
+              setConnecting(false);
+              return;
+            }
+          }
+        } catch {
+          // Sync is best-effort — fall through to GitHub redirect
+        }
+      }
+
+      // Phase 2: no existing installations found (or user already has some) — redirect to GitHub
       const res = await fetch("/api/v1/github/connect");
       if (!res.ok) {
         const data = await res.json();
         toast.error(data.error || "Failed to generate connect URL");
+        setConnecting(false);
         return;
       }
       const { url } = await res.json();
@@ -94,29 +113,6 @@ export function GitHubConnection() {
     }
   }
 
-  async function handleSync() {
-    setSyncing(true);
-    try {
-      const res = await fetch("/api/v1/github/installations/sync");
-      if (res.ok) {
-        const data = await res.json();
-        setInstallations(data.installations || []);
-        if (data.synced > 0) {
-          toast.success(`Synced ${data.synced} installation(s)`);
-        } else {
-          toast.info("No new installations found");
-        }
-      } else {
-        const data = await res.json();
-        toast.error(data.error || "Failed to sync installations");
-      }
-    } catch {
-      toast.error("Failed to sync GitHub installations");
-    } finally {
-      setSyncing(false);
-    }
-  }
-
   return (
     <Card className="squircle rounded-lg">
       <CardHeader>
@@ -125,34 +121,19 @@ export function GitHubConnection() {
             <CardTitle>GitHub</CardTitle>
             <CardDescription>Link a GitHub account to deploy from private repos and enable auto-deploy on push.</CardDescription>
           </div>
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={handleSync}
-              disabled={syncing}
-              title="Sync existing installations from GitHub"
-            >
-              {syncing ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <RefreshCw className="size-4" />
-              )}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleConnect}
-              disabled={connecting}
-            >
-              {connecting ? (
-                <Loader2 className="mr-1.5 size-4 animate-spin" />
-              ) : (
-                <Github className="mr-1.5 size-4" />
-              )}
-              Connect GitHub
-            </Button>
-          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleConnect}
+            disabled={connecting}
+          >
+            {connecting ? (
+              <Loader2 className="mr-1.5 size-4 animate-spin" />
+            ) : (
+              <Github className="mr-1.5 size-4" />
+            )}
+            {installations.length > 0 ? "Add Account" : "Connect GitHub"}
+          </Button>
         </div>
       </CardHeader>
       <CardContent>
@@ -166,20 +147,6 @@ export function GitHubConnection() {
           <p className="text-sm text-muted-foreground">
             No GitHub accounts connected yet.
           </p>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleSync}
-            disabled={syncing}
-            className="mt-2"
-          >
-            {syncing ? (
-              <Loader2 className="mr-1.5 size-4 animate-spin" />
-            ) : (
-              <RefreshCw className="mr-1.5 size-4" />
-            )}
-            Sync existing installations
-          </Button>
         </div>
       ) : (
         <div className="space-y-2">
