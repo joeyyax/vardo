@@ -38,7 +38,7 @@ RUN apt-get update -qq && \
     curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian bookworm stable" > /etc/apt/sources.list.d/docker.list && \
     apt-get update -qq && \
-    apt-get install -y --no-install-recommends docker-ce-cli && \
+    apt-get install -y --no-install-recommends docker-ce-cli iproute2 gosu && \
     curl -sSL https://nixpacks.com/install.sh | bash && \
     ARCH=$(uname -m) && \
     if [ "$ARCH" = "aarch64" ]; then RAILPACK_ARCH="arm64"; else RAILPACK_ARCH="x86_64"; fi && \
@@ -65,10 +65,13 @@ COPY --from=builder --chown=nextjs:nodejs /app/scripts ./scripts
 COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
 COPY --from=builder --chown=nextjs:nodejs /app/next.config.ts ./next.config.ts
 
-USER nextjs
+COPY --chown=nextjs:nodejs scripts/entrypoint.sh ./scripts/entrypoint.sh
+RUN chmod +x ./scripts/entrypoint.sh
 
 EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-CMD ["sh", "-c", "node scripts/migrate.mjs && npx next start"]
+# Entrypoint runs as root to set up mesh routing, then drops to nextjs for the app.
+# NET_ADMIN capability is required in docker-compose for the ip route command.
+ENTRYPOINT ["./scripts/entrypoint.sh"]
