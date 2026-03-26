@@ -84,6 +84,7 @@ export default async function AppDetailPage({ params }: PageProps) {
         environmentId: true,
         configSnapshot: true,
         rollbackFromId: true,
+        supersededBy: true,
         startedAt: true,
         finishedAt: true,
       },
