@@ -1151,7 +1151,7 @@ function GithubStep({
             onClick={regenerateWebhookSecret}
             className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
           >
-            <RefreshCw className="size-3" />
+            <RefreshCw aria-hidden="true" className="size-3" />
             Regenerate
           </button>
         </div>
