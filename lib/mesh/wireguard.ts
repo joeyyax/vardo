@@ -107,6 +107,52 @@ export async function syncConfig(): Promise<void> {
   ]);
 }
 
+/**
+ * Rebuild wg0.conf from all peers in the database and hot-reload WireGuard.
+ * Call this after any peer registration or removal.
+ */
+export async function rebuildAndSync(): Promise<void> {
+  // Dynamic imports to avoid circular dependencies
+  const { db } = await import("@/lib/db");
+  const { meshPeers } = await import("@/lib/db/schema");
+
+  // Read the current private key from the running interface
+  const { stdout: privKeyOut } = await execFileAsync("docker", [
+    "exec", WG_CONTAINER, "sh", "-c",
+    "cat /config/wg_confs/wg0.conf | grep PrivateKey | cut -d= -f2- | tr -d ' '",
+  ]);
+  const privateKey = privKeyOut.trim();
+  if (!WG_KEY_RE.test(privateKey)) {
+    throw new Error("Could not read WireGuard private key from config");
+  }
+
+  // Read the current address
+  const { stdout: addrOut } = await execFileAsync("docker", [
+    "exec", WG_CONTAINER, "sh", "-c",
+    "cat /config/wg_confs/wg0.conf | grep Address | cut -d= -f2- | tr -d ' ' | cut -d/ -f1",
+  ]);
+  const address = addrOut.trim();
+  if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(address)) {
+    throw new Error(`Invalid WireGuard address from config: ${address}`);
+  }
+
+  // Get all peers from the database
+  const allPeers = await db.query.meshPeers.findMany({
+    columns: { publicKey: true, endpoint: true, allowedIps: true },
+  });
+
+  const wgPeers: WgPeer[] = allPeers.map((p) => ({
+    publicKey: p.publicKey,
+    endpoint: p.endpoint,
+    allowedIps: p.allowedIps,
+  }));
+
+  const port = parseInt(process.env.WIREGUARD_PORT || "51820", 10);
+  const config = buildWgConfig(privateKey, port, address, wgPeers);
+  await writeWgConfig(config);
+  await syncConfig();
+}
+
 /** Check if the WireGuard container is running. */
 export async function isWireguardRunning(): Promise<boolean> {
   try {
