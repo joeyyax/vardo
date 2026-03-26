@@ -54,10 +54,19 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     }
 
     // Queued deployments have not started yet — update the DB directly.
-    await db
+    // Use a conditional WHERE to guard against a queued→running race: if the
+    // worker picked up the deployment between our status read and this write,
+    // no rows will be updated and we fall back to the Redis kill signal.
+    const updated = await db
       .update(deployments)
       .set({ status: "cancelled", finishedAt: new Date() })
-      .where(eq(deployments.id, deploymentId));
+      .where(and(eq(deployments.id, deploymentId), eq(deployments.status, "queued")))
+      .returning({ id: deployments.id });
+
+    if (updated.length === 0) {
+      // Deployment transitioned to running in the gap — send the kill signal instead.
+      await publishKillSignal(deploymentId);
+    }
 
     return NextResponse.json({ ok: true });
   } catch (error) {
