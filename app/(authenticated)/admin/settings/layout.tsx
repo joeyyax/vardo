@@ -17,6 +17,7 @@ const BASE_NAV_ITEMS = [
   { label: "GitHub App", href: "/admin/settings/github" },
   { label: "Domain & SSL", href: "/admin/settings/domain" },
   { label: "Traefik", href: "/admin/settings/traefik" },
+  { label: "External routes", href: "/admin/settings/external-routes" },
   { label: "Config", href: "/admin/settings/config" },
 ];
 
