@@ -44,6 +44,10 @@ services:
     group_add:
       - ${DOCKER_GID:-999}
     volumes:
+      # Docker socket — required for the deploy engine and admin restart endpoint.
+      # Accepted risk: mounting the socket grants this container full control over
+      # the host daemon. Mitigated by admin-only auth, non-root user, and docker GID mapping.
+      # Set CONTAINER_ID in .env if you run Vardo with a custom container hostname.
       - /var/run/docker.sock:/var/run/docker.sock
       - vardo_projects:/var/lib/vardo/projects
       - traefik_dynamic:/etc/traefik/dynamic
