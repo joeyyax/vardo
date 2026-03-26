@@ -305,6 +305,18 @@ export async function inspectContainer(id: string): Promise<ContainerInspect> {
 }
 
 // ---------------------------------------------------------------------------
+// Container lifecycle
+// ---------------------------------------------------------------------------
+
+export async function stopContainer(id: string): Promise<void> {
+  await dockerRequest("POST", `/containers/${id}/stop`);
+}
+
+export async function removeContainer(id: string): Promise<void> {
+  await dockerRequest("DELETE", `/containers/${id}`);
+}
+
+// ---------------------------------------------------------------------------
 // Logs
 // ---------------------------------------------------------------------------
 

@@ -11,6 +11,9 @@ import { generateComposeForImage, injectTraefikLabels, composeToYaml } from "@/l
 import { encrypt } from "@/lib/crypto/encrypt";
 import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
 import { recordActivity } from "@/lib/activity";
+import { stopContainer, removeContainer } from "@/lib/docker/client";
+import { requestDeploy } from "@/lib/docker/deploy-cancel";
+import { logger } from "@/lib/logger";
 
 type RouteParams = {
   params: Promise<{ orgId: string; containerId: string }>;
@@ -213,6 +216,32 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const { app } = result;
     const appId = app.id;
+
+    // Stop and remove the old unmanaged container so it disappears from discover
+    // and the new Vardo-managed container can take over its ports and name.
+    // Best-effort — the container may already be stopped or gone.
+    try {
+      await stopContainer(containerId);
+    } catch (err) {
+      logger.warn("import: could not stop old container", { containerId, err });
+    }
+    try {
+      await removeContainer(containerId);
+    } catch (err) {
+      logger.warn("import: could not remove old container", { containerId, err });
+    }
+
+    // Trigger a Vardo deploy so the container is recreated with vardo.managed=true
+    // labels, joined to vardo-network, and fully managed. Fire-and-forget — the
+    // caller can track progress via the app's deploy page.
+    void requestDeploy({
+      appId,
+      organizationId: orgId,
+      trigger: "api",
+      triggeredBy: org.session.user.id,
+    }).catch((err) => {
+      logger.error("import: deploy failed", { appId, err });
+    });
 
     const warnings: string[] = [];
 
