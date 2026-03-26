@@ -18,6 +18,7 @@ services:
         NEXT_PUBLIC_APP_URL: https://${VARDO_DOMAIN:-localhost}
         NEXT_PUBLIC_PLAUSIBLE_DOMAIN: ${NEXT_PUBLIC_PLAUSIBLE_DOMAIN:-}
         NEXT_PUBLIC_PLAUSIBLE_SRC: ${NEXT_PUBLIC_PLAUSIBLE_SRC:-}
+        GIT_SHA: ${GIT_SHA:-}
     profiles:
       - production
     restart: unless-stopped

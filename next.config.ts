@@ -16,7 +16,7 @@ try {
 const nextConfig: NextConfig = {
   outputFileTracingRoot: resolve(__dirname),
   env: {
-    NEXT_PUBLIC_GIT_SHA: gitSha,
+    NEXT_PUBLIC_GIT_SHA: gitSha || process.env.NEXT_PUBLIC_GIT_SHA || "",
   },
   serverExternalPackages: ["node-ical", "nodemailer", "@modelcontextprotocol/sdk"],
   images: {
