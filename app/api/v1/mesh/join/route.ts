@@ -7,6 +7,7 @@ import { meshPeers } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { redeemInvite } from "@/lib/mesh/invite";
 import { registerPeer } from "@/lib/mesh/peers";
+import { rebuildAndSync } from "@/lib/mesh/wireguard";
 
 const WG_KEY_RE = /^[A-Za-z0-9+/]{43}=$/;
 
@@ -57,6 +58,13 @@ async function handler(request: NextRequest) {
         .update(meshPeers)
         .set({ outboundToken: joinerOutboundToken })
         .where(eq(meshPeers.id, peer.id));
+    }
+
+    // Rebuild WireGuard config with the new peer
+    try {
+      await rebuildAndSync();
+    } catch {
+      // WireGuard sync failure shouldn't fail the join
     }
 
     const { tokenHash: _hash, ...peerWithoutHash } = peer;

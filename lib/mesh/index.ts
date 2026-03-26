@@ -3,6 +3,7 @@ export {
   buildWgConfig,
   writeWgConfig,
   syncConfig,
+  rebuildAndSync,
   isWireguardRunning,
   getWgStatus,
   getHubPublicKey,
