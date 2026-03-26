@@ -318,14 +318,19 @@ export async function getSslConfig(): Promise<SslConfig> {
   const concurrentIssuers = Math.max(1, Math.min(rawConcurrent, activeIssuers.length || 1));
 
   const fileChallengeType = fileConfig?.ssl?.challengeType;
-  const validChallengeType = fileChallengeType && VALID_CHALLENGE_TYPES.includes(fileChallengeType)
-    ? fileChallengeType
+  const validFileChallengeType = fileChallengeType && VALID_CHALLENGE_TYPES.includes(fileChallengeType as "http" | "dns")
+    ? (fileChallengeType as "http" | "dns")
+    : undefined;
+
+  const dbChallengeType = dbConfig?.challengeType;
+  const validDbChallengeType = dbChallengeType && VALID_CHALLENGE_TYPES.includes(dbChallengeType as "http" | "dns")
+    ? (dbChallengeType as "http" | "dns")
     : undefined;
 
   return {
     activeIssuers,
     concurrentIssuers,
-    challengeType: validChallengeType ?? dbConfig?.challengeType ?? "http",
+    challengeType: validFileChallengeType ?? validDbChallengeType ?? "http",
     dnsProvider: fileConfig?.ssl?.dnsProvider ?? dbConfig?.dnsProvider,
     dnsApiToken: fileConfig?.ssl?.dnsApiToken ?? dbConfig?.dnsApiToken,
     zerosslEabKid: fileConfig?.ssl?.zerossl?.eabKid ?? dbConfig?.zerosslEabKid,
