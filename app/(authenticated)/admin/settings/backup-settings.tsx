@@ -16,6 +16,12 @@ import { useVerify } from "@/hooks/use-verify";
 import { Card, CardContent } from "@/components/ui/card";
 import { MASK_SENTINEL } from "@/lib/mask-secrets";
 import { useSystemSetting } from "./use-system-setting";
+import {
+  ProviderGuide,
+  GuideLink,
+  FieldHint,
+} from "@/components/setup/provider-guide";
+import { BACKUP_PROVIDER_GUIDES } from "@/lib/setup/provider-guides";
 
 function toDisplay(value: string): string {
   if (value.startsWith(MASK_SENTINEL)) {
@@ -131,6 +137,23 @@ export function BackupSettings() {
             </Select>
           </div>
 
+          {BACKUP_PROVIDER_GUIDES[type] && (
+            <ProviderGuide title={`Setting up ${BACKUP_PROVIDER_GUIDES[type].name}`} description={BACKUP_PROVIDER_GUIDES[type].bucketSettings}>
+              <div className="space-y-2 text-xs text-muted-foreground">
+                <div>
+                  <span className="font-medium">Credentials:</span> {BACKUP_PROVIDER_GUIDES[type].credentialSteps}
+                </div>
+                <div>
+                  <span className="font-medium">Permissions needed:</span> {BACKUP_PROVIDER_GUIDES[type].requiredPermissions}
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <GuideLink href={BACKUP_PROVIDER_GUIDES[type].createBucketUrl}>Create bucket</GuideLink>
+                <GuideLink href={BACKUP_PROVIDER_GUIDES[type].consoleUrl}>Console</GuideLink>
+              </div>
+            </ProviderGuide>
+          )}
+
           <div className="max-w-md space-y-2">
             <Label htmlFor="sys-bucket">Bucket name</Label>
             <Input
@@ -151,6 +174,7 @@ export function BackupSettings() {
                 placeholder={type === "r2" ? "auto" : "us-east-1"}
                 required
               />
+              {type === "r2" && <FieldHint>Use &quot;auto&quot; for R2 — it handles region routing automatically.</FieldHint>}
             </div>
             <div className="space-y-2">
               <Label htmlFor="sys-endpoint">Endpoint</Label>
@@ -161,6 +185,8 @@ export function BackupSettings() {
                 placeholder={type === "s3" ? "Leave blank for AWS" : ""}
                 autoComplete="url"
               />
+              {type === "r2" && <FieldHint>https://&lt;account-id&gt;.r2.cloudflarestorage.com</FieldHint>}
+              {type === "b2" && <FieldHint>https://s3.&lt;region&gt;.backblazeb2.com</FieldHint>}
             </div>
           </div>
 

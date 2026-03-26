@@ -10,6 +10,15 @@ import { useVerify } from "@/hooks/use-verify";
 import { Card, CardContent } from "@/components/ui/card";
 import { MASK_SENTINEL } from "@/lib/mask-secrets";
 import { useSystemSetting } from "./use-system-setting";
+import {
+  ProviderGuide,
+  StepList,
+  GuideLink,
+  CopyableField,
+  FieldHint,
+  PermissionList,
+} from "@/components/setup/provider-guide";
+import { GITHUB_GUIDE, getWebhookUrl } from "@/lib/setup/provider-guides";
 
 function toDisplay(value: string): string {
   if (value.startsWith(MASK_SENTINEL)) {
@@ -86,6 +95,9 @@ export function GitHubSettings() {
     );
   }
 
+  const appUrl = typeof window !== "undefined" ? window.location.origin : "";
+  const webhookUrl = getWebhookUrl(appUrl);
+
   return (
     <div className="space-y-6">
       <div className="space-y-1">
@@ -94,6 +106,16 @@ export function GitHubSettings() {
           Connect a GitHub App to import repositories, manage deploy keys, and trigger automatic deployments on push. Create the app in your GitHub account and paste the credentials below.
         </p>
       </div>
+
+      <ProviderGuide title="How to create a GitHub App">
+        <StepList steps={GITHUB_GUIDE.steps} />
+        <PermissionList permissions={GITHUB_GUIDE.permissions} />
+        <GuideLink href={GITHUB_GUIDE.createAppUrl}>Create GitHub App</GuideLink>
+      </ProviderGuide>
+
+      {webhookUrl && (
+        <CopyableField label="Webhook URL (paste into GitHub)" value={webhookUrl} />
+      )}
 
     <Card className="squircle rounded-lg">
       <CardContent>
@@ -113,6 +135,7 @@ export function GitHubSettings() {
                 onChange={(e) => setAppId(e.target.value)}
                 required
               />
+              <FieldHint>{GITHUB_GUIDE.fieldHints.appId}</FieldHint>
             </div>
             <div className="space-y-2">
               <Label htmlFor="sys-appSlug">App slug</Label>
@@ -122,6 +145,7 @@ export function GitHubSettings() {
                 onChange={(e) => setAppSlug(e.target.value)}
                 required
               />
+              <FieldHint>{GITHUB_GUIDE.fieldHints.appSlug}</FieldHint>
             </div>
           </div>
 
@@ -133,6 +157,7 @@ export function GitHubSettings() {
               onChange={(e) => setClientId(e.target.value)}
               required
             />
+            <FieldHint>{GITHUB_GUIDE.fieldHints.clientId}</FieldHint>
           </div>
 
           <div className="max-w-md space-y-2">
