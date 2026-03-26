@@ -2,15 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { meshPeers } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, ne } from "drizzle-orm";
 import { requireMeshPeer } from "@/lib/mesh/auth";
+import { getInstanceId } from "@/lib/constants";
+import { getInstanceConfig } from "@/lib/system-settings";
 
 /**
  * POST /api/v1/mesh/heartbeat — peer health check.
  *
  * Authenticated via mesh bearer token. Marks the calling peer as online in the
- * local DB. The caller marks this instance online on their side when they
- * receive the 200 — that's the bidirectional liveness tracking.
+ * local DB. Returns the full peer manifest so the caller can see all mesh members,
+ * not just its direct connections.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -25,7 +27,33 @@ export async function POST(request: NextRequest) {
       })
       .where(eq(meshPeers.id, peer.id));
 
-    return NextResponse.json({ ok: true });
+    // Return the full peer list so the caller can see all mesh members.
+    // Exclude the calling peer itself and strip sensitive fields.
+    const allPeers = await db.query.meshPeers.findMany({
+      where: ne(meshPeers.id, peer.id),
+      columns: {
+        id: true,
+        name: true,
+        type: true,
+        status: true,
+        internalIp: true,
+        endpoint: true,
+        lastSeenAt: true,
+      },
+    });
+
+    const instanceId = await getInstanceId();
+    const config = await getInstanceConfig();
+
+    return NextResponse.json({
+      ok: true,
+      instance: {
+        id: instanceId,
+        name: config.instanceName,
+        internalIp: "10.99.0.1",
+      },
+      peers: allPeers,
+    });
   } catch (error) {
     return handleRouteError(error, "Error processing heartbeat");
   }
