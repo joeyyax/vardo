@@ -89,6 +89,27 @@ export async function POST() {
   const config = await getSslConfig();
   const acmeEmail = process.env.NEXT_PUBLIC_ACME_EMAIL;
 
+  // DNS challenge — verify token and ACME email, skip per-issuer HTTP checks
+  if (config.challengeType === "dns") {
+    if (!config.dnsApiToken) {
+      return NextResponse.json({
+        ok: false,
+        message: "DNS challenge requires a Cloudflare API token — add it above and save first",
+      });
+    }
+    if (!acmeEmail) {
+      return NextResponse.json({
+        ok: false,
+        message: "DNS challenge requires an ACME email — set NEXT_PUBLIC_ACME_EMAIL in your environment",
+      });
+    }
+    return NextResponse.json({
+      ok: true,
+      message: `DNS challenge configured (Cloudflare, ACME email: ${acmeEmail}) — restart Traefik to activate`,
+    });
+  }
+
+  // HTTP challenge — verify all active issuers
   const results = await Promise.all(
     config.activeIssuers.map((issuer) =>
       checkIssuer(issuer, acmeEmail, config.zerosslEabKid, config.zerosslEabHmac)

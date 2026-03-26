@@ -133,11 +133,22 @@ services:
       - "--certificatesresolvers.le.acme.tlschallenge=true"
       - "--certificatesresolvers.le.acme.email=${ACME_EMAIL:-}"
       - "--certificatesresolvers.le.acme.storage=/letsencrypt/acme-le.json"
+      # Let's Encrypt — DNS-01 challenge (Cloudflare; requires CF_DNS_API_TOKEN)
+      - "--certificatesresolvers.le-dns.acme.dnschallenge=true"
+      - "--certificatesresolvers.le-dns.acme.dnschallenge.provider=cloudflare"
+      - "--certificatesresolvers.le-dns.acme.email=${ACME_EMAIL:-}"
+      - "--certificatesresolvers.le-dns.acme.storage=/letsencrypt/acme-le-dns.json"
       # Google Trust Services (free, no EAB required)
       - "--certificatesresolvers.google.acme.tlschallenge=true"
       - "--certificatesresolvers.google.acme.email=${ACME_EMAIL:-}"
       - "--certificatesresolvers.google.acme.caserver=https://dv.acme-v02.api.pki.goog/directory"
       - "--certificatesresolvers.google.acme.storage=/letsencrypt/acme-google.json"
+      # Google Trust Services — DNS-01 challenge (Cloudflare; requires CF_DNS_API_TOKEN)
+      - "--certificatesresolvers.google-dns.acme.dnschallenge=true"
+      - "--certificatesresolvers.google-dns.acme.dnschallenge.provider=cloudflare"
+      - "--certificatesresolvers.google-dns.acme.email=${ACME_EMAIL:-}"
+      - "--certificatesresolvers.google-dns.acme.caserver=https://dv.acme-v02.api.pki.goog/directory"
+      - "--certificatesresolvers.google-dns.acme.storage=/letsencrypt/acme-google-dns.json"
       # ZeroSSL (requires EAB credentials — non-functional until configured)
       - "--certificatesresolvers.zerossl.acme.tlschallenge=true"
       - "--certificatesresolvers.zerossl.acme.email=${ACME_EMAIL:-}"
@@ -145,9 +156,20 @@ services:
       - "--certificatesresolvers.zerossl.acme.eab.kid=${ZEROSSL_EAB_KID:-}"
       - "--certificatesresolvers.zerossl.acme.eab.hmacencoded=${ZEROSSL_EAB_HMAC:-}"
       - "--certificatesresolvers.zerossl.acme.storage=/letsencrypt/acme-zerossl.json"
+      # ZeroSSL — DNS-01 challenge (Cloudflare; requires CF_DNS_API_TOKEN + EAB credentials)
+      - "--certificatesresolvers.zerossl-dns.acme.dnschallenge=true"
+      - "--certificatesresolvers.zerossl-dns.acme.dnschallenge.provider=cloudflare"
+      - "--certificatesresolvers.zerossl-dns.acme.email=${ACME_EMAIL:-}"
+      - "--certificatesresolvers.zerossl-dns.acme.caserver=https://acme.zerossl.com/v2/DV90"
+      - "--certificatesresolvers.zerossl-dns.acme.eab.kid=${ZEROSSL_EAB_KID:-}"
+      - "--certificatesresolvers.zerossl-dns.acme.eab.hmacencoded=${ZEROSSL_EAB_HMAC:-}"
+      - "--certificatesresolvers.zerossl-dns.acme.storage=/letsencrypt/acme-zerossl-dns.json"
       - "--providers.file.directory=/etc/traefik/dynamic"
       - "--providers.file.watch=true"
       - "--log.level=${TRAEFIK_LOG_LEVEL:-WARN}"
+    environment:
+      # Required for DNS-01 challenge with Cloudflare. Set in .env when using DNS challenge.
+      CF_DNS_API_TOKEN: ${CF_DNS_API_TOKEN:-}
     ports:
       - "80:80"
       - "443:443"
