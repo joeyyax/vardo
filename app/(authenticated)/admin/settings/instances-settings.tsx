@@ -385,7 +385,7 @@ export function InstancesSettings() {
                         <span
                           className={`size-2 rounded-full shrink-0 ${
                             peer.status === "online"
-                              ? "bg-status-success"
+                              ? "bg-status-success animate-pulse"
                               : "bg-status-neutral"
                           }`}
                           aria-hidden="true"
