@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { resolve4 } from "dns/promises";
 import { requireAdminAuth } from "@/lib/auth/admin";
 import { handleRouteError } from "@/lib/api/error-response";
+import { getInstanceConfig } from "@/lib/system-settings";
 
 type DnsCheck = {
   domain: string;
@@ -14,9 +15,10 @@ export async function GET(request: NextRequest) {
   try {
     await requireAdminAuth(request);
 
-    const serverIp = process.env.VARDO_SERVER_IP ?? "";
-    const baseDomain = process.env.VARDO_BASE_DOMAIN ?? "";
-    const hostDomain = process.env.VARDO_DOMAIN ?? "";
+    const config = await getInstanceConfig();
+    const serverIp = config.serverIp;
+    const baseDomain = config.baseDomain;
+    const hostDomain = config.domain;
 
     const domains = [hostDomain, baseDomain].filter(Boolean);
     // Deduplicate

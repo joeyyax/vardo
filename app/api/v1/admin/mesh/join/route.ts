@@ -6,6 +6,7 @@ import { decodeInviteToken } from "@/lib/mesh/invite";
 import { generateMeshToken } from "@/lib/mesh/auth";
 import { ensureHubConfig, HUB_IP } from "@/lib/mesh";
 import { getInstanceId } from "@/lib/constants";
+import { getInstanceConfig } from "@/lib/system-settings";
 import { db } from "@/lib/db";
 import { meshPeers } from "@/lib/db/schema";
 import { nanoid } from "nanoid";
@@ -46,7 +47,8 @@ export async function POST(request: NextRequest) {
     const localPublicKey = await ensureHubConfig(HUB_IP);
 
     const instanceId = await getInstanceId();
-    const hostname = process.env.HOSTNAME || process.env.VARDO_DOMAIN || "unknown";
+    const instanceConfig = await getInstanceConfig();
+    const hostname = process.env.HOSTNAME || instanceConfig.domain || "unknown";
 
     // Generate a token the hub can use to call our API
     const { raw: ourToken, hash: ourTokenHash } = generateMeshToken();

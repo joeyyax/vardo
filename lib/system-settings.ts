@@ -99,6 +99,7 @@ export type InstanceConfig = {
   instanceName: string;
   baseDomain: string;
   serverIp: string;
+  domain: string;
 };
 
 export async function getInstanceConfig(): Promise<InstanceConfig> {
@@ -106,11 +107,13 @@ export async function getInstanceConfig(): Promise<InstanceConfig> {
   const dbConfig = await getSystemSettingRaw("instance_config")
     .then((raw) => raw ? parseJson<InstanceConfig>(raw, "instance_config") : null);
 
-  // Merge: config file fields > DB fields > defaults
+  // Merge: config file fields > DB fields > env fallback > defaults
+  // Env fallbacks support migration from env-only setups to DB-managed config
   return {
     instanceName: fileConfig?.instance?.name ?? dbConfig?.instanceName ?? DEFAULT_APP_NAME,
-    baseDomain: fileConfig?.instance?.baseDomain ?? dbConfig?.baseDomain ?? "",
-    serverIp: fileConfig?.instance?.serverIp ?? dbConfig?.serverIp ?? "",
+    baseDomain: fileConfig?.instance?.baseDomain ?? dbConfig?.baseDomain ?? process.env.VARDO_BASE_DOMAIN ?? "",
+    serverIp: fileConfig?.instance?.serverIp ?? dbConfig?.serverIp ?? process.env.VARDO_SERVER_IP ?? "",
+    domain: fileConfig?.instance?.domain ?? dbConfig?.domain ?? process.env.VARDO_DOMAIN ?? "",
   };
 }
 
