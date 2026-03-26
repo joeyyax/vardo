@@ -3,10 +3,11 @@ import { meshPeers } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
 /**
- * Make an authenticated request to a mesh peer's API over WireGuard.
+ * Make an authenticated request to a mesh peer's API.
  *
- * Resolves the peer's apiUrl and outbound token from the database,
- * then makes a fetch call with Bearer auth.
+ * Tries the WireGuard mesh URL first (fast, encrypted tunnel). If unreachable,
+ * falls back to the peer's public API URL (works before tunnel routing is set up
+ * or when the mesh is down).
  */
 export async function meshFetch(
   peerId: string,
@@ -15,14 +16,14 @@ export async function meshFetch(
 ): Promise<Response> {
   const peer = await db.query.meshPeers.findFirst({
     where: eq(meshPeers.id, peerId),
-    columns: { apiUrl: true, outboundToken: true, name: true, status: true },
+    columns: { apiUrl: true, publicApiUrl: true, outboundToken: true, name: true },
   });
 
   if (!peer) {
     throw new MeshClientError(`Peer not found: ${peerId}`, "PEER_NOT_FOUND");
   }
 
-  if (!peer.apiUrl) {
+  if (!peer.apiUrl && !peer.publicApiUrl) {
     throw new MeshClientError(
       `Peer "${peer.name}" has no API URL configured`,
       "NO_API_URL"
@@ -36,18 +37,39 @@ export async function meshFetch(
     );
   }
 
-  const url = `${peer.apiUrl}${path}`;
+  const authHeaders = {
+    ...options.headers,
+    Authorization: `Bearer ${peer.outboundToken}`,
+  };
 
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      ...options.headers,
-      Authorization: `Bearer ${peer.outboundToken}`,
-    },
-    signal: options.signal ?? AbortSignal.timeout(30_000),
-  });
+  // Try mesh URL first (WireGuard tunnel) with a short timeout
+  if (peer.apiUrl) {
+    try {
+      const res = await fetch(`${peer.apiUrl}${path}`, {
+        ...options,
+        headers: authHeaders,
+        signal: AbortSignal.timeout(5_000),
+      });
+      return res;
+    } catch {
+      // Mesh unreachable — fall through to public URL
+    }
+  }
 
-  return res;
+  // Fall back to public API URL
+  if (peer.publicApiUrl) {
+    const res = await fetch(`${peer.publicApiUrl}${path}`, {
+      ...options,
+      headers: authHeaders,
+      signal: options.signal ?? AbortSignal.timeout(30_000),
+    });
+    return res;
+  }
+
+  throw new MeshClientError(
+    `Peer "${peer.name}" unreachable via mesh and has no public URL`,
+    "UNREACHABLE"
+  );
 }
 
 /**
