@@ -5,6 +5,7 @@ import { nanoid } from "nanoid";
 import type { NotificationEvent } from "./port";
 import { createChannel } from "./factory";
 import { enqueueRetry } from "./retry";
+import { resolveRecipients } from "./resolve-recipients";
 import { emit, onEmit, toBusEvent, toLegacyEvent } from "@/lib/bus";
 import type { BusEvent, BusEventType } from "@/lib/bus";
 import { logger } from "@/lib/logger";
@@ -42,6 +43,14 @@ function dispatchToChannels(orgId: string, event: BusEvent): void {
       await Promise.allSettled(
         channels.map(async (row) => {
           if (!channelAcceptsEvent(row.subscribedEvents, event.type)) return;
+
+          const { shouldSend } = await resolveRecipients(
+            orgId,
+            row.id,
+            row.type,
+            event.type,
+          );
+          if (!shouldSend) return;
 
           try {
             await createChannel(row).send(legacy);
