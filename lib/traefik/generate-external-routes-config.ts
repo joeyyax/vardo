@@ -180,13 +180,7 @@ export async function regenerateExternalRoutesConfig(): Promise<void> {
     },
   };
 
-  try {
-    await mkdir(TRAEFIK_DYNAMIC_DIR, { recursive: true });
-  } catch (err: unknown) {
-    if (err && typeof err === "object" && "code" in err && (err as NodeJS.ErrnoException).code !== "EEXIST") {
-      throw err;
-    }
-  }
+  await mkdir(TRAEFIK_DYNAMIC_DIR, { recursive: true });
 
   const filePath = join(TRAEFIK_DYNAMIC_DIR, EXTERNAL_ROUTES_FILE);
   const tmpPath = `${filePath}.tmp`;

@@ -74,6 +74,16 @@ export async function PATCH(
 
     const updates = parsed.data;
 
+    // Validate that the merged state still has at least one of targetUrl or redirectUrl
+    const mergedTargetUrl = updates.targetUrl !== undefined ? updates.targetUrl : existing.targetUrl;
+    const mergedRedirectUrl = updates.redirectUrl !== undefined ? updates.redirectUrl : existing.redirectUrl;
+    if (!mergedTargetUrl && !mergedRedirectUrl) {
+      return NextResponse.json(
+        { error: "Route must have either a target URL or a redirect URL" },
+        { status: 400 }
+      );
+    }
+
     // Check hostname uniqueness if it's being changed
     if (updates.hostname && updates.hostname !== existing.hostname) {
       const conflictRoute = await db.query.externalRoutes.findFirst({
