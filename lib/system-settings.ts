@@ -257,11 +257,15 @@ export type SslConfig = {
   activeIssuers: SslIssuer[];
   /** How many issuers to try in parallel when obtaining a certificate. */
   concurrentIssuers: number;
+  challengeType: "http" | "dns";
+  dnsProvider?: "cloudflare";
+  dnsApiToken?: string;
   zerosslEabKid?: string;
   zerosslEabHmac?: string;
 };
 
 export const VALID_ISSUERS = ["le", "google", "zerossl"] as const satisfies readonly SslIssuer[];
+const VALID_CHALLENGE_TYPES = ["http", "dns"] as const;
 
 export const ISSUER_LABELS: Record<SslIssuer, string> = {
   le: "Let's Encrypt",
@@ -285,6 +289,9 @@ export async function getSslConfig(): Promise<SslConfig> {
     concurrentIssuers?: number;
     /** Legacy field — migrated on read */
     defaultIssuer?: string;
+    challengeType?: string;
+    dnsProvider?: "cloudflare";
+    dnsApiToken?: string;
     zerosslEabKid?: string;
     zerosslEabHmac?: string;
   };
@@ -310,9 +317,17 @@ export async function getSslConfig(): Promise<SslConfig> {
   const rawConcurrent = fileConfig?.ssl?.concurrentIssuers ?? dbConfig?.concurrentIssuers ?? 1;
   const concurrentIssuers = Math.max(1, Math.min(rawConcurrent, activeIssuers.length || 1));
 
+  const fileChallengeType = fileConfig?.ssl?.challengeType;
+  const validChallengeType = fileChallengeType && VALID_CHALLENGE_TYPES.includes(fileChallengeType)
+    ? fileChallengeType
+    : undefined;
+
   return {
     activeIssuers,
     concurrentIssuers,
+    challengeType: validChallengeType ?? dbConfig?.challengeType ?? "http",
+    dnsProvider: fileConfig?.ssl?.dnsProvider ?? dbConfig?.dnsProvider,
+    dnsApiToken: fileConfig?.ssl?.dnsApiToken ?? dbConfig?.dnsApiToken,
     zerosslEabKid: fileConfig?.ssl?.zerossl?.eabKid ?? dbConfig?.zerosslEabKid,
     zerosslEabHmac: fileConfig?.ssl?.zerossl?.eabHmac ?? dbConfig?.zerosslEabHmac,
   };
