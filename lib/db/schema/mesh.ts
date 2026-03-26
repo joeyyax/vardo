@@ -22,7 +22,8 @@ export const meshPeers = pgTable("mesh_peer", {
   publicKey: text("public_key").notNull().unique(),
   allowedIps: text("allowed_ips").notNull(), // WireGuard AllowedIPs (CIDR)
   internalIp: text("internal_ip").notNull().unique(), // WireGuard tunnel address (e.g. 10.99.0.1)
-  apiUrl: text("api_url"), // reachable URL for mesh API calls over tunnel
+  apiUrl: text("api_url"), // mesh IP URL for API calls over WireGuard tunnel (e.g. http://10.99.0.2:3000)
+  publicApiUrl: text("public_api_url"), // public URL reachable without tunnel (e.g. https://console.vardo.run)
   tokenHash: text("token_hash").unique(), // SHA-256 hash of the token we gave this peer (inbound auth)
   outboundToken: text("outbound_token"), // token the peer gave us for calling their API (outbound auth)
   lastSeenAt: timestamp("last_seen_at"),
