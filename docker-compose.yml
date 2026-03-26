@@ -46,6 +46,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - vardo_projects:/var/lib/vardo/projects
+      - traefik_dynamic:/etc/traefik/dynamic
     labels:
       - "traefik.enable=true"
       # Primary router — domain with TLS
@@ -140,6 +141,8 @@ services:
       - "--certificatesresolvers.zerossl.acme.eab.kid=${ZEROSSL_EAB_KID:-}"
       - "--certificatesresolvers.zerossl.acme.eab.hmacencoded=${ZEROSSL_EAB_HMAC:-}"
       - "--certificatesresolvers.zerossl.acme.storage=/letsencrypt/acme-zerossl.json"
+      - "--providers.file.directory=/etc/traefik/dynamic"
+      - "--providers.file.watch=true"
       - "--log.level=${TRAEFIK_LOG_LEVEL:-WARN}"
     ports:
       - "80:80"
@@ -147,6 +150,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - letsencrypt:/letsencrypt
+      - traefik_dynamic:/etc/traefik/dynamic
     networks:
       - vardo-network
 
@@ -232,6 +236,7 @@ volumes:
   letsencrypt:
   loki_data:
   wireguard_config:
+  traefik_dynamic:
 
 networks:
   internal:
