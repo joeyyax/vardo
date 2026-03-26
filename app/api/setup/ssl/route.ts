@@ -7,6 +7,9 @@ import { maskSecret, resolveSecret } from "@/lib/mask-secrets";
 const sslSchema = z.object({
   activeIssuers: z.array(z.enum(["le", "google", "zerossl"])).min(1, "At least one issuer must be enabled"),
   concurrentIssuers: z.number().int().min(1).max(3).default(1),
+  challengeType: z.enum(["http", "dns"]).optional(),
+  dnsProvider: z.enum(["cloudflare"]).optional(),
+  dnsApiToken: z.string().optional(),
   zerosslEabKid: z.string().optional(),
   zerosslEabHmac: z.string().optional(),
 }).strict();
@@ -23,6 +26,9 @@ export async function GET(request: NextRequest) {
     configured: true,
     activeIssuers: config.activeIssuers,
     concurrentIssuers: config.concurrentIssuers,
+    challengeType: config.challengeType,
+    dnsProvider: config.dnsProvider,
+    dnsApiToken: maskSecret(config.dnsApiToken),
     zerosslEabKid: maskSecret(config.zerosslEabKid),
     zerosslEabHmac: maskSecret(config.zerosslEabHmac),
     zerosslConfigured,
@@ -42,7 +48,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { activeIssuers, concurrentIssuers, zerosslEabKid, zerosslEabHmac } = parsed.data;
+  const { activeIssuers, concurrentIssuers, challengeType, dnsProvider, dnsApiToken, zerosslEabKid, zerosslEabHmac } = parsed.data;
 
   const existing = await getSslConfig();
 
@@ -59,6 +65,9 @@ export async function POST(request: NextRequest) {
   await setSystemSetting("ssl_config", JSON.stringify({
     activeIssuers,
     concurrentIssuers,
+    challengeType: challengeType ?? "http",
+    dnsProvider: dnsProvider ?? "cloudflare",
+    dnsApiToken: resolveSecret(dnsApiToken, existing.dnsApiToken),
     zerosslEabKid: resolvedKid,
     zerosslEabHmac: resolvedHmac,
   }));
