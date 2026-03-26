@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   FolderKanban,
+  ScanSearch,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -26,6 +27,12 @@ const navItems: NavItem[] = [
     href: "/projects",
     icon: FolderKanban,
     description: "Manage deployed apps",
+  },
+  {
+    label: "Discover",
+    href: "/discover",
+    icon: ScanSearch,
+    description: "Import unmanaged containers",
   },
 ];
 
