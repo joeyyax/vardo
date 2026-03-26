@@ -12,21 +12,24 @@ import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { ALL_EVENT_TYPES } from "@/lib/bus/events";
 
-const putSchema = z
-  .object({
+/**
+ * Discriminated union for PUT — the `type` field routes the request cleanly
+ * without ambiguous fallthrough between digest and preference updates.
+ */
+const putSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("preference"),
     orgId: z.string().min(1),
     channelId: z.string().min(1),
     eventType: z.enum(ALL_EVENT_TYPES as [string, ...string[]]),
     enabled: z.boolean(),
-  })
-  .strict();
-
-const digestSchema = z
-  .object({
+  }),
+  z.object({
+    type: z.literal("digest"),
     orgId: z.string().min(1),
     digestEnabled: z.boolean(),
-  })
-  .strict();
+  }),
+]);
 
 /**
  * GET /api/v1/user/notification-preferences?orgId=xxx
@@ -83,8 +86,9 @@ export async function GET(req: NextRequest) {
 /**
  * PUT /api/v1/user/notification-preferences
  *
- * Upserts a single preference row (channel+event on/off) or updates the
- * digest toggle when digestEnabled is provided.
+ * Upserts a single preference row (type: "preference") or updates the
+ * digest toggle (type: "digest"). The `type` discriminant ensures clean
+ * routing with no ambiguous fallthrough.
  */
 export async function PUT(req: NextRequest) {
   try {
@@ -92,11 +96,17 @@ export async function PUT(req: NextRequest) {
     const userId = session.user.id;
 
     const body = await req.json();
+    const parsed = putSchema.safeParse(body);
 
-    // Handle digest toggle separately
-    const digestParsed = digestSchema.safeParse(body);
-    if (digestParsed.success) {
-      const { orgId, digestEnabled } = digestParsed.data;
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: parsed.error.issues[0].message },
+        { status: 400 },
+      );
+    }
+
+    if (parsed.data.type === "digest") {
+      const { orgId, digestEnabled } = parsed.data;
 
       const existing = await db.query.userDigestPreferences.findFirst({
         where: and(
@@ -123,15 +133,7 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // Handle per-channel, per-event preference
-    const parsed = putSchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: parsed.error.issues[0].message },
-        { status: 400 },
-      );
-    }
-
+    // type === "preference"
     const { orgId, channelId, eventType, enabled } = parsed.data;
 
     // Verify the channel belongs to the org
