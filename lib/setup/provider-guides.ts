@@ -44,8 +44,8 @@ export function getWebhookUrl(appUrl: string): string {
 
 export type EmailProviderGuide = {
   name: string;
-  signupUrl: string;
-  dashboardUrl: string;
+  signupUrl: string | null;
+  dashboardUrl: string | null;
   keyLocation: string;
   description: string;
 };
@@ -74,8 +74,8 @@ export const EMAIL_PROVIDER_GUIDES: Record<string, EmailProviderGuide> = {
   },
   smtp: {
     name: "SMTP",
-    signupUrl: "",
-    dashboardUrl: "",
+    signupUrl: null,
+    dashboardUrl: null,
     keyLocation: "",
     description: "Direct SMTP connection — no delivery tracking or bounce detection.",
   },

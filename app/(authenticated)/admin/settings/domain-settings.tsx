@@ -435,18 +435,12 @@ export function DomainSettings() {
             certificate authority issues certificates. The wildcard A record
             enables automatic subdomains for deployed apps.
           </p>
-          {dnsChecks.length > 0 && (() => {
-            const cfCheck = dnsChecks.find((c) => c.proxyProvider === "cloudflare");
-            if (cfCheck) {
-              return (
-                <div className="text-xs text-muted-foreground">
-                  Disable the proxy (gray cloud) on the wildcard record —{" "}
-                  <GuideLink href="https://dash.cloudflare.com">Cloudflare&apos;s proxy breaks wildcard SSL.</GuideLink>
-                </div>
-              );
-            }
-            return null;
-          })()}
+          {dnsChecks.some((c) => c.proxyProvider === "cloudflare") && (
+            <div className="text-xs text-muted-foreground">
+              Disable the proxy (gray cloud) on the wildcard record —{" "}
+              <GuideLink href="https://dash.cloudflare.com">Cloudflare&apos;s proxy breaks wildcard SSL.</GuideLink>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

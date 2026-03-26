@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 import { ChevronDown, ExternalLink, Copy, Check } from "lucide-react";
 import {
   Collapsible,
@@ -35,6 +36,7 @@ export function ProviderGuide({
           )}
         </div>
         <ChevronDown
+          aria-hidden="true"
           className={`size-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}
         />
       </CollapsibleTrigger>
@@ -67,9 +69,10 @@ export function GuideLink({
   href,
   children,
 }: {
-  href: string;
+  href: string | null;
   children: React.ReactNode;
 }) {
+  if (!href) return null;
   return (
     <a
       href={href}
@@ -78,7 +81,8 @@ export function GuideLink({
       className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
     >
       {children}
-      <ExternalLink className="size-3" />
+      <ExternalLink aria-hidden="true" className="size-3" />
+      <span className="sr-only">(opens in new tab)</span>
     </a>
   );
 }
@@ -101,7 +105,7 @@ export function CopyableField({
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Fallback: select the text
+      toast.error(`Failed to copy ${label} — please select and copy manually`);
     }
   }
 
@@ -119,9 +123,9 @@ export function CopyableField({
           aria-label={`Copy ${label}`}
         >
           {copied ? (
-            <Check className="size-3.5 text-status-success" />
+            <Check aria-hidden="true" className="size-3.5 text-status-success" />
           ) : (
-            <Copy className="size-3.5 text-muted-foreground" />
+            <Copy aria-hidden="true" className="size-3.5 text-muted-foreground" />
           )}
         </button>
       </div>
