@@ -93,6 +93,13 @@ export async function register() {
         })
         .catch((err) => log.error("Failed to start digest scheduler:", err)),
 
+      import("./lib/deploy/scheduler")
+        .then(({ startDeploySweeper }) => {
+          startDeploySweeper();
+          log.info("Deploy sweeper started");
+        })
+        .catch((err) => log.error("Failed to start deploy sweeper:", err)),
+
       Promise.resolve().then(() => {
         const domainLog = logger.child("domain-monitor");
         let ticking = false;
