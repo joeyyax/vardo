@@ -328,28 +328,32 @@ run_with_spinner() {
   fi
   log_to_file "CMD: $*"
 
+  # Determine output target for progress: /dev/tty when available, stderr otherwise
+  local tty_out
+  if [ -e /dev/tty ] && [ -w /dev/tty ]; then tty_out="/dev/tty"; else tty_out="/dev/stderr"; fi
+
   # Start a timer in a background subshell that updates every 5s
   local start_time=$SECONDS
   (
     while true; do
       sleep 5
       local elapsed=$(( SECONDS - start_time ))
-      printf "\r  ${CYAN}·${RESET} %s (%ds)  " "$label" "$elapsed" > /dev/tty
+      printf "\r  ${CYAN}·${RESET} %s (%ds)  " "$label" "$elapsed" > "$tty_out"
     done
   ) &
   local timer_pid=$!
 
-  printf "  ${CYAN}·${RESET} %s" "$label" > /dev/tty
+  printf "  ${CYAN}·${RESET} %s" "$label" > "$tty_out"
 
   # Run foreground
   local exit_code=0
   if "$@" >> "${INSTALL_LOG:-/dev/null}" 2>&1; then
     kill $timer_pid 2>/dev/null; wait $timer_pid 2>/dev/null
-    printf "\r  ${GREEN}✓${RESET} %s (%ds)\n" "$label" "$(( SECONDS - start_time ))" > /dev/tty
+    printf "\r  ${GREEN}✓${RESET} %s (%ds)\n" "$label" "$(( SECONDS - start_time ))" > "$tty_out"
   else
     exit_code=$?
     kill $timer_pid 2>/dev/null; wait $timer_pid 2>/dev/null
-    printf "\r  ${RED}✗${RESET} %s (%ds)\n" "$label" "$(( SECONDS - start_time ))" > /dev/tty
+    printf "\r  ${RED}✗${RESET} %s (%ds)\n" "$label" "$(( SECONDS - start_time ))" > "$tty_out"
     fail "$label — failed (exit $exit_code). Check ${INSTALL_LOG:-/var/log/vardo-install.log} for details."
   fi
   return $exit_code
@@ -360,6 +364,11 @@ confirm() {
   local prompt="${1:-Continue?}"
   local default="${2:-n}"
   local yn
+  # No TTY available — honour the default rather than crashing
+  if ! [ -t 0 ] && ! [ -e /dev/tty ]; then
+    [[ "$default" == "y" ]]
+    return
+  fi
   if [[ "$default" == "y" ]]; then
     read -p "  $prompt [Y/n] " -r yn < /dev/tty
     [[ -z "$yn" || "$yn" =~ ^[Yy] ]]
@@ -923,7 +932,8 @@ generate_env() {
       echo -e "    ${BOLD}3)${RESET} Development   Local development"
       echo ""
       local role_choice
-      read -rp "  Choose [1]: " role_choice < /dev/tty
+      if ! [ -t 0 ] && ! [ -e /dev/tty ]; then role_choice=1
+      else read -rp "  Choose [1]: " role_choice < /dev/tty; fi
       case "${role_choice:-1}" in
         1) VARDO_ROLE="production" ;;
         2) VARDO_ROLE="staging" ;;
@@ -944,15 +954,21 @@ generate_env() {
       [ -n "${VARDO_BASE_DOMAIN:-}" ] || fail "VARDO_BASE_DOMAIN is required in --unattended mode. Set it as an environment variable: VARDO_BASE_DOMAIN=example.com"
       [ -n "${ACME_EMAIL:-}" ] || fail "ACME_EMAIL is required in --unattended mode. Set it as an environment variable: ACME_EMAIL=you@example.com"
     else
-      if [ -z "${VARDO_DOMAIN:-}" ]; then
-        echo ""
-        read -rp "  Domain for Vardo dashboard (e.g. vardo.example.com): " VARDO_DOMAIN < /dev/tty
-      fi
-      if [ -z "${VARDO_BASE_DOMAIN:-}" ]; then
-        read -rp "  Base domain for projects (e.g. example.com): " VARDO_BASE_DOMAIN < /dev/tty
-      fi
-      if [ -z "${ACME_EMAIL:-}" ]; then
-        read -rp "  Email for TLS certificates:" ACME_EMAIL < /dev/tty
+      if ! [ -t 0 ] && ! [ -e /dev/tty ]; then
+        [ -n "${VARDO_DOMAIN:-}" ] || fail "No TTY available. Set VARDO_DOMAIN as an environment variable: VARDO_DOMAIN=vardo.example.com"
+        [ -n "${VARDO_BASE_DOMAIN:-}" ] || fail "No TTY available. Set VARDO_BASE_DOMAIN as an environment variable: VARDO_BASE_DOMAIN=example.com"
+        [ -n "${ACME_EMAIL:-}" ] || fail "No TTY available. Set ACME_EMAIL as an environment variable: ACME_EMAIL=you@example.com"
+      else
+        if [ -z "${VARDO_DOMAIN:-}" ]; then
+          echo ""
+          read -rp "  Domain for Vardo dashboard (e.g. vardo.example.com): " VARDO_DOMAIN < /dev/tty
+        fi
+        if [ -z "${VARDO_BASE_DOMAIN:-}" ]; then
+          read -rp "  Base domain for projects (e.g. example.com): " VARDO_BASE_DOMAIN < /dev/tty
+        fi
+        if [ -z "${ACME_EMAIL:-}" ]; then
+          read -rp "  Email for TLS certificates:" ACME_EMAIL < /dev/tty
+        fi
       fi
     fi
 
@@ -998,11 +1014,13 @@ generate_env() {
   elif [[ "$VARDO_ROLE" == "staging" ]]; then
     # Staging — domain is optional (may be behind existing reverse proxy)
     if [ -z "${VARDO_DOMAIN:-}" ] && ! $UNATTENDED; then
-      echo ""
-      read -rp "  Domain for Vardo dashboard (optional, press Enter to skip): " VARDO_DOMAIN < /dev/tty
-      if [ -n "${VARDO_DOMAIN:-}" ]; then
-        read -rp "  Base domain for projects: " VARDO_BASE_DOMAIN < /dev/tty
-        read -rp "  Email for TLS certificates:" ACME_EMAIL < /dev/tty
+      if [ -t 0 ] || [ -e /dev/tty ]; then
+        echo ""
+        read -rp "  Domain for Vardo dashboard (optional, press Enter to skip): " VARDO_DOMAIN < /dev/tty
+        if [ -n "${VARDO_DOMAIN:-}" ]; then
+          read -rp "  Base domain for projects: " VARDO_BASE_DOMAIN < /dev/tty
+          read -rp "  Email for TLS certificates:" ACME_EMAIL < /dev/tty
+        fi
       fi
     fi
   fi
@@ -1135,13 +1153,15 @@ wait_healthy() {
 
   local attempts=$((timeout / interval))
   local attempt=0
+  local tty_out
+  if [ -e /dev/tty ] && [ -w /dev/tty ]; then tty_out="/dev/tty"; else tty_out="/dev/stderr"; fi
 
   while [ $elapsed -lt "$timeout" ]; do
     attempt=$((attempt + 1))
-    printf "\r  ${CYAN}⠹${RESET} Waiting for healthy... (attempt %d/%d, %ds/%ds)" "$attempt" "$attempts" "$elapsed" "$timeout" > /dev/tty
+    printf "\r  ${CYAN}⠹${RESET} Waiting for healthy... (attempt %d/%d, %ds/%ds)" "$attempt" "$attempts" "$elapsed" "$timeout" > "$tty_out"
     if docker compose -f "$VARDO_DIR/$COMPOSE_FILE" exec -T "$container" \
       wget -q -O /dev/null http://localhost:3000/api/health 2>/dev/null; then
-      printf "\r                                                              \r" > /dev/tty
+      printf "\r                                                              \r" > "$tty_out"
       log "Vardo is healthy"
       return 0
     fi
@@ -1868,7 +1888,8 @@ show_menu() {
   echo ""
 
   local choice
-  read -rp "  Choose [1]: " choice < /dev/tty
+  if ! [ -t 0 ] && ! [ -e /dev/tty ]; then choice=1
+  else read -rp "  Choose [1]: " choice < /dev/tty; fi
   choice="${choice:-1}"
 
   case "$choice" in
