@@ -6,8 +6,9 @@ import { decodeInviteToken } from "@/lib/mesh/invite";
 import { generateMeshToken } from "@/lib/mesh/auth";
 import { ensureHubConfig, HUB_IP } from "@/lib/mesh";
 import { getInstanceId } from "@/lib/constants";
-import { getInstanceConfig, setSystemSetting } from "@/lib/system-settings";
+import { getInstanceConfig } from "@/lib/system-settings";
 import { needsSetup } from "@/lib/setup";
+import { inheritConfigFromHub, validateHubUrl } from "@/lib/mesh/config-inheritance";
 import { db } from "@/lib/db";
 import { meshPeers } from "@/lib/db/schema";
 import { nanoid } from "nanoid";
@@ -22,10 +23,12 @@ const joinSchema = z.object({ token: z.string().min(1, "Invite token is required
  * hub URL + code, bootstraps local WireGuard, generates a token for the
  * hub to call us, then calls the hub's public join endpoint with this
  * instance's details.
+ *
+ * During initial setup (no users exist), auth is bypassed so the join
+ * can happen before account creation.
  */
 export async function POST(request: NextRequest) {
   try {
-    // During initial setup (no users), allow unauthenticated join
     const isSetup = await needsSetup();
     if (!isSetup) {
       await requireAppAdmin();
@@ -43,19 +46,14 @@ export async function POST(request: NextRequest) {
     const decoded = decodeInviteToken(parsed.data.token.trim());
     if (!decoded) {
       return NextResponse.json(
-        { error: "Invalid invite token" },
+        { error: "Invalid or expired invite token. Generate a new one on the other instance." },
         { status: 400 }
       );
     }
 
-    // Validate hub URL to prevent SSRF
-    try {
-      const url = new URL(decoded.hubApiUrl);
-      if (!["http:", "https:"].includes(url.protocol)) {
-        return NextResponse.json({ error: "Invalid hub URL protocol" }, { status: 400 });
-      }
-    } catch {
-      return NextResponse.json({ error: "Invalid hub URL" }, { status: 400 });
+    const urlCheck = validateHubUrl(decoded.hubApiUrl);
+    if (!urlCheck.valid) {
+      return NextResponse.json({ error: urlCheck.error }, { status: 400 });
     }
 
     // Bootstrap local WireGuard (generates keypair if needed)
@@ -68,25 +66,33 @@ export async function POST(request: NextRequest) {
     // Generate a token the hub can use to call our API
     const { raw: ourToken, hash: ourTokenHash } = generateMeshToken();
 
-    // Call the hub's join endpoint — include our token so the hub can call us back
-    const joinRes = await fetch(`${decoded.hubApiUrl}/api/v1/mesh/join`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        code: decoded.code,
-        instanceId,
-        name: hostname,
-        type: "persistent",
-        publicKey: localPublicKey,
-        endpoint: null,
-        outboundToken: ourToken,
-      }),
-    });
+    // Call the hub's join endpoint
+    let joinRes: Response;
+    try {
+      joinRes = await fetch(`${decoded.hubApiUrl}/api/v1/mesh/join`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code: decoded.code,
+          instanceId,
+          name: hostname,
+          type: "persistent",
+          publicKey: localPublicKey,
+          endpoint: null,
+          outboundToken: ourToken,
+        }),
+      });
+    } catch {
+      return NextResponse.json(
+        { error: "Could not reach the other instance. Check that it's online and accessible." },
+        { status: 502 }
+      );
+    }
 
     const joinData = await joinRes.json();
     if (!joinRes.ok) {
       return NextResponse.json(
-        { error: joinData.error || "Hub rejected the invite" },
+        { error: joinData.error || "The other instance rejected the invite." },
         { status: joinRes.status }
       );
     }
@@ -107,8 +113,8 @@ export async function POST(request: NextRequest) {
       allowedIps: toCidr(joinData.hub.internalIp),
       internalIp,
       apiUrl: decoded.hubApiUrl,
-      tokenHash: ourTokenHash, // hash of the token we gave them (for inbound auth if they call us)
-      outboundToken: joinData.token, // token the hub gave us (for calling the hub's API)
+      tokenHash: ourTokenHash,
+      outboundToken: joinData.token,
       status: "online",
       lastSeenAt: new Date(),
     });
@@ -116,27 +122,7 @@ export async function POST(request: NextRequest) {
     // Pull shareable config from the hub (best-effort)
     let inheritedConfig = { email: false, backup: false, github: false };
     try {
-      const configRes = await fetch(`${decoded.hubApiUrl}/api/v1/mesh/config`, {
-        headers: { Authorization: `Bearer ${joinData.token}` },
-      });
-      if (configRes.ok) {
-        const config = await configRes.json();
-        if (config.email) {
-          await setSystemSetting("email_provider", JSON.stringify(config.email));
-          inheritedConfig.email = true;
-        }
-        if (config.backup) {
-          await setSystemSetting("backup_storage", JSON.stringify(config.backup));
-          inheritedConfig.backup = true;
-        }
-        if (config.github) {
-          await setSystemSetting("github_app", JSON.stringify(config.github));
-          inheritedConfig.github = true;
-        }
-        if (config.features) {
-          await setSystemSetting("feature_flags", JSON.stringify(config.features));
-        }
-      }
+      inheritedConfig = await inheritConfigFromHub(decoded.hubApiUrl, joinData.token);
     } catch {
       // Config inheritance is best-effort — don't fail the join
     }

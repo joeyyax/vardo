@@ -1422,12 +1422,14 @@ function JoinMeshStep({
       <form onSubmit={handleJoin} className="space-y-4">
         <div className="space-y-2">
           <Label htmlFor="meshToken">Invite token</Label>
-          <Input
+          <textarea
             id="meshToken"
             value={token}
             onChange={(e) => setToken(e.target.value)}
             placeholder="Paste an invite token from the other instance"
             required
+            rows={3}
+            className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 font-mono"
           />
           <p className="text-xs text-muted-foreground">
             On the instance you want to connect to, go to Settings &rarr;
