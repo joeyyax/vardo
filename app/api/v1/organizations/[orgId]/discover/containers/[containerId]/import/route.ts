@@ -16,22 +16,37 @@ type RouteParams = {
   params: Promise<{ orgId: string; containerId: string }>;
 };
 
-const importSchema = z.object({
-  projectId: z.string().nullable().optional(),
-  newProjectName: z.string().min(1).optional(),
-  displayName: z.string().min(1, "Display name is required"),
-  name: z
-    .string()
-    .min(1, "Name is required")
-    .regex(/^[a-z0-9-]+$/, "Name must be lowercase alphanumeric with hyphens"),
-  envVars: z.array(z.object({ key: z.string(), value: z.string() })).default([]),
-  importVolumes: z.boolean().default(true),
-});
+const importSchema = z
+  .object({
+    projectId: z.string().nullable().optional(),
+    newProjectName: z.string().min(1).optional(),
+    displayName: z.string().min(1, "Display name is required"),
+    name: z
+      .string()
+      .min(1, "Name is required")
+      .regex(/^[a-z0-9-]+$/, "Name must be lowercase alphanumeric with hyphens"),
+    envVars: z.array(z.object({ key: z.string(), value: z.string() })).default([]),
+    importVolumes: z.boolean().default(true),
+  })
+  .superRefine((data, ctx) => {
+    if (data.projectId === "new" && !data.newProjectName) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["newProjectName"],
+        message: "Required when creating a new project",
+      });
+    }
+  });
 
 // POST /api/v1/organizations/[orgId]/discover/containers/[containerId]/import
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, containerId } = await params;
+
+    if (!/^[a-zA-Z0-9_.-]+$/.test(containerId)) {
+      return NextResponse.json({ error: "Invalid container ID" }, { status: 400 });
+    }
+
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
@@ -72,10 +87,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     if (data.newProjectName) {
       const newProjectId = nanoid();
+      const newProjectSlug = data.newProjectName
+        .toLowerCase()
+        .replace(/[^a-z0-9-]/g, "-")
+        .replace(/-+/g, "-")
+        .replace(/^-|-$/g, "");
       await db.insert(projects).values({
         id: newProjectId,
         organizationId: orgId,
-        name: data.newProjectName,
+        name: newProjectSlug,
         displayName: data.newProjectName,
       });
       resolvedProjectId = newProjectId;

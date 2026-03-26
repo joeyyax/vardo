@@ -123,7 +123,7 @@ export async function discoverContainers(): Promise<DiscoveryResponse> {
       c.labels,
       [],
       0,
-      c.labels["NetworkMode"] ?? "bridge",
+      "unknown",
     )
   );
 
@@ -170,7 +170,7 @@ export async function getContainerDetail(containerId: string): Promise<Container
     return null;
   }
 
-  const networkMode = data.networks[0] ?? "bridge";
+  const networkMode = data.networkMode;
 
   return {
     id: data.id,
@@ -204,11 +204,10 @@ export function isLocalImage(imageName: string): boolean {
   if (/^[a-f0-9]{6,64}$/.test(imageName)) return true;
   // sha256 digest prefix
   if (imageName.startsWith("sha256:")) return true;
-  // No registry prefix (registry has dots or a colon port) and no org/repo slash
-  // e.g. "myapp:latest" is local; "nginx:latest" could be Docker Hub official
-  // We flag anything without a dot in the first path segment and no slash as potentially local
-  const firstSegment = imageName.split("/")[0];
-  const hasRegistryIndicator = firstSegment.includes(".") || firstSegment.includes(":");
-  const hasNamespace = imageName.includes("/");
-  return !hasRegistryIndicator && !hasNamespace && imageName !== "scratch";
+  // Images without any tag and no registry prefix or namespace are likely untagged local builds.
+  // Images with a tag (e.g. "nginx:latest", "myapp:1.0") are ambiguous — Docker Hub official
+  // images have no slash and no registry prefix yet are pullable. We only flag the no-tag case
+  // here; images with a colon-tag are treated as potentially pullable to avoid false positives.
+  if (imageName.includes(":") || imageName.includes("/")) return false;
+  return imageName !== "scratch";
 }

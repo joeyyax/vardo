@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentOrg } from "@/lib/auth/session";
 import { db } from "@/lib/db";
@@ -5,6 +6,8 @@ import { projects } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { PageToolbar } from "@/components/page-toolbar";
 import { DiscoverView } from "./discover-view";
+
+export const metadata: Metadata = { title: "Discover Containers" };
 
 export default async function DiscoverPage() {
   const orgData = await getCurrentOrg();

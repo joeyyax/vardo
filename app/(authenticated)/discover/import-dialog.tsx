@@ -79,7 +79,11 @@ export function ImportDialog({
     setDetail(null);
 
     setLoadingDetail(true);
-    fetch(`/api/v1/organizations/${orgId}/discover/containers/${container.id}`)
+    const controller = new AbortController();
+
+    fetch(`/api/v1/organizations/${orgId}/discover/containers/${container.id}`, {
+      signal: controller.signal,
+    })
       .then((r) => r.json())
       .then((d: ContainerDetail) => {
         setDetail(d);
@@ -93,14 +97,17 @@ export function ImportDialog({
           .filter((v): v is EnvVar => v !== null);
         setEnvVars(parsed);
       })
-      .catch(() => {
+      .catch((err: unknown) => {
+        if (err instanceof Error && err.name === "AbortError") return;
         toast.error("Failed to load container details");
       })
       .finally(() => setLoadingDetail(false));
+
+    return () => controller.abort();
   }, [open, container, orgId]);
 
-  function removeEnvVar(index: number) {
-    setEnvVars((prev) => prev.filter((_, i) => i !== index));
+  function removeEnvVar(key: string) {
+    setEnvVars((prev) => prev.filter((v) => v.key !== key));
   }
 
   async function handleSubmit() {
@@ -247,8 +254,8 @@ export function ImportDialog({
               )}
               {envVars.length > 0 && (
                 <div className="max-h-48 overflow-y-auto space-y-1.5 rounded-lg border p-2">
-                  {envVars.map((v, i) => (
-                    <div key={i} className="flex items-center gap-2 text-xs font-mono">
+                  {envVars.map((v) => (
+                    <div key={v.key} className="flex items-center gap-2 text-xs font-mono">
                       <span className="text-muted-foreground min-w-0 flex-1 truncate">
                         {v.key}
                       </span>
@@ -256,7 +263,8 @@ export function ImportDialog({
                         {v.value.length > 20 ? `${v.value.slice(0, 20)}…` : v.value}
                       </Badge>
                       <button
-                        onClick={() => removeEnvVar(i)}
+                        type="button"
+                        onClick={() => removeEnvVar(v.key)}
                         className="shrink-0 text-muted-foreground hover:text-foreground"
                         aria-label={`Remove ${v.key}`}
                       >

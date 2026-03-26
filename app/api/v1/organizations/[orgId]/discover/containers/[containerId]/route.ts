@@ -11,6 +11,11 @@ type RouteParams = {
 export async function GET(_request: Request, { params }: RouteParams) {
   try {
     const { orgId, containerId } = await params;
+
+    if (!/^[a-zA-Z0-9_.-]+$/.test(containerId)) {
+      return NextResponse.json({ error: "Invalid container ID" }, { status: 400 });
+    }
+
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 

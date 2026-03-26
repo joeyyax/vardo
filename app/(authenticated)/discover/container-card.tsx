@@ -7,7 +7,6 @@ import type { DiscoveredContainer } from "@/lib/docker/discover";
 
 type ContainerCardProps = {
   container: DiscoveredContainer;
-  orgId: string;
   onImport: (container: DiscoveredContainer) => void;
 };
 
@@ -36,6 +35,7 @@ export function ContainerCard({ container, onImport }: ContainerCardProps) {
           variant="outline"
           className="shrink-0"
           onClick={() => onImport(container)}
+          aria-label={`Import ${container.name}`}
         >
           Import
         </Button>
