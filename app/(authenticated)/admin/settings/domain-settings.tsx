@@ -14,9 +14,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { MASK_SENTINEL } from "@/lib/mask-secrets";
+import { maskDisplay } from "@/lib/mask-secrets";
 import { useSystemSetting } from "./use-system-setting";
-import { GuideLink, FieldHint } from "@/components/setup/provider-guide";
+import { FieldHint } from "@/components/setup/provider-guide";
+import type { SslIssuer } from "@/lib/system-settings";
 
 type DnsCheck = {
   domain: string;
@@ -35,8 +36,6 @@ type InstanceData = {
   instanceName: string;
 };
 
-type SslIssuer = "le" | "google" | "zerossl";
-
 const ISSUER_LABELS: Record<SslIssuer, string> = {
   le: "Let's Encrypt",
   google: "Google Trust Services",
@@ -51,12 +50,6 @@ const ISSUER_DESCRIPTIONS: Record<SslIssuer, string> = {
 
 const ALL_ISSUERS: SslIssuer[] = ["le", "google", "zerossl"];
 
-function toDisplay(value: string): string {
-  if (value.startsWith(MASK_SENTINEL)) {
-    return `••••${value.slice(MASK_SENTINEL.length)}`;
-  }
-  return value;
-}
 
 export function DomainSettings() {
   const [loading, setLoading] = useState(true);
@@ -73,6 +66,19 @@ export function DomainSettings() {
   const [zerosslHmac, setZerosslHmac] = useState("");
 
   const { verify: verifySsl, verifying: verifyingSsl, result: sslVerifyResult, reset: resetSslVerify } = useVerify("/api/setup/ssl/verify");
+
+  const toggleIssuer = useCallback((issuer: SslIssuer, enabled: boolean) => {
+    if (enabled) {
+      setActiveIssuers((prev) => [...prev, issuer]);
+    } else {
+      setActiveIssuers((prev) => {
+        if (prev.length === 1) return prev;
+        const next = prev.filter((i) => i !== issuer);
+        setConcurrentIssuers((c) => Math.min(c, next.length));
+        return next;
+      });
+    }
+  }, []);
 
   const onSslLoad = useCallback((data: Record<string, unknown>) => {
     const loaded = data.activeIssuers as SslIssuer[] | undefined;
@@ -287,18 +293,8 @@ export function DomainSettings() {
                   const isEnabled = activeIssuers.includes(issuer);
                   const isFirst = activeIssuers[0] === issuer;
 
-                  function toggleIssuer(enabled: boolean) {
-                    if (enabled) {
-                      setActiveIssuers((prev) => [...prev, issuer]);
-                    } else {
-                      // Prevent disabling the last active issuer
-                      if (activeIssuers.length === 1) return;
-                      setActiveIssuers((prev) => prev.filter((i) => i !== issuer));
-                    }
-                  }
-
                   return (
-                    <div key={issuer} className="rounded-lg border bg-card p-4">
+                    <div key={issuer} className="squircle rounded-lg border bg-card p-4">
                       <div className="flex items-start justify-between gap-4">
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
@@ -321,7 +317,7 @@ export function DomainSettings() {
                         <Switch
                           id={`ssl-issuer-${issuer}`}
                           checked={isEnabled}
-                          onCheckedChange={toggleIssuer}
+                          onCheckedChange={(enabled) => toggleIssuer(issuer, enabled)}
                           disabled={isEnabled && activeIssuers.length === 1}
                           aria-label={`Enable ${ISSUER_LABELS[issuer]}`}
                         />
@@ -344,7 +340,7 @@ export function DomainSettings() {
                             <Label htmlFor="zerossl-kid">EAB Key ID</Label>
                             <Input
                               id="zerossl-kid"
-                              value={toDisplay(zerosslKid)}
+                              value={maskDisplay(zerosslKid)}
                               onChange={(e) => setZerosslKid(e.target.value)}
                               placeholder="EAB Key ID from ZeroSSL dashboard"
                               className="font-mono text-sm"
@@ -354,7 +350,7 @@ export function DomainSettings() {
                             <Label htmlFor="zerossl-hmac">EAB HMAC Key</Label>
                             <Input
                               id="zerossl-hmac"
-                              value={toDisplay(zerosslHmac)}
+                              value={maskDisplay(zerosslHmac)}
                               onChange={(e) => setZerosslHmac(e.target.value)}
                               placeholder="EAB HMAC Key from ZeroSSL dashboard"
                               className="font-mono text-sm"

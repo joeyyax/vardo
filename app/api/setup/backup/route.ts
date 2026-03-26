@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireAdminAuth } from "@/lib/auth/admin";
 import { needsSetup } from "@/lib/setup";
 import { getBackupStorageConfig, setSystemSetting } from "@/lib/system-settings";
-import { maskSecret, isMasked } from "@/lib/mask-secrets";
+import { maskSecret, resolveSecret } from "@/lib/mask-secrets";
 
 const backupSchema = z.object({
   type: z.enum(["s3", "r2", "b2"]),
@@ -51,11 +51,6 @@ export async function POST(request: NextRequest) {
   const { type, bucket, region, endpoint, accessKey, secretKey } = parsed.data;
 
   const existing = await getBackupStorageConfig();
-
-  function resolveSecret(incoming: string | undefined | null, existingVal: string | undefined | null): string | undefined {
-    if (isMasked(incoming)) return existingVal ?? undefined;
-    return incoming ?? undefined;
-  }
 
   await setSystemSetting("backup_storage", JSON.stringify({
     type,

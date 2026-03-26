@@ -1,27 +1,21 @@
 import { NextResponse } from "next/server";
 import { requireAdminAuth } from "@/lib/auth/admin";
-import { getSslConfig } from "@/lib/system-settings";
-
-const ISSUER_LABELS: Record<string, string> = {
-  le: "Let's Encrypt",
-  google: "Google Trust Services",
-  zerossl: "ZeroSSL",
-};
+import { getSslConfig, ISSUER_LABELS, type SslIssuer } from "@/lib/system-settings";
 
 type IssuerResult = {
-  issuer: string;
+  issuer: SslIssuer;
   label: string;
   ok: boolean;
   message: string;
 };
 
 async function checkIssuer(
-  issuer: string,
+  issuer: SslIssuer,
   acmeEmail: string | undefined,
   zerosslEabKid: string | undefined,
   zerosslEabHmac: string | undefined,
 ): Promise<IssuerResult> {
-  const label = ISSUER_LABELS[issuer] ?? issuer;
+  const label = ISSUER_LABELS[issuer];
 
   if (issuer === "le" || issuer === "google") {
     if (!acmeEmail) {
@@ -53,7 +47,7 @@ async function checkIssuer(
     try {
       const res = await fetch(
         `https://api.zerossl.com/acme/eab-credentials-check?access_key=${encodeURIComponent(zerosslEabKid)}`,
-        { method: "GET" },
+        { method: "GET", signal: AbortSignal.timeout(5000) },
       );
 
       if (!res.ok) {

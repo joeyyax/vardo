@@ -263,6 +263,12 @@ export type SslConfig = {
 
 export const VALID_ISSUERS = ["le", "google", "zerossl"] as const satisfies readonly SslIssuer[];
 
+export const ISSUER_LABELS: Record<SslIssuer, string> = {
+  le: "Let's Encrypt",
+  google: "Google Trust Services",
+  zerossl: "ZeroSSL",
+};
+
 /**
  * The primary issuer — the first active issuer, or "le" as a safe default.
  * Use this when a single cert resolver value is needed (e.g. new domain defaults).
