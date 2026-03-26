@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { memberships, userNotificationPreferences } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import type { BusEventType } from "@/lib/bus";
+import { CHANNEL_TYPE_DEFAULTS } from "./channel-defaults";
 
 /**
  * Events that always send regardless of user preferences.
@@ -15,18 +16,24 @@ export const CRITICAL_EVENT_TYPES: ReadonlySet<BusEventType> = new Set([
 ] as BusEventType[]);
 
 /**
- * Default enabled state per channel type when a user has no preference row.
- * Email is on by default (primary channel). Slack and webhook require opt-in.
+ * Fetch all member user IDs for an org. Called once per dispatch, outside the
+ * per-channel loop, to avoid N+1 queries.
  */
-const CHANNEL_TYPE_DEFAULTS: Record<string, boolean> = {
-  email: true,
-  slack: false,
-  webhook: false,
-};
+export async function fetchOrgMembers(
+  orgId: string,
+): Promise<Array<{ userId: string }>> {
+  return db.query.memberships.findMany({
+    where: eq(memberships.organizationId, orgId),
+    columns: { userId: true },
+  });
+}
 
 /**
  * Determine whether a notification channel should fire for a given event,
  * based on org member preferences.
+ *
+ * Accepts pre-fetched `members` so the caller can hoist that query out of
+ * the per-channel loop (avoids the N+1 of querying members once per channel).
  *
  * Rules:
  * - Critical events always send, bypassing all preferences.
@@ -40,17 +47,13 @@ export async function resolveRecipients(
   channelId: string,
   channelType: string,
   eventType: BusEventType,
+  members: Array<{ userId: string }>,
 ): Promise<{ shouldSend: boolean }> {
   if (CRITICAL_EVENT_TYPES.has(eventType)) {
     return { shouldSend: true };
   }
 
   const channelDefault = CHANNEL_TYPE_DEFAULTS[channelType] ?? true;
-
-  const members = await db.query.memberships.findMany({
-    where: eq(memberships.organizationId, orgId),
-    columns: { userId: true },
-  });
 
   if (members.length === 0) {
     return { shouldSend: channelDefault };
