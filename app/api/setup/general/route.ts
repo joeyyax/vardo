@@ -8,6 +8,7 @@ const generalSchema = z.object({
   instanceName: z.string().min(1).max(100),
   baseDomain: z.string().optional(),
   serverIp: z.string().optional(),
+  domain: z.string().optional(),
 }).strict();
 
 export async function GET(request: NextRequest) {
@@ -20,6 +21,7 @@ export async function GET(request: NextRequest) {
     instanceName: config.instanceName,
     baseDomain: config.baseDomain,
     serverIp: config.serverIp,
+    domain: config.domain,
   });
 }
 
@@ -38,13 +40,13 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Only instanceName is editable; preserve baseDomain and serverIp from existing config
   const existing = await getInstanceConfig();
 
   await setSystemSetting("instance_config", JSON.stringify({
     instanceName: parsed.data.instanceName,
-    baseDomain: existing.baseDomain,
-    serverIp: existing.serverIp,
+    baseDomain: parsed.data.baseDomain ?? existing.baseDomain,
+    serverIp: parsed.data.serverIp ?? existing.serverIp,
+    domain: parsed.data.domain ?? existing.domain,
   }));
 
   return NextResponse.json({ ok: true });
