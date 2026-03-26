@@ -10,6 +10,7 @@ import {
   text,
   timestamp,
   unique,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import type { ConfigSnapshot } from "@/lib/types/deploy-snapshot";
@@ -130,6 +131,10 @@ export const deployments = pgTable("deployment", {
   envSnapshot: text("env_snapshot"), // Encrypted env blob at deploy time (AES-256-GCM)
   configSnapshot: jsonb("config_snapshot").$type<ConfigSnapshot>(),
   rollbackFromId: text("rollback_from_id"),
+  // ID of the deployment that superseded this one (set when status = "superseded")
+  supersededBy: text("superseded_by").references((): AnyPgColumn => deployments.id, {
+    onDelete: "set null",
+  }),
   startedAt: timestamp("started_at").defaultNow().notNull(),
   finishedAt: timestamp("finished_at"),
 },

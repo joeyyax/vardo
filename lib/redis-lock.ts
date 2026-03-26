@@ -13,3 +13,11 @@ export async function acquireLock(
   const result = await redis.set(key, "1", "PX", ttlMs, "NX");
   return result === "OK";
 }
+
+/**
+ * Explicitly release a lock before its TTL expires.
+ * Safe to call even if the lock no longer exists.
+ */
+export async function releaseLock(key: string): Promise<void> {
+  await redis.del(key);
+}
