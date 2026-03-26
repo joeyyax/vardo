@@ -109,6 +109,9 @@ export function InstancesSettings() {
   const [joinLoading, setJoinLoading] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
 
+  // WireGuard setup dialog (shown after dev-mode join)
+  const [wgConfig, setWgConfig] = useState<string | null>(null);
+
   // Delete/cancel dialogs
   const [deleteTarget, setDeleteTarget] = useState<MeshPeer | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -188,11 +191,15 @@ export function InstancesSettings() {
         setJoinError(json.error || "Failed to join mesh");
         return;
       }
-      toast.success("Connected to mesh");
       setJoinOpen(false);
       setJoinToken("");
       setJoinError(null);
       fetchPeers(true);
+      if (json.wgConfig) {
+        setWgConfig(json.wgConfig);
+      } else {
+        toast.success("Connected to mesh");
+      }
     } catch {
       setJoinError("Failed to join mesh");
     } finally {
@@ -611,6 +618,57 @@ export function InstancesSettings() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* WireGuard setup dialog — shown after a dev-mode join */}
+      <Dialog open={!!wgConfig} onOpenChange={(open) => !open && setWgConfig(null)}>
+        <DialogContent className="squircle sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>WireGuard setup required</DialogTitle>
+            <DialogDescription>
+              You&apos;re running in local dev mode. Apply this config to join the mesh tunnel.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium">vardo0.conf</p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => copyToClipboard(wgConfig ?? "", "WireGuard config")}
+                >
+                  <Copy className="size-3.5 mr-1.5" />
+                  Copy config
+                </Button>
+              </div>
+              <pre className="rounded-md bg-muted px-4 py-3 font-mono text-xs overflow-x-auto whitespace-pre">
+                {wgConfig}
+              </pre>
+            </div>
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Activate the tunnel</p>
+              <p className="text-sm text-muted-foreground">
+                Save the config above to a file, then run:
+              </p>
+              <pre className="rounded-md bg-muted px-4 py-3 font-mono text-xs overflow-x-auto whitespace-pre">
+                {`brew install wireguard-tools\nsudo wg-quick up /path/to/vardo0.conf`}
+              </pre>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              className="squircle"
+              onClick={() => {
+                setWgConfig(null);
+                toast.success("Connected to mesh");
+              }}
+            >
+              Done
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
