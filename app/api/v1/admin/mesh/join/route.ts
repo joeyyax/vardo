@@ -4,7 +4,8 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { decodeInviteToken } from "@/lib/mesh/invite";
 import { generateMeshToken } from "@/lib/mesh/auth";
-import { ensureHubConfig, HUB_IP } from "@/lib/mesh";
+import { ensureHubConfig, HUB_IP, generateKeypairNative, buildDevWgConfig } from "@/lib/mesh";
+import { isDevMode } from "@/lib/mesh/env";
 import { getInstanceId } from "@/lib/constants";
 import { getInstanceConfig } from "@/lib/system-settings";
 import { db } from "@/lib/db";
@@ -18,9 +19,13 @@ const joinSchema = z.object({ token: z.string().min(1, "Invite token is required
  * POST /api/v1/admin/mesh/join — join a mesh using an invite token.
  *
  * This runs on the *joining* instance. It decodes the token to get the
- * hub URL + code, bootstraps local WireGuard, generates a token for the
- * hub to call us, then calls the hub's public join endpoint with this
- * instance's details.
+ * hub URL + code, generates a keypair (via docker in container mode, natively
+ * in dev mode), generates a token for the hub to call us, then calls the hub's
+ * public join endpoint with this instance's details.
+ *
+ * In dev mode (pnpm dev, no WireGuard container), the response includes a
+ * `wgConfig` field containing a ready-to-use vardo0.conf the developer can
+ * activate with wg-quick.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -43,8 +48,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Bootstrap local WireGuard (generates keypair if needed)
-    const localPublicKey = await ensureHubConfig(HUB_IP);
+    const dev = isDevMode();
+
+    // Bootstrap WireGuard — docker exec in container mode, pure Node.js in dev
+    let localPublicKey: string;
+    let localPrivateKey: string | null = null;
+
+    if (dev) {
+      const keypair = generateKeypairNative();
+      localPublicKey = keypair.publicKey;
+      localPrivateKey = keypair.privateKey;
+    } else {
+      localPublicKey = await ensureHubConfig(HUB_IP);
+    }
 
     const instanceId = await getInstanceId();
     const instanceConfig = await getInstanceConfig();
@@ -61,7 +77,7 @@ export async function POST(request: NextRequest) {
         code: decoded.code,
         instanceId,
         name: hostname,
-        type: "persistent",
+        type: dev ? "dev" : "persistent",
         publicKey: localPublicKey,
         endpoint: null,
         outboundToken: ourToken,
@@ -92,15 +108,27 @@ export async function POST(request: NextRequest) {
       allowedIps: toCidr(joinData.hub.internalIp),
       internalIp,
       apiUrl: decoded.hubApiUrl,
-      tokenHash: ourTokenHash, // hash of the token we gave them (for inbound auth if they call us)
-      outboundToken: joinData.token, // token the hub gave us (for calling the hub's API)
+      tokenHash: ourTokenHash,
+      outboundToken: joinData.token,
       status: "online",
       lastSeenAt: new Date(),
     });
 
+    // In dev mode, build a vardo0.conf the developer can activate with wg-quick
+    let wgConfig: string | null = null;
+    if (dev && localPrivateKey) {
+      if (joinData.hub.endpoint) {
+        wgConfig = buildDevWgConfig(localPrivateKey, joinData.peer.internalIp, {
+          publicKey: joinData.hub.publicKey,
+          endpoint: joinData.hub.endpoint,
+        });
+      }
+    }
+
     return NextResponse.json({
       peer: joinData.peer,
       hub: joinData.hub,
+      ...(wgConfig !== null ? { wgConfig } : {}),
     });
   } catch (error) {
     return handleRouteError(error, "Error joining mesh");
