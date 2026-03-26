@@ -232,7 +232,7 @@ export function AppNetworking({
         toast.error(data.error || "Failed to update domain");
         return;
       }
-      toast.success("Domain updated — redeploy to apply");
+      toast.success("Domain updated");
       setEditingDomainId(null);
       router.refresh();
     } catch {
