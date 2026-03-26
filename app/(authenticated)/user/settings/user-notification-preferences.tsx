@@ -5,8 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "@/lib/messenger";
 import { Loader2, Bell, AlertCircle } from "lucide-react";
 import { EVENT_CATEGORIES, type BusEventType, type EventCategory } from "@/lib/bus/events";
-import { CRITICAL_EVENT_TYPES } from "@/lib/notifications/resolve-recipients";
-import { CHANNEL_TYPE_DEFAULTS } from "@/lib/notifications/channel-defaults";
+import { CRITICAL_EVENT_TYPES, CHANNEL_TYPE_DEFAULTS } from "@/lib/notifications/channel-defaults";
 
 type Channel = {
   id: string;
