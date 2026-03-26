@@ -57,6 +57,8 @@ export type VardoConfig = {
     concurrentIssuers?: number;
     /** @deprecated Use activeIssuers instead. Migrated on read. */
     defaultIssuer?: "le" | "google" | "zerossl";
+    challengeType?: "http" | "dns";
+    dnsProvider?: "cloudflare";
   };
   features?: Record<string, boolean>;
 };
@@ -82,6 +84,9 @@ export type VardoSecrets = {
     eabKid?: string;
     eabHmac?: string;
   };
+  dns?: {
+    apiToken?: string;
+  };
 };
 
 /** Config + secrets merged for internal use. */
@@ -91,7 +96,7 @@ export type VardoFullConfig = {
   email?: VardoConfig["email"] & VardoSecrets["email"];
   backup?: VardoConfig["backup"] & VardoSecrets["backup"];
   github?: VardoConfig["github"] & VardoSecrets["github"];
-  ssl?: VardoConfig["ssl"] & { zerossl?: VardoSecrets["zerossl"] };
+  ssl?: VardoConfig["ssl"] & { zerossl?: VardoSecrets["zerossl"]; dnsApiToken?: string };
   features?: VardoConfig["features"];
   secrets?: {
     encryptionKey?: string;
@@ -179,7 +184,7 @@ export async function readVardoConfig(): Promise<VardoFullConfig | null> {
     email: { ...config.email, ...secrets?.email },
     backup: { ...config.backup, ...secrets?.backup },
     github: { ...config.github, ...secrets?.github },
-    ssl: { ...config.ssl, zerossl: secrets?.zerossl },
+    ssl: { ...config.ssl, zerossl: secrets?.zerossl, dnsApiToken: secrets?.dns?.apiToken },
     features: config.features,
     secrets: {
       encryptionKey: secrets?.encryptionKey,
