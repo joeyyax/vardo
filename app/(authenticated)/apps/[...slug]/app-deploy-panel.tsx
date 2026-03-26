@@ -250,6 +250,7 @@ export const AppDeployPanel = forwardRef<AppDeployPanelHandle, AppDeployPanelPro
                     queued: "bg-status-neutral-muted",
                     cancelled: "bg-status-neutral-muted",
                     rolled_back: "bg-status-warning-muted",
+                    superseded: "bg-status-neutral-muted",
                   }[deployment.status] || "bg-card";
 
               return (

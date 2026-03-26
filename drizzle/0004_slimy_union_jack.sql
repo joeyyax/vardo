@@ -1,0 +1,1 @@
+ALTER TABLE "deployment" ADD CONSTRAINT "deployment_superseded_by_deployment_id_fk" FOREIGN KEY ("superseded_by") REFERENCES "public"."deployment"("id") ON DELETE set null ON UPDATE no action;
