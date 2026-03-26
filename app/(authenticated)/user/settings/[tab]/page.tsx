@@ -11,8 +11,9 @@ import {
 } from "../account-settings";
 import { ThemeSwitcher } from "../theme-switcher";
 import { GitHubConnection } from "../github-connection";
+import { UserNotificationPreferences } from "../user-notification-preferences";
 
-const VALID_TABS = ["profile", "auth", "tokens", "connections"] as const;
+const VALID_TABS = ["profile", "auth", "tokens", "connections", "notifications"] as const;
 type ValidTab = (typeof VALID_TABS)[number];
 
 export default async function UserSettingsTabPage({
@@ -28,9 +29,9 @@ export default async function UserSettingsTabPage({
 
   const validTab = tab as ValidTab;
 
-  // Tokens tab needs orgId
+  // Tokens and notifications tabs need orgId
   let orgId: string | null = null;
-  if (validTab === "tokens") {
+  if (validTab === "tokens" || validTab === "notifications") {
     const orgData = await getCurrentOrg();
     if (!orgData) redirect("/login");
     orgId = orgData.organization?.id ?? null;
@@ -105,6 +106,28 @@ function TabContent({ tab, orgId }: { tab: ValidTab; orgId: string | null }) {
             </p>
           </div>
           <GitHubConnection />
+        </div>
+      );
+    case "notifications":
+      return (
+        <div className="space-y-6">
+          <div>
+            <h2 className="text-lg font-semibold">Notifications</h2>
+            <p className="text-sm text-muted-foreground">
+              Choose which events you want to be notified about, and on which
+              channels.
+            </p>
+          </div>
+          {!orgId ? (
+            <div className="rounded-xl border bg-card p-6 text-center">
+              <p className="text-sm text-muted-foreground">
+                No organization selected. Create or join an organization to
+                configure notification preferences.
+              </p>
+            </div>
+          ) : (
+            <UserNotificationPreferences orgId={orgId} />
+          )}
         </div>
       );
   }
