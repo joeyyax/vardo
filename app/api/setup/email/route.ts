@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireAdminAuth } from "@/lib/auth/admin";
 import { needsSetup } from "@/lib/setup";
 import { getEmailProviderConfig, setSystemSetting } from "@/lib/system-settings";
-import { maskSecret, isMasked } from "@/lib/mask-secrets";
+import { maskSecret, resolveSecret } from "@/lib/mask-secrets";
 import { isSmtpAllowed } from "@/lib/config/provider-restrictions";
 
 const emailSchema = z.object({
@@ -64,14 +64,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Keep secrets the user didn't change (sentinel-prefixed values).
-  // Empty/null means the user cleared the field intentionally.
   const existing = await getEmailProviderConfig();
-
-  function resolveSecret(incoming: string | undefined | null, existingVal: string | undefined | null): string | undefined {
-    if (isMasked(incoming)) return existingVal ?? undefined;
-    return incoming ?? undefined;
-  }
 
   await setSystemSetting("email_provider", JSON.stringify({
     provider,

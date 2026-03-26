@@ -65,6 +65,8 @@ export function useSystemSetting<T extends Record<string, unknown>>(
         toast.error(
           err instanceof Error ? err.message : `Failed to save ${opts.label.toLowerCase()}`,
         );
+        // Reload server state so optimistic UI updates roll back
+        fetchConfig();
       } finally {
         setSaving(false);
       }
