@@ -196,8 +196,11 @@ async function clearKillSignal(deploymentId: string): Promise<void> {
 // Public API for user-initiated cancellation
 // ---------------------------------------------------------------------------
 
-/** TTL for the kill signal — short-lived; consumed at the next stage transition. */
-const KILL_TTL_MS = 60 * 1000; // 60 seconds
+// TTL must cover the worst-case duration of a single stage (e.g. a slow Docker
+// pull or a long build). Matching the active-deploy TTL ensures the signal
+// survives until the worker reaches its next stage boundary, no matter how
+// long that stage takes.
+const KILL_TTL_MS = ACTIVE_TTL_MS; // 30 minutes
 
 /**
  * Signal a running deployment to stop at the next stage boundary.
