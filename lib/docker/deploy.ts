@@ -47,7 +47,7 @@ const NETWORK_NAME = "vardo-network";
 const HEALTH_CHECK_TIMEOUT_MS = 60000;
 const HEALTH_CHECK_INTERVAL_MS = 2000;
 
-type DeployStage = "clone" | "build" | "deploy" | "healthcheck" | "routing" | "cleanup" | "done";
+export type DeployStage = "clone" | "build" | "deploy" | "healthcheck" | "routing" | "cleanup" | "done";
 
 export type DeployOpts = {
   appId: string;
@@ -60,8 +60,6 @@ export type DeployOpts = {
   onStage?: (stage: DeployStage, status: "running" | "success" | "failed" | "skipped") => void;
   signal?: AbortSignal;
 };
-
-export type { DeployOpts, DeployResult, DeployStage };
 
 export type DeployResult = {
   deploymentId: string;
