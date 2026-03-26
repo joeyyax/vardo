@@ -117,6 +117,7 @@ export const AppDeployPanel = forwardRef<AppDeployPanelHandle, AppDeployPanelPro
         toast.error(data.error || "Failed to cancel deployment");
         return;
       }
+      toast.success("Deployment cancelled");
       router.refresh();
     } catch {
       toast.error("Failed to cancel deployment");
@@ -200,12 +201,7 @@ export const AppDeployPanel = forwardRef<AppDeployPanelHandle, AppDeployPanelPro
                           </Badge>
                           <div className="min-w-0">
                             <p className="text-sm font-medium">
-                              {deployment.gitMessage || (
-                                <>
-                                  <span className="capitalize">{deployment.trigger}</span>
-                                  <span className="text-muted-foreground font-normal"> deploy</span>
-                                </>
-                              )}
+                              {deployment.gitMessage || triggerLabel}
                             </p>
                             <p className="text-xs text-foreground/60 mt-0.5">
                               {by ? `${triggerLabel} by ${by}` : triggerLabel}
@@ -287,16 +283,12 @@ export const AppDeployPanel = forwardRef<AppDeployPanelHandle, AppDeployPanelPro
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-medium">
-                          {deployment.gitMessage || (
-                            isActive ? (
-                              <>
-                                <span className="capitalize">{deployment.trigger}</span>
-                                <span className="text-muted-foreground font-normal"> deploy</span>
-                              </>
-                            ) : (
-                              <span className="capitalize">{deployment.trigger}</span>
-                            )
-                          )}
+                          {deployment.gitMessage || ({
+                            manual: "Manual deploy",
+                            webhook: "Auto deploy",
+                            api: "API deploy",
+                            rollback: "Rollback",
+                          }[deployment.trigger] ?? `${deployment.trigger.charAt(0).toUpperCase()}${deployment.trigger.slice(1)} deploy`)}
                         </p>
                         {deployment.gitSha && (() => {
                           const commitUrl = gitUrl?.replace(/\.git$/, "");
