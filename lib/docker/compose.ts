@@ -245,15 +245,18 @@ export function injectNetwork(
     };
   }
 
+  const anyServiceUsesNetwork = Object.values(updatedServices).some(
+    (svc) => svc.networks?.includes(networkName)
+  );
+
   const existingNetworks = (compose.networks ?? {}) as Record<string, unknown>;
 
   return {
     ...compose,
     services: updatedServices,
-    networks: {
-      ...existingNetworks,
-      [networkName]: { external: true },
-    },
+    networks: anyServiceUsesNetwork
+      ? { ...existingNetworks, [networkName]: { external: true } }
+      : existingNetworks,
   };
 }
 
@@ -433,8 +436,15 @@ export function parseCompose(yamlString: string): ComposeFile {
         svc.depends_on = Object.keys(raw.depends_on);
       }
     }
-    if (raw.network_mode && typeof raw.network_mode === "string") svc.network_mode = raw.network_mode;
-    if (raw.runtime && typeof raw.runtime === "string") svc.runtime = raw.runtime;
+    if (raw.network_mode && typeof raw.network_mode === "string") {
+      const nm = raw.network_mode;
+      if (ALLOWED_NETWORK_MODES.some((p) => nm === p || nm.startsWith(p + ":"))) {
+        svc.network_mode = nm;
+      }
+    }
+    if (raw.runtime && typeof raw.runtime === "string" && ALLOWED_RUNTIMES.includes(raw.runtime)) {
+      svc.runtime = raw.runtime;
+    }
     if (
       raw.deploy &&
       typeof raw.deploy === "object" &&
@@ -467,6 +477,9 @@ export function parseCompose(yamlString: string): ComposeFile {
 
 const SERVICE_NAME_RE = /^[a-z][a-z0-9-]*$/;
 const PORT_RE = /^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:)?(\d+:)?\d+(\/\w+)?$/;
+
+const ALLOWED_NETWORK_MODES = ["host", "bridge", "none", "service", "container"];
+const ALLOWED_RUNTIMES = ["runc", "nvidia", "sysbox"];
 
 const DENIED_MOUNT_PATHS = [
   "/etc",

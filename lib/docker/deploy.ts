@@ -24,6 +24,16 @@ import {
 } from "./compose";
 import { ensureNetwork, detectExposedPorts, listContainers, inspectContainer } from "./client";
 import { isFeatureEnabled } from "@/lib/config/features";
+
+function parseAndSanitize(yaml: string, log: (msg: string) => void): ComposeFile {
+  const compose = parseCompose(yaml);
+  const bindMountsEnabled = isFeatureEnabled("bindMounts");
+  const sanitized = sanitizeCompose(compose, { allowBindMounts: bindMountsEnabled });
+  if (sanitized.strippedMounts.length > 0) {
+    log(`[deploy] Stripped ${sanitized.strippedMounts.length} bind mount(s): ${sanitized.strippedMounts.join(", ")}`);
+  }
+  return sanitized.compose;
+}
 import { assertSafeName, assertSafeBranch } from "./validate";
 import { DeployBlockedError } from "./errors";
 import { volumeThreshold } from "@/lib/volumes/threshold";
@@ -33,7 +43,7 @@ import { githubAppInstallations, memberships } from "@/lib/db/schema";
 import { detectPreventiveFixes, detectCompatIssues, applyCompatFixes } from "./compat";
 import { syncComposeServices } from "./compose-sync";
 import { recordActivity } from "@/lib/activity";
-import { regenerateAppRouteConfig } from "@/lib/traefik/generate-config";
+import { regenerateAppRouteConfig, removeAppRouteConfig } from "@/lib/traefik/generate-config";
 import {
   getDecryptedPrivateKey,
   writeTemporaryKeyFile,
@@ -432,13 +442,7 @@ export async function runDeployment(
       stage("build", "running");
 
       if (composeContent && app.deployType === "compose") {
-        compose = parseCompose(composeContent);
-        const bindMountsEnabled = isFeatureEnabled("bindMounts");
-        const sanitized = sanitizeCompose(compose, { allowBindMounts: bindMountsEnabled });
-        compose = sanitized.compose;
-        if (sanitized.strippedMounts.length > 0) {
-          log(`[deploy] Stripped ${sanitized.strippedMounts.length} bind mount(s): ${sanitized.strippedMounts.join(", ")}`);
-        }
+        compose = parseAndSanitize(composeContent, log);
 
         // Detect declared volumes from compose YAML before deploy starts
         if (compose.volumes && Object.keys(compose.volumes).length > 0) {
@@ -537,13 +541,7 @@ export async function runDeployment(
       }
     } else if (app.composeContent) {
       // Direct compose content
-      compose = parseCompose(app.composeContent);
-      const bindMountsEnabled = isFeatureEnabled("bindMounts");
-      const sanitized = sanitizeCompose(compose, { allowBindMounts: bindMountsEnabled });
-      compose = sanitized.compose;
-      if (sanitized.strippedMounts.length > 0) {
-        log(`[deploy] Stripped ${sanitized.strippedMounts.length} bind mount(s): ${sanitized.strippedMounts.join(", ")}`);
-      }
+      compose = parseAndSanitize(app.composeContent, log);
       log(`[deploy] Parsed compose content`);
 
       // Detect declared volumes from compose YAML before deploy starts
@@ -648,6 +646,7 @@ export async function runDeployment(
       );
     } else {
       log(`[deploy] Skipping Traefik labels — all services use custom network modes: ${servicesWithCustomNetwork.join(", ")}`);
+      removeAppRouteConfig(app.name).catch(() => {});
     }
     compose = injectNetwork(compose, NETWORK_NAME);
 
