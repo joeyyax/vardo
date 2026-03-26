@@ -1,5 +1,6 @@
 import {
   boolean,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -66,15 +67,18 @@ export const userNotificationPreferences = pgTable(
     organizationId: text("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    channelId: text("channel_id")
-      .notNull()
-      .references(() => notificationChannels.id, { onDelete: "cascade" }),
+    channelId: text("channel_id").notNull(),
     eventType: text("event_type").notNull(),
     enabled: boolean("enabled").default(true).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => [
+    foreignKey({
+      name: "user_notif_pref_channel_fk",
+      columns: [t.channelId],
+      foreignColumns: [notificationChannels.id],
+    }).onDelete("cascade"),
     unique("unq_user_notification_pref").on(
       t.userId,
       t.organizationId,
