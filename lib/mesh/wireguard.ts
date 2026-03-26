@@ -110,8 +110,12 @@ export async function syncConfig(): Promise<void> {
 /**
  * Rebuild wg0.conf from all peers in the database and hot-reload WireGuard.
  * Call this after any peer registration or removal.
+ *
+ * @param overrideAddress — if provided, use this as the local WireGuard address
+ *   instead of reading from the existing config. Used when the joiner's address
+ *   needs to change from the bootstrap HUB_IP to the hub-assigned IP.
  */
-export async function rebuildAndSync(): Promise<void> {
+export async function rebuildAndSync(overrideAddress?: string): Promise<void> {
   // Dynamic imports to avoid circular dependencies
   const { db } = await import("@/lib/db");
   const { meshPeers } = await import("@/lib/db/schema");
@@ -126,14 +130,18 @@ export async function rebuildAndSync(): Promise<void> {
     throw new Error("Could not read WireGuard private key from config");
   }
 
-  // Read the current address
-  const { stdout: addrOut } = await execFileAsync("docker", [
-    "exec", WG_CONTAINER, "sh", "-c",
-    "cat /config/wg_confs/wg0.conf | grep Address | cut -d= -f2- | tr -d ' ' | cut -d/ -f1",
-  ]);
-  const address = addrOut.trim();
+  let address: string;
+  if (overrideAddress) {
+    address = overrideAddress;
+  } else {
+    const { stdout: addrOut } = await execFileAsync("docker", [
+      "exec", WG_CONTAINER, "sh", "-c",
+      "cat /config/wg_confs/wg0.conf | grep Address | cut -d= -f2- | tr -d ' ' | cut -d/ -f1",
+    ]);
+    address = addrOut.trim();
+  }
   if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(address)) {
-    throw new Error(`Invalid WireGuard address from config: ${address}`);
+    throw new Error(`Invalid WireGuard address: ${address}`);
   }
 
   // Get all peers from the database
