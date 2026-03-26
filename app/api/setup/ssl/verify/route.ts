@@ -1,12 +1,83 @@
 import { NextResponse } from "next/server";
 import { requireAdminAuth } from "@/lib/auth/admin";
-import { getSslConfig } from "@/lib/system-settings";
+import { getSslConfig, ISSUER_LABELS, type SslIssuer } from "@/lib/system-settings";
 
-const ISSUER_LABELS: Record<string, string> = {
-  le: "Let's Encrypt",
-  google: "Google Trust Services",
-  zerossl: "ZeroSSL",
+type IssuerResult = {
+  issuer: SslIssuer;
+  label: string;
+  ok: boolean;
+  message: string;
 };
+
+async function checkIssuer(
+  issuer: SslIssuer,
+  acmeEmail: string | undefined,
+  zerosslEabKid: string | undefined,
+  zerosslEabHmac: string | undefined,
+): Promise<IssuerResult> {
+  const label = ISSUER_LABELS[issuer];
+
+  if (issuer === "le" || issuer === "google") {
+    if (!acmeEmail) {
+      return {
+        issuer,
+        label,
+        ok: false,
+        message: `${label} requires an ACME email — set NEXT_PUBLIC_ACME_EMAIL in your environment`,
+      };
+    }
+    return {
+      issuer,
+      label,
+      ok: true,
+      message: `${label} is ready (ACME email: ${acmeEmail})`,
+    };
+  }
+
+  if (issuer === "zerossl") {
+    if (!zerosslEabKid || !zerosslEabHmac) {
+      return {
+        issuer,
+        label,
+        ok: false,
+        message: "ZeroSSL requires EAB Key ID and HMAC Key — add them and save first",
+      };
+    }
+
+    try {
+      const res = await fetch(
+        `https://api.zerossl.com/acme/eab-credentials-check?access_key=${encodeURIComponent(zerosslEabKid)}`,
+        { method: "GET", signal: AbortSignal.timeout(5000) },
+      );
+
+      if (!res.ok) {
+        return {
+          issuer,
+          label,
+          ok: false,
+          message: `ZeroSSL returned ${res.status} — check your EAB credentials`,
+        };
+      }
+
+      return {
+        issuer,
+        label,
+        ok: true,
+        message: "ZeroSSL EAB credentials are valid",
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      return {
+        issuer,
+        label,
+        ok: false,
+        message: `Could not reach ZeroSSL API: ${msg}`,
+      };
+    }
+  }
+
+  return { issuer, label, ok: false, message: `Unknown issuer: ${issuer}` };
+}
 
 export async function POST() {
   try {
@@ -16,60 +87,30 @@ export async function POST() {
   }
 
   const config = await getSslConfig();
+  const acmeEmail = process.env.NEXT_PUBLIC_ACME_EMAIL;
 
-  // Let's Encrypt and Google Trust Services don't need extra credentials
-  if (config.defaultIssuer === "le" || config.defaultIssuer === "google") {
-    const acmeEmail = process.env.NEXT_PUBLIC_ACME_EMAIL;
-    if (!acmeEmail) {
-      return NextResponse.json({
-        ok: false,
-        message: `${ISSUER_LABELS[config.defaultIssuer]} requires an ACME email — set NEXT_PUBLIC_ACME_EMAIL in your environment`,
-      });
-    }
+  const results = await Promise.all(
+    config.activeIssuers.map((issuer) =>
+      checkIssuer(issuer, acmeEmail, config.zerosslEabKid, config.zerosslEabHmac)
+    )
+  );
+
+  const allOk = results.every((r) => r.ok);
+  const failedIssuers = results.filter((r) => !r.ok);
+
+  if (allOk) {
+    const labels = results.map((r) => r.label).join(", ");
     return NextResponse.json({
       ok: true,
-      message: `${ISSUER_LABELS[config.defaultIssuer]} is ready (ACME email: ${acmeEmail})`,
+      message: `All active issuers are ready: ${labels}`,
+      results,
     });
   }
 
-  // ZeroSSL requires EAB credentials
-  if (config.defaultIssuer === "zerossl") {
-    if (!config.zerosslEabKid || !config.zerosslEabHmac) {
-      return NextResponse.json({
-        ok: false,
-        message: "ZeroSSL requires EAB Key ID and HMAC Key — add them above and save first",
-      });
-    }
-
-    // Validate EAB credentials against the ZeroSSL API
-    try {
-      const res = await fetch(
-        `https://api.zerossl.com/acme/eab-credentials-check?access_key=${encodeURIComponent(config.zerosslEabKid)}`,
-        { method: "GET" },
-      );
-
-      if (!res.ok) {
-        return NextResponse.json({
-          ok: false,
-          message: `ZeroSSL returned ${res.status} — check your EAB credentials`,
-        });
-      }
-
-      return NextResponse.json({
-        ok: true,
-        message: "ZeroSSL EAB credentials are configured",
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Unknown error";
-      return NextResponse.json({
-        ok: false,
-        message: `Could not reach ZeroSSL API: ${msg}`,
-      });
-    }
-  }
-
+  const failMessages = failedIssuers.map((r) => `${r.label}: ${r.message}`).join("; ");
   return NextResponse.json({
     ok: false,
-    message: `Unknown issuer: ${config.defaultIssuer}`,
+    message: failMessages,
+    results,
   });
 }

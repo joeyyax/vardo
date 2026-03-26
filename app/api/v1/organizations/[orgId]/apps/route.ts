@@ -10,6 +10,7 @@ import { allocatePorts } from "@/lib/docker/ports";
 import { recordActivity } from "@/lib/activity";
 import { isReservedSlug } from "@/lib/domains/reserved";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -235,13 +236,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     // Auto-create domain if requested
     if (data.generateDomain) {
+      const sslConfig = await getSslConfig();
       const autoDomain = generateSubdomain(data.name, orgRecord?.baseDomain);
       await db.insert(domains).values({
         id: nanoid(),
         appId,
         domain: autoDomain,
         port: data.containerPort ?? null,
-        certResolver: "le",
+        certResolver: getPrimaryIssuer(sslConfig),
       });
     }
 

@@ -44,3 +44,17 @@ export function isMasked(value: string | undefined | null): boolean {
   if (typeof value !== "string") return false;
   return value.startsWith(MASK_SENTINEL);
 }
+
+/**
+ * Resolve a secret field from a save request.
+ * If the incoming value is a masked sentinel, the existing stored value is
+ * kept unchanged. Otherwise the incoming value replaces it (null/undefined
+ * means the user intentionally cleared the field).
+ */
+export function resolveSecret(
+  incoming: string | undefined | null,
+  existing: string | undefined | null,
+): string | undefined {
+  if (isMasked(incoming)) return existing ?? undefined;
+  return incoming ?? undefined;
+}
