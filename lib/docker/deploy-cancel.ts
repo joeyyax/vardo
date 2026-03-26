@@ -36,6 +36,7 @@ import type { DeployOpts, DeployResult, DeployStage } from "./deploy";
 
 const ACTIVE_KEY = (appId: string) => `deploy:active:${appId}`;
 const CANCEL_KEY = (appId: string) => `deploy:cancel:${appId}`;
+const KILL_KEY = (deploymentId: string) => `deploy:kill:${deploymentId}`;
 
 /** TTL for the active-deploy registry entry — acts as a safety-net expiry. */
 const ACTIVE_TTL_MS = 30 * 60 * 1000; // 30 minutes
@@ -174,6 +175,38 @@ async function clearCancelSignal(appId: string): Promise<void> {
   }
 }
 
+async function checkKillSignal(deploymentId: string): Promise<boolean> {
+  try {
+    const value = await redis.get(KILL_KEY(deploymentId));
+    return value !== null;
+  } catch {
+    return false;
+  }
+}
+
+async function clearKillSignal(deploymentId: string): Promise<void> {
+  try {
+    await redis.del(KILL_KEY(deploymentId));
+  } catch {
+    // Non-fatal
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Public API for user-initiated cancellation
+// ---------------------------------------------------------------------------
+
+/** TTL for the kill signal — short-lived; consumed at the next stage transition. */
+const KILL_TTL_MS = 60 * 1000; // 60 seconds
+
+/**
+ * Signal a running deployment to stop at the next stage boundary.
+ * Called by the API when a user cancels a deployment that is already running.
+ */
+export async function publishKillSignal(deploymentId: string): Promise<void> {
+  await redis.set(KILL_KEY(deploymentId), "1", "PX", KILL_TTL_MS);
+}
+
 // ---------------------------------------------------------------------------
 // Core
 // ---------------------------------------------------------------------------
@@ -249,6 +282,15 @@ export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
         active.stage = stage;
         // Mirror stage to Redis
         await updateStageInRedis(appId, newDeploymentId, stage);
+
+        // Check for a user-initiated kill signal (cancel running deployment via API)
+        if (!controller.signal.aborted) {
+          const killed = await checkKillSignal(newDeploymentId);
+          if (killed) {
+            await clearKillSignal(newDeploymentId);
+            controller.abort({ killed: true });
+          }
+        }
 
         // Check for a cross-process cancel signal written by another process
         if (!controller.signal.aborted) {

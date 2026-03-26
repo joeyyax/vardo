@@ -1183,11 +1183,12 @@ export async function runDeployment(
     const message = error instanceof Error ? error.message : "Unknown error";
     const durationMs = Date.now() - startTime;
 
-    // Check if this deploy was superseded by a newer one (cancel-and-replace).
-    // The AbortController in deploy-cancel.ts passes { supersededBy } as the abort reason.
+    // Check if this deploy was aborted — either superseded by a newer one or killed by the user.
+    // The AbortController in deploy-cancel.ts passes { supersededBy } or { killed: true } as the reason.
     if (opts.signal?.aborted) {
-      const reason = opts.signal.reason as { supersededBy?: string } | undefined;
+      const reason = opts.signal.reason as { supersededBy?: string; killed?: boolean } | undefined;
       const supersededById = reason?.supersededBy;
+
       if (supersededById) {
         log(`[deploy] Superseded by deployment ${supersededById}`);
         await db
@@ -1206,6 +1207,36 @@ export async function runDeployment(
           appId: opts.appId,
           deploymentId,
           supersededBy: supersededById,
+        }).catch(() => {});
+
+        return { deploymentId, success: false, log: logLines.join("\n"), durationMs };
+      }
+
+      if (reason?.killed) {
+        log(`[deploy] Cancelled by user`);
+        await db
+          .update(deployments)
+          .set({
+            status: "cancelled",
+            log: logLines.join("\n"),
+            durationMs,
+            finishedAt: new Date(),
+          })
+          .where(eq(deployments.id, deploymentId));
+
+        publishEvent(appChannel(opts.appId), {
+          event: "deploy:complete",
+          status: "cancelled",
+          deploymentId,
+          success: false,
+          durationMs,
+        }).catch(() => {});
+
+        recordActivity({
+          organizationId: opts.organizationId,
+          action: "deployment.cancelled",
+          appId: opts.appId,
+          metadata: { deploymentId },
         }).catch(() => {});
 
         return { deploymentId, success: false, log: logLines.join("\n"), durationMs };
