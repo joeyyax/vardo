@@ -8,7 +8,9 @@ import { requireMeshPeer } from "@/lib/mesh/auth";
 /**
  * POST /api/v1/mesh/heartbeat — peer health check.
  *
- * Authenticated via mesh bearer token. Updates lastSeenAt and status.
+ * Authenticated via mesh bearer token. Marks the calling peer as online
+ * and updates lastSeenAt. The caller updates our status on their side via
+ * sendHeartbeatToPeer(), giving bidirectional liveness tracking.
  */
 export async function POST(request: NextRequest) {
   try {
