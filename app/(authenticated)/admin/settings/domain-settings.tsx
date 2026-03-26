@@ -4,13 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Check, X, Loader2, RefreshCw, CheckCircle2, XCircle } from "lucide-react";
 import { useVerify } from "@/hooks/use-verify";
 import {
@@ -41,11 +35,21 @@ type InstanceData = {
   instanceName: string;
 };
 
-const ISSUER_LABELS: Record<string, string> = {
+type SslIssuer = "le" | "google" | "zerossl";
+
+const ISSUER_LABELS: Record<SslIssuer, string> = {
   le: "Let's Encrypt",
   google: "Google Trust Services",
   zerossl: "ZeroSSL",
 };
+
+const ISSUER_DESCRIPTIONS: Record<SslIssuer, string> = {
+  le: "The most widely used free CA. Works for most deployments and has no account requirements.",
+  google: "Google's certificate authority. Offers high availability and geographic distribution via Google infrastructure.",
+  zerossl: "Alternative free CA. Requires External Account Binding (EAB) credentials from your ZeroSSL dashboard.",
+};
+
+const ALL_ISSUERS: SslIssuer[] = ["le", "google", "zerossl"];
 
 function toDisplay(value: string): string {
   if (value.startsWith(MASK_SENTINEL)) {
@@ -63,14 +67,15 @@ export function DomainSettings() {
   const [dnsChecks, setDnsChecks] = useState<DnsCheck[]>([]);
 
   // SSL issuer settings
-  const [sslIssuer, setSslIssuer] = useState<string>("le");
+  const [activeIssuers, setActiveIssuers] = useState<SslIssuer[]>(["le"]);
   const [zerosslKid, setZerosslKid] = useState("");
   const [zerosslHmac, setZerosslHmac] = useState("");
 
   const { verify: verifySsl, verifying: verifyingSsl, result: sslVerifyResult, reset: resetSslVerify } = useVerify("/api/setup/ssl/verify");
 
   const onSslLoad = useCallback((data: Record<string, unknown>) => {
-    setSslIssuer((data.defaultIssuer as string) || "le");
+    const loaded = data.activeIssuers as SslIssuer[] | undefined;
+    setActiveIssuers(loaded && loaded.length > 0 ? loaded : ["le"]);
     setZerosslKid((data.zerosslEabKid as string) || "");
     setZerosslHmac((data.zerosslEabHmac as string) || "");
   }, []);
@@ -232,7 +237,7 @@ export function DomainSettings() {
                 className="bg-muted"
               />
               <p className="text-xs text-muted-foreground">
-                Used for SSL certificate issuance with {ISSUER_LABELS[sslIssuer] || "Let's Encrypt"}.
+                Used for SSL certificate issuance with all active certificate authorities.
               </p>
             </div>
           )}
@@ -251,10 +256,17 @@ export function DomainSettings() {
         </CardContent>
       </Card>
 
-      {/* SSL certificate issuer */}
+      {/* SSL certificate issuers */}
       <Card className="squircle rounded-lg">
         <CardHeader>
-          <CardTitle className="text-sm">SSL certificate issuer</CardTitle>
+          <CardTitle className="text-sm">
+            SSL certificate issuers
+            {!sslLoading && (
+              <span className="ml-2 text-xs font-normal text-muted-foreground">
+                {activeIssuers.length} enabled
+              </span>
+            )}
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {sslLoading ? (
@@ -264,58 +276,95 @@ export function DomainSettings() {
             </div>
           ) : (
             <>
-              <div className="max-w-md space-y-2">
-                <Label htmlFor="ssl-issuer">Default issuer</Label>
-                <Select value={sslIssuer} onValueChange={setSslIssuer}>
-                  <SelectTrigger id="ssl-issuer" className="squircle">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="le">Let&apos;s Encrypt</SelectItem>
-                    <SelectItem value="google">Google Trust Services</SelectItem>
-                    <SelectItem value="zerossl">ZeroSSL</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  Certificate authority used for new domains. Can be overridden per domain.
-                </p>
-              </div>
+              <p className="text-xs text-muted-foreground">
+                Enable one or more certificate authorities. The first enabled issuer is used as the
+                default for new domains. Multiple issuers can be active simultaneously.
+              </p>
 
-              {(sslIssuer === "zerossl" || zerosslKid) && (
-                <div className="max-w-md space-y-4 rounded-lg border bg-muted/30 p-4">
-                  <p className="text-xs font-medium">
-                    ZeroSSL requires External Account Binding (EAB) credentials.{" "}
-                    <a
-                      href="https://app.zerossl.com/developer"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary underline"
-                    >
-                      Get credentials
-                    </a>
-                  </p>
-                  <div className="space-y-2">
-                    <Label htmlFor="zerossl-kid">EAB Key ID</Label>
-                    <Input
-                      id="zerossl-kid"
-                      value={toDisplay(zerosslKid)}
-                      onChange={(e) => setZerosslKid(e.target.value)}
-                      placeholder="EAB Key ID from ZeroSSL dashboard"
-                      className="font-mono text-sm"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="zerossl-hmac">EAB HMAC Key</Label>
-                    <Input
-                      id="zerossl-hmac"
-                      value={toDisplay(zerosslHmac)}
-                      onChange={(e) => setZerosslHmac(e.target.value)}
-                      placeholder="EAB HMAC Key from ZeroSSL dashboard"
-                      className="font-mono text-sm"
-                    />
-                  </div>
-                </div>
-              )}
+              <div className="space-y-3">
+                {ALL_ISSUERS.map((issuer) => {
+                  const isEnabled = activeIssuers.includes(issuer);
+                  const isFirst = activeIssuers[0] === issuer;
+
+                  function toggleIssuer(enabled: boolean) {
+                    if (enabled) {
+                      setActiveIssuers((prev) => [...prev, issuer]);
+                    } else {
+                      // Prevent disabling the last active issuer
+                      if (activeIssuers.length === 1) return;
+                      setActiveIssuers((prev) => prev.filter((i) => i !== issuer));
+                    }
+                  }
+
+                  return (
+                    <div key={issuer} className="rounded-lg border bg-card p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <Label
+                              htmlFor={`ssl-issuer-${issuer}`}
+                              className="text-sm font-medium leading-none cursor-pointer"
+                            >
+                              {ISSUER_LABELS[issuer]}
+                            </Label>
+                            {isEnabled && isFirst && (
+                              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                                default
+                              </span>
+                            )}
+                          </div>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {ISSUER_DESCRIPTIONS[issuer]}
+                          </p>
+                        </div>
+                        <Switch
+                          id={`ssl-issuer-${issuer}`}
+                          checked={isEnabled}
+                          onCheckedChange={toggleIssuer}
+                          disabled={isEnabled && activeIssuers.length === 1}
+                          aria-label={`Enable ${ISSUER_LABELS[issuer]}`}
+                        />
+                      </div>
+
+                      {issuer === "zerossl" && isEnabled && (
+                        <div className="mt-4 space-y-3 rounded-md border bg-muted/30 p-3">
+                          <p className="text-xs font-medium">
+                            ZeroSSL requires External Account Binding (EAB) credentials.{" "}
+                            <a
+                              href="https://app.zerossl.com/developer"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-primary underline"
+                            >
+                              Get credentials
+                            </a>
+                          </p>
+                          <div className="space-y-2">
+                            <Label htmlFor="zerossl-kid">EAB Key ID</Label>
+                            <Input
+                              id="zerossl-kid"
+                              value={toDisplay(zerosslKid)}
+                              onChange={(e) => setZerosslKid(e.target.value)}
+                              placeholder="EAB Key ID from ZeroSSL dashboard"
+                              className="font-mono text-sm"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="zerossl-hmac">EAB HMAC Key</Label>
+                            <Input
+                              id="zerossl-hmac"
+                              value={toDisplay(zerosslHmac)}
+                              onChange={(e) => setZerosslHmac(e.target.value)}
+                              placeholder="EAB HMAC Key from ZeroSSL dashboard"
+                              className="font-mono text-sm"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
 
               <div className="flex items-center gap-3">
                 <Button
@@ -323,7 +372,7 @@ export function DomainSettings() {
                   onClick={() => {
                     resetSslVerify();
                     saveSsl({
-                      defaultIssuer: sslIssuer,
+                      activeIssuers,
                       zerosslEabKid: zerosslKid || undefined,
                       zerosslEabHmac: zerosslHmac || undefined,
                     });
