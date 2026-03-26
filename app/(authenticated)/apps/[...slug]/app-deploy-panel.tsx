@@ -1,12 +1,15 @@
 "use client";
 
-import { forwardRef, useImperativeHandle, useState } from "react";
+import { forwardRef, useImperativeHandle, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import {
   Loader2,
   Rocket,
   ChevronDown,
   RotateCcw,
   History,
+  X,
+  Clock,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,6 +25,7 @@ import {
 } from "@/components/ui/bottom-sheet";
 import { DeploymentLog } from "@/components/log-viewer";
 import { DeploymentStatusBadge, formatDuration } from "@/components/app-status";
+import { toast } from "@/lib/messenger";
 import { Uptime } from "./timer";
 import { InProgressDeployCard } from "./in-progress-deploy-card";
 import { useDeploy } from "./hooks/use-deploy";
@@ -94,6 +98,37 @@ export const AppDeployPanel = forwardRef<AppDeployPanelHandle, AppDeployPanelPro
   } = deploy;
 
   const [expandedServerDeploy, setExpandedServerDeploy] = useState(false);
+  const [cancellingIds, setCancellingIds] = useState<Set<string>>(new Set());
+  const router = useRouter();
+
+  const queuedDeployments = filteredDeployments
+    .filter((d) => d.status === "queued")
+    .sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
+
+  const handleCancelQueued = useCallback(async (deploymentId: string) => {
+    setCancellingIds((prev) => new Set(prev).add(deploymentId));
+    try {
+      const res = await fetch(
+        `/api/v1/organizations/${orgId}/apps/${appId}/deployments/${deploymentId}`,
+        { method: "DELETE" },
+      );
+      if (!res.ok) {
+        const data = await res.json();
+        toast.error(data.error || "Failed to cancel deployment");
+        return;
+      }
+      toast.success("Deployment cancelled");
+      router.refresh();
+    } catch {
+      toast.error("Failed to cancel deployment");
+    } finally {
+      setCancellingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(deploymentId);
+        return next;
+      });
+    }
+  }, [orgId, appId, router]);
 
   useImperativeHandle(ref, () => ({
     handleDeploy: deploy.handleDeploy,
@@ -128,7 +163,7 @@ export const AppDeployPanel = forwardRef<AppDeployPanelHandle, AppDeployPanelPro
                 canAbort
               />
             )}
-            {!deploying && serverRunningDeploy && (
+            {!deploying && serverRunningDeploy && serverRunningDeploy.status === "running" && (
               <InProgressDeployCard
                 stages={{}}
                 log={serverRunningDeploy.log ? serverRunningDeploy.log.split("\n") : []}
@@ -137,6 +172,63 @@ export const AppDeployPanel = forwardRef<AppDeployPanelHandle, AppDeployPanelPro
                 onToggleExpand={() => setExpandedServerDeploy((prev) => !prev)}
                 trigger={serverRunningDeploy.trigger}
               />
+            )}
+
+            {queuedDeployments.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-muted-foreground px-1">Queued</p>
+                {queuedDeployments.map((deployment, idx) => {
+                  const position = idx + 1;
+                  const total = queuedDeployments.length;
+                  const isCancelling = cancellingIds.has(deployment.id);
+                  const triggerLabel = {
+                    manual: "Manual deploy",
+                    webhook: "Auto deploy",
+                    api: "API deploy",
+                    rollback: "Rollback",
+                  }[deployment.trigger];
+                  const by = deployment.triggeredByUser?.name;
+                  return (
+                    <div
+                      key={deployment.id}
+                      className="squircle rounded-lg border bg-status-neutral-muted overflow-hidden"
+                    >
+                      <div className="flex items-center justify-between gap-4 p-4">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <Badge className="border-transparent bg-status-neutral-muted text-status-neutral shrink-0 gap-1.5">
+                            <Clock className="size-3" />
+                            Queued
+                          </Badge>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium">
+                              {deployment.gitMessage || triggerLabel}
+                            </p>
+                            <p className="text-xs text-foreground/60 mt-0.5">
+                              {by ? `${triggerLabel} by ${by}` : triggerLabel}
+                              {" \u00B7 "}
+                              Position {position} of {total}
+                            </p>
+                          </div>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-xs gap-1 shrink-0"
+                          disabled={isCancelling}
+                          onClick={() => handleCancelQueued(deployment.id)}
+                        >
+                          {isCancelling ? (
+                            <Loader2 className="size-3 animate-spin" />
+                          ) : (
+                            <X className="size-3" />
+                          )}
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             )}
 
             {filteredDeployments
@@ -191,16 +283,12 @@ export const AppDeployPanel = forwardRef<AppDeployPanelHandle, AppDeployPanelPro
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-medium">
-                          {deployment.gitMessage || (
-                            isActive ? (
-                              <>
-                                <span className="capitalize">{deployment.trigger}</span>
-                                <span className="text-muted-foreground font-normal"> deploy</span>
-                              </>
-                            ) : (
-                              <span className="capitalize">{deployment.trigger}</span>
-                            )
-                          )}
+                          {deployment.gitMessage || ({
+                            manual: "Manual deploy",
+                            webhook: "Auto deploy",
+                            api: "API deploy",
+                            rollback: "Rollback",
+                          }[deployment.trigger] ?? `${deployment.trigger.charAt(0).toUpperCase()}${deployment.trigger.slice(1)} deploy`)}
                         </p>
                         {deployment.gitSha && (() => {
                           const commitUrl = gitUrl?.replace(/\.git$/, "");
