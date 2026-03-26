@@ -2,18 +2,7 @@ import { db } from "@/lib/db";
 import { memberships, userNotificationPreferences } from "@/lib/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import type { BusEventType } from "@/lib/bus";
-import { CHANNEL_TYPE_DEFAULTS } from "./channel-defaults";
-
-/**
- * Events that always send regardless of user preferences.
- * Users cannot mute these.
- */
-export const CRITICAL_EVENT_TYPES: ReadonlySet<BusEventType> = new Set([
-  "deploy.failed",
-  "security.file-exposed",
-  "system.service-down",
-  "system.disk-alert",
-] as BusEventType[]);
+import { CHANNEL_TYPE_DEFAULTS, CRITICAL_EVENT_TYPES } from "./channel-defaults";
 
 /**
  * Fetch all member user IDs for an org. Called once per dispatch, outside the
