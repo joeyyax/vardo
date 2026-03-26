@@ -8,7 +8,7 @@ import { enqueueRetry } from "./retry";
 import { emit, onEmit, toBusEvent, toLegacyEvent } from "@/lib/bus";
 import type { BusEvent, BusEventType } from "@/lib/bus";
 import { logger } from "@/lib/logger";
-import { fetchOrgMembers, resolveRecipients } from "./resolve-recipients";
+import { fetchOrgMembers, fetchEventPrefs, resolveRecipients } from "./resolve-recipients";
 
 const log = logger.child("notifications");
 
@@ -40,17 +40,19 @@ function dispatchToChannels(orgId: string, event: BusEvent): void {
 
       const legacy = toLegacyEvent(event);
       const members = await fetchOrgMembers(orgId);
+      const memberIds = members.map((m) => m.userId);
+      const prefs = await fetchEventPrefs(orgId, event.type, memberIds);
 
       await Promise.allSettled(
         channels.map(async (row) => {
           if (!channelAcceptsEvent(row.subscribedEvents, event.type)) return;
 
-          const { shouldSend } = await resolveRecipients(
-            orgId,
+          const { shouldSend } = resolveRecipients(
             row.id,
             row.type,
             event.type,
             members,
+            prefs,
           );
           if (!shouldSend) return;
 
