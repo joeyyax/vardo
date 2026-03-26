@@ -15,6 +15,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { maskDisplay } from "@/lib/mask-secrets";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useSystemSetting } from "./use-system-setting";
 import { FieldHint } from "@/components/setup/provider-guide";
 import type { SslIssuer } from "@/lib/system-settings";
@@ -62,6 +69,9 @@ export function DomainSettings() {
   // SSL issuer settings
   const [activeIssuers, setActiveIssuers] = useState<SslIssuer[]>(["le"]);
   const [concurrentIssuers, setConcurrentIssuers] = useState(1);
+  const [challengeType, setChallengeType] = useState<"http" | "dns">("http");
+  const dnsProvider = "cloudflare" as const;
+  const [dnsApiToken, setDnsApiToken] = useState("");
   const [zerosslKid, setZerosslKid] = useState("");
   const [zerosslHmac, setZerosslHmac] = useState("");
 
@@ -84,6 +94,8 @@ export function DomainSettings() {
     const loaded = data.activeIssuers as SslIssuer[] | undefined;
     setActiveIssuers(loaded && loaded.length > 0 ? loaded : ["le"]);
     setConcurrentIssuers(typeof data.concurrentIssuers === "number" ? data.concurrentIssuers : 1);
+    setChallengeType(((data.challengeType as string) || "http") as "http" | "dns");
+    setDnsApiToken((data.dnsApiToken as string) || "");
     setZerosslKid((data.zerosslEabKid as string) || "");
     setZerosslHmac((data.zerosslEabHmac as string) || "");
   }, []);
@@ -384,6 +396,83 @@ export function DomainSettings() {
                 </div>
               )}
 
+              <div className="max-w-md space-y-2">
+                <Label>Challenge type</Label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="challenge-type"
+                      value="http"
+                      checked={challengeType === "http"}
+                      onChange={() => setChallengeType("http")}
+                      className="accent-primary"
+                    />
+                    <span className="text-sm">HTTP-01</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="challenge-type"
+                      value="dns"
+                      checked={challengeType === "dns"}
+                      onChange={() => setChallengeType("dns")}
+                      className="accent-primary"
+                    />
+                    <span className="text-sm">DNS-01</span>
+                  </label>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  DNS-01 works behind NAT and supports wildcard certificates. Requires a DNS provider API token.
+                </p>
+              </div>
+
+              {challengeType === "dns" && (
+                <div className="max-w-md space-y-4 rounded-lg border bg-muted/30 p-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="dns-provider">DNS provider</Label>
+                    <Select value={dnsProvider} disabled>
+                      <SelectTrigger id="dns-provider" className="squircle">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="cloudflare">Cloudflare</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="cf-api-token">API token</Label>
+                    <Input
+                      id="cf-api-token"
+                      value={maskDisplay(dnsApiToken)}
+                      onChange={(e) => setDnsApiToken(e.target.value)}
+                      placeholder="Cloudflare API token with Zone:DNS:Edit"
+                      className="font-mono text-sm"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Create a token with <span className="font-medium">Zone — DNS — Edit</span> permissions at{" "}
+                      <a
+                        href="https://dash.cloudflare.com/profile/api-tokens"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary underline"
+                      >
+                        dash.cloudflare.com/profile/api-tokens
+                      </a>
+                    </p>
+                  </div>
+                  <div className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground space-y-1">
+                    <p className="font-medium text-foreground">Restart required</p>
+                    <p>
+                      After saving, update your <code className="font-mono">.env</code> and restart Traefik:
+                    </p>
+                    <pre className="mt-1 font-mono overflow-x-auto select-all whitespace-pre">
+                      {`CF_DNS_API_TOKEN=your-token-here\ndocker compose up -d traefik`}
+                    </pre>
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-center gap-3">
                 <Button
                   className="squircle"
@@ -392,6 +481,9 @@ export function DomainSettings() {
                     saveSsl({
                       activeIssuers,
                       concurrentIssuers,
+                      challengeType,
+                      dnsProvider,
+                      dnsApiToken: dnsApiToken || undefined,
                       zerosslEabKid: zerosslKid || undefined,
                       zerosslEabHmac: zerosslHmac || undefined,
                     });
