@@ -178,6 +178,8 @@ export const domains = pgTable("domain", {
   certResolver: text("cert_resolver").default("le"),
   isPrimary: boolean("is_primary").default(false),
   sslEnabled: boolean("ssl_enabled").default(true),
+  redirectTo: text("redirect_to"),
+  redirectCode: integer("redirect_code").default(301),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 },
   (t) => [
