@@ -15,6 +15,9 @@ export function TraefikSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [config, setConfig] = useState<TraefikConfig>({ externalRouting: false });
+  const [restartPending, setRestartPending] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+  const [restarted, setRestarted] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -41,11 +44,27 @@ export function TraefikSettings() {
         body: JSON.stringify(config),
       });
       if (!res.ok) throw new Error("Failed to save");
-      toast.success("Traefik settings updated and restarted");
+      toast.success("Settings saved. Restart Traefik to apply.");
+      setRestartPending(true);
+      setRestarted(false);
     } catch {
       toast.error("Failed to save Traefik settings");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleRestart() {
+    setRestarting(true);
+    try {
+      const res = await fetch("/api/v1/admin/traefik/restart", { method: "POST" });
+      if (!res.ok) throw new Error("Failed to restart");
+      setRestarted(true);
+      setRestartPending(false);
+    } catch {
+      toast.error("Failed to restart Traefik");
+    } finally {
+      setRestarting(false);
     }
   }
 
@@ -94,6 +113,37 @@ export function TraefikSettings() {
           Save
         </Button>
       </form>
+
+      {restartPending && (
+        <div className="rounded-lg border p-4 flex items-center justify-between gap-4">
+          <div className="space-y-0.5">
+            <p className="text-sm font-medium">Traefik restart required to apply changes</p>
+            <p className="text-xs text-muted-foreground">
+              Settings are saved. The running container won&apos;t pick them up until you restart.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            className="squircle shrink-0"
+            onClick={handleRestart}
+            disabled={restarting}
+            aria-label="Restart Traefik now"
+          >
+            {restarting && <Loader2 className="size-4 animate-spin" />}
+            {restarting ? "Restarting..." : "Restart now"}
+          </Button>
+        </div>
+      )}
+
+      {restarted && (
+        <div className="rounded-lg border p-4">
+          <p className="text-sm font-medium">Traefik restarted</p>
+          <p className="text-xs text-muted-foreground">
+            The container is back up with the new settings.
+          </p>
+        </div>
+      )}
 
       {config.externalRouting && (
         <div className="rounded-lg border p-4 space-y-3">

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { join } from "path";
-import { spawn } from "child_process";
 import { requireAdminAuth } from "@/lib/auth/admin";
 import { getTraefikConfig, setSystemSetting, invalidateSettingsCache } from "@/lib/system-settings";
 import { writeEnvKey } from "@/lib/env/write-env-key";
@@ -50,13 +49,6 @@ export async function POST(request: NextRequest) {
       { status: 500 },
     );
   }
-
-  // Restart the Traefik container so it picks up the new network setting.
-  // Detached + unref so the process outlives the request.
-  spawn("docker", ["restart", "vardo-traefik"], {
-    detached: true,
-    stdio: "ignore",
-  }).unref();
 
   log.info(`Traefik config updated: externalRouting=${parsed.data.externalRouting}`);
 
