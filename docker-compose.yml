@@ -237,6 +237,7 @@ services:
       start_period: 10s
     networks:
       - internal
+      - vardo-network
     mem_limit: 64m
 
   promtail:
