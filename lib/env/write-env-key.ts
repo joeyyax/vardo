@@ -32,12 +32,12 @@ export async function writeEnvKey(filePath: string, key: string, value: string):
   });
 
   if (!found) {
-    // Append — ensure there's a trailing newline before adding
+    // Append — insert a blank separator line when the file doesn't already
+    // end with one, then add the new key.
     if (updated.length > 0 && updated[updated.length - 1] !== "") {
-      updated.push(`${key}=${value}`);
-    } else {
-      updated.push(`${key}=${value}`);
+      updated.push("");
     }
+    updated.push(`${key}=${value}`);
   }
 
   // Ensure file ends with a single newline

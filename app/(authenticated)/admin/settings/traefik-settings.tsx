@@ -138,9 +138,9 @@ export function TraefikSettings() {
 
       {restarted && (
         <div className="rounded-lg border p-4">
-          <p className="text-sm font-medium">Traefik restarted</p>
+          <p className="text-sm font-medium">Traefik restart initiated</p>
           <p className="text-xs text-muted-foreground">
-            The container is back up with the new settings.
+            The container is restarting and will be back up momentarily.
           </p>
         </div>
       )}
