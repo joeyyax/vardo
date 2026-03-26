@@ -100,6 +100,13 @@ export async function register() {
         })
         .catch((err) => log.error("Failed to start deploy sweeper:", err)),
 
+      import("./lib/mesh/scheduler")
+        .then(({ startMeshHeartbeatScheduler }) => {
+          startMeshHeartbeatScheduler();
+          log.info("Mesh heartbeat scheduler started");
+        })
+        .catch((err) => log.error("Failed to start mesh heartbeat scheduler:", err)),
+
       Promise.resolve().then(() => {
         const domainLog = logger.child("domain-monitor");
         let ticking = false;
