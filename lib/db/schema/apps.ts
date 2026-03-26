@@ -92,6 +92,7 @@ export const apps = pgTable(
     parentAppId: text("parent_app_id"),
     composeService: text("compose_service"), // service name from compose YAML
     containerName: text("container_name"), // computed: {projectName}-{serviceName}-1
+    importedContainerId: text("imported_container_id"), // original container ID when imported from Docker
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
