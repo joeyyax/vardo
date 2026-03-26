@@ -299,3 +299,20 @@ export async function getAuthConfig(): Promise<AuthConfig> {
     sessionDurationDays: fileConfig?.auth?.sessionDurationDays ?? dbConfig?.sessionDurationDays ?? 7,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Traefik config
+// ---------------------------------------------------------------------------
+
+export type TraefikConfig = {
+  externalRouting: boolean;
+};
+
+export async function getTraefikConfig(): Promise<TraefikConfig> {
+  const raw = await getSystemSettingRaw("traefik_config");
+  const dbConfig = raw ? parseJson<TraefikConfig>(raw, "traefik_config") : null;
+
+  return {
+    externalRouting: dbConfig?.externalRouting ?? false,
+  };
+}
