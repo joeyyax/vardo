@@ -5,7 +5,7 @@ import { nanoid } from "nanoid";
 import type { NotificationEvent } from "./port";
 import { createChannel } from "./factory";
 import { enqueueRetry } from "./retry";
-import { resolveRecipients } from "./resolve-recipients";
+import { resolveRecipients, fetchOrgMembers } from "./resolve-recipients";
 import { emit, onEmit, toBusEvent, toLegacyEvent } from "@/lib/bus";
 import type { BusEvent, BusEventType } from "@/lib/bus";
 import { logger } from "@/lib/logger";
@@ -40,6 +40,9 @@ function dispatchToChannels(orgId: string, event: BusEvent): void {
 
       const legacy = toLegacyEvent(event);
 
+      // Fetch org members once — they're the same for every channel in this dispatch.
+      const members = await fetchOrgMembers(orgId);
+
       await Promise.allSettled(
         channels.map(async (row) => {
           if (!channelAcceptsEvent(row.subscribedEvents, event.type)) return;
@@ -49,6 +52,7 @@ function dispatchToChannels(orgId: string, event: BusEvent): void {
             row.id,
             row.type,
             event.type,
+            members,
           );
           if (!shouldSend) return;
 
