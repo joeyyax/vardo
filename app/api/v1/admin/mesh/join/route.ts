@@ -6,7 +6,8 @@ import { decodeInviteToken } from "@/lib/mesh/invite";
 import { generateMeshToken } from "@/lib/mesh/auth";
 import { ensureHubConfig, HUB_IP } from "@/lib/mesh";
 import { getInstanceId } from "@/lib/constants";
-import { getInstanceConfig } from "@/lib/system-settings";
+import { getInstanceConfig, setSystemSetting } from "@/lib/system-settings";
+import { needsSetup } from "@/lib/setup";
 import { db } from "@/lib/db";
 import { meshPeers } from "@/lib/db/schema";
 import { nanoid } from "nanoid";
@@ -24,7 +25,11 @@ const joinSchema = z.object({ token: z.string().min(1, "Invite token is required
  */
 export async function POST(request: NextRequest) {
   try {
-    await requireAppAdmin();
+    // During initial setup (no users), allow unauthenticated join
+    const isSetup = await needsSetup();
+    if (!isSetup) {
+      await requireAppAdmin();
+    }
 
     const body = await request.json();
     const parsed = joinSchema.safeParse(body);
@@ -41,6 +46,16 @@ export async function POST(request: NextRequest) {
         { error: "Invalid invite token" },
         { status: 400 }
       );
+    }
+
+    // Validate hub URL to prevent SSRF
+    try {
+      const url = new URL(decoded.hubApiUrl);
+      if (!["http:", "https:"].includes(url.protocol)) {
+        return NextResponse.json({ error: "Invalid hub URL protocol" }, { status: 400 });
+      }
+    } catch {
+      return NextResponse.json({ error: "Invalid hub URL" }, { status: 400 });
     }
 
     // Bootstrap local WireGuard (generates keypair if needed)
@@ -98,9 +113,38 @@ export async function POST(request: NextRequest) {
       lastSeenAt: new Date(),
     });
 
+    // Pull shareable config from the hub (best-effort)
+    let inheritedConfig = { email: false, backup: false, github: false };
+    try {
+      const configRes = await fetch(`${decoded.hubApiUrl}/api/v1/mesh/config`, {
+        headers: { Authorization: `Bearer ${joinData.token}` },
+      });
+      if (configRes.ok) {
+        const config = await configRes.json();
+        if (config.email) {
+          await setSystemSetting("email_provider", JSON.stringify(config.email));
+          inheritedConfig.email = true;
+        }
+        if (config.backup) {
+          await setSystemSetting("backup_storage", JSON.stringify(config.backup));
+          inheritedConfig.backup = true;
+        }
+        if (config.github) {
+          await setSystemSetting("github_app", JSON.stringify(config.github));
+          inheritedConfig.github = true;
+        }
+        if (config.features) {
+          await setSystemSetting("feature_flags", JSON.stringify(config.features));
+        }
+      }
+    } catch {
+      // Config inheritance is best-effort — don't fail the join
+    }
+
     return NextResponse.json({
       peer: joinData.peer,
       hub: joinData.hub,
+      inheritedConfig,
     });
   } catch (error) {
     return handleRouteError(error, "Error joining mesh");
