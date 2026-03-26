@@ -2,10 +2,16 @@
 set -e
 
 # Set up mesh routing if WireGuard gateway is configured.
-# Routes 10.99.0.0/24 (WireGuard mesh subnet) through the WireGuard container
-# so the frontend can reach peer APIs over the encrypted tunnel.
 if [ -n "${WIREGUARD_GATEWAY:-}" ]; then
   ip route add 10.99.0.0/24 via "$WIREGUARD_GATEWAY" 2>/dev/null || true
+fi
+
+# Ensure nextjs user has access to the Docker socket.
+# DOCKER_GID is set in docker-compose via group_add, but we need it
+# as a proper group membership for gosu to inherit.
+if [ -n "${DOCKER_GID:-}" ]; then
+  getent group "$DOCKER_GID" >/dev/null 2>&1 || addgroup --gid "$DOCKER_GID" docker 2>/dev/null || true
+  adduser nextjs "$(getent group "$DOCKER_GID" | cut -d: -f1)" 2>/dev/null || true
 fi
 
 # Drop to nextjs user, run migrations, start the app
