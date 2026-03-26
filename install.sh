@@ -314,12 +314,12 @@ run_cmd() {
 }
 
 # Returns true if a usable controlling terminal is available.
-# Checks each standard fd first (fast path), then tries to open /dev/tty.
+# Checks stdin fd first (fast path), then tries to actually open /dev/tty.
 # [ -e /dev/tty ] && [ -w /dev/tty ] is not sufficient — the device node
 # always exists and always has write permission bits set, even when there is
 # no controlling terminal (e.g. ssh host 'cmd' without -t).
 has_tty() {
-  [ -t 0 ] || [ -t 1 ] || [ -t 2 ] || { [ -e /dev/tty ] && { : < /dev/tty; } 2>/dev/null; }
+  [ -t 0 ] || { : < /dev/tty; } 2>/dev/null
 }
 
 # Run a command with elapsed timer — for long-running operations
@@ -337,7 +337,8 @@ run_with_spinner() {
   fi
   log_to_file "CMD: $*"
 
-  # Determine output target for progress: /dev/tty when available, stderr otherwise
+  # Safe to hardcode /dev/tty — the ! has_tty early return above ensures we
+  # only reach this point when a controlling terminal is actually available.
   local tty_out="/dev/tty"
 
   # Start a timer in a background subshell that updates every 5s
