@@ -14,7 +14,6 @@ export type DiscoveredContainer = {
   domain: string | null;
   containerPort: number | null;
   mounts: { source: string; destination: string; type: string }[];
-  envCount: number;
   composeProject: string | null;
   networkMode: string;
 };
@@ -29,7 +28,6 @@ export type DiscoveryResponse = {
 
 export type ContainerDetail = DiscoveredContainer & {
   env: string[];
-  restartPolicy: string;
   networks: string[];
 };
 
@@ -83,7 +81,6 @@ function rawToDiscovered(
   ports: { internal: number; external?: number; protocol: string }[],
   labels: Record<string, string>,
   mounts: { source: string; destination: string; type: string }[],
-  envCount: number,
   networkMode: string,
 ): DiscoveredContainer {
   return {
@@ -95,7 +92,6 @@ function rawToDiscovered(
     domain: parseTraefikDomain(labels),
     containerPort: parseTraefikPort(labels),
     mounts,
-    envCount,
     composeProject: labels["com.docker.compose.project"] ?? null,
     networkMode,
   };
@@ -122,7 +118,6 @@ export async function discoverContainers(): Promise<DiscoveryResponse> {
       c.ports,
       c.labels,
       [],
-      0,
       "unknown",
     )
   );
@@ -181,11 +176,9 @@ export async function getContainerDetail(containerId: string): Promise<Container
     domain: parseTraefikDomain(data.labels),
     containerPort: parseTraefikPort(data.labels),
     mounts: data.mounts,
-    envCount: data.env.length,
     composeProject: data.labels["com.docker.compose.project"] ?? null,
     networkMode,
     env: data.env,
-    restartPolicy: "unless-stopped",
     networks: data.networks,
   };
 }
