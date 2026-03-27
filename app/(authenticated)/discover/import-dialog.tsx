@@ -24,6 +24,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, X } from "lucide-react";
 import type { DiscoveredContainer, ContainerDetail } from "@/lib/docker/discover";
+import { slugify } from "@/lib/ui/slugify";
 
 type Project = { id: string; name: string; displayName: string };
 
@@ -37,14 +38,6 @@ type ImportDialogProps = {
   onOpenChange: (open: boolean) => void;
 };
 
-function slugify(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-}
-
 export function ImportDialog({
   container,
   orgId,
@@ -56,6 +49,7 @@ export function ImportDialog({
 
   const [detail, setDetail] = useState<ContainerDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [detailError, setDetailError] = useState(false);
 
   const [displayName, setDisplayName] = useState("");
   const [name, setName] = useState("");
@@ -77,6 +71,7 @@ export function ImportDialog({
     setEnvVars([]);
     setImportVolumes(true);
     setDetail(null);
+    setDetailError(false);
 
     setLoadingDetail(true);
     const controller = new AbortController();
@@ -102,6 +97,7 @@ export function ImportDialog({
       })
       .catch((err: unknown) => {
         if (err instanceof Error && err.name === "AbortError") return;
+        setDetailError(true);
         toast.error("Failed to load container details");
       })
       .finally(() => setLoadingDetail(false));
@@ -181,11 +177,15 @@ export function ImportDialog({
           <div className="py-8 text-center text-sm text-muted-foreground">
             Loading container details...
           </div>
+        ) : detailError ? (
+          <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+            Failed to load container details. Close and try again.
+          </div>
         ) : (
           <div className="space-y-5 py-1">
             {isHostNetwork && (
-              <div className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
-                <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+              <div role="alert" className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                <AlertTriangle aria-hidden="true" className="size-4 shrink-0 mt-0.5" />
                 <span>
                   This container uses host networking — no port mapping or automatic domain
                   routing is available.
@@ -212,6 +212,7 @@ export function ImportDialog({
                   placeholder="my-app"
                   className="font-mono text-sm"
                 />
+                <p className="text-xs text-muted-foreground">Lowercase letters, numbers, and hyphens only.</p>
               </div>
             </div>
 
@@ -257,8 +258,8 @@ export function ImportDialog({
               )}
               {envVars.length > 0 && (
                 <div className="max-h-48 overflow-y-auto space-y-1.5 rounded-lg border p-2">
-                  {envVars.map((v, i) => (
-                    <div key={i} className="flex items-center gap-2 text-xs font-mono">
+                  {envVars.map((v) => (
+                    <div key={v.key} className="flex items-center gap-2 text-xs font-mono">
                       <span className="text-muted-foreground min-w-0 flex-1 truncate">
                         {v.key}
                       </span>
@@ -292,8 +293,8 @@ export function ImportDialog({
                   </Label>
                 </div>
                 {importVolumes && hasBindMounts && (
-                  <div className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
-                    <AlertTriangle className="size-3.5 shrink-0 mt-0.5" />
+                  <div role="alert" className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                    <AlertTriangle aria-hidden="true" className="size-3.5 shrink-0 mt-0.5" />
                     <span>
                       Bind mounts reference host paths — they&apos;ll be included in the generated
                       compose file but Vardo won&apos;t manage the data.
@@ -316,7 +317,7 @@ export function ImportDialog({
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={submitting || loadingDetail || !name || !displayName}
+            disabled={submitting || loadingDetail || detailError || !name || !displayName}
           >
             {submitting ? "Importing..." : "Import"}
           </Button>
