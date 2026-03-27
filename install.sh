@@ -1170,7 +1170,7 @@ wait_healthy() {
     attempt=$((attempt + 1))
     printf "\r  ${CYAN}⠹${RESET} Waiting for healthy... (attempt %d/%d, %ds/%ds)" "$attempt" "$attempts" "$elapsed" "$timeout" > "$tty_out"
     if docker compose -f "$VARDO_DIR/$COMPOSE_FILE" exec -T "$container" \
-      wget -q -O /dev/null http://localhost:3000/api/health 2>/dev/null; then
+      curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
       printf "\r                                                              \r" > "$tty_out"
       log "Vardo is healthy"
       return 0

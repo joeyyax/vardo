@@ -50,7 +50,24 @@ try {
     );
 
     for (const stmt of statements) {
-      await sql.unsafe(stmt);
+      try {
+        await sql.unsafe(stmt);
+      } catch (err) {
+        // Tolerate DDL conflicts from partially-applied or out-of-band schema changes.
+        // These are safe to skip — the object already exists in the target state.
+        const code = err.code;
+        const ignorable =
+          code === "42710" || // duplicate_object (enum value, constraint)
+          code === "42701" || // duplicate_column
+          code === "42P07" || // duplicate_table
+          code === "42P16";   // invalid_table_definition (constraint already exists)
+
+        if (ignorable) {
+          console.log(`[migrate]   ↳ Skipped (already exists): ${err.message.split("\n")[0]}`);
+        } else {
+          throw err;
+        }
+      }
     }
 
     await sql`INSERT INTO __drizzle_migrations (hash, created_at) VALUES (${entry.tag}, ${Date.now()})`;
