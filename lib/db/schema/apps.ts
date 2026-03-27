@@ -98,7 +98,7 @@ export const apps = pgTable(
   },
   (t) => [
     unique("app_org_name_uniq").on(t.organizationId, t.name),
-    unique("app_imported_container_uniq").on(t.organizationId, t.importedContainerId),
+    unique("app_imported_container_uniq").on(t.importedContainerId),
     index("app_org_id_idx").on(t.organizationId),
     index("app_parent_app_id_idx").on(t.parentAppId),
   ]
