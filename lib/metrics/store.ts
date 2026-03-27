@@ -6,8 +6,27 @@ const url = process.env.REDIS_URL || "redis://localhost:7200";
 
 // Dedicated connection for time-series operations
 const globalForTS = globalThis as unknown as { tsRedis: Redis | undefined };
-const tsRedis = globalForTS.tsRedis ?? new Redis(url, { maxRetriesPerRequest: 3 });
-if (process.env.NODE_ENV !== "production") globalForTS.tsRedis = tsRedis;
+
+function getTsClient(): Redis {
+  if (!globalForTS.tsRedis) {
+    globalForTS.tsRedis = new Redis(url, {
+      maxRetriesPerRequest: 3,
+      lazyConnect: true,
+    });
+  }
+  return globalForTS.tsRedis;
+}
+
+const tsRedis = new Proxy({} as Redis, {
+  get(_, prop: string | symbol) {
+    const client = getTsClient();
+    const value = (client as unknown as Record<string | symbol, unknown>)[prop];
+    if (typeof value === "function") {
+      return (value as (...args: unknown[]) => unknown).bind(client);
+    }
+    return value;
+  },
+});
 
 // Retention: 7 days in ms
 const RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
