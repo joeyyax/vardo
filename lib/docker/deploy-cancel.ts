@@ -223,7 +223,7 @@ export async function publishKillSignal(deploymentId: string): Promise<void> {
  */
 export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
   const { appId } = opts;
-  const newDeploymentId = await createDeployment(opts);
+  const newDeploymentId = opts.deploymentId ?? await createDeployment(opts);
 
   // ------------------------------------------------------------------
   // 1. Check in-process registry first (same process — direct control)

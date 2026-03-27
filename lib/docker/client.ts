@@ -324,10 +324,13 @@ export async function startContainer(id: string): Promise<void> {
 }
 
 /**
- * Remove a container. The container must be stopped first.
+ * Remove a container. Pass `force: true` to remove a running container
+ * (equivalent to `docker rm --force`). Without it the daemon returns 409
+ * if the container is still running.
  */
-export async function removeContainer(id: string): Promise<void> {
-  await dockerRequest("DELETE", `/containers/${encodeURIComponent(id)}`);
+export async function removeContainer(id: string, opts?: { force?: boolean }): Promise<void> {
+  const qs = opts?.force ? "?force=true" : "";
+  await dockerRequest("DELETE", `/containers/${encodeURIComponent(id)}${qs}`);
 }
 
 // ---------------------------------------------------------------------------
