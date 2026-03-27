@@ -258,8 +258,8 @@ export function ImportDialog({
               )}
               {envVars.length > 0 && (
                 <div className="max-h-48 overflow-y-auto space-y-1.5 rounded-lg border p-2">
-                  {envVars.map((v) => (
-                    <div key={v.key} className="flex items-center gap-2 text-xs font-mono">
+                  {envVars.map((v, i) => (
+                    <div key={`${v.key}-${i}`} className="flex items-center gap-2 text-xs font-mono">
                       <span className="text-muted-foreground min-w-0 flex-1 truncate">
                         {v.key}
                       </span>
@@ -272,7 +272,7 @@ export function ImportDialog({
                         className="shrink-0 text-muted-foreground hover:text-foreground"
                         aria-label={`Remove ${v.key}`}
                       >
-                        <X className="size-3" />
+                        <X aria-hidden="true" className="size-3" />
                       </button>
                     </div>
                   ))}
