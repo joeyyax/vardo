@@ -44,7 +44,7 @@ export function ContainerCard({ container, onImport }: ContainerCardProps) {
       <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
         {container.domain && (
           <span className="flex items-center gap-1">
-            <Globe className="size-3" />
+            <Globe aria-hidden="true" className="size-3" />
             {container.domain}
           </span>
         )}
@@ -61,7 +61,7 @@ export function ContainerCard({ container, onImport }: ContainerCardProps) {
         )}
         {container.mounts.length > 0 && (
           <span className="flex items-center gap-1">
-            <HardDrive className="size-3" />
+            <HardDrive aria-hidden="true" className="size-3" />
             {container.mounts.length} mount{container.mounts.length !== 1 ? "s" : ""}
           </span>
         )}
