@@ -14,18 +14,22 @@ const WARN_THRESHOLD = 180;
 // Publish client — shared, reused across all publishEvent calls
 // ---------------------------------------------------------------------------
 const globalForPub = globalThis as unknown as { redisPub: Redis | undefined };
-const publishClient =
-  globalForPub.redisPub ??
-  new Redis(url, { maxRetriesPerRequest: 3, lazyConnect: true });
-if (process.env.NODE_ENV !== "production") {
-  globalForPub.redisPub = publishClient;
+
+function getPublishClient(): Redis {
+  if (!globalForPub.redisPub) {
+    globalForPub.redisPub = new Redis(url, {
+      maxRetriesPerRequest: 3,
+      lazyConnect: true,
+    });
+  }
+  return globalForPub.redisPub;
 }
 
 export async function publishEvent(
   channel: string,
   data: Record<string, unknown>,
 ) {
-  await publishClient.publish(channel, JSON.stringify(data));
+  await getPublishClient().publish(channel, JSON.stringify(data));
 }
 
 // ---------------------------------------------------------------------------
@@ -200,7 +204,10 @@ function cleanup() {
     state.subscriberCount = 0;
     globalForSub.redisSubState = undefined;
   }
-  publishClient.disconnect();
+  if (globalForPub.redisPub) {
+    globalForPub.redisPub.disconnect();
+    globalForPub.redisPub = undefined;
+  }
 }
 
 process.once("SIGTERM", cleanup);
