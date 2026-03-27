@@ -7,6 +7,7 @@ import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getContainerDetail, isLocalImage } from "@/lib/docker/discover";
+import { slugify } from "@/lib/ui/slugify";
 import { generateComposeForImage, injectTraefikLabels, composeToYaml } from "@/lib/docker/compose";
 import { encrypt } from "@/lib/crypto/encrypt";
 import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
@@ -24,7 +25,22 @@ const importSchema = z.object({
     .string()
     .min(1, "Name is required")
     .regex(/^[a-z0-9-]+$/, "Name must be lowercase alphanumeric with hyphens"),
-  envVars: z.array(z.object({ key: z.string(), value: z.string() })).default([]),
+  envVars: z
+    .array(
+      z.object({
+        key: z
+          .string()
+          .min(1)
+          .max(256, "Env key too long")
+          .regex(/^[A-Za-z_][A-Za-z0-9_]*$/, "Invalid env key"),
+        value: z
+          .string()
+          .max(65536, "Env value too long")
+          .refine((v) => !/[\x00-\x1f\x7f]/.test(v), "Value cannot contain control characters"),
+      })
+    )
+    .max(500, "Too many environment variables")
+    .default([]),
   importVolumes: z.boolean().default(true),
 });
 
@@ -36,7 +52,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    if (!/^[a-zA-Z0-9_.-]+$/.test(containerId)) {
+    if (!/^[a-f0-9]{12,64}$/.test(containerId)) {
       return NextResponse.json({ error: "Invalid container ID" }, { status: 400 });
     }
 
@@ -121,11 +137,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
         if (data.newProjectName) {
           const newProjectId = nanoid();
-          const newProjectSlug = data.newProjectName
-            .toLowerCase()
-            .replace(/[^a-z0-9-]/g, "-")
-            .replace(/-+/g, "-")
-            .replace(/^-|-$/g, "");
+          const newProjectSlug = slugify(data.newProjectName);
           await tx.insert(projects).values({
             id: newProjectId,
             organizationId: orgId,
@@ -260,8 +272,24 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             : null)
         : null;
     if (pgCode === "23505") {
+      const rawConstraint =
+        error instanceof Error && "constraint" in error
+          ? (error as { constraint: unknown }).constraint
+          : error instanceof Error &&
+              error.cause &&
+              typeof error.cause === "object" &&
+              "constraint" in error.cause
+            ? (error.cause as { constraint: unknown }).constraint
+            : null;
+      const constraintName = typeof rawConstraint === "string" ? rawConstraint : null;
+      if (constraintName === "app_imported_container_uniq") {
+        return NextResponse.json(
+          { error: "This container has already been imported" },
+          { status: 409 }
+        );
+      }
       return NextResponse.json(
-        { error: "An app with this name already exists" },
+        { error: "An app with this slug already exists in this organization" },
         { status: 409 }
       );
     }
