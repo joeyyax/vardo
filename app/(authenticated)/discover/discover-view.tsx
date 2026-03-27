@@ -71,7 +71,7 @@ export function DiscoverView({ orgId, projects }: DiscoverViewProps) {
           onClick={load}
           disabled={loading}
         >
-          <RefreshCw aria-hidden="true" className="size-3.5 mr-1.5" />
+          <RefreshCw aria-hidden="true" className={`size-3.5 mr-1.5${loading ? " animate-spin" : ""}`} />
           Refresh
         </Button>
       </div>
