@@ -56,11 +56,11 @@ export function DiscoverView({ orgId, projects }: DiscoverViewProps) {
   return (
     <>
       <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">
+        <p aria-live="polite" className="text-sm text-muted-foreground">
           {loading
             ? "Scanning containers..."
             : error
-            ? "Failed to load containers"
+            ? null
             : totalCount === 0
             ? "No unmanaged containers found"
             : `${totalCount} unmanaged container${totalCount !== 1 ? "s" : ""} found`}
@@ -71,13 +71,13 @@ export function DiscoverView({ orgId, projects }: DiscoverViewProps) {
           onClick={load}
           disabled={loading}
         >
-          <RefreshCw className={["size-3.5 mr-1.5", loading ? "animate-spin" : ""].filter(Boolean).join(" ")} />
+          <RefreshCw aria-hidden="true" className="size-3.5 mr-1.5" />
           Refresh
         </Button>
       </div>
 
       {error && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+        <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
           {error}
         </div>
       )}
@@ -119,13 +119,6 @@ export function DiscoverView({ orgId, projects }: DiscoverViewProps) {
             </section>
           )}
 
-          {totalCount === 0 && (
-            <div className="rounded-lg border border-dashed p-8 text-center">
-              <p className="text-sm text-muted-foreground">
-                All running containers are already managed by Vardo.
-              </p>
-            </div>
-          )}
         </div>
       )}
 
