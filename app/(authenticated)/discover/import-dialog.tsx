@@ -105,8 +105,8 @@ export function ImportDialog({
     return () => controller.abort();
   }, [open, container, orgId]);
 
-  function removeEnvVar(key: string) {
-    setEnvVars((prev) => prev.filter((v) => v.key !== key));
+  function removeEnvVar(index: number) {
+    setEnvVars((prev) => prev.filter((_, i) => i !== index));
   }
 
   async function handleSubmit() {
@@ -211,8 +211,9 @@ export function ImportDialog({
                   onChange={(e) => setName(e.target.value)}
                   placeholder="my-app"
                   className="font-mono text-sm"
+                  aria-describedby="slug-hint"
                 />
-                <p className="text-xs text-muted-foreground">Lowercase letters, numbers, and hyphens only.</p>
+                <p id="slug-hint" className="text-xs text-muted-foreground">Lowercase letters, numbers, and hyphens only.</p>
               </div>
             </div>
 
@@ -268,7 +269,7 @@ export function ImportDialog({
                       </Badge>
                       <button
                         type="button"
-                        onClick={() => removeEnvVar(v.key)}
+                        onClick={() => removeEnvVar(i)}
                         className="shrink-0 text-muted-foreground hover:text-foreground"
                         aria-label={`Remove ${v.key}`}
                       >

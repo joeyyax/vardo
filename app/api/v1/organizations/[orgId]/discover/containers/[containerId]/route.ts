@@ -15,7 +15,7 @@ export async function GET(_request: Request, { params }: RouteParams) {
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    if (!/^[a-f0-9]{12,64}$/i.test(containerId)) {
+    if (!/^[a-f0-9]{12,64}$/.test(containerId)) {
       return NextResponse.json({ error: "Invalid container ID" }, { status: 400 });
     }
 

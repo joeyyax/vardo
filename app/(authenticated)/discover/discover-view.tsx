@@ -62,7 +62,7 @@ export function DiscoverView({ orgId, projects }: DiscoverViewProps) {
             : error
             ? null
             : totalCount === 0
-            ? "No unmanaged containers found"
+            ? "All running containers are already managed by Vardo."
             : `${totalCount} unmanaged container${totalCount !== 1 ? "s" : ""} found`}
         </p>
         <Button

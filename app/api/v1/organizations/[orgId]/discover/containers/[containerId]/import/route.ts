@@ -36,7 +36,7 @@ const importSchema = z.object({
         value: z
           .string()
           .max(65536, "Env value too long")
-          .refine((v) => !v.includes("\n"), "Value cannot contain newlines"),
+          .refine((v) => !/[\x00-\x1f\x7f]/.test(v), "Value cannot contain control characters"),
       })
     )
     .max(500, "Too many environment variables")
@@ -272,15 +272,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             : null)
         : null;
     if (pgCode === "23505") {
-      const constraintName =
+      const rawConstraint =
         error instanceof Error && "constraint" in error
-          ? (error as { constraint: string }).constraint
+          ? (error as { constraint: unknown }).constraint
           : error instanceof Error &&
               error.cause &&
               typeof error.cause === "object" &&
               "constraint" in error.cause
-            ? (error.cause as { constraint: string }).constraint
+            ? (error.cause as { constraint: unknown }).constraint
             : null;
+      const constraintName = typeof rawConstraint === "string" ? rawConstraint : null;
       if (constraintName === "app_imported_container_uniq") {
         return NextResponse.json(
           { error: "This container has already been imported" },
