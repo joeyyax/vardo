@@ -28,8 +28,15 @@ const importSchema = z.object({
   envVars: z
     .array(
       z.object({
-        key: z.string().max(256, "Env key too long"),
-        value: z.string().max(65536, "Env value too long"),
+        key: z
+          .string()
+          .min(1)
+          .max(256, "Env key too long")
+          .regex(/^[A-Za-z_][A-Za-z0-9_]*$/, "Invalid env key"),
+        value: z
+          .string()
+          .max(65536, "Env value too long")
+          .refine((v) => !v.includes("\n"), "Value cannot contain newlines"),
       })
     )
     .max(500, "Too many environment variables")
@@ -45,7 +52,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    if (!/^[a-f0-9]{12,64}$/i.test(containerId)) {
+    if (!/^[a-f0-9]{12,64}$/.test(containerId)) {
       return NextResponse.json({ error: "Invalid container ID" }, { status: 400 });
     }
 
@@ -265,6 +272,21 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             : null)
         : null;
     if (pgCode === "23505") {
+      const constraintName =
+        error instanceof Error && "constraint" in error
+          ? (error as { constraint: string }).constraint
+          : error instanceof Error &&
+              error.cause &&
+              typeof error.cause === "object" &&
+              "constraint" in error.cause
+            ? (error.cause as { constraint: string }).constraint
+            : null;
+      if (constraintName === "app_imported_container_uniq") {
+        return NextResponse.json(
+          { error: "This container has already been imported" },
+          { status: 409 }
+        );
+      }
       return NextResponse.json(
         { error: "An app with this slug already exists in this organization" },
         { status: 409 }
