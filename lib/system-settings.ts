@@ -116,6 +116,15 @@ export async function getInstanceConfig(): Promise<InstanceConfig> {
   };
 }
 
+/**
+ * Returns the configured display name for this instance: instanceName > domain > null.
+ * Callers that always need a non-null value can provide a fallback, e.g. `os.hostname()`.
+ */
+export async function getInstanceDisplayName(): Promise<string | null> {
+  const config = await getInstanceConfig();
+  return config.instanceName || config.domain || null;
+}
+
 // ---------------------------------------------------------------------------
 // GitHub App
 // ---------------------------------------------------------------------------
