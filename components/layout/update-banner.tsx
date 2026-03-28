@@ -1,49 +1,38 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useSyncExternalStore } from "react";
 import { X } from "lucide-react";
 import type { VersionData } from "@/lib/types/version";
 
 const DISMISS_KEY = "vardo-update-dismissed";
 
-export function UpdateBanner() {
-  const [data, setData] = useState<VersionData | null>(null);
-  const [dismissed, setDismissed] = useState(false);
-  const [ready, setReady] = useState(false);
+function getDismissedVersion() {
+  return localStorage.getItem(DISMISS_KEY);
+}
 
-  useEffect(() => {
-    fetch("/api/v1/admin/version")
-      .then((r) => {
-        if (!r.ok) return null;
-        return r.json() as Promise<VersionData>;
-      })
-      .then((d) => {
-        if (!d) return;
-        setData(d);
+function subscribeToStorage(callback: () => void) {
+  window.addEventListener("storage", callback);
+  return () => window.removeEventListener("storage", callback);
+}
 
-        const dismissedVersion = localStorage.getItem(DISMISS_KEY);
-        if (dismissedVersion === d.latestVersion) {
-          setDismissed(true);
-        }
-      })
-      .catch(() => {})
-      .finally(() => setReady(true));
-  }, []);
+export function UpdateBanner({ data }: { data: VersionData | null }) {
+  const dismissedVersion = useSyncExternalStore(
+    subscribeToStorage,
+    getDismissedVersion,
+    () => null
+  );
 
-  // Reserve space while fetch is in-flight so layout doesn't shift once the
-  // banner appears. Once ready and there's nothing to show, render nothing.
-  if (!ready) {
-    return <div className="h-[41px]" aria-hidden />;
+  const dismissed = dismissedVersion === data?.latestVersion;
+
+  function handleDismiss() {
+    if (!data) return;
+    localStorage.setItem(DISMISS_KEY, data.latestVersion);
+    // Dispatch a storage event so useSyncExternalStore picks up the change
+    // (storage events only fire cross-tab by default)
+    window.dispatchEvent(new StorageEvent("storage", { key: DISMISS_KEY }));
   }
 
   if (!data?.hasUpdate || dismissed) return null;
-
-  function handleDismiss() {
-    if (data) {
-      localStorage.setItem(DISMISS_KEY, data.latestVersion);
-    }
-    setDismissed(true);
-  }
 
   return (
     <div

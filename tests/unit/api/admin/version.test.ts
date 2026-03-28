@@ -1,26 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { parseVersion, isNewer } from "@/lib/version";
 
 // ---------------------------------------------------------------------------
 // parseVersion / isNewer — pure version comparison helpers
 // ---------------------------------------------------------------------------
-// Logic extracted from app/api/v1/admin/version/route.ts for unit testing
-// without requiring Next.js plumbing, DB access, or network calls.
-
-function parseVersion(v: string): number[] {
-  return v.replace(/^v/, "").split(".").map((n) => parseInt(n, 10) || 0);
-}
-
-function isNewer(latest: string, current: string): boolean {
-  const l = parseVersion(latest);
-  const c = parseVersion(current);
-  for (let i = 0; i < Math.max(l.length, c.length); i++) {
-    const lv = l[i] ?? 0;
-    const cv = c[i] ?? 0;
-    if (lv > cv) return true;
-    if (lv < cv) return false;
-  }
-  return false;
-}
 
 describe("parseVersion", () => {
   it("parses a standard semver string", () => {
