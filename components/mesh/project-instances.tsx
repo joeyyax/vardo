@@ -55,16 +55,16 @@ export function ProjectInstances({
     return peers.find((p) => p.id === peerId)?.status ?? "offline";
   }
 
-  function statusColor(status: string) {
+  function statusDotClass(status: string) {
     switch (status) {
       case "running":
       case "online":
-        return "bg-green-500";
+        return "bg-status-success animate-pulse";
       case "stopped":
       case "offline":
-        return "bg-zinc-400";
+        return "bg-status-neutral";
       default:
-        return "bg-yellow-500";
+        return "bg-status-warning";
     }
   }
 
@@ -281,7 +281,7 @@ export function ProjectInstances({
                   <td className="px-4 py-3 font-medium capitalize">{inst.environment}</td>
                   <td className="px-4 py-3">
                     <span className="flex items-center gap-2">
-                      <span className={`size-2 rounded-full ${statusColor(status)}`} aria-hidden="true" />
+                      <span className={`size-2 rounded-full ${statusDotClass(status)}`} aria-hidden="true" />
                       {peerName(inst.meshPeerId)}
                       <span className="sr-only">({status})</span>
                     </span>
