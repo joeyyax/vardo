@@ -46,7 +46,7 @@ const importSchema = z.object({
     .default([]),
   // Array of container-side destination paths to import; empty array = no mounts.
   // If omitted, falls back to importVolumes for backward compatibility.
-  selectedMountDestinations: z.array(z.string()).optional(),
+  selectedMountDestinations: z.array(z.string().max(4096, "Mount destination too long")).max(100, "Too many mount destinations").optional(),
   // Deprecated: use selectedMountDestinations. Kept for backward compatibility.
   importVolumes: z.boolean().default(true),
 });
