@@ -305,6 +305,35 @@ export async function inspectContainer(id: string): Promise<ContainerInspect> {
 }
 
 // ---------------------------------------------------------------------------
+// Container lifecycle
+// ---------------------------------------------------------------------------
+
+/**
+ * Stop a running container. Sends SIGTERM, waits up to `timeoutSeconds` for
+ * a clean exit, then sends SIGKILL. Default timeout matches Docker's default.
+ */
+export async function stopContainer(id: string, timeoutSeconds = 10): Promise<void> {
+  await dockerRequest("POST", `/containers/${encodeURIComponent(id)}/stop?t=${timeoutSeconds}`);
+}
+
+/**
+ * Start a stopped container.
+ */
+export async function startContainer(id: string): Promise<void> {
+  await dockerRequest("POST", `/containers/${encodeURIComponent(id)}/start`);
+}
+
+/**
+ * Remove a container. Pass `force: true` to remove a running container
+ * (equivalent to `docker rm --force`). Without it the daemon returns 409
+ * if the container is still running.
+ */
+export async function removeContainer(id: string, opts?: { force?: boolean }): Promise<void> {
+  const qs = opts?.force ? "?force=true" : "";
+  await dockerRequest("DELETE", `/containers/${encodeURIComponent(id)}${qs}`);
+}
+
+// ---------------------------------------------------------------------------
 // Logs
 // ---------------------------------------------------------------------------
 
