@@ -572,6 +572,62 @@ export function validateCompose(compose: ComposeFile, opts?: ValidateOptions): {
     }
   }
 
+  // Detect circular chains in service:X network_mode references (A → B → A or longer).
+  // Self-references (A → A) are already caught above; this covers multi-hop cycles.
+  const cycleMembers = new Set<string>();
+  const cycleReported = new Set<string>();
+  for (const startName of Object.keys(compose.services)) {
+    if (cycleMembers.has(startName)) continue;
+
+    const path: string[] = [];
+    const seen = new Set<string>();
+    let node = startName;
+
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const nm = compose.services[node]?.network_mode;
+      if (!nm?.startsWith("service:")) break;
+      const next = nm.slice("service:".length);
+      // Skip invalid/missing/self-ref targets — already reported above
+      if (!next || !compose.services[next] || next === node) break;
+
+      if (seen.has(next)) {
+        // next appears earlier in the path — cycle detected
+        const cycleStart = path.indexOf(next);
+        const cycle = [...path.slice(cycleStart), node];
+        const cycleKey = [...cycle].sort().join(",");
+        if (!cycleReported.has(cycleKey)) {
+          cycleReported.add(cycleKey);
+          for (const n of cycle) cycleMembers.add(n);
+          errors.push(
+            `Circular network_mode chain detected: ${[...cycle, next].join(" → ")}`,
+          );
+        }
+        break;
+      }
+
+      path.push(node);
+      seen.add(node);
+      node = next;
+    }
+  }
+
+  // Detect non-circular chaining: service:B where B itself uses service:X.
+  // Docker does not allow network_mode chains — the target must own its network namespace.
+  for (const [name, svc] of Object.entries(compose.services)) {
+    if (!svc.network_mode?.startsWith("service:")) continue;
+    if (cycleMembers.has(name)) continue; // already covered by circular error above
+
+    const targetService = svc.network_mode.slice("service:".length);
+    if (!targetService || !compose.services[targetService] || targetService === name) continue;
+
+    if (compose.services[targetService].network_mode?.startsWith("service:")) {
+      errors.push(
+        `Service "${name}" uses network_mode "service:${targetService}", but "${targetService}" also uses a service: network_mode — Docker does not support chaining`,
+      );
+    }
+  }
+
   return { valid: errors.length === 0, errors };
 }
 

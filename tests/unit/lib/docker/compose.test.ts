@@ -401,6 +401,65 @@ describe("validateCompose — network_mode", () => {
     const { valid } = validateCompose(compose);
     expect(valid).toBe(true);
   });
+
+  it("rejects two-service circular chain (A → B → A)", () => {
+    const compose: ComposeFile = {
+      services: {
+        a: { name: "a", image: "alpine", network_mode: "service:b" },
+        b: { name: "b", image: "alpine", network_mode: "service:a" },
+      },
+    };
+
+    const { valid, errors } = validateCompose(compose);
+    expect(valid).toBe(false);
+    expect(errors.some((e) => e.includes("Circular") && e.includes("a") && e.includes("b"))).toBe(true);
+  });
+
+  it("rejects three-service circular chain (A → B → C → A)", () => {
+    const compose: ComposeFile = {
+      services: {
+        a: { name: "a", image: "alpine", network_mode: "service:b" },
+        b: { name: "b", image: "alpine", network_mode: "service:c" },
+        c: { name: "c", image: "alpine", network_mode: "service:a" },
+      },
+    };
+
+    const { valid, errors } = validateCompose(compose);
+    expect(valid).toBe(false);
+    expect(errors.some((e) => e.includes("Circular"))).toBe(true);
+    // Only one circular error reported, not three
+    expect(errors.filter((e) => e.includes("Circular"))).toHaveLength(1);
+  });
+
+  it("rejects non-circular chaining (A → B → C, where C has no service: mode)", () => {
+    const compose: ComposeFile = {
+      services: {
+        a: { name: "a", image: "alpine", network_mode: "service:b" },
+        b: { name: "b", image: "alpine", network_mode: "service:c" },
+        c: { name: "c", image: "alpine" },
+      },
+    };
+
+    const { valid, errors } = validateCompose(compose);
+    expect(valid).toBe(false);
+    expect(
+      errors.some((e) => e.includes('"a"') && e.includes('"b"') && e.includes("chaining")),
+    ).toBe(true);
+  });
+
+  it("accepts a valid multi-service layout without chaining", () => {
+    const compose: ComposeFile = {
+      services: {
+        vpn: { name: "vpn", image: "openvpn" },
+        torrent: { name: "torrent", image: "transmission", network_mode: "service:vpn" },
+        proxy: { name: "proxy", image: "nginx", network_mode: "service:vpn" },
+      },
+    };
+
+    const { valid, errors } = validateCompose(compose);
+    expect(valid).toBe(true);
+    expect(errors).toHaveLength(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
