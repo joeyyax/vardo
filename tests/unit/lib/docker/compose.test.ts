@@ -3,6 +3,7 @@ import {
   sanitizeCompose,
   parseCompose,
   injectNetwork,
+  injectTraefikLabels,
   validateCompose,
   composeToYaml,
   type ComposeFile,
@@ -517,5 +518,48 @@ describe("composeToYaml — network_mode round-trip", () => {
     const parsed = parseCompose(yaml);
     expect(parsed.services.transmission.network_mode).toBe("service:openvpn");
     expect(parsed.services.openvpn.network_mode).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// injectTraefikLabels — serviceName targeting
+// ---------------------------------------------------------------------------
+
+describe("injectTraefikLabels — serviceName", () => {
+  const baseOpts = {
+    projectName: "myapp",
+    domain: "myapp.example.com",
+    containerPort: 3000,
+  };
+
+  it("injects labels into the specified service, not the first", () => {
+    const compose: ComposeFile = {
+      services: {
+        hostapp: { name: "hostapp", image: "plexinc/pms-docker", network_mode: "host" },
+        web: { name: "web", image: "nginx" },
+      },
+    };
+
+    const result = injectTraefikLabels(compose, { ...baseOpts, serviceName: "web" });
+
+    // Labels go to the bridge-network service
+    expect(result.services.web.labels?.["traefik.enable"]).toBe("true");
+    // Host-network service is unchanged
+    expect(result.services.hostapp.labels?.["traefik.enable"]).toBeUndefined();
+    expect(result.services.hostapp.network_mode).toBe("host");
+  });
+
+  it("defaults to first service when serviceName is omitted", () => {
+    const compose: ComposeFile = {
+      services: {
+        web: { name: "web", image: "nginx" },
+        worker: { name: "worker", image: "node" },
+      },
+    };
+
+    const result = injectTraefikLabels(compose, baseOpts);
+
+    expect(result.services.web.labels?.["traefik.enable"]).toBe("true");
+    expect(result.services.worker.labels?.["traefik.enable"]).toBeUndefined();
   });
 });
