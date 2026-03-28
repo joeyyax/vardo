@@ -2,19 +2,14 @@
 
 import { useState, useEffect } from "react";
 import { X } from "lucide-react";
-
-type VersionData = {
-  currentVersion: string;
-  latestVersion: string;
-  hasUpdate: boolean;
-  releaseUrl: string;
-};
+import type { VersionData } from "@/lib/types/version";
 
 const DISMISS_KEY = "vardo-update-dismissed";
 
 export function UpdateBanner() {
   const [data, setData] = useState<VersionData | null>(null);
   const [dismissed, setDismissed] = useState(false);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     fetch("/api/v1/admin/version")
@@ -31,8 +26,15 @@ export function UpdateBanner() {
           setDismissed(true);
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setReady(true));
   }, []);
+
+  // Reserve space while fetch is in-flight so layout doesn't shift once the
+  // banner appears. Once ready and there's nothing to show, render nothing.
+  if (!ready) {
+    return <div className="h-[41px]" aria-hidden />;
+  }
 
   if (!data?.hasUpdate || dismissed) return null;
 
@@ -44,7 +46,12 @@ export function UpdateBanner() {
   }
 
   return (
-    <div className="bg-primary/10 border-b border-primary/20 px-5 lg:px-10 py-2.5">
+    <div
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      className="bg-primary/10 border-b border-primary/20 px-5 lg:px-10 py-2.5"
+    >
       <div className="mx-auto max-w-screen-xl flex items-center justify-between gap-4">
         <p className="text-sm text-foreground">
           Vardo {data.latestVersion} is available.{" "}
@@ -63,6 +70,7 @@ export function UpdateBanner() {
           to upgrade.
         </p>
         <button
+          type="button"
           onClick={handleDismiss}
           aria-label="Dismiss update notification"
           className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"

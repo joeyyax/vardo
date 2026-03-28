@@ -2,20 +2,14 @@ import { NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import pkg from "@/package.json";
+import type { VersionData } from "@/lib/types/version";
 
 const GITHUB_REPO = "joeyyax/vardo";
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 type CacheEntry = {
-  data: VersionResponse;
+  data: VersionData;
   fetchedAt: number;
-};
-
-type VersionResponse = {
-  currentVersion: string;
-  latestVersion: string;
-  hasUpdate: boolean;
-  releaseUrl: string;
 };
 
 // Module-level cache to avoid hammering GitHub API
@@ -79,7 +73,7 @@ export async function GET() {
       latestVersion = currentVersion;
     }
 
-    const data: VersionResponse = {
+    const data: VersionData = {
       currentVersion,
       latestVersion,
       hasUpdate: isNewer(latestVersion, currentVersion),
