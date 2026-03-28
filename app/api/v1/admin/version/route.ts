@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { requireAppAdmin } from "@/lib/auth/admin";
+import pkg from "@/package.json";
 
 const GITHUB_REPO = "joeyyax/vardo";
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
@@ -46,7 +47,7 @@ export async function GET() {
       return NextResponse.json(cache.data);
     }
 
-    const currentVersion = process.env.npm_package_version ?? "0.1.0";
+    const currentVersion = pkg.version;
 
     let latestVersion = currentVersion;
     let releaseUrl = `https://github.com/${GITHUB_REPO}/releases`;
