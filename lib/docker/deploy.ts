@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { redis } from "@/lib/redis";
-import { deployments, apps, orgEnvVars, organizations, environments, volumes } from "@/lib/db/schema";
+import { deployments, apps, orgEnvVars, organizations, environments, volumes, projects } from "@/lib/db/schema";
 import { encrypt, decryptOrFallback } from "@/lib/crypto/encrypt";
 import { parseEnvToMap } from "@/lib/env/parse-env";
 import { eq, and, isNull } from "drizzle-orm";
@@ -25,9 +25,9 @@ import {
 import { ensureNetwork, detectExposedPorts, listContainers, inspectContainer } from "./client";
 import { isFeatureEnabled } from "@/lib/config/features";
 
-function parseAndSanitize(yaml: string, log: (msg: string) => void): ComposeFile {
+function parseAndSanitize(yaml: string, log: (msg: string) => void, projectAllowBindMounts?: boolean): ComposeFile {
   const compose = parseCompose(yaml);
-  const bindMountsEnabled = isFeatureEnabled("bindMounts");
+  const bindMountsEnabled = projectAllowBindMounts || isFeatureEnabled("bindMounts");
   const sanitized = sanitizeCompose(compose, { allowBindMounts: bindMountsEnabled });
   if (sanitized.strippedMounts.length > 0) {
     log(`[deploy] Stripped ${sanitized.strippedMounts.length} bind mount(s): ${sanitized.strippedMounts.join(", ")}`);
@@ -174,6 +174,16 @@ export async function runDeployment(
     });
 
     if (!app) throw new Error("App not found");
+
+    // Resolve per-project bind mount permission
+    let projectAllowBindMounts = false;
+    if (app.projectId) {
+      const project = await db.query.projects.findFirst({
+        where: eq(projects.id, app.projectId),
+        columns: { allowBindMounts: true },
+      });
+      projectAllowBindMounts = project?.allowBindMounts ?? false;
+    }
 
     // Resolve environment — default to production if not specified
     if (!opts.environmentId) {
@@ -444,7 +454,7 @@ export async function runDeployment(
       stage("build", "running");
 
       if (composeContent && app.deployType === "compose") {
-        compose = parseAndSanitize(composeContent, log);
+        compose = parseAndSanitize(composeContent, log, projectAllowBindMounts);
 
         // Detect declared volumes from compose YAML before deploy starts
         if (compose.volumes && Object.keys(compose.volumes).length > 0) {
@@ -543,7 +553,7 @@ export async function runDeployment(
       }
     } else if (app.composeContent) {
       // Direct compose content
-      compose = parseAndSanitize(app.composeContent, log);
+      compose = parseAndSanitize(app.composeContent, log, projectAllowBindMounts);
       log(`[deploy] Parsed compose content`);
 
       // Detect declared volumes from compose YAML before deploy starts

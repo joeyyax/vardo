@@ -43,6 +43,7 @@ import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   BottomSheet,
   BottomSheetContent,
@@ -141,6 +142,7 @@ type Project = {
   displayName: string;
   description: string | null;
   color: string | null;
+  allowBindMounts: boolean;
   apps: ProjectApp[];
   groupEnvironments: GroupEnvironment[];
 };
@@ -752,6 +754,7 @@ export function ProjectDetail({
   project,
   orgId,
   initialTab,
+  isAdmin = false,
   meshEnabled = false,
   meshPeers = [],
   projectInstances = [],
@@ -759,6 +762,7 @@ export function ProjectDetail({
   project: Project;
   orgId: string;
   initialTab: string;
+  isAdmin?: boolean;
   meshEnabled?: boolean;
   meshPeers?: MeshPeerSummary[];
   projectInstances?: ProjectInstanceSummary[];
@@ -783,6 +787,7 @@ export function ProjectDetail({
   const [editOpen, setEditOpen] = useState(false);
   const [editDisplayName, setEditDisplayName] = useState(project.displayName);
   const [editDescription, setEditDescription] = useState(project.description || "");
+  const [editAllowBindMounts, setEditAllowBindMounts] = useState(project.allowBindMounts);
   const [editSaving, setEditSaving] = useState(false);
   const [stopAllOpen, setStopAllOpen] = useState(false);
 
@@ -1034,15 +1039,19 @@ export function ProjectDetail({
   async function handleEditProject() {
     setEditSaving(true);
     try {
+      const body: Record<string, unknown> = {
+        displayName: editDisplayName.trim(),
+        description: editDescription.trim() || null,
+      };
+      if (isAdmin) {
+        body.allowBindMounts = editAllowBindMounts;
+      }
       const res = await fetch(
         `/api/v1/organizations/${orgId}/projects/${project.id}`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            displayName: editDisplayName.trim(),
-            description: editDescription.trim() || null,
-          }),
+          body: JSON.stringify(body),
         }
       );
       if (res.ok) {
@@ -1420,6 +1429,21 @@ export function ProjectDetail({
                 onKeyDown={(e) => { if (e.key === "Enter") handleEditProject(); }}
               />
             </div>
+            {isAdmin && (
+              <div className="flex items-center justify-between gap-4 pt-2">
+                <div className="space-y-1">
+                  <Label htmlFor="edit-bind-mounts">Allow bind mounts</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Permit host path mounts in compose definitions for this project. Enable only for trusted workloads.
+                  </p>
+                </div>
+                <Switch
+                  id="edit-bind-mounts"
+                  checked={editAllowBindMounts}
+                  onCheckedChange={setEditAllowBindMounts}
+                />
+              </div>
+            )}
           </div>
           <BottomSheetFooter>
             <Button variant="outline" onClick={() => setEditOpen(false)} disabled={editSaving}>

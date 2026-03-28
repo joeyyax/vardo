@@ -1,4 +1,5 @@
 import {
+  boolean,
   pgTable,
   text,
   timestamp,
@@ -21,6 +22,7 @@ export const projects = pgTable(
     displayName: text("display_name").notNull(),
     description: text("description"),
     color: text("color").default("#6366f1"),
+    allowBindMounts: boolean("allow_bind_mounts").default(false).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
