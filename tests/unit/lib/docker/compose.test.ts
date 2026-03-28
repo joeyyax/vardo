@@ -562,4 +562,68 @@ describe("injectTraefikLabels — serviceName", () => {
     expect(result.services.web.labels?.["traefik.enable"]).toBe("true");
     expect(result.services.worker.labels?.["traefik.enable"]).toBeUndefined();
   });
+
+  it("throws when serviceName references a service that does not exist", () => {
+    const compose: ComposeFile = {
+      services: {
+        web: { name: "web", image: "nginx" },
+      },
+    };
+
+    expect(() =>
+      injectTraefikLabels(compose, { ...baseOpts, serviceName: "nonexistent" })
+    ).toThrow('Service "nonexistent" not found');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// primaryServiceName logic — service:X and container:X network modes
+// ---------------------------------------------------------------------------
+
+describe("injectTraefikLabels — service:X and container:X network modes", () => {
+  const baseOpts = {
+    projectName: "myapp",
+    domain: "myapp.example.com",
+    containerPort: 3000,
+  };
+
+  it("skips a service:X service and targets the first bridge-network service", () => {
+    const compose: ComposeFile = {
+      services: {
+        vpn: { name: "vpn", image: "openvpn" },
+        proxy: { name: "proxy", image: "nginx", network_mode: "service:vpn" },
+        web: { name: "web", image: "node" },
+      },
+    };
+
+    // Simulate the primaryServiceName logic from deploy.ts
+    const primaryServiceName = Object.keys(compose.services).find(
+      (k) => !compose.services[k].network_mode || compose.services[k].network_mode === "bridge"
+    );
+
+    expect(primaryServiceName).toBe("vpn");
+    const result = injectTraefikLabels(compose, { ...baseOpts, serviceName: primaryServiceName });
+    expect(result.services.vpn.labels?.["traefik.enable"]).toBe("true");
+    expect(result.services.proxy.labels?.["traefik.enable"]).toBeUndefined();
+    expect(result.services.web.labels?.["traefik.enable"]).toBeUndefined();
+  });
+
+  it("skips a container:X service and targets the first bridge-network service", () => {
+    const compose: ComposeFile = {
+      services: {
+        db: { name: "db", image: "postgres" },
+        sidecar: { name: "sidecar", image: "alpine", network_mode: "container:db" },
+        api: { name: "api", image: "node" },
+      },
+    };
+
+    const primaryServiceName = Object.keys(compose.services).find(
+      (k) => !compose.services[k].network_mode || compose.services[k].network_mode === "bridge"
+    );
+
+    expect(primaryServiceName).toBe("db");
+    const result = injectTraefikLabels(compose, { ...baseOpts, serviceName: primaryServiceName });
+    expect(result.services.db.labels?.["traefik.enable"]).toBe("true");
+    expect(result.services.sidecar.labels?.["traefik.enable"]).toBeUndefined();
+  });
 });

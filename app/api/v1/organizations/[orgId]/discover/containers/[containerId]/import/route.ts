@@ -127,7 +127,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       exposedPorts: detail.ports.filter((p) => p.external),
     });
 
-    // Inject Traefik labels if a domain was found
+    // Inject Traefik labels if a domain was found.
+    // TODO: if container import ever produces multi-service or host-network compose files,
+    // pass serviceName here (the first bridge-network service) as deploy.ts does.
     const sslConfig = await getSslConfig();
     if (detail.domain && containerPort) {
       compose = injectTraefikLabels(compose, {

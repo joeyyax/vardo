@@ -644,13 +644,14 @@ export async function runDeployment(
       .map(([name, svc]) => `${name} (${svc.network_mode})`);
     const allServicesCustomNetwork = servicesWithCustomNetwork.length === Object.keys(compose.services).length;
 
-    // For mixed-mode compose files, route Traefik to the first bridge-network service
-    // to avoid injecting labels into a host-network service that Traefik can't reach
-    const primaryServiceName = Object.keys(compose.services).find(
-      (k) => !compose.services[k].network_mode || compose.services[k].network_mode === "bridge"
-    );
-
-    if (!allServicesCustomNetwork && primaryServiceName) {
+    if (!allServicesCustomNetwork) {
+      // Find the first bridge-network service in compose file order (Object.keys preserves
+      // insertion order for string keys, matching the order services appear in the compose file).
+      // This ensures Traefik labels target a service reachable on vardo-network rather than
+      // a host-network, service:X, or container:X service that Traefik can't reach.
+      const primaryServiceName = Object.keys(compose.services).find(
+        (k) => !compose.services[k].network_mode || compose.services[k].network_mode === "bridge"
+      );
       for (const domain of app.domains) {
         const port = domain.port || containerPort;
         compose = injectTraefikLabels(compose, {
