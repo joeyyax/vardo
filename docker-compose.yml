@@ -80,6 +80,22 @@ services:
       - "traefik.http.routers.vardo-fallback-https.priority=1"
       - "traefik.http.routers.vardo-fallback-https.tls=true"
       - "traefik.http.routers.vardo-fallback-https.service=vardo"
+      # Unknown-host router — catches unrecognized hostnames and shows service-not-found page
+      # Regex requires at least one letter, so raw IP access falls through to vardo-fallback-https
+      - "traefik.http.routers.vardo-unknown-host.rule=HostRegexp(`.*[a-zA-Z].*`)"
+      - "traefik.http.routers.vardo-unknown-host.entrypoints=websecure"
+      - "traefik.http.routers.vardo-unknown-host.tls=true"
+      - "traefik.http.routers.vardo-unknown-host.priority=2"
+      - "traefik.http.routers.vardo-unknown-host.service=vardo"
+      - "traefik.http.routers.vardo-unknown-host.middlewares=vardo-unknown-host-path"
+      - "traefik.http.middlewares.vardo-unknown-host-path.replacepathregex.regex=^/.*$$"
+      - "traefik.http.middlewares.vardo-unknown-host-path.replacepathregex.replacement=/unknown-host"
+      # Unknown-host router (HTTP) — mirrors HTTPS behavior on port 80 for unknown hostnames
+      - "traefik.http.routers.vardo-unknown-host-http.rule=HostRegexp(`.*[a-zA-Z].*`)"
+      - "traefik.http.routers.vardo-unknown-host-http.entrypoints=web"
+      - "traefik.http.routers.vardo-unknown-host-http.priority=2"
+      - "traefik.http.routers.vardo-unknown-host-http.service=vardo"
+      - "traefik.http.routers.vardo-unknown-host-http.middlewares=vardo-unknown-host-path"
     networks:
       internal:
       mesh:
