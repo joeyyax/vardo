@@ -29,6 +29,32 @@ export type DiscoveryResponse = {
 export type ContainerDetail = DiscoveredContainer & {
   env: string[];
   networks: string[];
+  labels: Record<string, string>;
+  capAdd: string[];
+  capDrop: string[];
+  devices: { hostPath: string; containerPath: string; permissions: string }[];
+  privileged: boolean;
+  securityOpt: string[];
+  shmSize: number;
+  init: boolean;
+  extraHosts: string[];
+  restartPolicy: string;
+  nanoCpus: number;
+  memoryBytes: number;
+  ulimits: { name: string; soft: number; hard: number }[];
+  tmpfs: string[];
+  hostname: string;
+  user: string;
+  stopSignal: string;
+  healthcheck: {
+    test: string[];
+    interval: number;
+    timeout: number;
+    retries: number;
+    startPeriod: number;
+  } | null;
+  entrypoint: string[];
+  command: string[];
 };
 
 // ---------------------------------------------------------------------------
@@ -180,6 +206,26 @@ export async function getContainerDetail(containerId: string): Promise<Container
     networkMode,
     env: data.env,
     networks: data.networks,
+    labels: data.labels,
+    capAdd: data.capAdd,
+    capDrop: data.capDrop,
+    devices: data.devices,
+    privileged: data.privileged,
+    securityOpt: data.securityOpt,
+    shmSize: data.shmSize,
+    init: data.init,
+    extraHosts: data.extraHosts,
+    restartPolicy: data.restartPolicy,
+    nanoCpus: data.nanoCpus,
+    memoryBytes: data.memoryBytes,
+    ulimits: data.ulimits,
+    tmpfs: data.tmpfs,
+    hostname: data.hostname,
+    user: data.user,
+    stopSignal: data.stopSignal,
+    healthcheck: data.healthcheck,
+    entrypoint: data.entrypoint,
+    command: data.command,
   };
 }
 
