@@ -30,6 +30,15 @@ export function UpdateBanner({ data }: { data: VersionData | null }) {
     // Dispatch a storage event so useSyncExternalStore picks up the change
     // (storage events only fire cross-tab by default)
     window.dispatchEvent(new StorageEvent("storage", { key: DISMISS_KEY }));
+    // Move focus to main content so keyboard users aren't left stranded on
+    // <body> after the banner unmounts
+    const main = document.querySelector<HTMLElement>("main");
+    if (main) {
+      if (!main.hasAttribute("tabindex")) {
+        main.setAttribute("tabindex", "-1");
+      }
+      main.focus();
+    }
   }
 
   if (!data?.hasUpdate || dismissed) return null;
@@ -51,6 +60,7 @@ export function UpdateBanner({ data }: { data: VersionData | null }) {
             className="underline underline-offset-2 hover:opacity-80 transition-opacity"
           >
             See what&apos;s new
+            <span className="sr-only"> (opens in new tab)</span>
           </a>{" "}
           and run{" "}
           <code className="text-xs bg-primary/10 px-1.5 py-0.5 rounded font-mono">
