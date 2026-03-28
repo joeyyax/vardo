@@ -7,6 +7,8 @@ import { NotificationListener } from "@/components/notification-listener";
 import { getSession, getCurrentOrg, getUserOrganizations } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/config/features";
 import { SessionFooter } from "@/components/layout/session-footer";
+import { UpdateBanner } from "@/components/layout/update-banner";
+import { getVersionData } from "@/lib/version";
 
 export const metadata: Metadata = {
   robots: {
@@ -48,6 +50,15 @@ export default async function AppLayout({
   const { organization } = orgData;
   const organizations = await getUserOrganizations();
 
+  let versionData = null;
+  if (session.user.isAppAdmin) {
+    try {
+      versionData = await getVersionData();
+    } catch {
+      // If version check fails, don't break the layout
+    }
+  }
+
   return (
     <TooltipProvider>
       <div className="min-h-dvh flex flex-col bg-background">
@@ -57,6 +68,8 @@ export default async function AppLayout({
             organizations={organizations}
           />
         </div>
+
+        {session.user.isAppAdmin && <UpdateBanner data={versionData} />}
 
         <main className="mx-auto max-w-screen-xl px-5 py-8 lg:px-10 flex-1 w-full">
           {children}
