@@ -289,6 +289,8 @@ export const volumes = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     name: text("name").notNull(), // e.g. "data", "uploads"
     mountPath: text("mount_path").notNull(), // e.g. "/var/lib/postgresql/data"
+    type: text("type", { enum: ["named", "bind"] }).notNull().default("named"), // mount type — persisted so bind mounts display correctly when container is stopped
+    source: text("source"), // nullable — host path for bind mounts, Docker volume name for named; persisted so Host: label survives container stop
     persistent: boolean("persistent").default(true).notNull(), // survives deploys
     shared: boolean("shared").default(false).notNull(), // can be mounted by other apps in project
     description: text("description"),
