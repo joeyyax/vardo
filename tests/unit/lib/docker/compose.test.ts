@@ -1176,4 +1176,41 @@ describe("generateComposeFromContainer", () => {
     expect(svc.env_file).toEqual([".env"]);
     expect(parsed.volumes?.data).toBeDefined();
   });
+
+  it("bind mounts survive yaml round-trip and sanitize when allowBindMounts is true", () => {
+    // Regression: deploy.ts was regenerating compose from generateComposeForImage for
+    // image-type apps, silently dropping the bind mounts captured at import time.
+    // Now it uses the stored composeContent — this test verifies the full path.
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({
+      mounts: [
+        { source: "/host/data", destination: "/data", type: "bind" },
+        { source: "namedvol", destination: "/vol", type: "volume" },
+      ],
+    }));
+
+    const yaml = composeToYaml(compose);
+    const parsed = parseCompose(yaml);
+    const { compose: sanitized, strippedMounts } = sanitizeCompose(parsed, { allowBindMounts: true });
+
+    expect(strippedMounts).toHaveLength(0);
+    expect(sanitized.services.myapp.volumes).toContain("/host/data:/data");
+    expect(sanitized.services.myapp.volumes).toContain("namedvol:/vol");
+  });
+
+  it("bind mounts are stripped by sanitize when allowBindMounts is false", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({
+      mounts: [
+        { source: "/host/data", destination: "/data", type: "bind" },
+        { source: "namedvol", destination: "/vol", type: "volume" },
+      ],
+    }));
+
+    const yaml = composeToYaml(compose);
+    const parsed = parseCompose(yaml);
+    const { compose: sanitized, strippedMounts } = sanitizeCompose(parsed, { allowBindMounts: false });
+
+    expect(strippedMounts).toHaveLength(1);
+    expect(sanitized.services.myapp.volumes).not.toContain("/host/data:/data");
+    expect(sanitized.services.myapp.volumes).toContain("namedvol:/vol");
+  });
 });
