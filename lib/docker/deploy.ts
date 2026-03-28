@@ -274,19 +274,26 @@ export async function runDeployment(
       // Image deploy — no clone needed
       stage("clone", "skipped");
       stage("build", "running");
-      const volsForCompose = volumesList.length > 0 ? volumesList : undefined;
-      const exposedPorts = (app.exposedPorts as { internal: number; external?: number; protocol?: string }[] | null) ?? undefined;
-      compose = generateComposeForImage({
-        projectName: app.name,
-        imageName: app.imageName,
-        containerPort: app.containerPort ?? undefined,
-        envVars: envMap,
-        volumes: volsForCompose,
-        exposedPorts,
-      });
-      if (volsForCompose?.length) log(`[deploy] ${volsForCompose.length} persistent volume(s)`);
-      if (exposedPorts?.length) log(`[deploy] ${exposedPorts.length} exposed port(s)`);
-      log(`[deploy] Generated compose for image: ${app.imageName}`);
+      if (app.composeContent) {
+        // Imported container — use the stored compose so bind mounts and other
+        // HostConfig options captured at import time are not silently dropped.
+        compose = parseAndSanitize(app.composeContent, log, projectAllowBindMounts);
+        log(`[deploy] Using stored compose for imported container: ${app.imageName}`);
+      } else {
+        const volsForCompose = volumesList.length > 0 ? volumesList : undefined;
+        const exposedPorts = (app.exposedPorts as { internal: number; external?: number; protocol?: string }[] | null) ?? undefined;
+        compose = generateComposeForImage({
+          projectName: app.name,
+          imageName: app.imageName,
+          containerPort: app.containerPort ?? undefined,
+          envVars: envMap,
+          volumes: volsForCompose,
+          exposedPorts,
+        });
+        if (volsForCompose?.length) log(`[deploy] ${volsForCompose.length} persistent volume(s)`);
+        if (exposedPorts?.length) log(`[deploy] ${exposedPorts.length} exposed port(s)`);
+        log(`[deploy] Generated compose for image: ${app.imageName}`);
+      }
     } else if (app.source === "git" && app.gitUrl) {
       // Git source — clone/pull repo with GitHub App auth if needed
       // Repo lives at app level (shared across environments)
