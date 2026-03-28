@@ -8,7 +8,9 @@ import {
   composeToYaml,
   injectGpuDevices,
   injectResourceLimits,
+  generateComposeFromContainer,
   type ComposeFile,
+  type ContainerConfig,
 } from "@/lib/docker/compose";
 
 function makeCompose(volumes: string[]): ComposeFile {
@@ -735,5 +737,655 @@ describe("injectResourceLimits", () => {
     const original = baseCompose();
     const result = injectResourceLimits(original, {});
     expect(result).toBe(original);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseCompose — extended field round-trips
+// ---------------------------------------------------------------------------
+
+describe("parseCompose — extended fields", () => {
+  it("parses restart policy", () => {
+    const yaml = `
+services:
+  app:
+    image: nginx
+    restart: unless-stopped
+`;
+    const compose = parseCompose(yaml);
+    expect(compose.services.app.restart).toBe("unless-stopped");
+  });
+
+  it("parses env_file as array", () => {
+    const yaml = `
+services:
+  app:
+    image: nginx
+    env_file:
+      - .env
+`;
+    const compose = parseCompose(yaml);
+    expect(compose.services.app.env_file).toEqual([".env"]);
+  });
+
+  it("parses env_file as string and normalises to array", () => {
+    const yaml = `
+services:
+  app:
+    image: nginx
+    env_file: .env
+`;
+    const compose = parseCompose(yaml);
+    expect(compose.services.app.env_file).toEqual([".env"]);
+  });
+
+  it("parses cap_add and cap_drop", () => {
+    const yaml = `
+services:
+  app:
+    image: nginx
+    cap_add:
+      - NET_ADMIN
+      - SYS_PTRACE
+    cap_drop:
+      - ALL
+`;
+    const compose = parseCompose(yaml);
+    expect(compose.services.app.cap_add).toEqual(["NET_ADMIN", "SYS_PTRACE"]);
+    expect(compose.services.app.cap_drop).toEqual(["ALL"]);
+  });
+
+  it("parses devices", () => {
+    const yaml = `
+services:
+  app:
+    image: nvidia/cuda
+    devices:
+      - /dev/nvidia0:/dev/nvidia0
+`;
+    const compose = parseCompose(yaml);
+    expect(compose.services.app.devices).toEqual(["/dev/nvidia0:/dev/nvidia0"]);
+  });
+
+  it("parses privileged", () => {
+    const yaml = `
+services:
+  app:
+    image: nginx
+    privileged: true
+`;
+    const compose = parseCompose(yaml);
+    expect(compose.services.app.privileged).toBe(true);
+  });
+
+  it("does not set privileged when false", () => {
+    const yaml = `
+services:
+  app:
+    image: nginx
+    privileged: false
+`;
+    const compose = parseCompose(yaml);
+    expect(compose.services.app.privileged).toBeUndefined();
+  });
+
+  it("parses security_opt", () => {
+    const yaml = `
+services:
+  app:
+    image: nginx
+    security_opt:
+      - no-new-privileges:true
+`;
+    const compose = parseCompose(yaml);
+    expect(compose.services.app.security_opt).toEqual(["no-new-privileges:true"]);
+  });
+
+  it("parses shm_size", () => {
+    const yaml = `
+services:
+  app:
+    image: nginx
+    shm_size: 128m
+`;
+    const compose = parseCompose(yaml);
+    expect(compose.services.app.shm_size).toBe("128m");
+  });
+
+  it("parses init", () => {
+    const yaml = `
+services:
+  app:
+    image: nginx
+    init: true
+`;
+    const compose = parseCompose(yaml);
+    expect(compose.services.app.init).toBe(true);
+  });
+
+  it("does not set init when false", () => {
+    const yaml = `
+services:
+  app:
+    image: nginx
+    init: false
+`;
+    const compose = parseCompose(yaml);
+    expect(compose.services.app.init).toBeUndefined();
+  });
+
+  it("parses extra_hosts", () => {
+    const yaml = `
+services:
+  app:
+    image: nginx
+    extra_hosts:
+      - "myhost:192.168.1.10"
+`;
+    const compose = parseCompose(yaml);
+    expect(compose.services.app.extra_hosts).toEqual(["myhost:192.168.1.10"]);
+  });
+
+  it("parses healthcheck", () => {
+    const yaml = `
+services:
+  app:
+    image: nginx
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+`;
+    const compose = parseCompose(yaml);
+    expect(compose.services.app.healthcheck?.test).toEqual(["CMD", "curl", "-f", "http://localhost/"]);
+    expect(compose.services.app.healthcheck?.interval).toBe("30s");
+    expect(compose.services.app.healthcheck?.retries).toBe(3);
+  });
+
+  it("parses ulimits with soft/hard values", () => {
+    const yaml = `
+services:
+  app:
+    image: nginx
+    ulimits:
+      nofile:
+        soft: 1024
+        hard: 65536
+`;
+    const compose = parseCompose(yaml);
+    expect(compose.services.app.ulimits?.nofile).toEqual({ soft: 1024, hard: 65536 });
+  });
+
+  it("parses ulimits as single value", () => {
+    const yaml = `
+services:
+  app:
+    image: nginx
+    ulimits:
+      nproc: 65535
+`;
+    const compose = parseCompose(yaml);
+    expect(compose.services.app.ulimits?.nproc).toBe(65535);
+  });
+
+  it("parses hostname", () => {
+    const yaml = `
+services:
+  app:
+    image: nginx
+    hostname: my-custom-host
+`;
+    const compose = parseCompose(yaml);
+    expect(compose.services.app.hostname).toBe("my-custom-host");
+  });
+
+  it("parses user", () => {
+    const yaml = `
+services:
+  app:
+    image: nginx
+    user: "1000:1000"
+`;
+    const compose = parseCompose(yaml);
+    expect(compose.services.app.user).toBe("1000:1000");
+  });
+
+  it("parses stop_signal", () => {
+    const yaml = `
+services:
+  app:
+    image: nginx
+    stop_signal: SIGINT
+`;
+    const compose = parseCompose(yaml);
+    expect(compose.services.app.stop_signal).toBe("SIGINT");
+  });
+
+  it("parses entrypoint as array", () => {
+    const yaml = `
+services:
+  app:
+    image: nginx
+    entrypoint: ["/docker-entrypoint.sh"]
+`;
+    const compose = parseCompose(yaml);
+    expect(compose.services.app.entrypoint).toEqual(["/docker-entrypoint.sh"]);
+  });
+
+  it("parses command as string", () => {
+    const yaml = `
+services:
+  app:
+    image: nginx
+    command: nginx -g 'daemon off;'
+`;
+    const compose = parseCompose(yaml);
+    expect(compose.services.app.command).toBe("nginx -g 'daemon off;'");
+  });
+
+  it("parses tmpfs as array", () => {
+    const yaml = `
+services:
+  app:
+    image: nginx
+    tmpfs:
+      - /run
+      - /tmp
+`;
+    const compose = parseCompose(yaml);
+    expect(compose.services.app.tmpfs).toEqual(["/run", "/tmp"]);
+  });
+
+  it("parses tmpfs as string and normalises to array", () => {
+    const yaml = `
+services:
+  app:
+    image: nginx
+    tmpfs: /run
+`;
+    const compose = parseCompose(yaml);
+    expect(compose.services.app.tmpfs).toEqual(["/run"]);
+  });
+
+  it("round-trips all extended fields through yaml", () => {
+    const original: ComposeFile = {
+      services: {
+        app: {
+          name: "app",
+          image: "nginx:alpine",
+          restart: "unless-stopped",
+          env_file: [".env"],
+          cap_add: ["NET_ADMIN"],
+          cap_drop: ["ALL"],
+          privileged: true,
+          security_opt: ["no-new-privileges:true"],
+          shm_size: "128m",
+          init: true,
+          extra_hosts: ["host.docker.internal:host-gateway"],
+          hostname: "custom-host",
+          user: "1000:1000",
+          stop_signal: "SIGINT",
+          entrypoint: ["/entrypoint.sh"],
+          command: ["start"],
+          tmpfs: ["/run"],
+          ulimits: { nofile: { soft: 1024, hard: 65536 } },
+        },
+      },
+    };
+
+    const yaml = composeToYaml(original);
+    const parsed = parseCompose(yaml);
+    const svc = parsed.services.app;
+
+    expect(svc.restart).toBe("unless-stopped");
+    expect(svc.env_file).toEqual([".env"]);
+    expect(svc.cap_add).toEqual(["NET_ADMIN"]);
+    expect(svc.cap_drop).toEqual(["ALL"]);
+    expect(svc.privileged).toBe(true);
+    expect(svc.security_opt).toEqual(["no-new-privileges:true"]);
+    expect(svc.shm_size).toBe("128m");
+    expect(svc.init).toBe(true);
+    expect(svc.extra_hosts).toEqual(["host.docker.internal:host-gateway"]);
+    expect(svc.hostname).toBe("custom-host");
+    expect(svc.user).toBe("1000:1000");
+    expect(svc.stop_signal).toBe("SIGINT");
+    expect(svc.entrypoint).toEqual(["/entrypoint.sh"]);
+    expect(svc.command).toEqual(["start"]);
+    expect(svc.tmpfs).toEqual(["/run"]);
+    expect(svc.ulimits?.nofile).toEqual({ soft: 1024, hard: 65536 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// generateComposeFromContainer
+// ---------------------------------------------------------------------------
+
+function makeContainerConfig(overrides: Partial<ContainerConfig> = {}): ContainerConfig {
+  return {
+    image: "nginx:latest",
+    ports: [],
+    mounts: [],
+    networkMode: "bridge",
+    restartPolicy: "unless-stopped",
+    capAdd: [],
+    capDrop: [],
+    devices: [],
+    privileged: false,
+    securityOpt: [],
+    shmSize: 0,
+    init: false,
+    extraHosts: [],
+    nanoCpus: 0,
+    memoryBytes: 0,
+    ulimits: [],
+    tmpfs: [],
+    hostname: "",
+    user: "",
+    stopSignal: "",
+    healthcheck: null,
+    entrypoint: [],
+    command: [],
+    labels: {},
+    hasEnvVars: false,
+    ...overrides,
+  };
+}
+
+describe("generateComposeFromContainer", () => {
+  it("produces image and restart fields", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig());
+    const svc = compose.services.myapp;
+    expect(svc.image).toBe("nginx:latest");
+    expect(svc.restart).toBe("unless-stopped");
+  });
+
+  it("defaults restart to unless-stopped when container had none", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({ restartPolicy: "no" }));
+    expect(compose.services.myapp.restart).toBe("unless-stopped");
+  });
+
+  it("preserves on-failure:N restart policy", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({ restartPolicy: "on-failure:3" }));
+    expect(compose.services.myapp.restart).toBe("on-failure:3");
+  });
+
+  it("preserves always restart policy", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({ restartPolicy: "always" }));
+    expect(compose.services.myapp.restart).toBe("always");
+  });
+
+  it("adds env_file when hasEnvVars is true", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({ hasEnvVars: true }));
+    expect(compose.services.myapp.env_file).toEqual([".env"]);
+  });
+
+  it("omits env_file when hasEnvVars is false", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({ hasEnvVars: false }));
+    expect(compose.services.myapp.env_file).toBeUndefined();
+  });
+
+  it("maps external ports", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({
+      ports: [{ internal: 8080, external: 8080, protocol: "tcp" }],
+    }));
+    expect(compose.services.myapp.ports).toEqual(["8080:8080"]);
+  });
+
+  it("omits protocol suffix for tcp ports", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({
+      ports: [{ internal: 53, external: 53, protocol: "tcp" }],
+    }));
+    expect(compose.services.myapp.ports).toEqual(["53:53"]);
+  });
+
+  it("includes protocol suffix for non-tcp ports", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({
+      ports: [{ internal: 53, external: 53, protocol: "udp" }],
+    }));
+    expect(compose.services.myapp.ports).toEqual(["53:53/udp"]);
+  });
+
+  it("skips ports that are not externally mapped", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({
+      ports: [{ internal: 8080, protocol: "tcp" }],
+    }));
+    expect(compose.services.myapp.ports).toBeUndefined();
+  });
+
+  it("includes named volumes and declares them at top level", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({
+      mounts: [{ source: "mydata", destination: "/data", type: "volume" }],
+    }));
+    expect(compose.services.myapp.volumes).toContain("mydata:/data");
+    expect(compose.volumes?.mydata).toBeDefined();
+  });
+
+  it("includes bind mounts inline without a top-level declaration", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({
+      mounts: [{ source: "/host/path", destination: "/data", type: "bind" }],
+    }));
+    expect(compose.services.myapp.volumes).toContain("/host/path:/data");
+    expect(compose.volumes).toBeUndefined();
+  });
+
+  it("sets network_mode for host networking", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({ networkMode: "host" }));
+    expect(compose.services.myapp.network_mode).toBe("host");
+  });
+
+  it("omits network_mode for bridge networking", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({ networkMode: "bridge" }));
+    expect(compose.services.myapp.network_mode).toBeUndefined();
+  });
+
+  it("includes capabilities", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({
+      capAdd: ["NET_ADMIN", "SYS_PTRACE"],
+      capDrop: ["ALL"],
+    }));
+    expect(compose.services.myapp.cap_add).toEqual(["NET_ADMIN", "SYS_PTRACE"]);
+    expect(compose.services.myapp.cap_drop).toEqual(["ALL"]);
+  });
+
+  it("includes devices", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({
+      devices: [{ hostPath: "/dev/snd", containerPath: "/dev/snd", permissions: "rwm" }],
+    }));
+    // Default permissions (rwm) are omitted for brevity
+    expect(compose.services.myapp.devices).toEqual(["/dev/snd:/dev/snd"]);
+  });
+
+  it("includes non-default device permissions", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({
+      devices: [{ hostPath: "/dev/snd", containerPath: "/dev/snd", permissions: "r" }],
+    }));
+    expect(compose.services.myapp.devices).toEqual(["/dev/snd:/dev/snd:r"]);
+  });
+
+  it("includes privileged flag", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({ privileged: true }));
+    expect(compose.services.myapp.privileged).toBe(true);
+  });
+
+  it("omits privileged when false", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({ privileged: false }));
+    expect(compose.services.myapp.privileged).toBeUndefined();
+  });
+
+  it("includes security_opt", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({
+      securityOpt: ["no-new-privileges:true"],
+    }));
+    expect(compose.services.myapp.security_opt).toEqual(["no-new-privileges:true"]);
+  });
+
+  it("includes non-default shm_size", () => {
+    // 128 MiB = 128 * 1024 * 1024 bytes
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({
+      shmSize: 128 * 1024 * 1024,
+    }));
+    expect(compose.services.myapp.shm_size).toBe("128m");
+  });
+
+  it("omits shm_size at the Docker default (64 MiB)", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({
+      shmSize: 64 * 1024 * 1024,
+    }));
+    expect(compose.services.myapp.shm_size).toBeUndefined();
+  });
+
+  it("includes init flag", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({ init: true }));
+    expect(compose.services.myapp.init).toBe(true);
+  });
+
+  it("includes extra_hosts", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({
+      extraHosts: ["myhost:192.168.1.10"],
+    }));
+    expect(compose.services.myapp.extra_hosts).toEqual(["myhost:192.168.1.10"]);
+  });
+
+  it("includes resource limits from container HostConfig", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({
+      nanoCpus: 500_000_000, // 0.5 CPUs
+      memoryBytes: 256 * 1024 * 1024, // 256 MiB
+    }));
+    expect(compose.services.myapp.deploy?.resources?.limits?.cpus).toBe("0.5");
+    expect(compose.services.myapp.deploy?.resources?.limits?.memory).toBe("256m");
+  });
+
+  it("omits deploy block when no resource limits are set", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig());
+    expect(compose.services.myapp.deploy).toBeUndefined();
+  });
+
+  it("includes ulimits with matching soft/hard as single value", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({
+      ulimits: [{ name: "nproc", soft: 65535, hard: 65535 }],
+    }));
+    expect(compose.services.myapp.ulimits?.nproc).toBe(65535);
+  });
+
+  it("includes ulimits with differing soft/hard as object", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({
+      ulimits: [{ name: "nofile", soft: 1024, hard: 65536 }],
+    }));
+    expect(compose.services.myapp.ulimits?.nofile).toEqual({ soft: 1024, hard: 65536 });
+  });
+
+  it("includes tmpfs mounts", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({
+      tmpfs: ["/run", "/tmp"],
+    }));
+    expect(compose.services.myapp.tmpfs).toEqual(["/run", "/tmp"]);
+  });
+
+  it("includes custom hostname but not a container-id hostname", () => {
+    const customCompose = generateComposeFromContainer("myapp", makeContainerConfig({
+      hostname: "my-custom-host",
+    }));
+    expect(customCompose.services.myapp.hostname).toBe("my-custom-host");
+
+    // 12-char hex looks like a Docker-assigned container ID — skip it
+    const autoCompose = generateComposeFromContainer("myapp", makeContainerConfig({
+      hostname: "a1b2c3d4e5f6",
+    }));
+    expect(autoCompose.services.myapp.hostname).toBeUndefined();
+  });
+
+  it("includes user", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({ user: "1000:1000" }));
+    expect(compose.services.myapp.user).toBe("1000:1000");
+  });
+
+  it("includes non-default stop_signal", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({ stopSignal: "SIGINT" }));
+    expect(compose.services.myapp.stop_signal).toBe("SIGINT");
+  });
+
+  it("omits stop_signal when it is the default SIGTERM", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({ stopSignal: "SIGTERM" }));
+    expect(compose.services.myapp.stop_signal).toBeUndefined();
+  });
+
+  it("includes healthcheck with duration strings", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({
+      healthcheck: {
+        test: ["CMD", "curl", "-f", "http://localhost/"],
+        interval: 30_000_000_000, // 30s in nanoseconds
+        timeout: 10_000_000_000,  // 10s
+        retries: 3,
+        startPeriod: 0,
+      },
+    }));
+    const hc = compose.services.myapp.healthcheck;
+    expect(hc?.test).toEqual(["CMD", "curl", "-f", "http://localhost/"]);
+    expect(hc?.interval).toBe("30s");
+    expect(hc?.timeout).toBe("10s");
+    expect(hc?.retries).toBe(3);
+    expect(hc?.start_period).toBeUndefined();
+  });
+
+  it("includes entrypoint and command", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({
+      entrypoint: ["/entrypoint.sh"],
+      command: ["start", "--verbose"],
+    }));
+    expect(compose.services.myapp.entrypoint).toEqual(["/entrypoint.sh"]);
+    expect(compose.services.myapp.command).toEqual(["start", "--verbose"]);
+  });
+
+  it("strips internal labels but keeps user-defined labels", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({
+      labels: {
+        "com.docker.compose.project": "myproject",
+        "traefik.enable": "true",
+        "vardo.project": "myapp",
+        "host.project": "myapp",
+        "my.custom.label": "value",
+        "app.version": "1.2.3",
+      },
+    }));
+    const labels = compose.services.myapp.labels ?? {};
+    expect(labels["com.docker.compose.project"]).toBeUndefined();
+    expect(labels["traefik.enable"]).toBeUndefined();
+    expect(labels["vardo.project"]).toBeUndefined();
+    expect(labels["host.project"]).toBeUndefined();
+    expect(labels["my.custom.label"]).toBe("value");
+    expect(labels["app.version"]).toBe("1.2.3");
+  });
+
+  it("omits labels block when all labels are internal", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({
+      labels: {
+        "com.docker.compose.project": "myproject",
+        "vardo.managed": "true",
+      },
+    }));
+    expect(compose.services.myapp.labels).toBeUndefined();
+  });
+
+  it("produced compose round-trips through yaml cleanly", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({
+      ports: [{ internal: 8080, external: 8080, protocol: "tcp" }],
+      mounts: [{ source: "data", destination: "/data", type: "volume" }],
+      capAdd: ["NET_ADMIN"],
+      restartPolicy: "unless-stopped",
+      hasEnvVars: true,
+    }));
+
+    const yaml = composeToYaml(compose);
+    const parsed = parseCompose(yaml);
+    const svc = parsed.services.myapp;
+
+    expect(svc.image).toBe("nginx:latest");
+    expect(svc.restart).toBe("unless-stopped");
+    expect(svc.ports).toEqual(["8080:8080"]);
+    expect(svc.volumes).toContain("data:/data");
+    expect(svc.cap_add).toEqual(["NET_ADMIN"]);
+    expect(svc.env_file).toEqual([".env"]);
+    expect(parsed.volumes?.data).toBeDefined();
   });
 });
