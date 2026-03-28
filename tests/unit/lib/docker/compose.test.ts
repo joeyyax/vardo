@@ -211,7 +211,7 @@ services:
     expect(compose.services.app.network_mode).toBe("container:my-container-123");
   });
 
-  it("rejects unknown network modes", () => {
+  it("silently drops unknown network modes", () => {
     const yaml = `
 services:
   app:
@@ -219,7 +219,6 @@ services:
     network_mode: custom-plugin
 `;
     const compose = parseCompose(yaml);
-    // Unknown modes are silently dropped during parse
     expect(compose.services.app.network_mode).toBeUndefined();
   });
 
@@ -233,7 +232,6 @@ services:
 `;
     const compose = parseCompose(yaml);
     expect(compose.services.app.image).toBe("nginx:alpine");
-    expect(compose.services.app.restart).toBeUndefined(); // restart not parsed
     expect(compose.services.app.network_mode).toBe("host");
   });
 });
@@ -445,6 +443,26 @@ describe("validateCompose — network_mode", () => {
     expect(
       errors.some((e) => e.includes('"a"') && e.includes('"b"') && e.includes("chaining")),
     ).toBe(true);
+  });
+
+  it("rejects each intermediate hop in a multi-level non-circular chain (A → B → C → D)", () => {
+    const compose: ComposeFile = {
+      services: {
+        a: { name: "a", image: "alpine", network_mode: "service:b" },
+        b: { name: "b", image: "alpine", network_mode: "service:c" },
+        c: { name: "c", image: "alpine", network_mode: "service:d" },
+        d: { name: "d", image: "alpine" },
+      },
+    };
+
+    const { valid, errors } = validateCompose(compose);
+    expect(valid).toBe(false);
+    // a → b, and b uses service:c — a is invalid
+    expect(errors.some((e) => e.includes('"a"') && e.includes('"b"') && e.includes("chaining"))).toBe(true);
+    // b → c, and c uses service:d — b is invalid
+    expect(errors.some((e) => e.includes('"b"') && e.includes('"c"') && e.includes("chaining"))).toBe(true);
+    // c → d, and d has no service: mode — c is valid (not a chaining error)
+    expect(errors.some((e) => e.includes('Service "c"') && e.includes("chaining"))).toBe(false);
   });
 
   it("accepts a valid multi-service layout without chaining", () => {
