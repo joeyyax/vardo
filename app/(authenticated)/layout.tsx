@@ -59,7 +59,7 @@ export default async function AppLayout({
           />
         </div>
 
-        <UpdateBanner />
+        {session.user.isAppAdmin && <UpdateBanner />}
 
         <main className="mx-auto max-w-screen-xl px-5 py-8 lg:px-10 flex-1 w-full">
           {children}

@@ -68,7 +68,7 @@ export async function GET() {
         if (release.tag_name) {
           latestVersion = release.tag_name.replace(/^v/, "");
         }
-        if (release.html_url) {
+        if (release.html_url?.startsWith("https://")) {
           releaseUrl = release.html_url;
         }
       }
