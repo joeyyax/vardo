@@ -6,6 +6,8 @@
 // and swap the implementations of `composeToYaml` and `parseCompose`.
 // ---------------------------------------------------------------------------
 
+import type { ContainerRuntimeOptions } from "./client";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -14,6 +16,17 @@ export type ResourceLimits = {
   cpus?: string;
   memory?: string;
 };
+
+export type HealthCheck = {
+  test?: string | string[];
+  interval?: string;
+  timeout?: string;
+  retries?: number;
+  start_period?: string;
+  disable?: boolean;
+};
+
+export type Ulimits = Record<string, number | { soft: number; hard: number }>;
 
 export type ComposeService = {
   name: string;
@@ -41,6 +54,23 @@ export type ComposeService = {
       };
     };
   };
+  // Extended fields for faithful container import/round-trip
+  cap_add?: string[];
+  cap_drop?: string[];
+  devices?: string[];
+  privileged?: boolean;
+  security_opt?: string[];
+  shm_size?: string;
+  init?: boolean;
+  extra_hosts?: string[];
+  healthcheck?: HealthCheck;
+  ulimits?: Ulimits;
+  hostname?: string;
+  user?: string;
+  stop_signal?: string;
+  entrypoint?: string | string[];
+  command?: string | string[];
+  tmpfs?: string[];
 };
 
 export type ComposeFile = {
@@ -103,6 +133,221 @@ export function generateComposeForImage(opts: {
     compose.volumes = {};
     for (const v of volumes) {
       compose.volumes[v.name] = {};
+    }
+  }
+
+  return compose;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers for container spec conversion
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert a byte count to a compact size string.
+ * Uses exact multiples only to avoid rounding drift on round-trip.
+ */
+function bytesToSizeString(bytes: number): string {
+  const GiB = 1024 * 1024 * 1024;
+  const MiB = 1024 * 1024;
+  const KiB = 1024;
+  if (bytes % GiB === 0) return `${bytes / GiB}g`;
+  if (bytes % MiB === 0) return `${bytes / MiB}m`;
+  if (bytes % KiB === 0) return `${bytes / KiB}k`;
+  return `${bytes}b`;
+}
+
+/**
+ * Convert Docker's nanosecond duration to a compose-compatible duration string.
+ */
+export function nanosToDuration(nanos: number): string {
+  const ms = nanos / 1e6;
+  const s = ms / 1000;
+  const m = s / 60;
+  if (Number.isInteger(m) && m >= 1) return `${m}m`;
+  if (Number.isInteger(s) && s >= 1) return `${s}s`;
+  if (Number.isInteger(ms) && ms >= 1) return `${ms}ms`;
+  return `${Math.round(s)}s`;
+}
+
+// ---------------------------------------------------------------------------
+// Import-from-container compose generation
+// ---------------------------------------------------------------------------
+
+export type ContainerConfig = {
+  image: string;
+  ports: { internal: number; external?: number; protocol: string }[];
+  mounts: { source: string; destination: string; type: string }[];
+  networkMode: string;
+  labels: Record<string, string>;
+  hasEnvVars: boolean;
+} & ContainerRuntimeOptions;
+
+// Labels injected by Docker Compose or Vardo — strip these when capturing an
+// existing container's labels so they don't pollute the regenerated compose.
+const INTERNAL_LABEL_PREFIXES = [
+  "com.docker.",
+  "vardo.",
+  "host.",
+  "traefik.",
+];
+
+/**
+ * Generate a ComposeFile from a captured container spec.
+ * Faithfully reproduces capabilities, resource limits, network mode, devices,
+ * healthcheck, and all other Docker options present on the original container.
+ *
+ * Named volumes are declared at the top level; bind mounts are included
+ * as-is (the caller controls which mounts to include).
+ */
+export function generateComposeFromContainer(
+  serviceName: string,
+  container: ContainerConfig,
+): ComposeFile {
+  const service: ComposeService = {
+    name: serviceName,
+    image: container.image,
+  };
+
+  // Restart policy: default to unless-stopped if the container had none/no.
+  const restart =
+    container.restartPolicy && container.restartPolicy !== "no"
+      ? container.restartPolicy
+      : "unless-stopped";
+  service.restart = restart;
+
+  // Ports: only include mappings that exposed a host port.
+  const externalPorts = container.ports.filter((p) => p.external);
+  if (externalPorts.length > 0) {
+    service.ports = externalPorts.map((p) => {
+      const proto = p.protocol && p.protocol !== "tcp" ? `/${p.protocol}` : "";
+      return `${p.external}:${p.internal}${proto}`;
+    });
+  }
+
+  // Env file (written separately during deploy).
+  if (container.hasEnvVars) {
+    service.env_file = [".env"];
+  }
+
+  // Volumes.
+  const namedVolumes = container.mounts.filter((m) => m.type === "volume");
+  const bindMounts = container.mounts.filter((m) => m.type === "bind");
+  const allMounts = [
+    ...namedVolumes.map((m) => `${m.source}:${m.destination}`),
+    ...bindMounts.map((m) => `${m.source}:${m.destination}`),
+  ];
+  if (allMounts.length > 0) service.volumes = allMounts;
+
+  // Network mode (non-bridge modes must be explicit in the compose).
+  if (
+    container.networkMode &&
+    container.networkMode !== "bridge" &&
+    container.networkMode !== "default"
+  ) {
+    service.network_mode = container.networkMode;
+  }
+
+  // Labels: strip Docker-internal and Vardo-managed labels.
+  const filteredLabels = Object.fromEntries(
+    Object.entries(container.labels).filter(
+      ([k]) => !INTERNAL_LABEL_PREFIXES.some((prefix) => k.startsWith(prefix))
+    )
+  );
+  if (Object.keys(filteredLabels).length > 0) service.labels = filteredLabels;
+
+  // Capabilities.
+  if (container.capAdd.length > 0) service.cap_add = container.capAdd;
+  if (container.capDrop.length > 0) service.cap_drop = container.capDrop;
+
+  // Devices.
+  if (container.devices.length > 0) {
+    service.devices = container.devices.map((d) => {
+      const perms =
+        d.permissions && d.permissions !== "rwm" ? `:${d.permissions}` : "";
+      return `${d.hostPath}:${d.containerPath}${perms}`;
+    });
+  }
+
+  // Privileged mode.
+  if (container.privileged) service.privileged = true;
+
+  // Security options.
+  if (container.securityOpt.length > 0) service.security_opt = container.securityOpt;
+
+  // Shared memory size (skip the 64 MiB Docker default to keep the compose clean).
+  const DEFAULT_SHM_SIZE = 64 * 1024 * 1024;
+  if (container.shmSize > 0 && container.shmSize !== DEFAULT_SHM_SIZE) {
+    service.shm_size = bytesToSizeString(container.shmSize);
+  }
+
+  // Init process.
+  if (container.init) service.init = true;
+
+  // Extra hosts (/etc/hosts entries).
+  if (container.extraHosts.length > 0) service.extra_hosts = container.extraHosts;
+
+  // Resource limits from HostConfig (cpu/memory).
+  if (container.nanoCpus > 0 || container.memoryBytes > 0) {
+    const limits: ResourceLimits = {};
+    if (container.nanoCpus > 0) limits.cpus = String(container.nanoCpus / 1e9);
+    if (container.memoryBytes > 0) limits.memory = bytesToSizeString(container.memoryBytes);
+    service.deploy = { resources: { limits } };
+  }
+
+  // Ulimits.
+  if (container.ulimits.length > 0) {
+    const ulimits: Ulimits = {};
+    for (const u of container.ulimits) {
+      ulimits[u.name] =
+        u.soft === u.hard ? u.soft : { soft: u.soft, hard: u.hard };
+    }
+    service.ulimits = ulimits;
+  }
+
+  // Tmpfs mounts.
+  if (container.tmpfs.length > 0) service.tmpfs = container.tmpfs;
+
+  // Hostname: skip if it looks like the Docker-assigned short container ID
+  // (12 lowercase hex chars) since that would conflict on redeploy.
+  if (container.hostname && !/^[a-f0-9]{12}$/.test(container.hostname)) {
+    service.hostname = container.hostname;
+  }
+
+  // User.
+  if (container.user) service.user = container.user;
+
+  // Stop signal (SIGTERM is the default; omit to keep the compose clean).
+  if (container.stopSignal && container.stopSignal !== "SIGTERM") {
+    service.stop_signal = container.stopSignal;
+  }
+
+  // Healthcheck.
+  if (container.healthcheck) {
+    const hc = container.healthcheck;
+    const spec: HealthCheck = { test: hc.test };
+    if (hc.interval > 0) spec.interval = nanosToDuration(hc.interval);
+    if (hc.timeout > 0) spec.timeout = nanosToDuration(hc.timeout);
+    if (hc.retries > 0) spec.retries = hc.retries;
+    if (hc.startPeriod > 0) spec.start_period = nanosToDuration(hc.startPeriod);
+    service.healthcheck = spec;
+  }
+
+  // Entrypoint.
+  if (container.entrypoint.length > 0) service.entrypoint = container.entrypoint;
+
+  // Command.
+  if (container.command.length > 0) service.command = container.command;
+
+  const compose: ComposeFile = {
+    services: { [serviceName]: service },
+  };
+
+  // Declare named volumes at the top level.
+  if (namedVolumes.length > 0) {
+    compose.volumes = {};
+    for (const v of namedVolumes) {
+      compose.volumes[v.source] = {};
     }
   }
 
@@ -443,6 +688,7 @@ export function parseCompose(yamlString: string): ComposeFile {
 
     if (raw.image && typeof raw.image === "string") svc.image = raw.image;
     if (raw.build !== undefined) svc.build = raw.build as ComposeService["build"];
+    if (typeof raw.restart === "string") svc.restart = raw.restart;
     if (Array.isArray(raw.ports)) svc.ports = raw.ports.map(String);
     if (raw.environment && typeof raw.environment === "object") {
       if (Array.isArray(raw.environment)) {
@@ -456,6 +702,10 @@ export function parseCompose(yamlString: string): ComposeFile {
       } else {
         svc.environment = raw.environment as Record<string, string>;
       }
+    }
+    if (raw.env_file) {
+      if (Array.isArray(raw.env_file)) svc.env_file = raw.env_file.map(String);
+      else if (typeof raw.env_file === "string") svc.env_file = [raw.env_file];
     }
     if (Array.isArray(raw.volumes)) svc.volumes = raw.volumes.map(String);
     if (raw.labels) {
@@ -501,6 +751,33 @@ export function parseCompose(yamlString: string): ComposeFile {
     ) {
       svc.deploy = raw.deploy as ComposeService["deploy"];
     }
+    if (Array.isArray(raw.cap_add)) svc.cap_add = raw.cap_add.map(String);
+    if (Array.isArray(raw.cap_drop)) svc.cap_drop = raw.cap_drop.map(String);
+    if (Array.isArray(raw.devices)) svc.devices = raw.devices.map(String);
+    if (typeof raw.privileged === "boolean" && raw.privileged) svc.privileged = raw.privileged;
+    if (Array.isArray(raw.security_opt)) svc.security_opt = raw.security_opt.map(String);
+    if (typeof raw.shm_size === "string" && raw.shm_size) svc.shm_size = raw.shm_size;
+    if (typeof raw.init === "boolean" && raw.init) svc.init = raw.init;
+    if (Array.isArray(raw.extra_hosts)) svc.extra_hosts = raw.extra_hosts.map(String);
+    if (raw.healthcheck && typeof raw.healthcheck === "object" && !Array.isArray(raw.healthcheck)) {
+      svc.healthcheck = raw.healthcheck as HealthCheck;
+    }
+    if (raw.ulimits && typeof raw.ulimits === "object" && !Array.isArray(raw.ulimits)) {
+      svc.ulimits = raw.ulimits as Ulimits;
+    }
+    if (typeof raw.hostname === "string" && raw.hostname) svc.hostname = raw.hostname;
+    if (typeof raw.user === "string" && raw.user) svc.user = raw.user;
+    if (typeof raw.stop_signal === "string" && raw.stop_signal) svc.stop_signal = raw.stop_signal;
+    if (raw.entrypoint !== undefined) {
+      if (Array.isArray(raw.entrypoint)) svc.entrypoint = raw.entrypoint.map(String);
+      else if (typeof raw.entrypoint === "string") svc.entrypoint = raw.entrypoint;
+    }
+    if (raw.command !== undefined) {
+      if (Array.isArray(raw.command)) svc.command = raw.command.map(String);
+      else if (typeof raw.command === "string") svc.command = raw.command;
+    }
+    if (Array.isArray(raw.tmpfs)) svc.tmpfs = raw.tmpfs.map(String);
+    else if (typeof raw.tmpfs === "string") svc.tmpfs = [raw.tmpfs];
 
     services[name] = svc;
   }

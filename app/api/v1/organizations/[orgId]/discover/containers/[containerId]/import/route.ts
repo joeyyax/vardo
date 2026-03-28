@@ -8,7 +8,7 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getContainerDetail, isLocalImage } from "@/lib/docker/discover";
 import { slugify } from "@/lib/ui/slugify";
-import { generateComposeForImage, injectTraefikLabels, composeToYaml } from "@/lib/docker/compose";
+import { generateComposeFromContainer, injectTraefikLabels, composeToYaml } from "@/lib/docker/compose";
 import { encrypt } from "@/lib/crypto/encrypt";
 import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
 import { recordActivity } from "@/lib/activity";
@@ -114,17 +114,33 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         ? detail.mounts
         : detail.mounts.filter((m) => selectedDests.has(m.destination));
 
-    // Generate compose file
-    const namedVolumes = mountsToImport
-      .filter((m) => m.type === "volume")
-      .map((m) => ({ name: m.source, mountPath: m.destination }));
-
-    let compose = generateComposeForImage({
-      projectName: data.name,
-      imageName: detail.image,
-      containerPort: containerPort ?? undefined,
-      volumes: namedVolumes,
-      exposedPorts: detail.ports.filter((p) => p.external),
+    // Generate compose file from the full container spec.
+    let compose = generateComposeFromContainer(data.name, {
+      image: detail.image,
+      ports: detail.ports,
+      mounts: mountsToImport,
+      networkMode: detail.networkMode,
+      restartPolicy: detail.restartPolicy,
+      capAdd: detail.capAdd,
+      capDrop: detail.capDrop,
+      devices: detail.devices,
+      privileged: detail.privileged,
+      securityOpt: detail.securityOpt,
+      shmSize: detail.shmSize,
+      init: detail.init,
+      extraHosts: detail.extraHosts,
+      nanoCpus: detail.nanoCpus,
+      memoryBytes: detail.memoryBytes,
+      ulimits: detail.ulimits,
+      tmpfs: detail.tmpfs,
+      hostname: detail.hostname,
+      user: detail.user,
+      stopSignal: detail.stopSignal,
+      healthcheck: detail.healthcheck,
+      entrypoint: detail.entrypoint,
+      command: detail.command,
+      labels: detail.labels,
+      hasEnvVars: data.envVars.length > 0,
     });
 
     // Inject Traefik labels if a domain was found.
