@@ -5,6 +5,9 @@ import { projects, apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { isAdmin } from "@/lib/auth/permissions";
+import { logger } from "@/lib/logger";
+import { recordActivity } from "@/lib/activity";
 
 type RouteParams = {
   params: Promise<{ orgId: string; projectId: string }>;
@@ -78,6 +81,7 @@ const updateSchema = z.object({
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/)
     .optional(),
+  allowBindMounts: z.boolean().optional(),
 }).strict();
 
 // PATCH /api/v1/organizations/[orgId]/projects/[projectId]
@@ -96,6 +100,11 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         { error: parsed.error.issues[0].message },
         { status: 400 }
       );
+    }
+
+    // allowBindMounts is a security-sensitive flag — restrict to admins and owners
+    if (parsed.data.allowBindMounts !== undefined && !isAdmin(org.membership.role)) {
+      return NextResponse.json({ error: "Only admins can change the bind mounts setting" }, { status: 403 });
     }
 
     const existing = await findProjectBasic(orgId, projectId);
@@ -126,6 +135,19 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         .set(parsed.data)
         .where(eq(projects.id, existing.id))
         .returning();
+
+      if (parsed.data.allowBindMounts !== undefined) {
+        logger.info(
+          { projectId: existing.id, userId: org.session.user.id, allowBindMounts: parsed.data.allowBindMounts },
+          "allowBindMounts flag changed",
+        );
+        recordActivity({
+          organizationId: orgId,
+          action: "project.allow_bind_mounts.updated",
+          userId: org.session.user.id,
+          metadata: { projectId: existing.id, allowBindMounts: parsed.data.allowBindMounts },
+        }).catch(() => {});
+      }
 
       return NextResponse.json({ project: updated });
     } catch (updateError) {

@@ -560,22 +560,36 @@ export function validateCompose(compose: ComposeFile, opts?: ValidateOptions): {
 
 /**
  * Strip host bind mounts from compose, keeping only named volumes.
- * Returns the compose unchanged if allowBindMounts is true.
+ * When allowBindMounts is true, bind mounts are allowed but paths in
+ * DENIED_MOUNT_PATHS are always blocked regardless of the flag.
  * When stripping, returns the list of removed mounts for logging.
  */
 export function sanitizeCompose(compose: ComposeFile, opts?: { allowBindMounts?: boolean }): {
   compose: ComposeFile;
   strippedMounts: string[];
 } {
-  if (opts?.allowBindMounts) return { compose, strippedMounts: [] };
   const strippedMounts: string[] = [];
   const sanitized = { ...compose, services: { ...compose.services } };
   for (const [name, svc] of Object.entries(sanitized.services)) {
     if (svc.volumes) {
       const safe: string[] = [];
       for (const v of svc.volumes) {
-        if (v.startsWith("/") || v.startsWith("./") || v.startsWith("../")) {
-          strippedMounts.push(`${name}: ${v}`);
+        const isBindMount = v.startsWith("/") || v.startsWith("./") || v.startsWith("../");
+        if (isBindMount) {
+          if (opts?.allowBindMounts) {
+            // Bind mounts allowed — still enforce the deny list unconditionally.
+            // Throw rather than silently drop: the user explicitly configured this
+            // mount, so a silent strip would cause confusing runtime behaviour.
+            const mountSource = resolve(v.split(":")[0]);
+            if (DENIED_MOUNT_PATHS.some((p) => mountSource === p || mountSource.startsWith(p + "/"))) {
+              throw new Error(
+                `Service "${name}" mounts blocked host path "${mountSource}" — this path is not allowed even with bind mounts enabled`,
+              );
+            }
+            safe.push(v);
+          } else {
+            strippedMounts.push(`${name}: ${v}`);
+          }
         } else {
           safe.push(v);
         }

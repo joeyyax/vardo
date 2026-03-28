@@ -4,6 +4,7 @@ import { projects, projectInstances } from "@/lib/db/schema";
 import { getCurrentOrg } from "@/lib/auth/session";
 import { eq, and, or, desc, type AnyColumn } from "drizzle-orm";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
+import { isAdmin } from "@/lib/auth/permissions";
 import { ProjectDetail } from "./project-detail";
 import type { MeshPeerSummary, ProjectInstanceSummary } from "@/lib/mesh/types";
 
@@ -38,6 +39,7 @@ export default async function ProjectDetailPage({
   const orgData = await getCurrentOrg();
   if (!orgData) redirect("/login");
   const orgId = orgData.organization.id;
+  const userIsAdmin = isAdmin(orgData.membership.role);
 
   const project = await db.query.projects.findFirst({
     where: and(
@@ -137,6 +139,7 @@ export default async function ProjectDetailPage({
       project={project}
       orgId={orgId}
       initialTab={effectiveTab}
+      isAdmin={userIsAdmin}
       meshEnabled={meshEnabled}
       meshPeers={meshEnabled ? meshPeers : []}
       projectInstances={meshEnabled ? meshInstances : []}
