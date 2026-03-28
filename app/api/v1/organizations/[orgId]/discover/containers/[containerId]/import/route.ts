@@ -226,6 +226,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               organizationId: orgId,
               name: mount.source || mount.destination.replace(/\//g, "-").replace(/^-/, ""),
               mountPath: mount.destination,
+              type: mount.type === "bind" ? "bind" : "named",
               // Bind mounts are flagged as non-persistent — Vardo can't manage host paths
               persistent: mount.type !== "bind",
             });

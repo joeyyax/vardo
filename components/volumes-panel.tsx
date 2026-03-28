@@ -52,7 +52,7 @@ type Volume = {
   id: string | null;
   name: string;
   mountPath: string;
-  type: "named" | "anonymous" | "bind";
+  type: "named" | "bind";
   persistent: boolean;
   shared: boolean;
   description: string | null;
@@ -486,6 +486,7 @@ export function VolumesPanel({ appId, orgId }: Props) {
     const volumePayload = updated.map((v) => ({
       name: v.name,
       mountPath: v.mountPath,
+      type: v.type,
       persistent: v.persistent,
     }));
 
@@ -538,6 +539,7 @@ export function VolumesPanel({ appId, orgId }: Props) {
     const volumePayload = updated.map((v) => ({
       name: v.name,
       mountPath: v.mountPath,
+      type: v.type,
       persistent: v.persistent,
     }));
 
@@ -571,6 +573,7 @@ export function VolumesPanel({ appId, orgId }: Props) {
     const volumePayload = updated.map((v) => ({
       name: v.name,
       mountPath: v.mountPath,
+      type: v.type,
       persistent: v.persistent,
     }));
 
@@ -731,10 +734,6 @@ export function VolumesPanel({ appId, orgId }: Props) {
                             className="text-xs shrink-0 border-amber-300 text-amber-700 dark:border-amber-700 dark:text-amber-400"
                           >
                             bind
-                          </Badge>
-                        ) : vol.type === "anonymous" ? (
-                          <Badge variant="secondary" className="text-xs shrink-0">
-                            anonymous
                           </Badge>
                         ) : (
                           <Badge variant="secondary" className="text-xs shrink-0">
