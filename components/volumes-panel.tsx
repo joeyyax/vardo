@@ -21,6 +21,7 @@ import {
   RefreshCw,
   EyeOff,
   Check,
+  FolderOpen,
 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { Button } from "@/components/ui/button";
@@ -714,24 +715,48 @@ export function VolumesPanel({ appId, orgId }: Props) {
               >
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex items-center gap-4 min-w-0 flex-1">
-                    <HardDrive className="size-4 text-muted-foreground shrink-0" />
+                    {vol.type === "bind" ? (
+                      <FolderOpen className="size-4 text-amber-500 shrink-0" />
+                    ) : (
+                      <HardDrive className="size-4 text-muted-foreground shrink-0" />
+                    )}
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <p className="text-sm font-medium font-mono truncate">
                           {vol.name}
                         </p>
-                        <Badge variant="secondary" className="text-xs shrink-0">
-                          {vol.type}
-                        </Badge>
-                        {vol.persistent ? (
-                          <Badge className="text-xs shrink-0 border-transparent bg-status-success-muted text-status-success">
-                            <ShieldCheck className="mr-1 size-3" />
-                            Persistent
+                        {vol.type === "bind" ? (
+                          <Badge
+                            variant="outline"
+                            className="text-xs shrink-0 border-amber-300 text-amber-700 dark:border-amber-700 dark:text-amber-400"
+                          >
+                            bind
+                          </Badge>
+                        ) : vol.type === "anonymous" ? (
+                          <Badge variant="secondary" className="text-xs shrink-0">
+                            anonymous
                           </Badge>
                         ) : (
-                          <Badge variant="outline" className="text-xs shrink-0">
-                            <Clock className="mr-1 size-3" />
-                            Ephemeral
+                          <Badge variant="secondary" className="text-xs shrink-0">
+                            named
+                          </Badge>
+                        )}
+                        {vol.type !== "bind" && (
+                          vol.persistent ? (
+                            <Badge className="text-xs shrink-0 border-transparent bg-status-success-muted text-status-success">
+                              <ShieldCheck className="mr-1 size-3" />
+                              Persistent
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-xs shrink-0">
+                              <Clock className="mr-1 size-3" />
+                              Ephemeral
+                            </Badge>
+                          )
+                        )}
+                        {vol.type === "bind" && (
+                          <Badge variant="outline" className="text-xs shrink-0 text-muted-foreground">
+                            Host-managed
                           </Badge>
                         )}
                         {(vol.driftCount ?? 0) > 0 && (
@@ -747,6 +772,16 @@ export function VolumesPanel({ appId, orgId }: Props) {
                       <p className="text-xs text-muted-foreground font-mono mt-0.5 truncate">
                         {vol.mountPath}
                       </p>
+                      {vol.type === "bind" && vol.source && (
+                        <p className="text-xs text-amber-600 dark:text-amber-500 font-mono mt-0.5 truncate">
+                          Host: {vol.source}
+                        </p>
+                      )}
+                      {vol.type === "named" && vol.source && vol.source !== vol.name && (
+                        <p className="text-xs text-muted-foreground font-mono mt-0.5 truncate">
+                          Volume: {vol.source}
+                        </p>
+                      )}
                       {/* Per-volume usage vs limit */}
                       {vol.sizeBytes != null && vol.sizeBytes > 0 && limit && (() => {
                         const level = volumeThreshold(vol.sizeBytes!, limit.maxSizeBytes, limit.warnAtPercent ?? 80);
@@ -771,11 +806,13 @@ export function VolumesPanel({ appId, orgId }: Props) {
                     </div>
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
-                    <Switch
-                      checked={vol.persistent}
-                      onCheckedChange={() => togglePersistent(vol.name)}
-                      disabled={saving}
-                    />
+                    {vol.type !== "bind" && (
+                      <Switch
+                        checked={vol.persistent}
+                        onCheckedChange={() => togglePersistent(vol.name)}
+                        disabled={saving}
+                      />
+                    )}
                     <Button
                       size="sm"
                       variant="ghost"
@@ -786,8 +823,8 @@ export function VolumesPanel({ appId, orgId }: Props) {
                     </Button>
                   </div>
                 </div>
-                {/* Volume diff / changes section */}
-                {vol.persistent && (
+                {/* Volume diff / changes section — only for Vardo-managed named volumes */}
+                {vol.type !== "bind" && vol.persistent && (
                   <VolumeDiffSection
                     appId={appId}
                     orgId={orgId}
