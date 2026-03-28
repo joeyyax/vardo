@@ -577,13 +577,16 @@ export function sanitizeCompose(compose: ComposeFile, opts?: { allowBindMounts?:
         const isBindMount = v.startsWith("/") || v.startsWith("./") || v.startsWith("../");
         if (isBindMount) {
           if (opts?.allowBindMounts) {
-            // Bind mounts allowed — still enforce the deny list unconditionally
+            // Bind mounts allowed — still enforce the deny list unconditionally.
+            // Throw rather than silently drop: the user explicitly configured this
+            // mount, so a silent strip would cause confusing runtime behaviour.
             const mountSource = resolve(v.split(":")[0]);
             if (DENIED_MOUNT_PATHS.some((p) => mountSource === p || mountSource.startsWith(p + "/"))) {
-              strippedMounts.push(`${name}: ${v}`);
-            } else {
-              safe.push(v);
+              throw new Error(
+                `Service "${name}" mounts blocked host path "${mountSource}" — this path is not allowed even with bind mounts enabled`,
+              );
             }
+            safe.push(v);
           } else {
             strippedMounts.push(`${name}: ${v}`);
           }
