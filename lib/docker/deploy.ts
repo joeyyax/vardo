@@ -17,6 +17,7 @@ import {
   injectTraefikLabels,
   injectNetwork,
   injectResourceLimits,
+  injectGpuDevices,
   parseCompose,
   sanitizeCompose,
   validateCompose,
@@ -608,6 +609,10 @@ export async function runDeployment(
       compose = injectResourceLimits(compose, { cpuLimit: app.cpuLimit, memoryLimit: app.memoryLimit });
     }
 
+    if (app.gpuEnabled) {
+      compose = injectGpuDevices(compose);
+    }
+
     // Step 2: Detect container port
     let detectedPort: number | null = null;
 
@@ -1153,6 +1158,7 @@ export async function runDeployment(
     const configSnapshot: ConfigSnapshot = {
       cpuLimit: app.cpuLimit,
       memoryLimit: app.memoryLimit,
+      gpuEnabled: app.gpuEnabled ?? false,
       containerPort: app.containerPort,
       imageName: app.imageName,
       gitBranch: app.gitBranch,

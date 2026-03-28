@@ -7,6 +7,7 @@ import { z } from "zod";
 import { stopProject } from "@/lib/docker/deploy";
 import { recordActivity } from "@/lib/activity";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { isAdmin } from "@/lib/auth/permissions";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -35,6 +36,7 @@ const updateAppSchema = z.object({
   })).nullable().optional(),
   cpuLimit: z.number().positive().max(64).nullable().optional(),
   memoryLimit: z.number().int().min(64).max(65536).nullable().optional(),
+  gpuEnabled: z.boolean().optional(),
   diskWriteAlertThreshold: z.number().int().min(0).nullable().optional(), // bytes/hour, null = default 1GB
   autoRollback: z.boolean().optional(),
   rollbackGracePeriod: z.number().int().min(10).max(600).optional(),
@@ -92,6 +94,14 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json(
         { error: parsed.error.issues[0].message },
         { status: 400 }
+      );
+    }
+
+    // GPU passthrough grants direct host hardware access — restrict to owner/admin
+    if (parsed.data.gpuEnabled === true && !isAdmin(org.membership.role)) {
+      return NextResponse.json(
+        { error: "Only owners and admins can enable GPU passthrough" },
+        { status: 403 }
       );
     }
 
@@ -159,7 +169,7 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    if (org.membership.role !== "owner" && org.membership.role !== "admin") {
+    if (!isAdmin(org.membership.role)) {
       return NextResponse.json(
         { error: "Only owners and admins can delete apps" },
         { status: 403 }
