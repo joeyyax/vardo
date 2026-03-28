@@ -112,6 +112,7 @@ export const userDigestPreferences = pgTable(
   (t) => [
     unique("unq_user_digest_pref").on(t.userId, t.organizationId),
     index("user_digest_pref_user_idx").on(t.userId),
+    index("user_digest_pref_org_idx").on(t.organizationId),
   ]
 );
 

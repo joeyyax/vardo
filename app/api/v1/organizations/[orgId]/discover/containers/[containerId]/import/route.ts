@@ -12,6 +12,9 @@ import { generateComposeForImage, injectTraefikLabels, composeToYaml } from "@/l
 import { encrypt } from "@/lib/crypto/encrypt";
 import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
 import { recordActivity } from "@/lib/activity";
+import { stopContainer, startContainer, removeContainer } from "@/lib/docker/client";
+import { createDeployment } from "@/lib/docker/deploy";
+import { requestDeploy } from "@/lib/docker/deploy-cancel";
 
 type RouteParams = {
   params: Promise<{ orgId: string; containerId: string }>;
@@ -260,7 +263,68 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       },
     });
 
-    return NextResponse.json({ app, warnings }, { status: 201 });
+    // --- Migrate the container into Vardo management ---
+    //
+    // Pre-create the deployment record so the client has an ID to poll.
+    // Then fire the migration (stop → deploy → remove) async so the HTTP
+    // response is not held open while waiting for a lock or running the
+    // build. On any deploy failure the original container is restarted.
+
+    const deploymentId = await createDeployment({
+      appId,
+      organizationId: orgId,
+      trigger: "api",
+      triggeredBy: org.session.user.id,
+    });
+
+    void (async () => {
+      let containerStopped = false;
+
+      try {
+        await stopContainer(containerId);
+        containerStopped = true;
+      } catch {
+        // Can't stop the container — leave it running; the operator can
+        // trigger a manual deploy once they've resolved the issue.
+        return;
+      }
+
+      try {
+        const deployResult = await requestDeploy({
+          appId,
+          organizationId: orgId,
+          trigger: "api",
+          triggeredBy: org.session.user.id,
+          deploymentId,
+        });
+
+        if (!deployResult.success) {
+          throw new Error(deployResult.log || "Deployment did not succeed");
+        }
+      } catch {
+        // Restart the original container so the service keeps running while
+        // the operator figures out what went wrong.
+        if (containerStopped) {
+          try {
+            await startContainer(containerId);
+          } catch {
+            // Best effort — move on.
+          }
+        }
+        return;
+      }
+
+      // Deployment succeeded — remove the old container.
+      // Pass force=true so a still-running container (e.g. stop was swallowed)
+      // doesn't leave a 409 error.
+      try {
+        await removeContainer(containerId, { force: true });
+      } catch {
+        // Non-fatal — operator can remove manually.
+      }
+    })();
+
+    return NextResponse.json({ app, warnings, deploymentId, migrated: false }, { status: 201 });
   } catch (error) {
     const pgCode =
       error instanceof Error

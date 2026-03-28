@@ -71,6 +71,8 @@ export type DeployOpts = {
   onLog?: (line: string) => void;
   onStage?: (stage: DeployStage, status: "running" | "success" | "failed" | "skipped") => void;
   signal?: AbortSignal;
+  /** Pre-created deployment record ID — if provided, skips createDeployment. */
+  deploymentId?: string;
 };
 
 export type DeployResult = {
