@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { apps, domains } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { writeFile, unlink, mkdir } from "fs/promises";
+import { writeFile, unlink, mkdir, rename } from "fs/promises";
 import { join } from "path";
 import YAML from "yaml";
 import { logger } from "@/lib/logger";
@@ -209,15 +209,28 @@ export async function regenerateAppRouteConfig(appId: string): Promise<void> {
     },
   };
 
-  await mkdir(TRAEFIK_DYNAMIC_DIR, { recursive: true });
-
-  const filePath = join(TRAEFIK_DYNAMIC_DIR, `${app.name}.yml`);
   try {
-    await writeFile(filePath, YAML.stringify(config), "utf-8");
+    await mkdir(TRAEFIK_DYNAMIC_DIR, { recursive: true });
   } catch (err: unknown) {
     // Not running in an environment with the Traefik volume — skip silently.
-    if (err && typeof err === "object" && "code" in err && (err as NodeJS.ErrnoException).code === "ENOENT") {
-      return;
+    if (err && typeof err === "object" && "code" in err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "EACCES" || code === "ENOENT") return;
+    }
+    throw err;
+  }
+
+  const filePath = join(TRAEFIK_DYNAMIC_DIR, `${app.name}.yml`);
+  const tmpPath = `${filePath}.tmp`;
+
+  try {
+    await writeFile(tmpPath, YAML.stringify(config), "utf-8");
+    await rename(tmpPath, filePath);
+  } catch (err: unknown) {
+    // Not running in an environment with the Traefik volume — skip silently.
+    if (err && typeof err === "object" && "code" in err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "ENOENT" || code === "EACCES") return;
     }
     throw err;
   }

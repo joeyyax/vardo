@@ -19,7 +19,7 @@ fi
 # after privilege drop. Traefik (running as root) can still read/watch the dir.
 TRAEFIK_DYNAMIC_DIR="${TRAEFIK_DYNAMIC_DIR:-/etc/traefik/dynamic}"
 mkdir -p "$TRAEFIK_DYNAMIC_DIR"
-chown nextjs:nodejs "$TRAEFIK_DYNAMIC_DIR"
+chown -R nextjs:nodejs "$TRAEFIK_DYNAMIC_DIR"
 
 # Drop to nextjs user, run migrations, start the app
 exec gosu nextjs sh -c "node scripts/migrate.mjs && npx next start"
