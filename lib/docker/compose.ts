@@ -6,6 +6,8 @@
 // and swap the implementations of `composeToYaml` and `parseCompose`.
 // ---------------------------------------------------------------------------
 
+import type { ContainerRuntimeOptions } from "./client";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -177,34 +179,9 @@ export type ContainerConfig = {
   ports: { internal: number; external?: number; protocol: string }[];
   mounts: { source: string; destination: string; type: string }[];
   networkMode: string;
-  restartPolicy: string;
-  capAdd: string[];
-  capDrop: string[];
-  devices: { hostPath: string; containerPath: string; permissions: string }[];
-  privileged: boolean;
-  securityOpt: string[];
-  shmSize: number;
-  init: boolean;
-  extraHosts: string[];
-  nanoCpus: number;
-  memoryBytes: number;
-  ulimits: { name: string; soft: number; hard: number }[];
-  tmpfs: string[];
-  hostname: string;
-  user: string;
-  stopSignal: string;
-  healthcheck: {
-    test: string[];
-    interval: number;
-    timeout: number;
-    retries: number;
-    startPeriod: number;
-  } | null;
-  entrypoint: string[];
-  command: string[];
   labels: Record<string, string>;
   hasEnvVars: boolean;
-};
+} & ContainerRuntimeOptions;
 
 // Labels injected by Docker Compose or Vardo — strip these when capturing an
 // existing container's labels so they don't pollute the regenerated compose.

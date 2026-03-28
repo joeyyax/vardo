@@ -1,5 +1,5 @@
 import { listContainers, inspectContainer } from "./client";
-import type { ContainerInspect } from "./client";
+import type { ContainerInspect, ContainerRuntimeOptions } from "./client";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -30,32 +30,7 @@ export type ContainerDetail = DiscoveredContainer & {
   env: string[];
   networks: string[];
   labels: Record<string, string>;
-  capAdd: string[];
-  capDrop: string[];
-  devices: { hostPath: string; containerPath: string; permissions: string }[];
-  privileged: boolean;
-  securityOpt: string[];
-  shmSize: number;
-  init: boolean;
-  extraHosts: string[];
-  restartPolicy: string;
-  nanoCpus: number;
-  memoryBytes: number;
-  ulimits: { name: string; soft: number; hard: number }[];
-  tmpfs: string[];
-  hostname: string;
-  user: string;
-  stopSignal: string;
-  healthcheck: {
-    test: string[];
-    interval: number;
-    timeout: number;
-    retries: number;
-    startPeriod: number;
-  } | null;
-  entrypoint: string[];
-  command: string[];
-};
+} & ContainerRuntimeOptions;
 
 // ---------------------------------------------------------------------------
 // Traefik label parsing

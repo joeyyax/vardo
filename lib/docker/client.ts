@@ -31,17 +31,11 @@ export type ContainerInfo = {
   labels: Record<string, string>;
 };
 
-export type ContainerInspect = {
-  id: string;
-  name: string;
-  state: { running: boolean; status: string; startedAt: string };
-  image: string;
-  ports: { internal: number; external?: number; protocol: string }[];
-  env: string[];
-  labels: Record<string, string>;
-  networks: string[];
-  networkMode: string;
-  mounts: { source: string; destination: string; type: string }[];
+/**
+ * Fields shared across ContainerInspect, ContainerDetail, and ContainerConfig.
+ * Extracted here so all three stay in sync automatically.
+ */
+export type ContainerRuntimeOptions = {
   // Extended host config
   capAdd: string[];
   capDrop: string[];
@@ -70,6 +64,19 @@ export type ContainerInspect = {
   entrypoint: string[];
   command: string[];
 };
+
+export type ContainerInspect = {
+  id: string;
+  name: string;
+  state: { running: boolean; status: string; startedAt: string };
+  image: string;
+  ports: { internal: number; external?: number; protocol: string }[];
+  env: string[];
+  labels: Record<string, string>;
+  networks: string[];
+  networkMode: string;
+  mounts: { source: string; destination: string; type: string }[];
+} & ContainerRuntimeOptions;
 
 // ---------------------------------------------------------------------------
 // Connection helpers
