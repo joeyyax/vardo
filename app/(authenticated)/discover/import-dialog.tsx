@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "@/lib/messenger";
 import {
@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { AlertTriangle, X } from "lucide-react";
+import { AlertTriangle, X, HardDrive, FolderOpen } from "lucide-react";
 import type { DiscoveredContainer, ContainerDetail } from "@/lib/docker/discover";
 import { slugify } from "@/lib/ui/slugify";
 
@@ -56,7 +56,8 @@ export function ImportDialog({
   const [projectId, setProjectId] = useState<string>("none");
   const [newProjectName, setNewProjectName] = useState("");
   const [envVars, setEnvVars] = useState<EnvVar[]>([]);
-  const [importVolumes, setImportVolumes] = useState(true);
+  // Per-mount toggles: keyed by destination path
+  const [mountToggles, setMountToggles] = useState<Record<string, boolean>>({});
   const [submitting, setSubmitting] = useState(false);
 
   // Load container detail when dialog opens
@@ -69,7 +70,7 @@ export function ImportDialog({
     setProjectId("none");
     setNewProjectName("");
     setEnvVars([]);
-    setImportVolumes(true);
+    setMountToggles({});
     setDetail(null);
     setDetailError(false);
 
@@ -94,6 +95,12 @@ export function ImportDialog({
           })
           .filter((v): v is EnvVar => v !== null);
         setEnvVars(parsed);
+        // Default all mounts to selected
+        const toggles: Record<string, boolean> = {};
+        for (const m of d.mounts) {
+          toggles[m.destination] = true;
+        }
+        setMountToggles(toggles);
       })
       .catch((err: unknown) => {
         if (err instanceof Error && err.name === "AbortError") return;
@@ -109,18 +116,38 @@ export function ImportDialog({
     setEnvVars((prev) => prev.filter((_, i) => i !== index));
   }
 
+  function toggleMount(destination: string, checked: boolean) {
+    setMountToggles((prev) => ({ ...prev, [destination]: checked }));
+  }
+
+  const setAllMounts = useCallback(
+    (checked: boolean) => {
+      if (!detail) return;
+      const toggles: Record<string, boolean> = {};
+      for (const m of detail.mounts) {
+        toggles[m.destination] = checked;
+      }
+      setMountToggles(toggles);
+    },
+    [detail]
+  );
+
   async function handleSubmit() {
     if (!container) return;
 
     setSubmitting(true);
     try {
+      const selectedMountDestinations = (detail?.mounts ?? [])
+        .filter((m) => mountToggles[m.destination])
+        .map((m) => m.destination);
+
       const body = {
         displayName,
         name,
         projectId: projectId === "none" ? null : projectId === "new" ? null : projectId,
         newProjectName: projectId === "new" ? newProjectName : undefined,
         envVars,
-        importVolumes,
+        selectedMountDestinations,
       };
 
       const res = await fetch(
@@ -163,7 +190,10 @@ export function ImportDialog({
     }
   }
 
-  const hasBindMounts = (detail?.mounts ?? []).some((m) => m.type === "bind");
+  const mounts = detail?.mounts ?? [];
+  const selectedMounts = mounts.filter((m) => mountToggles[m.destination]);
+  const hasSelectedBindMounts = selectedMounts.some((m) => m.type === "bind");
+  const selectedCount = selectedMounts.length;
   const isHostNetwork = (detail?.networkMode ?? container?.networkMode) === "host";
 
   return (
@@ -281,19 +311,90 @@ export function ImportDialog({
               )}
             </div>
 
-            {(detail?.mounts?.length ?? 0) > 0 && (
+            {mounts.length > 0 && (
               <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    id="importVolumes"
-                    checked={importVolumes}
-                    onCheckedChange={(checked) => setImportVolumes(!!checked)}
-                  />
-                  <Label htmlFor="importVolumes" className="cursor-pointer">
-                    Import volume references ({detail?.mounts.length ?? 0})
-                  </Label>
+                <div className="flex items-center justify-between">
+                  <Label>Mounts</Label>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span>{selectedCount} of {mounts.length} selected</span>
+                    <button
+                      type="button"
+                      onClick={() => setAllMounts(true)}
+                      className="px-2 py-1 hover:text-foreground transition-colors"
+                    >
+                      All
+                    </button>
+                    <span aria-hidden="true">/</span>
+                    <button
+                      type="button"
+                      onClick={() => setAllMounts(false)}
+                      className="px-2 py-1 hover:text-foreground transition-colors"
+                    >
+                      None
+                    </button>
+                  </div>
                 </div>
-                {importVolumes && hasBindMounts && (
+
+                <div className="space-y-1.5 rounded-lg border p-2">
+                  {mounts.map((m) => {
+                    const isBind = m.type === "bind";
+                    const isSelected = mountToggles[m.destination] ?? true;
+                    return (
+                      <div
+                        key={m.destination}
+                        className="flex items-start gap-2.5 rounded-md px-1 py-1.5"
+                      >
+                        <Checkbox
+                          id={`mount-${m.destination}`}
+                          checked={isSelected}
+                          onCheckedChange={(checked) => toggleMount(m.destination, !!checked)}
+                          className="mt-0.5 shrink-0"
+                        />
+                        <Label
+                          htmlFor={`mount-${m.destination}`}
+                          className="min-w-0 flex-1 cursor-pointer space-y-0.5 font-normal"
+                        >
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {isBind ? (
+                              <FolderOpen aria-hidden="true" className="size-3 shrink-0 text-amber-500" />
+                            ) : (
+                              <HardDrive aria-hidden="true" className="size-3 shrink-0 text-muted-foreground" />
+                            )}
+                            <span className="font-mono text-xs truncate">
+                              {m.destination}
+                            </span>
+                            {isBind ? (
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] px-1.5 py-0 h-4 border-amber-300 text-amber-700 dark:border-amber-700 dark:text-amber-400 shrink-0"
+                              >
+                                bind
+                              </Badge>
+                            ) : (
+                              <Badge
+                                variant="secondary"
+                                className="text-[10px] px-1.5 py-0 h-4 shrink-0"
+                              >
+                                named
+                              </Badge>
+                            )}
+                          </div>
+                          {isBind ? (
+                            <p className="text-[10px] text-amber-600 dark:text-amber-500 font-mono truncate pl-4">
+                              Host: {m.source}
+                            </p>
+                          ) : (
+                            <p className="text-[10px] text-muted-foreground font-mono truncate pl-4">
+                              Volume: {m.source}
+                            </p>
+                          )}
+                        </Label>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {hasSelectedBindMounts && (
                   <div role="alert" className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
                     <AlertTriangle aria-hidden="true" className="size-3.5 shrink-0 mt-0.5" />
                     <span>

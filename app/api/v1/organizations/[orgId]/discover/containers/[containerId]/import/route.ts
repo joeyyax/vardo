@@ -44,6 +44,10 @@ const importSchema = z.object({
     )
     .max(500, "Too many environment variables")
     .default([]),
+  // Array of container-side destination paths to import; empty array = no mounts.
+  // If omitted, falls back to importVolumes for backward compatibility.
+  selectedMountDestinations: z.array(z.string().max(4096, "Mount destination too long")).max(100, "Too many mount destinations").optional(),
+  // Deprecated: use selectedMountDestinations. Kept for backward compatibility.
   importVolumes: z.boolean().default(true),
 });
 
@@ -97,12 +101,23 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       detail.ports.find((p) => p.internal)?.internal ??
       null;
 
+    // Resolve which mounts to import
+    const selectedDests =
+      data.selectedMountDestinations !== undefined
+        ? new Set(data.selectedMountDestinations)
+        : data.importVolumes
+          ? null // null = all mounts
+          : new Set<string>(); // empty = no mounts
+
+    const mountsToImport =
+      selectedDests === null
+        ? detail.mounts
+        : detail.mounts.filter((m) => selectedDests.has(m.destination));
+
     // Generate compose file
-    const namedVolumes = data.importVolumes
-      ? detail.mounts
-          .filter((m) => m.type === "volume")
-          .map((m) => ({ name: m.source, mountPath: m.destination }))
-      : [];
+    const namedVolumes = mountsToImport
+      .filter((m) => m.type === "volume")
+      .map((m) => ({ name: m.source, mountPath: m.destination }));
 
     let compose = generateComposeForImage({
       projectName: data.name,
@@ -202,15 +217,17 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           });
         }
 
-        // Create volume records
-        if (data.importVolumes && detail.mounts.length > 0) {
-          for (const mount of detail.mounts) {
+        // Create volume records for selected mounts
+        if (mountsToImport.length > 0) {
+          for (const mount of mountsToImport) {
             await tx.insert(volumes).values({
               id: nanoid(),
               appId,
               organizationId: orgId,
               name: mount.source || mount.destination.replace(/\//g, "-").replace(/^-/, ""),
               mountPath: mount.destination,
+              type: mount.type === "bind" ? "bind" : "named",
+              source: mount.source || null,
               // Bind mounts are flagged as non-persistent — Vardo can't manage host paths
               persistent: mount.type !== "bind",
             });
@@ -243,8 +260,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const bindMounts = detail.mounts.filter((m) => m.type === "bind");
-    if (data.importVolumes && bindMounts.length > 0) {
+    const bindMounts = mountsToImport.filter((m) => m.type === "bind");
+    if (bindMounts.length > 0) {
       warnings.push(
         `${bindMounts.length} bind mount(s) reference host paths — they've been imported but Vardo won't manage the data.`
       );

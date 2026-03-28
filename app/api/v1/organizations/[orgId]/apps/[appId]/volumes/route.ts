@@ -17,6 +17,7 @@ const volumeSchema = z.object({
   mountPath: z.string().min(1)
     .refine((p) => p.startsWith("/"), "Mount path must be absolute")
     .refine((p) => !p.includes(".."), "Mount path must not contain '..'"),
+  type: z.enum(["named", "bind"]).optional().default("named"),
   persistent: z.boolean().default(true),
   description: z.string().optional(),
   maxSizeBytes: z.number().int().positive().nullable().optional(),
@@ -31,7 +32,7 @@ type VolumeInfo = {
   id: string | null;
   name: string;
   mountPath: string;
-  type: "named" | "anonymous" | "bind";
+  type: "named" | "bind";
   persistent: boolean;
   shared: boolean;
   description: string | null;
@@ -143,7 +144,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
           id: saved.id,
           name: saved.name,
           mountPath: saved.mountPath,
-          type: "named",
+          type: saved.type as "named" | "bind",
           persistent: saved.persistent,
           shared: saved.shared,
           description: saved.description,
@@ -151,7 +152,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
           warnAtPercent: saved.warnAtPercent,
           ignorePatterns: saved.ignorePatterns,
           driftCount: saved.driftCount ?? 0,
-          source: saved.name,
+          source: saved.source ?? saved.name,
           sizeBytes: null,
         });
       }
@@ -207,6 +208,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         await db.update(volumes)
           .set({
             mountPath: vol.mountPath,
+            type: vol.type ?? prev.type,
             persistent: vol.persistent,
             description: vol.description ?? prev.description,
             maxSizeBytes: vol.maxSizeBytes !== undefined ? vol.maxSizeBytes : prev.maxSizeBytes,
@@ -221,6 +223,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
           organizationId: orgId,
           name: vol.name,
           mountPath: vol.mountPath,
+          type: vol.type ?? "named",
           persistent: vol.persistent,
           description: vol.description,
           maxSizeBytes: vol.maxSizeBytes ?? null,
