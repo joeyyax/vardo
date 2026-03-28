@@ -14,5 +14,12 @@ if [ -n "${DOCKER_GID:-}" ]; then
   adduser nextjs "$(getent group "$DOCKER_GID" | cut -d: -f1)" 2>/dev/null || true
 fi
 
+# Ensure the Traefik dynamic config directory is owned by the app user.
+# Docker named volumes are initialised as root — chown here so writes succeed
+# after privilege drop. Traefik (running as root) can still read/watch the dir.
+TRAEFIK_DYNAMIC_DIR="${TRAEFIK_DYNAMIC_DIR:-/etc/traefik/dynamic}"
+mkdir -p "$TRAEFIK_DYNAMIC_DIR"
+chown nextjs:nodejs "$TRAEFIK_DYNAMIC_DIR"
+
 # Drop to nextjs user, run migrations, start the app
 exec gosu nextjs sh -c "node scripts/migrate.mjs && npx next start"

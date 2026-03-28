@@ -209,14 +209,18 @@ export async function regenerateAppRouteConfig(appId: string): Promise<void> {
     },
   };
 
-  try {
-    await mkdir(TRAEFIK_DYNAMIC_DIR, { recursive: true });
-  } catch {
-    // Directory may already exist
-  }
+  await mkdir(TRAEFIK_DYNAMIC_DIR, { recursive: true });
 
   const filePath = join(TRAEFIK_DYNAMIC_DIR, `${app.name}.yml`);
-  await writeFile(filePath, YAML.stringify(config), "utf-8");
+  try {
+    await writeFile(filePath, YAML.stringify(config), "utf-8");
+  } catch (err: unknown) {
+    // Not running in an environment with the Traefik volume — skip silently.
+    if (err && typeof err === "object" && "code" in err && (err as NodeJS.ErrnoException).code === "ENOENT") {
+      return;
+    }
+    throw err;
+  }
   logger.info(
     `[traefik] Wrote dynamic config for ${app.name} (${appDomains.length} domain(s))`
   );
