@@ -66,6 +66,7 @@ export function AppSettingsDialog({
   const [editParentId, setEditParentId] = useState<string | null>(app.projectId ?? null);
   const [cpuLimit, setCpuLimit] = useState(app.cpuLimit?.toString() || "");
   const [memoryLimit, setMemoryLimit] = useState(app.memoryLimit?.toString() || "");
+  const [gpuEnabled, setGpuEnabled] = useState(app.gpuEnabled ?? false);
   const [diskWriteAlertThreshold, setDiskWriteAlertThreshold] = useState(app.diskWriteAlertThreshold ? (app.diskWriteAlertThreshold / 1_073_741_824).toString() : "");
   const [autoRollback, setAutoRollback] = useState(app.autoRollback ?? false);
   const [rollbackGracePeriod, setRollbackGracePeriod] = useState(app.rollbackGracePeriod?.toString() || "60");
@@ -103,6 +104,7 @@ export function AppSettingsDialog({
       body.restartPolicy = restartPolicy;
       body.cpuLimit = cpuLimit ? parseFloat(cpuLimit) : null;
       body.memoryLimit = memoryLimit ? parseInt(memoryLimit, 10) : null;
+      body.gpuEnabled = gpuEnabled;
       body.diskWriteAlertThreshold = diskWriteAlertThreshold ? Math.round(parseFloat(diskWriteAlertThreshold) * 1_073_741_824) : null;
       body.autoRollback = autoRollback;
       body.rollbackGracePeriod = rollbackGracePeriod ? parseInt(rollbackGracePeriod, 10) : 60;
@@ -340,6 +342,21 @@ export function AppSettingsDialog({
                 <Label htmlFor="edit-disk-write-threshold">Disk Write Alert (GB/hr)</Label>
                 <Input id="edit-disk-write-threshold" type="number" step="0.5" min="0.1" placeholder="Default: 1 GB" value={diskWriteAlertThreshold} onChange={(e) => setDiskWriteAlertThreshold(e.target.value)} />
                 <p className="text-xs text-muted-foreground">{diskWriteAlertThreshold ? diskWriteAlertThreshold + " GB/hr" : "Default: 1 GB/hr"}</p>
+              </div>
+            </div>
+
+            {/* GPU Access */}
+            <div className="flex items-center gap-3">
+              <Switch
+                id="edit-gpu-enabled"
+                checked={gpuEnabled}
+                onCheckedChange={setGpuEnabled}
+              />
+              <div className="grid gap-0.5">
+                <Label htmlFor="edit-gpu-enabled">GPU Access</Label>
+                <p className="text-xs text-muted-foreground">
+                  Pass all NVIDIA GPUs through to the container via <span className="font-mono">deploy.resources.reservations.devices</span>. Requires the NVIDIA Container Toolkit on the host.
+                </p>
               </div>
             </div>
 

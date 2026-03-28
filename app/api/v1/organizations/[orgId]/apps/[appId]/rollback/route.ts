@@ -62,6 +62,7 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
         envContent: true,
         cpuLimit: true,
         memoryLimit: true,
+        gpuEnabled: true,
         containerPort: true,
         composeFilePath: true,
         rootDirectory: true,
@@ -131,6 +132,7 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
         if (configSnapshot) {
           appUpdates.cpuLimit = configSnapshot.cpuLimit;
           appUpdates.memoryLimit = configSnapshot.memoryLimit;
+          appUpdates.gpuEnabled = configSnapshot.gpuEnabled ?? false;
           appUpdates.containerPort = configSnapshot.containerPort;
           appUpdates.imageName = configSnapshot.imageName;
           appUpdates.gitBranch = configSnapshot.gitBranch;
@@ -185,6 +187,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         envContent: true,
         cpuLimit: true,
         memoryLimit: true,
+        gpuEnabled: true,
         containerPort: true,
         imageName: true,
         gitBranch: true,
@@ -228,6 +231,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       const fields: { key: keyof typeof configSnapshot; label: string }[] = [
         { key: "cpuLimit", label: "CPU Limit" },
         { key: "memoryLimit", label: "Memory Limit" },
+        { key: "gpuEnabled", label: "GPU Access" },
         { key: "containerPort", label: "Container Port" },
         { key: "imageName", label: "Image" },
         { key: "gitBranch", label: "Git Branch" },

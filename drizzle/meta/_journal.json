@@ -92,6 +92,13 @@
       "when": 1774684969203,
       "tag": "0012_premium_annihilus",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1743120000000,
+      "tag": "0013_gpu_enabled",
+      "breakpoints": true
     }
   ]
 }

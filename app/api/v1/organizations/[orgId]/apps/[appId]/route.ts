@@ -35,6 +35,7 @@ const updateAppSchema = z.object({
   })).nullable().optional(),
   cpuLimit: z.number().positive().max(64).nullable().optional(),
   memoryLimit: z.number().int().min(64).max(65536).nullable().optional(),
+  gpuEnabled: z.boolean().optional(),
   diskWriteAlertThreshold: z.number().int().min(0).nullable().optional(), // bytes/hour, null = default 1GB
   autoRollback: z.boolean().optional(),
   rollbackGracePeriod: z.number().int().min(10).max(600).optional(),
