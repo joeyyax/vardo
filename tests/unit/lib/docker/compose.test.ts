@@ -117,6 +117,15 @@ describe("sanitizeCompose", () => {
       const { compose: result } = sanitizeCompose(compose, { allowBindMounts: true });
       expect(result.services.app.volumes).toEqual(["./uploads:/uploads"]);
     });
+
+    it("blocks path traversal that resolves to a denied path", () => {
+      // ../../../../../../etc traverses above the filesystem root and resolves
+      // to /etc — the deny list must still catch it after resolve().
+      const compose = makeCompose(["../../../../../../etc:/host/etc"]);
+      expect(() => sanitizeCompose(compose, { allowBindMounts: true })).toThrow(
+        /blocked host path/,
+      );
+    });
   });
 
   describe("services without volumes", () => {
