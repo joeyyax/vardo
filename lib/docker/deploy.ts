@@ -19,6 +19,7 @@ import {
   injectResourceLimits,
   parseCompose,
   sanitizeCompose,
+  validateCompose,
   composeToYaml,
   type ComposeFile,
 } from "./compose";
@@ -39,6 +40,10 @@ function parseAndSanitize(yaml: string, log: (msg: string) => void, projectAllow
   }
   if (sanitized.strippedMounts.length > 0) {
     log(`[deploy] Stripped ${sanitized.strippedMounts.length} bind mount(s): ${sanitized.strippedMounts.join(", ")}`);
+  }
+  const { valid, errors } = validateCompose(sanitized.compose, { allowBindMounts: bindMountsEnabled });
+  if (!valid) {
+    throw new DeployBlockedError(`Compose validation failed:\n${errors.join("\n")}`);
   }
   return sanitized.compose;
 }
@@ -640,6 +645,13 @@ export async function runDeployment(
     const allServicesCustomNetwork = servicesWithCustomNetwork.length === Object.keys(compose.services).length;
 
     if (!allServicesCustomNetwork) {
+      // Find the first bridge-network service in compose file order (Object.keys preserves
+      // insertion order for string keys, matching the order services appear in the compose file).
+      // This ensures Traefik labels target a service reachable on vardo-network rather than
+      // a host-network, service:X, or container:X service that Traefik can't reach.
+      const primaryServiceName = Object.keys(compose.services).find(
+        (k) => !compose.services[k].network_mode || compose.services[k].network_mode === "bridge"
+      );
       for (const domain of app.domains) {
         const port = domain.port || containerPort;
         compose = injectTraefikLabels(compose, {
@@ -651,6 +663,7 @@ export async function runDeployment(
           ssl: domain.sslEnabled ?? true,
           redirectTo: domain.redirectTo ?? undefined,
           redirectCode: domain.redirectCode ?? 301,
+          serviceName: primaryServiceName,
         });
         if (domain.redirectTo) {
           log(`[deploy] Traefik: ${domain.domain} → redirect ${domain.redirectCode ?? 301} ${domain.redirectTo}`);
