@@ -1401,12 +1401,19 @@ export function ProjectDetail({
       </BottomSheet>
 
       {/* Edit project sheet */}
-      <BottomSheet open={editOpen} onOpenChange={setEditOpen}>
+      <BottomSheet open={editOpen} onOpenChange={(open) => {
+        setEditOpen(open);
+        if (!open) {
+          setEditDisplayName(project.displayName);
+          setEditDescription(project.description || "");
+          setEditAllowBindMounts(project.allowBindMounts);
+        }
+      }}>
         <BottomSheetContent>
           <BottomSheetHeader>
             <BottomSheetTitle>Edit Project</BottomSheetTitle>
             <BottomSheetDescription>
-              Update project name and description.
+              Update project name, description, and settings.
             </BottomSheetDescription>
           </BottomSheetHeader>
           <div className="p-6 space-y-4">
