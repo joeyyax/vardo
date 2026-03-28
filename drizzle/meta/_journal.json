@@ -78,6 +78,13 @@
       "when": 1774674287521,
       "tag": "0010_light_natasha_romanoff",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1774674614254,
+      "tag": "0011_narrow_wonder_man",
+      "breakpoints": true
     }
   ]
 }

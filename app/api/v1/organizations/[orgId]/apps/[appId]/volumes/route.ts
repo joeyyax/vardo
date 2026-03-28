@@ -152,7 +152,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
           warnAtPercent: saved.warnAtPercent,
           ignorePatterns: saved.ignorePatterns,
           driftCount: saved.driftCount ?? 0,
-          source: saved.name,
+          source: saved.source ?? saved.name,
           sizeBytes: null,
         });
       }
