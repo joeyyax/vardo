@@ -160,7 +160,7 @@ function bytesToSizeString(bytes: number): string {
 /**
  * Convert Docker's nanosecond duration to a compose-compatible duration string.
  */
-function nanosToDuration(nanos: number): string {
+export function nanosToDuration(nanos: number): string {
   const ms = nanos / 1e6;
   const s = ms / 1000;
   const m = s / 60;

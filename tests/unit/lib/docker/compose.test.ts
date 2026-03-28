@@ -745,30 +745,7 @@ describe("injectResourceLimits", () => {
 // ---------------------------------------------------------------------------
 
 describe("parseCompose — extended fields", () => {
-  it("parses restart policy", () => {
-    const yaml = `
-services:
-  app:
-    image: nginx
-    restart: unless-stopped
-`;
-    const compose = parseCompose(yaml);
-    expect(compose.services.app.restart).toBe("unless-stopped");
-  });
-
-  it("parses env_file as array", () => {
-    const yaml = `
-services:
-  app:
-    image: nginx
-    env_file:
-      - .env
-`;
-    const compose = parseCompose(yaml);
-    expect(compose.services.app.env_file).toEqual([".env"]);
-  });
-
-  it("parses env_file as string and normalises to array", () => {
+  it("normalises env_file from scalar string to array", () => {
     const yaml = `
 services:
   app:
@@ -779,225 +756,20 @@ services:
     expect(compose.services.app.env_file).toEqual([".env"]);
   });
 
-  it("parses cap_add and cap_drop", () => {
-    const yaml = `
-services:
-  app:
-    image: nginx
-    cap_add:
-      - NET_ADMIN
-      - SYS_PTRACE
-    cap_drop:
-      - ALL
-`;
-    const compose = parseCompose(yaml);
-    expect(compose.services.app.cap_add).toEqual(["NET_ADMIN", "SYS_PTRACE"]);
-    expect(compose.services.app.cap_drop).toEqual(["ALL"]);
-  });
-
-  it("parses devices", () => {
-    const yaml = `
-services:
-  app:
-    image: nvidia/cuda
-    devices:
-      - /dev/nvidia0:/dev/nvidia0
-`;
-    const compose = parseCompose(yaml);
-    expect(compose.services.app.devices).toEqual(["/dev/nvidia0:/dev/nvidia0"]);
-  });
-
-  it("parses privileged", () => {
-    const yaml = `
-services:
-  app:
-    image: nginx
-    privileged: true
-`;
-    const compose = parseCompose(yaml);
-    expect(compose.services.app.privileged).toBe(true);
-  });
-
-  it("does not set privileged when false", () => {
+  it("omits privileged and init when explicitly false", () => {
     const yaml = `
 services:
   app:
     image: nginx
     privileged: false
-`;
-    const compose = parseCompose(yaml);
-    expect(compose.services.app.privileged).toBeUndefined();
-  });
-
-  it("parses security_opt", () => {
-    const yaml = `
-services:
-  app:
-    image: nginx
-    security_opt:
-      - no-new-privileges:true
-`;
-    const compose = parseCompose(yaml);
-    expect(compose.services.app.security_opt).toEqual(["no-new-privileges:true"]);
-  });
-
-  it("parses shm_size", () => {
-    const yaml = `
-services:
-  app:
-    image: nginx
-    shm_size: 128m
-`;
-    const compose = parseCompose(yaml);
-    expect(compose.services.app.shm_size).toBe("128m");
-  });
-
-  it("parses init", () => {
-    const yaml = `
-services:
-  app:
-    image: nginx
-    init: true
-`;
-    const compose = parseCompose(yaml);
-    expect(compose.services.app.init).toBe(true);
-  });
-
-  it("does not set init when false", () => {
-    const yaml = `
-services:
-  app:
-    image: nginx
     init: false
 `;
     const compose = parseCompose(yaml);
+    expect(compose.services.app.privileged).toBeUndefined();
     expect(compose.services.app.init).toBeUndefined();
   });
 
-  it("parses extra_hosts", () => {
-    const yaml = `
-services:
-  app:
-    image: nginx
-    extra_hosts:
-      - "myhost:192.168.1.10"
-`;
-    const compose = parseCompose(yaml);
-    expect(compose.services.app.extra_hosts).toEqual(["myhost:192.168.1.10"]);
-  });
-
-  it("parses healthcheck", () => {
-    const yaml = `
-services:
-  app:
-    image: nginx
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-`;
-    const compose = parseCompose(yaml);
-    expect(compose.services.app.healthcheck?.test).toEqual(["CMD", "curl", "-f", "http://localhost/"]);
-    expect(compose.services.app.healthcheck?.interval).toBe("30s");
-    expect(compose.services.app.healthcheck?.retries).toBe(3);
-  });
-
-  it("parses ulimits with soft/hard values", () => {
-    const yaml = `
-services:
-  app:
-    image: nginx
-    ulimits:
-      nofile:
-        soft: 1024
-        hard: 65536
-`;
-    const compose = parseCompose(yaml);
-    expect(compose.services.app.ulimits?.nofile).toEqual({ soft: 1024, hard: 65536 });
-  });
-
-  it("parses ulimits as single value", () => {
-    const yaml = `
-services:
-  app:
-    image: nginx
-    ulimits:
-      nproc: 65535
-`;
-    const compose = parseCompose(yaml);
-    expect(compose.services.app.ulimits?.nproc).toBe(65535);
-  });
-
-  it("parses hostname", () => {
-    const yaml = `
-services:
-  app:
-    image: nginx
-    hostname: my-custom-host
-`;
-    const compose = parseCompose(yaml);
-    expect(compose.services.app.hostname).toBe("my-custom-host");
-  });
-
-  it("parses user", () => {
-    const yaml = `
-services:
-  app:
-    image: nginx
-    user: "1000:1000"
-`;
-    const compose = parseCompose(yaml);
-    expect(compose.services.app.user).toBe("1000:1000");
-  });
-
-  it("parses stop_signal", () => {
-    const yaml = `
-services:
-  app:
-    image: nginx
-    stop_signal: SIGINT
-`;
-    const compose = parseCompose(yaml);
-    expect(compose.services.app.stop_signal).toBe("SIGINT");
-  });
-
-  it("parses entrypoint as array", () => {
-    const yaml = `
-services:
-  app:
-    image: nginx
-    entrypoint: ["/docker-entrypoint.sh"]
-`;
-    const compose = parseCompose(yaml);
-    expect(compose.services.app.entrypoint).toEqual(["/docker-entrypoint.sh"]);
-  });
-
-  it("parses command as string", () => {
-    const yaml = `
-services:
-  app:
-    image: nginx
-    command: nginx -g 'daemon off;'
-`;
-    const compose = parseCompose(yaml);
-    expect(compose.services.app.command).toBe("nginx -g 'daemon off;'");
-  });
-
-  it("parses tmpfs as array", () => {
-    const yaml = `
-services:
-  app:
-    image: nginx
-    tmpfs:
-      - /run
-      - /tmp
-`;
-    const compose = parseCompose(yaml);
-    expect(compose.services.app.tmpfs).toEqual(["/run", "/tmp"]);
-  });
-
-  it("parses tmpfs as string and normalises to array", () => {
+  it("normalises tmpfs from scalar string to array", () => {
     const yaml = `
 services:
   app:
@@ -1006,6 +778,22 @@ services:
 `;
     const compose = parseCompose(yaml);
     expect(compose.services.app.tmpfs).toEqual(["/run"]);
+  });
+
+  it("parses ulimits in both single-value and soft/hard object forms", () => {
+    const yaml = `
+services:
+  app:
+    image: nginx
+    ulimits:
+      nproc: 65535
+      nofile:
+        soft: 1024
+        hard: 65536
+`;
+    const compose = parseCompose(yaml);
+    expect(compose.services.app.ulimits?.nproc).toBe(65535);
+    expect(compose.services.app.ulimits?.nofile).toEqual({ soft: 1024, hard: 65536 });
   });
 
   it("round-trips all extended fields through yaml", () => {

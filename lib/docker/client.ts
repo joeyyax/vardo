@@ -296,6 +296,46 @@ export async function listContainers(projectLabel?: string, environmentLabel?: s
   }).map(mapRawContainer);
 }
 
+// ---------------------------------------------------------------------------
+// inspectContainer helpers (exported for testing)
+// ---------------------------------------------------------------------------
+
+/**
+ * Normalize a Docker restart policy name + retry count to compose format.
+ * Returns "no" when name is empty/absent.
+ */
+export function normalizeRestartPolicy(name: string, maxRetryCount: number): string {
+  if (!name) return "no";
+  if (name === "on-failure" && maxRetryCount > 0) {
+    return `on-failure:${maxRetryCount}`;
+  }
+  return name;
+}
+
+type RawHealthcheck = {
+  Test?: string[];
+  Interval?: number;
+  Timeout?: number;
+  Retries?: number;
+  StartPeriod?: number;
+} | null | undefined;
+
+/**
+ * Convert a Docker Engine healthcheck object to the internal shape.
+ * Returns null when no healthcheck is configured or it is explicitly disabled
+ * (test array starts with "NONE").
+ */
+export function parseDockerHealthcheck(hc: RawHealthcheck): ContainerRuntimeOptions["healthcheck"] {
+  if (!hc?.Test || hc.Test[0] === "NONE") return null;
+  return {
+    test: hc.Test,
+    interval: hc.Interval ?? 0,
+    timeout: hc.Timeout ?? 0,
+    retries: hc.Retries ?? 0,
+    startPeriod: hc.StartPeriod ?? 0,
+  };
+}
+
 export async function inspectContainer(id: string): Promise<ContainerInspect> {
   const data = await dockerRequest<{
     Id: string;
@@ -344,28 +384,11 @@ export async function inspectContainer(id: string): Promise<ContainerInspect> {
   const hc = data.HostConfig;
   const cfg = data.Config;
 
-  // Normalize restart policy to compose format
-  let restartPolicy = "no";
-  if (hc.RestartPolicy?.Name) {
-    const { Name, MaximumRetryCount } = hc.RestartPolicy;
-    if (Name === "on-failure" && MaximumRetryCount && MaximumRetryCount > 0) {
-      restartPolicy = `on-failure:${MaximumRetryCount}`;
-    } else {
-      restartPolicy = Name;
-    }
-  }
-
-  // Healthcheck: null if test is ["NONE"] (disabled) or missing
-  let healthcheck: ContainerInspect["healthcheck"] = null;
-  if (cfg.Healthcheck?.Test && cfg.Healthcheck.Test[0] !== "NONE") {
-    healthcheck = {
-      test: cfg.Healthcheck.Test,
-      interval: cfg.Healthcheck.Interval ?? 0,
-      timeout: cfg.Healthcheck.Timeout ?? 0,
-      retries: cfg.Healthcheck.Retries ?? 0,
-      startPeriod: cfg.Healthcheck.StartPeriod ?? 0,
-    };
-  }
+  const restartPolicy = normalizeRestartPolicy(
+    hc.RestartPolicy?.Name ?? "",
+    hc.RestartPolicy?.MaximumRetryCount ?? 0,
+  );
+  const healthcheck = parseDockerHealthcheck(cfg.Healthcheck);
 
   return {
     id: data.Id,
