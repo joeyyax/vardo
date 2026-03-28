@@ -7,6 +7,7 @@ import { NotificationListener } from "@/components/notification-listener";
 import { getSession, getCurrentOrg, getUserOrganizations } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/config/features";
 import { SessionFooter } from "@/components/layout/session-footer";
+import { UpdateBanner } from "@/components/layout/update-banner";
 
 export const metadata: Metadata = {
   robots: {
@@ -57,6 +58,8 @@ export default async function AppLayout({
             organizations={organizations}
           />
         </div>
+
+        <UpdateBanner />
 
         <main className="mx-auto max-w-screen-xl px-5 py-8 lg:px-10 flex-1 w-full">
           {children}
