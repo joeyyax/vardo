@@ -7,6 +7,7 @@ import { generateMeshToken } from "@/lib/mesh/auth";
 import { ensureHubConfig } from "@/lib/mesh";
 import { getInstanceId } from "@/lib/constants";
 import { getInstanceConfig } from "@/lib/system-settings";
+import { hostname as osHostname } from "node:os";
 import { needsSetup } from "@/lib/setup";
 import { inheritConfigFromHub, validateHubUrl } from "@/lib/mesh/config-inheritance";
 import { rebuildAndSync } from "@/lib/mesh/wireguard";
@@ -63,7 +64,7 @@ export async function POST(request: NextRequest) {
 
     const instanceId = await getInstanceId();
     const instanceConfig = await getInstanceConfig();
-    const hostname = instanceConfig.instanceName || instanceConfig.domain || "unknown";
+    const hostname = instanceConfig.instanceName || instanceConfig.domain || osHostname();
 
     // Generate a token the hub can use to call our API
     const { raw: ourToken, hash: ourTokenHash } = generateMeshToken();
@@ -108,7 +109,7 @@ export async function POST(request: NextRequest) {
     await db.insert(meshPeers).values({
       id: nanoid(),
       instanceId: joinData.peer.instanceId,
-      name: "Hub",
+      name: joinData.hub.name || "Hub",
       type: "persistent",
       publicKey: joinData.hub.publicKey,
       endpoint: joinData.hub.endpoint,
