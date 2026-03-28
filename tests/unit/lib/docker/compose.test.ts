@@ -6,6 +6,8 @@ import {
   injectTraefikLabels,
   validateCompose,
   composeToYaml,
+  injectGpuDevices,
+  injectResourceLimits,
   type ComposeFile,
 } from "@/lib/docker/compose";
 
@@ -625,5 +627,113 @@ describe("injectTraefikLabels — service:X and container:X network modes", () =
     const result = injectTraefikLabels(compose, { ...baseOpts, serviceName: primaryServiceName });
     expect(result.services.db.labels?.["traefik.enable"]).toBe("true");
     expect(result.services.sidecar.labels?.["traefik.enable"]).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// injectGpuDevices
+// ---------------------------------------------------------------------------
+
+const baseCompose = (): ComposeFile => ({
+  services: {
+    app: {
+      name: "app",
+      image: "myapp:latest",
+    },
+  },
+});
+
+describe("injectGpuDevices", () => {
+  it("adds nvidia gpu reservation to a service", () => {
+    const result = injectGpuDevices(baseCompose());
+    const devices = result.services.app.deploy?.resources?.reservations?.devices;
+    expect(devices).toHaveLength(1);
+    expect(devices?.[0]).toMatchObject({
+      driver: "nvidia",
+      count: "all",
+      capabilities: ["gpu"],
+    });
+  });
+
+  it("does not duplicate gpu entry when already present", () => {
+    const compose: ComposeFile = {
+      services: {
+        app: {
+          name: "app",
+          image: "myapp:latest",
+          deploy: {
+            resources: {
+              reservations: {
+                devices: [{ driver: "nvidia", count: "all", capabilities: ["gpu"] }],
+              },
+            },
+          },
+        },
+      },
+    };
+    const result = injectGpuDevices(compose);
+    const devices = result.services.app.deploy?.resources?.reservations?.devices;
+    expect(devices).toHaveLength(1);
+  });
+
+  it("preserves existing deploy resource limits when injecting gpu", () => {
+    const compose: ComposeFile = {
+      services: {
+        app: {
+          name: "app",
+          image: "myapp:latest",
+          deploy: {
+            resources: {
+              limits: { cpus: "2", memory: "1024M" },
+            },
+          },
+        },
+      },
+    };
+    const result = injectGpuDevices(compose);
+    expect(result.services.app.deploy?.resources?.limits).toEqual({
+      cpus: "2",
+      memory: "1024M",
+    });
+    const devices = result.services.app.deploy?.resources?.reservations?.devices;
+    expect(devices).toHaveLength(1);
+    expect(devices?.[0].capabilities).toContain("gpu");
+  });
+
+  it("does not mutate the original compose", () => {
+    const original = baseCompose();
+    injectGpuDevices(original);
+    expect(original.services.app.deploy).toBeUndefined();
+  });
+
+  it("injects gpu into every service", () => {
+    const compose: ComposeFile = {
+      services: {
+        web: { name: "web", image: "web:latest" },
+        worker: { name: "worker", image: "worker:latest" },
+      },
+    };
+    const result = injectGpuDevices(compose);
+    for (const svc of Object.values(result.services)) {
+      const devices = svc.deploy?.resources?.reservations?.devices;
+      expect(devices).toHaveLength(1);
+      expect(devices?.[0].capabilities).toContain("gpu");
+    }
+  });
+});
+
+describe("injectResourceLimits", () => {
+  it("adds cpu and memory limits", () => {
+    const result = injectResourceLimits(baseCompose(), { cpuLimit: 1.5, memoryLimit: 512 });
+    expect(result.services.app.deploy?.resources?.limits).toEqual({
+      cpus: "1.5",
+      memory: "512M",
+    });
+  });
+
+  it("returns unchanged compose when no limits provided", () => {
+    const original = baseCompose();
+    const result = injectResourceLimits(original, {});
+    expect(result).toBe(original);
   });
 });

@@ -280,6 +280,51 @@ export function injectResourceLimits(
 }
 
 // ---------------------------------------------------------------------------
+// GPU / device injection
+// ---------------------------------------------------------------------------
+
+/**
+ * Inject NVIDIA GPU access into every service in a compose file via
+ * deploy.resources.reservations.devices.  Uses `count: all` so every
+ * available GPU is accessible.  Returns a new ComposeFile — does not
+ * mutate the original.
+ *
+ * This is a whole-app toggle — all services in the compose file receive
+ * the NVIDIA runtime reservation.  For multi-service apps, every container
+ * gets the overhead regardless of whether it actually needs GPU access.
+ */
+export function injectGpuDevices(compose: ComposeFile): ComposeFile {
+  const updatedServices: Record<string, ComposeService> = {};
+  for (const [key, svc] of Object.entries(compose.services)) {
+    const existingDevices = svc.deploy?.resources?.reservations?.devices ?? [];
+    const alreadyHasGpu = existingDevices.some((d) =>
+      d.capabilities?.includes("gpu")
+    );
+    if (alreadyHasGpu) {
+      updatedServices[key] = svc;
+      continue;
+    }
+    updatedServices[key] = {
+      ...svc,
+      deploy: {
+        ...svc.deploy,
+        resources: {
+          ...svc.deploy?.resources,
+          reservations: {
+            ...svc.deploy?.resources?.reservations,
+            devices: [
+              ...existingDevices,
+              { driver: "nvidia", count: "all", capabilities: ["gpu"] },
+            ],
+          },
+        },
+      },
+    };
+  }
+  return { ...compose, services: updatedServices };
+}
+
+// ---------------------------------------------------------------------------
 // Port detection
 // ---------------------------------------------------------------------------
 

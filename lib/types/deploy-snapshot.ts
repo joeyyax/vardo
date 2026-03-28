@@ -6,6 +6,7 @@
 export type ConfigSnapshot = {
   cpuLimit: number | null;
   memoryLimit: number | null;
+  gpuEnabled: boolean;
   containerPort: number | null;
   imageName: string | null;
   gitBranch: string | null;
