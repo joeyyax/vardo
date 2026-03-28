@@ -6,7 +6,8 @@ import { decodeInviteToken } from "@/lib/mesh/invite";
 import { generateMeshToken } from "@/lib/mesh/auth";
 import { ensureHubConfig } from "@/lib/mesh";
 import { getInstanceId } from "@/lib/constants";
-import { getInstanceConfig } from "@/lib/system-settings";
+import { getInstanceDisplayName } from "@/lib/system-settings";
+import { hostname as osHostname } from "node:os";
 import { needsSetup } from "@/lib/setup";
 import { inheritConfigFromHub, validateHubUrl } from "@/lib/mesh/config-inheritance";
 import { rebuildAndSync } from "@/lib/mesh/wireguard";
@@ -16,6 +17,20 @@ import { nanoid } from "nanoid";
 import { toCidr } from "@/lib/mesh/ip-allocator";
 
 const joinSchema = z.object({ token: z.string().min(1, "Invite token is required") }).strict();
+
+const joinResponseSchema = z.object({
+  peer: z.object({
+    instanceId: z.string(),
+    internalIp: z.string(),
+  }).passthrough(),
+  token: z.string(),
+  hub: z.object({
+    publicKey: z.string(),
+    endpoint: z.string().nullable().optional(),
+    internalIp: z.string(),
+    name: z.string().max(255).nullable().optional(),
+  }),
+});
 
 /**
  * POST /api/v1/admin/mesh/join — join a mesh using an invite token.
@@ -62,8 +77,7 @@ export async function POST(request: NextRequest) {
     const localPublicKey = await ensureHubConfig("10.99.0.254");
 
     const instanceId = await getInstanceId();
-    const instanceConfig = await getInstanceConfig();
-    const hostname = instanceConfig.instanceName || instanceConfig.domain || "unknown";
+    const hostname = (await getInstanceDisplayName()) ?? osHostname();
 
     // Generate a token the hub can use to call our API
     const { raw: ourToken, hash: ourTokenHash } = generateMeshToken();
@@ -91,13 +105,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const joinData = await joinRes.json();
+    const rawJoinData = await joinRes.json();
     if (!joinRes.ok) {
       return NextResponse.json(
-        { error: joinData.error || "The other instance rejected the invite." },
+        { error: rawJoinData.error || "The other instance rejected the invite." },
         { status: joinRes.status }
       );
     }
+
+    // Validate and parse the hub's response — clamps hub.name to 255 chars at the parse layer
+    const joinParsed = joinResponseSchema.safeParse(rawJoinData);
+    if (!joinParsed.success) {
+      return NextResponse.json(
+        { error: "Unexpected response from the other instance." },
+        { status: 502 }
+      );
+    }
+    const joinData = joinParsed.data;
 
     // The hub allocated an IP for us: joinData.peer.internalIp
     // The hub's own mesh IP: joinData.hub.internalIp
@@ -108,7 +132,7 @@ export async function POST(request: NextRequest) {
     await db.insert(meshPeers).values({
       id: nanoid(),
       instanceId: joinData.peer.instanceId,
-      name: "Hub",
+      name: joinData.hub.name || "Hub",
       type: "persistent",
       publicKey: joinData.hub.publicKey,
       endpoint: joinData.hub.endpoint,

@@ -7,6 +7,7 @@ import { meshPeers } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { redeemInvite } from "@/lib/mesh/invite";
 import { registerPeer } from "@/lib/mesh/peers";
+import { getInstanceDisplayName } from "@/lib/system-settings";
 
 const WG_KEY_RE = /^[A-Za-z0-9+/]{43}=$/;
 
@@ -49,7 +50,10 @@ async function handler(request: NextRequest) {
       );
     }
 
-    const { peer, token } = await registerPeer(peerInput);
+    const [{ peer, token }, hubName] = await Promise.all([
+      registerPeer(peerInput),
+      getInstanceDisplayName(),
+    ]);
 
     // Store the joiner's outbound token so we can call their API
     if (joinerOutboundToken) {
@@ -68,6 +72,7 @@ async function handler(request: NextRequest) {
           publicKey: hub.hubPublicKey,
           endpoint: hub.hubEndpoint,
           internalIp: hub.hubInternalIp,
+          name: hubName,
         },
       },
       { status: 201 }
