@@ -31,6 +31,40 @@ export type ContainerInfo = {
   labels: Record<string, string>;
 };
 
+/**
+ * Fields shared across ContainerInspect, ContainerDetail, and ContainerConfig.
+ * Extracted here so all three stay in sync automatically.
+ */
+export type ContainerRuntimeOptions = {
+  // Extended host config
+  capAdd: string[];
+  capDrop: string[];
+  devices: { hostPath: string; containerPath: string; permissions: string }[];
+  privileged: boolean;
+  securityOpt: string[];
+  shmSize: number; // bytes; 0 means use default
+  init: boolean;
+  extraHosts: string[];
+  restartPolicy: string; // compose-format: "no", "always", "unless-stopped", "on-failure", "on-failure:N"
+  nanoCpus: number; // 0 = no limit
+  memoryBytes: number; // 0 = no limit
+  ulimits: { name: string; soft: number; hard: number }[];
+  tmpfs: string[];
+  // Container config
+  hostname: string;
+  user: string;
+  stopSignal: string;
+  healthcheck: {
+    test: string[];
+    interval: number; // nanoseconds
+    timeout: number;  // nanoseconds
+    retries: number;
+    startPeriod: number; // nanoseconds
+  } | null;
+  entrypoint: string[];
+  command: string[];
+};
+
 export type ContainerInspect = {
   id: string;
   name: string;
@@ -42,7 +76,7 @@ export type ContainerInspect = {
   networks: string[];
   networkMode: string;
   mounts: { source: string; destination: string; type: string }[];
-};
+} & ContainerRuntimeOptions;
 
 // ---------------------------------------------------------------------------
 // Connection helpers
@@ -262,6 +296,46 @@ export async function listContainers(projectLabel?: string, environmentLabel?: s
   }).map(mapRawContainer);
 }
 
+// ---------------------------------------------------------------------------
+// inspectContainer helpers (exported for testing)
+// ---------------------------------------------------------------------------
+
+/**
+ * Normalize a Docker restart policy name + retry count to compose format.
+ * Returns "no" when name is empty/absent.
+ */
+export function normalizeRestartPolicy(name: string, maxRetryCount: number): string {
+  if (!name) return "no";
+  if (name === "on-failure" && maxRetryCount > 0) {
+    return `on-failure:${maxRetryCount}`;
+  }
+  return name;
+}
+
+type RawHealthcheck = {
+  Test?: string[];
+  Interval?: number;
+  Timeout?: number;
+  Retries?: number;
+  StartPeriod?: number;
+} | null | undefined;
+
+/**
+ * Convert a Docker Engine healthcheck object to the internal shape.
+ * Returns null when no healthcheck is configured or it is explicitly disabled
+ * (test array starts with "NONE").
+ */
+export function parseDockerHealthcheck(hc: RawHealthcheck): ContainerRuntimeOptions["healthcheck"] {
+  if (!hc?.Test || hc.Test[0] === "NONE") return null;
+  return {
+    test: hc.Test,
+    interval: hc.Interval ?? 0,
+    timeout: hc.Timeout ?? 0,
+    retries: hc.Retries ?? 0,
+    startPeriod: hc.StartPeriod ?? 0,
+  };
+}
+
 export async function inspectContainer(id: string): Promise<ContainerInspect> {
   const data = await dockerRequest<{
     Id: string;
@@ -271,16 +345,50 @@ export async function inspectContainer(id: string): Promise<ContainerInspect> {
       Image: string;
       Env: string[];
       Labels: Record<string, string>;
+      Hostname?: string;
+      User?: string;
+      StopSignal?: string;
+      Healthcheck?: {
+        Test?: string[];
+        Interval?: number;
+        Timeout?: number;
+        Retries?: number;
+        StartPeriod?: number;
+      } | null;
+      Entrypoint?: string[] | null;
+      Cmd?: string[] | null;
     };
     HostConfig: {
       PortBindings?: Record<string, { HostPort: string }[] | null>;
       NetworkMode?: string;
+      CapAdd?: string[] | null;
+      CapDrop?: string[] | null;
+      Devices?: { PathOnHost: string; PathInContainer: string; CgroupPermissions: string }[] | null;
+      Privileged?: boolean;
+      SecurityOpt?: string[] | null;
+      ShmSize?: number;
+      Init?: boolean | null;
+      ExtraHosts?: string[] | null;
+      RestartPolicy?: { Name: string; MaximumRetryCount: number };
+      NanoCpus?: number;
+      Memory?: number;
+      Ulimits?: { Name: string; Soft: number; Hard: number }[] | null;
+      Tmpfs?: Record<string, string> | null;
     };
     NetworkSettings: {
       Networks?: Record<string, unknown>;
     };
     Mounts: { Source: string; Destination: string; Type: string }[];
   }>("GET", `/containers/${id}/json`);
+
+  const hc = data.HostConfig;
+  const cfg = data.Config;
+
+  const restartPolicy = normalizeRestartPolicy(
+    hc.RestartPolicy?.Name ?? "",
+    hc.RestartPolicy?.MaximumRetryCount ?? 0,
+  );
+  const healthcheck = parseDockerHealthcheck(cfg.Healthcheck);
 
   return {
     id: data.Id,
@@ -290,17 +398,44 @@ export async function inspectContainer(id: string): Promise<ContainerInspect> {
       status: data.State.Status,
       startedAt: data.State.StartedAt,
     },
-    image: data.Config.Image,
-    ports: parseInspectPorts(data.HostConfig.PortBindings),
-    env: data.Config.Env ?? [],
-    labels: data.Config.Labels ?? {},
+    image: cfg.Image,
+    ports: parseInspectPorts(hc.PortBindings),
+    env: cfg.Env ?? [],
+    labels: cfg.Labels ?? {},
     networks: Object.keys(data.NetworkSettings.Networks ?? {}),
-    networkMode: data.HostConfig.NetworkMode ?? "bridge",
+    networkMode: hc.NetworkMode ?? "bridge",
     mounts: (data.Mounts ?? []).map((m) => ({
       source: m.Source,
       destination: m.Destination,
       type: m.Type,
     })),
+    capAdd: hc.CapAdd ?? [],
+    capDrop: hc.CapDrop ?? [],
+    devices: (hc.Devices ?? []).map((d) => ({
+      hostPath: d.PathOnHost,
+      containerPath: d.PathInContainer,
+      permissions: d.CgroupPermissions,
+    })),
+    privileged: hc.Privileged ?? false,
+    securityOpt: hc.SecurityOpt ?? [],
+    shmSize: hc.ShmSize ?? 0,
+    init: hc.Init ?? false,
+    extraHosts: hc.ExtraHosts ?? [],
+    restartPolicy,
+    nanoCpus: hc.NanoCpus ?? 0,
+    memoryBytes: hc.Memory ?? 0,
+    ulimits: (hc.Ulimits ?? []).map((u) => ({
+      name: u.Name,
+      soft: u.Soft,
+      hard: u.Hard,
+    })),
+    tmpfs: Object.keys(hc.Tmpfs ?? {}),
+    hostname: cfg.Hostname ?? "",
+    user: cfg.User ?? "",
+    stopSignal: cfg.StopSignal ?? "",
+    healthcheck,
+    entrypoint: cfg.Entrypoint ?? [],
+    command: cfg.Cmd ?? [],
   };
 }
 
