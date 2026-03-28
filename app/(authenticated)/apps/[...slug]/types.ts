@@ -89,6 +89,7 @@ export type App = {
   exposedPorts: { internal: number; external?: number; description?: string }[] | null;
   cpuLimit: number | null;
   memoryLimit: number | null;
+  gpuEnabled: boolean | null;
   diskWriteAlertThreshold: number | null;
   autoRollback: boolean | null;
   rollbackGracePeriod: number | null;

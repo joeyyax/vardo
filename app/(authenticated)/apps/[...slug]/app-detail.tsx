@@ -1031,6 +1031,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
       <AppSettingsDialog
         app={app}
         orgId={orgId}
+        userRole={userRole}
         open={editOpen}
         onOpenChange={setEditOpen}
         allParentApps={allParentApps}
