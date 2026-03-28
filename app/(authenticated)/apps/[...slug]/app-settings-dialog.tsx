@@ -25,11 +25,13 @@ import {
 } from "@/components/ui/select";
 import { BranchSelect } from "@/components/branch-select";
 
+import { isAdmin } from "@/lib/auth/permissions";
 import type { App } from "./types";
 
 export function AppSettingsDialog({
   app,
   orgId,
+  userRole,
   open,
   onOpenChange,
   allParentApps,
@@ -37,6 +39,7 @@ export function AppSettingsDialog({
 }: {
   app: App;
   orgId: string;
+  userRole: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   allParentApps: { id: string; name: string; color: string }[];
@@ -345,21 +348,6 @@ export function AppSettingsDialog({
               </div>
             </div>
 
-            {/* GPU Access */}
-            <div className="flex items-center gap-3">
-              <Switch
-                id="edit-gpu-enabled"
-                checked={gpuEnabled}
-                onCheckedChange={setGpuEnabled}
-              />
-              <div className="grid gap-0.5">
-                <Label htmlFor="edit-gpu-enabled">GPU Access</Label>
-                <p className="text-xs text-muted-foreground">
-                  Pass all NVIDIA GPUs through to the container via <span className="font-mono">deploy.resources.reservations.devices</span>. Requires the NVIDIA Container Toolkit on the host.
-                </p>
-              </div>
-            </div>
-
             {/* Toggles */}
             <div className="grid gap-3">
               <div className="flex items-center gap-3">
@@ -377,6 +365,22 @@ export function AppSettingsDialog({
                   onCheckedChange={setAutoRollback}
                 />
                 <Label htmlFor="edit-auto-rollback">Auto Rollback</Label>
+              </div>
+              <div className="flex items-center gap-3">
+                <Switch
+                  id="edit-gpu-enabled"
+                  checked={gpuEnabled}
+                  onCheckedChange={setGpuEnabled}
+                  disabled={!isAdmin(userRole)}
+                />
+                <div className="grid gap-0.5">
+                  <Label htmlFor="edit-gpu-enabled">GPU Access</Label>
+                  <p className="text-xs text-muted-foreground">
+                    {isAdmin(userRole)
+                      ? <>Pass all NVIDIA GPUs through to the container via <span className="font-mono">deploy.resources.reservations.devices</span>. Requires the NVIDIA Container Toolkit on the host.</>
+                      : "Only owners and admins can enable GPU access."}
+                  </p>
+                </div>
               </div>
               {autoRollback && (
                 <div className="grid gap-2 pl-10">
