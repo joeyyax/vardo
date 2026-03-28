@@ -96,6 +96,14 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    // GPU passthrough grants direct host hardware access — restrict to owner/admin
+    if (parsed.data.gpuEnabled === true && org.membership.role !== "owner" && org.membership.role !== "admin") {
+      return NextResponse.json(
+        { error: "Only owners and admins can enable GPU passthrough" },
+        { status: 403 }
+      );
+    }
+
     // Validate projectId changes — must belong to same org
     let oldProjectId: string | null = null;
     if ("projectId" in parsed.data) {
