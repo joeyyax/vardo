@@ -320,7 +320,7 @@ export function ImportDialog({
                     <button
                       type="button"
                       onClick={() => setAllMounts(true)}
-                      className="hover:text-foreground transition-colors"
+                      className="px-2 py-1 hover:text-foreground transition-colors"
                     >
                       All
                     </button>
@@ -328,7 +328,7 @@ export function ImportDialog({
                     <button
                       type="button"
                       onClick={() => setAllMounts(false)}
-                      className="hover:text-foreground transition-colors"
+                      className="px-2 py-1 hover:text-foreground transition-colors"
                     >
                       None
                     </button>
@@ -350,9 +350,9 @@ export function ImportDialog({
                           onCheckedChange={(checked) => toggleMount(m.destination, !!checked)}
                           className="mt-0.5 shrink-0"
                         />
-                        <label
+                        <Label
                           htmlFor={`mount-${m.destination}`}
-                          className="min-w-0 flex-1 cursor-pointer space-y-0.5"
+                          className="min-w-0 flex-1 cursor-pointer space-y-0.5 font-normal"
                         >
                           <div className="flex items-center gap-1.5 flex-wrap">
                             {isBind ? (
@@ -388,7 +388,7 @@ export function ImportDialog({
                               Volume: {m.source}
                             </p>
                           )}
-                        </label>
+                        </Label>
                       </div>
                     );
                   })}

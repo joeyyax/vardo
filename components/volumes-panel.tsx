@@ -719,7 +719,7 @@ export function VolumesPanel({ appId, orgId }: Props) {
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex items-center gap-4 min-w-0 flex-1">
                     {vol.type === "bind" ? (
-                      <FolderOpen className="size-4 text-amber-500 shrink-0" />
+                      <FolderOpen aria-hidden="true" className="size-4 text-amber-500 shrink-0" />
                     ) : (
                       <HardDrive className="size-4 text-muted-foreground shrink-0" />
                     )}
