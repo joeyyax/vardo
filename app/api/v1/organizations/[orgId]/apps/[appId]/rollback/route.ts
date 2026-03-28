@@ -10,6 +10,7 @@ import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { decrypt, encrypt } from "@/lib/crypto/encrypt";
 import type { ConfigSnapshot } from "@/lib/types/deploy-snapshot";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { isAdmin } from "@/lib/auth/permissions";
 
 const rollbackSchema = z.object({
   deploymentId: z.string().min(1, "deploymentId is required"),
@@ -103,6 +104,15 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
     }
 
     const configSnapshot = targetDeployment.configSnapshot as ConfigSnapshot | null;
+
+    // Rolling back to a snapshot with GPU passthrough enabled restores host hardware
+    // access — gate it the same way as enabling GPU via PATCH.
+    if (configSnapshot?.gpuEnabled === true && !isAdmin(org.membership.role)) {
+      return NextResponse.json(
+        { error: "Only owners and admins can roll back to a snapshot with GPU passthrough enabled" },
+        { status: 403 },
+      );
+    }
 
     // Trigger a new deploy through the normal blue-green flow.
     // Config and env changes are applied AFTER the deploy succeeds

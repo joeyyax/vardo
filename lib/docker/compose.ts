@@ -288,6 +288,10 @@ export function injectResourceLimits(
  * deploy.resources.reservations.devices.  Uses `count: all` so every
  * available GPU is accessible.  Returns a new ComposeFile — does not
  * mutate the original.
+ *
+ * This is a whole-app toggle — all services in the compose file receive
+ * the NVIDIA runtime reservation.  For multi-service apps, every container
+ * gets the overhead regardless of whether it actually needs GPU access.
  */
 export function injectGpuDevices(compose: ComposeFile): ComposeFile {
   const updatedServices: Record<string, ComposeService> = {};

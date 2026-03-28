@@ -25,7 +25,6 @@ import {
 } from "@/components/ui/select";
 import { BranchSelect } from "@/components/branch-select";
 
-import { isAdmin } from "@/lib/auth/permissions";
 import type { App } from "./types";
 
 export function AppSettingsDialog({
@@ -371,12 +370,12 @@ export function AppSettingsDialog({
                   id="edit-gpu-enabled"
                   checked={gpuEnabled}
                   onCheckedChange={setGpuEnabled}
-                  disabled={!isAdmin(userRole)}
+                  disabled={userRole !== "owner" && userRole !== "admin"}
                 />
                 <div className="grid gap-0.5">
                   <Label htmlFor="edit-gpu-enabled">GPU Access</Label>
                   <p className="text-xs text-muted-foreground">
-                    {isAdmin(userRole)
+                    {userRole === "owner" || userRole === "admin"
                       ? <>Pass all NVIDIA GPUs through to the container via <span className="font-mono">deploy.resources.reservations.devices</span>. Requires the NVIDIA Container Toolkit on the host.</>
                       : "Only owners and admins can enable GPU access."}
                   </p>

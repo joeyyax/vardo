@@ -7,6 +7,7 @@ import { z } from "zod";
 import { stopProject } from "@/lib/docker/deploy";
 import { recordActivity } from "@/lib/activity";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { isAdmin } from "@/lib/auth/permissions";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -97,7 +98,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     // GPU passthrough grants direct host hardware access — restrict to owner/admin
-    if (parsed.data.gpuEnabled === true && org.membership.role !== "owner" && org.membership.role !== "admin") {
+    if (parsed.data.gpuEnabled === true && !isAdmin(org.membership.role)) {
       return NextResponse.json(
         { error: "Only owners and admins can enable GPU passthrough" },
         { status: 403 }
@@ -168,7 +169,7 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    if (org.membership.role !== "owner" && org.membership.role !== "admin") {
+    if (!isAdmin(org.membership.role)) {
       return NextResponse.json(
         { error: "Only owners and admins can delete apps" },
         { status: 403 }
