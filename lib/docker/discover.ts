@@ -1,5 +1,5 @@
 import { listContainers, inspectContainer } from "./client";
-import type { ContainerInspect } from "./client";
+import type { ContainerInspect, ContainerRuntimeOptions } from "./client";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -29,7 +29,8 @@ export type DiscoveryResponse = {
 export type ContainerDetail = DiscoveredContainer & {
   env: string[];
   networks: string[];
-};
+  labels: Record<string, string>;
+} & ContainerRuntimeOptions;
 
 // ---------------------------------------------------------------------------
 // Traefik label parsing
@@ -180,6 +181,26 @@ export async function getContainerDetail(containerId: string): Promise<Container
     networkMode,
     env: data.env,
     networks: data.networks,
+    labels: data.labels,
+    capAdd: data.capAdd,
+    capDrop: data.capDrop,
+    devices: data.devices,
+    privileged: data.privileged,
+    securityOpt: data.securityOpt,
+    shmSize: data.shmSize,
+    init: data.init,
+    extraHosts: data.extraHosts,
+    restartPolicy: data.restartPolicy,
+    nanoCpus: data.nanoCpus,
+    memoryBytes: data.memoryBytes,
+    ulimits: data.ulimits,
+    tmpfs: data.tmpfs,
+    hostname: data.hostname,
+    user: data.user,
+    stopSignal: data.stopSignal,
+    healthcheck: data.healthcheck,
+    entrypoint: data.entrypoint,
+    command: data.command,
   };
 }
 
