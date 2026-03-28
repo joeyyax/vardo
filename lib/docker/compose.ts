@@ -553,6 +553,23 @@ export function validateCompose(compose: ComposeFile, opts?: ValidateOptions): {
         }
       }
     }
+
+    // Validate network_mode service:X references
+    if (svc.network_mode) {
+      const nm = svc.network_mode;
+      if (nm.startsWith("service:")) {
+        const targetService = nm.slice("service:".length);
+        if (!targetService) {
+          errors.push(`Service "${name}" has invalid network_mode "${nm}" — service name is empty`);
+        } else if (!compose.services[targetService]) {
+          errors.push(
+            `Service "${name}" has network_mode "${nm}" but service "${targetService}" is not defined`,
+          );
+        } else if (targetService === name) {
+          errors.push(`Service "${name}" cannot reference itself in network_mode`);
+        }
+      }
+    }
   }
 
   return { valid: errors.length === 0, errors };
