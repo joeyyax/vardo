@@ -6,6 +6,8 @@ import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { isAdmin } from "@/lib/auth/permissions";
+import { logger } from "@/lib/logger";
+import { recordActivity } from "@/lib/activity";
 
 type RouteParams = {
   params: Promise<{ orgId: string; projectId: string }>;
@@ -133,6 +135,19 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         .set(parsed.data)
         .where(eq(projects.id, existing.id))
         .returning();
+
+      if (parsed.data.allowBindMounts !== undefined) {
+        logger.info(
+          { projectId: existing.id, userId: org.session.user.id, allowBindMounts: parsed.data.allowBindMounts },
+          "allowBindMounts flag changed",
+        );
+        recordActivity({
+          organizationId: orgId,
+          action: "project.allow_bind_mounts.updated",
+          userId: org.session.user.id,
+          metadata: { projectId: existing.id, allowBindMounts: parsed.data.allowBindMounts },
+        }).catch(() => {});
+      }
 
       return NextResponse.json({ project: updated });
     } catch (updateError) {
