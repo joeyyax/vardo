@@ -60,6 +60,7 @@ export function ImportDialog({
   const [envVars, setEnvVars] = useState<EnvVar[]>([]);
   // Per-mount toggles: keyed by destination path
   const [mountToggles, setMountToggles] = useState<Record<string, boolean>>({});
+  const [manualPort, setManualPort] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   // Load container detail when dialog opens
@@ -74,6 +75,7 @@ export function ImportDialog({
     setNewProjectName("");
     setEnvVars([]);
     setMountToggles({});
+    setManualPort("");
     setDetail(null);
     setDetailError(false);
 
@@ -144,6 +146,8 @@ export function ImportDialog({
         .filter((m) => mountToggles[m.destination])
         .map((m) => m.destination);
 
+      const parsedManualPort = manualPort ? parseInt(manualPort, 10) : undefined;
+
       const body = {
         displayName,
         name,
@@ -151,6 +155,7 @@ export function ImportDialog({
         newProjectName: projectId === "new" ? newProjectName : undefined,
         envVars,
         selectedMountDestinations,
+        containerPort: parsedManualPort,
       };
 
       const res = await fetch(
@@ -198,6 +203,13 @@ export function ImportDialog({
   const hasSelectedBindMounts = selectedMounts.some((m) => m.type === "bind");
   const selectedCount = selectedMounts.length;
   const isHostNetwork = (detail?.networkMode ?? container?.networkMode) === "host";
+
+  // Show the manual port field only after detail loads and auto-detection has no result.
+  // Auto-detection: Traefik label port first, then first exposed internal port.
+  const autoDetectedPort = detail
+    ? (detail.containerPort ?? detail.ports.find((p) => p.internal)?.internal ?? null)
+    : undefined;
+  const showPortField = detail !== null && autoDetectedPort === null && !isHostNetwork;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -277,6 +289,25 @@ export function ImportDialog({
                   onChange={(e) => setNewProjectName(e.target.value)}
                   placeholder="My Project"
                 />
+              </div>
+            )}
+
+            {showPortField && (
+              <div className="space-y-1.5">
+                <Label htmlFor="containerPort">Container port</Label>
+                <Input
+                  id="containerPort"
+                  type="number"
+                  min={1}
+                  max={65535}
+                  value={manualPort}
+                  onChange={(e) => setManualPort(e.target.value)}
+                  placeholder="e.g. 3000"
+                  aria-describedby="container-port-hint"
+                />
+                <p id="container-port-hint" className="text-xs text-muted-foreground">
+                  No port was detected automatically. Specify the port your app listens on to enable domain routing.
+                </p>
               </div>
             )}
 

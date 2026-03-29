@@ -51,6 +51,8 @@ const importSchema = z.object({
   selectedMountDestinations: z.array(z.string().max(4096, "Mount destination too long")).max(100, "Too many mount destinations").optional(),
   // Deprecated: use selectedMountDestinations. Kept for backward compatibility.
   importVolumes: z.boolean().default(true),
+  // User-supplied port when auto-detection (Traefik labels + exposed ports) yields nothing.
+  containerPort: z.number().int().min(1).max(65535).optional(),
 });
 
 // POST /api/v1/organizations/[orgId]/discover/containers/[containerId]/import
@@ -97,10 +99,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Determine container port — prefer Traefik-detected, then first exposed port
+    // Determine container port — prefer Traefik-detected, then first exposed port,
+    // then user-supplied value when auto-detection yields nothing.
     const containerPort =
       detail.containerPort ??
       detail.ports.find((p) => p.internal)?.internal ??
+      data.containerPort ??
       null;
 
     // Resolve which mounts to import
