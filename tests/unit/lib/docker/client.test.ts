@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizeRestartPolicy, parseDockerHealthcheck, stripDockerProjectPrefix, resolveVolumeName } from "@/lib/docker/client";
+import { normalizeRestartPolicy, parseDockerHealthcheck, stripDockerProjectPrefix, resolveVolumeName, parseExposedPorts } from "@/lib/docker/client";
 import { nanosToDuration } from "@/lib/docker/compose";
 
 describe("normalizeRestartPolicy", () => {
@@ -108,6 +108,36 @@ describe("stripDockerProjectPrefix", () => {
     // The regex removes everything up to and including the first underscore,
     // so a leading underscore removes just that character.
     expect(stripDockerProjectPrefix("_data")).toBe("data");
+  });
+});
+
+describe("parseExposedPorts", () => {
+  it("parses a single tcp port", () => {
+    expect(parseExposedPorts({ "8080/tcp": {} })).toEqual([8080]);
+  });
+
+  it("parses multiple ports", () => {
+    expect(parseExposedPorts({ "80/tcp": {}, "443/tcp": {}, "8080/tcp": {} })).toEqual([80, 443, 8080]);
+  });
+
+  it("parses udp ports", () => {
+    expect(parseExposedPorts({ "53/udp": {} })).toEqual([53]);
+  });
+
+  it("returns empty array for null", () => {
+    expect(parseExposedPorts(null)).toEqual([]);
+  });
+
+  it("returns empty array for undefined", () => {
+    expect(parseExposedPorts(undefined)).toEqual([]);
+  });
+
+  it("returns empty array for empty object", () => {
+    expect(parseExposedPorts({})).toEqual([]);
+  });
+
+  it("filters out non-numeric entries", () => {
+    expect(parseExposedPorts({ "notaport/tcp": {} })).toEqual([]);
   });
 });
 
