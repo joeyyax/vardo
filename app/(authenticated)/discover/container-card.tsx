@@ -7,7 +7,7 @@ import type { DiscoveredContainer } from "@/lib/docker/discover";
 
 type ContainerCardProps = {
   container: DiscoveredContainer;
-  onImport: (container: DiscoveredContainer) => void;
+  onImport?: (container: DiscoveredContainer) => void;
 };
 
 export function ContainerCard({ container, onImport }: ContainerCardProps) {
@@ -30,15 +30,17 @@ export function ContainerCard({ container, onImport }: ContainerCardProps) {
           </div>
           <p className="text-xs text-muted-foreground mt-1 truncate">{container.image}</p>
         </div>
-        <Button
-          size="sm"
-          variant="outline"
-          className="shrink-0"
-          onClick={() => onImport(container)}
-          aria-label={`Import ${container.name}`}
-        >
-          Import
-        </Button>
+        {onImport && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="shrink-0"
+            onClick={() => onImport(container)}
+            aria-label={`Import ${container.name}`}
+          >
+            Import
+          </Button>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
