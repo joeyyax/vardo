@@ -526,6 +526,22 @@ function stripDockerLogHeaders(raw: string): string {
 // Port detection
 // ---------------------------------------------------------------------------
 
+/**
+ * Fetch the env vars baked into a Docker image.
+ * Returns an empty array if the image cannot be inspected (e.g. the image
+ * was removed after the container was created).
+ */
+export async function inspectImageEnv(imageRef: string): Promise<string[]> {
+  try {
+    const image = await dockerRequest<{
+      Config?: { Env?: string[] | null };
+    }>("GET", `/images/${encodeURIComponent(imageRef)}/json`);
+    return image.Config?.Env ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export async function detectExposedPorts(imageOrId: string): Promise<number[]> {
   // Try image inspect first, fall back to container inspect
   let exposedPorts: Record<string, unknown> | undefined;
