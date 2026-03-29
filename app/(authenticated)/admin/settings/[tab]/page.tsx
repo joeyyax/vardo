@@ -4,7 +4,6 @@ import { apps } from "@/lib/db/schema";
 import { getCurrentOrg } from "@/lib/auth/session";
 import { eq } from "drizzle-orm";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
-import { OverviewSettings } from "../overview-settings";
 import { GeneralSettings } from "../general-settings";
 import { EmailSettings } from "../email-settings";
 import { AuthSettings } from "../auth-settings";
@@ -18,11 +17,10 @@ import { TraefikSettings } from "../traefik-settings";
 import { ExternalRoutesSettings } from "../external-routes-settings";
 import { BackupPage } from "@/components/backups/backup-page";
 
-const VALID_TABS = ["overview", "general", "email", "authentication", "feature-flags", "backup", "github", "domain", "traefik", "external-routes", "instances", "config"] as const;
+const VALID_TABS = ["general", "email", "authentication", "feature-flags", "backup", "github", "domain", "traefik", "external-routes", "instances", "config"] as const;
 type ValidTab = (typeof VALID_TABS)[number];
 
 const TAB_COMPONENTS: Record<ValidTab, React.ComponentType> = {
-  "overview": OverviewSettings,
   "general": GeneralSettings,
   "email": EmailSettings,
   "authentication": AuthSettings,

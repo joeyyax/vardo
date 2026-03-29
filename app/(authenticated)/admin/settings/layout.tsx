@@ -8,7 +8,6 @@ import { SettingsNav } from "@/components/settings-nav";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 
 const BASE_NAV_ITEMS = [
-  { label: "Overview", href: "/admin/settings/overview" },
   { label: "General", href: "/admin/settings/general" },
   { label: "Email", href: "/admin/settings/email" },
   { label: "Authentication", href: "/admin/settings/authentication" },

@@ -5,7 +5,7 @@ import { getSession, getCurrentOrg } from "@/lib/auth/session";
 import { eq } from "drizzle-orm";
 import { AdminPanel } from "../admin-panel";
 
-const VALID_TABS = ["overview", "system", "organizations", "users", "maintenance", "metrics"] as const;
+const VALID_TABS = ["overview", "organizations", "users", "maintenance", "metrics"] as const;
 type ValidTab = (typeof VALID_TABS)[number];
 
 type PageProps = {
