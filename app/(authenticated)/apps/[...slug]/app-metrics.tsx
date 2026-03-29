@@ -183,7 +183,10 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled }: AppMet
 
   // Determine if GPU data is actually present in the stream (covers live containers
   // that have GPU even if gpuEnabled flag isn't set on the app record yet)
-  const hasGpuData = gpuEnabled || containers.some((c) => c.gpuMemoryTotal > 0);
+  const hasGpuData = useMemo(
+    () => gpuEnabled || containers.some((c) => c.gpuMemoryTotal > 0),
+    [gpuEnabled, containers],
+  );
 
   // Error state -- metrics service unreachable
   if (error && !connected && !loading && points.length === 0) {

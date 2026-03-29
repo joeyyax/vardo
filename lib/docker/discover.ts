@@ -80,7 +80,7 @@ function isManagedContainer(labels: Record<string, string>): boolean {
  * Checks image name and labels for NVIDIA indicators since the list-containers
  * API does not expose env vars or device mounts.
  */
-function detectContainerGpu(image: string, labels: Record<string, string>): boolean {
+export function detectContainerGpu(image: string, labels: Record<string, string>): boolean {
   const img = image.toLowerCase();
   if (img.includes("nvidia") || img.includes("cuda") || img.startsWith("nvcr.io/")) return true;
   // NVIDIA runtime labels
