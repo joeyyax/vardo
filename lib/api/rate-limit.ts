@@ -50,6 +50,7 @@ end
  *   must supply an IP — note x-forwarded-for can be spoofed if not behind a
  *   trusted proxy.
  * @param key - Logical bucket name prefixed onto the Redis key (e.g. "mcp:create-preview").
+ *   Pass an empty string to produce a bare `rl:${identifier}` key (legacy format, no bucket).
  */
 export async function slidingWindowRateLimit(
   identifier: string,
@@ -57,7 +58,7 @@ export async function slidingWindowRateLimit(
   limit: number,
   windowMs: number
 ): Promise<{ limited: false } | { limited: true; retryAfterSeconds: number }> {
-  const redisKey = `rl:${key}:${identifier}`;
+  const redisKey = key ? `rl:${key}:${identifier}` : `rl:${identifier}`;
   const now = Date.now();
   const ttlSeconds = Math.ceil(windowMs / 1000);
 
@@ -122,7 +123,7 @@ export async function rateLimit(
 
   const result = await slidingWindowRateLimit(
     rateLimitId,
-    opts.key ?? "default",
+    opts.key ?? "",
     opts.limit,
     opts.windowMs
   );

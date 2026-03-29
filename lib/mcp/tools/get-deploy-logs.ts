@@ -16,7 +16,7 @@ import type { McpAuthContext } from "../auth";
  * Pattern: word boundary, 3+ uppercase/underscore name, `=`, non-whitespace value.
  * Intentionally broad — better to over-redact than expose credentials.
  */
-function scrubEnvValues(log: string): string {
+export function scrubEnvValues(log: string): string {
   return log.replace(/\b([A-Z_][A-Z0-9_]{2,})=([^\s"'\n]+)/g, "$1=[redacted]");
 }
 
