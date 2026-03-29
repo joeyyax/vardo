@@ -459,9 +459,11 @@ async function mrangeQueryImpl(
 
   if (!result || result.length === 0) return [];
 
-  // Aggregate across series by summing (or max for limits)
+  // Aggregate across series: max for limits, avg for GPU util/temp, sum otherwise
   const pointMap = new Map<number, number>();
   const useMax = metric === "memoryLimit" || metric === "disk";
+  const useAvg = metric === "gpuUtilization" || metric === "gpuTemperature";
+  const countMap = useAvg ? new Map<number, number>() : null;
 
   for (const series of result as [string, string[][], [string, string][]][]) {
     const dataPoints = series[2];
@@ -472,11 +474,14 @@ async function mrangeQueryImpl(
         pointMap.set(t, Math.max(pointMap.get(t) || 0, v));
       } else {
         pointMap.set(t, (pointMap.get(t) || 0) + v);
+        if (countMap) countMap.set(t, (countMap.get(t) || 0) + 1);
       }
     }
   }
 
-  return Array.from(pointMap.entries()).sort((a, b) => a[0] - b[0]);
+  return Array.from(pointMap.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([t, v]) => [t, countMap ? v / Math.max(1, countMap.get(t) ?? 1) : v] as TimeSeriesPoint);
 }
 
 // ---------------------------------------------------------------------------
