@@ -82,6 +82,7 @@ async function handler(_request: NextRequest, { params }: RouteParams) {
       },
       volumesList,
       NETWORK_NAME,
+      org.organization.trusted ?? false,
     );
 
     const compose = composeParsed ? composeToYaml(composeParsed) : null;

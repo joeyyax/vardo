@@ -1193,6 +1193,7 @@ export function buildComposePreview(
   app: ComposePreviewApp,
   volumesList: { name: string; mountPath: string }[],
   networkName: string,
+  orgTrusted?: boolean,
 ): ComposeFile | null {
   let compose: ComposeFile | null = null;
 
@@ -1200,8 +1201,12 @@ export function buildComposePreview(
     // Imported container — use stored compose
     try {
       const parsed = parseCompose(app.composeContent);
-      const { compose: sanitized } = sanitizeCompose(parsed, { allowBindMounts: true });
-      compose = sanitized;
+      if (orgTrusted) {
+        compose = parsed;
+      } else {
+        const { compose: sanitized } = sanitizeCompose(parsed, { allowBindMounts: true });
+        compose = sanitized;
+      }
     } catch {
       return null;
     }
@@ -1217,8 +1222,12 @@ export function buildComposePreview(
     // Stored compose content (git repos with inline compose)
     try {
       const parsed = parseCompose(app.composeContent);
-      const { compose: sanitized } = sanitizeCompose(parsed, { allowBindMounts: true });
-      compose = sanitized;
+      if (orgTrusted) {
+        compose = parsed;
+      } else {
+        const { compose: sanitized } = sanitizeCompose(parsed, { allowBindMounts: true });
+        compose = sanitized;
+      }
     } catch {
       return null;
     }
