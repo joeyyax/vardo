@@ -694,10 +694,11 @@ export async function runDeployment(
       const primaryServiceName = Object.keys(compose.services).find(
         (k) => !compose.services[k].network_mode || compose.services[k].network_mode === "bridge"
       );
+      const narrowedProtocol = narrowBackendProtocol(app.backendProtocol);
       for (const domain of app.domains) {
         const port = domain.port || containerPort;
         const resolvedProtocol = resolveBackendProtocol(
-          narrowBackendProtocol(app.backendProtocol),
+          narrowedProtocol,
           port,
         );
         compose = injectTraefikLabels(compose, {
