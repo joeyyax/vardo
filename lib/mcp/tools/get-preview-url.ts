@@ -1,10 +1,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { environments } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { groupEnvironments, environments, apps, projects } from "@/lib/db/schema";
+import { eq, and } from "drizzle-orm";
 import type { McpAuthContext } from "../auth";
-import { resolveOrgPreview, previewNotFound } from "./preview-helpers";
+import { previewNotFound } from "./preview-helpers";
 
 export function registerGetPreviewUrl(
   server: McpServer,
@@ -19,25 +19,42 @@ export function registerGetPreviewUrl(
         .describe("The preview environment ID (returned by vardo_create_preview)"),
     },
     async ({ preview_id }) => {
-      const preview = await resolveOrgPreview(preview_id, context.organizationId);
-      if (!preview) return previewNotFound();
+      // Single query: verify org ownership and fetch environment URLs in one JOIN.
+      // LEFT JOINs on environments/apps so a preview with no environments still
+      // resolves rather than returning not-found.
+      const rows = await db
+        .select({
+          envId: environments.id,
+          envName: environments.name,
+          domain: environments.domain,
+          appId: apps.id,
+          appName: apps.name,
+          appDisplayName: apps.displayName,
+        })
+        .from(groupEnvironments)
+        .innerJoin(projects, eq(groupEnvironments.projectId, projects.id))
+        .leftJoin(
+          environments,
+          eq(environments.groupEnvironmentId, groupEnvironments.id)
+        )
+        .leftJoin(apps, eq(environments.appId, apps.id))
+        .where(
+          and(
+            eq(groupEnvironments.id, preview_id),
+            eq(projects.organizationId, context.organizationId)
+          )
+        );
 
-      const envs = await db.query.environments.findMany({
-        where: eq(environments.groupEnvironmentId, preview_id),
-        columns: { id: true, name: true, domain: true },
-        with: {
-          app: { columns: { id: true, name: true, displayName: true } },
-        },
-      });
+      if (rows.length === 0) return previewNotFound();
 
-      const urls = envs
-        .filter((e) => e.domain)
-        .map((e) => ({
-          appId: e.app.id,
-          appName: e.app.name,
-          appDisplayName: e.app.displayName,
-          url: `https://${e.domain}`,
-          domain: e.domain,
+      const urls = rows
+        .filter((r) => r.envId != null && r.domain != null)
+        .map((r) => ({
+          appId: r.appId!,
+          appName: r.appName!,
+          appDisplayName: r.appDisplayName,
+          url: `https://${r.domain}`,
+          domain: r.domain,
         }));
 
       return {

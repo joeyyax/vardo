@@ -1,10 +1,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { environments, apps } from "@/lib/db/schema";
+import { groupEnvironments, environments, apps, projects } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import type { McpAuthContext } from "../auth";
-import { resolveOrgPreview, previewNotFound } from "./preview-helpers";
+import { previewNotFound } from "./preview-helpers";
 
 export function registerGetPreviewStatus(
   server: McpServer,
@@ -19,12 +19,18 @@ export function registerGetPreviewStatus(
         .describe("The preview environment ID (returned by vardo_create_preview)"),
     },
     async ({ preview_id }) => {
-      const preview = await resolveOrgPreview(preview_id, context.organizationId);
-      if (!preview) return previewNotFound();
-
-      // Load environments for this preview with their app status
-      const envs = await db
+      // Single query: verify org ownership and fetch environments in one JOIN.
+      // groupEnvironments → projects (org check) → environments → apps.
+      // LEFT JOINs on environments/apps so a preview with no environments still
+      // returns the preview metadata rather than an empty result set.
+      const rows = await db
         .select({
+          previewId: groupEnvironments.id,
+          previewName: groupEnvironments.name,
+          prNumber: groupEnvironments.prNumber,
+          prUrl: groupEnvironments.prUrl,
+          expiresAt: groupEnvironments.expiresAt,
+          previewCreatedAt: groupEnvironments.createdAt,
           environmentId: environments.id,
           environmentName: environments.name,
           domain: environments.domain,
@@ -34,34 +40,50 @@ export function registerGetPreviewStatus(
           appDisplayName: apps.displayName,
           appStatus: apps.status,
         })
-        .from(environments)
-        .innerJoin(apps, eq(environments.appId, apps.id))
+        .from(groupEnvironments)
+        .innerJoin(projects, eq(groupEnvironments.projectId, projects.id))
+        .leftJoin(
+          environments,
+          eq(environments.groupEnvironmentId, groupEnvironments.id)
+        )
+        .leftJoin(apps, eq(environments.appId, apps.id))
         .where(
           and(
-            eq(environments.groupEnvironmentId, preview_id),
-            eq(apps.organizationId, context.organizationId)
+            eq(groupEnvironments.id, preview_id),
+            eq(projects.organizationId, context.organizationId)
           )
         );
+
+      if (rows.length === 0) return previewNotFound();
+
+      const first = rows[0];
+      const preview = {
+        id: first.previewId,
+        name: first.previewName,
+        prNumber: first.prNumber,
+        prUrl: first.prUrl,
+        expiresAt: first.expiresAt,
+        createdAt: first.previewCreatedAt,
+      };
+
+      const envs = rows
+        .filter((r) => r.environmentId != null)
+        .map((r) => ({
+          environmentId: r.environmentId!,
+          environmentName: r.environmentName!,
+          domain: r.domain,
+          gitBranch: r.gitBranch,
+          appId: r.appId!,
+          appName: r.appName!,
+          appDisplayName: r.appDisplayName,
+          appStatus: r.appStatus!,
+        }));
 
       return {
         content: [
           {
             type: "text" as const,
-            text: JSON.stringify(
-              {
-                preview: {
-                  id: preview.id,
-                  name: preview.name,
-                  prNumber: preview.prNumber,
-                  prUrl: preview.prUrl,
-                  expiresAt: preview.expiresAt,
-                  createdAt: preview.createdAt,
-                },
-                environments: envs,
-              },
-              null,
-              2
-            ),
+            text: JSON.stringify({ preview, environments: envs }, null, 2),
           },
         ],
       };

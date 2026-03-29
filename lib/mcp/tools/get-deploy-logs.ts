@@ -2,8 +2,14 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { deployments, apps } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import type { McpAuthContext } from "../auth";
+
+// Cap log output at 100KB of characters. Build logs (Nixpacks/Railpack) can
+// easily reach 10MB+. Fetching the full column for every MCP request would
+// load that into memory and bloat the response payload. right() in Postgres
+// is character-based, which is close enough for log truncation purposes.
+const LOG_CAP = 100 * 1024;
 
 /**
  * Scrub env var values from build log output.
@@ -33,7 +39,9 @@ export function registerGetDeployLogs(
         .describe("The deployment ID to get logs for"),
     },
     async ({ deployment_id }) => {
-      // Join to apps to verify org scope
+      // Join to apps to verify org scope. Fetch only the last LOG_CAP
+      // characters of the log column so large build logs don't load into
+      // memory in full. logLength is fetched separately to detect truncation.
       const result = await db
         .select({
           id: deployments.id,
@@ -41,7 +49,8 @@ export function registerGetDeployLogs(
           trigger: deployments.trigger,
           gitSha: deployments.gitSha,
           gitMessage: deployments.gitMessage,
-          log: deployments.log,
+          log: sql<string | null>`right(${deployments.log}, ${LOG_CAP})`,
+          logLength: sql<number | null>`length(${deployments.log})`,
           durationMs: deployments.durationMs,
           startedAt: deployments.startedAt,
           finishedAt: deployments.finishedAt,
@@ -89,6 +98,8 @@ export function registerGetDeployLogs(
                   appName: result.appName,
                 },
                 log: result.log ? scrubEnvValues(result.log) : "(no log available)",
+                logTruncated: result.logLength != null && result.logLength > LOG_CAP,
+                logLength: result.logLength,
               },
               null,
               2
