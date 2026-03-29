@@ -57,6 +57,17 @@ export function parseTraefikPort(labels: Record<string, string>): number | null 
   return null;
 }
 
+/**
+ * Resolve the container port using the priority chain:
+ *   Traefik loadbalancer label → ExposedPorts[0] → null
+ */
+export function resolveContainerPort(
+  labels: Record<string, string>,
+  exposedPorts: number[],
+): number | null {
+  return parseTraefikPort(labels) ?? exposedPorts[0] ?? null;
+}
+
 // ---------------------------------------------------------------------------
 // Filtering
 // ---------------------------------------------------------------------------
@@ -226,7 +237,7 @@ export async function getContainerDetail(containerId: string): Promise<Container
     state: data.state.status,
     ports: data.ports,
     domain: parseTraefikDomain(data.labels),
-    containerPort: parseTraefikPort(data.labels) ?? data.exposedPorts[0] ?? null,
+    containerPort: resolveContainerPort(data.labels, data.exposedPorts),
     mounts: data.mounts,
     composeProject: data.labels["com.docker.compose.project"] ?? null,
     networkMode,
