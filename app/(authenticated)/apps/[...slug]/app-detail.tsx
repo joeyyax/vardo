@@ -17,6 +17,7 @@ import {
   Check,
   Container,
   EllipsisVertical,
+  Cpu,
 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { PageToolbar } from "@/components/page-toolbar";
@@ -745,6 +746,12 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
             <span className="text-muted-foreground/40">
               {deployTypeLabel(app.deployType)}
             </span>
+            {app.gpuEnabled && (
+              <span className="flex items-center gap-1 text-muted-foreground/70" title="GPU passthrough enabled">
+                <Cpu className="size-3" aria-hidden="true" />
+                GPU
+              </span>
+            )}
             <span className="text-muted-foreground/40">
               {new Date(app.createdAt).toLocaleDateString()}
             </span>
@@ -950,7 +957,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         )}
 
         <TabsContent value="metrics" className="pt-4">
-          <AppMetrics key={`metrics-${selectedEnvId}`} orgId={orgId} appId={app.id} environmentName={selectedEnv?.name} />
+          <AppMetrics key={`metrics-${selectedEnvId}`} orgId={orgId} appId={app.id} environmentName={selectedEnv?.name} gpuEnabled={!!app.gpuEnabled} />
         </TabsContent>
 
         {featureFlags?.backups !== false && (

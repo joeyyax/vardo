@@ -33,7 +33,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const projectApps = await db.query.apps.findMany({
       where: and(eq(apps.projectId, projectId), eq(apps.organizationId, orgId)),
-      columns: { id: true, name: true },
+      columns: { id: true, name: true, gpuEnabled: true },
     });
 
     const searchParams = request.nextUrl.searchParams;
@@ -43,7 +43,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     // Query all apps in parallel, then merge points
     const perAppPoints = await Promise.all(
-      projectApps.map((app) => queryMetricsPoints(app.name, from, to, bucket))
+      projectApps.map((app) => queryMetricsPoints(app.name, from, to, bucket, app.gpuEnabled))
     );
 
     // Merge by summing at each timestamp

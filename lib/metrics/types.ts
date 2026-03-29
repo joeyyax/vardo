@@ -28,6 +28,10 @@ export type MetricsPoint = {
   networkRx: number; // bytes
   networkTx: number; // bytes
   diskTotal: number; // bytes
+  gpuUtilization: number; // percent (averaged across GPU containers)
+  gpuMemoryUsed: number; // bytes
+  gpuMemoryTotal: number; // bytes
+  gpuTemperature: number; // Celsius (average)
 };
 
 /** Per-container snapshot for detail tables */
@@ -40,6 +44,10 @@ export type ContainerPoint = {
   memoryPercent: number;
   networkRx: number;
   networkTx: number;
+  gpuUtilization: number;
+  gpuMemoryUsed: number;
+  gpuMemoryTotal: number;
+  gpuTemperature: number;
 };
 
 /** SSE event payload — point + optional container breakdown */

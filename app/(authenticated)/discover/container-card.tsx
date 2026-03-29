@@ -2,7 +2,7 @@
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Globe, HardDrive } from "lucide-react";
+import { Globe, HardDrive, Cpu } from "lucide-react";
 import type { DiscoveredContainer } from "@/lib/docker/discover";
 
 type ContainerCardProps = {
@@ -65,6 +65,12 @@ export function ContainerCard({ container, onImport }: ContainerCardProps) {
           <span className="flex items-center gap-1">
             <HardDrive aria-hidden="true" className="size-3" />
             {container.mounts.length} mount{container.mounts.length !== 1 ? "s" : ""}
+          </span>
+        )}
+        {container.hasGpu && (
+          <span className="flex items-center gap-1">
+            <Cpu aria-hidden="true" className="size-3" />
+            GPU
           </span>
         )}
         {container.networkMode === "host" && (

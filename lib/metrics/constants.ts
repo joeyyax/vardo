@@ -31,6 +31,9 @@ export const CHART_COLORS = {
   networkTx: "oklch(0.75 0.15 75)",
   memoryLimit: "oklch(0.65 0.22 25)",
   disk: "oklch(0.65 0.1 30)",
+  gpuUtilization: "oklch(0.68 0.20 320)",
+  gpuMemory: "oklch(0.70 0.18 290)",
+  gpuTemperature: "oklch(0.72 0.20 40)",
   grid: "oklch(0.30 0.006 285.75 / 40%)",
   tick: "oklch(0.55 0.006 285.75)",
 };
