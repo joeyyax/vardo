@@ -199,6 +199,10 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         router.refresh();
       });
 
+      es.addEventListener("deploy:rolled_back", () => {
+        router.refresh();
+      });
+
       es.onerror = () => {
         es?.close();
         es = null;
@@ -625,6 +629,27 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                 Retry
               </button>
             </div>
+          </div>
+        );
+      })()}
+
+      {/* Import rollback banner — shown when an import deploy failed and the original container was restored */}
+      {app.importedContainerId && (() => {
+        const latestDeploy = filteredDeployments[0];
+        if (!latestDeploy || latestDeploy.status !== "rolled_back") return null;
+        return (
+          <div className="flex items-start gap-2 rounded-lg bg-status-warning-muted px-4 py-2.5 text-sm text-status-warning">
+            <AlertTriangle className="size-4 shrink-0 mt-0.5" aria-hidden="true" />
+            <span className="flex-1">
+              Rolled back — original container restored. Deploy failed; your original container is running. Redeploy when you&apos;re ready.
+            </span>
+            <button
+              type="button"
+              onClick={() => { setActiveTab("deployments"); deployPanelRef.current?.setViewingLogId(latestDeploy.id); }}
+              className="text-xs underline underline-offset-2 opacity-80 hover:opacity-100 shrink-0 mt-0.5"
+            >
+              View log
+            </button>
           </div>
         );
       })()}

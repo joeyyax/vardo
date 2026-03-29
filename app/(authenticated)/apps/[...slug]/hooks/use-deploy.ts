@@ -138,9 +138,11 @@ export function useDeploy({
             if (dep?.log) {
               setDeployLog(dep.log.split("\n"));
             }
-            if (dep?.status === "success" || dep?.status === "failed") {
+            if (dep?.status === "success" || dep?.status === "failed" || dep?.status === "rolled_back") {
               if (dep.status === "success") {
                 toast.success(dep.durationMs ? `Deployed in ${formatDuration(dep.durationMs)}` : "Deployed");
+              } else if (dep.status === "rolled_back") {
+                toast.error("Import deploy failed — original container restarted");
               } else {
                 // Extract last error line from deploy log for the toast
                 const errorLine = dep.log
