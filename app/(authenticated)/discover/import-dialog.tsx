@@ -58,6 +58,7 @@ export function ImportDialog({
   const [projectId, setProjectId] = useState<string>("none");
   const [newProjectName, setNewProjectName] = useState("");
   const [envVars, setEnvVars] = useState<EnvVar[]>([]);
+  const [manualPort, setManualPort] = useState("");
   // Per-mount toggles: keyed by destination path
   const [mountToggles, setMountToggles] = useState<Record<string, boolean>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -73,6 +74,7 @@ export function ImportDialog({
     setProjectId(validDefault ? defaultProjectId : "none");
     setNewProjectName("");
     setEnvVars([]);
+    setManualPort("");
     setMountToggles({});
     setDetail(null);
     setDetailError(false);
@@ -144,6 +146,8 @@ export function ImportDialog({
         .filter((m) => mountToggles[m.destination])
         .map((m) => m.destination);
 
+      const parsedManualPort = manualPort ? parseInt(manualPort, 10) : null;
+
       const body = {
         displayName,
         name,
@@ -151,6 +155,7 @@ export function ImportDialog({
         newProjectName: projectId === "new" ? newProjectName : undefined,
         envVars,
         selectedMountDestinations,
+        containerPort: parsedManualPort && !isNaN(parsedManualPort) ? parsedManualPort : null,
       };
 
       const res = await fetch(
@@ -198,6 +203,12 @@ export function ImportDialog({
   const hasSelectedBindMounts = selectedMounts.some((m) => m.type === "bind");
   const selectedCount = selectedMounts.length;
   const isHostNetwork = (detail?.networkMode ?? container?.networkMode) === "host";
+
+  // Show manual port input when auto-detection fails: no Traefik port and no exposed ports.
+  // Skip for host-network containers — they don't use port mapping.
+  const portAutoDetected =
+    detail !== null && (detail.containerPort !== null || detail.ports.some((p) => p.internal));
+  const showPortInput = detail !== null && !isHostNetwork && !portAutoDetected;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -249,6 +260,26 @@ export function ImportDialog({
                 <p id="slug-hint" className="text-xs text-muted-foreground">Lowercase letters, numbers, and hyphens only.</p>
               </div>
             </div>
+
+            {showPortInput && (
+              <div className="space-y-1.5">
+                <Label htmlFor="containerPort">Container port</Label>
+                <Input
+                  id="containerPort"
+                  type="number"
+                  min={1}
+                  max={65535}
+                  value={manualPort}
+                  onChange={(e) => setManualPort(e.target.value)}
+                  placeholder="e.g. 3000"
+                  className="font-mono text-sm"
+                  aria-describedby="containerPort-hint"
+                />
+                <p id="containerPort-hint" className="text-xs text-muted-foreground">
+                  The port this container listens on. Used for domain routing — leave blank to configure later.
+                </p>
+              </div>
+            )}
 
             <div className="space-y-1.5">
               <Label htmlFor="project">Project</Label>
