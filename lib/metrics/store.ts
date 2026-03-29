@@ -149,6 +149,53 @@ export async function storeDiskWrite(
 }
 
 /**
+ * Store GPU metrics for a container (utilization, memory, temperature).
+ * Only called when the container has accelerators reported by cAdvisor.
+ */
+export async function storeGpuMetrics(
+  projectName: string,
+  containerId: string,
+  containerName: string,
+  timestamp: number,
+  values: {
+    gpuUtilization: number;
+    gpuMemoryUsed: number;
+    gpuMemoryTotal: number;
+    gpuTemperature: number;
+  },
+  organizationId?: string | null,
+) {
+  const labels: Record<string, string> = {
+    project: projectName,
+    container: containerId,
+    containerName,
+  };
+  if (organizationId) labels.organization = organizationId;
+
+  const keys = {
+    gpuUtilization: tsKey(projectName, "gpuUtilization", containerId),
+    gpuMemoryUsed: tsKey(projectName, "gpuMemoryUsed", containerId),
+    gpuMemoryTotal: tsKey(projectName, "gpuMemoryTotal", containerId),
+    gpuTemperature: tsKey(projectName, "gpuTemperature", containerId),
+  };
+
+  await Promise.all([
+    ensureTimeSeries(keys.gpuUtilization, { ...labels, metric: "gpuUtilization" }),
+    ensureTimeSeries(keys.gpuMemoryUsed, { ...labels, metric: "gpuMemoryUsed" }),
+    ensureTimeSeries(keys.gpuMemoryTotal, { ...labels, metric: "gpuMemoryTotal" }),
+    ensureTimeSeries(keys.gpuTemperature, { ...labels, metric: "gpuTemperature" }),
+  ]);
+
+  const ts = timestamp.toString();
+  await Promise.all([
+    tsRedis.call("TS.ADD", keys.gpuUtilization, ts, values.gpuUtilization.toString()),
+    tsRedis.call("TS.ADD", keys.gpuMemoryUsed, ts, values.gpuMemoryUsed.toString()),
+    tsRedis.call("TS.ADD", keys.gpuMemoryTotal, ts, values.gpuMemoryTotal.toString()),
+    tsRedis.call("TS.ADD", keys.gpuTemperature, ts, values.gpuTemperature.toString()),
+  ]);
+}
+
+/**
  * Query disk write bytes for a specific container over a time range.
  * Returns raw [timestamp, value] pairs (cumulative counters).
  */
@@ -349,7 +396,7 @@ export type TimeSeriesPoint = [number, number]; // [timestamp, value]
  * Query historical metrics for a project.
  * Returns data points within the given time range.
  */
-type MetricName = "cpu" | "memory" | "memoryLimit" | "networkRx" | "networkTx" | "disk" | "diskWrite";
+type MetricName = "cpu" | "memory" | "memoryLimit" | "networkRx" | "networkTx" | "disk" | "diskWrite" | "gpuUtilization" | "gpuMemoryUsed" | "gpuMemoryTotal" | "gpuTemperature";
 type Aggregation = { type: "avg" | "max" | "min" | "sum"; bucketMs: number };
 
 /**
@@ -499,23 +546,18 @@ export async function queryMetricsPoints(
   toMs: number,
   bucketMs: number,
 ): Promise<MetricsPoint[]> {
-  const [cpu, memory, memoryLimit, networkRx, networkTx] = await Promise.all([
+  const [cpu, memory, memoryLimit, networkRx, networkTx, gpuUtilization, gpuMemoryUsed, gpuMemoryTotal, gpuTemperature] = await Promise.all([
     queryMetrics(projectName, "cpu", fromMs, toMs, { type: "avg", bucketMs }),
     queryMetrics(projectName, "memory", fromMs, toMs, { type: "avg", bucketMs }),
-    queryMetrics(projectName, "memoryLimit", fromMs, toMs, {
-      type: "max",
-      bucketMs,
-    }),
-    queryMetrics(projectName, "networkRx", fromMs, toMs, {
-      type: "sum",
-      bucketMs,
-    }),
-    queryMetrics(projectName, "networkTx", fromMs, toMs, {
-      type: "sum",
-      bucketMs,
-    }),
+    queryMetrics(projectName, "memoryLimit", fromMs, toMs, { type: "max", bucketMs }),
+    queryMetrics(projectName, "networkRx", fromMs, toMs, { type: "sum", bucketMs }),
+    queryMetrics(projectName, "networkTx", fromMs, toMs, { type: "sum", bucketMs }),
+    queryMetrics(projectName, "gpuUtilization", fromMs, toMs, { type: "avg", bucketMs }),
+    queryMetrics(projectName, "gpuMemoryUsed", fromMs, toMs, { type: "avg", bucketMs }),
+    queryMetrics(projectName, "gpuMemoryTotal", fromMs, toMs, { type: "max", bucketMs }),
+    queryMetrics(projectName, "gpuTemperature", fromMs, toMs, { type: "avg", bucketMs }),
   ]);
-  return seriesToPoints({ cpu, memory, memoryLimit, networkRx, networkTx });
+  return seriesToPoints({ cpu, memory, memoryLimit, networkRx, networkTx, gpuUtilization, gpuMemoryUsed, gpuMemoryTotal, gpuTemperature });
 }
 
 /** Query historical metrics for an org, returns unified MetricsPoint[] */
@@ -525,14 +567,18 @@ export async function queryByOrgPoints(
   toMs: number,
   bucketMs: number,
 ): Promise<MetricsPoint[]> {
-  const [cpu, memory, memoryLimit, networkRx, networkTx] = await Promise.all([
+  const [cpu, memory, memoryLimit, networkRx, networkTx, gpuUtilization, gpuMemoryUsed, gpuMemoryTotal, gpuTemperature] = await Promise.all([
     queryByOrg(orgId, "cpu", fromMs, toMs, { type: "avg", bucketMs }),
     queryByOrg(orgId, "memory", fromMs, toMs, { type: "avg", bucketMs }),
     queryByOrg(orgId, "memoryLimit", fromMs, toMs, { type: "max", bucketMs }),
     queryByOrg(orgId, "networkRx", fromMs, toMs, { type: "sum", bucketMs }),
     queryByOrg(orgId, "networkTx", fromMs, toMs, { type: "sum", bucketMs }),
+    queryByOrg(orgId, "gpuUtilization", fromMs, toMs, { type: "avg", bucketMs }),
+    queryByOrg(orgId, "gpuMemoryUsed", fromMs, toMs, { type: "avg", bucketMs }),
+    queryByOrg(orgId, "gpuMemoryTotal", fromMs, toMs, { type: "max", bucketMs }),
+    queryByOrg(orgId, "gpuTemperature", fromMs, toMs, { type: "avg", bucketMs }),
   ]);
-  return seriesToPoints({ cpu, memory, memoryLimit, networkRx, networkTx });
+  return seriesToPoints({ cpu, memory, memoryLimit, networkRx, networkTx, gpuUtilization, gpuMemoryUsed, gpuMemoryTotal, gpuTemperature });
 }
 
 /** Query historical metrics system-wide, returns unified MetricsPoint[] */
@@ -541,7 +587,7 @@ export async function queryAllPoints(
   toMs: number,
   bucketMs: number,
 ): Promise<MetricsPoint[]> {
-  const [cpu, memory, memoryLimit, networkRx, networkTx, disk] =
+  const [cpu, memory, memoryLimit, networkRx, networkTx, disk, gpuUtilization, gpuMemoryUsed, gpuMemoryTotal, gpuTemperature] =
     await Promise.all([
       queryAll("cpu", fromMs, toMs, { type: "avg", bucketMs }),
       queryAll("memory", fromMs, toMs, { type: "avg", bucketMs }),
@@ -549,13 +595,10 @@ export async function queryAllPoints(
       queryAll("networkRx", fromMs, toMs, { type: "sum", bucketMs }),
       queryAll("networkTx", fromMs, toMs, { type: "sum", bucketMs }),
       queryDiskHistory(fromMs, toMs, bucketMs),
+      queryAll("gpuUtilization", fromMs, toMs, { type: "avg", bucketMs }),
+      queryAll("gpuMemoryUsed", fromMs, toMs, { type: "avg", bucketMs }),
+      queryAll("gpuMemoryTotal", fromMs, toMs, { type: "max", bucketMs }),
+      queryAll("gpuTemperature", fromMs, toMs, { type: "avg", bucketMs }),
     ]);
-  return seriesToPoints({
-    cpu,
-    memory,
-    memoryLimit,
-    networkRx,
-    networkTx,
-    disk,
-  });
+  return seriesToPoints({ cpu, memory, memoryLimit, networkRx, networkTx, disk, gpuUtilization, gpuMemoryUsed, gpuMemoryTotal, gpuTemperature });
 }

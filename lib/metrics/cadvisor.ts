@@ -14,7 +14,21 @@ export type ContainerMetrics = {
   diskUsage: number;
   diskLimit: number;
   diskWriteBytes: number; // cumulative block I/O writes
+  gpuUtilization: number; // percent (summed duty_cycle across accelerators)
+  gpuMemoryUsed: number; // bytes
+  gpuMemoryTotal: number; // bytes
+  gpuTemperature: number; // Celsius (average across accelerators)
   timestamp: number;
+};
+
+type V2Accelerator = {
+  id: string;
+  make: string;
+  model: string;
+  memory: number;       // total GPU memory in bytes
+  duty_cycle: number;   // GPU utilization %
+  memory_used: number;  // GPU memory used in bytes
+  temperature: number;  // Celsius
 };
 
 type V2StatEntry = {
@@ -33,6 +47,8 @@ type V2StatEntry = {
   diskio?: {
     io_service_bytes?: { device: string; major: number; minor: number; stats: Record<string, number> }[];
   };
+  has_accelerators?: boolean;
+  accelerators?: V2Accelerator[];
 };
 
 type V2SpecEntry = {
@@ -132,6 +148,22 @@ export async function fetchAllContainerMetrics(): Promise<ContainerMetrics[]> {
       }
     }
 
+    // GPU accelerators (NVIDIA via cAdvisor NVML integration)
+    let gpuUtilization = 0;
+    let gpuMemoryUsed = 0;
+    let gpuMemoryTotal = 0;
+    let gpuTemperature = 0;
+    if (curr.has_accelerators && curr.accelerators && curr.accelerators.length > 0) {
+      for (const acc of curr.accelerators) {
+        gpuUtilization += acc.duty_cycle || 0;
+        gpuMemoryUsed += acc.memory_used || 0;
+        gpuMemoryTotal += acc.memory || 0;
+        gpuTemperature += acc.temperature || 0;
+      }
+      // Average temperature across GPUs
+      gpuTemperature = Math.round(gpuTemperature / curr.accelerators.length);
+    }
+
     const containerName = spec.aliases?.[0] || key.split("/").pop() || "";
     const containerId = key.split("/").pop()?.slice(0, 12) || "";
 
@@ -149,6 +181,10 @@ export async function fetchAllContainerMetrics(): Promise<ContainerMetrics[]> {
       diskUsage,
       diskLimit,
       diskWriteBytes,
+      gpuUtilization: Math.round(gpuUtilization * 100) / 100,
+      gpuMemoryUsed,
+      gpuMemoryTotal,
+      gpuTemperature,
       timestamp: new Date(curr.timestamp).getTime(),
     });
   }

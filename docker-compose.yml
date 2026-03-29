@@ -215,6 +215,13 @@ services:
       - /var/run:/var/run:ro
       - /sys:/sys:ro
       - /var/lib/docker/:/var/lib/docker:ro
+    # NVIDIA GPU metrics: expose GPU devices so cAdvisor can read utilization via NVML.
+    # These device nodes only exist on hosts with an NVIDIA driver installed — cAdvisor
+    # degrades gracefully when they are absent.
+    devices:
+      - /dev/nvidiactl:/dev/nvidiactl
+      - /dev/nvidia-uvm:/dev/nvidia-uvm
+      - /dev/nvidia0:/dev/nvidia0
     networks:
       - internal
       - vardo-network

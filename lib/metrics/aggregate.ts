@@ -6,6 +6,7 @@ export function aggregateContainers(
   containers: ContainerMetrics[],
   diskTotal = 0,
 ): MetricsPoint {
+  const gpuContainers = containers.filter((c) => c.gpuMemoryTotal > 0);
   return {
     timestamp: Date.now(),
     cpu:
@@ -17,6 +18,12 @@ export function aggregateContainers(
     networkRx: containers.reduce((s, c) => s + c.networkRxBytes, 0),
     networkTx: containers.reduce((s, c) => s + c.networkTxBytes, 0),
     diskTotal,
+    gpuUtilization: Math.round(containers.reduce((s, c) => s + c.gpuUtilization, 0) * 100) / 100,
+    gpuMemoryUsed: containers.reduce((s, c) => s + c.gpuMemoryUsed, 0),
+    gpuMemoryTotal: containers.reduce((s, c) => s + c.gpuMemoryTotal, 0),
+    gpuTemperature: gpuContainers.length > 0
+      ? Math.round(gpuContainers.reduce((s, c) => s + c.gpuTemperature, 0) / gpuContainers.length)
+      : 0,
   };
 }
 
@@ -31,6 +38,10 @@ export function containerToPoint(m: ContainerMetrics): ContainerPoint {
     memoryPercent: m.memoryPercent,
     networkRx: m.networkRxBytes,
     networkTx: m.networkTxBytes,
+    gpuUtilization: m.gpuUtilization,
+    gpuMemoryUsed: m.gpuMemoryUsed,
+    gpuMemoryTotal: m.gpuMemoryTotal,
+    gpuTemperature: m.gpuTemperature,
   };
 }
 
@@ -45,6 +56,10 @@ export function seriesToPoints(series: {
   networkRx?: [number, number][];
   networkTx?: [number, number][];
   disk?: [number, number][];
+  gpuUtilization?: [number, number][];
+  gpuMemoryUsed?: [number, number][];
+  gpuMemoryTotal?: [number, number][];
+  gpuTemperature?: [number, number][];
 }): MetricsPoint[] {
   // Collect all unique timestamps
   const tsSet = new Set<number>();
@@ -61,6 +76,10 @@ export function seriesToPoints(series: {
   const rxMap = new Map(series.networkRx || []);
   const txMap = new Map(series.networkTx || []);
   const diskMap = new Map(series.disk || []);
+  const gpuUtilMap = new Map(series.gpuUtilization || []);
+  const gpuMemUsedMap = new Map(series.gpuMemoryUsed || []);
+  const gpuMemTotalMap = new Map(series.gpuMemoryTotal || []);
+  const gpuTempMap = new Map(series.gpuTemperature || []);
 
   return timestamps.map((ts) => ({
     timestamp: ts,
@@ -70,5 +89,9 @@ export function seriesToPoints(series: {
     networkRx: rxMap.get(ts) || 0,
     networkTx: txMap.get(ts) || 0,
     diskTotal: diskMap.get(ts) || 0,
+    gpuUtilization: Math.round((gpuUtilMap.get(ts) || 0) * 100) / 100,
+    gpuMemoryUsed: gpuMemUsedMap.get(ts) || 0,
+    gpuMemoryTotal: gpuMemTotalMap.get(ts) || 0,
+    gpuTemperature: Math.round(gpuTempMap.get(ts) || 0),
   }));
 }
