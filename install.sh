@@ -352,6 +352,9 @@ run_with_spinner() {
     local exit_code=0
     "$@" || exit_code=$?
     kill $keepalive_pid 2>/dev/null; wait $keepalive_pid 2>/dev/null
+    if [ $exit_code -ne 0 ]; then
+      fail "$label — failed (exit $exit_code). Check ${INSTALL_LOG:-/var/log/vardo-install.log} for details."
+    fi
     return $exit_code
   fi
 
