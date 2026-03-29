@@ -1,14 +1,12 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { db } from "@/lib/db";
 import { apps, projects, tags } from "@/lib/db/schema";
 import { getCurrentOrg, getUserOrganizations } from "@/lib/auth/session";
-import { eq, desc, asc, sql, isNull, and, type AnyColumn } from "drizzle-orm";
-import { Plus } from "lucide-react";
+import { eq, desc, asc, isNull, and, type AnyColumn } from "drizzle-orm";
 import { PageToolbar } from "@/components/page-toolbar";
-import { Button } from "@/components/ui/button";
 import { OrgSwitcher } from "@/components/layout/org-switcher";
 import { AppGrid } from "./app-grid";
+import { ProjectsActions, DeployAppButton } from "./projects-actions";
 
 export default async function ProjectsPage() {
   const orgData = await getCurrentOrg();
@@ -57,24 +55,7 @@ export default async function ProjectsPage() {
 
   return (
     <div className="space-y-6">
-      <PageToolbar
-        actions={
-          <div className="flex items-center gap-3">
-            <Button variant="outline" asChild>
-              <Link href="/projects/new">
-                <Plus className="mr-1.5 size-4" />
-                New project
-              </Link>
-            </Button>
-            <Button asChild>
-              <Link href="/apps/new">
-                <Plus className="mr-1.5 size-4" />
-                Deploy app
-              </Link>
-            </Button>
-          </div>
-        }
-      >
+      <PageToolbar actions={<ProjectsActions />}>
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
           <OrgSwitcher
@@ -95,19 +76,7 @@ export default async function ProjectsPage() {
               Apps are deployed from a Git repo, Docker image, or Compose file. Projects are optional groups that help you organize related apps.
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            <Button asChild>
-              <Link href="/apps/new">
-                <Plus className="mr-1.5 size-4" />
-                Deploy app
-              </Link>
-            </Button>
-            <Button variant="outline" asChild>
-              <Link href="/projects/new">
-                New project
-              </Link>
-            </Button>
-          </div>
+          <DeployAppButton />
         </div>
       ) : (
         <AppGrid

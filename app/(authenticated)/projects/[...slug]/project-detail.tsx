@@ -18,6 +18,7 @@ import {
   Variable,
   FileText,
   Activity,
+  Container,
 } from "lucide-react";
 import {
   type AppMetrics as AppMetricsType,
@@ -1156,12 +1157,26 @@ export function ProjectDetail({
                 </Button>
               );
             })()}
-            <Button size="sm" asChild>
-              <Link href={`/apps/new?project=${project.id}`}>
-                <Plus className="mr-1.5 size-4" />
-                Add App
-              </Link>
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm">
+                  <Plus className="mr-1.5 size-4" />
+                  Add App
+                  <ChevronDown className="ml-1.5 size-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem asChild>
+                  <Link href={`/apps/new?project=${project.id}`}>Create new app</Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href={`/discover?project=${project.id}`}>
+                    <Container className="mr-2 size-4" />
+                    Import existing container
+                  </Link>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button size="icon-sm" variant="outline">
@@ -1288,12 +1303,26 @@ export function ProjectDetail({
                   Connect a Git repo, Docker image, or Compose file to start deploying.
                 </p>
               </div>
-              <Button size="sm" asChild>
-                <Link href={`/apps/new?project=${project.id}`}>
-                  <Plus className="mr-1.5 size-4" />
-                  Add App
-                </Link>
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm">
+                    <Plus className="mr-1.5 size-4" />
+                    Add App
+                    <ChevronDown className="ml-1.5 size-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="center">
+                  <DropdownMenuItem asChild>
+                    <Link href={`/apps/new?project=${project.id}`}>Create new app</Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href={`/discover?project=${project.id}`}>
+                      <Container className="mr-2 size-4" />
+                      Import existing container
+                    </Link>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
