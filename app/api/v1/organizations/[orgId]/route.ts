@@ -15,6 +15,7 @@ const updateOrgSchema = z.object({
     z.literal(""),
     z.null(),
   ]).optional(),
+  trusted: z.boolean().optional(),
 }).strict().refine(data => Object.keys(data).length > 0, { message: "No valid updates provided" });
 
 type RouteParams = {
@@ -88,6 +89,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     if (parsed.data.baseDomain !== undefined) {
       updates.baseDomain = parsed.data.baseDomain === "" ? null : parsed.data.baseDomain;
     }
+    if (parsed.data.trusted !== undefined) updates.trusted = parsed.data.trusted;
 
     if (Object.keys(updates).length === 0) {
       return NextResponse.json({ error: "No valid updates provided" }, { status: 400 });

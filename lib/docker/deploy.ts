@@ -32,8 +32,16 @@ import { isFeatureEnabled } from "@/lib/config/features";
 import { assertSafeName, assertSafeBranch } from "./validate";
 import { DeployBlockedError } from "./errors";
 
-function parseAndSanitize(yaml: string, log: (msg: string) => void, projectAllowBindMounts?: boolean): ComposeFile {
+function parseAndSanitize(yaml: string, log: (msg: string) => void, projectAllowBindMounts?: boolean, orgTrusted?: boolean): ComposeFile {
   const compose = parseCompose(yaml);
+  // Trusted orgs bypass all mount restrictions — no sanitization, no deny list.
+  if (orgTrusted) {
+    const { valid, errors } = validateCompose(compose, { allowBindMounts: true, skipMountChecks: true });
+    if (!valid) {
+      throw new DeployBlockedError(`Compose validation failed:\n${errors.join("\n")}`);
+    }
+    return compose;
+  }
   const bindMountsEnabled = projectAllowBindMounts || isFeatureEnabled("bindMounts");
   let sanitized: ReturnType<typeof sanitizeCompose>;
   try {
@@ -189,6 +197,13 @@ export async function runDeployment(
 
     if (!app) throw new Error("App not found");
 
+    // Resolve org trusted flag — trusted orgs skip all mount restrictions
+    const org = await db.query.organizations.findFirst({
+      where: eq(organizations.id, opts.organizationId),
+      columns: { trusted: true },
+    });
+    const orgTrusted = org?.trusted ?? true;
+
     // Resolve per-project bind mount permission
     let projectAllowBindMounts = false;
     if (app.projectId) {
@@ -279,7 +294,7 @@ export async function runDeployment(
       if (app.composeContent) {
         // Imported container — use the stored compose so bind mounts and other
         // HostConfig options captured at import time are not silently dropped.
-        compose = parseAndSanitize(app.composeContent, log, projectAllowBindMounts);
+        compose = parseAndSanitize(app.composeContent, log, projectAllowBindMounts, orgTrusted);
         log(`[deploy] Using stored compose for imported container: ${app.imageName}`);
       } else {
         const volsForCompose = volumesList.length > 0 ? volumesList : undefined;
@@ -475,7 +490,7 @@ export async function runDeployment(
       stage("build", "running");
 
       if (composeContent && app.deployType === "compose") {
-        compose = parseAndSanitize(composeContent, log, projectAllowBindMounts);
+        compose = parseAndSanitize(composeContent, log, projectAllowBindMounts, orgTrusted);
 
         // Detect declared volumes from compose YAML before deploy starts
         if (compose.volumes && Object.keys(compose.volumes).length > 0) {
@@ -574,7 +589,7 @@ export async function runDeployment(
       }
     } else if (app.composeContent) {
       // Direct compose content
-      compose = parseAndSanitize(app.composeContent, log, projectAllowBindMounts);
+      compose = parseAndSanitize(app.composeContent, log, projectAllowBindMounts, orgTrusted);
       log(`[deploy] Parsed compose content`);
 
       // Detect declared volumes from compose YAML before deploy starts
