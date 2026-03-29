@@ -64,7 +64,7 @@ export async function SessionFooter() {
           </Link>.
         </span>
         {"isAppAdmin" in user && (user as { isAppAdmin?: boolean }).isAppAdmin && (
-          <Link href="/admin/settings/overview" className="hover:text-foreground transition-colors">
+          <Link href="/admin/settings/general" className="hover:text-foreground transition-colors">
             System admin.
           </Link>
         )}
