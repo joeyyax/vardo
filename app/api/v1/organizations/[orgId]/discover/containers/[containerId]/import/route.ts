@@ -52,7 +52,7 @@ const importSchema = z.object({
   selectedMountDestinations: z.array(z.string().max(4096, "Mount destination too long")).max(100, "Too many mount destinations").optional(),
   // Deprecated: use selectedMountDestinations. Kept for backward compatibility.
   importVolumes: z.boolean().default(true),
-  // User-supplied port when auto-detection (Traefik labels + exposed ports) yields nothing.
+  // User-supplied port when auto-detection fails (no Traefik labels, no exposed ports).
   containerPort: z.number().int().min(1).max(65535).optional(),
 });
 
