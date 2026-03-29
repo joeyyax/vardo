@@ -14,10 +14,12 @@ type DebugData = {
 function CodeBlock({
   label,
   content,
+  loading = false,
   defaultOpen = true,
 }: {
   label: string;
   content: string | null;
+  loading?: boolean;
   defaultOpen?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -46,7 +48,7 @@ function CodeBlock({
           )}
           {label}
         </button>
-        {content && (
+        {!loading && content && (
           <button
             type="button"
             onClick={handleCopy}
@@ -63,7 +65,9 @@ function CodeBlock({
       </div>
       {open && (
         <pre className="p-4 text-xs text-zinc-300 font-mono overflow-x-auto whitespace-pre leading-5">
-          {content ?? (
+          {loading ? (
+            <span className="text-zinc-600 italic">Loading...</span>
+          ) : content ?? (
             <span className="text-zinc-600 italic">
               Not available — only generated at deploy time for git-sourced apps.
             </span>
@@ -142,24 +146,25 @@ export function AppDebug({
         </div>
       )}
 
-      {(data !== null || loading) && (
-        <div className="space-y-3">
-          <CodeBlock
-            label="Docker Compose"
-            content={loading ? null : (data?.compose ?? null)}
-          />
-          <CodeBlock
-            label="Traefik Config"
-            content={loading ? null : (data?.traefikConfig ?? null)}
-            defaultOpen={false}
-          />
-          <CodeBlock
-            label="Container Inspect"
-            content={loading ? null : containerJson}
-            defaultOpen={false}
-          />
-        </div>
-      )}
+      <div className="space-y-3">
+        <CodeBlock
+          label="Docker Compose"
+          content={data?.compose ?? null}
+          loading={loading}
+        />
+        <CodeBlock
+          label="Traefik Config"
+          content={data?.traefikConfig ?? null}
+          loading={loading}
+          defaultOpen={false}
+        />
+        <CodeBlock
+          label="Container Inspect"
+          content={containerJson}
+          loading={loading}
+          defaultOpen={false}
+        />
+      </div>
     </div>
   );
 }
