@@ -27,7 +27,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         eq(apps.id, appId),
         eq(apps.organizationId, orgId)
       ),
-      columns: { id: true, name: true },
+      columns: { id: true, name: true, gpuEnabled: true },
     });
 
     if (!app) {
@@ -40,7 +40,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const to = parseInt(searchParams.get("to") || String(now));
     const bucketMs = parseInt(searchParams.get("bucket") || "30000"); // default 30s
 
-    const points = await queryMetricsPoints(app.name, from, to, bucketMs);
+    const points = await queryMetricsPoints(app.name, from, to, bucketMs, app.gpuEnabled);
 
     return NextResponse.json({ points });
   } catch (error) {

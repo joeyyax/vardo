@@ -1,7 +1,7 @@
 import { logger } from "@/lib/logger";
 import { isMetricsEnabled } from "./config";
 import { fetchAllContainerMetrics } from "./cadvisor";
-import { storeMetrics, storeDiskUsage, storeDiskWrite, storeProjectDisk, storeBusinessMetric, storeOrgBusinessMetric } from "./store";
+import { storeMetrics, storeDiskUsage, storeDiskWrite, storeGpuMetrics, storeProjectDisk, storeBusinessMetric, storeOrgBusinessMetric } from "./store";
 import { checkDiskWriteAlerts } from "./disk-write-alerts";
 import { getSystemDiskUsage, getPerProjectDiskUsage } from "@/lib/docker/client";
 import { db } from "@/lib/db";
@@ -53,16 +53,28 @@ async function collect() {
   try {
     metrics = await fetchAllContainerMetrics();
     const results = await Promise.allSettled(
-      metrics.flatMap((m) => [
-        storeMetrics(m.projectName, m.containerId, m.containerName, m.timestamp, {
-          cpuPercent: m.cpuPercent,
-          memoryUsage: m.memoryUsage,
-          memoryLimit: m.memoryLimit,
-          networkRxBytes: m.networkRxBytes,
-          networkTxBytes: m.networkTxBytes,
-        }, m.organizationId),
-        storeDiskWrite(m.projectName, m.containerId, m.containerName, m.timestamp, m.diskWriteBytes, m.organizationId),
-      ])
+      metrics.flatMap((m) => {
+        const ops = [
+          storeMetrics(m.projectName, m.containerId, m.containerName, m.timestamp, {
+            cpuPercent: m.cpuPercent,
+            memoryUsage: m.memoryUsage,
+            memoryLimit: m.memoryLimit,
+            networkRxBytes: m.networkRxBytes,
+            networkTxBytes: m.networkTxBytes,
+          }, m.organizationId),
+          storeDiskWrite(m.projectName, m.containerId, m.containerName, m.timestamp, m.diskWriteBytes, m.organizationId),
+        ];
+        // Only store GPU metrics when a GPU is present for this container
+        if (m.gpuMemoryTotal > 0) {
+          ops.push(storeGpuMetrics(m.projectName, m.containerId, m.containerName, m.timestamp, {
+            gpuUtilization: m.gpuUtilization,
+            gpuMemoryUsed: m.gpuMemoryUsed,
+            gpuMemoryTotal: m.gpuMemoryTotal,
+            gpuTemperature: m.gpuTemperature,
+          }, m.organizationId));
+        }
+        return ops;
+      })
     );
     const failed = results.filter((r) => r.status === "rejected").length;
     if (failed > 0) {
