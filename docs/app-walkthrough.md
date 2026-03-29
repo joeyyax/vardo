@@ -439,7 +439,7 @@ Base path for all file references: `/Users/joeyyax/Projects/Sites/joeyyax/host/`
 ### 5.1 Admin Panel Page (`app/(authenticated)/admin/[[...slug]]/page.tsx`)
 
 - Requires `isAppAdmin` (`page.tsx:27-28`)
-- Valid tabs: `overview`, `system`, `organizations`, `users`, `maintenance`, `metrics` (`page.tsx:8`)
+- Valid tabs: `overview`, `organizations`, `users`, `maintenance`, `metrics` (`page.tsx:8`)
 - Default tab: `"overview"` (`page.tsx:17-19`)
 - URL: `/admin` or `/admin/{tab}` (`page.tsx:24`)
 
@@ -450,7 +450,6 @@ Base path for all file references: `/Users/joeyyax/Projects/Sites/joeyyax/host/`
 | Tab | Component |
 |-----|-----------|
 | Overview | `AdminOverview` |
-| System | `AdminSystem` |
 | Organizations | `AdminOrganizations` |
 | Users | `UserManagement` (from `admin-actions.tsx`) |
 | Maintenance | `DockerPrune` (from `admin-actions.tsx`) |
@@ -465,18 +464,6 @@ Base path for all file references: `/Users/joeyyax/Projects/Sites/joeyyax/host/`
   - Users, Apps, Deployments, Templates
 - **Resource bars** (CPU, memory, disk-like) with status: critical, warning, healthy (`admin-overview.tsx:72-80`)
 - **Infrastructure services** list
-
-### 5.4 Admin System (`app/(authenticated)/admin/admin-system.tsx`)
-
-- Fetches from `/api/v1/admin/health` (`admin-system.tsx:30`)
-- **Data shape** (`admin-system.tsx:9-15`):
-  - `services: ServiceStatus[]`
-  - `runtime: RuntimeInfo` (nextVersion, nodeVersion, uptime, memoryUsage)
-  - `auth`: passkeys, magicLink, github, passwords, twoFactor (booleans)
-  - `featureFlags: FeatureFlagInfo[]`
-- **Runtime section**: Next.js version, Node.js version, Uptime, Memory RSS (`admin-system.tsx:44-58`)
-- **Infrastructure section**: service list with healthy/unhealthy/unknown status indicators (`admin-system.tsx:68-80`)
-- **Auth methods** and **Feature flags** sections
 
 ---
 

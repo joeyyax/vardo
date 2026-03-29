@@ -1,16 +1,39 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useSystemSetting } from "./use-system-setting";
 import { DEFAULT_APP_NAME } from "@/lib/app-name";
 
+type RuntimeInfo = {
+  nodeVersion: string;
+  nextVersion: string;
+  uptime: number;
+  memoryUsage: number;
+};
+
+function formatUptime(seconds: number): string {
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (days > 0) return `${days}d ${hours}h ${minutes}m`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / 1024).toFixed(1)} KB`;
+}
+
 export function GeneralSettings() {
   const [instanceName, setInstanceName] = useState(DEFAULT_APP_NAME);
+  const [runtime, setRuntime] = useState<RuntimeInfo | null>(null);
 
   const onLoad = useCallback(
     (data: Record<string, unknown>) => {
@@ -23,6 +46,19 @@ export function GeneralSettings() {
     label: "General settings",
     onLoad,
   });
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/v1/admin/health");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.runtime) setRuntime(data.runtime);
+      } catch {
+        // best effort
+      }
+    })();
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -71,6 +107,34 @@ export function GeneralSettings() {
           </form>
         </CardContent>
       </Card>
+
+      {runtime && (
+        <Card className="squircle rounded-lg">
+          <CardHeader>
+            <CardTitle className="text-base">Runtime</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-4">
+              <div>
+                <dt className="text-muted-foreground">Node.js</dt>
+                <dd className="font-mono">{runtime.nodeVersion}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Next.js</dt>
+                <dd className="font-mono">{runtime.nextVersion}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Uptime</dt>
+                <dd>{formatUptime(runtime.uptime)}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Memory RSS</dt>
+                <dd>{formatBytes(runtime.memoryUsage)}</dd>
+              </div>
+            </dl>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
