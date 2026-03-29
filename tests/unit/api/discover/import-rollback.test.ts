@@ -1,139 +1,88 @@
 import { describe, it, expect } from "vitest";
+import { parseContainerEnvVars, getPgErrorCode } from "@/lib/docker/import";
 
 // ---------------------------------------------------------------------------
-// import route — restarted branch state transitions
-// ---------------------------------------------------------------------------
-// When a container import deploy fails and the original container is
-// successfully restarted, the route must:
-//
-//   1. Update the deployment record to status="rolled_back".
-//
-//   2. Update the app record to status="active" — the original container is
-//      running again so the app is healthy from the user's perspective.
-//
-//   3. Publish a deploy:rolled_back SSE event so any open app view refreshes
-//      without waiting for the 10-minute stream timeout.
-//
-//   4. Record activity with action "deployment.rolled_back" and
-//      metadata.source = "import" so audit consumers can distinguish import
-//      rollbacks from monitor-triggered rollbacks.
-//
-//   When restarted is false (startContainer threw) none of these updates
-//   should happen — the deployment stays in whatever state the failed deploy
-//   left it, and the app status is not touched.
-//
-// Tested as extracted pure functions mirroring the import route logic.
+// parseContainerEnvVars
 // ---------------------------------------------------------------------------
 
-type DeploymentUpdate = { status: "rolled_back"; finishedAt: Date };
-type AppUpdate = { status: "active" };
-type ActivityRecord = {
-  action: "deployment.rolled_back";
-  metadata: { source: "import"; deploymentId: string; containerId: string };
-};
-
-type ImportRollbackResult = {
-  deployment: DeploymentUpdate;
-  app: AppUpdate;
-  activity: ActivityRecord;
-  publishRolledBackEvent: true;
-} | null;
-
-/**
- * Computes which DB updates and side effects should occur when the import
- * route reaches the restarted check.
- *
- * Mirrors the `if (restarted)` block in:
- *   app/api/v1/organizations/[orgId]/discover/containers/[containerId]/import/route.ts
- */
-function buildImportRollbackResult(
-  restarted: boolean,
-  deploymentId: string,
-  containerId: string,
-): ImportRollbackResult {
-  if (!restarted) return null;
-  return {
-    deployment: { status: "rolled_back", finishedAt: new Date() },
-    app: { status: "active" },
-    activity: {
-      action: "deployment.rolled_back",
-      metadata: { source: "import", deploymentId, containerId },
-    },
-    publishRolledBackEvent: true,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// 1. restarted = true — all updates applied
-// ---------------------------------------------------------------------------
-
-describe("import rollback — restarted=true", () => {
-  const result = buildImportRollbackResult(true, "dep-123", "abc123def456");
-
-  it("returns a non-null result", () => {
-    expect(result).not.toBeNull();
+describe("parseContainerEnvVars", () => {
+  it("parses simple KEY=VALUE entries", () => {
+    const { vars, skippedKeys } = parseContainerEnvVars(["FOO=bar", "BAZ=qux"]);
+    expect(vars).toEqual({ FOO: "bar", BAZ: "qux" });
+    expect(skippedKeys).toHaveLength(0);
   });
 
-  it("sets deployment status to rolled_back", () => {
-    expect(result?.deployment.status).toBe("rolled_back");
+  it("splits on the first = only — values may contain =", () => {
+    const { vars } = parseContainerEnvVars(["URL=http://host?a=1&b=2"]);
+    expect(vars).toEqual({ URL: "http://host?a=1&b=2" });
   });
 
-  it("sets deployment finishedAt to a Date", () => {
-    expect(result?.deployment.finishedAt).toBeInstanceOf(Date);
+  it("skips entries with no = separator", () => {
+    const { vars, skippedKeys } = parseContainerEnvVars(["NOEQUAL", "GOOD=value"]);
+    expect(vars).toEqual({ GOOD: "value" });
+    expect(skippedKeys).toHaveLength(0);
   });
 
-  it("sets app status to active", () => {
-    expect(result?.app.status).toBe("active");
+  it("skips values containing ${...} and records the key", () => {
+    const { vars, skippedKeys } = parseContainerEnvVars([
+      "SAFE=literal",
+      "UNSAFE=${SOME_VAR}",
+    ]);
+    expect(vars).toEqual({ SAFE: "literal" });
+    expect(skippedKeys).toEqual(["UNSAFE"]);
   });
 
-  it("publishes the rolled_back SSE event", () => {
-    expect(result?.publishRolledBackEvent).toBe(true);
+  it("skips inline interpolation in the middle of a value", () => {
+    const { vars, skippedKeys } = parseContainerEnvVars(["PREFIX=foo${BAR}baz"]);
+    expect(vars).toEqual({});
+    expect(skippedKeys).toEqual(["PREFIX"]);
   });
 
-  it("records activity with action deployment.rolled_back", () => {
-    expect(result?.activity.action).toBe("deployment.rolled_back");
+  it("handles empty value (KEY=)", () => {
+    const { vars, skippedKeys } = parseContainerEnvVars(["EMPTY="]);
+    expect(vars).toEqual({ EMPTY: "" });
+    expect(skippedKeys).toHaveLength(0);
   });
 
-  it("records activity with source=import in metadata", () => {
-    expect(result?.activity.metadata.source).toBe("import");
+  it("returns empty results for an empty array", () => {
+    const { vars, skippedKeys } = parseContainerEnvVars([]);
+    expect(vars).toEqual({});
+    expect(skippedKeys).toHaveLength(0);
   });
 
-  it("records activity with the deployment ID in metadata", () => {
-    expect(result?.activity.metadata.deploymentId).toBe("dep-123");
-  });
-
-  it("records activity with the container ID in metadata", () => {
-    expect(result?.activity.metadata.containerId).toBe("abc123def456");
+  it("collects multiple skipped keys", () => {
+    const { skippedKeys } = parseContainerEnvVars([
+      "A=${X}",
+      "B=${Y}",
+      "C=safe",
+    ]);
+    expect(skippedKeys).toEqual(["A", "B"]);
   });
 });
 
 // ---------------------------------------------------------------------------
-// 2. restarted = false — no updates
+// getPgErrorCode
 // ---------------------------------------------------------------------------
 
-describe("import rollback — restarted=false", () => {
-  it("returns null when startContainer failed", () => {
-    const result = buildImportRollbackResult(false, "dep-456", "abc123def456");
-    expect(result).toBeNull();
+describe("getPgErrorCode", () => {
+  it("returns null for non-Error values", () => {
+    expect(getPgErrorCode("string")).toBeNull();
+    expect(getPgErrorCode(42)).toBeNull();
+    expect(getPgErrorCode(null)).toBeNull();
   });
 
-  it("does not update deployment status when not restarted", () => {
-    const result = buildImportRollbackResult(false, "dep-456", "abc123def456");
-    expect(result?.deployment).toBeUndefined();
+  it("returns the direct code property when present", () => {
+    const err = Object.assign(new Error("test"), { code: "23505" });
+    expect(getPgErrorCode(err)).toBe("23505");
   });
 
-  it("does not update app status when not restarted", () => {
-    const result = buildImportRollbackResult(false, "dep-456", "abc123def456");
-    expect(result?.app).toBeUndefined();
+  it("returns the cause.code when direct code is absent", () => {
+    const err = new Error("wrapper");
+    err.cause = { code: "23503" };
+    expect(getPgErrorCode(err)).toBe("23503");
   });
 
-  it("does not publish SSE event when not restarted", () => {
-    const result = buildImportRollbackResult(false, "dep-456", "abc123def456");
-    expect(result?.publishRolledBackEvent).toBeUndefined();
-  });
-
-  it("does not record activity when not restarted", () => {
-    const result = buildImportRollbackResult(false, "dep-456", "abc123def456");
-    expect(result?.activity).toBeUndefined();
+  it("returns null when neither code nor cause.code exists", () => {
+    expect(getPgErrorCode(new Error("plain"))).toBeNull();
   });
 });

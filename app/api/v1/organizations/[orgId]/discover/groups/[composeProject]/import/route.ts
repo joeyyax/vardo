@@ -282,25 +282,28 @@ async function handler(request: NextRequest, { params }: RouteParams) {
 
         // Create domain records for services where a domain was detected.
         // These appear in the Vardo UI and are used for TLS cert tracking.
-        for (const sd of serviceDomains) {
-          await tx.insert(domains).values({
-            id: nanoid(),
-            appId,
-            domain: sd.domain,
-            port: sd.port,
-            certResolver,
-            isPrimary: serviceDomains.indexOf(sd) === 0,
-          });
+        if (serviceDomains.length > 0) {
+          await tx.insert(domains).values(
+            serviceDomains.map((sd, i) => ({
+              id: nanoid(),
+              appId,
+              domain: sd.domain,
+              port: sd.port,
+              certResolver,
+              isPrimary: i === 0,
+            }))
+          );
         }
 
         // Create volume records for all mounts across all services.
         // Deduplicate by mountPath to avoid unique-constraint violations when
         // multiple services share the same host path.
         const seenMountPaths = new Set<string>();
+        const volumeRows: (typeof volumes)["$inferInsert"][] = [];
         for (const mount of allMounts) {
           if (seenMountPaths.has(mount.destination)) continue;
           seenMountPaths.add(mount.destination);
-          await tx.insert(volumes).values({
+          volumeRows.push({
             id: nanoid(),
             appId,
             organizationId: orgId,
@@ -311,6 +314,9 @@ async function handler(request: NextRequest, { params }: RouteParams) {
             // Bind mounts are flagged as non-persistent — Vardo can't manage host paths
             persistent: mount.type !== "bind",
           });
+        }
+        if (volumeRows.length > 0) {
+          await tx.insert(volumes).values(volumeRows);
         }
 
         return { app };
