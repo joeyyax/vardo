@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 import { fetchAllContainerMetrics } from "@/lib/metrics/cadvisor";
 import { queryAllPoints } from "@/lib/metrics/store";
 import { isMetricsEnabled } from "@/lib/metrics/config";
@@ -27,7 +28,11 @@ export async function GET(request: NextRequest) {
       const fromMs = parseInt(from);
       const toMs = parseInt(to);
       const bucket = parseInt(searchParams.get("bucket") || "30000");
-      const points = await queryAllPoints(fromMs, toMs, bucket);
+      const gpuApp = await db.query.apps.findFirst({
+        where: eq(apps.gpuEnabled, true),
+        columns: { id: true },
+      });
+      const points = await queryAllPoints(fromMs, toMs, bucket, !!gpuApp);
 
       return NextResponse.json({ points });
     }

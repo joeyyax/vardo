@@ -18,7 +18,9 @@ export function aggregateContainers(
     networkRx: containers.reduce((s, c) => s + c.networkRxBytes, 0),
     networkTx: containers.reduce((s, c) => s + c.networkTxBytes, 0),
     diskTotal,
-    gpuUtilization: Math.round(containers.reduce((s, c) => s + c.gpuUtilization, 0) * 100) / 100,
+    gpuUtilization: gpuContainers.length > 0
+      ? Math.round(gpuContainers.reduce((s, c) => s + c.gpuUtilization, 0) / gpuContainers.length * 100) / 100
+      : 0,
     gpuMemoryUsed: containers.reduce((s, c) => s + c.gpuMemoryUsed, 0),
     gpuMemoryTotal: containers.reduce((s, c) => s + c.gpuMemoryTotal, 0),
     gpuTemperature: gpuContainers.length > 0

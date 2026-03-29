@@ -74,6 +74,38 @@ async function ensureTimeSeries(
 }
 
 /**
+ * Generic helper: ensure + write a set of named time-series values for a container.
+ * Shared by storeMetrics, storeGpuMetrics, and any future per-container series.
+ */
+async function storeContainerSeries(
+  projectName: string,
+  containerId: string,
+  containerName: string,
+  timestamp: number,
+  metrics: Record<string, number>,
+  organizationId?: string | null,
+) {
+  const baseLabels: Record<string, string> = {
+    project: projectName,
+    container: containerId,
+    containerName,
+  };
+  if (organizationId) baseLabels.organization = organizationId;
+
+  const entries = Object.entries(metrics);
+  const keys = entries.map(([name]) => tsKey(projectName, name, containerId));
+
+  await Promise.all(
+    entries.map(([name], i) => ensureTimeSeries(keys[i], { ...baseLabels, metric: name }))
+  );
+
+  const ts = timestamp.toString();
+  await Promise.all(
+    entries.map(([, value], i) => tsRedis.call("TS.ADD", keys[i], ts, value.toString()))
+  );
+}
+
+/**
  * Store a metrics snapshot for a project's container.
  */
 export async function storeMetrics(
@@ -90,39 +122,13 @@ export async function storeMetrics(
   },
   organizationId?: string | null,
 ) {
-  const labels: Record<string, string> = {
-    project: projectName,
-    container: containerId,
-    containerName: containerName,
-  };
-  if (organizationId) labels.organization = organizationId;
-
-  const keys = {
-    cpu: tsKey(projectName, "cpu", containerId),
-    memory: tsKey(projectName, "memory", containerId),
-    memoryLimit: tsKey(projectName, "memoryLimit", containerId),
-    networkRx: tsKey(projectName, "networkRx", containerId),
-    networkTx: tsKey(projectName, "networkTx", containerId),
-  };
-
-  // Ensure all keys exist
-  await Promise.all([
-    ensureTimeSeries(keys.cpu, { ...labels, metric: "cpu" }),
-    ensureTimeSeries(keys.memory, { ...labels, metric: "memory" }),
-    ensureTimeSeries(keys.memoryLimit, { ...labels, metric: "memoryLimit" }),
-    ensureTimeSeries(keys.networkRx, { ...labels, metric: "networkRx" }),
-    ensureTimeSeries(keys.networkTx, { ...labels, metric: "networkTx" }),
-  ]);
-
-  // Add data points
-  const ts = timestamp.toString();
-  await Promise.all([
-    tsRedis.call("TS.ADD", keys.cpu, ts, values.cpuPercent.toString()),
-    tsRedis.call("TS.ADD", keys.memory, ts, values.memoryUsage.toString()),
-    tsRedis.call("TS.ADD", keys.memoryLimit, ts, values.memoryLimit.toString()),
-    tsRedis.call("TS.ADD", keys.networkRx, ts, values.networkRxBytes.toString()),
-    tsRedis.call("TS.ADD", keys.networkTx, ts, values.networkTxBytes.toString()),
-  ]);
+  await storeContainerSeries(projectName, containerId, containerName, timestamp, {
+    cpu: values.cpuPercent,
+    memory: values.memoryUsage,
+    memoryLimit: values.memoryLimit,
+    networkRx: values.networkRxBytes,
+    networkTx: values.networkTxBytes,
+  }, organizationId);
 }
 
 /**
@@ -165,34 +171,12 @@ export async function storeGpuMetrics(
   },
   organizationId?: string | null,
 ) {
-  const labels: Record<string, string> = {
-    project: projectName,
-    container: containerId,
-    containerName,
-  };
-  if (organizationId) labels.organization = organizationId;
-
-  const keys = {
-    gpuUtilization: tsKey(projectName, "gpuUtilization", containerId),
-    gpuMemoryUsed: tsKey(projectName, "gpuMemoryUsed", containerId),
-    gpuMemoryTotal: tsKey(projectName, "gpuMemoryTotal", containerId),
-    gpuTemperature: tsKey(projectName, "gpuTemperature", containerId),
-  };
-
-  await Promise.all([
-    ensureTimeSeries(keys.gpuUtilization, { ...labels, metric: "gpuUtilization" }),
-    ensureTimeSeries(keys.gpuMemoryUsed, { ...labels, metric: "gpuMemoryUsed" }),
-    ensureTimeSeries(keys.gpuMemoryTotal, { ...labels, metric: "gpuMemoryTotal" }),
-    ensureTimeSeries(keys.gpuTemperature, { ...labels, metric: "gpuTemperature" }),
-  ]);
-
-  const ts = timestamp.toString();
-  await Promise.all([
-    tsRedis.call("TS.ADD", keys.gpuUtilization, ts, values.gpuUtilization.toString()),
-    tsRedis.call("TS.ADD", keys.gpuMemoryUsed, ts, values.gpuMemoryUsed.toString()),
-    tsRedis.call("TS.ADD", keys.gpuMemoryTotal, ts, values.gpuMemoryTotal.toString()),
-    tsRedis.call("TS.ADD", keys.gpuTemperature, ts, values.gpuTemperature.toString()),
-  ]);
+  await storeContainerSeries(projectName, containerId, containerName, timestamp, {
+    gpuUtilization: values.gpuUtilization,
+    gpuMemoryUsed: values.gpuMemoryUsed,
+    gpuMemoryTotal: values.gpuMemoryTotal,
+    gpuTemperature: values.gpuTemperature,
+  }, organizationId);
 }
 
 /**
@@ -545,13 +529,21 @@ export async function queryMetricsPoints(
   fromMs: number,
   toMs: number,
   bucketMs: number,
+  includeGpu = false,
 ): Promise<MetricsPoint[]> {
-  const [cpu, memory, memoryLimit, networkRx, networkTx, gpuUtilization, gpuMemoryUsed, gpuMemoryTotal, gpuTemperature] = await Promise.all([
+  const [cpu, memory, memoryLimit, networkRx, networkTx] = await Promise.all([
     queryMetrics(projectName, "cpu", fromMs, toMs, { type: "avg", bucketMs }),
     queryMetrics(projectName, "memory", fromMs, toMs, { type: "avg", bucketMs }),
     queryMetrics(projectName, "memoryLimit", fromMs, toMs, { type: "max", bucketMs }),
     queryMetrics(projectName, "networkRx", fromMs, toMs, { type: "sum", bucketMs }),
     queryMetrics(projectName, "networkTx", fromMs, toMs, { type: "sum", bucketMs }),
+  ]);
+
+  if (!includeGpu) {
+    return seriesToPoints({ cpu, memory, memoryLimit, networkRx, networkTx });
+  }
+
+  const [gpuUtilization, gpuMemoryUsed, gpuMemoryTotal, gpuTemperature] = await Promise.all([
     queryMetrics(projectName, "gpuUtilization", fromMs, toMs, { type: "avg", bucketMs }),
     queryMetrics(projectName, "gpuMemoryUsed", fromMs, toMs, { type: "avg", bucketMs }),
     queryMetrics(projectName, "gpuMemoryTotal", fromMs, toMs, { type: "max", bucketMs }),
@@ -566,13 +558,21 @@ export async function queryByOrgPoints(
   fromMs: number,
   toMs: number,
   bucketMs: number,
+  includeGpu = false,
 ): Promise<MetricsPoint[]> {
-  const [cpu, memory, memoryLimit, networkRx, networkTx, gpuUtilization, gpuMemoryUsed, gpuMemoryTotal, gpuTemperature] = await Promise.all([
+  const [cpu, memory, memoryLimit, networkRx, networkTx] = await Promise.all([
     queryByOrg(orgId, "cpu", fromMs, toMs, { type: "avg", bucketMs }),
     queryByOrg(orgId, "memory", fromMs, toMs, { type: "avg", bucketMs }),
     queryByOrg(orgId, "memoryLimit", fromMs, toMs, { type: "max", bucketMs }),
     queryByOrg(orgId, "networkRx", fromMs, toMs, { type: "sum", bucketMs }),
     queryByOrg(orgId, "networkTx", fromMs, toMs, { type: "sum", bucketMs }),
+  ]);
+
+  if (!includeGpu) {
+    return seriesToPoints({ cpu, memory, memoryLimit, networkRx, networkTx });
+  }
+
+  const [gpuUtilization, gpuMemoryUsed, gpuMemoryTotal, gpuTemperature] = await Promise.all([
     queryByOrg(orgId, "gpuUtilization", fromMs, toMs, { type: "avg", bucketMs }),
     queryByOrg(orgId, "gpuMemoryUsed", fromMs, toMs, { type: "avg", bucketMs }),
     queryByOrg(orgId, "gpuMemoryTotal", fromMs, toMs, { type: "max", bucketMs }),
@@ -586,19 +586,26 @@ export async function queryAllPoints(
   fromMs: number,
   toMs: number,
   bucketMs: number,
+  includeGpu = false,
 ): Promise<MetricsPoint[]> {
-  const [cpu, memory, memoryLimit, networkRx, networkTx, disk, gpuUtilization, gpuMemoryUsed, gpuMemoryTotal, gpuTemperature] =
-    await Promise.all([
-      queryAll("cpu", fromMs, toMs, { type: "avg", bucketMs }),
-      queryAll("memory", fromMs, toMs, { type: "avg", bucketMs }),
-      queryAll("memoryLimit", fromMs, toMs, { type: "max", bucketMs }),
-      queryAll("networkRx", fromMs, toMs, { type: "sum", bucketMs }),
-      queryAll("networkTx", fromMs, toMs, { type: "sum", bucketMs }),
-      queryDiskHistory(fromMs, toMs, bucketMs),
-      queryAll("gpuUtilization", fromMs, toMs, { type: "avg", bucketMs }),
-      queryAll("gpuMemoryUsed", fromMs, toMs, { type: "avg", bucketMs }),
-      queryAll("gpuMemoryTotal", fromMs, toMs, { type: "max", bucketMs }),
-      queryAll("gpuTemperature", fromMs, toMs, { type: "avg", bucketMs }),
-    ]);
+  const [cpu, memory, memoryLimit, networkRx, networkTx, disk] = await Promise.all([
+    queryAll("cpu", fromMs, toMs, { type: "avg", bucketMs }),
+    queryAll("memory", fromMs, toMs, { type: "avg", bucketMs }),
+    queryAll("memoryLimit", fromMs, toMs, { type: "max", bucketMs }),
+    queryAll("networkRx", fromMs, toMs, { type: "sum", bucketMs }),
+    queryAll("networkTx", fromMs, toMs, { type: "sum", bucketMs }),
+    queryDiskHistory(fromMs, toMs, bucketMs),
+  ]);
+
+  if (!includeGpu) {
+    return seriesToPoints({ cpu, memory, memoryLimit, networkRx, networkTx, disk });
+  }
+
+  const [gpuUtilization, gpuMemoryUsed, gpuMemoryTotal, gpuTemperature] = await Promise.all([
+    queryAll("gpuUtilization", fromMs, toMs, { type: "avg", bucketMs }),
+    queryAll("gpuMemoryUsed", fromMs, toMs, { type: "avg", bucketMs }),
+    queryAll("gpuMemoryTotal", fromMs, toMs, { type: "max", bucketMs }),
+    queryAll("gpuTemperature", fromMs, toMs, { type: "avg", bucketMs }),
+  ]);
   return seriesToPoints({ cpu, memory, memoryLimit, networkRx, networkTx, disk, gpuUtilization, gpuMemoryUsed, gpuMemoryTotal, gpuTemperature });
 }
