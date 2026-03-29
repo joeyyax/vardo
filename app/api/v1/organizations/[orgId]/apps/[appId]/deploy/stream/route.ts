@@ -50,6 +50,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           send("stage", { deploymentId: data.deploymentId, stage: data.stage, status: data.status });
         } else if (event === "deploy:complete") {
           send("done", { deploymentId: data.deploymentId, success: data.success, durationMs: data.durationMs, status: data.status });
+        } else if (event === "deploy:rolled_back") {
+          send("rolled_back", { deploymentId: data.deploymentId, message: data.message });
         }
       });
     } catch (err) {
