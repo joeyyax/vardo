@@ -114,13 +114,18 @@ export function AdminOverview() {
       <div className="flex flex-wrap items-center gap-3 mt-4 min-h-[20px]">
         {services ? (
           services.map((svc) => (
-            <div key={svc.name} className="flex items-center gap-1.5">
-              <span className={`size-1.5 rounded-full ${
+            <div key={svc.name} className="flex items-start gap-1.5">
+              <span className={`size-1.5 rounded-full shrink-0 mt-[3px] ${
                 svc.status === "healthy" ? "bg-status-success" :
                 svc.status === "unhealthy" ? "bg-status-error" :
                 "bg-status-neutral"
               }`} />
-              <span className="text-xs text-muted-foreground">{svc.name}</span>
+              <div>
+                <span className="text-xs text-muted-foreground">{svc.name}</span>
+                {svc.status === "unhealthy" && svc.error && (
+                  <p className="text-xs text-muted-foreground max-w-[200px] truncate">{svc.error}</p>
+                )}
+              </div>
             </div>
           ))
         ) : (

@@ -12,6 +12,7 @@ export type ServiceStatus = {
   description: string;
   status: "healthy" | "unhealthy" | "unconfigured";
   latencyMs?: number;
+  error?: string;
 };
 
 export type ResourceStatus = {
@@ -64,6 +65,23 @@ const THRESHOLDS = {
 // Service checks
 // ---------------------------------------------------------------------------
 
+const MAX_ERROR_LENGTH = 120;
+
+/**
+ * Strip potentially sensitive info from raw library error messages before
+ * surfacing them in the API response or admin UI. Removes connection strings,
+ * IP addresses with ports, and pg role/database/user names.
+ */
+export function sanitizeError(message: string): string {
+  return message
+    .replace(/redis:\/\/\S+/gi, "[url]")
+    .replace(/postgres(?:ql)?:\/\/\S+/gi, "[url]")
+    .replace(/\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\b/g, "[host]")
+    .replace(/\blocalhost(?::\d+)?\b/gi, "[host]")
+    .replace(/\b(role|database|user) "[^"]+"/gi, "$1 [name]")
+    .slice(0, MAX_ERROR_LENGTH);
+}
+
 async function checkService(
   name: string,
   description: string,
@@ -73,8 +91,10 @@ async function checkService(
   try {
     await check();
     return { name, description, status: "healthy", latencyMs: Date.now() - start };
-  } catch {
-    return { name, description, status: "unhealthy", latencyMs: Date.now() - start };
+  } catch (err) {
+    const raw = err instanceof Error ? err.message : String(err);
+    const error = sanitizeError(raw);
+    return { name, description, status: "unhealthy", latencyMs: Date.now() - start, error };
   }
 }
 
