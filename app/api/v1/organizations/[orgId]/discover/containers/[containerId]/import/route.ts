@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { db } from "@/lib/db";
-import { apps, environments, domains, volumes, projects } from "@/lib/db/schema";
+import { apps, deployments, environments, domains, volumes, projects } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
@@ -15,6 +15,7 @@ import { recordActivity } from "@/lib/activity";
 import { stopContainer, startContainer, removeContainer } from "@/lib/docker/client";
 import { createDeployment } from "@/lib/docker/deploy";
 import { requestDeploy } from "@/lib/docker/deploy-cancel";
+import { publishEvent, appChannel } from "@/lib/events";
 
 type RouteParams = {
   params: Promise<{ orgId: string; containerId: string }>;
@@ -340,10 +341,54 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         // Restart the original container so the service keeps running while
         // the operator figures out what went wrong.
         if (containerStopped) {
+          let restarted = false;
           try {
             await startContainer(containerId);
+            restarted = true;
           } catch {
             // Best effort — move on.
+          }
+
+          if (restarted) {
+            // Update the deployment to reflect that the original container was restored.
+            await db
+              .update(deployments)
+              .set({ status: "rolled_back", finishedAt: new Date() })
+              .where(eq(deployments.id, deploymentId));
+
+            // Reset app status — the original container is running again.
+            await db
+              .update(apps)
+              .set({ status: "active", updatedAt: new Date() })
+              .where(eq(apps.id, appId));
+
+            // Publish real-time event so any open app view refreshes.
+            publishEvent(appChannel(appId), {
+              event: "deploy:rolled_back",
+              appId,
+              deploymentId,
+              message: "Import deploy failed — original container restarted",
+            }).catch(() => {});
+
+            // Record activity for audit trail.
+            recordActivity({
+              organizationId: orgId,
+              action: "deployment.rolled_back",
+              appId,
+              metadata: { deploymentId, containerId, source: "import" },
+            }).catch(() => {});
+
+            // Send notification so the user sees a toast even if they navigated away.
+            import("@/lib/notifications/dispatch").then(({ emit }) => {
+              emit(orgId, {
+                type: "deploy.rollback",
+                title: `Import deploy failed: ${data.displayName}`,
+                message: "Import deploy failed — original container restarted",
+                projectName: data.displayName,
+                appId,
+                rollbackSuccess: true,
+              });
+            }).catch(() => {});
           }
         }
         return;

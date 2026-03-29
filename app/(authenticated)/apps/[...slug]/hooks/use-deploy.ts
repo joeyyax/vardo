@@ -96,10 +96,29 @@ export function useDeploy({
         if (data.success) {
           toast.success(data.durationMs ? `Deployed in ${formatDuration(data.durationMs)}` : "Deployed");
           announce("Deployment succeeded.");
+        } else if (data.status === "rolled_back") {
+          toast.error("Deployment rolled back");
+          announce("Deployment rolled back.");
         } else {
           toast.error(data.error || "Deployment failed");
           announce(`Deployment failed. ${data.error || ""}`);
         }
+        if (data.deploymentId) {
+          setViewingLogId(data.deploymentId);
+        }
+      } catch { /* skip malformed */ }
+      es.close();
+      setDeploying(false);
+      setDeployAbort(null);
+      router.refresh();
+    });
+
+    es.addEventListener("rolled_back", (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        finished = true;
+        toast.error(data.message || "Deployment rolled back");
+        announce(data.message || "Deployment rolled back.");
         if (data.deploymentId) {
           setViewingLogId(data.deploymentId);
         }
@@ -138,9 +157,11 @@ export function useDeploy({
             if (dep?.log) {
               setDeployLog(dep.log.split("\n"));
             }
-            if (dep?.status === "success" || dep?.status === "failed") {
+            if (dep?.status === "success" || dep?.status === "failed" || dep?.status === "rolled_back") {
               if (dep.status === "success") {
                 toast.success(dep.durationMs ? `Deployed in ${formatDuration(dep.durationMs)}` : "Deployed");
+              } else if (dep.status === "rolled_back") {
+                toast.error("Deployment rolled back");
               } else {
                 // Extract last error line from deploy log for the toast
                 const errorLine = dep.log

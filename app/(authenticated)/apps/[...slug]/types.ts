@@ -98,6 +98,7 @@ export type App = {
   dependsOn: string[] | null;
   status: "active" | "stopped" | "error" | "deploying";
   needsRedeploy: boolean | null;
+  importedContainerId: string | null;
   createdAt: Date;
   updatedAt: Date;
   deployments: Deployment[];
