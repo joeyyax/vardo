@@ -1015,6 +1015,83 @@ export function validateCompose(compose: ComposeFile, opts?: ValidateOptions): {
  * DENIED_MOUNT_PATHS are always blocked regardless of the flag.
  * When stripping, returns the list of removed mounts for logging.
  */
+type DeployTransformDomain = {
+  id: string;
+  domain: string;
+  port: number | null;
+  sslEnabled: boolean | null;
+  certResolver: string | null;
+  redirectTo: string | null;
+  redirectCode: number | null;
+};
+
+/**
+ * Apply the standard deployment transformation chain to a compose file.
+ *
+ * Injects resource limits, GPU devices, Traefik labels, and the shared
+ * vardo network — the same sequence used during deploy. Both the deploy
+ * path and the debug endpoint use this so the preview matches what
+ * actually runs.
+ */
+export function applyDeployTransforms(
+  compose: ComposeFile,
+  opts: {
+    appName: string;
+    containerPort: number | null;
+    cpuLimit?: number | null;
+    memoryLimit?: number | null;
+    gpuEnabled?: boolean;
+    domains: DeployTransformDomain[];
+    networkName: string;
+  },
+): ComposeFile {
+  let result = compose;
+
+  if (opts.cpuLimit || opts.memoryLimit) {
+    result = injectResourceLimits(result, {
+      cpuLimit: opts.cpuLimit,
+      memoryLimit: opts.memoryLimit,
+    });
+  }
+
+  if (opts.gpuEnabled) {
+    result = injectGpuDevices(result);
+  }
+
+  const servicesWithCustomNetwork = Object.entries(result.services)
+    .filter(([, svc]) => svc.network_mode && svc.network_mode !== "bridge")
+    .map(([name]) => name);
+  const allServicesCustomNetwork =
+    servicesWithCustomNetwork.length === Object.keys(result.services).length;
+
+  if (!allServicesCustomNetwork) {
+    result = stripTraefikLabels(result);
+
+    const primaryServiceName = Object.keys(result.services).find(
+      (k) => !result.services[k].network_mode || result.services[k].network_mode === "bridge",
+    );
+
+    for (const domain of opts.domains) {
+      const port = domain.port || opts.containerPort || 3000;
+      result = injectTraefikLabels(result, {
+        projectName: `${opts.appName}-${domain.id.slice(0, 6)}`,
+        appName: opts.appName,
+        domain: domain.domain,
+        containerPort: port,
+        certResolver: domain.certResolver || "le",
+        ssl: domain.sslEnabled ?? true,
+        redirectTo: domain.redirectTo ?? undefined,
+        redirectCode: domain.redirectCode ?? 301,
+        serviceName: primaryServiceName,
+      });
+    }
+  }
+
+  result = injectNetwork(result, opts.networkName);
+
+  return result;
+}
+
 export function sanitizeCompose(compose: ComposeFile, opts?: { allowBindMounts?: boolean }): {
   compose: ComposeFile;
   strippedMounts: string[];
