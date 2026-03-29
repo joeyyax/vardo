@@ -99,6 +99,13 @@
       "when": 1743120000000,
       "tag": "0013_gpu_enabled",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1743206400000,
+      "tag": "0014_org_trusted",
+      "breakpoints": true
     }
   ]
 }

@@ -857,6 +857,8 @@ export function isAnonymousVolume(name: string): boolean {
 
 type ValidateOptions = {
   allowBindMounts?: boolean;
+  /** Skip all mount-related validation checks. Used when the org is trusted. */
+  skipMountChecks?: boolean;
 };
 
 /**
@@ -914,7 +916,7 @@ export function validateCompose(compose: ComposeFile, opts?: ValidateOptions): {
       }
     }
 
-    if (svc.volumes) {
+    if (svc.volumes && !opts?.skipMountChecks) {
       for (const vol of svc.volumes) {
         if (isBindMount(vol) && !opts?.allowBindMounts) {
           errors.push(
