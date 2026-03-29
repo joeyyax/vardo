@@ -21,7 +21,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const orgApps = await db.query.apps.findMany({
       where: eq(apps.organizationId, orgId),
-      columns: { id: true, name: true, displayName: true, status: true },
+      columns: { id: true, name: true, displayName: true, status: true, gpuEnabled: true },
     });
 
     const searchParams = request.nextUrl.searchParams;
@@ -37,7 +37,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       const perProject = searchParams.get("perProject") === "true";
 
       const activeApps = orgApps.filter((p) => p.status === "active");
-      const activeAppNames = activeApps.map((p) => p.name);
 
       if (perProject) {
         const metricFilter = searchParams.get("metric");
@@ -67,7 +66,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
       // Aggregate across all projects
       const perAppPoints = await Promise.all(
-        activeAppNames.map((name) => queryMetricsPoints(name, fromMs, toMs, bucketMs))
+        activeApps.map((app) => queryMetricsPoints(app.name, fromMs, toMs, bucketMs, app.gpuEnabled))
       );
       // Merge all apps' points by timestamp
       const pointMap = new Map<number, MetricsPoint>();

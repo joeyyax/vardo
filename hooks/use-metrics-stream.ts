@@ -132,6 +132,10 @@ export function useMetricsStream(
           networkRx: data.networkRx ?? 0,
           networkTx: data.networkTx ?? 0,
           diskTotal: data.diskTotal ?? 0,
+          gpuUtilization: data.gpuUtilization ?? 0,
+          gpuMemoryUsed: data.gpuMemoryUsed ?? 0,
+          gpuMemoryTotal: data.gpuMemoryTotal ?? 0,
+          gpuTemperature: data.gpuTemperature ?? 0,
         };
 
         // Container breakdown — optional per event
