@@ -1126,3 +1126,78 @@ export function sanitizeCompose(compose: ComposeFile, opts?: { allowBindMounts?:
   }
   return { compose: sanitized, strippedMounts };
 }
+
+type ComposePreviewApp = {
+  name: string;
+  deployType: string;
+  imageName: string | null;
+  composeContent: string | null;
+  containerPort: number | null;
+  cpuLimit: number | null;
+  memoryLimit: number | null;
+  gpuEnabled: boolean;
+  exposedPorts: { internal: number; external?: number; protocol?: string }[] | null;
+  domains: DeployTransformDomain[];
+};
+
+/**
+ * Build a compose preview from the app's stored configuration.
+ *
+ * Applies the same transformation chain as deploy without cloning a repo or
+ * building images. Used by the debug endpoint to show what the compose file
+ * would look like at runtime.
+ *
+ * Returns null for git-sourced apps that have no stored compose content —
+ * their compose is generated during the build step and is not available
+ * statically.
+ */
+export function buildComposePreview(
+  app: ComposePreviewApp,
+  volumesList: { name: string; mountPath: string }[],
+  networkName: string,
+): ComposeFile | null {
+  let compose: ComposeFile | null = null;
+
+  if (app.deployType === "image" && app.composeContent) {
+    // Imported container — use stored compose
+    try {
+      const parsed = parseCompose(app.composeContent);
+      const { compose: sanitized } = sanitizeCompose(parsed, { allowBindMounts: true });
+      compose = sanitized;
+    } catch {
+      return null;
+    }
+  } else if (app.deployType === "image" && app.imageName) {
+    compose = generateComposeForImage({
+      projectName: app.name,
+      imageName: app.imageName,
+      containerPort: app.containerPort ?? undefined,
+      volumes: volumesList.length > 0 ? volumesList : undefined,
+      exposedPorts: app.exposedPorts ?? undefined,
+    });
+  } else if (app.composeContent) {
+    // Stored compose content (git repos with inline compose)
+    try {
+      const parsed = parseCompose(app.composeContent);
+      const { compose: sanitized } = sanitizeCompose(parsed, { allowBindMounts: true });
+      compose = sanitized;
+    } catch {
+      return null;
+    }
+  } else {
+    // Git repo — compose is generated during build, not available statically
+    return null;
+  }
+
+  if (!compose) return null;
+
+  return applyDeployTransforms(compose, {
+    appName: app.name,
+    containerPort: app.containerPort,
+    cpuLimit: app.cpuLimit,
+    memoryLimit: app.memoryLimit,
+    gpuEnabled: app.gpuEnabled,
+    domains: app.domains,
+    networkName,
+  });
+}

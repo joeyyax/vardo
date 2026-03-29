@@ -7,12 +7,8 @@ import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { isAdmin } from "@/lib/auth/permissions";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import {
-  generateComposeForImage,
-  parseCompose,
-  sanitizeCompose,
-  applyDeployTransforms,
+  buildComposePreview,
   composeToYaml,
-  type ComposeFile,
 } from "@/lib/docker/compose";
 import { listContainers, inspectContainer } from "@/lib/docker/client";
 import { buildTraefikConfigYaml } from "@/lib/traefik/generate-config";
@@ -22,73 +18,6 @@ type RouteParams = {
 };
 
 const NETWORK_NAME = "vardo-network";
-
-/**
- * Build a compose preview from the app's stored configuration.
- * Applies the same transformation chain as deploy without cloning a repo
- * or building images.
- */
-function buildComposePreview(
-  app: {
-    name: string;
-    deployType: string;
-    source: string;
-    imageName: string | null;
-    composeContent: string | null;
-    containerPort: number | null;
-    cpuLimit: number | null;
-    memoryLimit: number | null;
-    gpuEnabled: boolean;
-    exposedPorts: { internal: number; external?: number; protocol?: string }[] | null;
-    domains: { id: string; domain: string; port: number | null; sslEnabled: boolean | null; certResolver: string | null; redirectTo: string | null; redirectCode: number | null }[];
-  },
-  volumesList: { name: string; mountPath: string }[],
-): ComposeFile | null {
-  let compose: ComposeFile | null = null;
-
-  if (app.deployType === "image" && app.composeContent) {
-    // Imported container — use stored compose
-    try {
-      const parsed = parseCompose(app.composeContent);
-      const { compose: sanitized } = sanitizeCompose(parsed, { allowBindMounts: true });
-      compose = sanitized;
-    } catch {
-      return null;
-    }
-  } else if (app.deployType === "image" && app.imageName) {
-    compose = generateComposeForImage({
-      projectName: app.name,
-      imageName: app.imageName,
-      containerPort: app.containerPort ?? undefined,
-      volumes: volumesList.length > 0 ? volumesList : undefined,
-      exposedPorts: app.exposedPorts ?? undefined,
-    });
-  } else if (app.composeContent) {
-    // Stored compose content (git repos with inline compose)
-    try {
-      const parsed = parseCompose(app.composeContent);
-      const { compose: sanitized } = sanitizeCompose(parsed, { allowBindMounts: true });
-      compose = sanitized;
-    } catch {
-      return null;
-    }
-  } else {
-    // Git repo — compose is generated during build, not available statically
-    return null;
-  }
-
-  if (!compose) return null;
-
-  return applyDeployTransforms(compose, {
-    appName: app.name,
-    containerPort: app.containerPort,
-    cpuLimit: app.cpuLimit,
-    memoryLimit: app.memoryLimit,
-    gpuEnabled: app.gpuEnabled,
-    domains: app.domains,
-    networkName: NETWORK_NAME,
-  });
-}
 
 // GET /api/v1/organizations/[orgId]/apps/[appId]/debug
 async function handler(_request: NextRequest, { params }: RouteParams) {
@@ -121,7 +50,6 @@ async function handler(_request: NextRequest, { params }: RouteParams) {
       {
         name: app.name,
         deployType: app.deployType,
-        source: app.source,
         imageName: app.imageName,
         composeContent: app.composeContent,
         containerPort: app.containerPort,
@@ -140,6 +68,7 @@ async function handler(_request: NextRequest, { params }: RouteParams) {
         })),
       },
       volumesList,
+      NETWORK_NAME,
     );
 
     const compose = composeParsed ? composeToYaml(composeParsed) : null;
