@@ -9,6 +9,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { AddAppDropdown } from "./add-app-dropdown";
 
 export function ProjectsActions() {
   return (
@@ -34,51 +35,11 @@ export function ProjectsActions() {
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button>
-            <Plus className="mr-1.5 size-4" />
-            Deploy app
-            <ChevronDown className="ml-1.5 size-3.5" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem asChild>
-            <Link href="/apps/new">Create new app</Link>
-          </DropdownMenuItem>
-          <DropdownMenuItem asChild>
-            <Link href="/discover">
-              <Container className="mr-2 size-4" />
-              Import existing container
-            </Link>
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <AddAppDropdown label="Deploy app" size="default" />
     </div>
   );
 }
 
 export function DeployAppButton() {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button size="sm">
-          <Plus className="mr-1.5 size-4" />
-          Deploy app
-          <ChevronDown className="ml-1.5 size-3.5" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem asChild>
-          <Link href="/apps/new">Create new app</Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link href="/discover">
-            <Container className="mr-2 size-4" />
-            Import existing container
-          </Link>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
+  return <AddAppDropdown label="Deploy app" />;
 }
