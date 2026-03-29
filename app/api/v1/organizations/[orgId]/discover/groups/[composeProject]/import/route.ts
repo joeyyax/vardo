@@ -319,6 +319,30 @@ async function handler(request: NextRequest, { params }: RouteParams) {
       if (txError instanceof Error && txError.message === "PROJECT_NOT_FOUND") {
         return NextResponse.json({ error: "Project not found" }, { status: 400 });
       }
+      // Race condition: another request inserted between our pre-check and insert.
+      // Do the same lookup as the pre-checks so the client can redirect to the
+      // existing app. Try by slug first, then by compose project.
+      if (getPgErrorCode(txError) === "23505") {
+        const existing =
+          (await db.query.apps.findFirst({
+            where: and(eq(apps.organizationId, orgId), eq(apps.name, data.name)),
+            columns: { id: true },
+          })) ??
+          (await db.query.apps.findFirst({
+            where: and(
+              eq(apps.organizationId, orgId),
+              eq(apps.importedComposeProject, composeProject)
+            ),
+            columns: { id: true },
+          }));
+        return NextResponse.json(
+          {
+            error: "An app with this slug already exists in this organization",
+            ...(existing ? { appId: existing.id } : {}),
+          },
+          { status: 409 }
+        );
+      }
       throw txError;
     }
 
@@ -376,16 +400,6 @@ async function handler(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ app, warnings, deploymentId, migrated: false }, { status: 201 });
   } catch (error) {
-    const pgCode = getPgErrorCode(error);
-    if (pgCode === "23505") {
-      // Race condition: another request inserted between our pre-check and insert.
-      // Return a generic conflict — the pre-checks above handle the common case
-      // with appId so the client can redirect.
-      return NextResponse.json(
-        { error: "An app with this slug already exists in this organization" },
-        { status: 409 }
-      );
-    }
     return handleRouteError(error, "Error importing compose group");
   }
 }
