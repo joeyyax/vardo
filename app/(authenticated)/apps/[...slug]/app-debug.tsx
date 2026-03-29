@@ -3,6 +3,11 @@
 import { useState, useCallback, useEffect } from "react";
 import { Copy, Check, RefreshCw, ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Collapsible,
+  CollapsibleTrigger,
+  CollapsibleContent,
+} from "@/components/ui/collapsible";
 import { toast } from "@/lib/messenger";
 
 type DebugData = {
@@ -22,7 +27,6 @@ function CodeBlock({
   loading?: boolean;
   defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(() => {
@@ -34,26 +38,23 @@ function CodeBlock({
   }, [content]);
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-950 overflow-hidden">
+    <Collapsible
+      defaultOpen={defaultOpen}
+      className="rounded-lg border border-zinc-800 bg-zinc-950 overflow-hidden"
+    >
       <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-800 bg-zinc-900/50">
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          className="flex items-center gap-1.5 text-sm font-medium text-zinc-300 hover:text-zinc-100 transition-colors"
-        >
-          {open ? (
-            <ChevronDown className="size-3.5 text-zinc-500" />
-          ) : (
-            <ChevronRight className="size-3.5 text-zinc-500" />
-          )}
+        <CollapsibleTrigger className="flex items-center gap-1.5 text-sm font-medium text-zinc-300 hover:text-zinc-100 transition-colors group">
+          <ChevronRight className="size-3.5 text-zinc-500 group-data-[state=open]:hidden" />
+          <ChevronDown className="size-3.5 text-zinc-500 hidden group-data-[state=open]:block" />
           {label}
-        </button>
+        </CollapsibleTrigger>
         {!loading && content && (
           <button
             type="button"
             onClick={handleCopy}
             className="p-1 rounded text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition-colors"
             title="Copy to clipboard"
+            aria-label={`Copy ${label} to clipboard`}
           >
             {copied ? (
               <Check className="size-3.5 text-status-success" />
@@ -63,7 +64,7 @@ function CodeBlock({
           </button>
         )}
       </div>
-      {open && (
+      <CollapsibleContent>
         <pre className="p-4 text-xs text-zinc-300 font-mono overflow-x-auto whitespace-pre leading-5">
           {loading ? (
             <span className="text-zinc-600 italic">Loading...</span>
@@ -73,8 +74,8 @@ function CodeBlock({
             </span>
           )}
         </pre>
-      )}
-    </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
@@ -111,8 +112,7 @@ export function AppDebug({
 
   useEffect(() => {
     load();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [load]);
 
   const containerJson = data?.containers?.length
     ? JSON.stringify(
