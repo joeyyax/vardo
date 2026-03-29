@@ -14,4 +14,5 @@ export type ConfigSnapshot = {
   rootDirectory: string | null;
   restartPolicy: string | null;
   autoTraefikLabels: boolean | null;
+  backendProtocol: "http" | "https" | null;
 };
