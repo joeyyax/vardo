@@ -23,8 +23,8 @@ type RouteParams = {
 
 const importSchema = z.object({
   projectId: z.string().nullable().optional(),
-  newProjectName: z.string().min(1).optional(),
-  displayName: z.string().min(1, "Display name is required"),
+  newProjectName: z.string().min(1).max(255).optional(),
+  displayName: z.string().min(1, "Display name is required").max(255),
   name: z
     .string()
     .min(1, "Name is required")

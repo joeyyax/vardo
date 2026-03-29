@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { db } from "@/lib/db";
 import { apps, deployments, environments, projects } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -22,8 +23,8 @@ type RouteParams = {
 
 const importGroupSchema = z.object({
   projectId: z.string().nullable().optional(),
-  newProjectName: z.string().min(1).optional(),
-  displayName: z.string().min(1, "Display name is required"),
+  newProjectName: z.string().min(1).max(255).optional(),
+  displayName: z.string().min(1, "Display name is required").max(255),
   name: z
     .string()
     .min(1, "Name is required")
@@ -31,7 +32,7 @@ const importGroupSchema = z.object({
 });
 
 // POST /api/v1/organizations/[orgId]/discover/groups/[composeProject]/import
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handler(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, composeProject } = await params;
 
@@ -339,3 +340,5 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error importing compose group");
   }
 }
+
+export const POST = withRateLimit(handler, { tier: "mutation", key: "discover-import" });
