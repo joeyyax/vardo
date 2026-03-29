@@ -71,6 +71,7 @@ export type ContainerInspect = {
   state: { running: boolean; status: string; startedAt: string };
   image: string;
   ports: { internal: number; external?: number; protocol: string }[];
+  exposedPorts: number[];
   env: string[];
   labels: Record<string, string>;
   networks: string[];
@@ -345,6 +346,7 @@ export async function inspectContainer(id: string): Promise<ContainerInspect> {
       Image: string;
       Env: string[];
       Labels: Record<string, string>;
+      ExposedPorts?: Record<string, unknown> | null;
       Hostname?: string;
       User?: string;
       StopSignal?: string;
@@ -400,6 +402,7 @@ export async function inspectContainer(id: string): Promise<ContainerInspect> {
     },
     image: cfg.Image,
     ports: parseInspectPorts(hc.PortBindings),
+    exposedPorts: Object.keys(cfg.ExposedPorts ?? {}).map((key) => parseInt(key.split("/")[0], 10)).filter((p) => !isNaN(p)),
     env: cfg.Env ?? [],
     labels: cfg.Labels ?? {},
     networks: Object.keys(data.NetworkSettings.Networks ?? {}),

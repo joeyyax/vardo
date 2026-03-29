@@ -211,9 +211,12 @@ export async function runDeployment(
     });
     const orgTrusted = org?.trusted ?? false;
 
-    // Resolve per-project bind mount permission
+    // Resolve per-project bind mount permission.
+    // Trusted orgs bypass the per-project flag — all bind mounts are allowed.
     let projectAllowBindMounts = false;
-    if (app.projectId) {
+    if (orgTrusted) {
+      projectAllowBindMounts = true;
+    } else if (app.projectId) {
       const project = await db.query.projects.findFirst({
         where: eq(projects.id, app.projectId),
         columns: { allowBindMounts: true },
