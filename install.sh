@@ -1485,6 +1485,10 @@ _do_rebuild() {
 
   wait_healthy 120 3 || true
 
+  step "Migrations"
+  run_with_spinner "Running database migrations" \
+    docker compose -f "$COMPOSE_FILE" exec -T frontend node scripts/migrate.mjs
+
   # Summary
   local new_version
   new_version=$(get_version)
