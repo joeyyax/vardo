@@ -29,6 +29,9 @@ pnpm test:e2e           # Playwright end-to-end tests
 # Infrastructure
 docker compose up -d    # Start Postgres + Redis + Traefik + cAdvisor + Loki
 docker compose down     # Stop all services
+
+# GPU metrics (NVIDIA hosts only)
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 ```
 
 ## Architecture
