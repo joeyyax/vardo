@@ -3,7 +3,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { Plus, Cpu } from "lucide-react";
 import { EndpointsPopover } from "@/components/endpoints-popover";
 import { detectAppType } from "@/lib/ui/app-type";
 import { statusDotColor } from "@/lib/ui/status-colors";
@@ -30,6 +30,7 @@ type AppWithRelations = {
   imageName: string | null;
   gitUrl: string | null;
   projectId: string | null;
+  gpuEnabled: boolean | null;
   status: string;
   needsRedeploy: boolean | null;
   createdAt: Date;
@@ -221,6 +222,9 @@ function ProjectCard({
             >
               <span aria-hidden="true" className={`size-1.5 rounded-full ${statusDotColor(a.status)}`} />
               {a.displayName}
+              {a.gpuEnabled && (
+                <Cpu className="size-3 text-muted-foreground/50" aria-label="GPU passthrough enabled" />
+              )}
               <span className="sr-only">
                 {a.status === "active" ? ", Running" : a.status === "error" ? ", Crashed" : a.status === "deploying" ? ", Deploying" : ", Stopped"}
               </span>
@@ -266,6 +270,9 @@ function AppCard({
               <h3 className="text-base font-semibold truncate">
                 {app.displayName}
               </h3>
+              {app.gpuEnabled && (
+                <Cpu className="size-3.5 shrink-0 text-muted-foreground/60" aria-label="GPU passthrough enabled" />
+              )}
               <EndpointsPopover endpoints={app.domains.map((d) => ({ domain: d.domain }))} />
             </div>
             <StatusIndicator
