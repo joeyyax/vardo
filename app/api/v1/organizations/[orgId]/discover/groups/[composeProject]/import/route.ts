@@ -60,16 +60,32 @@ async function handler(request: NextRequest, { params }: RouteParams) {
 
     const data = parsed.data;
 
-    // Guard against re-importing a group that already has an app with this slug.
-    // The unique constraint catches this at DB level too, but an explicit check
-    // here gives a better error and avoids unnecessary container inspection work.
-    const existingApp = await db.query.apps.findFirst({
+    // Guard against re-importing the same compose group. Check both the
+    // compose project name (importedComposeProject) and the requested slug
+    // (name) so the client gets a useful error in both cases. Explicit checks
+    // here give better errors and avoid unnecessary container inspection work;
+    // the unique constraints catch any race condition at DB level.
+    const existingByGroup = await db.query.apps.findFirst({
+      where: and(
+        eq(apps.organizationId, orgId),
+        eq(apps.importedComposeProject, composeProject)
+      ),
+      columns: { id: true },
+    });
+    if (existingByGroup) {
+      return NextResponse.json(
+        { error: "This compose group has already been imported", appId: existingByGroup.id },
+        { status: 409 }
+      );
+    }
+
+    const existingBySlug = await db.query.apps.findFirst({
       where: and(eq(apps.organizationId, orgId), eq(apps.name, data.name)),
       columns: { id: true },
     });
-    if (existingApp) {
+    if (existingBySlug) {
       return NextResponse.json(
-        { error: "An app with this slug already exists in this organization", appId: existingApp.id },
+        { error: "An app with this slug already exists in this organization", appId: existingBySlug.id },
         { status: 409 }
       );
     }
@@ -250,6 +266,7 @@ async function handler(request: NextRequest, { params }: RouteParams) {
             // would overwrite service-specific routing configs.
             autoTraefikLabels: false,
             projectId: resolvedProjectId,
+            importedComposeProject: composeProject,
             status: "active",
           })
           .returning();
@@ -361,6 +378,9 @@ async function handler(request: NextRequest, { params }: RouteParams) {
   } catch (error) {
     const pgCode = getPgErrorCode(error);
     if (pgCode === "23505") {
+      // Race condition: another request inserted between our pre-check and insert.
+      // Return a generic conflict — the pre-checks above handle the common case
+      // with appId so the client can redirect.
       return NextResponse.json(
         { error: "An app with this slug already exists in this organization" },
         { status: 409 }

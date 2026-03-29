@@ -86,6 +86,14 @@ export function GroupImportDialog({
       const data = await res.json();
 
       if (!res.ok) {
+        if (res.status === 409 && data.appId) {
+          toast.error("Stack already imported", {
+            description: "Redirecting to the existing app.",
+          });
+          router.push(`/apps/${data.appId}`);
+          onOpenChange(false);
+          return;
+        }
         toast.error(data.error ?? "Import failed");
         return;
       }
@@ -111,7 +119,7 @@ export function GroupImportDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="squircle max-w-xl">
+      <DialogContent className="squircle max-w-xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Import compose stack</DialogTitle>
         </DialogHeader>
