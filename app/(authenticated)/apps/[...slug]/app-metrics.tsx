@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
-import { Activity, AlertTriangle, Container, Cpu, MemoryStick, Network, Loader2, RefreshCw, Thermometer } from "lucide-react";
+import { Activity, AlertTriangle, Container, Cpu, Microchip, MemoryStick, Network, Loader2, RefreshCw, Thermometer } from "lucide-react";
 import { ChartCard } from "@/components/app-status";
 import { formatBytes, formatBytesShort, formatMemLimit, formatBytesRate, formatTime } from "@/lib/metrics/format";
 import { CHART_COLORS, chartTickStyle, TIME_RANGES, type TimeRange } from "@/lib/metrics/constants";
@@ -281,34 +281,39 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled }: AppMet
             {formatBytes(containers.reduce((s, c) => s + c.networkTx, 0))}
           </p>
         </div>
-        {hasGpuData && (
-          <>
-            <div className="squircle rounded-lg border bg-card px-4 py-3">
-              <p className="text-xs text-muted-foreground">GPU</p>
-              <p className="text-2xl font-semibold tabular-nums mt-1">
-                {containers.reduce((s, c) => s + c.gpuUtilization, 0).toFixed(1)}%
-              </p>
-            </div>
-            <div className="squircle rounded-lg border bg-card px-4 py-3">
-              <p className="text-xs text-muted-foreground">GPU Memory</p>
-              <p className="text-2xl font-semibold tabular-nums mt-1">
-                {formatBytes(containers.reduce((s, c) => s + c.gpuMemoryUsed, 0))}
-              </p>
-            </div>
-            {containers.some((c) => c.gpuTemperature > 0) && (
-              <div className="squircle rounded-lg border bg-card px-4 py-3">
-                <p className="text-xs text-muted-foreground">GPU Temp</p>
-                <p className="text-2xl font-semibold tabular-nums mt-1">
-                  {Math.round(
-                    containers.filter((c) => c.gpuTemperature > 0).reduce((s, c) => s + c.gpuTemperature, 0) /
-                    Math.max(1, containers.filter((c) => c.gpuTemperature > 0).length)
-                  )}°C
-                </p>
-              </div>
-            )}
-          </>
-        )}
       </div>
+      {hasGpuData && (
+        <div className={`grid grid-cols-2 gap-4 ${containers.some((c) => c.gpuTemperature > 0) ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
+          <div className="squircle rounded-lg border bg-card px-4 py-3">
+            <p className="text-xs text-muted-foreground">GPU</p>
+            <p className="text-2xl font-semibold tabular-nums mt-1">
+              {(() => {
+                const gpuContainers = containers.filter((c) => c.gpuMemoryTotal > 0);
+                return gpuContainers.length > 0
+                  ? (gpuContainers.reduce((s, c) => s + c.gpuUtilization, 0) / gpuContainers.length).toFixed(1)
+                  : "0.0";
+              })()}%
+            </p>
+          </div>
+          <div className="squircle rounded-lg border bg-card px-4 py-3">
+            <p className="text-xs text-muted-foreground">GPU Memory</p>
+            <p className="text-2xl font-semibold tabular-nums mt-1">
+              {formatBytes(containers.reduce((s, c) => s + c.gpuMemoryUsed, 0))}
+            </p>
+          </div>
+          {containers.some((c) => c.gpuTemperature > 0) && (
+            <div className="squircle rounded-lg border bg-card px-4 py-3">
+              <p className="text-xs text-muted-foreground">GPU Temp</p>
+              <p className="text-2xl font-semibold tabular-nums mt-1">
+                {Math.round(
+                  containers.filter((c) => c.gpuTemperature > 0).reduce((s, c) => s + c.gpuTemperature, 0) /
+                  Math.max(1, containers.filter((c) => c.gpuTemperature > 0).length)
+                )}°C
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* CPU Chart */}
       <ChartCard title="CPU Usage" icon={Cpu}>
@@ -385,7 +390,7 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled }: AppMet
       {/* GPU Charts — only rendered when gpuEnabled or live GPU data present */}
       {hasGpuData && (
         <>
-          <ChartCard title="GPU Utilization" icon={Cpu}>
+          <ChartCard title="GPU Utilization" icon={Microchip}>
             <ResponsiveContainer width="100%" height={200}>
               <AreaChart data={chartData}>
                 <defs>

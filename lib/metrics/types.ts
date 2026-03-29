@@ -28,7 +28,7 @@ export type MetricsPoint = {
   networkRx: number; // bytes
   networkTx: number; // bytes
   diskTotal: number; // bytes
-  gpuUtilization: number; // percent (summed across containers)
+  gpuUtilization: number; // percent (averaged across GPU containers)
   gpuMemoryUsed: number; // bytes
   gpuMemoryTotal: number; // bytes
   gpuTemperature: number; // Celsius (average)
