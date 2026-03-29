@@ -1,4 +1,4 @@
-import { listContainers, inspectContainer } from "./client";
+import { listContainers, inspectContainer, inspectImageEnv } from "./client";
 import type { ContainerInspect, ContainerRuntimeOptions } from "./client";
 
 // ---------------------------------------------------------------------------
@@ -175,8 +175,31 @@ export function groupByComposeProject(containers: DiscoveredContainer[]): Discov
 // ---------------------------------------------------------------------------
 
 /**
+ * Remove env vars that are identical to what the image provides.
+ *
+ * Docker containers inherit env vars from their image (PATH, LANG, etc.).
+ * During import we only want the delta — vars that were explicitly set or
+ * overridden at container run time. Capturing inherited vars causes broken
+ * containers because the values are locked to whatever was in the image at
+ * import time, overriding anything the new image version might set.
+ *
+ * Vars that share a key with the image but have a different value are kept
+ * because they represent explicit runtime overrides.
+ */
+export function filterImageInheritedEnv(
+  containerEnv: string[],
+  imageEnv: string[],
+): string[] {
+  const imageSet = new Set(imageEnv);
+  return containerEnv.filter((e) => !imageSet.has(e));
+}
+
+/**
  * Inspect a single container and return enriched detail including env vars.
  * Verifies the container is not Vardo-managed before returning.
+ *
+ * Env vars inherited from the image are filtered out — only vars that were
+ * explicitly set or overridden at runtime are included.
  */
 export async function getContainerDetail(containerId: string): Promise<ContainerDetail | null> {
   const data: ContainerInspect = await inspectContainer(containerId);
@@ -190,6 +213,12 @@ export async function getContainerDetail(containerId: string): Promise<Container
   const hasNvidiaEnv = data.env.some((e) => e.startsWith("NVIDIA_VISIBLE_DEVICES=") || e.startsWith("NVIDIA_DRIVER_CAPABILITIES="));
   const hasNvidiaDevice = data.devices.some((d) => d.hostPath.startsWith("/dev/nvidia") || d.containerPath.startsWith("/dev/nvidia"));
 
+  // Filter out env vars that come from the image itself. Only the delta
+  // (vars explicitly set or overridden at run time) is meaningful to capture.
+  // If the image inspect fails for any reason we fall back to the full list.
+  const imageEnv = await inspectImageEnv(data.image);
+  const filteredEnv = filterImageInheritedEnv(data.env, imageEnv);
+
   return {
     id: data.id,
     name: data.name,
@@ -202,7 +231,7 @@ export async function getContainerDetail(containerId: string): Promise<Container
     composeProject: data.labels["com.docker.compose.project"] ?? null,
     networkMode,
     hasGpu: detectContainerGpu(data.image, data.labels) || hasNvidiaEnv || hasNvidiaDevice,
-    env: data.env,
+    env: filteredEnv,
     networks: data.networks,
     labels: data.labels,
     capAdd: data.capAdd,
