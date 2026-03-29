@@ -16,6 +16,8 @@ import {
   generateComposeForImage,
   injectTraefikLabels,
   injectNetwork,
+  resolveBackendProtocol,
+  narrowBackendProtocol,
   injectResourceLimits,
   injectGpuDevices,
   isAnonymousVolume,
@@ -692,8 +694,13 @@ export async function runDeployment(
       const primaryServiceName = Object.keys(compose.services).find(
         (k) => !compose.services[k].network_mode || compose.services[k].network_mode === "bridge"
       );
+      const narrowedProtocol = narrowBackendProtocol(app.backendProtocol);
       for (const domain of app.domains) {
         const port = domain.port || containerPort;
+        const resolvedProtocol = resolveBackendProtocol(
+          narrowedProtocol,
+          port,
+        );
         compose = injectTraefikLabels(compose, {
           projectName: `${app.name}-${domain.id.slice(0, 6)}`,
           appName: app.name,
@@ -704,6 +711,7 @@ export async function runDeployment(
           redirectTo: domain.redirectTo ?? undefined,
           redirectCode: domain.redirectCode ?? 301,
           serviceName: primaryServiceName,
+          backendProtocol: resolvedProtocol,
         });
         if (domain.redirectTo) {
           log(`[deploy] Traefik: ${domain.domain} → redirect ${domain.redirectCode ?? 301} ${domain.redirectTo}`);
@@ -1198,6 +1206,7 @@ export async function runDeployment(
       rootDirectory: app.rootDirectory,
       restartPolicy: app.restartPolicy,
       autoTraefikLabels: app.autoTraefikLabels,
+      backendProtocol: narrowBackendProtocol(app.backendProtocol),
     };
 
     const durationMs = Date.now() - startTime;

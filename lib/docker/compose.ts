@@ -183,6 +183,33 @@ export type ContainerConfig = {
   hasEnvVars: boolean;
 } & ContainerRuntimeOptions;
 
+/**
+ * Narrow an arbitrary string DB value to the valid backend protocol union.
+ * Drizzle types text columns as string | null; this helper validates the
+ * value at runtime and returns null for anything unexpected, avoiding
+ * scattered `as "http" | "https" | null` casts at every call site.
+ */
+export function narrowBackendProtocol(
+  value: string | null | undefined,
+): "http" | "https" | null {
+  if (value === "http" || value === "https") return value;
+  return null;
+}
+
+/**
+ * Resolve the effective backend protocol Traefik should use when connecting to
+ * the container. Explicit "http"/"https" always wins; null/undefined triggers
+ * auto-detection based on the container port (443 or 8443 → https).
+ */
+export function resolveBackendProtocol(
+  backendProtocol: "http" | "https" | null | undefined,
+  port: number,
+): "http" | "https" {
+  if (backendProtocol === "https") return "https";
+  if (backendProtocol === "http") return "http";
+  return port === 443 || port === 8443 ? "https" : "http";
+}
+
 // Only labels with these prefixes survive the import filter. Everything else
 // (OCI image metadata, Docker Compose internals, arbitrary user labels) is
 // stripped so the generated compose stays clean. Traefik routing labels are
@@ -384,6 +411,7 @@ export function injectTraefikLabels(
     ssl?: boolean;
     redirectTo?: string;
     redirectCode?: number;
+    backendProtocol?: "http" | "https";
   },
 ): ComposeFile {
   const { projectName, domain, containerPort, certResolver = "le", ssl = true } = opts;
@@ -418,9 +446,13 @@ export function injectTraefikLabels(
     labels[`traefik.http.routers.${projectName}.service`] = opts.appName || projectName;
   } else {
     // Normal domain — route to the app container
-    labels[`traefik.http.services.${opts.appName || projectName}.loadbalancer.server.port`] =
-      String(containerPort);
-    labels[`traefik.http.routers.${projectName}.service`] = opts.appName || projectName;
+    const svcName = opts.appName || projectName;
+    labels[`traefik.http.services.${svcName}.loadbalancer.server.port`] = String(containerPort);
+    labels[`traefik.http.routers.${projectName}.service`] = svcName;
+    if (opts.backendProtocol === "https") {
+      labels[`traefik.http.services.${svcName}.loadbalancer.server.scheme`] = "https";
+      labels[`traefik.http.services.${svcName}.loadbalancer.serversTransport`] = `${svcName}-insecure@file`;
+    }
   }
 
   if (ssl) {
@@ -1045,6 +1077,7 @@ export function applyDeployTransforms(
     gpuEnabled?: boolean;
     domains: DeployTransformDomain[];
     networkName: string;
+    backendProtocol?: "http" | "https" | null;
   },
 ): ComposeFile {
   let result = compose;
@@ -1075,6 +1108,7 @@ export function applyDeployTransforms(
 
     for (const domain of opts.domains) {
       const port = domain.port || opts.containerPort || 3000;
+      const resolvedProtocol = resolveBackendProtocol(opts.backendProtocol, port);
       result = injectTraefikLabels(result, {
         projectName: `${opts.appName}-${domain.id.slice(0, 6)}`,
         appName: opts.appName,
@@ -1085,6 +1119,7 @@ export function applyDeployTransforms(
         redirectTo: domain.redirectTo ?? undefined,
         redirectCode: domain.redirectCode ?? 301,
         serviceName: primaryServiceName,
+        backendProtocol: resolvedProtocol,
       });
     }
   }
@@ -1140,6 +1175,7 @@ type ComposePreviewApp = {
   gpuEnabled: boolean;
   exposedPorts: { internal: number; external?: number; protocol?: string }[] | null;
   domains: DeployTransformDomain[];
+  backendProtocol?: "http" | "https" | null;
 };
 
 /**
@@ -1201,5 +1237,6 @@ export function buildComposePreview(
     gpuEnabled: app.gpuEnabled,
     domains: app.domains,
     networkName,
+    backendProtocol: app.backendProtocol,
   });
 }

@@ -9,6 +9,8 @@ import { withRateLimit } from "@/lib/api/with-rate-limit";
 import {
   buildComposePreview,
   composeToYaml,
+  resolveBackendProtocol,
+  narrowBackendProtocol,
 } from "@/lib/docker/compose";
 import { listContainers, inspectContainer } from "@/lib/docker/client";
 import { buildTraefikConfigYaml } from "@/lib/traefik/generate-config";
@@ -49,6 +51,12 @@ async function handler(_request: NextRequest, { params }: RouteParams) {
       .filter((v) => v.persistent)
       .map((v) => ({ name: v.name, mountPath: v.mountPath }));
 
+    // Resolve the effective backend protocol for the debug preview
+    const resolvedProtocol = resolveBackendProtocol(
+      narrowBackendProtocol(app.backendProtocol),
+      app.containerPort ?? 3000,
+    );
+
     // Generate compose preview
     const composeParsed = buildComposePreview(
       {
@@ -70,6 +78,7 @@ async function handler(_request: NextRequest, { params }: RouteParams) {
           redirectTo: d.redirectTo ?? null,
           redirectCode: d.redirectCode ?? null,
         })),
+        backendProtocol: narrowBackendProtocol(app.backendProtocol),
       },
       volumesList,
       NETWORK_NAME,
@@ -88,6 +97,7 @@ async function handler(_request: NextRequest, { params }: RouteParams) {
         redirectTo: d.redirectTo ?? null,
         redirectCode: d.redirectCode ?? null,
       })),
+      resolvedProtocol,
     );
 
     // Get container inspect data — env vars are stripped to avoid exposing

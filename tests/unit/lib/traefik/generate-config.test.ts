@@ -285,3 +285,46 @@ describe("buildTraefikConfigYaml — multiple domains", () => {
     expect(config.http.routers["myapp-dom-1234"].service).toBe("myapp@docker");
   });
 });
+
+// ---------------------------------------------------------------------------
+// buildTraefikConfigYaml — HTTPS backend
+// ---------------------------------------------------------------------------
+
+describe("buildTraefikConfigYaml — HTTPS backend", () => {
+  it("adds insecure serversTransport when backendProtocol is https", () => {
+    const yaml = buildTraefikConfigYaml(
+      "myapp",
+      [makeDomain({ sslEnabled: false })],
+      "https",
+    );
+    expect(yaml).not.toBeNull();
+    const config = YAML.parse(yaml!);
+    expect(config.http.serversTransports).toBeDefined();
+    expect(config.http.serversTransports["myapp-insecure"]).toEqual({ insecureSkipVerify: true });
+  });
+
+  it.each<["http" | null | undefined, string]>([
+    ["http", "http"],
+    [null, "null"],
+    [undefined, "omitted"],
+  ])("does not add serversTransport when backendProtocol is %s", (protocol) => {
+    const yaml = buildTraefikConfigYaml(
+      "myapp",
+      [makeDomain({ sslEnabled: false })],
+      protocol,
+    );
+    expect(yaml).not.toBeNull();
+    const config = YAML.parse(yaml!);
+    expect(config.http.serversTransports).toBeUndefined();
+  });
+
+  it("names the serversTransport key after the app", () => {
+    const yaml = buildTraefikConfigYaml(
+      "coolapp",
+      [makeDomain({ sslEnabled: false })],
+      "https",
+    );
+    const config = YAML.parse(yaml!);
+    expect(config.http.serversTransports["coolapp-insecure"]).toBeDefined();
+  });
+});

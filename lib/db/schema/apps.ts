@@ -88,6 +88,7 @@ export const apps = pgTable(
     diskWriteAlertThreshold: bigint("disk_write_alert_threshold", { mode: "number" }), // bytes/hour, null = default 1GB
     autoRollback: boolean("auto_rollback").default(false), // Rollback on crash after deploy
     rollbackGracePeriod: integer("rollback_grace_period").default(60), // Seconds to monitor after deploy
+    backendProtocol: text("backend_protocol", { enum: ["http", "https"] }), // Backend scheme Traefik uses to reach the container. Null = auto (https if port 443/8443)
     envContent: text("env_content"), // Encrypted env file blob (AES-256-GCM)
     // Compose decomposition: child service records point to parent compose app
     parentAppId: text("parent_app_id"),

@@ -18,6 +18,7 @@ export const appBundleSchema = z.object({
   rootDirectory: z.string().nullable(),
   autoTraefikLabels: z.boolean().nullable(),
   containerPort: z.number().nullable(),
+  backendProtocol: z.enum(["http", "https"]).nullable().optional(),
   restartPolicy: z.string().nullable(),
   exposedPorts: z.array(z.object({
     internal: z.number(),

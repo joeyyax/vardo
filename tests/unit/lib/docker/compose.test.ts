@@ -12,6 +12,8 @@ import {
   isAnonymousVolume,
   stripTraefikLabels,
   applyDeployTransforms,
+  resolveBackendProtocol,
+  narrowBackendProtocol,
   type ComposeFile,
   type ContainerConfig,
 } from "@/lib/docker/compose";
@@ -1572,6 +1574,31 @@ describe("applyDeployTransforms — Traefik labels", () => {
     // stripTraefikLabels removes existing labels; no new ones are injected
     expect(result.services.app.labels).toBeUndefined();
   });
+
+  it("injects HTTPS backend labels when backendProtocol is https", () => {
+    const result = applyDeployTransforms(makeSimpleCompose(), {
+      ...baseTransformOpts,
+      appName: "myapp",
+      backendProtocol: "https",
+      domains: [
+        {
+          id: "dom-aabbccdd",
+          domain: "example.com",
+          port: null,
+          sslEnabled: false,
+          certResolver: null,
+          redirectTo: null,
+          redirectCode: null,
+        },
+      ],
+    });
+    const labels = result.services.app.labels as Record<string, string> | undefined;
+    expect(labels).toBeDefined();
+    expect(labels!["traefik.http.services.myapp.loadbalancer.server.scheme"]).toBe("https");
+    expect(labels!["traefik.http.services.myapp.loadbalancer.serversTransport"]).toBe(
+      "myapp-insecure@file",
+    );
+  });
 });
 
 describe("applyDeployTransforms — combined transforms", () => {
@@ -1609,5 +1636,118 @@ describe("applyDeployTransforms — combined transforms", () => {
 
     // Network injected
     expect(result.services.app.networks).toContain("vardo-network");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveBackendProtocol
+// ---------------------------------------------------------------------------
+
+describe("resolveBackendProtocol", () => {
+  it("returns 'https' when backendProtocol is explicitly 'https'", () => {
+    expect(resolveBackendProtocol("https", 3000)).toBe("https");
+  });
+
+  it("returns 'http' when backendProtocol is explicitly 'http'", () => {
+    expect(resolveBackendProtocol("http", 443)).toBe("http");
+  });
+
+  it("auto-detects https for port 443 when backendProtocol is null", () => {
+    expect(resolveBackendProtocol(null, 443)).toBe("https");
+  });
+
+  it("auto-detects https for port 8443 when backendProtocol is null", () => {
+    expect(resolveBackendProtocol(null, 8443)).toBe("https");
+  });
+
+  it("auto-detects http for port 3000 when backendProtocol is null", () => {
+    expect(resolveBackendProtocol(null, 3000)).toBe("http");
+  });
+
+  it("auto-detects http for port 80 when backendProtocol is null", () => {
+    expect(resolveBackendProtocol(null, 80)).toBe("http");
+  });
+
+  it("auto-detects http when backendProtocol is undefined", () => {
+    expect(resolveBackendProtocol(undefined, 3000)).toBe("http");
+  });
+
+  it("auto-detects https when backendProtocol is undefined and port is 443", () => {
+    expect(resolveBackendProtocol(undefined, 443)).toBe("https");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// narrowBackendProtocol
+// ---------------------------------------------------------------------------
+
+describe("narrowBackendProtocol", () => {
+  it("returns 'http' for 'http'", () => {
+    expect(narrowBackendProtocol("http")).toBe("http");
+  });
+
+  it("returns 'https' for 'https'", () => {
+    expect(narrowBackendProtocol("https")).toBe("https");
+  });
+
+  it("returns null for null", () => {
+    expect(narrowBackendProtocol(null)).toBeNull();
+  });
+
+  it("returns null for undefined", () => {
+    expect(narrowBackendProtocol(undefined)).toBeNull();
+  });
+
+  it("returns null for an unexpected string value", () => {
+    expect(narrowBackendProtocol("ftp")).toBeNull();
+  });
+
+  it("returns null for an empty string", () => {
+    expect(narrowBackendProtocol("")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// injectTraefikLabels — HTTPS backend
+// ---------------------------------------------------------------------------
+
+describe("injectTraefikLabels — HTTPS backend", () => {
+  const baseComposeFn = (): ComposeFile => ({
+    services: {
+      app: { name: "app", image: "myimage:latest" },
+    },
+  });
+
+  const baseOpts = {
+    projectName: "myapp",
+    appName: "myapp",
+    domain: "myapp.example.com",
+    containerPort: 443,
+  };
+
+  it("sets server scheme to https and serversTransport when backendProtocol is https", () => {
+    const result = injectTraefikLabels(baseComposeFn(), {
+      ...baseOpts,
+      backendProtocol: "https",
+    });
+    const labels = result.services.app.labels as Record<string, string>;
+    expect(labels["traefik.http.services.myapp.loadbalancer.server.scheme"]).toBe("https");
+    expect(labels["traefik.http.services.myapp.loadbalancer.serversTransport"]).toBe("myapp-insecure@file");
+  });
+
+  it("does not set https scheme when backendProtocol is http", () => {
+    const result = injectTraefikLabels(baseComposeFn(), {
+      ...baseOpts,
+      backendProtocol: "http",
+    });
+    const labels = result.services.app.labels as Record<string, string>;
+    expect(labels["traefik.http.services.myapp.loadbalancer.server.scheme"]).toBeUndefined();
+    expect(labels["traefik.http.services.myapp.loadbalancer.serversTransport"]).toBeUndefined();
+  });
+
+  it("does not set https scheme when backendProtocol is omitted", () => {
+    const result = injectTraefikLabels(baseComposeFn(), baseOpts);
+    const labels = result.services.app.labels as Record<string, string>;
+    expect(labels["traefik.http.services.myapp.loadbalancer.server.scheme"]).toBeUndefined();
   });
 });
