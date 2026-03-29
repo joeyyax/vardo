@@ -139,6 +139,22 @@ describe("sanitizeCompose", () => {
     });
   });
 
+  describe("anonymous volumes", () => {
+    it("passes anonymous volumes through unchanged", () => {
+      const compose = makeCompose(["/data"]);
+      const { compose: result, strippedMounts } = sanitizeCompose(compose);
+      expect(result.services.app.volumes).toEqual(["/data"]);
+      expect(strippedMounts).toHaveLength(0);
+    });
+
+    it("passes anonymous volumes through even when bind mounts are disabled", () => {
+      const compose = makeCompose(["/var/lib/postgresql/data"]);
+      const { compose: result, strippedMounts } = sanitizeCompose(compose);
+      expect(result.services.app.volumes).toEqual(["/var/lib/postgresql/data"]);
+      expect(strippedMounts).toHaveLength(0);
+    });
+  });
+
   describe("services without volumes", () => {
     it("handles services with no volumes key", () => {
       const compose: ComposeFile = {
@@ -482,6 +498,34 @@ describe("validateCompose — network_mode", () => {
     const { valid, errors } = validateCompose(compose);
     expect(valid).toBe(true);
     expect(errors).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validateCompose — anonymous volumes
+// ---------------------------------------------------------------------------
+
+describe("validateCompose — anonymous volumes", () => {
+  it("accepts anonymous volumes (bare container paths) without flagging as bind mounts", () => {
+    const compose: ComposeFile = {
+      services: {
+        db: { name: "db", image: "postgres:17", volumes: ["/var/lib/postgresql/data"] },
+      },
+    };
+    const { valid, errors } = validateCompose(compose);
+    expect(valid).toBe(true);
+    expect(errors).toHaveLength(0);
+  });
+
+  it("still rejects bind mounts when allowBindMounts is false", () => {
+    const compose: ComposeFile = {
+      services: {
+        app: { name: "app", image: "nginx", volumes: ["/host/path:/data"] },
+      },
+    };
+    const { valid, errors } = validateCompose(compose);
+    expect(valid).toBe(false);
+    expect(errors.some((e) => e.includes("bind mount"))).toBe(true);
   });
 });
 
@@ -943,15 +987,39 @@ describe("generateComposeFromContainer", () => {
 
   it("includes named volumes and declares them at top level", () => {
     const compose = generateComposeFromContainer("myapp", makeContainerConfig({
-      mounts: [{ source: "mydata", destination: "/data", type: "volume" }],
+      mounts: [{ name: "mydata", source: "/var/lib/docker/volumes/mydata/_data", destination: "/data", type: "volume" }],
     }));
     expect(compose.services.myapp.volumes).toContain("mydata:/data");
     expect(compose.volumes?.mydata).toBeDefined();
   });
 
+  it("emits anonymous volumes as bare container paths and omits top-level declaration", () => {
+    const anonHash = "a".repeat(64);
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({
+      mounts: [{ name: anonHash, source: `/var/lib/docker/volumes/${anonHash}/_data`, destination: "/data", type: "volume" }],
+    }));
+    expect(compose.services.myapp.volumes).toContain("/data");
+    expect(compose.services.myapp.volumes).not.toContain(`${anonHash}:/data`);
+    expect(compose.volumes).toBeUndefined();
+  });
+
+  it("handles mixed named and anonymous volumes", () => {
+    const anonHash = "b".repeat(64);
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({
+      mounts: [
+        { name: "mydata", source: "/var/lib/docker/volumes/mydata/_data", destination: "/data", type: "volume" },
+        { name: anonHash, source: `/var/lib/docker/volumes/${anonHash}/_data`, destination: "/tmp/cache", type: "volume" },
+      ],
+    }));
+    expect(compose.services.myapp.volumes).toContain("mydata:/data");
+    expect(compose.services.myapp.volumes).toContain("/tmp/cache");
+    expect(compose.volumes?.mydata).toBeDefined();
+    expect(compose.volumes?.[anonHash]).toBeUndefined();
+  });
+
   it("includes bind mounts inline without a top-level declaration", () => {
     const compose = generateComposeFromContainer("myapp", makeContainerConfig({
-      mounts: [{ source: "/host/path", destination: "/data", type: "bind" }],
+      mounts: [{ name: "", source: "/host/path", destination: "/data", type: "bind" }],
     }));
     expect(compose.services.myapp.volumes).toContain("/host/path:/data");
     expect(compose.volumes).toBeUndefined();
@@ -1158,7 +1226,7 @@ describe("generateComposeFromContainer", () => {
   it("produced compose round-trips through yaml cleanly", () => {
     const compose = generateComposeFromContainer("myapp", makeContainerConfig({
       ports: [{ internal: 8080, external: 8080, protocol: "tcp" }],
-      mounts: [{ source: "data", destination: "/data", type: "volume" }],
+      mounts: [{ name: "data", source: "/var/lib/docker/volumes/data/_data", destination: "/data", type: "volume" }],
       capAdd: ["NET_ADMIN"],
       restartPolicy: "unless-stopped",
       hasEnvVars: true,
@@ -1183,8 +1251,8 @@ describe("generateComposeFromContainer", () => {
     // Now it uses the stored composeContent — this test verifies the full path.
     const compose = generateComposeFromContainer("myapp", makeContainerConfig({
       mounts: [
-        { source: "/host/data", destination: "/data", type: "bind" },
-        { source: "namedvol", destination: "/vol", type: "volume" },
+        { name: "", source: "/host/data", destination: "/data", type: "bind" },
+        { name: "namedvol", source: "/var/lib/docker/volumes/namedvol/_data", destination: "/vol", type: "volume" },
       ],
     }));
 
@@ -1200,8 +1268,8 @@ describe("generateComposeFromContainer", () => {
   it("bind mounts are stripped by sanitize when allowBindMounts is false", () => {
     const compose = generateComposeFromContainer("myapp", makeContainerConfig({
       mounts: [
-        { source: "/host/data", destination: "/data", type: "bind" },
-        { source: "namedvol", destination: "/vol", type: "volume" },
+        { name: "", source: "/host/data", destination: "/data", type: "bind" },
+        { name: "namedvol", source: "/var/lib/docker/volumes/namedvol/_data", destination: "/vol", type: "volume" },
       ],
     }));
 

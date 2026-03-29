@@ -177,7 +177,7 @@ export function nanosToDuration(nanos: number): string {
 export type ContainerConfig = {
   image: string;
   ports: { internal: number; external?: number; protocol: string }[];
-  mounts: { source: string; destination: string; type: string }[];
+  mounts: { name: string; source: string; destination: string; type: string }[];
   networkMode: string;
   labels: Record<string, string>;
   hasEnvVars: boolean;
@@ -231,10 +231,17 @@ export function generateComposeFromContainer(
   }
 
   // Volumes.
-  const namedVolumes = container.mounts.filter((m) => m.type === "volume");
+  // Anonymous volumes have a 64-char hex name assigned by Docker — they should
+  // be emitted as a bare container path so Docker Compose recreates an anonymous
+  // volume on deploy rather than trying to reference a named volume.
+  const isAnonymousVolume = (name: string) => /^[0-9a-f]{64}$/.test(name);
+  const dockerVolumes = container.mounts.filter((m) => m.type === "volume");
+  const namedVolumes = dockerVolumes.filter((m) => !isAnonymousVolume(m.name));
+  const anonymousVolumes = dockerVolumes.filter((m) => isAnonymousVolume(m.name));
   const bindMounts = container.mounts.filter((m) => m.type === "bind");
   const allMounts = [
-    ...namedVolumes.map((m) => `${m.source}:${m.destination}`),
+    ...namedVolumes.map((m) => `${m.name}:${m.destination}`),
+    ...anonymousVolumes.map((m) => m.destination),
     ...bindMounts.map((m) => `${m.source}:${m.destination}`),
   ];
   if (allMounts.length > 0) service.volumes = allMounts;
@@ -347,7 +354,7 @@ export function generateComposeFromContainer(
   if (namedVolumes.length > 0) {
     compose.volumes = {};
     for (const v of namedVolumes) {
-      compose.volumes[v.source] = {};
+      compose.volumes[v.name] = {};
     }
   }
 
@@ -859,7 +866,12 @@ export function validateCompose(compose: ComposeFile, opts?: ValidateOptions): {
 
     if (svc.volumes) {
       for (const vol of svc.volumes) {
-        const isBindMount = vol.startsWith("/") || vol.startsWith("./") || vol.startsWith("../");
+        // A bind mount has a path source before the colon. A bare path like "/data"
+        // (no colon) is a Docker anonymous volume and must not be treated as a bind mount.
+        const isBindMount =
+          vol.startsWith("./") ||
+          vol.startsWith("../") ||
+          (vol.startsWith("/") && vol.includes(":"));
         if (isBindMount && !opts?.allowBindMounts) {
           errors.push(
             `Service "${name}" uses host bind mount "${vol}" — enable the Bind Mounts feature flag to allow this`,
@@ -969,7 +981,12 @@ export function sanitizeCompose(compose: ComposeFile, opts?: { allowBindMounts?:
     if (svc.volumes) {
       const safe: string[] = [];
       for (const v of svc.volumes) {
-        const isBindMount = v.startsWith("/") || v.startsWith("./") || v.startsWith("../");
+        // A bind mount has a path source before the colon. A bare path like "/data"
+        // (no colon) is a Docker anonymous volume and must not be treated as a bind mount.
+        const isBindMount =
+          v.startsWith("./") ||
+          v.startsWith("../") ||
+          (v.startsWith("/") && v.includes(":"));
         if (isBindMount) {
           if (opts?.allowBindMounts) {
             // Bind mounts allowed — still enforce the deny list unconditionally.

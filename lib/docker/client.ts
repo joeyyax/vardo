@@ -75,7 +75,7 @@ export type ContainerInspect = {
   labels: Record<string, string>;
   networks: string[];
   networkMode: string;
-  mounts: { source: string; destination: string; type: string }[];
+  mounts: { name: string; source: string; destination: string; type: string }[];
 } & ContainerRuntimeOptions;
 
 // ---------------------------------------------------------------------------
@@ -378,7 +378,7 @@ export async function inspectContainer(id: string): Promise<ContainerInspect> {
     NetworkSettings: {
       Networks?: Record<string, unknown>;
     };
-    Mounts: { Source: string; Destination: string; Type: string }[];
+    Mounts: { Name: string; Source: string; Destination: string; Type: string }[];
   }>("GET", `/containers/${id}/json`);
 
   const hc = data.HostConfig;
@@ -405,6 +405,7 @@ export async function inspectContainer(id: string): Promise<ContainerInspect> {
     networks: Object.keys(data.NetworkSettings.Networks ?? {}),
     networkMode: hc.NetworkMode ?? "bridge",
     mounts: (data.Mounts ?? []).map((m) => ({
+      name: m.Name ?? "",
       source: m.Source,
       destination: m.Destination,
       type: m.Type,
