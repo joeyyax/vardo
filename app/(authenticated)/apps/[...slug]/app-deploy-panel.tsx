@@ -102,7 +102,7 @@ export const AppDeployPanel = forwardRef<AppDeployPanelHandle, AppDeployPanelPro
   const router = useRouter();
 
   const queuedDeployments = filteredDeployments
-    .filter((d) => d.status === "queued")
+    .filter((d) => d.status === "queued" && d.id !== serverRunningDeploy?.id)
     .sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
 
   const handleCancelQueued = useCallback(async (deploymentId: string) => {
