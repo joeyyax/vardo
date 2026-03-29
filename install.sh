@@ -1480,6 +1480,13 @@ _do_rebuild() {
   export GIT_SHA=$(git -C "$VARDO_DIR" rev-parse --short HEAD 2>/dev/null || true)
   run_with_spinner "Building containers" docker compose -f "$COMPOSE_FILE" build
 
+  # Run pending database migrations using the freshly built image, before starting the app.
+  # This is explicit and reliable — doesn't depend on whether the container is recreated.
+  if ! is_dev; then
+    run_with_spinner "Running database migrations" \
+      docker compose -f "$COMPOSE_FILE" run --rm --no-deps -T --entrypoint gosu frontend nextjs node scripts/migrate.mjs
+  fi
+
   info "Restarting services..."
   run_cmd docker compose -f "$COMPOSE_FILE" up -d
 
