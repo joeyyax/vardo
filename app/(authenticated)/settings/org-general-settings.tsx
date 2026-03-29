@@ -49,35 +49,37 @@ export function OrgGeneralSettings({ orgId, orgName }: OrgGeneralSettingsProps) 
   }
 
   return (
-    <Card className="squircle rounded-lg">
-      <CardHeader>
-        <CardTitle>General</CardTitle>
-        <CardDescription>The organization name appears in the sidebar, team invitations, and notification emails.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSave} className="space-y-4 max-w-md">
-          <div className="space-y-2">
-            <Label htmlFor="org-name">Organization name</Label>
-            <Input
-              id="org-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="My Organization"
-              maxLength={64}
-              required
-            />
-          </div>
+    <div className="space-y-4">
+      <Card className="squircle rounded-lg">
+        <CardHeader>
+          <CardTitle>General</CardTitle>
+          <CardDescription>The organization name appears in the sidebar, team invitations, and notification emails.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSave} className="space-y-4 max-w-md">
+            <div className="space-y-2">
+              <Label htmlFor="org-name">Organization name</Label>
+              <Input
+                id="org-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="My Organization"
+                maxLength={64}
+                required
+              />
+            </div>
 
-          <Button
-            type="submit"
-            className="squircle"
-            disabled={!isDirty || saving || !name.trim()}
-          >
-            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Save changes
-          </Button>
-        </form>
-      </CardContent>
-    </Card>
+            <Button
+              type="submit"
+              className="squircle"
+              disabled={!isDirty || saving || !name.trim()}
+            >
+              {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Save changes
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
