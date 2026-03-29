@@ -7,6 +7,7 @@ import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getContainerDetail, isLocalImage } from "@/lib/docker/discover";
+import { resolveContainerPort } from "@/lib/docker/resolve-port";
 import { generateComposeFromContainer, injectTraefikLabels, composeToYaml } from "@/lib/docker/compose";
 import { encrypt } from "@/lib/crypto/encrypt";
 import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
@@ -99,13 +100,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Determine container port — prefer Traefik-detected, then first exposed port,
-    // then user-supplied value when auto-detection yields nothing.
-    const containerPort =
-      detail.containerPort ??
-      detail.ports.find((p) => p.internal)?.internal ??
-      data.containerPort ??
-      null;
+    // Determine container port via the priority chain:
+    //   Traefik label → first exposed internal port → user-supplied → null
+    const containerPort = resolveContainerPort(detail, data.containerPort);
 
     // Resolve which mounts to import
     const selectedDests =

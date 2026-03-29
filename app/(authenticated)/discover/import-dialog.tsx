@@ -24,6 +24,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, X, HardDrive, FolderOpen } from "lucide-react";
 import type { DiscoveredContainer, ContainerDetail } from "@/lib/docker/discover";
+import { resolveContainerPort } from "@/lib/docker/resolve-port";
 import { slugify } from "@/lib/ui/slugify";
 
 type Project = { id: string; name: string; displayName: string };
@@ -210,10 +211,8 @@ export function ImportDialog({
   const isHostNetwork = (detail?.networkMode ?? container?.networkMode) === "host";
 
   // Show the manual port field only after detail loads and auto-detection has no result.
-  // Auto-detection: Traefik label port first, then first exposed internal port.
-  const autoDetectedPort = detail
-    ? (detail.containerPort ?? detail.ports.find((p) => p.internal)?.internal ?? null)
-    : undefined;
+  // Uses the same resolution chain as the server: Traefik label → exposed port → null.
+  const autoDetectedPort = detail ? resolveContainerPort(detail) : undefined;
   const showPortField = detail !== null && autoDetectedPort === null && !isHostNetwork;
 
   return (
