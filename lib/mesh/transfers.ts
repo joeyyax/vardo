@@ -3,6 +3,7 @@ import { apps, projects, projectInstances, volumes } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { getInstanceId } from "@/lib/constants";
+import { narrowBackendProtocol } from "@/lib/docker/compose";
 
 // ---------------------------------------------------------------------------
 // Dependencies
@@ -108,7 +109,7 @@ export async function buildProjectBundle(
       rootDirectory: app.rootDirectory,
       autoTraefikLabels: app.autoTraefikLabels,
       containerPort: app.containerPort,
-      backendProtocol: app.backendProtocol as "http" | "https" | null,
+      backendProtocol: narrowBackendProtocol(app.backendProtocol),
       restartPolicy: app.restartPolicy,
       exposedPorts: app.exposedPorts,
       envContent: options.includeEnvVars ? app.envContent : null,

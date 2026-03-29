@@ -10,6 +10,7 @@ import {
   buildComposePreview,
   composeToYaml,
   resolveBackendProtocol,
+  narrowBackendProtocol,
 } from "@/lib/docker/compose";
 import { listContainers, inspectContainer } from "@/lib/docker/client";
 import { buildTraefikConfigYaml } from "@/lib/traefik/generate-config";
@@ -52,7 +53,7 @@ async function handler(_request: NextRequest, { params }: RouteParams) {
 
     // Resolve the effective backend protocol for the debug preview
     const resolvedProtocol = resolveBackendProtocol(
-      app.backendProtocol as "http" | "https" | null,
+      narrowBackendProtocol(app.backendProtocol),
       app.containerPort ?? 3000,
     );
 
@@ -77,7 +78,7 @@ async function handler(_request: NextRequest, { params }: RouteParams) {
           redirectTo: d.redirectTo ?? null,
           redirectCode: d.redirectCode ?? null,
         })),
-        backendProtocol: app.backendProtocol as "http" | "https" | null,
+        backendProtocol: narrowBackendProtocol(app.backendProtocol),
       },
       volumesList,
       NETWORK_NAME,

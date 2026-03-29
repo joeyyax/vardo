@@ -5,7 +5,7 @@ import { writeFile, unlink, mkdir, rename } from "fs/promises";
 import { join } from "path";
 import YAML from "yaml";
 import { logger } from "@/lib/logger";
-import { resolveBackendProtocol } from "@/lib/docker/compose";
+import { resolveBackendProtocol, narrowBackendProtocol } from "@/lib/docker/compose";
 
 /**
  * Directory where Traefik dynamic config files are written.
@@ -234,7 +234,7 @@ export async function regenerateAppRouteConfig(appId: string): Promise<void> {
   // Resolve the effective backend protocol: explicit setting wins; null auto-detects
   // from the container port (443 or 8443 → https).
   const resolvedProtocol = resolveBackendProtocol(
-    app.backendProtocol as "http" | "https" | null,
+    narrowBackendProtocol(app.backendProtocol),
     app.containerPort ?? 3000,
   );
 

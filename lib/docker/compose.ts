@@ -184,6 +184,19 @@ export type ContainerConfig = {
 } & ContainerRuntimeOptions;
 
 /**
+ * Narrow an arbitrary string DB value to the valid backend protocol union.
+ * Drizzle types text columns as string | null; this helper validates the
+ * value at runtime and returns null for anything unexpected, avoiding
+ * scattered `as "http" | "https" | null` casts at every call site.
+ */
+export function narrowBackendProtocol(
+  value: string | null | undefined,
+): "http" | "https" | null {
+  if (value === "http" || value === "https") return value;
+  return null;
+}
+
+/**
  * Resolve the effective backend protocol Traefik should use when connecting to
  * the container. Explicit "http"/"https" always wins; null/undefined triggers
  * auto-detection based on the container port (443 or 8443 → https).

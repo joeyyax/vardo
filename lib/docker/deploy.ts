@@ -17,6 +17,7 @@ import {
   injectTraefikLabels,
   injectNetwork,
   resolveBackendProtocol,
+  narrowBackendProtocol,
   injectResourceLimits,
   injectGpuDevices,
   isAnonymousVolume,
@@ -696,7 +697,7 @@ export async function runDeployment(
       for (const domain of app.domains) {
         const port = domain.port || containerPort;
         const resolvedProtocol = resolveBackendProtocol(
-          app.backendProtocol as "http" | "https" | null,
+          narrowBackendProtocol(app.backendProtocol),
           port,
         );
         compose = injectTraefikLabels(compose, {
@@ -1204,7 +1205,7 @@ export async function runDeployment(
       rootDirectory: app.rootDirectory,
       restartPolicy: app.restartPolicy,
       autoTraefikLabels: app.autoTraefikLabels,
-      backendProtocol: app.backendProtocol as "http" | "https" | null,
+      backendProtocol: narrowBackendProtocol(app.backendProtocol),
     };
 
     const durationMs = Date.now() - startTime;

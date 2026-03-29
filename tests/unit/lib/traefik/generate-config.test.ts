@@ -285,3 +285,60 @@ describe("buildTraefikConfigYaml — multiple domains", () => {
     expect(config.http.routers["myapp-dom-1234"].service).toBe("myapp@docker");
   });
 });
+
+// ---------------------------------------------------------------------------
+// buildTraefikConfigYaml — HTTPS backend
+// ---------------------------------------------------------------------------
+
+describe("buildTraefikConfigYaml — HTTPS backend", () => {
+  it("adds insecure serversTransport when backendProtocol is https", () => {
+    const yaml = buildTraefikConfigYaml(
+      "myapp",
+      [makeDomain({ sslEnabled: false })],
+      "https",
+    );
+    expect(yaml).not.toBeNull();
+    const config = YAML.parse(yaml!);
+    expect(config.http.serversTransports).toBeDefined();
+    expect(config.http.serversTransports["myapp-insecure"]).toEqual({ insecureSkipVerify: true });
+  });
+
+  it("does not add serversTransport when backendProtocol is http", () => {
+    const yaml = buildTraefikConfigYaml(
+      "myapp",
+      [makeDomain({ sslEnabled: false })],
+      "http",
+    );
+    expect(yaml).not.toBeNull();
+    const config = YAML.parse(yaml!);
+    expect(config.http.serversTransports).toBeUndefined();
+  });
+
+  it("does not add serversTransport when backendProtocol is omitted", () => {
+    const yaml = buildTraefikConfigYaml("myapp", [makeDomain({ sslEnabled: false })]);
+    expect(yaml).not.toBeNull();
+    const config = YAML.parse(yaml!);
+    expect(config.http.serversTransports).toBeUndefined();
+  });
+
+  it("does not add serversTransport when backendProtocol is null", () => {
+    const yaml = buildTraefikConfigYaml(
+      "myapp",
+      [makeDomain({ sslEnabled: false })],
+      null,
+    );
+    expect(yaml).not.toBeNull();
+    const config = YAML.parse(yaml!);
+    expect(config.http.serversTransports).toBeUndefined();
+  });
+
+  it("names the serversTransport key after the app", () => {
+    const yaml = buildTraefikConfigYaml(
+      "coolapp",
+      [makeDomain({ sslEnabled: false })],
+      "https",
+    );
+    const config = YAML.parse(yaml!);
+    expect(config.http.serversTransports["coolapp-insecure"]).toBeDefined();
+  });
+});
