@@ -77,6 +77,7 @@ import type { AppDeployPanelHandle } from "./app-deploy-panel";
 import { AppNetworking } from "./app-networking";
 import { AppConnect } from "./app-connect";
 import { AppSettingsDialog } from "./app-settings-dialog";
+import { AppDebug } from "./app-debug";
 
 import type { AppDetailProps, Environment } from "./types";
 
@@ -855,6 +856,11 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
               Backups
             </TabsTrigger>
           )}
+          {isAdmin(userRole) && (
+            <TabsTrigger value="debug">
+              Debug
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="deployments">
@@ -953,6 +959,12 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
               Snapshots of this app&apos;s persistent volumes. Download or restore any backup.
             </p>
             <AppBackupHistory orgId={orgId} appId={app.id} />
+          </TabsContent>
+        )}
+
+        {isAdmin(userRole) && (
+          <TabsContent value="debug">
+            <AppDebug orgId={orgId} appId={app.id} />
           </TabsContent>
         )}
 

@@ -1015,6 +1015,83 @@ export function validateCompose(compose: ComposeFile, opts?: ValidateOptions): {
  * DENIED_MOUNT_PATHS are always blocked regardless of the flag.
  * When stripping, returns the list of removed mounts for logging.
  */
+type DeployTransformDomain = {
+  id: string;
+  domain: string;
+  port: number | null;
+  sslEnabled: boolean | null;
+  certResolver: string | null;
+  redirectTo: string | null;
+  redirectCode: number | null;
+};
+
+/**
+ * Apply the standard deployment transformation chain to a compose file.
+ *
+ * Injects resource limits, GPU devices, Traefik labels, and the shared
+ * vardo network — the same sequence used during deploy. Both the deploy
+ * path and the debug endpoint use this so the preview matches what
+ * actually runs.
+ */
+export function applyDeployTransforms(
+  compose: ComposeFile,
+  opts: {
+    appName: string;
+    containerPort: number | null;
+    cpuLimit?: number | null;
+    memoryLimit?: number | null;
+    gpuEnabled?: boolean;
+    domains: DeployTransformDomain[];
+    networkName: string;
+  },
+): ComposeFile {
+  let result = compose;
+
+  if (opts.cpuLimit || opts.memoryLimit) {
+    result = injectResourceLimits(result, {
+      cpuLimit: opts.cpuLimit,
+      memoryLimit: opts.memoryLimit,
+    });
+  }
+
+  if (opts.gpuEnabled) {
+    result = injectGpuDevices(result);
+  }
+
+  const servicesWithCustomNetwork = Object.entries(result.services)
+    .filter(([, svc]) => svc.network_mode && svc.network_mode !== "bridge")
+    .map(([name]) => name);
+  const allServicesCustomNetwork =
+    servicesWithCustomNetwork.length === Object.keys(result.services).length;
+
+  if (!allServicesCustomNetwork) {
+    result = stripTraefikLabels(result);
+
+    const primaryServiceName = Object.keys(result.services).find(
+      (k) => !result.services[k].network_mode || result.services[k].network_mode === "bridge",
+    );
+
+    for (const domain of opts.domains) {
+      const port = domain.port || opts.containerPort || 3000;
+      result = injectTraefikLabels(result, {
+        projectName: `${opts.appName}-${domain.id.slice(0, 6)}`,
+        appName: opts.appName,
+        domain: domain.domain,
+        containerPort: port,
+        certResolver: domain.certResolver || "le",
+        ssl: domain.sslEnabled ?? true,
+        redirectTo: domain.redirectTo ?? undefined,
+        redirectCode: domain.redirectCode ?? 301,
+        serviceName: primaryServiceName,
+      });
+    }
+  }
+
+  result = injectNetwork(result, opts.networkName);
+
+  return result;
+}
+
 export function sanitizeCompose(compose: ComposeFile, opts?: { allowBindMounts?: boolean }): {
   compose: ComposeFile;
   strippedMounts: string[];
@@ -1048,4 +1125,79 @@ export function sanitizeCompose(compose: ComposeFile, opts?: { allowBindMounts?:
     }
   }
   return { compose: sanitized, strippedMounts };
+}
+
+type ComposePreviewApp = {
+  name: string;
+  deployType: string;
+  imageName: string | null;
+  composeContent: string | null;
+  containerPort: number | null;
+  cpuLimit: number | null;
+  memoryLimit: number | null;
+  gpuEnabled: boolean;
+  exposedPorts: { internal: number; external?: number; protocol?: string }[] | null;
+  domains: DeployTransformDomain[];
+};
+
+/**
+ * Build a compose preview from the app's stored configuration.
+ *
+ * Applies the same transformation chain as deploy without cloning a repo or
+ * building images. Used by the debug endpoint to show what the compose file
+ * would look like at runtime.
+ *
+ * Returns null for git-sourced apps that have no stored compose content —
+ * their compose is generated during the build step and is not available
+ * statically.
+ */
+export function buildComposePreview(
+  app: ComposePreviewApp,
+  volumesList: { name: string; mountPath: string }[],
+  networkName: string,
+): ComposeFile | null {
+  let compose: ComposeFile | null = null;
+
+  if (app.deployType === "image" && app.composeContent) {
+    // Imported container — use stored compose
+    try {
+      const parsed = parseCompose(app.composeContent);
+      const { compose: sanitized } = sanitizeCompose(parsed, { allowBindMounts: true });
+      compose = sanitized;
+    } catch {
+      return null;
+    }
+  } else if (app.deployType === "image" && app.imageName) {
+    compose = generateComposeForImage({
+      projectName: app.name,
+      imageName: app.imageName,
+      containerPort: app.containerPort ?? undefined,
+      volumes: volumesList.length > 0 ? volumesList : undefined,
+      exposedPorts: app.exposedPorts ?? undefined,
+    });
+  } else if (app.composeContent) {
+    // Stored compose content (git repos with inline compose)
+    try {
+      const parsed = parseCompose(app.composeContent);
+      const { compose: sanitized } = sanitizeCompose(parsed, { allowBindMounts: true });
+      compose = sanitized;
+    } catch {
+      return null;
+    }
+  } else {
+    // Git repo — compose is generated during build, not available statically
+    return null;
+  }
+
+  if (!compose) return null;
+
+  return applyDeployTransforms(compose, {
+    appName: app.name,
+    containerPort: app.containerPort,
+    cpuLimit: app.cpuLimit,
+    memoryLimit: app.memoryLimit,
+    gpuEnabled: app.gpuEnabled,
+    domains: app.domains,
+    networkName,
+  });
 }

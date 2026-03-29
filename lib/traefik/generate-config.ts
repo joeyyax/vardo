@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { apps, domains } from "@/lib/db/schema";
+import { apps } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { writeFile, unlink, mkdir, rename } from "fs/promises";
 import { join } from "path";
@@ -43,45 +43,34 @@ type TraefikDynamicConfig = {
   };
 };
 
+type AppDomainEntry = {
+  id: string;
+  domain: string;
+  sslEnabled: boolean | null;
+  certResolver: string | null;
+  redirectTo: string | null;
+  redirectCode: number | null;
+};
+
 /**
- * Regenerate the Traefik file-provider config for a given app.
+ * Build the Traefik HTTP router + middleware config for an app's domains.
+ * Returns null when the domain list is empty.
  *
- * Writes one YAML file per app into the shared volume. Traefik watches the
- * directory and picks up changes within seconds — no container restart needed.
- *
- * File-provider routers use priority 100 (higher than Docker-label defaults
- * at 0) so they take precedence over stale labels from the last deploy.
+ * Used by both regenerateAppRouteConfig (writes to disk) and the debug
+ * endpoint (returns as YAML without I/O).
  */
-export async function regenerateAppRouteConfig(appId: string): Promise<void> {
-  const app = await db.query.apps.findFirst({
-    where: eq(apps.id, appId),
-    columns: { id: true, name: true, containerPort: true },
-    with: { domains: true },
-  });
-
-  if (!app) {
-    logger.warn(`[traefik] App ${appId} not found, skipping config generation`);
-    return;
-  }
-
-  const appDomains = app.domains;
-
-  // If no domains remain, remove the config file
-  if (appDomains.length === 0) {
-    await removeAppRouteConfig(app.name);
-    return;
-  }
+export function buildTraefikConfigYaml(
+  appName: string,
+  appDomains: AppDomainEntry[],
+): string | null {
+  if (appDomains.length === 0) return null;
 
   const routers: Record<string, TraefikRouterConfig> = {};
   const middlewares: Record<string, TraefikMiddlewareConfig> = {};
-
-  // The service name referenced here must match the service discovered by
-  // Traefik's Docker provider from the container labels. In compose.ts
-  // injectTraefikLabels, the service is keyed by app.name.
-  const dockerServiceRef = `${app.name}@docker`;
+  const dockerServiceRef = `${appName}@docker`;
 
   for (const domain of appDomains) {
-    const routerName = `${app.name}-${domain.id.slice(0, 8)}`;
+    const routerName = `${appName}-${domain.id.slice(0, 8)}`;
     const isLocal =
       domain.domain.endsWith(".localhost") || domain.domain === "localhost";
     const ssl = domain.sslEnabled ?? true;
@@ -89,7 +78,6 @@ export async function regenerateAppRouteConfig(appId: string): Promise<void> {
     const isRedirect = !!domain.redirectTo;
     const permanent = (domain.redirectCode ?? 301) === 301;
 
-    // If this is a redirect domain, create a redirectRegex middleware
     if (isRedirect) {
       const redirectMw = `${routerName}-redirect`;
       middlewares[redirectMw] = {
@@ -109,7 +97,6 @@ export async function regenerateAppRouteConfig(appId: string): Promise<void> {
           middlewares: [redirectMw],
           priority: 100,
         };
-        // HTTP router also redirects (no need for https-redirect, the domain redirect handles it)
         routers[`${routerName}-http`] = {
           rule: `Host(\`${domain.domain}\`)`,
           service: dockerServiceRef,
@@ -145,9 +132,7 @@ export async function regenerateAppRouteConfig(appId: string): Promise<void> {
       continue;
     }
 
-    // Normal (non-redirect) domain routing
     if (ssl && !isLocal) {
-      // HTTPS router
       routers[routerName] = {
         rule: `Host(\`${domain.domain}\`)`,
         service: dockerServiceRef,
@@ -155,11 +140,8 @@ export async function regenerateAppRouteConfig(appId: string): Promise<void> {
         tls: { certResolver },
         priority: 100,
       };
-
-      // HTTP-to-HTTPS redirect router
       const httpRouterName = `${routerName}-http`;
       const redirectMiddleware = `${routerName}-https-redirect`;
-
       routers[httpRouterName] = {
         rule: `Host(\`${domain.domain}\`)`,
         service: dockerServiceRef,
@@ -167,7 +149,6 @@ export async function regenerateAppRouteConfig(appId: string): Promise<void> {
         middlewares: [redirectMiddleware],
         priority: 100,
       };
-
       middlewares[redirectMiddleware] = {
         redirectScheme: {
           scheme: "https",
@@ -175,7 +156,6 @@ export async function regenerateAppRouteConfig(appId: string): Promise<void> {
         },
       };
     } else if (ssl && isLocal) {
-      // Local TLS (self-signed)
       routers[routerName] = {
         rule: `Host(\`${domain.domain}\`)`,
         service: dockerServiceRef,
@@ -183,8 +163,6 @@ export async function regenerateAppRouteConfig(appId: string): Promise<void> {
         tls: {},
         priority: 100,
       };
-
-      // Also listen on HTTP for local
       routers[`${routerName}-http`] = {
         rule: `Host(\`${domain.domain}\`)`,
         service: dockerServiceRef,
@@ -192,7 +170,6 @@ export async function regenerateAppRouteConfig(appId: string): Promise<void> {
         priority: 100,
       };
     } else {
-      // HTTP only
       routers[routerName] = {
         rule: `Host(\`${domain.domain}\`)`,
         service: dockerServiceRef,
@@ -209,6 +186,44 @@ export async function regenerateAppRouteConfig(appId: string): Promise<void> {
     },
   };
 
+  return YAML.stringify(config);
+}
+
+/**
+ * Regenerate the Traefik file-provider config for a given app.
+ *
+ * Writes one YAML file per app into the shared volume. Traefik watches the
+ * directory and picks up changes within seconds — no container restart needed.
+ *
+ * File-provider routers use priority 100 (higher than Docker-label defaults
+ * at 0) so they take precedence over stale labels from the last deploy.
+ */
+export async function regenerateAppRouteConfig(appId: string): Promise<void> {
+  const app = await db.query.apps.findFirst({
+    where: eq(apps.id, appId),
+    columns: { id: true, name: true, containerPort: true },
+    with: { domains: true },
+  });
+
+  if (!app) {
+    logger.warn(`[traefik] App ${appId} not found, skipping config generation`);
+    return;
+  }
+
+  const appDomains = app.domains;
+
+  // If no domains remain, remove the config file
+  if (appDomains.length === 0) {
+    await removeAppRouteConfig(app.name);
+    return;
+  }
+
+  const configYaml = buildTraefikConfigYaml(app.name, appDomains);
+  if (!configYaml) {
+    await removeAppRouteConfig(app.name);
+    return;
+  }
+
   try {
     await mkdir(TRAEFIK_DYNAMIC_DIR, { recursive: true });
   } catch (err: unknown) {
@@ -224,7 +239,7 @@ export async function regenerateAppRouteConfig(appId: string): Promise<void> {
   const tmpPath = `${filePath}.tmp`;
 
   try {
-    await writeFile(tmpPath, YAML.stringify(config), "utf-8");
+    await writeFile(tmpPath, configYaml, "utf-8");
     await rename(tmpPath, filePath);
   } catch (err: unknown) {
     // Not running in an environment with the Traefik volume — skip silently.
