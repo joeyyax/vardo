@@ -2,7 +2,8 @@ import { db } from "@/lib/db";
 import { volumes, apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { computeVolumeDiff } from "./diff";
-import { listContainers, inspectContainer } from "@/lib/docker/client";
+import { listContainers, inspectContainer, resolveVolumeName } from "@/lib/docker/client";
+import { isAnonymousVolume } from "@/lib/docker/compose";
 import { recordActivity } from "@/lib/activity";
 
 const DRIFT_NOTIFICATION_THRESHOLD = 10;
@@ -66,8 +67,10 @@ export async function runPostDeployDriftCheck(opts: DriftCheckOpts): Promise<voi
         const info = await inspectContainer(container.id);
         for (const mount of info.mounts) {
           if (mount.type === "volume" && !dockerVolumes.has(mount.destination)) {
-            const volName = mount.name || mount.source;
-            dockerVolumes.set(mount.destination, volName);
+            const volName = resolveVolumeName(mount);
+            if (!isAnonymousVolume(volName)) {
+              dockerVolumes.set(mount.destination, volName);
+            }
           }
         }
       }

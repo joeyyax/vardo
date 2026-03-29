@@ -3,7 +3,7 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps, volumes } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { listContainers, inspectContainer } from "@/lib/docker/client";
+import { listContainers, inspectContainer, resolveVolumeName } from "@/lib/docker/client";
 import { z } from "zod";
 import { nanoid } from "nanoid";
 import { exec } from "child_process";
@@ -74,7 +74,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         try {
           const info = await inspectContainer(container.id);
           for (const mount of info.mounts) {
-            const name = mount.type === "volume" ? mount.name || mount.source : mount.source;
+            const name = mount.type === "volume" ? resolveVolumeName(mount) : mount.source;
             const saved = savedByName.get(name);
             dockerVolumes.push({
               id: saved?.id ?? null,

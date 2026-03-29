@@ -5,7 +5,7 @@ import { apps, volumes } from "@/lib/db/schema";
 import { verifyAppAccess } from "@/lib/api/verify-access";
 import { eq, and } from "drizzle-orm";
 import { syncFilesFromImage } from "@/lib/volumes/diff";
-import { listContainers, inspectContainer } from "@/lib/docker/client";
+import { listContainers, inspectContainer, resolveVolumeName } from "@/lib/docker/client";
 import { z } from "zod";
 import { recordActivity } from "@/lib/activity";
 
@@ -110,7 +110,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         const info = await inspectContainer(container.id);
         for (const mount of info.mounts) {
           if (mount.destination === volume.mountPath && mount.type === "volume") {
-            dockerVolumeName = mount.name || mount.source;
+            dockerVolumeName = resolveVolumeName(mount);
             break;
           }
         }

@@ -9,6 +9,7 @@ import {
   injectGpuDevices,
   injectResourceLimits,
   generateComposeFromContainer,
+  isAnonymousVolume,
   type ComposeFile,
   type ContainerConfig,
 } from "@/lib/docker/compose";
@@ -1280,5 +1281,47 @@ describe("generateComposeFromContainer", () => {
     expect(strippedMounts).toHaveLength(1);
     expect(sanitized.services.myapp.volumes).not.toContain("/host/data:/data");
     expect(sanitized.services.myapp.volumes).toContain("namedvol:/vol");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isAnonymousVolume — anonymous volume detection
+// ---------------------------------------------------------------------------
+
+describe("isAnonymousVolume", () => {
+  it("returns true for an empty name", () => {
+    // Docker sets Name to "" for volumes that have no explicit name field.
+    expect(isAnonymousVolume("")).toBe(true);
+  });
+
+  it("returns true for a 64-character lowercase hex hash", () => {
+    // Docker assigns a hex hash as the volume name for anonymous volumes.
+    const hash = "a1b2c3d4".repeat(8); // 64 chars
+    expect(isAnonymousVolume(hash)).toBe(true);
+  });
+
+  it("returns false for a short human-readable volume name", () => {
+    expect(isAnonymousVolume("data")).toBe(false);
+    expect(isAnonymousVolume("postgres")).toBe(false);
+  });
+
+  it("returns false for a namespaced volume name (project_volume)", () => {
+    expect(isAnonymousVolume("myapp-blue_data")).toBe(false);
+    expect(isAnonymousVolume("myapp-green_postgres")).toBe(false);
+  });
+
+  it("returns false for a 63-character hex string (one short of a Docker hash)", () => {
+    const almostHash = "a".repeat(63);
+    expect(isAnonymousVolume(almostHash)).toBe(false);
+  });
+
+  it("returns false for a 65-character hex string (one over a Docker hash)", () => {
+    const tooLong = "a".repeat(65);
+    expect(isAnonymousVolume(tooLong)).toBe(false);
+  });
+
+  it("returns false for a 64-char string with uppercase letters (not a Docker hash)", () => {
+    const upperHash = "A".repeat(64);
+    expect(isAnonymousVolume(upperHash)).toBe(false);
   });
 });

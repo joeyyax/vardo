@@ -18,13 +18,14 @@ import {
   injectNetwork,
   injectResourceLimits,
   injectGpuDevices,
+  isAnonymousVolume,
   parseCompose,
   sanitizeCompose,
   validateCompose,
   composeToYaml,
   type ComposeFile,
 } from "./compose";
-import { ensureNetwork, detectExposedPorts, listContainers, inspectContainer } from "./client";
+import { ensureNetwork, detectExposedPorts, listContainers, inspectContainer, stripDockerProjectPrefix } from "./client";
 import { isFeatureEnabled } from "@/lib/config/features";
 
 import { assertSafeName, assertSafeBranch } from "./validate";
@@ -965,9 +966,9 @@ export async function runDeployment(
       for (const c of runningContainers) {
         const info = await inspectContainer(c.id);
         for (const mount of info.mounts) {
-          if (mount.type === "volume" && !seen.has(mount.destination) && mount.name) {
+          if (mount.type === "volume" && !seen.has(mount.destination) && !isAnonymousVolume(mount.name)) {
             seen.add(mount.destination);
-            const name = mount.name.replace(/^[^_]*_/, "");
+            const name = stripDockerProjectPrefix(mount.name);
             detectedVolumes.push({ name, mountPath: mount.destination });
           }
         }
@@ -1033,7 +1034,7 @@ export async function runDeployment(
             if (mount.type === "volume" && mount.name) {
               const volName = mount.name;
               if (/^[a-zA-Z0-9._-]+$/.test(volName)) {
-                const displayName = volName.replace(/^[^_]*_/, "");
+                const displayName = stripDockerProjectPrefix(volName);
                 volEntries.push({ volName, displayName });
               }
             }

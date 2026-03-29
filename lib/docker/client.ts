@@ -801,6 +801,29 @@ export type SystemInfo = {
   containersRunning: number;
 };
 
+// ---------------------------------------------------------------------------
+// Volume name helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Strips the Docker Compose project prefix from a volume name.
+ * Docker names volumes as <project>_<name>; we store only the suffix.
+ * Returns the original string unchanged if there is no underscore.
+ */
+export function stripDockerProjectPrefix(volName: string): string {
+  return volName.replace(/^[^_]*_/, "");
+}
+
+/**
+ * Resolves the effective Docker volume name for a mount.
+ * Returns mount.name directly — the Docker inspect Name field is the
+ * actual volume name. Callers should check for empty string or use
+ * isAnonymousVolume() to skip anonymous volumes.
+ */
+export function resolveVolumeName(mount: { name: string; source: string }): string {
+  return mount.name;
+}
+
 export async function getSystemInfo(): Promise<SystemInfo> {
   const raw = await dockerRequest<{
     NCPU: number;

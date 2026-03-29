@@ -235,7 +235,6 @@ export function generateComposeFromContainer(
   // be emitted as a bare container path so Docker Compose recreates an anonymous
   // volume on deploy rather than trying to reference a named volume.
   // An empty name is also treated as anonymous (defensive: shouldn't happen with Docker).
-  const isAnonymousVolume = (name: string) => !name || /^[0-9a-f]{64}$/.test(name);
   const dockerVolumes = container.mounts.filter((m) => m.type === "volume");
   const namedVolumes = dockerVolumes.filter((m) => !isAnonymousVolume(m.name));
   const anonymousVolumes = dockerVolumes.filter((m) => isAnonymousVolume(m.name));
@@ -818,6 +817,15 @@ const DENIED_MOUNT_PATHS = [
   "/var/run/docker.sock",
   "/root",
 ];
+
+/**
+ * Returns true if a Docker inspect mount name represents an anonymous volume.
+ * Docker assigns a 64-character hex hash as the name for anonymous volumes.
+ * An empty name is also treated as anonymous.
+ */
+export function isAnonymousVolume(name: string): boolean {
+  return !name || /^[0-9a-f]{64}$/.test(name);
+}
 
 type ValidateOptions = {
   allowBindMounts?: boolean;
