@@ -71,6 +71,7 @@ export type ContainerInspect = {
   state: { running: boolean; status: string; startedAt: string };
   image: string;
   ports: { internal: number; external?: number; protocol: string }[];
+  exposedPorts: number[];
   env: string[];
   labels: Record<string, string>;
   networks: string[];
@@ -218,6 +219,19 @@ function parseListPorts(
   }));
 }
 
+/**
+ * Parse Docker's ExposedPorts map (keys like "8080/tcp") into an array of
+ * port numbers. Used as a fallback when no Traefik label specifies a port.
+ */
+export function parseExposedPorts(
+  exposedPorts?: Record<string, unknown> | null,
+): number[] {
+  if (!exposedPorts) return [];
+  return Object.keys(exposedPorts)
+    .map((key) => parseInt(key.split("/")[0], 10))
+    .filter((n) => !isNaN(n));
+}
+
 function parseInspectPorts(
   portBindings?: Record<string, { HostPort: string }[] | null>,
 ): ParsedPort[] {
@@ -345,6 +359,7 @@ export async function inspectContainer(id: string): Promise<ContainerInspect> {
       Image: string;
       Env: string[];
       Labels: Record<string, string>;
+      ExposedPorts?: Record<string, unknown> | null;
       Hostname?: string;
       User?: string;
       StopSignal?: string;
@@ -400,6 +415,7 @@ export async function inspectContainer(id: string): Promise<ContainerInspect> {
     },
     image: cfg.Image,
     ports: parseInspectPorts(hc.PortBindings),
+    exposedPorts: parseExposedPorts(cfg.ExposedPorts),
     env: cfg.Env ?? [],
     labels: cfg.Labels ?? {},
     networks: Object.keys(data.NetworkSettings.Networks ?? {}),
