@@ -10,6 +10,7 @@ import {
   injectResourceLimits,
   generateComposeFromContainer,
   isAnonymousVolume,
+  stripTraefikLabels,
   type ComposeFile,
   type ContainerConfig,
 } from "@/lib/docker/compose";
@@ -1336,5 +1337,73 @@ describe("isAnonymousVolume", () => {
   it("returns false for a 64-char string with uppercase letters (not a Docker hash)", () => {
     const upperHash = "A".repeat(64);
     expect(isAnonymousVolume(upperHash)).toBe(false);
+  });
+});
+
+describe("stripTraefikLabels", () => {
+  it("strips all traefik.* labels from a single service", () => {
+    const compose: ComposeFile = {
+      services: {
+        app: {
+          name: "app",
+          image: "nginx:latest",
+          labels: {
+            "traefik.enable": "true",
+            "traefik.http.routers.app.rule": "Host(`example.com`)",
+            "vardo.managed": "true",
+          },
+        },
+      },
+    };
+    const result = stripTraefikLabels(compose);
+    expect(result.services.app.labels).toEqual({ "vardo.managed": "true" });
+  });
+
+  it("leaves services with no labels unchanged", () => {
+    const compose: ComposeFile = {
+      services: {
+        app: {
+          name: "app",
+          image: "nginx:latest",
+        },
+      },
+    };
+    const result = stripTraefikLabels(compose);
+    expect(result.services.app.labels).toBeUndefined();
+  });
+
+  it("strips traefik.* labels from each service independently in a multi-service compose", () => {
+    const compose: ComposeFile = {
+      services: {
+        web: {
+          name: "web",
+          image: "nginx:latest",
+          labels: {
+            "traefik.enable": "true",
+            "traefik.http.routers.web.rule": "Host(`example.com`)",
+            "vardo.managed": "true",
+          },
+        },
+        db: {
+          name: "db",
+          image: "postgres:15",
+          labels: {
+            "vardo.managed": "true",
+          },
+        },
+        cache: {
+          name: "cache",
+          image: "redis:7",
+          labels: {
+            "traefik.enable": "false",
+            "com.example.custom": "keep",
+          },
+        },
+      },
+    };
+    const result = stripTraefikLabels(compose);
+    expect(result.services.web.labels).toEqual({ "vardo.managed": "true" });
+    expect(result.services.db.labels).toEqual({ "vardo.managed": "true" });
+    expect(result.services.cache.labels).toEqual({ "com.example.custom": "keep" });
   });
 });

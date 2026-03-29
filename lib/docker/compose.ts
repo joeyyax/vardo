@@ -474,6 +474,31 @@ export function injectTraefikLabels(
 }
 
 // ---------------------------------------------------------------------------
+// Traefik label stripping
+// ---------------------------------------------------------------------------
+
+/**
+ * Strip all Traefik labels from every service in the compose file.
+ * Used before re-injecting fresh Traefik config to prevent stale router names
+ * from accumulating (e.g. "appname" from import vs "appname-abc123" from deploy).
+ * Returns a new ComposeFile — does not mutate the original.
+ */
+export function stripTraefikLabels(compose: ComposeFile): ComposeFile {
+  const updatedServices: Record<string, ComposeService> = {};
+  for (const [svcName, svc] of Object.entries(compose.services)) {
+    if (!svc.labels) {
+      updatedServices[svcName] = svc;
+      continue;
+    }
+    const stripped = Object.fromEntries(
+      Object.entries(svc.labels).filter(([k]) => !k.startsWith(TRAEFIK_LABEL_PREFIX))
+    );
+    updatedServices[svcName] = { ...svc, labels: stripped };
+  }
+  return { ...compose, services: updatedServices };
+}
+
+// ---------------------------------------------------------------------------
 // Network injection
 // ---------------------------------------------------------------------------
 

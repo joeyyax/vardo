@@ -23,7 +23,7 @@ import {
   sanitizeCompose,
   validateCompose,
   composeToYaml,
-  TRAEFIK_LABEL_PREFIX,
+  stripTraefikLabels,
   type ComposeFile,
 } from "./compose";
 import { ensureNetwork, detectExposedPorts, listContainers, inspectContainer, stripDockerProjectPrefix } from "./client";
@@ -663,15 +663,7 @@ export async function runDeployment(
       // The stored compose may contain router names from a prior import or deploy
       // (e.g. "appname" from import vs "appname-abc123" from deploy) — clear them
       // all so we don't end up with duplicate routers pointing at the same domain.
-      for (const svcName of Object.keys(compose.services)) {
-        const svc = compose.services[svcName];
-        if (svc.labels) {
-          const stripped = Object.fromEntries(
-            Object.entries(svc.labels).filter(([k]) => !k.startsWith(TRAEFIK_LABEL_PREFIX))
-          );
-          compose.services[svcName] = { ...svc, labels: stripped };
-        }
-      }
+      compose = stripTraefikLabels(compose);
 
       // Find the first bridge-network service in compose file order (Object.keys preserves
       // insertion order for string keys, matching the order services appear in the compose file).
