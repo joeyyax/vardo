@@ -36,6 +36,7 @@ type ImportDialogProps = {
   projects: Project[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  defaultProjectId?: string;
 };
 
 export function ImportDialog({
@@ -44,6 +45,7 @@ export function ImportDialog({
   projects,
   open,
   onOpenChange,
+  defaultProjectId,
 }: ImportDialogProps) {
   const router = useRouter();
 
@@ -67,7 +69,8 @@ export function ImportDialog({
     const initialName = slugify(container.name);
     setDisplayName(container.name);
     setName(initialName);
-    setProjectId("none");
+    const validDefault = defaultProjectId && projects.some((p) => p.id === defaultProjectId);
+    setProjectId(validDefault ? defaultProjectId : "none");
     setNewProjectName("");
     setEnvVars([]);
     setMountToggles({});
@@ -110,7 +113,7 @@ export function ImportDialog({
       .finally(() => setLoadingDetail(false));
 
     return () => controller.abort();
-  }, [open, container, orgId]);
+  }, [open, container, orgId, defaultProjectId, projects]);
 
   function removeEnvVar(index: number) {
     setEnvVars((prev) => prev.filter((_, i) => i !== index));
