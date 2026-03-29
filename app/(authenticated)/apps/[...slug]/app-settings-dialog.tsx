@@ -330,6 +330,7 @@ export function AppSettingsDialog({
               <p className="text-xs text-muted-foreground">
                 Protocol Traefik uses to reach the container. Auto-detect defaults to HTTPS when port is 443 or 8443. Use HTTPS for apps like Kasm that serve TLS internally.
               </p>
+              <p className="text-xs text-muted-foreground">Requires a redeploy to take effect.</p>
             </div>
 
             {/* Restart policy */}
