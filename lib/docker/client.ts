@@ -206,6 +206,17 @@ export async function ensureNetwork(name: string): Promise<void> {
 // Port parsing helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Parse Docker's ExposedPorts map (keys like "80/tcp") into plain port numbers.
+ * Non-numeric keys are filtered out.
+ */
+export function parseExposedPorts(exposedPorts: Record<string, unknown> | null | undefined): number[] {
+  if (!exposedPorts) return [];
+  return Object.keys(exposedPorts)
+    .map((key) => parseInt(key.split("/")[0], 10))
+    .filter((p) => !isNaN(p));
+}
+
 type ParsedPort = { internal: number; external?: number; protocol: string };
 
 function parseListPorts(
@@ -402,7 +413,7 @@ export async function inspectContainer(id: string): Promise<ContainerInspect> {
     },
     image: cfg.Image,
     ports: parseInspectPorts(hc.PortBindings),
-    exposedPorts: Object.keys(cfg.ExposedPorts ?? {}).map((key) => parseInt(key.split("/")[0], 10)).filter((p) => !isNaN(p)),
+    exposedPorts: parseExposedPorts(cfg.ExposedPorts),
     env: cfg.Env ?? [],
     labels: cfg.Labels ?? {},
     networks: Object.keys(data.NetworkSettings.Networks ?? {}),
@@ -564,10 +575,7 @@ export async function detectExposedPorts(imageOrId: string): Promise<number[]> {
 
   if (!exposedPorts) return [];
 
-  return Object.keys(exposedPorts).map((key) => {
-    // key is like "8080/tcp"
-    return parseInt(key.split("/")[0], 10);
-  });
+  return parseExposedPorts(exposedPorts);
 }
 
 // ---------------------------------------------------------------------------

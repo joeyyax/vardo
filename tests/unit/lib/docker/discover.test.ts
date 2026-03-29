@@ -84,6 +84,7 @@ describe("detectContainerPort", () => {
     expect(detectContainerPort({}, [9000])).toBe(9000);
   });
 
+
   it("prefers 80 over other exposed ports", () => {
     expect(detectContainerPort({}, [3000, 80, 8080])).toBe(80);
   });
@@ -118,6 +119,7 @@ describe("detectContainerPort", () => {
     };
     expect(detectContainerPort(labels, [80])).toBe(9999);
   });
+
 
   it("exposed ports win over bound ports", () => {
     expect(detectContainerPort({}, [8080], [3000])).toBe(8080);
