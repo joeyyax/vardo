@@ -1,5 +1,57 @@
 import { describe, it, expect } from "vitest";
-import { detectContainerGpu, filterImageInheritedEnv } from "@/lib/docker/discover";
+import { detectContainerGpu, filterImageInheritedEnv, parseTraefikPort } from "@/lib/docker/discover";
+
+// ---------------------------------------------------------------------------
+// parseTraefikPort — extract container port from Traefik loadbalancer label
+// ---------------------------------------------------------------------------
+// Priority order for containerPort in getContainerDetail:
+//   Traefik label → ExposedPorts[0] → null
+
+describe("parseTraefikPort", () => {
+  it("returns the port from a Traefik loadbalancer label", () => {
+    expect(parseTraefikPort({
+      "traefik.http.services.myapp.loadbalancer.server.port": "3000",
+    })).toBe(3000);
+  });
+
+  it("works regardless of the service name in the label key", () => {
+    expect(parseTraefikPort({
+      "traefik.http.services.api-gateway.loadbalancer.server.port": "8080",
+    })).toBe(8080);
+  });
+
+  it("returns null when no Traefik loadbalancer label is present", () => {
+    expect(parseTraefikPort({})).toBeNull();
+  });
+
+  it("returns null for unrelated Traefik labels", () => {
+    expect(parseTraefikPort({
+      "traefik.enable": "true",
+      "traefik.http.routers.myapp.rule": "Host(`app.example.com`)",
+    })).toBeNull();
+  });
+
+  it("returns null when the port value is not a valid number", () => {
+    expect(parseTraefikPort({
+      "traefik.http.services.myapp.loadbalancer.server.port": "notaport",
+    })).toBeNull();
+  });
+
+  it("returns null when the port value is empty", () => {
+    expect(parseTraefikPort({
+      "traefik.http.services.myapp.loadbalancer.server.port": "",
+    })).toBeNull();
+  });
+
+  it("returns the port when the label is mixed with other labels", () => {
+    expect(parseTraefikPort({
+      "com.docker.compose.project": "myproject",
+      "traefik.enable": "true",
+      "traefik.http.routers.myapp.rule": "Host(`app.example.com`)",
+      "traefik.http.services.myapp.loadbalancer.server.port": "4000",
+    })).toBe(4000);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // detectContainerGpu — GPU heuristic for discovered containers
