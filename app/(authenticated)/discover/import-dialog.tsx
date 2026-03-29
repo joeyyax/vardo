@@ -24,7 +24,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, X, HardDrive, FolderOpen } from "lucide-react";
 import type { DiscoveredContainer, ContainerDetail } from "@/lib/docker/discover";
-import { resolveContainerPort } from "@/lib/docker/resolve-port";
 import { slugify } from "@/lib/ui/slugify";
 
 type Project = { id: string; name: string; displayName: string };
@@ -61,7 +60,7 @@ export function ImportDialog({
   const [envVars, setEnvVars] = useState<EnvVar[]>([]);
   // Per-mount toggles: keyed by destination path
   const [mountToggles, setMountToggles] = useState<Record<string, boolean>>({});
-  const [manualPort, setManualPort] = useState("");
+  const [containerPort, setContainerPort] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
 
   // Load container detail when dialog opens
@@ -76,7 +75,7 @@ export function ImportDialog({
     setNewProjectName("");
     setEnvVars([]);
     setMountToggles({});
-    setManualPort("");
+    setContainerPort("");
     setDetail(null);
     setDetailError(false);
 
@@ -141,18 +140,16 @@ export function ImportDialog({
   async function handleSubmit() {
     if (!container) return;
 
-    const parsedManualPort = manualPort ? parseInt(manualPort, 10) : undefined;
-
-    if (parsedManualPort !== undefined && (isNaN(parsedManualPort) || parsedManualPort < 1 || parsedManualPort > 65535)) {
-      toast.error("Port must be between 1 and 65535");
-      return;
-    }
-
     setSubmitting(true);
     try {
       const selectedMountDestinations = (detail?.mounts ?? [])
         .filter((m) => mountToggles[m.destination])
         .map((m) => m.destination);
+
+      const portOverride =
+        !portAutoDetected && containerPort !== ""
+          ? parseInt(containerPort, 10)
+          : undefined;
 
       const body = {
         displayName,
@@ -161,7 +158,7 @@ export function ImportDialog({
         newProjectName: projectId === "new" ? newProjectName : undefined,
         envVars,
         selectedMountDestinations,
-        containerPort: parsedManualPort,
+        containerPort: portOverride,
       };
 
       const res = await fetch(
@@ -210,10 +207,14 @@ export function ImportDialog({
   const selectedCount = selectedMounts.length;
   const isHostNetwork = (detail?.networkMode ?? container?.networkMode) === "host";
 
-  // Show the manual port field only after detail loads and auto-detection has no result.
-  // Uses the same resolution chain as the server: Traefik label → exposed port → null.
-  const autoDetectedPort = detail ? resolveContainerPort(detail) : undefined;
-  const showPortField = detail !== null && autoDetectedPort === null && !isHostNetwork;
+  // Port auto-detection fails when there's no Traefik label and no exposed ports.
+  // Only relevant for non-host-network containers since host networking has no port routing.
+  const portAutoDetected =
+    !detail ||
+    isHostNetwork ||
+    detail.containerPort !== null ||
+    detail.ports.some((p) => p.internal);
+  const portFieldValid = portAutoDetected || (containerPort !== "" && /^\d+$/.test(containerPort) && parseInt(containerPort, 10) > 0 && parseInt(containerPort, 10) <= 65535);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -284,6 +285,24 @@ export function ImportDialog({
               </Select>
             </div>
 
+            {!portAutoDetected && (
+              <div className="space-y-1.5">
+                <Label htmlFor="containerPort">Container port</Label>
+                <Input
+                  id="containerPort"
+                  type="number"
+                  min={1}
+                  max={65535}
+                  value={containerPort}
+                  onChange={(e) => setContainerPort(e.target.value)}
+                  placeholder="e.g. 3000"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Port could not be detected automatically. Enter the port your container listens on for HTTP traffic.
+                </p>
+              </div>
+            )}
+
             {projectId === "new" && (
               <div className="space-y-1.5">
                 <Label htmlFor="newProjectName">New project name</Label>
@@ -293,25 +312,6 @@ export function ImportDialog({
                   onChange={(e) => setNewProjectName(e.target.value)}
                   placeholder="My Project"
                 />
-              </div>
-            )}
-
-            {showPortField && (
-              <div className="space-y-1.5">
-                <Label htmlFor="containerPort">Container port</Label>
-                <Input
-                  id="containerPort"
-                  type="number"
-                  min={1}
-                  max={65535}
-                  value={manualPort}
-                  onChange={(e) => setManualPort(e.target.value)}
-                  placeholder="e.g. 3000"
-                  aria-describedby="container-port-hint"
-                />
-                <p id="container-port-hint" className="text-xs text-muted-foreground">
-                  No port was detected automatically. Specify the port your app listens on to enable domain routing.
-                </p>
               </div>
             )}
 
@@ -457,7 +457,7 @@ export function ImportDialog({
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={submitting || loadingDetail || detailError || !name || !displayName}
+            disabled={submitting || loadingDetail || detailError || !name || !displayName || !portFieldValid}
           >
             {submitting ? "Importing..." : "Import"}
           </Button>
