@@ -195,10 +195,9 @@ async function handler(request: NextRequest, { params }: RouteParams) {
       const hasExistingTraefikRouter = Object.keys(detail.labels).some(
         (k) => /^traefik\.http\.routers\..+\.rule$/.test(k)
       );
-      const containerPort =
-        detail.containerPort ??
-        detail.ports.find((p) => p.internal)?.internal ??
-        null;
+      // Container port — resolved by detectContainerPort in getContainerDetail:
+      // Traefik labels → ExposedPorts → PortBindings fallback chain.
+      const containerPort = detail.containerPort;
 
       if (detail.domain && containerPort && !hasExistingTraefikRouter) {
         const injected = injectTraefikLabels(singleFile, {

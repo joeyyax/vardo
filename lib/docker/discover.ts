@@ -57,6 +57,38 @@ export function parseTraefikPort(labels: Record<string, string>): number | null 
   return null;
 }
 
+/**
+ * Determine the most likely container port for HTTP routing.
+ *
+ * Priority:
+ * 1. Traefik labels — explicit, authoritative
+ * 2. ExposedPorts from Docker inspect (Config.ExposedPorts) — declared listening port
+ *    - Single port: use it directly
+ *    - Multiple: prefer common HTTP ports in order: 80, 8080, 3000, 8000, 443, 8443
+ * 3. PortBindings (host-mapped ports, internal side) — last resort
+ */
+export function detectContainerPort(
+  labels: Record<string, string>,
+  exposedPorts: number[],
+  boundPorts: number[] = [],
+): number | null {
+  const traefikPort = parseTraefikPort(labels);
+  if (traefikPort !== null) return traefikPort;
+
+  if (exposedPorts.length === 1) return exposedPorts[0];
+  if (exposedPorts.length > 1) {
+    const preferred = [80, 8080, 3000, 8000, 443, 8443];
+    for (const p of preferred) {
+      if (exposedPorts.includes(p)) return p;
+    }
+    return exposedPorts[0];
+  }
+
+  if (boundPorts.length > 0) return boundPorts[0];
+
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Filtering
 // ---------------------------------------------------------------------------
@@ -226,7 +258,11 @@ export async function getContainerDetail(containerId: string): Promise<Container
     state: data.state.status,
     ports: data.ports,
     domain: parseTraefikDomain(data.labels),
-    containerPort: parseTraefikPort(data.labels),
+    containerPort: detectContainerPort(
+      data.labels,
+      data.exposedPorts,
+      data.ports.map((p) => p.internal),
+    ),
     mounts: data.mounts,
     composeProject: data.labels["com.docker.compose.project"] ?? null,
     networkMode,
