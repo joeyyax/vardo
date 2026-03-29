@@ -37,7 +37,10 @@ export function AddAppDropdown({
       </DropdownMenuTrigger>
       <DropdownMenuContent align={align}>
         <DropdownMenuItem asChild>
-          <Link href={newAppHref}>Create new app</Link>
+          <Link href={newAppHref}>
+            <Plus className="mr-2 size-4" />
+            Create new app
+          </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <Link href={discoverHref}>

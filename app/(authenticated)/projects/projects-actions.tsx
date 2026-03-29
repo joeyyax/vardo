@@ -24,7 +24,10 @@ export function ProjectsActions() {
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem asChild>
-            <Link href="/projects/new">Create new</Link>
+            <Link href="/projects/new">
+              <Plus className="mr-2 size-4" />
+              Create new
+            </Link>
           </DropdownMenuItem>
           <DropdownMenuItem asChild>
             <Link href="/discover">
