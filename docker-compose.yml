@@ -2,11 +2,31 @@ name: vardo
 
 # Single compose file for all environments.
 #
-#   Dev:   docker compose up -d
-#          App container skipped (no production profile). Run the app with `pnpm dev`.
+#   Dev:    docker compose up -d
+#           App container skipped (no production profile). Run the app with `pnpm dev`.
 #
-#   Prod:  docker compose up -d
-#          install.sh sets COMPOSE_PROFILES=production — all services start.
+#   Prod:   docker compose up -d
+#           install.sh sets COMPOSE_PROFILES=production — all services start.
+#
+#   GPU:    COMPOSE_PROFILES=gpu docker compose up -d  (or production,gpu)
+#           Activates the cadvisor-gpu service, which passes NVIDIA device nodes
+#           into cAdvisor for GPU metrics collection via NVML. Requires NVIDIA
+#           drivers and nvidia-container-toolkit on the host.
+
+x-cadvisor: &cadvisor
+  image: gcr.io/cadvisor/cadvisor:latest
+  restart: unless-stopped
+  privileged: true
+  ports:
+    - "${CADVISOR_PORT:-7300}:8080"
+  volumes:
+    - /:/rootfs:ro
+    - /var/run:/var/run:ro
+    - /sys:/sys:ro
+    - /var/lib/docker/:/var/lib/docker:ro
+  networks:
+    - internal
+    - vardo-network
 
 services:
   frontend:
@@ -204,20 +224,21 @@ services:
       - vardo-network
 
   cadvisor:
+    <<: *cadvisor
     container_name: vardo-cadvisor
-    image: gcr.io/cadvisor/cadvisor:latest
-    restart: unless-stopped
-    privileged: true
-    ports:
-      - "${CADVISOR_PORT:-7300}:8080"
-    volumes:
-      - /:/rootfs:ro
-      - /var/run:/var/run:ro
-      - /sys:/sys:ro
-      - /var/lib/docker/:/var/lib/docker:ro
-    networks:
-      - internal
-      - vardo-network
+    profiles: ["!gpu"]
+
+  # GPU variant — passes NVIDIA device nodes into cAdvisor for NVML-based GPU metrics.
+  # Activate with: COMPOSE_PROFILES=gpu docker compose up -d
+  # Multi-GPU hosts: add /dev/nvidia1, /dev/nvidia2, etc. as needed.
+  cadvisor-gpu:
+    <<: *cadvisor
+    container_name: vardo-cadvisor
+    profiles: [gpu]
+    devices:
+      - /dev/nvidiactl:/dev/nvidiactl
+      - /dev/nvidia-uvm:/dev/nvidia-uvm
+      - /dev/nvidia0:/dev/nvidia0
 
   loki:
     container_name: vardo-loki

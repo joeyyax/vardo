@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
-import { Activity, AlertTriangle, Container, Cpu, MemoryStick, Network, Loader2, RefreshCw } from "lucide-react";
+import { Activity, AlertTriangle, Container, Cpu, Microchip, MemoryStick, Network, Loader2, RefreshCw, Thermometer } from "lucide-react";
 import { ChartCard } from "@/components/app-status";
 import { formatBytes, formatBytesShort, formatMemLimit, formatBytesRate, formatTime } from "@/lib/metrics/format";
 import { CHART_COLORS, chartTickStyle, TIME_RANGES, type TimeRange } from "@/lib/metrics/constants";
@@ -16,6 +16,7 @@ type AppMetricsProps = {
   orgId: string;
   appId: string;
   environmentName?: string;
+  gpuEnabled?: boolean;
 };
 
 type ChartPoint = {
@@ -28,6 +29,10 @@ type ChartPoint = {
   networkTx: number;
   networkRxRate: number;
   networkTxRate: number;
+  gpuUtilization: number;
+  gpuMemoryUsed: number;
+  gpuMemoryTotal: number;
+  gpuTemperature: number;
 };
 
 /* ── Stable tooltip components (outside render to avoid re-creation) ── */
@@ -58,6 +63,36 @@ function NetTooltip(props: { active?: boolean; payload?: Array<{ dataKey?: strin
       {...props}
       valueFormatter={(v) => formatBytesRate(v)}
       categoryLabels={{ networkRxRate: "RX", networkTxRate: "TX" }}
+    />
+  );
+}
+
+function GpuUtilTooltip(props: { active?: boolean; payload?: Array<{ dataKey?: string; name?: string; value?: number; color?: string }>; label?: string }) {
+  return (
+    <MetricsTooltip
+      {...props}
+      valueFormatter={(v) => `${v.toFixed(1)}%`}
+      categoryLabels={{ gpuUtilization: "GPU" }}
+    />
+  );
+}
+
+function GpuMemTooltip(props: { active?: boolean; payload?: Array<{ dataKey?: string; name?: string; value?: number; color?: string }>; label?: string }) {
+  return (
+    <MetricsTooltip
+      {...props}
+      valueFormatter={(v) => formatBytes(v)}
+      categoryLabels={{ gpuMemoryUsed: "GPU Mem" }}
+    />
+  );
+}
+
+function GpuTempTooltip(props: { active?: boolean; payload?: Array<{ dataKey?: string; name?: string; value?: number; color?: string }>; label?: string }) {
+  return (
+    <MetricsTooltip
+      {...props}
+      valueFormatter={(v) => `${Math.round(v)}°C`}
+      categoryLabels={{ gpuTemperature: "Temp" }}
     />
   );
 }
@@ -102,7 +137,7 @@ function ContainerTable({ containers }: { containers: ContainerPoint[] }) {
   );
 }
 
-export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
+export function AppMetrics({ orgId, appId, environmentName, gpuEnabled }: AppMetricsProps) {
   const [timeRange, setTimeRange] = useState<TimeRange>("1h");
 
   const { points, containers, connected, loading, reconnecting, error } = useMetricsStream({
@@ -138,9 +173,20 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
         networkTx: p.networkTx,
         networkRxRate,
         networkTxRate,
+        gpuUtilization: p.gpuUtilization,
+        gpuMemoryUsed: p.gpuMemoryUsed,
+        gpuMemoryTotal: p.gpuMemoryTotal,
+        gpuTemperature: p.gpuTemperature,
       };
     });
   }, [points]);
+
+  // Determine if GPU data is actually present in the stream (covers live containers
+  // that have GPU even if gpuEnabled flag isn't set on the app record yet)
+  const hasGpuData = useMemo(
+    () => gpuEnabled || containers.some((c) => c.gpuMemoryTotal > 0),
+    [gpuEnabled, containers],
+  );
 
   // Error state -- metrics service unreachable
   if (error && !connected && !loading && points.length === 0) {
@@ -179,7 +225,7 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
   }
 
   const latestMemoryLimit = chartData.length > 0 ? chartData[chartData.length - 1].memoryLimit : 0;
-
+  const latestGpuMemTotal = chartData.length > 0 ? chartData[chartData.length - 1].gpuMemoryTotal : 0;
 
   return (
     <div className="space-y-6">
@@ -239,6 +285,38 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
           </p>
         </div>
       </div>
+      {hasGpuData && (
+        <div className={`grid grid-cols-2 gap-4 ${containers.some((c) => c.gpuTemperature > 0) ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
+          <div className="squircle rounded-lg border bg-card px-4 py-3">
+            <p className="text-xs text-muted-foreground">GPU</p>
+            <p className="text-2xl font-semibold tabular-nums mt-1">
+              {(() => {
+                const gpuContainers = containers.filter((c) => c.gpuMemoryTotal > 0);
+                return gpuContainers.length > 0
+                  ? (gpuContainers.reduce((s, c) => s + c.gpuUtilization, 0) / gpuContainers.length).toFixed(1)
+                  : "0.0";
+              })()}%
+            </p>
+          </div>
+          <div className="squircle rounded-lg border bg-card px-4 py-3">
+            <p className="text-xs text-muted-foreground">GPU Memory</p>
+            <p className="text-2xl font-semibold tabular-nums mt-1">
+              {formatBytes(containers.reduce((s, c) => s + c.gpuMemoryUsed, 0))}
+            </p>
+          </div>
+          {containers.some((c) => c.gpuTemperature > 0) && (
+            <div className="squircle rounded-lg border bg-card px-4 py-3">
+              <p className="text-xs text-muted-foreground">GPU Temp</p>
+              <p className="text-2xl font-semibold tabular-nums mt-1">
+                {Math.round(
+                  containers.filter((c) => c.gpuTemperature > 0).reduce((s, c) => s + c.gpuTemperature, 0) /
+                  Math.max(1, containers.filter((c) => c.gpuTemperature > 0).length)
+                )}°C
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* CPU Chart */}
       <ChartCard title="CPU Usage" icon={Cpu}>
@@ -311,6 +389,75 @@ export function AppMetrics({ orgId, appId, environmentName }: AppMetricsProps) {
           </AreaChart>
         </ResponsiveContainer>
       </ChartCard>
+
+      {/* GPU Charts — only rendered when gpuEnabled or live GPU data present */}
+      {hasGpuData && (
+        <>
+          <ChartCard title="GPU Utilization" icon={Microchip}>
+            <ResponsiveContainer width="100%" height={200}>
+              <AreaChart data={chartData}>
+                <defs>
+                  <linearGradient id="appGpuUtilGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={CHART_COLORS.gpuUtilization} stopOpacity={0.3} />
+                    <stop offset="100%" stopColor={CHART_COLORS.gpuUtilization} stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+                <XAxis dataKey="time" tick={chartTickStyle} />
+                <YAxis width={45} tickFormatter={(v) => `${v}%`} tick={chartTickStyle} domain={[0, 100]} />
+                <Tooltip content={<GpuUtilTooltip />} />
+                <Area isAnimationActive={false} type="monotone" dataKey="gpuUtilization" stroke={CHART_COLORS.gpuUtilization} fill="url(#appGpuUtilGradient)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </ChartCard>
+
+          <ChartCard title="GPU Memory" icon={MemoryStick}>
+            {latestGpuMemTotal > 0 && (
+              <p className="text-[10px] text-muted-foreground mb-1" style={{ color: CHART_COLORS.memoryLimit }}>
+                Total: {formatBytes(latestGpuMemTotal, 0)}
+              </p>
+            )}
+            <ResponsiveContainer width="100%" height={200}>
+              <AreaChart data={chartData}>
+                <defs>
+                  <linearGradient id="appGpuMemGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={CHART_COLORS.gpuMemory} stopOpacity={0.3} />
+                    <stop offset="100%" stopColor={CHART_COLORS.gpuMemory} stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+                <XAxis dataKey="time" tick={chartTickStyle} />
+                <YAxis
+                  width={65}
+                  tickFormatter={formatBytesShort}
+                  tick={chartTickStyle}
+                  domain={[0, latestGpuMemTotal > 0 ? latestGpuMemTotal * 1.05 : "auto"]}
+                />
+                <Tooltip content={<GpuMemTooltip />} />
+                <Area isAnimationActive={false} type="monotone" dataKey="gpuMemoryUsed" stroke={CHART_COLORS.gpuMemory} fill="url(#appGpuMemGradient)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </ChartCard>
+
+          <ChartCard title="GPU Temperature" icon={Thermometer}>
+            <ResponsiveContainer width="100%" height={200}>
+              <AreaChart data={chartData}>
+                <defs>
+                  <linearGradient id="appGpuTempGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={CHART_COLORS.gpuTemperature} stopOpacity={0.3} />
+                    <stop offset="100%" stopColor={CHART_COLORS.gpuTemperature} stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+                <XAxis dataKey="time" tick={chartTickStyle} />
+                <YAxis width={50} tickFormatter={(v) => `${v}°C`} tick={chartTickStyle} />
+                <Tooltip content={<GpuTempTooltip />} />
+                <Area isAnimationActive={false} type="monotone" dataKey="gpuTemperature" stroke={CHART_COLORS.gpuTemperature} fill="url(#appGpuTempGradient)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </ChartCard>
+        </>
+      )}
 
       {/* Container list */}
       {containers.length > 0 && (

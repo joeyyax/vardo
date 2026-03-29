@@ -16,6 +16,7 @@ export type DiscoveredContainer = {
   mounts: { name: string; source: string; destination: string; type: string }[];
   composeProject: string | null;
   networkMode: string;
+  hasGpu: boolean;
 };
 
 export type DiscoveryResponse = {
@@ -71,6 +72,23 @@ function isManagedContainer(labels: Record<string, string>): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// GPU detection
+// ---------------------------------------------------------------------------
+
+/**
+ * Best-effort GPU heuristic for discovered containers.
+ * Checks image name and labels for NVIDIA indicators since the list-containers
+ * API does not expose env vars or device mounts.
+ */
+export function detectContainerGpu(image: string, labels: Record<string, string>): boolean {
+  const img = image.toLowerCase();
+  if (img.includes("nvidia") || img.includes("cuda") || img.startsWith("nvcr.io/")) return true;
+  // NVIDIA runtime labels
+  if (labels["com.nvidia.volumes.needed"] || labels["com.nvidia.cuda.version"]) return true;
+  return false;
+}
+
+// ---------------------------------------------------------------------------
 // Shape conversion
 // ---------------------------------------------------------------------------
 
@@ -95,6 +113,7 @@ function rawToDiscovered(
     mounts,
     composeProject: labels["com.docker.compose.project"] ?? null,
     networkMode,
+    hasGpu: detectContainerGpu(image, labels),
   };
 }
 
@@ -168,6 +187,9 @@ export async function getContainerDetail(containerId: string): Promise<Container
 
   const networkMode = data.networkMode;
 
+  const hasNvidiaEnv = data.env.some((e) => e.startsWith("NVIDIA_VISIBLE_DEVICES=") || e.startsWith("NVIDIA_DRIVER_CAPABILITIES="));
+  const hasNvidiaDevice = data.devices.some((d) => d.hostPath.startsWith("/dev/nvidia") || d.containerPath.startsWith("/dev/nvidia"));
+
   return {
     id: data.id,
     name: data.name,
@@ -179,6 +201,7 @@ export async function getContainerDetail(containerId: string): Promise<Container
     mounts: data.mounts,
     composeProject: data.labels["com.docker.compose.project"] ?? null,
     networkMode,
+    hasGpu: detectContainerGpu(data.image, data.labels) || hasNvidiaEnv || hasNvidiaDevice,
     env: data.env,
     networks: data.networks,
     labels: data.labels,
