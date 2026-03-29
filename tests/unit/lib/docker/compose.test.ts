@@ -14,6 +14,7 @@ import {
   applyDeployTransforms,
   resolveBackendProtocol,
   narrowBackendProtocol,
+  buildComposePreview,
   type ComposeFile,
   type ContainerConfig,
 } from "@/lib/docker/compose";
@@ -1749,5 +1750,139 @@ describe("injectTraefikLabels — HTTPS backend", () => {
     const result = injectTraefikLabels(baseComposeFn(), baseOpts);
     const labels = result.services.app.labels as Record<string, string>;
     expect(labels["traefik.http.services.myapp.loadbalancer.server.scheme"]).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildComposePreview — trusted org bind mount handling
+// ---------------------------------------------------------------------------
+
+const BASE_PREVIEW_APP = {
+  name: "myapp",
+  deployType: "compose" as const,
+  imageName: null,
+  containerPort: 3000,
+  cpuLimit: null,
+  memoryLimit: null,
+  gpuEnabled: false,
+  exposedPorts: null,
+  domains: [],
+  backendProtocol: null as "http" | "https" | null,
+};
+
+describe("buildComposePreview", () => {
+  const networkName = "vardo-network";
+
+  it("returns a preview for a compose app with a safe bind mount", () => {
+    const compose = `
+services:
+  app:
+    image: nginx:latest
+    volumes:
+      - /home/user/data:/data
+`;
+    const result = buildComposePreview(
+      { ...BASE_PREVIEW_APP, composeContent: compose },
+      [],
+      networkName,
+    );
+    expect(result).not.toBeNull();
+    expect(result!.services.app.volumes).toContain("/home/user/data:/data");
+  });
+
+  it("returns null for a denied bind mount path when org is not trusted", () => {
+    const compose = `
+services:
+  app:
+    image: myimage:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+`;
+    const result = buildComposePreview(
+      { ...BASE_PREVIEW_APP, composeContent: compose },
+      [],
+      networkName,
+    );
+    expect(result).toBeNull();
+  });
+
+  it("preserves denied bind mount paths for trusted orgs", () => {
+    const compose = `
+services:
+  app:
+    image: myimage:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+`;
+    const result = buildComposePreview(
+      { ...BASE_PREVIEW_APP, composeContent: compose },
+      [],
+      networkName,
+      true,
+    );
+    expect(result).not.toBeNull();
+    expect(result!.services.app.volumes).toContain(
+      "/var/run/docker.sock:/var/run/docker.sock",
+    );
+  });
+
+  it("preserves /etc bind mounts for trusted orgs", () => {
+    const compose = `
+services:
+  app:
+    image: myimage:latest
+    volumes:
+      - /etc/myconfig:/etc/myconfig:ro
+`;
+    const result = buildComposePreview(
+      { ...BASE_PREVIEW_APP, composeContent: compose },
+      [],
+      networkName,
+      true,
+    );
+    expect(result).not.toBeNull();
+    expect(result!.services.app.volumes).toContain("/etc/myconfig:/etc/myconfig:ro");
+  });
+
+  it("preserves multiple denied bind mounts for trusted orgs", () => {
+    const compose = `
+services:
+  app:
+    image: myimage:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /proc:/host/proc:ro
+      - data:/app/data
+`;
+    const result = buildComposePreview(
+      { ...BASE_PREVIEW_APP, composeContent: compose },
+      [],
+      networkName,
+      true,
+    );
+    expect(result).not.toBeNull();
+    const vols = result!.services.app.volumes ?? [];
+    expect(vols).toContain("/var/run/docker.sock:/var/run/docker.sock");
+    expect(vols).toContain("/proc:/host/proc:ro");
+    expect(vols).toContain("data:/app/data");
+  });
+
+  it("applies deploy transforms (network injection) for trusted org preview", () => {
+    const compose = `
+services:
+  app:
+    image: myimage:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+`;
+    const result = buildComposePreview(
+      { ...BASE_PREVIEW_APP, composeContent: compose },
+      [],
+      networkName,
+      true,
+    );
+    expect(result).not.toBeNull();
+    // Network should be injected by applyDeployTransforms
+    expect(result!.networks).toBeDefined();
   });
 });
