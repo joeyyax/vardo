@@ -57,6 +57,10 @@ export function parseTraefikPort(labels: Record<string, string>): number | null 
   return null;
 }
 
+// Common HTTP ports in preference order — used by detectContainerPort to pick
+// the best candidate when a container exposes multiple ports.
+const PREFERRED_HTTP_PORTS = [80, 8080, 3000, 8000, 443, 8443];
+
 /**
  * Determine the most likely container port for HTTP routing.
  *
@@ -77,8 +81,7 @@ export function detectContainerPort(
 
   if (exposedPorts.length === 1) return exposedPorts[0];
   if (exposedPorts.length > 1) {
-    const preferred = [80, 8080, 3000, 8000, 443, 8443];
-    for (const p of preferred) {
+    for (const p of PREFERRED_HTTP_PORTS) {
       if (exposedPorts.includes(p)) return p;
     }
     return exposedPorts[0];
