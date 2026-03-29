@@ -37,7 +37,69 @@ end
 `.trim();
 
 /**
- * Redis-backed sliding window rate limiter.
+ * Low-level sliding window rate limit check.
+ *
+ * Returns `{ limited: false }` when the request is allowed, or
+ * `{ limited: true, retryAfterSeconds }` when the limit is exceeded.
+ *
+ * Falls back to allowing the request if Redis is unavailable, so a Redis
+ * outage does not block callers.
+ *
+ * @param identifier - Forgery-resistant string identifying the actor
+ *   (e.g. `${userId}:${orgId}`). For unauthenticated contexts the caller
+ *   must supply an IP — note x-forwarded-for can be spoofed if not behind a
+ *   trusted proxy.
+ * @param key - Logical bucket name prefixed onto the Redis key (e.g. "mcp:create-preview").
+ */
+export async function slidingWindowRateLimit(
+  identifier: string,
+  key: string,
+  limit: number,
+  windowMs: number
+): Promise<{ limited: false } | { limited: true; retryAfterSeconds: number }> {
+  const redisKey = `rl:${key}:${identifier}`;
+  const now = Date.now();
+  const ttlSeconds = Math.ceil(windowMs / 1000);
+
+  let count: number;
+  try {
+    const result = await redis.eval(
+      SLIDING_WINDOW_SCRIPT,
+      1,
+      redisKey,
+      String(now),
+      String(windowMs),
+      String(limit),
+      String(ttlSeconds)
+    );
+    count = Number(result);
+  } catch (err) {
+    // Redis unavailable — fail open so a Redis outage doesn't block callers
+    log.error("Redis error, failing open:", err);
+    return { limited: false };
+  }
+
+  if (count > limit) {
+    // Accurate retry-after: time until the oldest request drops out of the window.
+    let retryAfterSeconds = ttlSeconds;
+    try {
+      const oldest = await redis.zrange(redisKey, 0, 0, "WITHSCORES");
+      if (oldest.length >= 2) {
+        const oldestMs = Number(oldest[1]);
+        const msUntilClear = oldestMs + windowMs - now;
+        if (msUntilClear > 0) retryAfterSeconds = Math.ceil(msUntilClear / 1000);
+      }
+    } catch {
+      // Best-effort
+    }
+    return { limited: true, retryAfterSeconds };
+  }
+
+  return { limited: false };
+}
+
+/**
+ * Redis-backed sliding window rate limiter for Next.js route handlers.
  * Returns null if the request is allowed, or a 429 NextResponse if rate-limited.
  *
  * Falls back to allowing the request if Redis is unavailable, so a Redis outage
@@ -58,51 +120,19 @@ export async function rateLimit(
     request.headers.get("x-real-ip") ??
     "unknown";
 
-  const key = `rl:${opts.key ? `${opts.key}:` : ""}${rateLimitId}`;
-  const now = Date.now();
-  const ttlSeconds = Math.ceil(opts.windowMs / 1000);
+  const result = await slidingWindowRateLimit(
+    rateLimitId,
+    opts.key ?? "default",
+    opts.limit,
+    opts.windowMs
+  );
 
-  let count: number;
-  try {
-    const result = await redis.eval(
-      SLIDING_WINDOW_SCRIPT,
-      1,
-      key,
-      String(now),
-      String(opts.windowMs),
-      String(opts.limit),
-      String(ttlSeconds)
-    );
-    count = Number(result);
-  } catch (err) {
-    // Redis unavailable — fail open so a Redis outage doesn't block the API
-    log.error("Redis error, failing open:", err);
-    return null;
-  }
-
-  if (count > opts.limit) {
-    // Accurate retry-after: time until the oldest request drops out of the window.
-    // pttl reflects key-expiry (which resets on every allowed write) and is always
-    // the full window size, not the actual wait. Instead, fetch the oldest entry's
-    // score (its insertion timestamp in ms) and compute when it will age out.
-    let retryAfter = Math.ceil(opts.windowMs / 1000);
-    try {
-      const oldest = await redis.zrange(key, 0, 0, "WITHSCORES");
-      // oldest = [member, score] when entries exist
-      if (oldest.length >= 2) {
-        const oldestMs = Number(oldest[1]);
-        const msUntilClear = oldestMs + opts.windowMs - now;
-        if (msUntilClear > 0) retryAfter = Math.ceil(msUntilClear / 1000);
-      }
-    } catch {
-      // Best-effort
-    }
-
+  if (result.limited) {
     return NextResponse.json(
       { error: "Too many requests" },
       {
         status: 429,
-        headers: { "Retry-After": String(retryAfter) },
+        headers: { "Retry-After": String(result.retryAfterSeconds) },
       }
     );
   }

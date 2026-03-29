@@ -4,7 +4,13 @@ import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { createPreview } from "@/lib/docker/preview";
+import { slidingWindowRateLimit } from "@/lib/api/rate-limit";
 import type { McpAuthContext } from "../auth";
+
+// 5 preview deployments per 10 minutes per user/org pair.
+// Each call spins up Docker containers — this caps resource exhaustion.
+const PREVIEW_RATE_LIMIT = 5;
+const PREVIEW_RATE_WINDOW_MS = 10 * 60 * 1000;
 
 export function registerCreatePreview(
   server: McpServer,
@@ -27,8 +33,12 @@ export function registerCreatePreview(
         .describe("Pull request number"),
       pr_url: z
         .string()
+        .url()
+        .refine((url) => url.startsWith("https://"), {
+          message: "pr_url must use HTTPS",
+        })
         .optional()
-        .describe("Full URL of the pull request (optional)"),
+        .describe("Full HTTPS URL of the pull request (optional)"),
       ttl_days: z
         .number()
         .int()
@@ -38,6 +48,28 @@ export function registerCreatePreview(
         .describe("Days before auto-cleanup (default 7)"),
     },
     async ({ repo, branch, pr_number, pr_url, ttl_days }) => {
+      // Rate limit: cap preview deployments to prevent resource exhaustion.
+      // Keyed per user+org so one bad actor can't starve the whole organization.
+      const rl = await slidingWindowRateLimit(
+        `${context.userId}:${context.organizationId}`,
+        "mcp:create-preview",
+        PREVIEW_RATE_LIMIT,
+        PREVIEW_RATE_WINDOW_MS
+      );
+      if (rl.limited) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                error: `Rate limit exceeded. Try again in ${rl.retryAfterSeconds}s.`,
+              }),
+            },
+          ],
+          isError: true,
+        };
+      }
+
       // Verify this org has an app tracking the given repo
       const gitUrl = `https://github.com/${repo}.git`;
 

@@ -5,6 +5,21 @@ import { deployments, apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import type { McpAuthContext } from "../auth";
 
+/**
+ * Scrub env var values from build log output.
+ *
+ * Nixpacks and Railpack may echo variable assignments during the build
+ * (e.g. `SECRET_KEY=abc123` or `Setting DATABASE_URL=postgres://...`).
+ * This replaces the value portion of any ALL_CAPS=value token so secrets
+ * don't leak to any org member with MCP access.
+ *
+ * Pattern: word boundary, 3+ uppercase/underscore name, `=`, non-whitespace value.
+ * Intentionally broad — better to over-redact than expose credentials.
+ */
+function scrubEnvValues(log: string): string {
+  return log.replace(/\b([A-Z_][A-Z0-9_]{2,})=([^\s"'\n]+)/g, "$1=[redacted]");
+}
+
 export function registerGetDeployLogs(
   server: McpServer,
   context: McpAuthContext
@@ -73,7 +88,7 @@ export function registerGetDeployLogs(
                   appId: result.appId,
                   appName: result.appName,
                 },
-                log: result.log ?? "(no log available)",
+                log: result.log ? scrubEnvValues(result.log) : "(no log available)",
               },
               null,
               2
