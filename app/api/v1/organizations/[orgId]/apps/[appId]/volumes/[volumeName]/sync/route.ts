@@ -110,7 +110,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         const info = await inspectContainer(container.id);
         for (const mount of info.mounts) {
           if (mount.destination === volume.mountPath && mount.type === "volume") {
-            dockerVolumeName = mount.source.split("/").pop() || mount.source;
+            dockerVolumeName = mount.name || mount.source;
             break;
           }
         }

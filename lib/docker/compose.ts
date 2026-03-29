@@ -824,6 +824,19 @@ type ValidateOptions = {
 };
 
 /**
+ * Returns true if a compose volume entry is a host bind mount.
+ * A bare absolute path like "/data" (no colon) is a Docker anonymous volume —
+ * it must not be treated as a bind mount.
+ */
+function isBindMount(vol: string): boolean {
+  return (
+    vol.startsWith("./") ||
+    vol.startsWith("../") ||
+    (vol.startsWith("/") && vol.includes(":"))
+  );
+}
+
+/**
  * Basic validation of a ComposeFile structure.
  */
 export function validateCompose(compose: ComposeFile, opts?: ValidateOptions): {
@@ -867,18 +880,12 @@ export function validateCompose(compose: ComposeFile, opts?: ValidateOptions): {
 
     if (svc.volumes) {
       for (const vol of svc.volumes) {
-        // A bind mount has a path source before the colon. A bare path like "/data"
-        // (no colon) is a Docker anonymous volume and must not be treated as a bind mount.
-        const isBindMount =
-          vol.startsWith("./") ||
-          vol.startsWith("../") ||
-          (vol.startsWith("/") && vol.includes(":"));
-        if (isBindMount && !opts?.allowBindMounts) {
+        if (isBindMount(vol) && !opts?.allowBindMounts) {
           errors.push(
             `Service "${name}" uses host bind mount "${vol}" — enable the Bind Mounts feature flag to allow this`,
           );
         }
-        if (isBindMount && opts?.allowBindMounts) {
+        if (isBindMount(vol) && opts?.allowBindMounts) {
           const mountSource = resolve(vol.split(":")[0]);
           if (DENIED_MOUNT_PATHS.some((p) => mountSource === p || mountSource.startsWith(p + "/"))) {
             errors.push(
@@ -982,13 +989,7 @@ export function sanitizeCompose(compose: ComposeFile, opts?: { allowBindMounts?:
     if (svc.volumes) {
       const safe: string[] = [];
       for (const v of svc.volumes) {
-        // A bind mount has a path source before the colon. A bare path like "/data"
-        // (no colon) is a Docker anonymous volume and must not be treated as a bind mount.
-        const isBindMount =
-          v.startsWith("./") ||
-          v.startsWith("../") ||
-          (v.startsWith("/") && v.includes(":"));
-        if (isBindMount) {
+        if (isBindMount(v)) {
           if (opts?.allowBindMounts) {
             // Bind mounts allowed — still enforce the deny list unconditionally.
             // Throw rather than silently drop: the user explicitly configured this

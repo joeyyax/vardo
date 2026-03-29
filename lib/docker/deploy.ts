@@ -965,11 +965,9 @@ export async function runDeployment(
       for (const c of runningContainers) {
         const info = await inspectContainer(c.id);
         for (const mount of info.mounts) {
-          if (mount.type === "volume" && !seen.has(mount.destination)) {
+          if (mount.type === "volume" && !seen.has(mount.destination) && mount.name) {
             seen.add(mount.destination);
-            const parts = mount.source.split("/");
-            const rawName = parts[parts.length - 1];
-            const name = rawName.replace(/^[^_]*_/, "");
+            const name = mount.name.replace(/^[^_]*_/, "");
             detectedVolumes.push({ name, mountPath: mount.destination });
           }
         }
@@ -1032,8 +1030,8 @@ export async function runDeployment(
         for (const c of runningContainers) {
           const info = await inspectContainer(c.id);
           for (const mount of info.mounts) {
-            if (mount.type === "volume") {
-              const volName = mount.source.split("/").pop() || "";
+            if (mount.type === "volume" && mount.name) {
+              const volName = mount.name;
               if (/^[a-zA-Z0-9._-]+$/.test(volName)) {
                 const displayName = volName.replace(/^[^_]*_/, "");
                 volEntries.push({ volName, displayName });

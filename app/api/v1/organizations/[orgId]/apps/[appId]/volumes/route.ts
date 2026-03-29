@@ -74,7 +74,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         try {
           const info = await inspectContainer(container.id);
           for (const mount of info.mounts) {
-            const name = mount.type === "volume" ? mount.source.split("/").pop() || mount.source : mount.source;
+            const name = mount.type === "volume" ? mount.name || mount.source : mount.source;
             const saved = savedByName.get(name);
             dockerVolumes.push({
               id: saved?.id ?? null,
@@ -100,16 +100,14 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         .map((vol, idx) => ({ vol, idx }))
         .filter(({ vol }) => {
           if (vol.type !== "named") return false;
-          const volName = vol.source.split("/").pop() || "";
-          return /^[a-zA-Z0-9._-]+$/.test(volName);
+          return /^[a-zA-Z0-9._-]+$/.test(vol.name);
         });
 
       if (measurable.length > 0) {
         const results = await Promise.allSettled(
           measurable.map(({ vol }) => {
-            const volName = vol.source.split("/").pop() || "";
             return execAsync(
-              `docker run --rm -v "${volName}:/data" alpine du -sb /data`,
+              `docker run --rm -v "${vol.name}:/data" alpine du -sb /data`,
               { timeout: 5000 }
             );
           })

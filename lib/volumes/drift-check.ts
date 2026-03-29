@@ -66,7 +66,7 @@ export async function runPostDeployDriftCheck(opts: DriftCheckOpts): Promise<voi
         const info = await inspectContainer(container.id);
         for (const mount of info.mounts) {
           if (mount.type === "volume" && !dockerVolumes.has(mount.destination)) {
-            const volName = mount.source.split("/").pop() || mount.source;
+            const volName = mount.name || mount.source;
             dockerVolumes.set(mount.destination, volName);
           }
         }
