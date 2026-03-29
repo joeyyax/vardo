@@ -150,6 +150,7 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
           appUpdates.rootDirectory = configSnapshot.rootDirectory;
           appUpdates.restartPolicy = configSnapshot.restartPolicy;
           appUpdates.autoTraefikLabels = configSnapshot.autoTraefikLabels;
+          appUpdates.backendProtocol = configSnapshot.backendProtocol ?? null;
         }
 
         if (includeEnvVars && targetDeployment.envSnapshot) {
@@ -205,6 +206,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         rootDirectory: true,
         restartPolicy: true,
         autoTraefikLabels: true,
+        backendProtocol: true,
       },
     });
 
@@ -249,6 +251,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         { key: "rootDirectory", label: "Root Directory" },
         { key: "restartPolicy", label: "Restart Policy" },
         { key: "autoTraefikLabels", label: "Auto Traefik Labels" },
+        { key: "backendProtocol", label: "Backend Protocol" },
       ];
 
       for (const { key, label } of fields) {
