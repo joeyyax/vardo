@@ -226,7 +226,7 @@ export async function getContainerDetail(containerId: string): Promise<Container
     state: data.state.status,
     ports: data.ports,
     domain: parseTraefikDomain(data.labels),
-    containerPort: parseTraefikPort(data.labels),
+    containerPort: parseTraefikPort(data.labels) ?? data.exposedPorts[0] ?? null,
     mounts: data.mounts,
     composeProject: data.labels["com.docker.compose.project"] ?? null,
     networkMode,
