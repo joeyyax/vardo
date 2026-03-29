@@ -1,1 +1,1 @@
-ALTER TABLE "organization" ADD COLUMN "trusted" boolean DEFAULT true NOT NULL;
+ALTER TABLE "organization" ADD COLUMN "trusted" boolean DEFAULT false NOT NULL;

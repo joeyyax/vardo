@@ -202,7 +202,7 @@ export async function runDeployment(
       where: eq(organizations.id, opts.organizationId),
       columns: { trusted: true },
     });
-    const orgTrusted = org?.trusted ?? true;
+    const orgTrusted = org?.trusted ?? false;
 
     // Resolve per-project bind mount permission
     let projectAllowBindMounts = false;

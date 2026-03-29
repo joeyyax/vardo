@@ -20,7 +20,7 @@ export const organizations = pgTable("organization", {
   logo: text("logo"),
   baseDomain: text("base_domain"),
   sslEnabled: boolean("ssl_enabled").default(true),
-  trusted: boolean("trusted").default(true).notNull(),
+  trusted: boolean("trusted").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
