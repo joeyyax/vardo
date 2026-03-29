@@ -77,6 +77,7 @@ import type { AppDeployPanelHandle } from "./app-deploy-panel";
 import { AppNetworking } from "./app-networking";
 import { AppConnect } from "./app-connect";
 import { AppSettingsDialog } from "./app-settings-dialog";
+import { AppDebug } from "./app-debug";
 
 import type { AppDetailProps, Environment } from "./types";
 
@@ -855,6 +856,9 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
               Backups
             </TabsTrigger>
           )}
+          <TabsTrigger value="debug">
+            Debug
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="deployments">
@@ -955,6 +959,10 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
             <AppBackupHistory orgId={orgId} appId={app.id} />
           </TabsContent>
         )}
+
+        <TabsContent value="debug">
+          <AppDebug orgId={orgId} appId={app.id} />
+        </TabsContent>
 
       </Tabs>
 
