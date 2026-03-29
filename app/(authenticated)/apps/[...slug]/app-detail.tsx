@@ -856,9 +856,11 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
               Backups
             </TabsTrigger>
           )}
-          <TabsTrigger value="debug">
-            Debug
-          </TabsTrigger>
+          {isAdmin(userRole) && (
+            <TabsTrigger value="debug">
+              Debug
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="deployments">
@@ -960,9 +962,11 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           </TabsContent>
         )}
 
-        <TabsContent value="debug">
-          <AppDebug orgId={orgId} appId={app.id} />
-        </TabsContent>
+        {isAdmin(userRole) && (
+          <TabsContent value="debug">
+            <AppDebug orgId={orgId} appId={app.id} />
+          </TabsContent>
+        )}
 
       </Tabs>
 

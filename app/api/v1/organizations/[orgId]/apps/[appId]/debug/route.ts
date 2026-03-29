@@ -4,6 +4,8 @@ import { db } from "@/lib/db";
 import { apps, volumes } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { isAdmin } from "@/lib/auth/permissions";
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import {
   generateComposeForImage,
   parseCompose,
@@ -271,11 +273,14 @@ function buildTraefikConfigYaml(
 }
 
 // GET /api/v1/organizations/[orgId]/apps/[appId]/debug
-export async function GET(_request: NextRequest, { params }: RouteParams) {
+async function handler(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!isAdmin(org.membership.role)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     const app = await db.query.apps.findFirst({
       where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
@@ -345,7 +350,16 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       );
       containers = inspectResults
         .filter((r): r is PromiseFulfilledResult<unknown> => r.status === "fulfilled")
-        .map((r) => r.value);
+        .map((r) => {
+          const c = r.value as Record<string, unknown>;
+          // Strip Env — env vars are encrypted at rest and must not be exposed via this endpoint
+          if (c.Config && typeof c.Config === "object") {
+            const config = { ...(c.Config as Record<string, unknown>) };
+            delete config.Env;
+            return { ...c, Config: config };
+          }
+          return c;
+        });
     } catch {
       // Docker not available — return empty
     }
@@ -355,3 +369,5 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error loading debug info");
   }
 }
+
+export const GET = withRateLimit(handler, { tier: "admin", key: "app-debug" });
