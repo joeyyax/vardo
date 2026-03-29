@@ -9,7 +9,12 @@ import { DiscoverView } from "./discover-view";
 
 export const metadata: Metadata = { title: "Discover Containers" };
 
-export default async function DiscoverPage() {
+export default async function DiscoverPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ project?: string }>;
+}) {
+  const { project: defaultProjectId } = await searchParams;
   const orgData = await getCurrentOrg();
 
   if (!orgData) {
@@ -34,7 +39,7 @@ export default async function DiscoverPage() {
         and manage future deploys from here.
       </p>
 
-      <DiscoverView orgId={orgId} projects={projectList} />
+      <DiscoverView orgId={orgId} projects={projectList} defaultProjectId={defaultProjectId} />
     </div>
   );
 }

@@ -13,9 +13,10 @@ type Project = { id: string; name: string; displayName: string };
 type DiscoverViewProps = {
   orgId: string;
   projects: Project[];
+  defaultProjectId?: string;
 };
 
-export function DiscoverView({ orgId, projects }: DiscoverViewProps) {
+export function DiscoverView({ orgId, projects, defaultProjectId }: DiscoverViewProps) {
   const [data, setData] = useState<DiscoveryResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -128,6 +129,7 @@ export function DiscoverView({ orgId, projects }: DiscoverViewProps) {
         projects={projects}
         open={importOpen}
         onOpenChange={setImportOpen}
+        defaultProjectId={defaultProjectId}
       />
     </>
   );
