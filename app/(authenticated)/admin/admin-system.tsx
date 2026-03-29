@@ -88,15 +88,20 @@ export function AdminSystem() {
                   {svc.latencyMs !== undefined && svc.status === "healthy" && (
                     <span className="text-xs tabular-nums text-muted-foreground">{svc.latencyMs}ms</span>
                   )}
-                  <span className={`text-xs font-medium ${
-                    svc.status === "healthy" ? "text-status-success" :
-                    svc.status === "unhealthy" ? "text-status-error" :
-                    "text-muted-foreground"
-                  }`}>
-                    {svc.status === "healthy" ? "Healthy" :
-                     svc.status === "unhealthy" ? "Unhealthy" :
-                     "Not configured"}
-                  </span>
+                  <div className="text-right">
+                    <span className={`text-xs font-medium ${
+                      svc.status === "healthy" ? "text-status-success" :
+                      svc.status === "unhealthy" ? "text-status-error" :
+                      "text-muted-foreground"
+                    }`}>
+                      {svc.status === "healthy" ? "Healthy" :
+                       svc.status === "unhealthy" ? "Unhealthy" :
+                       "Not configured"}
+                    </span>
+                    {svc.status === "unhealthy" && svc.error && (
+                      <p className="text-xs text-muted-foreground mt-0.5">{svc.error}</p>
+                    )}
+                  </div>
                 </div>
               </div>
             ))
