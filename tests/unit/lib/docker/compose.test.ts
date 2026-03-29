@@ -10,6 +10,7 @@ import {
   injectResourceLimits,
   generateComposeFromContainer,
   isAnonymousVolume,
+  stripTraefikLabels,
   type ComposeFile,
   type ContainerConfig,
 } from "@/lib/docker/compose";
@@ -1194,31 +1195,44 @@ describe("generateComposeFromContainer", () => {
     expect(compose.services.myapp.command).toEqual(["start", "--verbose"]);
   });
 
-  it("strips internal labels but keeps user-defined labels", () => {
+  it("strips OCI and Docker metadata labels, keeps only traefik. and vardo. prefixed", () => {
     const compose = generateComposeFromContainer("myapp", makeContainerConfig({
       labels: {
+        // OCI image metadata — should be stripped
+        "maintainer": "OpenSpeedTest.com <support@OpenSpeedTest.com>",
+        "org.opencontainers.image.created": "2025-01-06T01:05:14.577Z",
+        "org.opencontainers.image.description": "Unprivileged NGINX Dockerfiles",
+        // Docker Compose internals — should be stripped
         "com.docker.compose.project": "myproject",
-        "traefik.enable": "true",
-        "vardo.project": "myapp",
+        // Other arbitrary labels — should be stripped
         "host.project": "myapp",
         "my.custom.label": "value",
         "app.version": "1.2.3",
+        // Allowed prefixes — should be kept
+        "traefik.enable": "true",
+        "traefik.http.routers.foo.rule": "Host(`example.com`)",
+        "vardo.custom": "meta",
       },
     }));
     const labels = compose.services.myapp.labels ?? {};
+    expect(labels["maintainer"]).toBeUndefined();
+    expect(labels["org.opencontainers.image.created"]).toBeUndefined();
+    expect(labels["org.opencontainers.image.description"]).toBeUndefined();
     expect(labels["com.docker.compose.project"]).toBeUndefined();
-    expect(labels["traefik.enable"]).toBeUndefined();
-    expect(labels["vardo.project"]).toBeUndefined();
     expect(labels["host.project"]).toBeUndefined();
-    expect(labels["my.custom.label"]).toBe("value");
-    expect(labels["app.version"]).toBe("1.2.3");
+    expect(labels["my.custom.label"]).toBeUndefined();
+    expect(labels["app.version"]).toBeUndefined();
+    expect(labels["traefik.enable"]).toBe("true");
+    expect(labels["traefik.http.routers.foo.rule"]).toBe("Host(`example.com`)");
+    expect(labels["vardo.custom"]).toBe("meta");
   });
 
-  it("omits labels block when all labels are internal", () => {
+  it("omits labels block when no allowed labels are present", () => {
     const compose = generateComposeFromContainer("myapp", makeContainerConfig({
       labels: {
         "com.docker.compose.project": "myproject",
-        "vardo.managed": "true",
+        "org.opencontainers.image.title": "My App",
+        "maintainer": "someone",
       },
     }));
     expect(compose.services.myapp.labels).toBeUndefined();
@@ -1323,5 +1337,73 @@ describe("isAnonymousVolume", () => {
   it("returns false for a 64-char string with uppercase letters (not a Docker hash)", () => {
     const upperHash = "A".repeat(64);
     expect(isAnonymousVolume(upperHash)).toBe(false);
+  });
+});
+
+describe("stripTraefikLabels", () => {
+  it("strips all traefik.* labels from a single service", () => {
+    const compose: ComposeFile = {
+      services: {
+        app: {
+          name: "app",
+          image: "nginx:latest",
+          labels: {
+            "traefik.enable": "true",
+            "traefik.http.routers.app.rule": "Host(`example.com`)",
+            "vardo.managed": "true",
+          },
+        },
+      },
+    };
+    const result = stripTraefikLabels(compose);
+    expect(result.services.app.labels).toEqual({ "vardo.managed": "true" });
+  });
+
+  it("leaves services with no labels unchanged", () => {
+    const compose: ComposeFile = {
+      services: {
+        app: {
+          name: "app",
+          image: "nginx:latest",
+        },
+      },
+    };
+    const result = stripTraefikLabels(compose);
+    expect(result.services.app.labels).toBeUndefined();
+  });
+
+  it("strips traefik.* labels from each service independently in a multi-service compose", () => {
+    const compose: ComposeFile = {
+      services: {
+        web: {
+          name: "web",
+          image: "nginx:latest",
+          labels: {
+            "traefik.enable": "true",
+            "traefik.http.routers.web.rule": "Host(`example.com`)",
+            "vardo.managed": "true",
+          },
+        },
+        db: {
+          name: "db",
+          image: "postgres:15",
+          labels: {
+            "vardo.managed": "true",
+          },
+        },
+        cache: {
+          name: "cache",
+          image: "redis:7",
+          labels: {
+            "traefik.enable": "false",
+            "com.example.custom": "keep",
+          },
+        },
+      },
+    };
+    const result = stripTraefikLabels(compose);
+    expect(result.services.web.labels).toEqual({ "vardo.managed": "true" });
+    expect(result.services.db.labels).toEqual({ "vardo.managed": "true" });
+    expect(result.services.cache.labels).toEqual({ "com.example.custom": "keep" });
   });
 });
