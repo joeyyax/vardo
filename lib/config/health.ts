@@ -12,6 +12,7 @@ export type ServiceStatus = {
   description: string;
   status: "healthy" | "unhealthy" | "unconfigured";
   latencyMs?: number;
+  error?: string;
 };
 
 export type ResourceStatus = {
@@ -73,8 +74,9 @@ async function checkService(
   try {
     await check();
     return { name, description, status: "healthy", latencyMs: Date.now() - start };
-  } catch {
-    return { name, description, status: "unhealthy", latencyMs: Date.now() - start };
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    return { name, description, status: "unhealthy", latencyMs: Date.now() - start, error };
   }
 }
 
