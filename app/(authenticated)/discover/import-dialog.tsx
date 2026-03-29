@@ -140,13 +140,18 @@ export function ImportDialog({
   async function handleSubmit() {
     if (!container) return;
 
+    const parsedManualPort = manualPort ? parseInt(manualPort, 10) : undefined;
+
+    if (parsedManualPort !== undefined && (isNaN(parsedManualPort) || parsedManualPort < 1 || parsedManualPort > 65535)) {
+      toast.error("Port must be between 1 and 65535");
+      return;
+    }
+
     setSubmitting(true);
     try {
       const selectedMountDestinations = (detail?.mounts ?? [])
         .filter((m) => mountToggles[m.destination])
         .map((m) => m.destination);
-
-      const parsedManualPort = manualPort ? parseInt(manualPort, 10) : undefined;
 
       const body = {
         displayName,
