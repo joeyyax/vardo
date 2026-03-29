@@ -260,7 +260,7 @@ export function CommandPalette({ orgId }: CommandPaletteProps) {
               </CommandItem>
               <CommandItem
                 value="Admin System Infrastructure Health"
-                onSelect={() => runCommand(() => router.push("/admin/system"))}
+                onSelect={() => runCommand(() => router.push("/admin"))}
                 className="gap-2"
               >
                 <Server className="size-4" />

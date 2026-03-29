@@ -421,7 +421,6 @@ Base path for all file references: `/Users/joeyyax/Projects/Sites/joeyyax/host/`
 
 | Tab | Path |
 |-----|------|
-| Overview | `/admin/settings/overview` |
 | General | `/admin/settings/general` |
 | Email | `/admin/settings/email` |
 | Authentication | `/admin/settings/authentication` |
