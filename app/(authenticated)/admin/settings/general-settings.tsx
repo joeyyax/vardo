@@ -8,6 +8,7 @@ import { Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useSystemSetting } from "./use-system-setting";
 import { DEFAULT_APP_NAME } from "@/lib/app-name";
+import { formatBytes, formatUptime } from "@/lib/metrics/format";
 
 type RuntimeInfo = {
   nodeVersion: string;
@@ -15,21 +16,6 @@ type RuntimeInfo = {
   uptime: number;
   memoryUsage: number;
 };
-
-function formatUptime(seconds: number): string {
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  if (days > 0) return `${days}d ${hours}h ${minutes}m`;
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  return `${minutes}m`;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / 1024).toFixed(1)} KB`;
-}
 
 export function GeneralSettings() {
   const [instanceName, setInstanceName] = useState(DEFAULT_APP_NAME);
