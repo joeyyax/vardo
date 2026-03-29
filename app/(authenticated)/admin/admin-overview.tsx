@@ -115,12 +115,17 @@ export function AdminOverview() {
         {services ? (
           services.map((svc) => (
             <div key={svc.name} className="flex items-center gap-1.5">
-              <span className={`size-1.5 rounded-full ${
+              <span className={`size-1.5 rounded-full shrink-0 ${
                 svc.status === "healthy" ? "bg-status-success" :
                 svc.status === "unhealthy" ? "bg-status-error" :
                 "bg-status-neutral"
               }`} />
-              <span className="text-xs text-muted-foreground">{svc.name}</span>
+              <div>
+                <span className="text-xs text-muted-foreground">{svc.name}</span>
+                {svc.status === "unhealthy" && svc.error && (
+                  <p className="text-xs text-muted-foreground/60">{svc.error}</p>
+                )}
+              </div>
             </div>
           ))
         ) : (
