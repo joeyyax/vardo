@@ -14,7 +14,7 @@ export async function GET() {
 
     const [allOrgs, allApps, memberCounts, deploymentCounts, metrics] = await Promise.all([
       db.query.organizations.findMany({
-        columns: { id: true, name: true, slug: true },
+        columns: { id: true, name: true, slug: true, trusted: true },
       }),
       db.query.apps.findMany({
         orderBy: [asc(apps.sortOrder), desc(apps.createdAt)],
@@ -65,6 +65,7 @@ export async function GET() {
         id: org.id,
         name: org.name,
         slug: org.slug,
+        trusted: org.trusted,
         memberCount: memberCountMap.get(org.id) ?? 0,
         appCount: orgApps.length,
         activeApps: orgApps.filter((a) => a.status === "active").length,

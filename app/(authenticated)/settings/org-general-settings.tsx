@@ -4,7 +4,6 @@ import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { toast } from "@/lib/messenger";
 import { Loader2 } from "lucide-react";
@@ -12,15 +11,12 @@ import { Loader2 } from "lucide-react";
 interface OrgGeneralSettingsProps {
   orgId: string;
   orgName: string;
-  trusted: boolean;
 }
 
-export function OrgGeneralSettings({ orgId, orgName, trusted: initialTrusted }: OrgGeneralSettingsProps) {
+export function OrgGeneralSettings({ orgId, orgName }: OrgGeneralSettingsProps) {
   const [name, setName] = useState(orgName);
   const [savedName, setSavedName] = useState(orgName);
   const [saving, setSaving] = useState(false);
-  const [trusted, setTrusted] = useState(initialTrusted);
-  const [savingTrusted, setSavingTrusted] = useState(false);
 
   const isDirty = name.trim() !== savedName;
 
@@ -49,30 +45,6 @@ export function OrgGeneralSettings({ orgId, orgName, trusted: initialTrusted }: 
       toast.error(err instanceof Error ? err.message : "Failed to save");
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function handleTrustedChange(value: boolean) {
-    setTrusted(value);
-    setSavingTrusted(true);
-    try {
-      const res = await fetch(`/api/v1/organizations/${orgId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ trusted: value }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error ?? "Failed to save");
-      }
-
-      toast.success(value ? "Trusted environment enabled" : "Trusted environment disabled");
-    } catch (err) {
-      setTrusted(!value);
-      toast.error(err instanceof Error ? err.message : "Failed to save");
-    } finally {
-      setSavingTrusted(false);
     }
   }
 
@@ -106,28 +78,6 @@ export function OrgGeneralSettings({ orgId, orgName, trusted: initialTrusted }: 
               Save changes
             </Button>
           </form>
-        </CardContent>
-      </Card>
-
-      <Card className="squircle rounded-lg">
-        <CardHeader>
-          <CardTitle>Trusted environment</CardTitle>
-          <CardDescription>
-            When enabled, all mount restrictions are removed. Bind mounts, docker socket, /dev, and other host paths are allowed as configured. Recommended for self-hosted installs. Disable for multi-tenant or shared environments.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-3">
-            <Switch
-              id="org-trusted"
-              checked={trusted}
-              onCheckedChange={handleTrustedChange}
-              disabled={savingTrusted}
-            />
-            <Label htmlFor="org-trusted" className="cursor-pointer">
-              {trusted ? "Enabled — no mount restrictions" : "Disabled — standard sanitization applies"}
-            </Label>
-          </div>
         </CardContent>
       </Card>
     </div>

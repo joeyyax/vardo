@@ -41,7 +41,6 @@ export default async function OrgSettingsTabPage({
         <OrgGeneralSettings
           orgId={orgId}
           orgName={orgData.organization.name}
-          trusted={orgData.organization.trusted ?? false}
         />
       );
 
