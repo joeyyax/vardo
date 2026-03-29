@@ -5,7 +5,7 @@ import { apps, volumes } from "@/lib/db/schema";
 import { verifyAppAccess } from "@/lib/api/verify-access";
 import { eq, and } from "drizzle-orm";
 import { computeVolumeDiff } from "@/lib/volumes/diff";
-import { listContainers, inspectContainer } from "@/lib/docker/client";
+import { listContainers, inspectContainer, resolveVolumeName } from "@/lib/docker/client";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string; volumeName: string }>;
@@ -69,7 +69,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         const info = await inspectContainer(container.id);
         for (const mount of info.mounts) {
           if (mount.destination === volume.mountPath && mount.type === "volume") {
-            dockerVolumeName = mount.source.split("/").pop() || mount.source;
+            dockerVolumeName = resolveVolumeName(mount);
             break;
           }
         }
