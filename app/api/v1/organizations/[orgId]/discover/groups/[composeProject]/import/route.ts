@@ -3,19 +3,27 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { db } from "@/lib/db";
-import { apps, deployments, environments, projects } from "@/lib/db/schema";
+import { apps, domains, environments, volumes } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { discoverContainers, getContainerDetail, isLocalImage } from "@/lib/docker/discover";
 import { slugify } from "@/lib/ui/slugify";
-import { generateComposeFromContainer, composeToYaml } from "@/lib/docker/compose";
+import {
+  generateComposeFromContainer,
+  injectTraefikLabels,
+  composeToYaml,
+} from "@/lib/docker/compose";
 import type { ComposeFile } from "@/lib/docker/compose";
+import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
 import { recordActivity } from "@/lib/activity";
-import { stopContainer, startContainer, removeContainer } from "@/lib/docker/client";
 import { createDeployment } from "@/lib/docker/deploy";
-import { requestDeploy } from "@/lib/docker/deploy-cancel";
-import { publishEvent, appChannel } from "@/lib/events";
+import {
+  resolveProjectForImport,
+  getPgErrorCode,
+  runAsyncContainerMigration,
+  parseContainerEnvVars,
+} from "@/lib/docker/import";
 
 type RouteParams = {
   params: Promise<{ orgId: string; composeProject: string }>;
@@ -52,6 +60,20 @@ async function handler(request: NextRequest, { params }: RouteParams) {
 
     const data = parsed.data;
 
+    // Guard against re-importing a group that already has an app with this slug.
+    // The unique constraint catches this at DB level too, but an explicit check
+    // here gives a better error and avoids unnecessary container inspection work.
+    const existingApp = await db.query.apps.findFirst({
+      where: and(eq(apps.organizationId, orgId), eq(apps.name, data.name)),
+      columns: { id: true },
+    });
+    if (existingApp) {
+      return NextResponse.json(
+        { error: "An app with this slug already exists in this organization", appId: existingApp.id },
+        { status: 409 }
+      );
+    }
+
     // Discover all unmanaged containers and find those in this compose group
     const discovery = await discoverContainers();
     const group = discovery.groups.find((g) => g.composeProject === composeProject);
@@ -75,14 +97,43 @@ async function handler(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    const sslConfig = await getSslConfig();
+    const certResolver = getPrimaryIssuer(sslConfig);
+
     // Build a multi-service compose file by merging individual container configs.
     // Use the com.docker.compose.service label as the service name, falling back
     // to the container name slugified.
+    //
+    // Domain detection: each service may already carry Traefik routing labels
+    // (preserved via ALLOWED_LABEL_PREFIXES in generateComposeFromContainer).
+    // For services that have a detectable domain + container port but no existing
+    // Traefik labels, we inject them so Vardo-managed deploys keep the routing.
+    // autoTraefikLabels is set to false on the app record because the Traefik
+    // config is captured in the compose content rather than generated at deploy time.
     const merged: ComposeFile = { services: {} };
+
+    // Collect per-service domain info for DB records (created after insert).
+    type ServiceDomain = { serviceName: string; domain: string; port: number };
+    const serviceDomains: ServiceDomain[] = [];
+
+    // Collect all mounts across services for volume DB records.
+    type ServiceMount = { appId: string; mount: { name: string; source: string; destination: string; type: string } };
+    const allMounts: Omit<ServiceMount, "appId">["mount"][] = [];
+
+    const warnings: string[] = [];
 
     for (const detail of validDetails) {
       const serviceName =
         (detail.labels["com.docker.compose.service"] ?? slugify(detail.name)) || slugify(detail.name);
+
+      // Parse env vars from the running container. Values containing ${...} are
+      // skipped to avoid Docker Compose variable substitution breaking the file.
+      const { vars: envVars, skippedKeys } = parseContainerEnvVars(detail.env);
+      if (skippedKeys.length > 0) {
+        warnings.push(
+          `Service "${serviceName}": ${skippedKeys.length} env var(s) skipped (values contain \${...} interpolation syntax): ${skippedKeys.join(", ")}`
+        );
+      }
 
       const singleFile = generateComposeFromContainer(serviceName, {
         image: detail.image,
@@ -109,12 +160,49 @@ async function handler(request: NextRequest, { params }: RouteParams) {
         entrypoint: detail.entrypoint,
         command: detail.command,
         labels: detail.labels,
+        // Env vars are inlined in the environment: block. Group compose imports
+        // use the environment: key directly rather than an env_file because each
+        // service has its own vars and multi-service env file routing is not yet
+        // supported. hasEnvVars controls the env_file directive only.
         hasEnvVars: false,
       });
 
+      // Inline env vars for this service directly in the compose.
+      const composeSvc = singleFile.services[serviceName];
+      if (composeSvc && Object.keys(envVars).length > 0) {
+        composeSvc.environment = envVars;
+      }
+
+      // Inject Traefik labels for services that have a detectable domain but no
+      // existing Traefik router labels. Services that already carry traefik.*
+      // labels (preserved from the original container) keep their own config.
+      const hasExistingTraefikRouter = Object.keys(detail.labels).some(
+        (k) => /^traefik\.http\.routers\..+\.rule$/.test(k)
+      );
+      const containerPort =
+        detail.containerPort ??
+        detail.ports.find((p) => p.internal)?.internal ??
+        null;
+
+      if (detail.domain && containerPort && !hasExistingTraefikRouter) {
+        const injected = injectTraefikLabels(singleFile, {
+          projectName: `${data.name}-${serviceName}`,
+          domain: detail.domain,
+          containerPort,
+          serviceName,
+          certResolver,
+        });
+        // Merge labels back so the rest of the loop picks them up
+        singleFile.services[serviceName] = injected.services[serviceName];
+      }
+
+      if (detail.domain && containerPort) {
+        serviceDomains.push({ serviceName, domain: detail.domain, port: containerPort });
+      }
+
       // Merge this service into the combined file
-      for (const [name, svc] of Object.entries(singleFile.services)) {
-        merged.services[name] = svc;
+      for (const [name, mergedSvc] of Object.entries(singleFile.services)) {
+        merged.services[name] = mergedSvc;
       }
 
       // Merge named volume declarations
@@ -124,6 +212,11 @@ async function handler(request: NextRequest, { params }: RouteParams) {
           merged.volumes[volName] = volDef;
         }
       }
+
+      // Accumulate mounts for volume DB records
+      for (const mount of detail.mounts) {
+        allMounts.push(mount);
+      }
     }
 
     const composeContent = composeToYaml(merged);
@@ -132,27 +225,12 @@ async function handler(request: NextRequest, { params }: RouteParams) {
     try {
       result = await db.transaction(async (tx) => {
         // Resolve projectId — create new project if requested
-        let resolvedProjectId: string | null = data.projectId ?? null;
-
-        if (data.newProjectName) {
-          const newProjectId = nanoid();
-          const newProjectSlug = slugify(data.newProjectName);
-          await tx.insert(projects).values({
-            id: newProjectId,
-            organizationId: orgId,
-            name: newProjectSlug,
-            displayName: data.newProjectName,
-          });
-          resolvedProjectId = newProjectId;
-        } else if (resolvedProjectId) {
-          const project = await tx.query.projects.findFirst({
-            where: and(eq(projects.id, resolvedProjectId), eq(projects.organizationId, orgId)),
-            columns: { id: true },
-          });
-          if (!project) {
-            throw new Error("PROJECT_NOT_FOUND");
-          }
-        }
+        const resolvedProjectId = await resolveProjectForImport(
+          tx,
+          orgId,
+          data.projectId,
+          data.newProjectName,
+        );
 
         // Insert parent app record for the compose stack
         const appId = nanoid();
@@ -166,6 +244,10 @@ async function handler(request: NextRequest, { params }: RouteParams) {
             source: "direct",
             deployType: "compose",
             composeContent,
+            // autoTraefikLabels is false — Traefik config is baked into the
+            // compose content either from the original container labels or via
+            // explicit injectTraefikLabels above. Regenerating at deploy time
+            // would overwrite service-specific routing configs.
             autoTraefikLabels: false,
             projectId: resolvedProjectId,
             status: "active",
@@ -181,6 +263,39 @@ async function handler(request: NextRequest, { params }: RouteParams) {
           isDefault: true,
         });
 
+        // Create domain records for services where a domain was detected.
+        // These appear in the Vardo UI and are used for TLS cert tracking.
+        for (const sd of serviceDomains) {
+          await tx.insert(domains).values({
+            id: nanoid(),
+            appId,
+            domain: sd.domain,
+            port: sd.port,
+            certResolver,
+            isPrimary: serviceDomains.indexOf(sd) === 0,
+          });
+        }
+
+        // Create volume records for all mounts across all services.
+        // Deduplicate by mountPath to avoid unique-constraint violations when
+        // multiple services share the same host path.
+        const seenMountPaths = new Set<string>();
+        for (const mount of allMounts) {
+          if (seenMountPaths.has(mount.destination)) continue;
+          seenMountPaths.add(mount.destination);
+          await tx.insert(volumes).values({
+            id: nanoid(),
+            appId,
+            organizationId: orgId,
+            name: mount.source || mount.destination.replace(/\//g, "-").replace(/^-/, ""),
+            mountPath: mount.destination,
+            type: mount.type === "bind" ? "bind" : "named",
+            source: mount.source || null,
+            // Bind mounts are flagged as non-persistent — Vardo can't manage host paths
+            persistent: mount.type !== "bind",
+          });
+        }
+
         return { app };
       });
     } catch (txError) {
@@ -193,18 +308,18 @@ async function handler(request: NextRequest, { params }: RouteParams) {
     const { app } = result;
     const appId = app.id;
 
-    const warnings: string[] = [];
-
     // Warn about local images and host networking
     for (const detail of validDetails) {
+      const svcName =
+        (detail.labels["com.docker.compose.service"] ?? slugify(detail.name)) || slugify(detail.name);
       if (isLocalImage(detail.image)) {
         warnings.push(
-          `Service "${detail.labels["com.docker.compose.service"] ?? detail.name}" uses a local image — Vardo won't be able to redeploy without pushing to a registry first.`
+          `Service "${svcName}" uses a local image — Vardo won't be able to redeploy without pushing to a registry first.`
         );
       }
       if (detail.networkMode === "host") {
         warnings.push(
-          `Service "${detail.labels["com.docker.compose.service"] ?? detail.name}" uses host networking — no port mapping or automatic domain routing is available.`
+          `Service "${svcName}" uses host networking — no port mapping or automatic domain routing is available.`
         );
       }
     }
@@ -232,105 +347,19 @@ async function handler(request: NextRequest, { params }: RouteParams) {
 
     const containerIds = validDetails.map((d) => d.id);
 
-    void (async () => {
-      const stoppedIds: string[] = [];
-
-      // Stop all containers in the group
-      for (const containerId of containerIds) {
-        try {
-          await stopContainer(containerId);
-          stoppedIds.push(containerId);
-        } catch {
-          // If we can't stop all containers, leave running ones and bail
-        }
-      }
-
-      try {
-        const deployResult = await requestDeploy({
-          appId,
-          organizationId: orgId,
-          trigger: "api",
-          triggeredBy: org.session.user.id,
-          deploymentId,
-        });
-
-        if (!deployResult.success) {
-          throw new Error(deployResult.log || "Deployment did not succeed");
-        }
-      } catch {
-        // Restart originals so the services keep running
-        if (stoppedIds.length > 0) {
-          let anyRestarted = false;
-          for (const containerId of stoppedIds) {
-            try {
-              await startContainer(containerId);
-              anyRestarted = true;
-            } catch {
-              // Best effort
-            }
-          }
-
-          if (anyRestarted) {
-            await db
-              .update(deployments)
-              .set({ status: "rolled_back", finishedAt: new Date() })
-              .where(eq(deployments.id, deploymentId));
-
-            await db
-              .update(apps)
-              .set({ status: "active", updatedAt: new Date() })
-              .where(eq(apps.id, appId));
-
-            publishEvent(appChannel(appId), {
-              event: "deploy:rolled_back",
-              appId,
-              deploymentId,
-              message: "Import deploy failed — original containers restarted",
-            }).catch(() => {});
-
-            recordActivity({
-              organizationId: orgId,
-              action: "deployment.rolled_back",
-              appId,
-              metadata: { deploymentId, composeProject, source: "group-import" },
-            }).catch(() => {});
-
-            import("@/lib/notifications/dispatch").then(({ emit }) => {
-              emit(orgId, {
-                type: "deploy.rollback",
-                title: `Import deploy failed: ${data.displayName}`,
-                message: "Import deploy failed — original containers restarted",
-                projectName: data.displayName,
-                appId,
-                rollbackSuccess: true,
-              });
-            }).catch(() => {});
-          }
-        }
-        return;
-      }
-
-      // Deployment succeeded — remove original containers
-      for (const containerId of containerIds) {
-        try {
-          await removeContainer(containerId, { force: true });
-        } catch {
-          // Non-fatal
-        }
-      }
-    })();
+    runAsyncContainerMigration({
+      containerIds,
+      appId,
+      deploymentId,
+      orgId,
+      userId: org.session.user.id,
+      displayName: data.displayName,
+      activityMetadata: { composeProject, source: "group-import" },
+    });
 
     return NextResponse.json({ app, warnings, deploymentId, migrated: false }, { status: 201 });
   } catch (error) {
-    const pgCode =
-      error instanceof Error
-        ? ("code" in error ? (error as { code: string }).code : null) ??
-          (error.cause &&
-          typeof error.cause === "object" &&
-          "code" in error.cause
-            ? (error.cause as { code: string }).code
-            : null)
-        : null;
+    const pgCode = getPgErrorCode(error);
     if (pgCode === "23505") {
       return NextResponse.json(
         { error: "An app with this slug already exists in this organization" },

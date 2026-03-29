@@ -2,20 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { db } from "@/lib/db";
-import { apps, deployments, environments, domains, volumes, projects } from "@/lib/db/schema";
+import { apps, environments, domains, volumes } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getContainerDetail, isLocalImage } from "@/lib/docker/discover";
-import { slugify } from "@/lib/ui/slugify";
 import { generateComposeFromContainer, injectTraefikLabels, composeToYaml } from "@/lib/docker/compose";
 import { encrypt } from "@/lib/crypto/encrypt";
 import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
 import { recordActivity } from "@/lib/activity";
-import { stopContainer, startContainer, removeContainer } from "@/lib/docker/client";
 import { createDeployment } from "@/lib/docker/deploy";
-import { requestDeploy } from "@/lib/docker/deploy-cancel";
-import { publishEvent, appChannel } from "@/lib/events";
+import {
+  resolveProjectForImport,
+  getPgErrorCode,
+  runAsyncContainerMigration,
+} from "@/lib/docker/import";
 
 type RouteParams = {
   params: Promise<{ orgId: string; containerId: string }>;
@@ -170,28 +171,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     try {
       result = await db.transaction(async (tx) => {
         // Resolve projectId — create new project if requested
-        let resolvedProjectId: string | null = data.projectId ?? null;
-
-        if (data.newProjectName) {
-          const newProjectId = nanoid();
-          const newProjectSlug = slugify(data.newProjectName);
-          await tx.insert(projects).values({
-            id: newProjectId,
-            organizationId: orgId,
-            name: newProjectSlug,
-            displayName: data.newProjectName,
-          });
-          resolvedProjectId = newProjectId;
-        } else if (resolvedProjectId) {
-          // Verify the project belongs to this org
-          const project = await tx.query.projects.findFirst({
-            where: and(eq(projects.id, resolvedProjectId), eq(projects.organizationId, orgId)),
-            columns: { id: true },
-          });
-          if (!project) {
-            throw new Error("PROJECT_NOT_FOUND");
-          }
-        }
+        const resolvedProjectId = await resolveProjectForImport(
+          tx,
+          orgId,
+          data.projectId,
+          data.newProjectName,
+        );
 
         // Insert app record
         const appId = nanoid();
@@ -299,8 +284,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       },
     });
 
-    // --- Migrate the container into Vardo management ---
-    //
     // Pre-create the deployment record so the client has an ID to poll.
     // Then fire the migration (stop → deploy → remove) async so the HTTP
     // response is not held open while waiting for a lock or running the
@@ -313,108 +296,22 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       triggeredBy: org.session.user.id,
     });
 
-    void (async () => {
-      let containerStopped = false;
-
-      try {
-        await stopContainer(containerId);
-        containerStopped = true;
-      } catch {
-        // Can't stop the container — leave it running; the operator can
-        // trigger a manual deploy once they've resolved the issue.
-        return;
-      }
-
-      try {
-        const deployResult = await requestDeploy({
-          appId,
-          organizationId: orgId,
-          trigger: "api",
-          triggeredBy: org.session.user.id,
-          deploymentId,
-        });
-
-        if (!deployResult.success) {
-          throw new Error(deployResult.log || "Deployment did not succeed");
-        }
-      } catch {
-        // Restart the original container so the service keeps running while
-        // the operator figures out what went wrong.
-        if (containerStopped) {
-          let restarted = false;
-          try {
-            await startContainer(containerId);
-            restarted = true;
-          } catch {
-            // Best effort — move on.
-          }
-
-          if (restarted) {
-            // Update the deployment to reflect that the original container was restored.
-            await db
-              .update(deployments)
-              .set({ status: "rolled_back", finishedAt: new Date() })
-              .where(eq(deployments.id, deploymentId));
-
-            // Reset app status — the original container is running again.
-            await db
-              .update(apps)
-              .set({ status: "active", updatedAt: new Date() })
-              .where(eq(apps.id, appId));
-
-            // Publish real-time event so any open app view refreshes.
-            publishEvent(appChannel(appId), {
-              event: "deploy:rolled_back",
-              appId,
-              deploymentId,
-              message: "Import deploy failed — original container restarted",
-            }).catch(() => {});
-
-            // Record activity for audit trail.
-            recordActivity({
-              organizationId: orgId,
-              action: "deployment.rolled_back",
-              appId,
-              metadata: { deploymentId, containerId, source: "import" },
-            }).catch(() => {});
-
-            // Send notification so the user sees a toast even if they navigated away.
-            import("@/lib/notifications/dispatch").then(({ emit }) => {
-              emit(orgId, {
-                type: "deploy.rollback",
-                title: `Import deploy failed: ${data.displayName}`,
-                message: "Import deploy failed — original container restarted",
-                projectName: data.displayName,
-                appId,
-                rollbackSuccess: true,
-              });
-            }).catch(() => {});
-          }
-        }
-        return;
-      }
-
-      // Deployment succeeded — remove the old container.
-      // Pass force=true so a still-running container (e.g. stop was swallowed)
-      // doesn't leave a 409 error.
-      try {
-        await removeContainer(containerId, { force: true });
-      } catch {
-        // Non-fatal — operator can remove manually.
-      }
-    })();
+    runAsyncContainerMigration({
+      containerIds: [containerId],
+      appId,
+      deploymentId,
+      orgId,
+      userId: org.session.user.id,
+      displayName: data.displayName,
+      activityMetadata: { containerId, source: "import" },
+      // Bail if stop fails — deploying with the original container still running
+      // would likely fail due to port conflicts, so there is nothing useful to do.
+      bailOnFirstStopFailure: true,
+    });
 
     return NextResponse.json({ app, warnings, deploymentId, migrated: false }, { status: 201 });
   } catch (error) {
-    const pgCode =
-      error instanceof Error
-        ? ("code" in error ? (error as { code: string }).code : null) ??
-          (error.cause &&
-          typeof error.cause === "object" &&
-          "code" in error.cause
-            ? (error.cause as { code: string }).code
-            : null)
-        : null;
+    const pgCode = getPgErrorCode(error);
     if (pgCode === "23505") {
       const rawConstraint =
         error instanceof Error && "constraint" in error
