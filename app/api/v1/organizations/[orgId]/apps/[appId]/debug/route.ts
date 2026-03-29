@@ -9,6 +9,7 @@ import { withRateLimit } from "@/lib/api/with-rate-limit";
 import {
   buildComposePreview,
   composeToYaml,
+  resolveBackendProtocol,
 } from "@/lib/docker/compose";
 import { listContainers, inspectContainer } from "@/lib/docker/client";
 import { buildTraefikConfigYaml } from "@/lib/traefik/generate-config";
@@ -50,11 +51,10 @@ async function handler(_request: NextRequest, { params }: RouteParams) {
       .map((v) => ({ name: v.name, mountPath: v.mountPath }));
 
     // Resolve the effective backend protocol for the debug preview
-    const port = app.containerPort ?? 3000;
-    const resolvedProtocol: "http" | "https" =
-      app.backendProtocol === "https" ? "https" :
-      app.backendProtocol === "http" ? "http" :
-      (port === 443 || port === 8443) ? "https" : "http";
+    const resolvedProtocol = resolveBackendProtocol(
+      app.backendProtocol as "http" | "https" | null,
+      app.containerPort ?? 3000,
+    );
 
     // Generate compose preview
     const composeParsed = buildComposePreview(

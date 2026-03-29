@@ -16,6 +16,7 @@ import {
   generateComposeForImage,
   injectTraefikLabels,
   injectNetwork,
+  resolveBackendProtocol,
   injectResourceLimits,
   injectGpuDevices,
   isAnonymousVolume,
@@ -694,10 +695,10 @@ export async function runDeployment(
       );
       for (const domain of app.domains) {
         const port = domain.port || containerPort;
-        const resolvedProtocol =
-          app.backendProtocol === "https" ? "https" :
-          app.backendProtocol === "http" ? "http" :
-          (port === 443 || port === 8443) ? "https" : "http";
+        const resolvedProtocol = resolveBackendProtocol(
+          app.backendProtocol as "http" | "https" | null,
+          port,
+        );
         compose = injectTraefikLabels(compose, {
           projectName: `${app.name}-${domain.id.slice(0, 6)}`,
           appName: app.name,
