@@ -13,7 +13,7 @@ export type DiscoveredContainer = {
   ports: { internal: number; external?: number; protocol: string }[];
   domain: string | null;
   containerPort: number | null;
-  mounts: { source: string; destination: string; type: string }[];
+  mounts: { name: string; source: string; destination: string; type: string }[];
   composeProject: string | null;
   networkMode: string;
 };
@@ -81,7 +81,7 @@ function rawToDiscovered(
   state: string,
   ports: { internal: number; external?: number; protocol: string }[],
   labels: Record<string, string>,
-  mounts: { source: string; destination: string; type: string }[],
+  mounts: { name: string; source: string; destination: string; type: string }[],
   networkMode: string,
 ): DiscoveredContainer {
   return {
