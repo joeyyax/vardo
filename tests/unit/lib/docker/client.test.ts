@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizeRestartPolicy, parseDockerHealthcheck, stripDockerProjectPrefix, resolveVolumeName } from "@/lib/docker/client";
+import { normalizeRestartPolicy, parseDockerHealthcheck, parseExposedPorts, stripDockerProjectPrefix, resolveVolumeName } from "@/lib/docker/client";
 import { nanosToDuration } from "@/lib/docker/compose";
 
 describe("normalizeRestartPolicy", () => {
@@ -83,6 +83,29 @@ describe("nanosToDuration", () => {
     expect(nanosToDuration(1_500_000_001)).toBe("2s");
   });
 });
+
+describe("parseExposedPorts", () => {
+  it("parses a single 'port/protocol' key to a number", () => {
+    expect(parseExposedPorts({ "80/tcp": {} })).toEqual([80]);
+  });
+
+  it("parses multiple ports and preserves order", () => {
+    expect(parseExposedPorts({ "80/tcp": {}, "443/tcp": {}, "8080/tcp": {} })).toEqual([80, 443, 8080]);
+  });
+
+  it("filters out keys that do not start with a valid port number", () => {
+    expect(parseExposedPorts({ "invalid/tcp": {}, "80/tcp": {} })).toEqual([80]);
+  });
+
+  it("returns empty array for null", () => {
+    expect(parseExposedPorts(null)).toEqual([]);
+  });
+
+  it("returns empty array for undefined", () => {
+    expect(parseExposedPorts(undefined)).toEqual([]);
+  });
+});
+
 
 describe("stripDockerProjectPrefix", () => {
   it("strips the project prefix from a namespaced volume name", () => {
