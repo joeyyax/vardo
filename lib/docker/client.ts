@@ -75,7 +75,7 @@ export type ContainerInspect = {
   labels: Record<string, string>;
   networks: string[];
   networkMode: string;
-  mounts: { source: string; destination: string; type: string }[];
+  mounts: { name: string; source: string; destination: string; type: string }[];
 } & ContainerRuntimeOptions;
 
 // ---------------------------------------------------------------------------
@@ -378,7 +378,7 @@ export async function inspectContainer(id: string): Promise<ContainerInspect> {
     NetworkSettings: {
       Networks?: Record<string, unknown>;
     };
-    Mounts: { Source: string; Destination: string; Type: string }[];
+    Mounts: { Name: string; Source: string; Destination: string; Type: string }[];
   }>("GET", `/containers/${id}/json`);
 
   const hc = data.HostConfig;
@@ -405,6 +405,7 @@ export async function inspectContainer(id: string): Promise<ContainerInspect> {
     networks: Object.keys(data.NetworkSettings.Networks ?? {}),
     networkMode: hc.NetworkMode ?? "bridge",
     mounts: (data.Mounts ?? []).map((m) => ({
+      name: m.Name ?? "",
       source: m.Source,
       destination: m.Destination,
       type: m.Type,
@@ -799,6 +800,29 @@ export type SystemInfo = {
   containers: number;
   containersRunning: number;
 };
+
+// ---------------------------------------------------------------------------
+// Volume name helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Strips the Docker Compose project prefix from a volume name.
+ * Docker names volumes as <project>_<name>; we store only the suffix.
+ * Returns the original string unchanged if there is no underscore.
+ */
+export function stripDockerProjectPrefix(volName: string): string {
+  return volName.replace(/^[^_]*_/, "");
+}
+
+/**
+ * Resolves the effective Docker volume name for a mount.
+ * Returns mount.name directly — the Docker inspect Name field is the
+ * actual volume name. Callers should check for empty string or use
+ * isAnonymousVolume() to skip anonymous volumes.
+ */
+export function resolveVolumeName(mount: { name: string; source: string }): string {
+  return mount.name;
+}
 
 export async function getSystemInfo(): Promise<SystemInfo> {
   const raw = await dockerRequest<{

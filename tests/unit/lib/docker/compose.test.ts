@@ -9,6 +9,7 @@ import {
   injectGpuDevices,
   injectResourceLimits,
   generateComposeFromContainer,
+  isAnonymousVolume,
   type ComposeFile,
   type ContainerConfig,
 } from "@/lib/docker/compose";
@@ -136,6 +137,22 @@ describe("sanitizeCompose", () => {
       expect(() => sanitizeCompose(compose, { allowBindMounts: true })).toThrow(
         /blocked host path/,
       );
+    });
+  });
+
+  describe("anonymous volumes", () => {
+    it("passes anonymous volumes through unchanged", () => {
+      const compose = makeCompose(["/data"]);
+      const { compose: result, strippedMounts } = sanitizeCompose(compose);
+      expect(result.services.app.volumes).toEqual(["/data"]);
+      expect(strippedMounts).toHaveLength(0);
+    });
+
+    it("passes anonymous volumes through even when bind mounts are disabled", () => {
+      const compose = makeCompose(["/var/lib/postgresql/data"]);
+      const { compose: result, strippedMounts } = sanitizeCompose(compose);
+      expect(result.services.app.volumes).toEqual(["/var/lib/postgresql/data"]);
+      expect(strippedMounts).toHaveLength(0);
     });
   });
 
@@ -482,6 +499,34 @@ describe("validateCompose — network_mode", () => {
     const { valid, errors } = validateCompose(compose);
     expect(valid).toBe(true);
     expect(errors).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validateCompose — anonymous volumes
+// ---------------------------------------------------------------------------
+
+describe("validateCompose — anonymous volumes", () => {
+  it("accepts anonymous volumes (bare container paths) without flagging as bind mounts", () => {
+    const compose: ComposeFile = {
+      services: {
+        db: { name: "db", image: "postgres:17", volumes: ["/var/lib/postgresql/data"] },
+      },
+    };
+    const { valid, errors } = validateCompose(compose);
+    expect(valid).toBe(true);
+    expect(errors).toHaveLength(0);
+  });
+
+  it("still rejects bind mounts when allowBindMounts is false", () => {
+    const compose: ComposeFile = {
+      services: {
+        app: { name: "app", image: "nginx", volumes: ["/host/path:/data"] },
+      },
+    };
+    const { valid, errors } = validateCompose(compose);
+    expect(valid).toBe(false);
+    expect(errors.some((e) => e.includes("bind mount"))).toBe(true);
   });
 });
 
@@ -943,15 +988,39 @@ describe("generateComposeFromContainer", () => {
 
   it("includes named volumes and declares them at top level", () => {
     const compose = generateComposeFromContainer("myapp", makeContainerConfig({
-      mounts: [{ source: "mydata", destination: "/data", type: "volume" }],
+      mounts: [{ name: "mydata", source: "/var/lib/docker/volumes/mydata/_data", destination: "/data", type: "volume" }],
     }));
     expect(compose.services.myapp.volumes).toContain("mydata:/data");
     expect(compose.volumes?.mydata).toBeDefined();
   });
 
+  it("emits anonymous volumes as bare container paths and omits top-level declaration", () => {
+    const anonHash = "a".repeat(64);
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({
+      mounts: [{ name: anonHash, source: `/var/lib/docker/volumes/${anonHash}/_data`, destination: "/data", type: "volume" }],
+    }));
+    expect(compose.services.myapp.volumes).toContain("/data");
+    expect(compose.services.myapp.volumes).not.toContain(`${anonHash}:/data`);
+    expect(compose.volumes).toBeUndefined();
+  });
+
+  it("handles mixed named and anonymous volumes", () => {
+    const anonHash = "b".repeat(64);
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({
+      mounts: [
+        { name: "mydata", source: "/var/lib/docker/volumes/mydata/_data", destination: "/data", type: "volume" },
+        { name: anonHash, source: `/var/lib/docker/volumes/${anonHash}/_data`, destination: "/tmp/cache", type: "volume" },
+      ],
+    }));
+    expect(compose.services.myapp.volumes).toContain("mydata:/data");
+    expect(compose.services.myapp.volumes).toContain("/tmp/cache");
+    expect(compose.volumes?.mydata).toBeDefined();
+    expect(compose.volumes?.[anonHash]).toBeUndefined();
+  });
+
   it("includes bind mounts inline without a top-level declaration", () => {
     const compose = generateComposeFromContainer("myapp", makeContainerConfig({
-      mounts: [{ source: "/host/path", destination: "/data", type: "bind" }],
+      mounts: [{ name: "", source: "/host/path", destination: "/data", type: "bind" }],
     }));
     expect(compose.services.myapp.volumes).toContain("/host/path:/data");
     expect(compose.volumes).toBeUndefined();
@@ -1158,7 +1227,7 @@ describe("generateComposeFromContainer", () => {
   it("produced compose round-trips through yaml cleanly", () => {
     const compose = generateComposeFromContainer("myapp", makeContainerConfig({
       ports: [{ internal: 8080, external: 8080, protocol: "tcp" }],
-      mounts: [{ source: "data", destination: "/data", type: "volume" }],
+      mounts: [{ name: "data", source: "/var/lib/docker/volumes/data/_data", destination: "/data", type: "volume" }],
       capAdd: ["NET_ADMIN"],
       restartPolicy: "unless-stopped",
       hasEnvVars: true,
@@ -1183,8 +1252,8 @@ describe("generateComposeFromContainer", () => {
     // Now it uses the stored composeContent — this test verifies the full path.
     const compose = generateComposeFromContainer("myapp", makeContainerConfig({
       mounts: [
-        { source: "/host/data", destination: "/data", type: "bind" },
-        { source: "namedvol", destination: "/vol", type: "volume" },
+        { name: "", source: "/host/data", destination: "/data", type: "bind" },
+        { name: "namedvol", source: "/var/lib/docker/volumes/namedvol/_data", destination: "/vol", type: "volume" },
       ],
     }));
 
@@ -1200,8 +1269,8 @@ describe("generateComposeFromContainer", () => {
   it("bind mounts are stripped by sanitize when allowBindMounts is false", () => {
     const compose = generateComposeFromContainer("myapp", makeContainerConfig({
       mounts: [
-        { source: "/host/data", destination: "/data", type: "bind" },
-        { source: "namedvol", destination: "/vol", type: "volume" },
+        { name: "", source: "/host/data", destination: "/data", type: "bind" },
+        { name: "namedvol", source: "/var/lib/docker/volumes/namedvol/_data", destination: "/vol", type: "volume" },
       ],
     }));
 
@@ -1212,5 +1281,47 @@ describe("generateComposeFromContainer", () => {
     expect(strippedMounts).toHaveLength(1);
     expect(sanitized.services.myapp.volumes).not.toContain("/host/data:/data");
     expect(sanitized.services.myapp.volumes).toContain("namedvol:/vol");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isAnonymousVolume — anonymous volume detection
+// ---------------------------------------------------------------------------
+
+describe("isAnonymousVolume", () => {
+  it("returns true for an empty name", () => {
+    // Docker sets Name to "" for volumes that have no explicit name field.
+    expect(isAnonymousVolume("")).toBe(true);
+  });
+
+  it("returns true for a 64-character lowercase hex hash", () => {
+    // Docker assigns a hex hash as the volume name for anonymous volumes.
+    const hash = "a1b2c3d4".repeat(8); // 64 chars
+    expect(isAnonymousVolume(hash)).toBe(true);
+  });
+
+  it("returns false for a short human-readable volume name", () => {
+    expect(isAnonymousVolume("data")).toBe(false);
+    expect(isAnonymousVolume("postgres")).toBe(false);
+  });
+
+  it("returns false for a namespaced volume name (project_volume)", () => {
+    expect(isAnonymousVolume("myapp-blue_data")).toBe(false);
+    expect(isAnonymousVolume("myapp-green_postgres")).toBe(false);
+  });
+
+  it("returns false for a 63-character hex string (one short of a Docker hash)", () => {
+    const almostHash = "a".repeat(63);
+    expect(isAnonymousVolume(almostHash)).toBe(false);
+  });
+
+  it("returns false for a 65-character hex string (one over a Docker hash)", () => {
+    const tooLong = "a".repeat(65);
+    expect(isAnonymousVolume(tooLong)).toBe(false);
+  });
+
+  it("returns false for a 64-char string with uppercase letters (not a Docker hash)", () => {
+    const upperHash = "A".repeat(64);
+    expect(isAnonymousVolume(upperHash)).toBe(false);
   });
 });

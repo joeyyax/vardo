@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizeRestartPolicy, parseDockerHealthcheck } from "@/lib/docker/client";
+import { normalizeRestartPolicy, parseDockerHealthcheck, stripDockerProjectPrefix, resolveVolumeName } from "@/lib/docker/client";
 import { nanosToDuration } from "@/lib/docker/compose";
 
 describe("normalizeRestartPolicy", () => {
@@ -83,3 +83,58 @@ describe("nanosToDuration", () => {
     expect(nanosToDuration(1_500_000_001)).toBe("2s");
   });
 });
+
+describe("stripDockerProjectPrefix", () => {
+  it("strips the project prefix from a namespaced volume name", () => {
+    expect(stripDockerProjectPrefix("myapp-blue_data")).toBe("data");
+    expect(stripDockerProjectPrefix("myapp-green_postgres")).toBe("postgres");
+  });
+
+  it("strips only the first segment up to the first underscore", () => {
+    // volume names with multiple underscores: only the leading prefix is removed
+    expect(stripDockerProjectPrefix("myapp-blue_redis_data")).toBe("redis_data");
+  });
+
+  it("returns the original name when there is no underscore", () => {
+    expect(stripDockerProjectPrefix("data")).toBe("data");
+    expect(stripDockerProjectPrefix("postgres")).toBe("postgres");
+  });
+
+  it("returns empty string for an empty input", () => {
+    expect(stripDockerProjectPrefix("")).toBe("");
+  });
+
+  it("handles names that start with an underscore (edge case)", () => {
+    // The regex removes everything up to and including the first underscore,
+    // so a leading underscore removes just that character.
+    expect(stripDockerProjectPrefix("_data")).toBe("data");
+  });
+});
+
+describe("resolveVolumeName", () => {
+  it("returns mount.name for a named volume", () => {
+    const mount = { name: "myapp-blue_data", source: "/var/lib/docker/volumes/myapp-blue_data/_data" };
+    expect(resolveVolumeName(mount)).toBe("myapp-blue_data");
+  });
+
+  it("returns empty string when name is empty — does not fall back to mount.source", () => {
+    // mount.source is a host path, not a valid volume name; callers should skip
+    // empty results rather than using the source path.
+    const mount = { name: "", source: "/var/lib/docker/volumes/abc123/_data" };
+    expect(resolveVolumeName(mount)).toBe("");
+  });
+
+  it("returns mount.name regardless of source value", () => {
+    const mount = { name: "explicit-name", source: "/some/source/path" };
+    expect(resolveVolumeName(mount)).toBe("explicit-name");
+  });
+
+  it("returns the 64-char hash name for a Docker anonymous volume", () => {
+    // Anonymous volumes carry a hash name — callers should use isAnonymousVolume()
+    // to decide whether to skip.
+    const hash = "a".repeat(64);
+    const mount = { name: hash, source: `/var/lib/docker/volumes/${hash}/_data` };
+    expect(resolveVolumeName(mount)).toBe(hash);
+  });
+});
+
