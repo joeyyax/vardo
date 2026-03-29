@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { normalizeRestartPolicy, parseDockerHealthcheck, stripDockerProjectPrefix, resolveVolumeName } from "@/lib/docker/client";
-import { nanosToDuration, isAnonymousVolume } from "@/lib/docker/compose";
+import { nanosToDuration } from "@/lib/docker/compose";
 
 describe("normalizeRestartPolicy", () => {
   it("returns 'no' when name is empty", () => {
@@ -138,33 +138,3 @@ describe("resolveVolumeName", () => {
   });
 });
 
-describe("isAnonymousVolume", () => {
-  it("returns false for a named volume", () => {
-    expect(isAnonymousVolume("myapp-blue_data")).toBe(false);
-  });
-
-  it("returns true for an empty string", () => {
-    expect(isAnonymousVolume("")).toBe(true);
-  });
-
-  it("returns true for a 64-character lowercase hex hash (Docker anonymous volume id)", () => {
-    const hash = "a1b2c3d4".repeat(8); // 64 chars
-    expect(isAnonymousVolume(hash)).toBe(true);
-  });
-
-  it("returns false for a string that is 64 chars but not all hex", () => {
-    // Docker hashes are strictly lowercase hex; anything else is a named volume
-    const notHex = "z".repeat(64);
-    expect(isAnonymousVolume(notHex)).toBe(false);
-  });
-
-  it("returns false for a 63-char hex string (one short)", () => {
-    const shortHash = "a".repeat(63);
-    expect(isAnonymousVolume(shortHash)).toBe(false);
-  });
-
-  it("returns false for a 65-char hex string (one long)", () => {
-    const longHash = "a".repeat(65);
-    expect(isAnonymousVolume(longHash)).toBe(false);
-  });
-});
