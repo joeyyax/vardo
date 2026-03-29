@@ -658,6 +658,20 @@ export async function runDeployment(
     const allServicesCustomNetwork = servicesWithCustomNetwork.length === Object.keys(compose.services).length;
 
     if (!allServicesCustomNetwork) {
+      // Strip stale Traefik labels from the stored compose before re-injecting.
+      // The stored compose may contain router names from a prior import or deploy
+      // (e.g. "appname" from import vs "appname-abc123" from deploy) — clear them
+      // all so we don't end up with duplicate routers pointing at the same domain.
+      for (const svcName of Object.keys(compose.services)) {
+        const svc = compose.services[svcName];
+        if (svc.labels) {
+          const stripped = Object.fromEntries(
+            Object.entries(svc.labels).filter(([k]) => !k.startsWith("traefik."))
+          );
+          compose.services[svcName] = { ...svc, labels: stripped };
+        }
+      }
+
       // Find the first bridge-network service in compose file order (Object.keys preserves
       // insertion order for string keys, matching the order services appear in the compose file).
       // This ensures Traefik labels target a service reachable on vardo-network rather than

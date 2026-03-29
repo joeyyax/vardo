@@ -183,14 +183,13 @@ export type ContainerConfig = {
   hasEnvVars: boolean;
 } & ContainerRuntimeOptions;
 
-// Labels injected by Docker Compose or Vardo — strip these when capturing an
-// existing container's labels so they don't pollute the regenerated compose.
-const INTERNAL_LABEL_PREFIXES = [
-  "com.docker.",
-  "vardo.",
-  "host.",
-  "traefik.",
-];
+// Only labels with these prefixes survive the import filter. Everything else
+// (OCI image metadata, Docker Compose internals, arbitrary user labels) is
+// stripped so the generated compose stays clean. Traefik routing labels are
+// allowed through because they may carry custom middleware config; Vardo labels
+// are allowed so any user-set vardo.* metadata is preserved. Both will be
+// re-evaluated and overwritten during deploy anyway.
+const ALLOWED_LABEL_PREFIXES = ["traefik.", "vardo."];
 
 /**
  * Generate a ComposeFile from a captured container spec.
@@ -255,10 +254,13 @@ export function generateComposeFromContainer(
     service.network_mode = container.networkMode;
   }
 
-  // Labels: strip Docker-internal and Vardo-managed labels.
+  // Labels: keep only traefik. and vardo. prefixed labels. OCI image metadata
+  // (maintainer, org.opencontainers.image.*), Docker Compose internals, and
+  // everything else is stripped — they belong to the image or the runtime, not
+  // the compose definition.
   const filteredLabels = Object.fromEntries(
     Object.entries(container.labels).filter(
-      ([k]) => !INTERNAL_LABEL_PREFIXES.some((prefix) => k.startsWith(prefix))
+      ([k]) => ALLOWED_LABEL_PREFIXES.some((prefix) => k.startsWith(prefix))
     )
   );
   if (Object.keys(filteredLabels).length > 0) service.labels = filteredLabels;

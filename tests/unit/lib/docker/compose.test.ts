@@ -1194,31 +1194,44 @@ describe("generateComposeFromContainer", () => {
     expect(compose.services.myapp.command).toEqual(["start", "--verbose"]);
   });
 
-  it("strips internal labels but keeps user-defined labels", () => {
+  it("strips OCI and Docker metadata labels, keeps only traefik. and vardo. prefixed", () => {
     const compose = generateComposeFromContainer("myapp", makeContainerConfig({
       labels: {
+        // OCI image metadata — should be stripped
+        "maintainer": "OpenSpeedTest.com <support@OpenSpeedTest.com>",
+        "org.opencontainers.image.created": "2025-01-06T01:05:14.577Z",
+        "org.opencontainers.image.description": "Unprivileged NGINX Dockerfiles",
+        // Docker Compose internals — should be stripped
         "com.docker.compose.project": "myproject",
-        "traefik.enable": "true",
-        "vardo.project": "myapp",
+        // Other arbitrary labels — should be stripped
         "host.project": "myapp",
         "my.custom.label": "value",
         "app.version": "1.2.3",
+        // Allowed prefixes — should be kept
+        "traefik.enable": "true",
+        "traefik.http.routers.foo.rule": "Host(`example.com`)",
+        "vardo.custom": "meta",
       },
     }));
     const labels = compose.services.myapp.labels ?? {};
+    expect(labels["maintainer"]).toBeUndefined();
+    expect(labels["org.opencontainers.image.created"]).toBeUndefined();
+    expect(labels["org.opencontainers.image.description"]).toBeUndefined();
     expect(labels["com.docker.compose.project"]).toBeUndefined();
-    expect(labels["traefik.enable"]).toBeUndefined();
-    expect(labels["vardo.project"]).toBeUndefined();
     expect(labels["host.project"]).toBeUndefined();
-    expect(labels["my.custom.label"]).toBe("value");
-    expect(labels["app.version"]).toBe("1.2.3");
+    expect(labels["my.custom.label"]).toBeUndefined();
+    expect(labels["app.version"]).toBeUndefined();
+    expect(labels["traefik.enable"]).toBe("true");
+    expect(labels["traefik.http.routers.foo.rule"]).toBe("Host(`example.com`)");
+    expect(labels["vardo.custom"]).toBe("meta");
   });
 
-  it("omits labels block when all labels are internal", () => {
+  it("omits labels block when no allowed labels are present", () => {
     const compose = generateComposeFromContainer("myapp", makeContainerConfig({
       labels: {
         "com.docker.compose.project": "myproject",
-        "vardo.managed": "true",
+        "org.opencontainers.image.title": "My App",
+        "maintainer": "someone",
       },
     }));
     expect(compose.services.myapp.labels).toBeUndefined();
