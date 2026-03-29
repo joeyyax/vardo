@@ -1574,6 +1574,31 @@ describe("applyDeployTransforms — Traefik labels", () => {
     // stripTraefikLabels removes existing labels; no new ones are injected
     expect(result.services.app.labels).toBeUndefined();
   });
+
+  it("injects HTTPS backend labels when backendProtocol is https", () => {
+    const result = applyDeployTransforms(makeSimpleCompose(), {
+      ...baseTransformOpts,
+      appName: "myapp",
+      backendProtocol: "https",
+      domains: [
+        {
+          id: "dom-aabbccdd",
+          domain: "example.com",
+          port: null,
+          sslEnabled: false,
+          certResolver: null,
+          redirectTo: null,
+          redirectCode: null,
+        },
+      ],
+    });
+    const labels = result.services.app.labels as Record<string, string> | undefined;
+    expect(labels).toBeDefined();
+    expect(labels!["traefik.http.services.myapp.loadbalancer.server.scheme"]).toBe("https");
+    expect(labels!["traefik.http.services.myapp.loadbalancer.serversTransport"]).toBe(
+      "myapp-insecure@file",
+    );
+  });
 });
 
 describe("applyDeployTransforms — combined transforms", () => {

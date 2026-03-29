@@ -303,29 +303,15 @@ describe("buildTraefikConfigYaml — HTTPS backend", () => {
     expect(config.http.serversTransports["myapp-insecure"]).toEqual({ insecureSkipVerify: true });
   });
 
-  it("does not add serversTransport when backendProtocol is http", () => {
+  it.each<["http" | null | undefined, string]>([
+    ["http", "http"],
+    [null, "null"],
+    [undefined, "omitted"],
+  ])("does not add serversTransport when backendProtocol is %s", (protocol) => {
     const yaml = buildTraefikConfigYaml(
       "myapp",
       [makeDomain({ sslEnabled: false })],
-      "http",
-    );
-    expect(yaml).not.toBeNull();
-    const config = YAML.parse(yaml!);
-    expect(config.http.serversTransports).toBeUndefined();
-  });
-
-  it("does not add serversTransport when backendProtocol is omitted", () => {
-    const yaml = buildTraefikConfigYaml("myapp", [makeDomain({ sslEnabled: false })]);
-    expect(yaml).not.toBeNull();
-    const config = YAML.parse(yaml!);
-    expect(config.http.serversTransports).toBeUndefined();
-  });
-
-  it("does not add serversTransport when backendProtocol is null", () => {
-    const yaml = buildTraefikConfigYaml(
-      "myapp",
-      [makeDomain({ sslEnabled: false })],
-      null,
+      protocol,
     );
     expect(yaml).not.toBeNull();
     const config = YAML.parse(yaml!);
