@@ -180,7 +180,16 @@ export async function regenerateExternalRoutesConfig(): Promise<void> {
     },
   };
 
-  await mkdir(TRAEFIK_DYNAMIC_DIR, { recursive: true });
+  try {
+    await mkdir(TRAEFIK_DYNAMIC_DIR, { recursive: true });
+  } catch (err: unknown) {
+    // Not running in an environment with the Traefik volume — skip silently.
+    if (err && typeof err === "object" && "code" in err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "EACCES" || code === "ENOENT") return;
+    }
+    throw err;
+  }
 
   const filePath = join(TRAEFIK_DYNAMIC_DIR, EXTERNAL_ROUTES_FILE);
   const tmpPath = `${filePath}.tmp`;
@@ -190,9 +199,10 @@ export async function regenerateExternalRoutesConfig(): Promise<void> {
     await rename(tmpPath, filePath);
     logger.info(`[traefik] Wrote external routes config (${routes.length} route(s))`);
   } catch (err: unknown) {
-    // Not running in an environment with /etc/traefik/dynamic — skip silently
-    if (err && typeof err === "object" && "code" in err && (err as NodeJS.ErrnoException).code === "ENOENT") {
-      return;
+    // Not running in an environment with /etc/traefik/dynamic — skip silently.
+    if (err && typeof err === "object" && "code" in err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "ENOENT" || code === "EACCES") return;
     }
     throw err;
   }
