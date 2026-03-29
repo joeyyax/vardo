@@ -72,7 +72,7 @@ const MAX_ERROR_LENGTH = 120;
  * surfacing them in the API response or admin UI. Removes connection strings,
  * IP addresses with ports, and pg role/database/user names.
  */
-function sanitizeError(message: string): string {
+export function sanitizeError(message: string): string {
   return message
     .replace(/redis:\/\/\S+/gi, "[url]")
     .replace(/postgres(?:ql)?:\/\/\S+/gi, "[url]")
