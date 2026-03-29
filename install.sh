@@ -330,12 +330,30 @@ run_with_spinner() {
     echo -e "  ${DIM}[dry-run] $*${RESET}"
     return 0
   fi
-  if $VERBOSE || ! has_tty; then
+  if $VERBOSE; then
     info "$label"
     "$@"
     return $?
   fi
   log_to_file "CMD: $*"
+
+  if ! has_tty; then
+    # No controlling terminal (e.g. SSH without -t). Print periodic keepalive
+    # output so the connection doesn't time out during long builds.
+    info "$label"
+    local start_time=$SECONDS
+    (
+      while true; do
+        sleep 30
+        printf "  · %s (%ds)\n" "$label" "$(( SECONDS - start_time ))"
+      done
+    ) &
+    local keepalive_pid=$!
+    local exit_code=0
+    "$@" || exit_code=$?
+    kill $keepalive_pid 2>/dev/null; wait $keepalive_pid 2>/dev/null
+    return $exit_code
+  fi
 
   # Safe to hardcode /dev/tty — the ! has_tty early return above ensures we
   # only reach this point when a controlling terminal is actually available.
