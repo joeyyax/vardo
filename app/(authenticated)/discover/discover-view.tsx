@@ -6,6 +6,7 @@ import { RefreshCw } from "lucide-react";
 import { ContainerCard } from "./container-card";
 import { ComposeGroupCard } from "./compose-group-card";
 import { ImportDialog } from "./import-dialog";
+import { GroupImportDialog } from "./group-import-dialog";
 import type { DiscoveryResponse, DiscoveredContainer } from "@/lib/docker/discover";
 
 type Project = { id: string; name: string; displayName: string };
@@ -23,6 +24,12 @@ export function DiscoverView({ orgId, projects, defaultProjectId }: DiscoverView
 
   const [importTarget, setImportTarget] = useState<DiscoveredContainer | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+
+  const [groupImportTarget, setGroupImportTarget] = useState<{
+    composeProject: string;
+    containers: DiscoveredContainer[];
+  } | null>(null);
+  const [groupImportOpen, setGroupImportOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -48,6 +55,11 @@ export function DiscoverView({ orgId, projects, defaultProjectId }: DiscoverView
   function handleImport(container: DiscoveredContainer) {
     setImportTarget(container);
     setImportOpen(true);
+  }
+
+  function handleGroupImport(group: { composeProject: string; containers: DiscoveredContainer[] }) {
+    setGroupImportTarget(group);
+    setGroupImportOpen(true);
   }
 
   const totalCount = data
@@ -113,7 +125,7 @@ export function DiscoverView({ orgId, projects, defaultProjectId }: DiscoverView
                     key={g.composeProject}
                     composeProject={g.composeProject}
                     containers={g.containers}
-                    onImport={handleImport}
+                    onImport={handleGroupImport}
                   />
                 ))}
               </div>
@@ -129,6 +141,15 @@ export function DiscoverView({ orgId, projects, defaultProjectId }: DiscoverView
         projects={projects}
         open={importOpen}
         onOpenChange={setImportOpen}
+        defaultProjectId={defaultProjectId}
+      />
+
+      <GroupImportDialog
+        group={groupImportTarget}
+        orgId={orgId}
+        projects={projects}
+        open={groupImportOpen}
+        onOpenChange={setGroupImportOpen}
         defaultProjectId={defaultProjectId}
       />
     </>

@@ -94,12 +94,14 @@ export const apps = pgTable(
     composeService: text("compose_service"), // service name from compose YAML
     containerName: text("container_name"), // computed: {projectName}-{serviceName}-1
     importedContainerId: text("imported_container_id"), // original container ID when imported from Docker
+    importedComposeProject: text("imported_compose_project"), // original compose project name when imported as a group
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => [
     unique("app_org_name_uniq").on(t.organizationId, t.name),
     unique("app_imported_container_uniq").on(t.organizationId, t.importedContainerId),
+    unique("app_imported_compose_project_uniq").on(t.organizationId, t.importedComposeProject),
     index("app_org_id_idx").on(t.organizationId),
     index("app_parent_app_id_idx").on(t.parentAppId),
   ]
