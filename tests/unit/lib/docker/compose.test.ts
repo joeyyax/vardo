@@ -11,6 +11,7 @@ import {
   generateComposeFromContainer,
   isAnonymousVolume,
   stripTraefikLabels,
+  applyDeployTransforms,
   type ComposeFile,
   type ContainerConfig,
 } from "@/lib/docker/compose";
@@ -1405,5 +1406,158 @@ describe("stripTraefikLabels", () => {
     expect(result.services.web.labels).toEqual({ "vardo.managed": "true" });
     expect(result.services.db.labels).toEqual({ "vardo.managed": "true" });
     expect(result.services.cache.labels).toEqual({ "com.example.custom": "keep" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyDeployTransforms
+// ---------------------------------------------------------------------------
+
+function makeSimpleCompose(): ComposeFile {
+  return {
+    services: {
+      app: {
+        name: "app",
+        image: "nginx:latest",
+      },
+    },
+  };
+}
+
+const baseTransformOpts = {
+  appName: "myapp",
+  containerPort: 3000,
+  cpuLimit: null,
+  memoryLimit: null,
+  gpuEnabled: false,
+  domains: [] as { id: string; domain: string; port: number | null; sslEnabled: boolean | null; certResolver: string | null; redirectTo: string | null; redirectCode: number | null }[],
+  networkName: "vardo-network",
+};
+
+describe("applyDeployTransforms — network injection", () => {
+  it("injects the vardo network into all services", () => {
+    const result = applyDeployTransforms(makeSimpleCompose(), baseTransformOpts);
+    expect(result.services.app.networks).toContain("vardo-network");
+    expect(result.networks?.["vardo-network"]).toBeDefined();
+  });
+});
+
+describe("applyDeployTransforms — resource limits", () => {
+  it("does not inject resource limits when both are null", () => {
+    const result = applyDeployTransforms(makeSimpleCompose(), {
+      ...baseTransformOpts,
+      cpuLimit: null,
+      memoryLimit: null,
+    });
+    expect(result.services.app.deploy?.resources).toBeUndefined();
+  });
+
+  it("injects CPU limit when cpuLimit is set", () => {
+    const result = applyDeployTransforms(makeSimpleCompose(), {
+      ...baseTransformOpts,
+      cpuLimit: 2,
+      memoryLimit: null,
+    });
+    expect(result.services.app.deploy?.resources?.limits?.cpus).toBe("2");
+  });
+
+  it("injects memory limit when memoryLimit is set", () => {
+    const result = applyDeployTransforms(makeSimpleCompose(), {
+      ...baseTransformOpts,
+      cpuLimit: null,
+      memoryLimit: 512,
+    });
+    expect(result.services.app.deploy?.resources?.limits?.memory).toBe("512M");
+  });
+});
+
+describe("applyDeployTransforms — GPU devices", () => {
+  it("does not inject GPU devices when gpuEnabled is false", () => {
+    const result = applyDeployTransforms(makeSimpleCompose(), {
+      ...baseTransformOpts,
+      gpuEnabled: false,
+    });
+    expect(result.services.app.deploy?.resources?.reservations?.devices).toBeUndefined();
+  });
+
+  it("injects GPU device reservation when gpuEnabled is true", () => {
+    const result = applyDeployTransforms(makeSimpleCompose(), {
+      ...baseTransformOpts,
+      gpuEnabled: true,
+    });
+    const devices = result.services.app.deploy?.resources?.reservations?.devices;
+    expect(devices).toBeDefined();
+    expect(devices?.[0]?.capabilities).toContain("gpu");
+  });
+});
+
+describe("applyDeployTransforms — Traefik labels", () => {
+  it("injects Traefik labels for each domain", () => {
+    const result = applyDeployTransforms(makeSimpleCompose(), {
+      ...baseTransformOpts,
+      domains: [
+        {
+          id: "dom-aabbccdd",
+          domain: "example.com",
+          port: null,
+          sslEnabled: true,
+          certResolver: "le",
+          redirectTo: null,
+          redirectCode: null,
+        },
+      ],
+    });
+    const labels = result.services.app.labels as Record<string, string> | undefined;
+    expect(labels).toBeDefined();
+    const labelStr = JSON.stringify(labels);
+    expect(labelStr).toContain("traefik");
+    expect(labelStr).toContain("example.com");
+  });
+
+  it("does not inject Traefik labels when there are no domains", () => {
+    const result = applyDeployTransforms(makeSimpleCompose(), {
+      ...baseTransformOpts,
+      domains: [],
+    });
+    // stripTraefikLabels removes existing labels; no new ones are injected
+    expect(result.services.app.labels).toBeUndefined();
+  });
+});
+
+describe("applyDeployTransforms — combined transforms", () => {
+  it("applies all transforms in sequence: limits, GPU, labels, network", () => {
+    const result = applyDeployTransforms(makeSimpleCompose(), {
+      appName: "fullapp",
+      containerPort: 8080,
+      cpuLimit: 1,
+      memoryLimit: 256,
+      gpuEnabled: true,
+      domains: [
+        {
+          id: "dom-00112233",
+          domain: "full.example.com",
+          port: null,
+          sslEnabled: false,
+          certResolver: null,
+          redirectTo: null,
+          redirectCode: null,
+        },
+      ],
+      networkName: "vardo-network",
+    });
+
+    // Resource limits applied
+    expect(result.services.app.deploy?.resources?.limits?.cpus).toBe("1");
+    expect(result.services.app.deploy?.resources?.limits?.memory).toBe("256M");
+
+    // GPU devices applied
+    expect(result.services.app.deploy?.resources?.reservations?.devices).toBeDefined();
+
+    // Traefik labels injected
+    const labels = result.services.app.labels as Record<string, string> | undefined;
+    expect(JSON.stringify(labels)).toContain("traefik");
+
+    // Network injected
+    expect(result.services.app.networks).toContain("vardo-network");
   });
 });
