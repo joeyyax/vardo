@@ -533,6 +533,56 @@ describe("validateCompose — anonymous volumes", () => {
 });
 
 // ---------------------------------------------------------------------------
+// validateCompose — skipMountChecks (trusted org bypass)
+// ---------------------------------------------------------------------------
+
+describe("validateCompose — skipMountChecks", () => {
+  it("allows docker socket mount when skipMountChecks is true", () => {
+    const compose: ComposeFile = {
+      services: {
+        app: { name: "app", image: "nginx", volumes: ["/var/run/docker.sock:/var/run/docker.sock"] },
+      },
+    };
+    const { valid, errors } = validateCompose(compose, { skipMountChecks: true });
+    expect(valid).toBe(true);
+    expect(errors).toHaveLength(0);
+  });
+
+  it("allows /etc and /dev mounts when skipMountChecks is true", () => {
+    const compose: ComposeFile = {
+      services: {
+        app: { name: "app", image: "nginx", volumes: ["/etc:/host-etc", "/dev:/host-dev"] },
+      },
+    };
+    const { valid, errors } = validateCompose(compose, { skipMountChecks: true });
+    expect(valid).toBe(true);
+    expect(errors).toHaveLength(0);
+  });
+
+  it("still rejects invalid service names when skipMountChecks is true", () => {
+    const compose: ComposeFile = {
+      services: {
+        "Invalid-Service": { name: "Invalid-Service", image: "nginx", volumes: ["/var/run/docker.sock:/var/run/docker.sock"] },
+      },
+    };
+    const { valid, errors } = validateCompose(compose, { skipMountChecks: true });
+    expect(valid).toBe(false);
+    expect(errors.some((e) => e.includes("Service name"))).toBe(true);
+  });
+
+  it("blocks denied paths when skipMountChecks is explicitly false", () => {
+    const compose: ComposeFile = {
+      services: {
+        app: { name: "app", image: "nginx", volumes: ["/var/run/docker.sock:/var/run/docker.sock"] },
+      },
+    };
+    const { valid, errors } = validateCompose(compose, { skipMountChecks: false });
+    expect(valid).toBe(false);
+    expect(errors.some((e) => e.includes("bind mount"))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // composeToYaml — round-trip with network_mode
 // ---------------------------------------------------------------------------
 

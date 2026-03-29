@@ -3,6 +3,8 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { organizations, memberships } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth/session";
+import { requireAppAdmin } from "@/lib/auth/admin";
+import { recordActivity } from "@/lib/activity";
 import { eq, and } from "drizzle-orm";
 import { logger } from "@/lib/logger";
 
@@ -15,6 +17,7 @@ const updateOrgSchema = z.object({
     z.literal(""),
     z.null(),
   ]).optional(),
+  trusted: z.boolean().optional(),
 }).strict().refine(data => Object.keys(data).length > 0, { message: "No valid updates provided" });
 
 type RouteParams = {
@@ -83,11 +86,21 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    // trusted is a security boundary — only platform admins may change it
+    if (parsed.data.trusted !== undefined) {
+      try {
+        await requireAppAdmin();
+      } catch {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+    }
+
     const updates: Partial<typeof organizations.$inferInsert> = {};
     if (parsed.data.name !== undefined) updates.name = parsed.data.name;
     if (parsed.data.baseDomain !== undefined) {
       updates.baseDomain = parsed.data.baseDomain === "" ? null : parsed.data.baseDomain;
     }
+    if (parsed.data.trusted !== undefined) updates.trusted = parsed.data.trusted;
 
     if (Object.keys(updates).length === 0) {
       return NextResponse.json({ error: "No valid updates provided" }, { status: 400 });
@@ -100,6 +113,15 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       .set(updates)
       .where(eq(organizations.id, orgId))
       .returning();
+
+    if (parsed.data.trusted !== undefined) {
+      recordActivity({
+        organizationId: orgId,
+        action: "org.trusted_changed",
+        userId: session.user.id,
+        metadata: { trusted: parsed.data.trusted },
+      });
+    }
 
     return NextResponse.json({ organization: org });
   } catch (error) {

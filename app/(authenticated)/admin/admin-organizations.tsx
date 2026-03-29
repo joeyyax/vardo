@@ -2,13 +2,14 @@
 
 import { useState, useEffect } from "react";
 import { Loader2, Building2 } from "lucide-react";
-import Link from "next/link";
-import { formatBytes } from "@/lib/metrics/format";
+import { Switch } from "@/components/ui/switch";
+import { toast } from "@/lib/messenger";
 
 type OrgBreakdown = {
   id: string;
   name: string;
   slug: string;
+  trusted: boolean;
   memberCount: number;
   appCount: number;
   activeApps: number;
@@ -20,8 +21,11 @@ type OrgBreakdown = {
   containers: number;
 };
 
+import { formatBytes } from "@/lib/metrics/format";
+
 export function AdminOrganizations() {
   const [orgs, setOrgs] = useState<OrgBreakdown[] | null>(null);
+  const [savingTrusted, setSavingTrusted] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     fetch("/api/v1/admin/organizations")
@@ -29,6 +33,30 @@ export function AdminOrganizations() {
       .then((data) => setOrgs(data.organizations || []))
       .catch(() => setOrgs([]));
   }, []);
+
+  async function handleTrustedChange(orgId: string, value: boolean) {
+    setSavingTrusted((prev) => ({ ...prev, [orgId]: true }));
+    setOrgs((prev) => prev?.map((o) => o.id === orgId ? { ...o, trusted: value } : o) ?? prev);
+    try {
+      const res = await fetch(`/api/v1/organizations/${orgId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trusted: value }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Failed to save");
+      }
+
+      toast.success(value ? "Trusted environment enabled" : "Trusted environment disabled");
+    } catch (err) {
+      setOrgs((prev) => prev?.map((o) => o.id === orgId ? { ...o, trusted: !value } : o) ?? prev);
+      toast.error(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSavingTrusted((prev) => ({ ...prev, [orgId]: false }));
+    }
+  }
 
   if (orgs === null) {
     return (
@@ -54,7 +82,7 @@ export function AdminOrganizations() {
 
   return (
     <div className="squircle rounded-lg border bg-card overflow-x-auto">
-      <div className="grid grid-cols-[1fr_70px_70px_70px_90px_100px_80px] gap-3 px-4 py-2 border-b text-xs text-muted-foreground whitespace-nowrap min-w-[700px]">
+      <div className="grid grid-cols-[1fr_70px_70px_70px_90px_100px_80px_80px] gap-3 px-4 py-2 border-b text-xs text-muted-foreground whitespace-nowrap min-w-[800px]">
         <span>Organization</span>
         <span className="text-right">Members</span>
         <span className="text-right">Apps</span>
@@ -62,13 +90,13 @@ export function AdminOrganizations() {
         <span className="text-right">CPU</span>
         <span className="text-right">Memory</span>
         <span className="text-right">Containers</span>
+        <span className="text-right">Trusted</span>
       </div>
       <div className="divide-y">
         {orgs.map((org) => (
-          <Link
+          <div
             key={org.id}
-            href="/projects"
-            className="grid grid-cols-[1fr_70px_70px_70px_90px_100px_80px] gap-3 px-4 py-3 items-center whitespace-nowrap min-w-[700px] hover:bg-accent/50 transition-colors"
+            className="grid grid-cols-[1fr_70px_70px_70px_90px_100px_80px_80px] gap-3 px-4 py-3 items-center whitespace-nowrap min-w-[800px]"
           >
             <div className="min-w-0">
               <p className="text-sm font-medium truncate">{org.name}</p>
@@ -86,7 +114,17 @@ export function AdminOrganizations() {
             <span className="text-xs text-right tabular-nums text-muted-foreground">
               {org.containers || "-"}
             </span>
-          </Link>
+            <div className="flex justify-end items-center gap-1.5">
+              {savingTrusted[org.id] && (
+                <Loader2 className="size-3 animate-spin text-muted-foreground" />
+              )}
+              <Switch
+                checked={org.trusted}
+                onCheckedChange={(v) => handleTrustedChange(org.id, v)}
+                disabled={savingTrusted[org.id]}
+              />
+            </div>
+          </div>
         ))}
       </div>
     </div>
