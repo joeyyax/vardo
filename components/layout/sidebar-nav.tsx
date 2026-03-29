@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   FolderKanban,
+  Shield,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -12,6 +13,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useSession } from "@/lib/auth/client";
 
 type NavItem = {
   label: string;
@@ -29,6 +31,13 @@ const navItems: NavItem[] = [
   },
 ];
 
+const adminNavItem: NavItem = {
+  label: "Admin",
+  href: "/admin",
+  icon: Shield,
+  description: "System administration",
+};
+
 type SidebarNavProps = {
   collapsed?: boolean;
   orgId?: string;
@@ -36,10 +45,13 @@ type SidebarNavProps = {
 
 export function SidebarNav({ collapsed }: SidebarNavProps) {
   const pathname = usePathname();
+  const { data: session } = useSession();
+  const isAdmin = !!session?.user?.isAppAdmin;
+  const items = isAdmin ? [...navItems, adminNavItem] : navItems;
 
   return (
     <nav className="flex flex-col gap-1 px-3">
-      {navItems.map((item, index) => {
+      {items.map((item) => {
         const isActive =
           pathname === item.href || pathname.startsWith(`${item.href}/`);
         const Icon = item.icon;
