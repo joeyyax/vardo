@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { detectContainerGpu, filterImageInheritedEnv } from "@/lib/docker/discover";
+import { detectContainerGpu, detectContainerPort, filterImageInheritedEnv } from "@/lib/docker/discover";
 
 // ---------------------------------------------------------------------------
 // detectContainerGpu — GPU heuristic for discovered containers
@@ -56,6 +56,71 @@ describe("detectContainerGpu", () => {
       "com.nvidia.cuda.version": "12.0",
       "com.docker.compose.service": "app",
     })).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// detectContainerPort — port detection with fallback chain
+// ---------------------------------------------------------------------------
+// Priority: Traefik labels → ExposedPorts → PortBindings
+
+describe("detectContainerPort", () => {
+  it("returns the Traefik loadbalancer port when present", () => {
+    const labels = {
+      "traefik.http.services.myapp.loadbalancer.server.port": "8080",
+    };
+    expect(detectContainerPort(labels, [80, 443])).toBe(8080);
+  });
+
+  it("returns null when no labels, no exposed ports, no bound ports", () => {
+    expect(detectContainerPort({}, [])).toBeNull();
+  });
+
+  it("returns the single exposed port when only one is declared", () => {
+    expect(detectContainerPort({}, [80])).toBe(80);
+  });
+
+  it("returns the single exposed port regardless of value", () => {
+    expect(detectContainerPort({}, [9000])).toBe(9000);
+  });
+
+  it("prefers 80 over other exposed ports", () => {
+    expect(detectContainerPort({}, [3000, 80, 8080])).toBe(80);
+  });
+
+  it("prefers 8080 when 80 is not exposed", () => {
+    expect(detectContainerPort({}, [3000, 8080])).toBe(8080);
+  });
+
+  it("prefers 3000 when 80 and 8080 are not exposed", () => {
+    expect(detectContainerPort({}, [9000, 3000])).toBe(3000);
+  });
+
+  it("prefers 8000 when only 8000 and non-preferred ports are exposed", () => {
+    expect(detectContainerPort({}, [9000, 8000])).toBe(8000);
+  });
+
+  it("falls back to the first exposed port when none are preferred", () => {
+    expect(detectContainerPort({}, [9000, 9001])).toBe(9000);
+  });
+
+  it("falls back to the first bound port when no exposed ports exist", () => {
+    expect(detectContainerPort({}, [], [4000, 5000])).toBe(4000);
+  });
+
+  it("returns null when bound ports list is empty and no exposed ports", () => {
+    expect(detectContainerPort({}, [], [])).toBeNull();
+  });
+
+  it("Traefik label wins over exposed ports", () => {
+    const labels = {
+      "traefik.http.services.app.loadbalancer.server.port": "9999",
+    };
+    expect(detectContainerPort(labels, [80])).toBe(9999);
+  });
+
+  it("exposed ports win over bound ports", () => {
+    expect(detectContainerPort({}, [8080], [3000])).toBe(8080);
   });
 });
 
