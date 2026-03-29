@@ -69,6 +69,7 @@ export function AppSettingsDialog({
   const [cpuLimit, setCpuLimit] = useState(app.cpuLimit?.toString() || "");
   const [memoryLimit, setMemoryLimit] = useState(app.memoryLimit?.toString() || "");
   const [gpuEnabled, setGpuEnabled] = useState(app.gpuEnabled ?? false);
+  const [backendProtocol, setBackendProtocol] = useState<"" | "http" | "https">(app.backendProtocol ?? "");
   const [diskWriteAlertThreshold, setDiskWriteAlertThreshold] = useState(app.diskWriteAlertThreshold ? (app.diskWriteAlertThreshold / 1_073_741_824).toString() : "");
   const [autoRollback, setAutoRollback] = useState(app.autoRollback ?? false);
   const [rollbackGracePeriod, setRollbackGracePeriod] = useState(app.rollbackGracePeriod?.toString() || "60");
@@ -107,6 +108,7 @@ export function AppSettingsDialog({
       body.cpuLimit = cpuLimit ? parseFloat(cpuLimit) : null;
       body.memoryLimit = memoryLimit ? parseInt(memoryLimit, 10) : null;
       body.gpuEnabled = gpuEnabled;
+      body.backendProtocol = backendProtocol || null;
       body.diskWriteAlertThreshold = diskWriteAlertThreshold ? Math.round(parseFloat(diskWriteAlertThreshold) * 1_073_741_824) : null;
       body.autoRollback = autoRollback;
       body.rollbackGracePeriod = rollbackGracePeriod ? parseInt(rollbackGracePeriod, 10) : 60;
@@ -123,7 +125,8 @@ export function AppSettingsDialog({
         (body.imageName !== undefined && body.imageName !== (app.imageName || "")) ||
         (body.containerPort !== app.containerPort) ||
         (body.restartPolicy !== (app.restartPolicy || "unless-stopped")) ||
-        (body.rootDirectory !== (app.rootDirectory || null))
+        (body.rootDirectory !== (app.rootDirectory || null)) ||
+        (body.backendProtocol !== (app.backendProtocol ?? null))
       );
 
       const res = await fetch(
@@ -309,6 +312,24 @@ export function AppSettingsDialog({
                 )}
               </div>
               <p className="text-xs text-muted-foreground">Requires a redeploy to take effect.</p>
+            </div>
+
+            {/* Backend Protocol */}
+            <div className="grid gap-2 sm:w-1/2">
+              <Label>Backend Protocol</Label>
+              <Select value={backendProtocol} onValueChange={(v) => setBackendProtocol(v as "" | "http" | "https")}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Auto-detect" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Auto-detect</SelectItem>
+                  <SelectItem value="http">HTTP</SelectItem>
+                  <SelectItem value="https">HTTPS</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Protocol Traefik uses to reach the container. Auto-detect defaults to HTTPS when port is 443 or 8443. Use HTTPS for apps like Kasm that serve TLS internally.
+              </p>
             </div>
 
             {/* Restart policy */}

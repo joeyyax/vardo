@@ -49,6 +49,13 @@ async function handler(_request: NextRequest, { params }: RouteParams) {
       .filter((v) => v.persistent)
       .map((v) => ({ name: v.name, mountPath: v.mountPath }));
 
+    // Resolve the effective backend protocol for the debug preview
+    const port = app.containerPort ?? 3000;
+    const resolvedProtocol: "http" | "https" =
+      app.backendProtocol === "https" ? "https" :
+      app.backendProtocol === "http" ? "http" :
+      (port === 443 || port === 8443) ? "https" : "http";
+
     // Generate compose preview
     const composeParsed = buildComposePreview(
       {
@@ -70,6 +77,7 @@ async function handler(_request: NextRequest, { params }: RouteParams) {
           redirectTo: d.redirectTo ?? null,
           redirectCode: d.redirectCode ?? null,
         })),
+        backendProtocol: app.backendProtocol as "http" | "https" | null,
       },
       volumesList,
       NETWORK_NAME,
@@ -88,6 +96,7 @@ async function handler(_request: NextRequest, { params }: RouteParams) {
         redirectTo: d.redirectTo ?? null,
         redirectCode: d.redirectCode ?? null,
       })),
+      resolvedProtocol,
     );
 
     // Get container inspect data — env vars are stripped to avoid exposing

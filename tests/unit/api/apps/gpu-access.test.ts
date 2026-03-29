@@ -94,6 +94,7 @@ describe("rollback GPU role gate", () => {
     rootDirectory: null,
     restartPolicy: null,
     autoTraefikLabels: null,
+    backendProtocol: null,
   };
 
   const noGpuSnapshot: ConfigSnapshot = { ...gpuSnapshot, gpuEnabled: false };
@@ -155,6 +156,7 @@ describe("rollback config restore — gpuEnabled", () => {
     rootDirectory: null,
     restartPolicy: null,
     autoTraefikLabels: null,
+    backendProtocol: null,
   };
 
   it("restores gpuEnabled=true from a snapshot where it was enabled", () => {

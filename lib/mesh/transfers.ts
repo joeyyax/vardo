@@ -37,6 +37,7 @@ export type AppBundle = {
   rootDirectory: string | null;
   autoTraefikLabels: boolean | null;
   containerPort: number | null;
+  backendProtocol: "http" | "https" | null;
   restartPolicy: string | null;
   exposedPorts: { internal: number; external?: number; protocol?: string; description?: string }[] | null;
   envContent: string | null; // only included if explicitly requested
@@ -107,6 +108,7 @@ export async function buildProjectBundle(
       rootDirectory: app.rootDirectory,
       autoTraefikLabels: app.autoTraefikLabels,
       containerPort: app.containerPort,
+      backendProtocol: app.backendProtocol as "http" | "https" | null,
       restartPolicy: app.restartPolicy,
       exposedPorts: app.exposedPorts,
       envContent: options.includeEnvVars ? app.envContent : null,
@@ -223,6 +225,7 @@ export async function importProjectBundle(
           rootDirectory: appBundle.rootDirectory,
           autoTraefikLabels: appBundle.autoTraefikLabels,
           containerPort: appBundle.containerPort,
+          backendProtocol: appBundle.backendProtocol ?? null,
           restartPolicy: appBundle.restartPolicy,
           exposedPorts: appBundle.exposedPorts,
           envContent: appBundle.envContent,

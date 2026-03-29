@@ -90,6 +90,7 @@ export type App = {
   cpuLimit: number | null;
   memoryLimit: number | null;
   gpuEnabled: boolean | null;
+  backendProtocol: "http" | "https" | null;
   diskWriteAlertThreshold: number | null;
   autoRollback: boolean | null;
   rollbackGracePeriod: number | null;

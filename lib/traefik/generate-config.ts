@@ -36,10 +36,15 @@ type TraefikMiddlewareConfig = {
   };
 };
 
+type TraefikServersTransportConfig = {
+  insecureSkipVerify: boolean;
+};
+
 type TraefikDynamicConfig = {
   http: {
     routers: Record<string, TraefikRouterConfig>;
     middlewares?: Record<string, TraefikMiddlewareConfig>;
+    serversTransports?: Record<string, TraefikServersTransportConfig>;
   };
 };
 
@@ -62,11 +67,13 @@ type AppDomainEntry = {
 export function buildTraefikConfigYaml(
   appName: string,
   appDomains: AppDomainEntry[],
+  backendProtocol?: "http" | "https" | null,
 ): string | null {
   if (appDomains.length === 0) return null;
 
   const routers: Record<string, TraefikRouterConfig> = {};
   const middlewares: Record<string, TraefikMiddlewareConfig> = {};
+  const serversTransports: Record<string, TraefikServersTransportConfig> = {};
   const dockerServiceRef = `${appName}@docker`;
 
   for (const domain of appDomains) {
@@ -179,10 +186,15 @@ export function buildTraefikConfigYaml(
     }
   }
 
+  if (backendProtocol === "https") {
+    serversTransports[`${appName}-insecure`] = { insecureSkipVerify: true };
+  }
+
   const config: TraefikDynamicConfig = {
     http: {
       routers,
       ...(Object.keys(middlewares).length > 0 && { middlewares }),
+      ...(Object.keys(serversTransports).length > 0 && { serversTransports }),
     },
   };
 
@@ -201,7 +213,7 @@ export function buildTraefikConfigYaml(
 export async function regenerateAppRouteConfig(appId: string): Promise<void> {
   const app = await db.query.apps.findFirst({
     where: eq(apps.id, appId),
-    columns: { id: true, name: true, containerPort: true },
+    columns: { id: true, name: true, containerPort: true, backendProtocol: true },
     with: { domains: true },
   });
 
@@ -218,7 +230,15 @@ export async function regenerateAppRouteConfig(appId: string): Promise<void> {
     return;
   }
 
-  const configYaml = buildTraefikConfigYaml(app.name, appDomains);
+  // Resolve the effective backend protocol: explicit setting wins; null auto-detects
+  // from the container port (443 or 8443 → https).
+  const port = app.containerPort ?? 3000;
+  const resolvedProtocol: "http" | "https" =
+    app.backendProtocol === "https" ? "https" :
+    app.backendProtocol === "http" ? "http" :
+    (port === 443 || port === 8443) ? "https" : "http";
+
+  const configYaml = buildTraefikConfigYaml(app.name, appDomains, resolvedProtocol);
   if (!configYaml) {
     await removeAppRouteConfig(app.name);
     return;
