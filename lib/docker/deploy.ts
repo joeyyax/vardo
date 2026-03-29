@@ -709,6 +709,11 @@ export async function runDeployment(
     compose = injectNetwork(compose, NETWORK_NAME);
 
     // Step 3: Add app labels
+    // These are written after the spread of any stored labels, so they
+    // unconditionally overwrite any vardo.* values that came through the import
+    // filter (compose.ts). That overwrite is the security boundary — an imported
+    // container's labels cannot spoof organization, project.id, managed, etc.
+    // If the spread order ever changes, that guarantee breaks.
     for (const [svcName, svc] of Object.entries(compose.services)) {
       compose.services[svcName] = {
         ...svc,
