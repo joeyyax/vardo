@@ -1,9 +1,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { groupEnvironments, projects, environments, apps } from "@/lib/db/schema";
+import { environments, apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import type { McpAuthContext } from "../auth";
+import { resolveOrgPreview, previewNotFound } from "./preview-helpers";
 
 export function registerGetPreviewStatus(
   server: McpServer,
@@ -18,33 +19,8 @@ export function registerGetPreviewStatus(
         .describe("The preview environment ID (returned by vardo_create_preview)"),
     },
     async ({ preview_id }) => {
-      // Verify the preview belongs to this org
-      const preview = await db
-        .select({
-          id: groupEnvironments.id,
-          name: groupEnvironments.name,
-          prNumber: groupEnvironments.prNumber,
-          prUrl: groupEnvironments.prUrl,
-          expiresAt: groupEnvironments.expiresAt,
-          createdAt: groupEnvironments.createdAt,
-          organizationId: projects.organizationId,
-        })
-        .from(groupEnvironments)
-        .innerJoin(projects, eq(groupEnvironments.projectId, projects.id))
-        .where(eq(groupEnvironments.id, preview_id))
-        .then((rows) => rows[0] ?? null);
-
-      if (!preview || preview.organizationId !== context.organizationId) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({ error: "Preview not found or access denied" }),
-            },
-          ],
-          isError: true,
-        };
-      }
+      const preview = await resolveOrgPreview(preview_id, context.organizationId);
+      if (!preview) return previewNotFound();
 
       // Load environments for this preview with their app status
       const envs = await db
