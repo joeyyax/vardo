@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { detectContainerGpu, filterImageInheritedEnv, parseTraefikPort } from "@/lib/docker/discover";
+import { detectContainerGpu, filterImageInheritedEnv, parseTraefikPort, resolveContainerPort } from "@/lib/docker/discover";
 
 // ---------------------------------------------------------------------------
 // parseTraefikPort — extract container port from Traefik loadbalancer label
@@ -50,6 +50,49 @@ describe("parseTraefikPort", () => {
       "traefik.http.routers.myapp.rule": "Host(`app.example.com`)",
       "traefik.http.services.myapp.loadbalancer.server.port": "4000",
     })).toBe(4000);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveContainerPort — full priority chain
+// ---------------------------------------------------------------------------
+// Priority order: Traefik label → ExposedPorts[0] → null
+
+describe("resolveContainerPort", () => {
+  it("returns the Traefik port when the label is present", () => {
+    expect(resolveContainerPort(
+      { "traefik.http.services.myapp.loadbalancer.server.port": "3000" },
+      [8080],
+    )).toBe(3000);
+  });
+
+  it("Traefik label takes priority over ExposedPorts", () => {
+    expect(resolveContainerPort(
+      { "traefik.http.services.myapp.loadbalancer.server.port": "3000" },
+      [9000, 9001],
+    )).toBe(3000);
+  });
+
+  it("falls back to ExposedPorts[0] when no Traefik label is present", () => {
+    expect(resolveContainerPort({}, [8080, 9090])).toBe(8080);
+  });
+
+  it("returns null when there is no Traefik label and no ExposedPorts", () => {
+    expect(resolveContainerPort({}, [])).toBeNull();
+  });
+
+  it("returns null when Traefik label is invalid and ExposedPorts is empty", () => {
+    expect(resolveContainerPort(
+      { "traefik.http.services.myapp.loadbalancer.server.port": "notaport" },
+      [],
+    )).toBeNull();
+  });
+
+  it("falls back to ExposedPorts[0] when Traefik label is invalid", () => {
+    expect(resolveContainerPort(
+      { "traefik.http.services.myapp.loadbalancer.server.port": "notaport" },
+      [5000],
+    )).toBe(5000);
   });
 });
 
