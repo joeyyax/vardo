@@ -23,6 +23,7 @@ import {
   sanitizeCompose,
   validateCompose,
   composeToYaml,
+  stripTraefikLabels,
   type ComposeFile,
 } from "./compose";
 import { ensureNetwork, detectExposedPorts, listContainers, inspectContainer, stripDockerProjectPrefix } from "./client";
@@ -658,6 +659,12 @@ export async function runDeployment(
     const allServicesCustomNetwork = servicesWithCustomNetwork.length === Object.keys(compose.services).length;
 
     if (!allServicesCustomNetwork) {
+      // Strip stale Traefik labels from the stored compose before re-injecting.
+      // The stored compose may contain router names from a prior import or deploy
+      // (e.g. "appname" from import vs "appname-abc123" from deploy) — clear them
+      // all so we don't end up with duplicate routers pointing at the same domain.
+      compose = stripTraefikLabels(compose);
+
       // Find the first bridge-network service in compose file order (Object.keys preserves
       // insertion order for string keys, matching the order services appear in the compose file).
       // This ensures Traefik labels target a service reachable on vardo-network rather than
@@ -695,6 +702,11 @@ export async function runDeployment(
     compose = injectNetwork(compose, NETWORK_NAME);
 
     // Step 3: Add app labels
+    // These are written after the spread of any stored labels, so they
+    // unconditionally overwrite any vardo.* values that came through the import
+    // filter (compose.ts). That overwrite is the security boundary — an imported
+    // container's labels cannot spoof organization, project.id, managed, etc.
+    // If the spread order ever changes, that guarantee breaks.
     for (const [svcName, svc] of Object.entries(compose.services)) {
       compose.services[svcName] = {
         ...svc,

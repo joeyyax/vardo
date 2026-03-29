@@ -183,14 +183,14 @@ export type ContainerConfig = {
   hasEnvVars: boolean;
 } & ContainerRuntimeOptions;
 
-// Labels injected by Docker Compose or Vardo — strip these when capturing an
-// existing container's labels so they don't pollute the regenerated compose.
-const INTERNAL_LABEL_PREFIXES = [
-  "com.docker.",
-  "vardo.",
-  "host.",
-  "traefik.",
-];
+// Only labels with these prefixes survive the import filter. Everything else
+// (OCI image metadata, Docker Compose internals, arbitrary user labels) is
+// stripped so the generated compose stays clean. Traefik routing labels are
+// allowed through because they may carry custom middleware config; Vardo labels
+// are allowed so any user-set vardo.* metadata is preserved. Both will be
+// re-evaluated and overwritten during deploy anyway.
+export const TRAEFIK_LABEL_PREFIX = "traefik.";
+const ALLOWED_LABEL_PREFIXES = [TRAEFIK_LABEL_PREFIX, "vardo."];
 
 /**
  * Generate a ComposeFile from a captured container spec.
@@ -255,10 +255,13 @@ export function generateComposeFromContainer(
     service.network_mode = container.networkMode;
   }
 
-  // Labels: strip Docker-internal and Vardo-managed labels.
+  // Labels: keep only traefik. and vardo. prefixed labels. OCI image metadata
+  // (maintainer, org.opencontainers.image.*), Docker Compose internals, and
+  // everything else is stripped — they belong to the image or the runtime, not
+  // the compose definition.
   const filteredLabels = Object.fromEntries(
     Object.entries(container.labels).filter(
-      ([k]) => !INTERNAL_LABEL_PREFIXES.some((prefix) => k.startsWith(prefix))
+      ([k]) => ALLOWED_LABEL_PREFIXES.some((prefix) => k.startsWith(prefix))
     )
   );
   if (Object.keys(filteredLabels).length > 0) service.labels = filteredLabels;
@@ -468,6 +471,31 @@ export function injectTraefikLabels(
       [serviceName]: updatedService,
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Traefik label stripping
+// ---------------------------------------------------------------------------
+
+/**
+ * Strip all Traefik labels from every service in the compose file.
+ * Used before re-injecting fresh Traefik config to prevent stale router names
+ * from accumulating (e.g. "appname" from import vs "appname-abc123" from deploy).
+ * Returns a new ComposeFile — does not mutate the original.
+ */
+export function stripTraefikLabels(compose: ComposeFile): ComposeFile {
+  const updatedServices: Record<string, ComposeService> = {};
+  for (const [svcName, svc] of Object.entries(compose.services)) {
+    if (!svc.labels) {
+      updatedServices[svcName] = svc;
+      continue;
+    }
+    const stripped = Object.fromEntries(
+      Object.entries(svc.labels).filter(([k]) => !k.startsWith(TRAEFIK_LABEL_PREFIX))
+    );
+    updatedServices[svcName] = { ...svc, labels: stripped };
+  }
+  return { ...compose, services: updatedServices };
 }
 
 // ---------------------------------------------------------------------------
