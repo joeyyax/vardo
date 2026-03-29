@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { Copy, Check, RefreshCw, ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -114,13 +114,14 @@ export function AppDebug({
     load();
   }, [load]);
 
-  const containerJson = data?.containers?.length
-    ? JSON.stringify(
-        data.containers.length === 1 ? data.containers[0] : data.containers,
-        null,
-        2,
-      )
-    : null;
+  const containerJson = useMemo(() => {
+    if (!data?.containers?.length) return null;
+    return JSON.stringify(
+      data.containers.length === 1 ? data.containers[0] : data.containers,
+      null,
+      2,
+    );
+  }, [data]);
 
   return (
     <div className="pt-4 space-y-4">

@@ -18,6 +18,8 @@ type RouteParams = {
 };
 
 const NETWORK_NAME = "vardo-network";
+// Cap the serialized container inspect payload to avoid returning MB+ for multi-service apps
+const CONTAINER_INSPECT_MAX_BYTES = 256 * 1024; // 256KB
 
 // GET /api/v1/organizations/[orgId]/apps/[appId]/debug
 async function handler(_request: NextRequest, { params }: RouteParams) {
@@ -29,18 +31,20 @@ async function handler(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const app = await db.query.apps.findFirst({
-      where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
-      with: { domains: true },
-    });
+    const [app, appVolumes] = await Promise.all([
+      db.query.apps.findFirst({
+        where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
+        with: { domains: true },
+      }),
+      db.query.volumes.findMany({
+        where: eq(volumes.appId, appId),
+      }),
+    ]);
 
     if (!app) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const appVolumes = await db.query.volumes.findMany({
-      where: eq(volumes.appId, appId),
-    });
     const volumesList = appVolumes
       .filter((v) => v.persistent)
       .map((v) => ({ name: v.name, mountPath: v.mountPath }));
@@ -94,13 +98,17 @@ async function handler(_request: NextRequest, { params }: RouteParams) {
       const inspectResults = await Promise.allSettled(
         containerList.map((c) => inspectContainer(c.id)),
       );
+      let totalBytes = 0;
       containers = inspectResults
         .filter((r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof inspectContainer>>> => r.status === "fulfilled")
-        .map((r) => {
+        .flatMap((r) => {
           // Strip env — secrets are encrypted at rest and must not be exposed here
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const { env, ...rest } = r.value;
-          return rest;
+          const serialized = JSON.stringify(rest);
+          totalBytes += serialized.length;
+          if (totalBytes > CONTAINER_INSPECT_MAX_BYTES) return [];
+          return [rest];
         });
     } catch {
       // Docker not available — return empty
