@@ -234,7 +234,8 @@ export function generateComposeFromContainer(
   // Anonymous volumes have a 64-char hex name assigned by Docker — they should
   // be emitted as a bare container path so Docker Compose recreates an anonymous
   // volume on deploy rather than trying to reference a named volume.
-  const isAnonymousVolume = (name: string) => /^[0-9a-f]{64}$/.test(name);
+  // An empty name is also treated as anonymous (defensive: shouldn't happen with Docker).
+  const isAnonymousVolume = (name: string) => !name || /^[0-9a-f]{64}$/.test(name);
   const dockerVolumes = container.mounts.filter((m) => m.type === "volume");
   const namedVolumes = dockerVolumes.filter((m) => !isAnonymousVolume(m.name));
   const anonymousVolumes = dockerVolumes.filter((m) => isAnonymousVolume(m.name));
