@@ -351,16 +351,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
           if (restarted) {
             // Update the deployment to reflect that the original container was restored.
-            db.update(deployments)
+            await db
+              .update(deployments)
               .set({ status: "rolled_back", finishedAt: new Date() })
-              .where(eq(deployments.id, deploymentId))
-              .catch(() => {});
+              .where(eq(deployments.id, deploymentId));
 
             // Reset app status — the original container is running again.
-            db.update(apps)
+            await db
+              .update(apps)
               .set({ status: "active", updatedAt: new Date() })
-              .where(eq(apps.id, appId))
-              .catch(() => {});
+              .where(eq(apps.id, appId));
 
             // Publish real-time event so any open app view refreshes.
             publishEvent(appChannel(appId), {
@@ -373,9 +373,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             // Record activity for audit trail.
             recordActivity({
               organizationId: orgId,
-              action: "import.deploy.rolled_back",
+              action: "deployment.rolled_back",
               appId,
-              metadata: { deploymentId, containerId },
+              metadata: { deploymentId, containerId, source: "import" },
             }).catch(() => {});
 
             // Send notification so the user sees a toast even if they navigated away.
