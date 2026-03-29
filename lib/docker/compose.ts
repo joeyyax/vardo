@@ -189,7 +189,8 @@ export type ContainerConfig = {
 // allowed through because they may carry custom middleware config; Vardo labels
 // are allowed so any user-set vardo.* metadata is preserved. Both will be
 // re-evaluated and overwritten during deploy anyway.
-const ALLOWED_LABEL_PREFIXES = ["traefik.", "vardo."];
+export const TRAEFIK_LABEL_PREFIX = "traefik.";
+const ALLOWED_LABEL_PREFIXES = [TRAEFIK_LABEL_PREFIX, "vardo."];
 
 /**
  * Generate a ComposeFile from a captured container spec.

@@ -23,6 +23,7 @@ import {
   sanitizeCompose,
   validateCompose,
   composeToYaml,
+  TRAEFIK_LABEL_PREFIX,
   type ComposeFile,
 } from "./compose";
 import { ensureNetwork, detectExposedPorts, listContainers, inspectContainer, stripDockerProjectPrefix } from "./client";
@@ -666,7 +667,7 @@ export async function runDeployment(
         const svc = compose.services[svcName];
         if (svc.labels) {
           const stripped = Object.fromEntries(
-            Object.entries(svc.labels).filter(([k]) => !k.startsWith("traefik."))
+            Object.entries(svc.labels).filter(([k]) => !k.startsWith(TRAEFIK_LABEL_PREFIX))
           );
           compose.services[svcName] = { ...svc, labels: stripped };
         }
