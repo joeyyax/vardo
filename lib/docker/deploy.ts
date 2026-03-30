@@ -28,7 +28,7 @@ import {
   stripTraefikLabels,
   type ComposeFile,
 } from "./compose";
-import { ensureNetwork, detectExposedPorts, listContainers, inspectContainer, stripDockerProjectPrefix, listImages, removeImage, pruneImages, pruneBuildCache } from "./client";
+import { ensureNetwork, detectExposedPorts, listContainers, inspectContainer, removeContainer, stripDockerProjectPrefix, listImages, removeImage, pruneImages, pruneBuildCache } from "./client";
 import { isFeatureEnabled } from "@/lib/config/features";
 
 import { assertSafeBranch } from "./validate";
@@ -994,6 +994,24 @@ export async function runDeployment(
       } catch (err) {
         log(`[deploy] Warning: old slot cleanup — ${err instanceof Error ? err.message : err}`);
       }
+    }
+
+    // Step 10.5: Clean up original container from import (if any)
+    // When a container is imported, the original container ID is stored on the
+    // app record. If the import's initial deploy failed and rolled back, the
+    // original stays running. On the next successful deploy, remove it.
+    if (app.importedContainerId) {
+      try {
+        const info = await inspectContainer(app.importedContainerId).catch(() => null);
+        if (info && (info.state.status === "running" || info.state.status === "exited")) {
+          await removeContainer(app.importedContainerId, { force: true });
+          log(`[deploy] Removed original imported container ${app.importedContainerId.slice(0, 12)}`);
+        }
+      } catch {
+        // Best effort — operator can remove manually
+      }
+      // Clear the field so we don't try again on future deploys
+      await db.update(apps).set({ importedContainerId: null, updatedAt: new Date() }).where(eq(apps.id, opts.appId));
     }
 
     // Step 11: Record active slot
