@@ -9,12 +9,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-
-function statusDotColor(status: string) {
-  return status === "active" ? "bg-status-success"
-    : status === "error" ? "bg-status-error"
-    : "bg-status-neutral";
-}
+import { statusDotColor } from "@/lib/ui/status-colors";
 
 export function DependencySelector({
   appId,
