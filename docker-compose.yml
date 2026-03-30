@@ -49,13 +49,13 @@ services:
         condition: service_healthy
     env_file: .env
     environment:
-      DATABASE_URL: postgresql://host:${DB_PASSWORD:-host}@postgres:5432/host
-      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://host:${DB_PASSWORD:-host}@vardo-postgres:5432/host
+      REDIS_URL: redis://vardo-redis:6379
       NEXT_PUBLIC_BETTER_AUTH_URL: https://${VARDO_DOMAIN:-localhost}
       NEXT_PUBLIC_APP_URL: https://${VARDO_DOMAIN:-localhost}
       VARDO_PROJECTS_DIR: /var/lib/vardo/projects
-      CADVISOR_URL: http://cadvisor:8080
-      LOKI_URL: http://loki:3100
+      CADVISOR_URL: http://vardo-cadvisor:8080
+      LOKI_URL: http://vardo-loki:3100
       WIREGUARD_GATEWAY: 10.88.0.2
       DOCKER_GID: ${DOCKER_GID:-999}
     healthcheck:
