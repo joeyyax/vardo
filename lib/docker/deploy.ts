@@ -286,6 +286,7 @@ export async function runDeployment(
     let compose: ComposeFile;
     let builtLocally = false;
     let hostConfig: import("@/lib/config/host-config").HostConfig | null = null;
+    let repoDir: string | null = null;
     // App-level dir holds the repo; env-level dir holds slots
     const appBaseDir = join(PROJECTS_DIR, app.name);
     const appDir = join(appBaseDir, envName);
@@ -324,7 +325,7 @@ export async function runDeployment(
     } else if (app.source === "git" && app.gitUrl) {
       // Git source — clone/pull repo with GitHub App auth if needed
       // Repo lives at app level (shared across environments)
-      const repoDir = join(appBaseDir, "repo");
+      repoDir = join(appBaseDir, "repo");
       const branch = envBranchOverride || app.gitBranch || "main";
       assertSafeBranch(branch);
 
@@ -779,7 +780,25 @@ export async function runDeployment(
     stage("deploy", "running");
     log(`[deploy] Active slot: ${activeSlot || "none"}, deploying to: ${newSlot}`);
 
-    // Step 5: Write compose file (without Traefik labels — new container starts but doesn't receive traffic)
+    // Step 5: Write compose file
+    // For git-sourced compose apps with build: directives, symlink the repo
+    // contents into the slot dir so build contexts resolve correctly.
+    if (repoDir) {
+      const hasBuildDirective = Object.values(compose.services).some((svc) => svc.build);
+      if (hasBuildDirective) {
+        const { readdir, symlink, lstat } = await import("fs/promises");
+        const entries = await readdir(repoDir);
+        for (const entry of entries) {
+          if (entry === "docker-compose.yml" || entry === "docker-compose.yaml" || entry === "compose.yml" || entry === "compose.yaml" || entry === ".env") continue;
+          const target = join(slotDir, entry);
+          try {
+            await lstat(target);
+          } catch {
+            await symlink(join(repoDir, entry), target);
+          }
+        }
+      }
+    }
     const composePath = join(slotDir, "docker-compose.yml");
     await writeFile(composePath, composeToYaml(compose), "utf-8");
 
