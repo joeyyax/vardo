@@ -18,6 +18,7 @@ import {
   type ComposeFile,
   type ContainerConfig,
 } from "@/lib/docker/compose";
+import { mergeComposeFile } from "@/lib/docker/import";
 
 function makeCompose(volumes: string[]): ComposeFile {
   return {
@@ -1143,23 +1144,13 @@ describe("generateComposeFromContainer", () => {
     const a = generateComposeFromContainer("svc-a", makeContainerConfig({ networkMode: "overlay-1" }));
     const b = generateComposeFromContainer("svc-b", makeContainerConfig({ networkMode: "overlay-2" }));
 
-    // Simulate the merge loop from the group import route
     const merged: ComposeFile = { services: {} };
-    for (const file of [a, b]) {
-      for (const [name, svc] of Object.entries(file.services)) {
-        merged.services[name] = svc;
-      }
-      if (file.networks) {
-        merged.networks ??= {};
-        for (const [netName, netDef] of Object.entries(file.networks)) {
-          (merged.networks as Record<string, unknown>)[netName] = netDef;
-        }
-      }
-    }
+    mergeComposeFile(merged, a);
+    mergeComposeFile(merged, b);
 
     expect(merged.networks).toBeDefined();
-    expect((merged.networks as Record<string, unknown>)["overlay-1"]).toEqual({ external: true });
-    expect((merged.networks as Record<string, unknown>)["overlay-2"]).toEqual({ external: true });
+    expect(merged.networks!["overlay-1"]).toEqual({ external: true });
+    expect(merged.networks!["overlay-2"]).toEqual({ external: true });
   });
 
   it("does not add default network_mode for omitted networkMode", () => {

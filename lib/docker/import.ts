@@ -15,6 +15,7 @@ import { stopContainer, startContainer, removeContainer, inspectContainer } from
 import { requestDeploy } from "@/lib/docker/deploy-cancel";
 import { publishEvent, appChannel } from "@/lib/events";
 import { recordActivity } from "@/lib/activity";
+import type { ComposeFile } from "@/lib/docker/compose";
 
 // Infer the Drizzle transaction type from the db.transaction callback signature.
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -336,7 +337,7 @@ export function parseComposeDependsOn(labels: Record<string, string>): string[] 
  * The match is intentionally broad — false positives are safer than misses.
  */
 export function isSensitiveEnvKey(key: string): boolean {
-  return /password|passwd|secret|token|private_key|api_key|access_key|credential/i.test(key);
+  return /password|passwd|secret|token|private_key|api_key|access_key|credential|url|uri|dsn|connection/i.test(key);
 }
 
 /**
@@ -366,4 +367,41 @@ export function parseContainerEnvVars(env: string[]): {
   }
 
   return { vars, skippedKeys };
+}
+
+// ---------------------------------------------------------------------------
+// Compose file merging
+// ---------------------------------------------------------------------------
+
+/**
+ * Merge services, volumes, and networks from `source` into `target`.
+ *
+ * When `composeProject` is provided, networks matching the compose project's
+ * default network pattern are excluded — they are ephemeral and will not exist
+ * after the original containers are removed.
+ */
+export function mergeComposeFile(
+  target: ComposeFile,
+  source: ComposeFile,
+  composeProject?: string,
+): void {
+  for (const [name, svc] of Object.entries(source.services)) {
+    target.services[name] = svc;
+  }
+
+  if (source.volumes) {
+    target.volumes ??= {};
+    for (const [volName, volDef] of Object.entries(source.volumes)) {
+      target.volumes[volName] = volDef;
+    }
+  }
+
+  if (source.networks) {
+    target.networks ??= {};
+    for (const [netName, netDef] of Object.entries(source.networks)) {
+      if (!composeProject || !isComposeProjectNetwork(netName, composeProject)) {
+        target.networks[netName] = netDef;
+      }
+    }
+  }
 }

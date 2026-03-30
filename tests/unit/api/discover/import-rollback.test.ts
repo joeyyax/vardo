@@ -122,8 +122,16 @@ describe("isSensitiveEnvKey", () => {
     expect(isSensitiveEnvKey("Api_Token")).toBe(true);
   });
 
+  it("matches URL/URI/DSN/CONNECTION variants that embed credentials", () => {
+    expect(isSensitiveEnvKey("DATABASE_URL")).toBe(true);
+    expect(isSensitiveEnvKey("REDIS_URL")).toBe(true);
+    expect(isSensitiveEnvKey("MONGODB_URI")).toBe(true);
+    expect(isSensitiveEnvKey("MONGO_URI")).toBe(true);
+    expect(isSensitiveEnvKey("DATABASE_DSN")).toBe(true);
+    expect(isSensitiveEnvKey("CONNECTION_STRING")).toBe(true);
+  });
+
   it("does not match non-sensitive keys", () => {
-    expect(isSensitiveEnvKey("DATABASE_URL")).toBe(false);
     expect(isSensitiveEnvKey("REDIS_HOST")).toBe(false);
     expect(isSensitiveEnvKey("PORT")).toBe(false);
     expect(isSensitiveEnvKey("NODE_ENV")).toBe(false);

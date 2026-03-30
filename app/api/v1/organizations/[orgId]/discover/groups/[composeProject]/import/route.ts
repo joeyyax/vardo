@@ -27,6 +27,7 @@ import {
   isSensitiveEnvKey,
   parseComposeDependsOn,
   isComposeProjectNetwork,
+  mergeComposeFile,
 } from "@/lib/docker/import";
 
 type RouteParams = {
@@ -255,29 +256,11 @@ async function handler(request: NextRequest, { params }: RouteParams) {
         serviceDomains.push({ serviceName, domain: detail.domain, port: containerPort });
       }
 
-      // Merge this service into the combined file
-      for (const [name, mergedSvc] of Object.entries(singleFile.services)) {
-        merged.services[name] = mergedSvc;
-      }
-
-      // Merge named volume declarations
-      if (singleFile.volumes) {
-        merged.volumes ??= {};
-        for (const [volName, volDef] of Object.entries(singleFile.volumes)) {
-          merged.volumes[volName] = volDef;
-        }
-      }
-
-      // Merge network declarations (excluding compose-project networks which
-      // were already stripped from individual services above).
-      if (singleFile.networks) {
-        merged.networks ??= {};
-        for (const [netName, netDef] of Object.entries(singleFile.networks)) {
-          if (!isComposeProjectNetwork(netName, composeProject)) {
-            merged.networks[netName] = netDef;
-          }
-        }
-      }
+      // Merge this service's compose file into the combined file.
+      // Networks matching the compose project's default pattern are excluded —
+      // they are ephemeral and will not exist after the original containers
+      // are removed.
+      mergeComposeFile(merged, singleFile, composeProject);
 
       // Accumulate mounts for volume DB records
       for (const mount of detail.mounts) {
@@ -296,7 +279,7 @@ async function handler(request: NextRequest, { params }: RouteParams) {
     let envContent: string | null = null;
     if (Object.keys(allSensitiveVars).length > 0) {
       const envLines = Object.entries(allSensitiveVars)
-        .map(([k, v]) => `${k}=${v}`)
+        .map(([k, v]) => `${k}=${v.replace(/\r?\n/g, "\\n")}`)
         .join("\n");
       envContent = encrypt(envLines, orgId);
     }
