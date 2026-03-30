@@ -186,15 +186,17 @@ export function runAsyncContainerMigration(params: MigrationParams): void {
             try { await startContainer(id); } catch { /* best effort */ }
           }
 
-          await db
-            .update(deployments)
-            .set({ status: "failed", finishedAt: new Date() })
-            .where(eq(deployments.id, deploymentId));
+          await db.transaction(async (tx) => {
+            await tx
+              .update(deployments)
+              .set({ status: "failed", finishedAt: new Date() })
+              .where(eq(deployments.id, deploymentId));
 
-          await db
-            .update(apps)
-            .set({ status: "active", updatedAt: new Date() })
-            .where(eq(apps.id, appId));
+            await tx
+              .update(apps)
+              .set({ status: "active", updatedAt: new Date() })
+              .where(eq(apps.id, appId));
+          });
 
           publishEvent(appChannel(appId), {
             event: "deploy:failed",

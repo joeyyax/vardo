@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("@/lib/db", () => ({
   db: {
     update: vi.fn(),
+    transaction: vi.fn(),
   },
 }));
 
@@ -69,6 +70,13 @@ describe("runAsyncContainerMigration — bailOnFirstStopFailure", () => {
     // inspectContainer throws (container not found) so waitForContainerStopped
     // exits immediately rather than polling for 5 seconds.
     vi.mocked(inspectContainer).mockRejectedValue(new Error("Not found"));
+
+    // db.transaction delegates to its callback with db as the tx so that
+    // tx.update(...) calls the same db.update mock and existing call-count
+    // assertions remain valid.
+    vi.mocked(db.transaction).mockImplementation(
+      async (callback) => callback(db as unknown as Parameters<Parameters<typeof db.transaction>[0]>[0]),
+    );
   });
 
   it("marks deployment failed and resets app when the only container fails to stop", async () => {
