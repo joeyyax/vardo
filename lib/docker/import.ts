@@ -11,7 +11,7 @@ import { apps, deployments, projects } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { slugify } from "@/lib/ui/slugify";
-import { stopContainer, startContainer, removeContainer } from "@/lib/docker/client";
+import { stopContainer, startContainer, removeContainer, inspectContainer } from "@/lib/docker/client";
 import { requestDeploy } from "@/lib/docker/deploy-cancel";
 import { publishEvent, appChannel } from "@/lib/events";
 import { recordActivity } from "@/lib/activity";
@@ -91,6 +91,34 @@ export function getPgErrorCode(error: unknown): string | null {
 }
 
 // ---------------------------------------------------------------------------
+// Container stop verification
+// ---------------------------------------------------------------------------
+
+const STOP_POLL_INTERVAL_MS = 250;
+const STOP_POLL_MAX_WAIT_MS = 5000;
+
+/**
+ * Poll the container state until it reaches a terminal status ("exited" or
+ * "dead"), or until the timeout expires. Docker's stop API blocks until the
+ * main process exits, but the engine may not have fully released resources
+ * (port bindings, network namespace) by the time it returns. Polling ensures
+ * the deploy that follows doesn't hit lock or port conflicts.
+ */
+async function waitForContainerStopped(containerId: string): Promise<void> {
+  const deadline = Date.now() + STOP_POLL_MAX_WAIT_MS;
+  while (Date.now() < deadline) {
+    try {
+      const info = await inspectContainer(containerId);
+      if (info.state.status === "exited" || info.state.status === "dead") return;
+    } catch {
+      // Container removed or not found — treat as stopped.
+      return;
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, STOP_POLL_INTERVAL_MS));
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Async container migration
 // ---------------------------------------------------------------------------
 
@@ -142,6 +170,11 @@ export function runAsyncContainerMigration(params: MigrationParams): void {
     for (const containerId of containerIds) {
       try {
         await stopContainer(containerId);
+        // Docker's stop API returns once the main process exits, but the engine
+        // may not have fully released port bindings and other resources yet.
+        // Wait until the container reaches a terminal state before deploying
+        // to avoid lock or port conflicts with the incoming Vardo container.
+        await waitForContainerStopped(containerId);
         stoppedIds.push(containerId);
       } catch {
         // If we can't stop a container, optionally bail so the deploy is not
@@ -232,6 +265,18 @@ export function runAsyncContainerMigration(params: MigrationParams): void {
 // ---------------------------------------------------------------------------
 // Env var parsing
 // ---------------------------------------------------------------------------
+
+/**
+ * Returns true when an env var key name suggests it holds a sensitive value
+ * (password, token, secret, private key, API key, credential, etc.).
+ *
+ * Used during container import to route sensitive vars to the encrypted
+ * envContent field rather than inlining them in plaintext compose content.
+ * The match is intentionally broad — false positives are safer than misses.
+ */
+export function isSensitiveEnvKey(key: string): boolean {
+  return /password|passwd|secret|token|private_key|api_key|access_key|credential/i.test(key);
+}
 
 /**
  * Parse a Docker env array (`["KEY=VALUE", ...]`) into a plain object.
