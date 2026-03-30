@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { parseContainerEnvVars, getPgErrorCode, isSensitiveEnvKey } from "@/lib/docker/import";
+import {
+  parseContainerEnvVars,
+  getPgErrorCode,
+  isSensitiveEnvKey,
+  parseComposeDependsOn,
+  isComposeProjectNetwork,
+} from "@/lib/docker/import";
 
 // ---------------------------------------------------------------------------
 // parseContainerEnvVars
@@ -116,13 +122,97 @@ describe("isSensitiveEnvKey", () => {
     expect(isSensitiveEnvKey("Api_Token")).toBe(true);
   });
 
+  it("matches URL/URI/DSN/CONNECTION variants that embed credentials", () => {
+    expect(isSensitiveEnvKey("DATABASE_URL")).toBe(true);
+    expect(isSensitiveEnvKey("REDIS_URL")).toBe(true);
+    expect(isSensitiveEnvKey("MONGODB_URI")).toBe(true);
+    expect(isSensitiveEnvKey("MONGO_URI")).toBe(true);
+    expect(isSensitiveEnvKey("DATABASE_DSN")).toBe(true);
+    expect(isSensitiveEnvKey("CONNECTION_STRING")).toBe(true);
+  });
+
   it("does not match non-sensitive keys", () => {
-    expect(isSensitiveEnvKey("DATABASE_URL")).toBe(false);
     expect(isSensitiveEnvKey("REDIS_HOST")).toBe(false);
     expect(isSensitiveEnvKey("PORT")).toBe(false);
     expect(isSensitiveEnvKey("NODE_ENV")).toBe(false);
     expect(isSensitiveEnvKey("APP_NAME")).toBe(false);
     expect(isSensitiveEnvKey("LOG_LEVEL")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isComposeProjectNetwork
+// ---------------------------------------------------------------------------
+
+describe("isComposeProjectNetwork", () => {
+  it("matches {project}_default pattern", () => {
+    expect(isComposeProjectNetwork("paperless_default", "paperless")).toBe(true);
+    expect(isComposeProjectNetwork("mystack_default", "mystack")).toBe(true);
+  });
+
+  it("matches the project name itself", () => {
+    expect(isComposeProjectNetwork("paperless", "paperless")).toBe(true);
+  });
+
+  it("is case-insensitive", () => {
+    expect(isComposeProjectNetwork("Paperless_Default", "paperless")).toBe(true);
+    expect(isComposeProjectNetwork("paperless_default", "Paperless")).toBe(true);
+  });
+
+  it("does not match unrelated networks", () => {
+    expect(isComposeProjectNetwork("bridge", "paperless")).toBe(false);
+    expect(isComposeProjectNetwork("host", "paperless")).toBe(false);
+    expect(isComposeProjectNetwork("vardo-network", "paperless")).toBe(false);
+    expect(isComposeProjectNetwork("other_default", "paperless")).toBe(false);
+  });
+
+  it("returns false for empty inputs", () => {
+    expect(isComposeProjectNetwork("", "paperless")).toBe(false);
+    expect(isComposeProjectNetwork("paperless_default", "")).toBe(false);
+    expect(isComposeProjectNetwork("", "")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseComposeDependsOn
+// ---------------------------------------------------------------------------
+
+describe("parseComposeDependsOn", () => {
+  it("parses standard depends_on label format preserving conditions", () => {
+    const labels = {
+      "com.docker.compose.depends_on": "redis:service_started:false,postgres:service_started:false",
+    };
+    expect(parseComposeDependsOn(labels)).toEqual({
+      redis: { condition: "service_started" },
+      postgres: { condition: "service_started" },
+    });
+  });
+
+  it("handles a single dependency", () => {
+    const labels = {
+      "com.docker.compose.depends_on": "db:service_started:false",
+    };
+    expect(parseComposeDependsOn(labels)).toEqual({
+      db: { condition: "service_started" },
+    });
+  });
+
+  it("returns empty object when label is absent", () => {
+    expect(parseComposeDependsOn({})).toEqual({});
+  });
+
+  it("returns empty object for empty string", () => {
+    expect(parseComposeDependsOn({ "com.docker.compose.depends_on": "" })).toEqual({});
+  });
+
+  it("preserves service_healthy condition", () => {
+    const labels = {
+      "com.docker.compose.depends_on": "redis:service_healthy:true,postgres:service_started:false",
+    };
+    expect(parseComposeDependsOn(labels)).toEqual({
+      redis: { condition: "service_healthy" },
+      postgres: { condition: "service_started" },
+    });
   });
 });
 

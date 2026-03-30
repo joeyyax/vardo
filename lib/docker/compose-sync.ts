@@ -176,8 +176,15 @@ export async function syncComposeServices(opts: {
       const { cpuLimit, memoryLimit } = parseResourceLimits(svc);
       const volumes = parseServiceVolumes(svc, compose.volumes);
 
-      // Map compose depends_on to child app names (prefixed with parent)
-      const dependsOn = svc.depends_on?.map((dep) => `${parentAppName}-${dep}`) ?? null;
+      // Map compose depends_on to child app names (prefixed with parent).
+      // depends_on may be a string[] or an object keyed by service name.
+      const dependsOnRaw = svc.depends_on;
+      const dependsOnServiceNames = dependsOnRaw
+        ? Array.isArray(dependsOnRaw)
+          ? dependsOnRaw
+          : Object.keys(dependsOnRaw)
+        : null;
+      const dependsOn = dependsOnServiceNames?.map((dep) => `${parentAppName}-${dep}`) ?? null;
 
       const existing = childByService.get(serviceName);
 
