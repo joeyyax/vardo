@@ -287,6 +287,43 @@ export function runAsyncContainerMigration(params: MigrationParams): void {
 }
 
 // ---------------------------------------------------------------------------
+// Compose group helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Check whether a network name is the default network created by a Docker
+ * Compose project. Compose generates networks named `{project}_default` (or
+ * just `{project}` in some older versions). These networks are ephemeral —
+ * they won't exist after the original containers are removed, so referencing
+ * them as `external: true` in the imported compose file would cause deploy
+ * failures.
+ */
+export function isComposeProjectNetwork(networkName: string, composeProject: string): boolean {
+  if (!networkName || !composeProject) return false;
+  const lower = networkName.toLowerCase();
+  const project = composeProject.toLowerCase();
+  return lower === `${project}_default` || lower === project;
+}
+
+/**
+ * Parse the `com.docker.compose.depends_on` label into an array of service
+ * names. Docker Compose stores dependency info as a comma-separated list of
+ * `service:condition:restart` triples (e.g.
+ * "redis:service_started:false,postgres:service_started:false").
+ *
+ * Returns an empty array if the label is absent or empty.
+ */
+export function parseComposeDependsOn(labels: Record<string, string>): string[] {
+  const raw = labels["com.docker.compose.depends_on"];
+  if (!raw) return [];
+
+  return raw
+    .split(",")
+    .map((entry) => entry.split(":")[0].trim())
+    .filter(Boolean);
+}
+
+// ---------------------------------------------------------------------------
 // Env var parsing
 // ---------------------------------------------------------------------------
 
