@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { detectContainerGpu, detectContainerPort, filterImageInheritedEnv } from "@/lib/docker/discover";
+import { detectContainerGpu, detectContainerPort, filterImageInheritedEnv, hasAtFileTraefikLabels } from "@/lib/docker/discover";
 
 // ---------------------------------------------------------------------------
 // detectContainerGpu — GPU heuristic for discovered containers
@@ -123,6 +123,51 @@ describe("detectContainerPort", () => {
 
   it("exposed ports win over bound ports", () => {
     expect(detectContainerPort({}, [8080], [3000])).toBe(8080);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// hasAtFileTraefikLabels — @file provider reference detection
+// ---------------------------------------------------------------------------
+
+describe("hasAtFileTraefikLabels", () => {
+  it("returns false when there are no labels", () => {
+    expect(hasAtFileTraefikLabels({})).toBe(false);
+  });
+
+  it("returns false when there are no traefik labels", () => {
+    expect(hasAtFileTraefikLabels({
+      "com.docker.compose.project": "myapp",
+      "com.docker.compose.service": "web",
+    })).toBe(false);
+  });
+
+  it("returns false when a traefik label exists but has no @file value", () => {
+    expect(hasAtFileTraefikLabels({
+      "traefik.enable": "true",
+      "traefik.http.routers.app.rule": "Host(`app.example.com`)",
+    })).toBe(false);
+  });
+
+  it("returns false when a non-traefik label contains @file", () => {
+    expect(hasAtFileTraefikLabels({
+      "com.example.config": "something@file",
+      "traefik.enable": "true",
+    })).toBe(false);
+  });
+
+  it("returns true when a traefik label value contains @file", () => {
+    expect(hasAtFileTraefikLabels({
+      "traefik.http.services.app.loadbalancer.serversTransport": "app-insecure@file",
+    })).toBe(true);
+  });
+
+  it("returns true when one of several traefik labels references @file", () => {
+    expect(hasAtFileTraefikLabels({
+      "traefik.enable": "true",
+      "traefik.http.routers.app.rule": "Host(`app.example.com`)",
+      "traefik.http.middlewares.my-mw.plugin": "something@file",
+    })).toBe(true);
   });
 });
 
