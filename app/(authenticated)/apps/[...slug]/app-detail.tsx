@@ -12,6 +12,7 @@ import {
   X,
   Rocket,
   RotateCcw,
+  RefreshCw,
   Square,
   ChevronDown,
   Check,
@@ -187,6 +188,28 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
   const handleDeploy = useCallback(() => {
     deployPanelRef.current?.handleDeploy();
   }, []);
+
+  const handleRestart = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/restart`, { method: "POST" });
+      const data = await res.json();
+      data.success ? toast.success("Restarted") : toast.error(data.error || "Restart failed");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Restart failed");
+    }
+    router.refresh();
+  }, [orgId, app.id, router]);
+
+  const handleRecreate = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/recreate`, { method: "POST" });
+      const data = await res.json();
+      data.success ? toast.success("Recreated") : toast.error(data.error || "Recreate failed");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Recreate failed");
+    }
+    router.refresh();
+  }, [orgId, app.id, router]);
 
   // Real-time updates via SSE (Redis pub/sub), with polling fallback
   useEffect(() => {
@@ -413,25 +436,33 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem disabled={deploying} onClick={handleDeploy}>
-                    <Rocket className="mr-2 size-4" />
-                    Redeploy
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={async () => {
-                      try {
-                        const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/restart`, { method: "POST" });
-                        const data = await res.json();
-                        data.success ? toast.success("Restarted") : toast.error(data.error || "Restart failed");
-                      } catch (err) {
-                        toast.error(err instanceof Error ? err.message : "Restart failed");
-                      }
-                      router.refresh();
-                    }}
-                  >
-                    <RotateCcw className="mr-2 size-4" />
-                    Restart
-                  </DropdownMenuItem>
+                  {app.source === "direct" ? (
+                    <>
+                      <DropdownMenuItem disabled={deploying} onClick={handleDeploy}>
+                        <Rocket className="mr-2 size-4" />
+                        Update
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={handleRestart}>
+                        <RotateCcw className="mr-2 size-4" />
+                        Restart
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={handleRecreate}>
+                        <RefreshCw className="mr-2 size-4" />
+                        Recreate
+                      </DropdownMenuItem>
+                    </>
+                  ) : (
+                    <>
+                      <DropdownMenuItem disabled={deploying} onClick={handleDeploy}>
+                        <Rocket className="mr-2 size-4" />
+                        Redeploy
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={handleRestart}>
+                        <RotateCcw className="mr-2 size-4" />
+                        Restart
+                      </DropdownMenuItem>
+                    </>
+                  )}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     className="text-destructive focus:text-destructive"
