@@ -86,6 +86,7 @@ export const apps = pgTable(
     memoryLimit: integer("memory_limit"), // Memory in MB (e.g. 256, 512, 1024)
     gpuEnabled: boolean("gpu_enabled").notNull().default(false), // GPU passthrough via deploy.resources.reservations.devices
     diskWriteAlertThreshold: bigint("disk_write_alert_threshold", { mode: "number" }), // bytes/hour, null = default 1GB
+    healthCheckTimeout: integer("health_check_timeout"), // Seconds to wait for healthy containers (null = system default 60s)
     autoRollback: boolean("auto_rollback").default(false), // Rollback on crash after deploy
     rollbackGracePeriod: integer("rollback_grace_period").default(60), // Seconds to monitor after deploy
     backendProtocol: text("backend_protocol", { enum: ["http", "https"] }), // Backend scheme Traefik uses to reach the container. Null = auto (https if port 443/8443)
