@@ -159,6 +159,18 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       });
     }
 
+    // Detect backendProtocol from Traefik labels or port number so the deploy
+    // engine can reconstruct serversTransport for HTTPS backends.
+    let importedBackendProtocol: "http" | "https" | null = null;
+    const schemeLabel = Object.entries(detail.labels).find(
+      ([k]) => /^traefik\.http\.services\..+\.loadbalancer\.server\.scheme$/.test(k)
+    )?.[1];
+    if (schemeLabel === "https") {
+      importedBackendProtocol = "https";
+    } else if (containerPort && (containerPort === 443 || containerPort === 8443)) {
+      importedBackendProtocol = "https";
+    }
+
     const composeContent = composeToYaml(compose);
 
     // Build env content string from user-reviewed vars
@@ -193,6 +205,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             imageName: detail.image,
             composeContent,
             containerPort: containerPort ?? undefined,
+            backendProtocol: importedBackendProtocol,
             autoTraefikLabels: false,
             projectId: resolvedProjectId,
             envContent,
