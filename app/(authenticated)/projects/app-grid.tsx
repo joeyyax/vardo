@@ -8,7 +8,7 @@ import { EndpointsPopover } from "@/components/endpoints-popover";
 import { detectAppType } from "@/lib/ui/app-type";
 import { statusDotColor } from "@/lib/ui/status-colors";
 import { StatusIndicator, AppIcon } from "@/components/app-status";
-import { ChildAppChip } from "@/components/child-app-chip";
+import { ChildAppChipList } from "@/components/child-app-chip";
 import {
   type AppMetrics,
   type MetricKey,
@@ -321,13 +321,7 @@ function AppCard({
         </div>
       </div>
 
-      {(app.childApps ?? []).length > 0 && (
-        <div className="relative flex flex-wrap gap-1.5 mt-3 pt-3 border-t">
-          {(app.childApps ?? []).map((child) => (
-            <ChildAppChip key={child.id} displayName={child.displayName} status={child.status} />
-          ))}
-        </div>
-      )}
+      <ChildAppChipList childApps={app.childApps ?? []} />
     </Link>
   );
 }

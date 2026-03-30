@@ -17,3 +17,18 @@ export function ChildAppChip({
     </span>
   );
 }
+
+export function ChildAppChipList({
+  childApps,
+}: {
+  childApps: { id: string; displayName: string; status: string }[];
+}) {
+  if (childApps.length === 0) return null;
+  return (
+    <div className="relative flex flex-wrap gap-1.5 mt-3 pt-3 border-t">
+      {childApps.map((child) => (
+        <ChildAppChip key={child.id} displayName={child.displayName} status={child.status} />
+      ))}
+    </div>
+  );
+}
