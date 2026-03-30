@@ -3,7 +3,7 @@ import { redis } from "@/lib/redis";
 import { deployments, apps, orgEnvVars, organizations, environments, volumes, projects } from "@/lib/db/schema";
 import { encrypt, decryptOrFallback } from "@/lib/crypto/encrypt";
 import { parseEnvToMap } from "@/lib/env/parse-env";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { logger } from "@/lib/logger";
 import { resolveAllEnvVars, type ResolveContext } from "@/lib/env/resolve";
 import { nanoid } from "nanoid";
@@ -28,10 +28,10 @@ import {
   stripTraefikLabels,
   type ComposeFile,
 } from "./compose";
-import { ensureNetwork, detectExposedPorts, listContainers, inspectContainer, stripDockerProjectPrefix } from "./client";
+import { ensureNetwork, detectExposedPorts, listContainers, inspectContainer, stripDockerProjectPrefix, listImages, removeImage, pruneImages, pruneBuildCache } from "./client";
 import { isFeatureEnabled } from "@/lib/config/features";
 
-import { assertSafeName, assertSafeBranch } from "./validate";
+import { assertSafeBranch } from "./validate";
 import { DeployBlockedError } from "./errors";
 
 type ParseAndSanitizeOpts = {
@@ -984,6 +984,51 @@ export async function runDeployment(
 
     // Step 11: Record active slot
     await writeFile(join(appDir, ".active-slot"), newSlot, "utf-8");
+
+    // Step 11.5: Prune old Docker images
+    try {
+      const { formatBytes } = await import("@/lib/metrics/format");
+
+      // Remove stale locally-built images for this app (all but the current deployment).
+      // Images are tagged host/<app.name>:<shortDeployId> and accumulate across deploys.
+      if (builtLocally) {
+        const currentImageName = `host/${app.name}:${deploymentId.slice(0, 8)}`;
+        const appImages = await listImages({ reference: [`host/${app.name}`] });
+        const staleImages = appImages.filter((img) => !img.repoTags.includes(currentImageName));
+
+        let removedCount = 0;
+        for (const img of staleImages) {
+          try {
+            await removeImage(img.id);
+            removedCount++;
+          } catch {
+            // Image may still be referenced (e.g. a parallel deployment) — skip
+          }
+        }
+
+        if (removedCount > 0) {
+          log(`[deploy] Removed ${removedCount} old image(s) for ${app.name}`);
+        }
+      }
+
+      // Prune all dangling images (untagged, unreferenced by any container).
+      const { spaceReclaimed, count } = await pruneImages({ dangling: ["true"] });
+      if (count > 0) {
+        log(`[deploy] Pruned ${count} dangling image(s), reclaimed ${formatBytes(spaceReclaimed)}`);
+      }
+
+      // Prune build cache older than 24h.
+      try {
+        const { spaceReclaimed: cacheReclaimed } = await pruneBuildCache({ until: ["24h"] });
+        if (cacheReclaimed > 0) {
+          log(`[deploy] Pruned build cache, reclaimed ${formatBytes(cacheReclaimed)}`);
+        }
+      } catch {
+        // Build cache pruning is optional — not all builders support it
+      }
+    } catch {
+      // Image pruning is best-effort — never fail the deploy
+    }
 
     stage("cleanup", "success");
     // Step 12: HTTP health check on domains
