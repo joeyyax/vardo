@@ -39,6 +39,7 @@ type AppWithRelations = {
   deployments: { id: string; status: string; startedAt: Date; finishedAt: Date | null }[];
   appTags: { tag: Tag }[];
   project: { id: string; name: string; displayName: string; color: string | null } | null;
+  childApps?: { id: string; displayName: string; status: string }[];
 };
 
 type EmptyProject = {
@@ -319,6 +320,22 @@ function AppCard({
         </div>
       </div>
 
+      {(app.childApps ?? []).length > 0 && (
+        <div className="relative flex flex-wrap gap-1.5 mt-3 pt-3 border-t">
+          {(app.childApps ?? []).map((child) => (
+            <span
+              key={child.id}
+              className="inline-flex items-center gap-1.5 rounded-full border border-transparent px-2.5 py-1 text-xs font-medium bg-background"
+            >
+              <span aria-hidden="true" className={`size-1.5 rounded-full ${statusDotColor(child.status)}`} />
+              {child.displayName}
+              <span className="sr-only">
+                {child.status === "active" ? ", Running" : child.status === "error" ? ", Crashed" : child.status === "deploying" ? ", Deploying" : ", Stopped"}
+              </span>
+            </span>
+          ))}
+        </div>
+      )}
     </Link>
   );
 }

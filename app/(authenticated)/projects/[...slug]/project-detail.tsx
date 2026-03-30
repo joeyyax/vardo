@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -14,7 +14,6 @@ import {
   Loader2,
   RotateCcw,
   Square,
-  Layers,
   Variable,
   FileText,
   Activity,
@@ -53,7 +52,7 @@ import {
   BottomSheetDescription,
 } from "@/components/ui/bottom-sheet";
 import { detectAppType } from "@/lib/ui/app-type";
-import { envTypeDotColor } from "@/lib/ui/status-colors";
+import { statusDotColor, envTypeDotColor } from "@/lib/ui/status-colors";
 import { Uptime, StatusIndicator, AppIcon, DeploymentStatusBadge, formatDuration } from "@/components/app-status";
 import { EndpointsPopover } from "@/components/endpoints-popover";
 import { LogViewer, DeploymentLog } from "@/components/log-viewer";
@@ -173,7 +172,7 @@ function AppCard({
   highlight,
   onHoverStart,
   onHoverEnd,
-  childCount = 0,
+  childApps = [],
   statusOverride,
 }: {
   app: ProjectApp;
@@ -183,7 +182,7 @@ function AppCard({
   highlight: DepHighlight;
   onHoverStart: () => void;
   onHoverEnd: () => void;
-  childCount?: number;
+  childApps?: ComposeChildApp[];
   statusOverride?: string;
 }) {
   const router = useRouter();
@@ -257,14 +256,6 @@ function AppCard({
             )}
           </div>
           {metrics && <MetricsLine metrics={metrics} onHover={() => {}} />}
-          {childCount > 0 && (
-            <div className="flex items-center gap-1.5 mt-1">
-              <Layers className="size-3 text-muted-foreground/50" />
-              <span className="text-[10px] text-muted-foreground/50">
-                {childCount} service{childCount > 1 ? "s" : ""}
-              </span>
-            </div>
-          )}
         </div>
       </div>
 
@@ -296,127 +287,28 @@ function AppCard({
           <span>depends on this</span>
         </div>
       )}
-    </Link>
-  );
-}
 
-// ---------------------------------------------------------------------------
-// Compose Service Card (child service of a compose app)
-// ---------------------------------------------------------------------------
-
-function ComposeServiceCard({
-  service,
-  parentName,
-}: {
-  service: ComposeChildApp;
-  parentName: string;
-}) {
-  const statusColor =
-    service.status === "active"
-      ? "bg-status-success"
-      : service.status === "error"
-        ? "bg-status-error"
-        : "bg-status-neutral";
-
-  const deps = service.dependsOn ?? [];
-
-  return (
-    <div className="squircle relative flex flex-col rounded-lg border bg-card/60 p-3 transition-all duration-200 hover:bg-accent/50 overflow-hidden">
-      <div className="flex gap-3 w-full">
-        <div className="flex size-8 items-center justify-center rounded-md bg-muted">
-          <Layers className="size-4 text-muted-foreground" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <h3 className="text-sm font-semibold truncate">
-                {service.displayName}
-              </h3>
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-muted-foreground/20">
-                compose
-              </Badge>
-            </div>
-            <span className={`size-2 rounded-full shrink-0 ${statusColor}`} />
-          </div>
-          {service.imageName && (
-            <p className="text-xs text-muted-foreground/60 font-mono truncate mt-0.5">
-              {service.imageName}
-            </p>
-          )}
-          <div className="flex items-center gap-2 mt-1">
-            {service.cpuLimit && (
-              <span className="text-[10px] text-muted-foreground/50">
-                {service.cpuLimit} CPU
-              </span>
-            )}
-            {service.memoryLimit && (
-              <span className="text-[10px] text-muted-foreground/50">
-                {service.memoryLimit}MB
-              </span>
-            )}
-            {service.persistentVolumes && service.persistentVolumes.length > 0 && (
-              <span className="text-[10px] text-muted-foreground/50">
-                {service.persistentVolumes.length} vol{service.persistentVolumes.length > 1 ? "s" : ""}
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {deps.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1 mt-2 pt-2 border-t border-border/50">
-          <span className="text-[10px] text-muted-foreground/60 mr-0.5">depends on</span>
-          {deps.map((dep) => (
+      {/* Compose service chips */}
+      {childApps.length > 0 && (
+        <div className="relative flex flex-wrap gap-1.5 mt-3 pt-3 border-t">
+          {childApps.map((child) => (
             <span
-              key={dep}
-              className="inline-flex items-center rounded-full bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 dark:text-blue-400"
+              key={child.id}
+              className="inline-flex items-center gap-1.5 rounded-full border border-transparent px-2.5 py-1 text-xs font-medium bg-background"
             >
-              {dep.replace(`${parentName}-`, "")}
+              <span aria-hidden="true" className={`size-1.5 rounded-full ${statusDotColor(child.status)}`} />
+              {child.displayName}
+              <span className="sr-only">
+                {child.status === "active" ? ", Running" : child.status === "error" ? ", Crashed" : child.status === "deploying" ? ", Deploying" : ", Stopped"}
+              </span>
             </span>
           ))}
         </div>
       )}
-    </div>
+    </Link>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Compose Services Section (expandable, nested under parent app card)
-// ---------------------------------------------------------------------------
-
-function ComposeServicesGrid({
-  parentApp,
-}: {
-  parentApp: ProjectApp;
-}) {
-  const children = parentApp.childApps ?? [];
-  if (children.length === 0) return null;
-
-  return (
-    <div className="col-span-full">
-      <div className="squircle rounded-lg border border-dashed border-muted-foreground/20 p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <Layers className="size-4 text-muted-foreground" />
-          <span className="text-xs font-medium text-muted-foreground">
-            {parentApp.displayName} Services
-          </span>
-          <Badge variant="secondary" className="text-[10px]">
-            {children.length}
-          </Badge>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {children.map((child) => (
-            <ComposeServiceCard
-              key={child.id}
-              service={child}
-              parentName={parentApp.name}
-            />
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Deployments Tab (merged across apps)
@@ -1291,22 +1183,18 @@ export function ProjectDetail({
               {project.apps
                 .filter((app) => !app.parentAppId)
                 .map((app) => (
-                  <React.Fragment key={app.id}>
-                    <AppCard
-                      app={app}
-                      color={color}
-                      metrics={metrics.get(app.id)}
-                      history={history.get(app.id) || EMPTY_HISTORY}
-                      highlight={getHighlight(app.name)}
-                      onHoverStart={() => setHoveredAppName(app.name)}
-                      onHoverEnd={() => setHoveredAppName(null)}
-                      childCount={(app.childApps ?? []).length}
-                      statusOverride={appStatusOverrides.get(app.id)}
-                    />
-                    {(app.childApps ?? []).length > 0 && (
-                      <ComposeServicesGrid parentApp={app} />
-                    )}
-                  </React.Fragment>
+                  <AppCard
+                    key={app.id}
+                    app={app}
+                    color={color}
+                    metrics={metrics.get(app.id)}
+                    history={history.get(app.id) || EMPTY_HISTORY}
+                    highlight={getHighlight(app.name)}
+                    onHoverStart={() => setHoveredAppName(app.name)}
+                    onHoverEnd={() => setHoveredAppName(null)}
+                    childApps={app.childApps ?? []}
+                    statusOverride={appStatusOverrides.get(app.id)}
+                  />
                 ))}
             </div>
           )}

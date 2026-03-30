@@ -37,6 +37,9 @@ export default async function ProjectsPage() {
         project: {
           columns: { id: true, name: true, displayName: true, color: true },
         },
+        childApps: {
+          columns: { id: true, displayName: true, status: true },
+        },
       },
     }),
     db.query.tags.findMany({
