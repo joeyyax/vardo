@@ -300,6 +300,14 @@ export async function getContainerDetail(containerId: string): Promise<Container
 // ---------------------------------------------------------------------------
 
 /**
+ * Returns true when any label whose key starts with "traefik." has a value
+ * containing "@file" — indicating an external Traefik file provider reference.
+ */
+export function hasAtFileTraefikLabels(labels: Record<string, string>): boolean {
+  return Object.entries(labels).some(([k, v]) => k.startsWith("traefik.") && v.includes("@file"));
+}
+
+/**
  * Check whether an image name looks local (no registry prefix or short hash).
  * Used to warn users that the image may not be pullable.
  */

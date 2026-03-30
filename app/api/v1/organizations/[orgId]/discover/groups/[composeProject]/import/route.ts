@@ -7,7 +7,7 @@ import { apps, domains, environments, volumes } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
-import { discoverContainers, getContainerDetail, isLocalImage } from "@/lib/docker/discover";
+import { discoverContainers, getContainerDetail, hasAtFileTraefikLabels, isLocalImage } from "@/lib/docker/discover";
 import { slugify } from "@/lib/ui/slugify";
 import {
   generateComposeFromContainer,
@@ -429,7 +429,7 @@ async function handler(request: NextRequest, { params }: RouteParams) {
     const { app } = result;
     const appId = app.id;
 
-    // Warn about local images and host networking
+    // Warn about local images, host networking, and @file provider references
     for (const detail of validDetails) {
       const svcName =
         (detail.labels["com.docker.compose.service"] ?? slugify(detail.name)) || slugify(detail.name);
@@ -441,6 +441,11 @@ async function handler(request: NextRequest, { params }: RouteParams) {
       if (detail.networkMode === "host") {
         warnings.push(
           `Service "${svcName}" uses host networking — no port mapping or automatic domain routing is available.`
+        );
+      }
+      if (hasAtFileTraefikLabels(detail.labels)) {
+        warnings.push(
+          `Service "${svcName}": one or more Traefik labels reference external @file provider configs — make sure those configurations exist in your Traefik setup.`
         );
       }
     }
