@@ -218,9 +218,10 @@ async function handler(request: NextRequest, { params }: RouteParams) {
 
       // Reconstruct depends_on from Docker Compose labels. The container label
       // com.docker.compose.depends_on encodes the original dependency graph
-      // (e.g. "redis:service_started:false,postgres:service_started:false").
+      // (e.g. "redis:service_started:false,postgres:service_healthy:false").
+      // The object form preserves health-check conditions (service_healthy).
       const dependsOn = parseComposeDependsOn(detail.labels);
-      if (dependsOn.length > 0) {
+      if (Object.keys(dependsOn).length > 0) {
         singleFile.services[serviceName].depends_on = dependsOn;
       }
 

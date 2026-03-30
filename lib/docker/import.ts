@@ -309,21 +309,30 @@ export function isComposeProjectNetwork(networkName: string, composeProject: str
 }
 
 /**
- * Parse the `com.docker.compose.depends_on` label into an array of service
- * names. Docker Compose stores dependency info as a comma-separated list of
- * `service:condition:restart` triples (e.g.
- * "redis:service_started:false,postgres:service_started:false").
+ * Parse the `com.docker.compose.depends_on` label into a depends_on object
+ * that preserves condition info. Docker Compose stores dependency info as a
+ * comma-separated list of `service:condition:restart` triples (e.g.
+ * "redis:service_started:false,postgres:service_healthy:false").
  *
- * Returns an empty array if the label is absent or empty.
+ * Returns an empty object if the label is absent or empty.
  */
-export function parseComposeDependsOn(labels: Record<string, string>): string[] {
+export function parseComposeDependsOn(
+  labels: Record<string, string>,
+): Record<string, { condition: "service_healthy" | "service_started" | "service_completed_successfully" }> {
   const raw = labels["com.docker.compose.depends_on"];
-  if (!raw) return [];
+  if (!raw) return {};
 
-  return raw
-    .split(",")
-    .map((entry) => entry.split(":")[0].trim())
-    .filter(Boolean);
+  const result: Record<string, { condition: "service_healthy" | "service_started" | "service_completed_successfully" }> = {};
+  for (const entry of raw.split(",").map((e) => e.trim()).filter(Boolean)) {
+    const [serviceName, condition] = entry.split(":");
+    if (!serviceName) continue;
+    const cond = (condition?.trim() ?? "service_started") as
+      | "service_healthy"
+      | "service_started"
+      | "service_completed_successfully";
+    result[serviceName.trim()] = { condition: cond };
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------

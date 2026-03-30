@@ -178,33 +178,41 @@ describe("isComposeProjectNetwork", () => {
 // ---------------------------------------------------------------------------
 
 describe("parseComposeDependsOn", () => {
-  it("parses standard depends_on label format", () => {
+  it("parses standard depends_on label format preserving conditions", () => {
     const labels = {
       "com.docker.compose.depends_on": "redis:service_started:false,postgres:service_started:false",
     };
-    expect(parseComposeDependsOn(labels)).toEqual(["redis", "postgres"]);
+    expect(parseComposeDependsOn(labels)).toEqual({
+      redis: { condition: "service_started" },
+      postgres: { condition: "service_started" },
+    });
   });
 
   it("handles a single dependency", () => {
     const labels = {
       "com.docker.compose.depends_on": "db:service_started:false",
     };
-    expect(parseComposeDependsOn(labels)).toEqual(["db"]);
+    expect(parseComposeDependsOn(labels)).toEqual({
+      db: { condition: "service_started" },
+    });
   });
 
-  it("returns empty array when label is absent", () => {
-    expect(parseComposeDependsOn({})).toEqual([]);
+  it("returns empty object when label is absent", () => {
+    expect(parseComposeDependsOn({})).toEqual({});
   });
 
-  it("returns empty array for empty string", () => {
-    expect(parseComposeDependsOn({ "com.docker.compose.depends_on": "" })).toEqual([]);
+  it("returns empty object for empty string", () => {
+    expect(parseComposeDependsOn({ "com.docker.compose.depends_on": "" })).toEqual({});
   });
 
-  it("handles entries with varying condition formats", () => {
+  it("preserves service_healthy condition", () => {
     const labels = {
       "com.docker.compose.depends_on": "redis:service_healthy:true,postgres:service_started:false",
     };
-    expect(parseComposeDependsOn(labels)).toEqual(["redis", "postgres"]);
+    expect(parseComposeDependsOn(labels)).toEqual({
+      redis: { condition: "service_healthy" },
+      postgres: { condition: "service_started" },
+    });
   });
 });
 

@@ -28,6 +28,29 @@ export type HealthCheck = {
 
 export type Ulimits = Record<string, number | { soft: number; hard: number }>;
 
+export type ComposeDependsOnCondition =
+  | "service_started"
+  | "service_healthy"
+  | "service_completed_successfully";
+
+/**
+ * Docker Compose depends_on can be a simple list of service names or an object
+ * mapping service names to their dependency conditions. Using the object form
+ * preserves health-check gates (service_healthy) that are lost in the string[]
+ * form.
+ */
+export type ComposeDependsOn =
+  | string[]
+  | Record<string, { condition: ComposeDependsOnCondition }>;
+
+/**
+ * Extract the service name keys from a ComposeDependsOn value, normalising
+ * both the string[] and object forms.
+ */
+export function dependsOnKeys(dependsOn: ComposeDependsOn): string[] {
+  return Array.isArray(dependsOn) ? dependsOn : Object.keys(dependsOn);
+}
+
 export type ComposeService = {
   name: string;
   image?: string;
@@ -39,7 +62,7 @@ export type ComposeService = {
   volumes?: string[];
   labels?: Record<string, string>;
   networks?: string[];
-  depends_on?: string[];
+  depends_on?: ComposeDependsOn;
   network_mode?: string;
   runtime?: string;
   deploy?: {
@@ -815,12 +838,21 @@ export function parseCompose(yamlString: string): ComposeFile {
       }
     }
     if (Array.isArray(raw.networks)) svc.networks = raw.networks.map(String);
-    // depends_on: array of strings or object with service keys
+    // depends_on: array of strings or object with per-service conditions
     if (raw.depends_on) {
       if (Array.isArray(raw.depends_on)) {
         svc.depends_on = raw.depends_on.map(String);
       } else if (typeof raw.depends_on === "object") {
-        svc.depends_on = Object.keys(raw.depends_on);
+        // Preserve condition info (e.g. service_healthy) rather than dropping
+        // to a plain string[].
+        const deps: Record<string, { condition: ComposeDependsOnCondition }> = {};
+        for (const [depName, conf] of Object.entries(
+          raw.depends_on as Record<string, { condition?: string }>
+        )) {
+          const condition = (conf?.condition ?? "service_started") as ComposeDependsOnCondition;
+          deps[depName] = { condition };
+        }
+        svc.depends_on = deps;
       }
     }
     if (raw.network_mode && typeof raw.network_mode === "string") {
