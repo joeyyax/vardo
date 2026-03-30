@@ -274,6 +274,29 @@ async function handler(request: NextRequest, { params }: RouteParams) {
       delete merged.networks;
     }
 
+    // Extract containerPort and backendProtocol from the primary service's
+    // Traefik labels. The deploy engine strips and regenerates Traefik labels
+    // from these app-record fields, so they must be set correctly for features
+    // like serversTransport (HTTPS backends) to survive the round-trip.
+    let importedContainerPort: number | null = null;
+    let importedBackendProtocol: "http" | "https" | null = null;
+    if (serviceDomains.length > 0) {
+      importedContainerPort = serviceDomains[0].port;
+    }
+    for (const detail of validDetails) {
+      const scheme = Object.entries(detail.labels).find(
+        ([k]) => /^traefik\.http\.services\..+\.loadbalancer\.server\.scheme$/.test(k)
+      )?.[1];
+      if (scheme === "https") {
+        importedBackendProtocol = "https";
+        break;
+      }
+    }
+    // Auto-detect from port if scheme label wasn't set
+    if (!importedBackendProtocol && importedContainerPort && (importedContainerPort === 443 || importedContainerPort === 8443)) {
+      importedBackendProtocol = "https";
+    }
+
     const composeContent = composeToYaml(merged);
 
     // Encrypt sensitive vars collected across all services.
@@ -313,6 +336,8 @@ async function handler(request: NextRequest, { params }: RouteParams) {
             // explicit injectTraefikLabels above. Regenerating at deploy time
             // would overwrite service-specific routing configs.
             autoTraefikLabels: false,
+            containerPort: importedContainerPort,
+            backendProtocol: importedBackendProtocol,
             projectId: resolvedProjectId,
             envContent,
             importedComposeProject: composeProject,
