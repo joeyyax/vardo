@@ -1,6 +1,6 @@
 import http from "node:http";
 import net from "node:net";
-import { getConnectionOptions } from "./client";
+import { getConnectionOptions, DOCKER_API_VERSION } from "./client";
 
 // ---------------------------------------------------------------------------
 // Create exec instance
@@ -23,7 +23,7 @@ export async function createExec(
     const req = http.request(
       {
         ...conn,
-        path: `/v1.43/containers/${containerId}/exec`,
+        path: `/v${DOCKER_API_VERSION}/containers/${containerId}/exec`,
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -81,7 +81,7 @@ export async function startExec(execId: string): Promise<net.Socket> {
   // Build raw HTTP request — we need the raw socket because Docker hijacks
   // the connection for bidirectional TTY I/O, which http.request can't handle
   const httpReq = [
-    `POST /v1.43/exec/${execId}/start HTTP/1.1`,
+    `POST /v${DOCKER_API_VERSION}/exec/${execId}/start HTTP/1.1`,
     `Host: localhost`,
     `Content-Type: application/json`,
     `Content-Length: ${Buffer.byteLength(payload)}`,
@@ -167,7 +167,7 @@ export async function resizeExec(
     const req = http.request(
       {
         ...conn,
-        path: `/v1.43/exec/${execId}/resize?${params}`,
+        path: `/v${DOCKER_API_VERSION}/exec/${execId}/resize?${params}`,
         method: "POST",
       },
       (res) => {
@@ -205,7 +205,7 @@ export async function inspectExec(
     const req = http.request(
       {
         ...conn,
-        path: `/v1.43/exec/${execId}/json`,
+        path: `/v${DOCKER_API_VERSION}/exec/${execId}/json`,
         method: "GET",
       },
       (res) => {

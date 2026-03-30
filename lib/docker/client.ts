@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 
 // Detect the Docker daemon's API version at startup.
 // Falls back to 1.47 if detection fails.
-let DOCKER_API_VERSION = "1.47";
+export let DOCKER_API_VERSION = "1.47";
 try {
   const out = execFileSync("docker", ["version", "--format", "{{.Server.APIVersion}}"], {
     encoding: "utf-8",
