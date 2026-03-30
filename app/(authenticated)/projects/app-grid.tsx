@@ -8,6 +8,7 @@ import { EndpointsPopover } from "@/components/endpoints-popover";
 import { detectAppType } from "@/lib/ui/app-type";
 import { statusDotColor } from "@/lib/ui/status-colors";
 import { StatusIndicator, AppIcon } from "@/components/app-status";
+import { ChildAppChipList } from "@/components/child-app-chip";
 import {
   type AppMetrics,
   type MetricKey,
@@ -39,6 +40,7 @@ type AppWithRelations = {
   deployments: { id: string; status: string; startedAt: Date; finishedAt: Date | null }[];
   appTags: { tag: Tag }[];
   project: { id: string; name: string; displayName: string; color: string | null } | null;
+  childApps?: { id: string; displayName: string; status: string }[];
 };
 
 type EmptyProject = {
@@ -319,6 +321,7 @@ function AppCard({
         </div>
       </div>
 
+      <ChildAppChipList childApps={app.childApps ?? []} />
     </Link>
   );
 }
