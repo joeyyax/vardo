@@ -429,7 +429,7 @@ async function handler(request: NextRequest, { params }: RouteParams) {
     const { app } = result;
     const appId = app.id;
 
-    // Warn about local images and host networking
+    // Warn about local images, host networking, and @file provider references
     for (const detail of validDetails) {
       const svcName =
         (detail.labels["com.docker.compose.service"] ?? slugify(detail.name)) || slugify(detail.name);
@@ -441,6 +441,14 @@ async function handler(request: NextRequest, { params }: RouteParams) {
       if (detail.networkMode === "host") {
         warnings.push(
           `Service "${svcName}" uses host networking — no port mapping or automatic domain routing is available.`
+        );
+      }
+      const atFileTraefikLabels = Object.entries(detail.labels).filter(
+        ([k, v]) => k.startsWith("traefik.") && v.includes("@file")
+      );
+      if (atFileTraefikLabels.length > 0) {
+        warnings.push(
+          `Service "${svcName}": one or more Traefik labels reference external @file provider configs — make sure those configurations exist in your Traefik setup.`
         );
       }
     }

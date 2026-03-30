@@ -285,6 +285,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    const atFileTraefikLabels = Object.entries(detail.labels).filter(
+      ([k, v]) => k.startsWith("traefik.") && v.includes("@file")
+    );
+    if (atFileTraefikLabels.length > 0) {
+      warnings.push(
+        "One or more Traefik labels reference external @file provider configs — make sure those configurations exist in your Traefik setup."
+      );
+    }
+
     recordActivity({
       organizationId: orgId,
       action: "app.imported",
