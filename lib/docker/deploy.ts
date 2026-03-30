@@ -1775,7 +1775,46 @@ export async function stopProject(
   }
 }
 
-export async function restartProject(
+export async function restartContainers(
+  appName: string,
+  environmentName?: string,
+): Promise<{ success: boolean; log: string }> {
+  const logs: string[] = [];
+  try {
+    const dir = environmentName
+      ? join(PROJECTS_DIR, appName, environmentName)
+      : join(PROJECTS_DIR, appName);
+    const prefix = environmentName
+      ? `${appName}-${environmentName}`
+      : appName;
+
+    let activeSlot: string;
+    try {
+      activeSlot = (await readFile(join(dir, ".active-slot"), "utf-8")).trim();
+    } catch {
+      activeSlot = "blue";
+    }
+
+    const slotDir = join(dir, activeSlot);
+    const composePath = join(slotDir, "docker-compose.yml");
+    const composeProject = `${prefix}-${activeSlot}`;
+
+    const { stdout, stderr } = await execFileAsync(
+      "docker",
+      ["compose", "-f", composePath, "-p", composeProject, "restart"],
+      { cwd: slotDir, timeout: 60000 }
+    );
+    if (stdout.trim()) logs.push(stdout.trim());
+    if (stderr.trim()) logs.push(stderr.trim());
+
+    return { success: true, log: logs.join("\n") };
+  } catch (err) {
+    logs.push(`ERROR: ${err instanceof Error ? err.message : String(err)}`);
+    return { success: false, log: logs.join("\n") };
+  }
+}
+
+export async function recreateProject(
   appId: string,
   appName: string,
   environmentName?: string,
@@ -1819,4 +1858,13 @@ export async function restartProject(
     logs.push(`ERROR: ${err instanceof Error ? err.message : String(err)}`);
     return { success: false, log: logs.join("\n") };
   }
+}
+
+/** @deprecated Use restartContainers or recreateProject instead */
+export async function restartProject(
+  appId: string,
+  appName: string,
+  environmentName?: string,
+): Promise<{ success: boolean; log: string }> {
+  return recreateProject(appId, appName, environmentName);
 }

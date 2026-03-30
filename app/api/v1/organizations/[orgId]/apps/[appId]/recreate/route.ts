@@ -3,7 +3,7 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { restartContainers } from "@/lib/docker/deploy";
+import { recreateProject } from "@/lib/docker/deploy";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 type RouteParams = {
@@ -25,9 +25,9 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const result = await restartContainers(app.name);
+    const result = await recreateProject(appId, app.name);
     return NextResponse.json(result);
   } catch (error) {
-    return handleRouteError(error, "Error restarting app");
+    return handleRouteError(error, "Error recreating app");
   }
 }
