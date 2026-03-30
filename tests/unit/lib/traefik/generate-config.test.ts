@@ -37,6 +37,7 @@ const mockApp = {
   id: "app-123",
   name: "test-app",
   containerPort: 3000,
+  containerName: "test-app-production-blue-web-1",
   domains: [
     {
       id: "dom-12345678",
@@ -279,10 +280,55 @@ describe("buildTraefikConfigYaml — multiple domains", () => {
     expect(config.http.routers["myapp-bbb-2222"]).toBeDefined();
   });
 
-  it("uses the docker service ref matching the app name", () => {
+  it("falls back to @docker service ref when no containerName provided", () => {
     const yaml = buildTraefikConfigYaml("myapp", [makeDomain({ sslEnabled: false })]);
     const config = YAML.parse(yaml!);
     expect(config.http.routers["myapp-dom-1234"].service).toBe("myapp@docker");
+    expect(config.http.services).toBeUndefined();
+  });
+
+  it("defines an inline service when containerName is provided", () => {
+    const yaml = buildTraefikConfigYaml(
+      "myapp",
+      [makeDomain({ sslEnabled: false })],
+      null,
+      "myapp-production-blue-web-1",
+      8080,
+    );
+    const config = YAML.parse(yaml!);
+    expect(config.http.routers["myapp-dom-1234"].service).toBe("myapp");
+    expect(config.http.services.myapp.loadBalancer.servers).toEqual([
+      { url: "http://myapp-production-blue-web-1:8080" },
+    ]);
+  });
+
+  it("uses https in service URL when backendProtocol is https", () => {
+    const yaml = buildTraefikConfigYaml(
+      "myapp",
+      [makeDomain({ sslEnabled: false })],
+      "https",
+      "myapp-production-blue-web-1",
+      443,
+    );
+    const config = YAML.parse(yaml!);
+    expect(config.http.services.myapp.loadBalancer.servers).toEqual([
+      { url: "https://myapp-production-blue-web-1:443" },
+    ]);
+    expect(config.http.services.myapp.loadBalancer.serversTransport).toBe("myapp-insecure");
+  });
+
+  it("defaults to port 3000 when containerPort is null", () => {
+    const yaml = buildTraefikConfigYaml(
+      "myapp",
+      [makeDomain({ sslEnabled: false })],
+      null,
+      "myapp-production-blue-web-1",
+      null,
+    );
+    const config = YAML.parse(yaml!);
+    expect(config.http.services.myapp.loadBalancer.servers).toEqual([
+      { url: "http://myapp-production-blue-web-1:3000" },
+    ]);
   });
 });
 
