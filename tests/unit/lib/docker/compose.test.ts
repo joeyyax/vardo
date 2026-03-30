@@ -340,6 +340,20 @@ describe("injectNetwork — network_mode services", () => {
 
     expect(twice.services.app.networks?.filter((n) => n === "vardo-network").length).toBe(1);
   });
+
+  it("adds vardo-network alongside a named network from generateComposeFromContainer", () => {
+    // Regression: containers on named Docker networks (e.g. vardo-network) had
+    // their network set via network_mode, which caused injectNetwork to skip
+    // the service. Fix: use networks array so injectNetwork can add vardo-network.
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({ networkMode: "my-overlay" }));
+    const result = injectNetwork(compose, "vardo-network");
+
+    // Service must not have network_mode set — that would prevent injectNetwork from running.
+    expect(result.services.myapp.network_mode).toBeUndefined();
+    // Both the original named network and vardo-network should be present.
+    expect(result.services.myapp.networks).toContain("my-overlay");
+    expect(result.services.myapp.networks).toContain("vardo-network");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1086,9 +1100,46 @@ describe("generateComposeFromContainer", () => {
     expect(compose.services.myapp.network_mode).toBe("host");
   });
 
+  it("sets network_mode for none networking", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({ networkMode: "none" }));
+    expect(compose.services.myapp.network_mode).toBe("none");
+  });
+
+  it("sets network_mode for container: networking", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({ networkMode: "container:abc123" }));
+    expect(compose.services.myapp.network_mode).toBe("container:abc123");
+    expect(compose.services.myapp.networks).toBeUndefined();
+  });
+
+  it("sets network_mode for service: networking", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({ networkMode: "service:vpn" }));
+    expect(compose.services.myapp.network_mode).toBe("service:vpn");
+    expect(compose.services.myapp.networks).toBeUndefined();
+  });
+
   it("omits network_mode for bridge networking", () => {
     const compose = generateComposeFromContainer("myapp", makeContainerConfig({ networkMode: "bridge" }));
     expect(compose.services.myapp.network_mode).toBeUndefined();
+  });
+
+  it("uses networks array (not network_mode) for named Docker networks", () => {
+    // Regression: named networks were incorrectly set as network_mode, which
+    // caused injectNetwork to skip the service so it never joined vardo-network.
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({ networkMode: "vardo-network" }));
+    expect(compose.services.myapp.network_mode).toBeUndefined();
+    expect(compose.services.myapp.networks).toEqual(["vardo-network"]);
+  });
+
+  it("declares named networks as external in the top-level networks section", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({ networkMode: "my-overlay" }));
+    expect(compose.networks).toBeDefined();
+    expect(compose.networks!["my-overlay"]).toEqual({ external: true });
+  });
+
+  it("does not add default network_mode for omitted networkMode", () => {
+    const compose = generateComposeFromContainer("myapp", makeContainerConfig({ networkMode: "default" }));
+    expect(compose.services.myapp.network_mode).toBeUndefined();
+    expect(compose.services.myapp.networks).toBeUndefined();
   });
 
   it("includes capabilities", () => {

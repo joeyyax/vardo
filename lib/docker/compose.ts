@@ -273,13 +273,29 @@ export function generateComposeFromContainer(
   ];
   if (allMounts.length > 0) service.volumes = allMounts;
 
-  // Network mode (non-bridge modes must be explicit in the compose).
-  if (
-    container.networkMode &&
-    container.networkMode !== "bridge" &&
-    container.networkMode !== "default"
-  ) {
-    service.network_mode = container.networkMode;
+  // Network mode.
+  // Special modes (host, none, container:, service:) must be preserved as
+  // network_mode — they change the network namespace, not just membership.
+  // Named Docker networks should go in the networks array instead: setting
+  // them as network_mode causes injectNetwork to skip the service, so it
+  // never joins vardo-network and cross-service DNS breaks.
+  if (container.networkMode) {
+    const isSpecialMode =
+      container.networkMode === "host" ||
+      container.networkMode === "none" ||
+      container.networkMode.startsWith("container:") ||
+      container.networkMode.startsWith("service:");
+
+    if (isSpecialMode) {
+      service.network_mode = container.networkMode;
+    } else if (
+      container.networkMode !== "bridge" &&
+      container.networkMode !== "default"
+    ) {
+      // Named Docker network — add to the networks array so injectNetwork can
+      // still attach vardo-network alongside it.
+      service.networks = [container.networkMode];
+    }
   }
 
   // Labels: keep only traefik. and vardo. prefixed labels. OCI image metadata
@@ -385,6 +401,15 @@ export function generateComposeFromContainer(
     compose.volumes = {};
     for (const v of namedVolumes) {
       compose.volumes[v.name] = {};
+    }
+  }
+
+  // Declare any named Docker networks as external so compose knows they
+  // pre-exist and does not try to create them.
+  if (service.networks && service.networks.length > 0) {
+    compose.networks = {};
+    for (const net of service.networks) {
+      compose.networks[net] = { external: true };
     }
   }
 
