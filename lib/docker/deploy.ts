@@ -938,14 +938,18 @@ export async function runDeployment(
     }
 
     // Step 7: Pull and start new slot (no traffic yet)
-    // Use --pull missing for locally-built images, --pull always for remote
-    const pullPolicy = builtLocally ? "missing" : "always";
+    // Use --pull missing when compose has build directives or locally-built images,
+    // --pull always for remote-only images
+    const hasBuild = Object.values(compose.services).some((svc) => svc.build);
+    const pullPolicy = builtLocally || hasBuild ? "missing" : "always";
+    // Allow 10 minutes for builds (images with build: directives can take a while)
+    const composeUpTimeout = hasBuild ? 600000 : 120000;
     log(`[deploy] Starting ${newSlot} slot...`);
     try {
       const { stdout, stderr } = await execFileAsync(
         "docker",
-        ["compose", "-f", composePath, "-p", newProjectName, "up", "-d", "--pull", pullPolicy],
-        { cwd: slotDir, timeout: 120000 }
+        ["compose", "-f", composePath, "-p", newProjectName, "up", "-d", ...(hasBuild ? ["--build"] : []), "--pull", pullPolicy],
+        { cwd: slotDir, timeout: composeUpTimeout }
       );
       for (const line of stdout.split(/\r?\n|\r/).filter(Boolean)) {
         logs.push(`[deploy][compose] ${line.trim()}`);
