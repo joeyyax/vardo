@@ -781,20 +781,25 @@ export async function runDeployment(
     log(`[deploy] Active slot: ${activeSlot || "none"}, deploying to: ${newSlot}`);
 
     // Step 5: Write compose file
-    // For git-sourced compose apps with build: directives, symlink the repo
-    // contents into the slot dir so build contexts resolve correctly.
+    // For git-sourced apps, link repo contents into the slot dir so build
+    // contexts and relative volume mounts (e.g. ./init.sql) resolve correctly.
+    // Directories are symlinked (for build contexts), files are copied (Docker
+    // bind mounts don't follow symlinks — they create empty dirs instead).
     if (repoDir) {
-      const hasBuildDirective = Object.values(compose.services).some((svc) => svc.build);
-      if (hasBuildDirective) {
-        const { readdir, symlink, lstat } = await import("fs/promises");
-        const entries = await readdir(repoDir);
-        for (const entry of entries) {
-          if (entry === "docker-compose.yml" || entry === "docker-compose.yaml" || entry === "compose.yml" || entry === "compose.yaml" || entry === ".env") continue;
-          const target = join(slotDir, entry);
-          try {
-            await lstat(target);
-          } catch {
-            await symlink(join(repoDir, entry), target);
+      const { readdir, symlink, copyFile, lstat, stat } = await import("fs/promises");
+      const entries = await readdir(repoDir);
+      for (const entry of entries) {
+        if (entry === "docker-compose.yml" || entry === "docker-compose.yaml" || entry === "compose.yml" || entry === "compose.yaml" || entry === ".env") continue;
+        const source = join(repoDir, entry);
+        const target = join(slotDir, entry);
+        try {
+          await lstat(target);
+        } catch {
+          const st = await stat(source);
+          if (st.isDirectory()) {
+            await symlink(source, target);
+          } else {
+            await copyFile(source, target);
           }
         }
       }
