@@ -16,6 +16,7 @@ export async function createExec(
     AttachStdout: true,
     AttachStderr: true,
     Tty: true,
+    Env: ["TERM=xterm-256color"],
     Cmd: cmd,
   });
 
