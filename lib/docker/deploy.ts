@@ -804,6 +804,35 @@ export async function runDeployment(
         }
       }
     }
+    // Step 5a: Externalize named volumes so they persist across blue-green swaps.
+    // Docker Compose scopes named volumes to the project name, so blue and green
+    // slots get separate volumes by default. Making them external with a stable
+    // name ensures database data, uploads, etc. survive every deploy.
+    // Service mount strings (e.g. "postgres-data:/var/lib/postgresql/data") stay
+    // unchanged — Compose resolves the volume key to the external name automatically.
+    const stableVolumePrefix = `${app.name}-${envName}`;
+    if (compose.volumes && Object.keys(compose.volumes).length > 0) {
+      const externalized: string[] = [];
+
+      for (const volName of Object.keys(compose.volumes)) {
+        if (isAnonymousVolume(volName)) continue;
+        const stableName = `${stableVolumePrefix}_${volName}`;
+
+        // Ensure the external volume exists
+        try {
+          await execFileAsync("docker", ["volume", "create", stableName], { timeout: 10000 });
+        } catch { /* already exists — fine */ }
+
+        // Replace the volume declaration with an external reference
+        compose.volumes[volName] = { external: true, name: stableName };
+        externalized.push(`${volName} → ${stableName}`);
+      }
+
+      if (externalized.length > 0) {
+        log(`[deploy] Externalized ${externalized.length} volume(s): ${externalized.join(", ")}`);
+      }
+    }
+
     const composePath = join(slotDir, "docker-compose.yml");
     await writeFile(composePath, composeToYaml(compose), "utf-8");
 
