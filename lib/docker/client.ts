@@ -857,8 +857,10 @@ export async function pruneImages(filters?: Record<string, string[]>): Promise<{
 }
 
 export async function pruneBuildCache(filters?: Record<string, string[]>): Promise<{ spaceReclaimed: number }> {
-  const body = filters ? { Filters: filters } : undefined;
-  const result = await dockerRequest<{ SpaceReclaimed: number }>("POST", "/build/prune", body);
+  const query = filters
+    ? `?filters=${encodeURIComponent(JSON.stringify(filters))}`
+    : "";
+  const result = await dockerRequest<{ SpaceReclaimed: number }>("POST", `/build/prune${query}`);
   return { spaceReclaimed: result.SpaceReclaimed ?? 0 };
 }
 
