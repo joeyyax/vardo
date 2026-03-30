@@ -39,6 +39,7 @@ const updateAppSchema = z.object({
   gpuEnabled: z.boolean().optional(),
   backendProtocol: z.enum(["http", "https"]).nullable().optional(),
   diskWriteAlertThreshold: z.number().int().min(0).nullable().optional(), // bytes/hour, null = default 1GB
+  healthCheckTimeout: z.number().int().min(10).max(600).nullable().optional(),
   autoRollback: z.boolean().optional(),
   rollbackGracePeriod: z.number().int().min(10).max(600).optional(),
   projectId: z.string().nullable().optional(),

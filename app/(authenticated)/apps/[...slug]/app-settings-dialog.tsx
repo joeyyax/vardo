@@ -71,6 +71,7 @@ export function AppSettingsDialog({
   const [gpuEnabled, setGpuEnabled] = useState(app.gpuEnabled ?? false);
   const [backendProtocol, setBackendProtocol] = useState<"auto" | "http" | "https">(app.backendProtocol || "auto");
   const [diskWriteAlertThreshold, setDiskWriteAlertThreshold] = useState(app.diskWriteAlertThreshold ? (app.diskWriteAlertThreshold / 1_073_741_824).toString() : "");
+  const [healthCheckTimeout, setHealthCheckTimeout] = useState(app.healthCheckTimeout?.toString() || "60");
   const [autoRollback, setAutoRollback] = useState(app.autoRollback ?? false);
   const [rollbackGracePeriod, setRollbackGracePeriod] = useState(app.rollbackGracePeriod?.toString() || "60");
 
@@ -110,6 +111,7 @@ export function AppSettingsDialog({
       body.gpuEnabled = gpuEnabled;
       body.backendProtocol = backendProtocol === "auto" ? null : backendProtocol;
       body.diskWriteAlertThreshold = diskWriteAlertThreshold ? Math.round(parseFloat(diskWriteAlertThreshold) * 1_073_741_824) : null;
+      body.healthCheckTimeout = healthCheckTimeout ? parseInt(healthCheckTimeout, 10) : null;
       body.autoRollback = autoRollback;
       body.rollbackGracePeriod = rollbackGracePeriod ? parseInt(rollbackGracePeriod, 10) : 60;
       if (editParentId) {
@@ -367,6 +369,24 @@ export function AppSettingsDialog({
                 <Input id="edit-disk-write-threshold" type="number" step="0.5" min="0.1" placeholder="Default: 1 GB" value={diskWriteAlertThreshold} onChange={(e) => setDiskWriteAlertThreshold(e.target.value)} />
                 <p className="text-xs text-muted-foreground">{diskWriteAlertThreshold ? diskWriteAlertThreshold + " GB/hr" : "Default: 1 GB/hr"}</p>
               </div>
+            </div>
+
+            {/* Health Check Timeout */}
+            <div className="grid gap-2 sm:w-1/2">
+              <Label htmlFor="edit-health-timeout">Health Check Timeout (seconds)</Label>
+              <Input
+                id="edit-health-timeout"
+                type="number"
+                step="10"
+                min="10"
+                max="600"
+                placeholder="60"
+                value={healthCheckTimeout}
+                onChange={(e) => setHealthCheckTimeout(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                How long to wait for all containers to be healthy after deploy. Increase for services with slow startup like VPN tunnels.
+              </p>
             </div>
 
             {/* Toggles */}

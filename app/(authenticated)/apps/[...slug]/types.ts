@@ -92,6 +92,7 @@ export type App = {
   gpuEnabled: boolean | null;
   backendProtocol: "http" | "https" | null;
   diskWriteAlertThreshold: number | null;
+  healthCheckTimeout: number | null;
   autoRollback: boolean | null;
   rollbackGracePeriod: number | null;
   projectId: string | null;

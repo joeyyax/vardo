@@ -1082,6 +1082,13 @@ generate_env() {
   local docker_gid
   docker_gid=$(getent group docker 2>/dev/null | cut -d: -f3 || echo "999")
 
+  # Detect NVIDIA GPU — enables the cadvisor-gpu compose profile for GPU metrics
+  local compose_profiles="production"
+  if [ -e /dev/nvidia0 ] && [ -e /dev/nvidiactl ]; then
+    compose_profiles="production,gpu"
+    log "NVIDIA GPU detected — enabling gpu compose profile"
+  fi
+
   if [[ "$VARDO_ROLE" == "development" ]]; then
     # Dev .env — minimal, no TLS/domain config
     cat > "$env_file" <<EOF
@@ -1098,7 +1105,7 @@ EOF
     cat > "$env_file" <<EOF
 VARDO_ROLE=staging
 VARDO_INSTANCE_ID=$instance_id
-COMPOSE_PROFILES=production
+COMPOSE_PROFILES=$compose_profiles
 DOCKER_GID=$docker_gid
 DB_PASSWORD=$db_pass
 BETTER_AUTH_SECRET=$auth_secret
@@ -1114,7 +1121,7 @@ EOF
     cat > "$env_file" <<EOF
 VARDO_ROLE=${VARDO_ROLE}
 VARDO_INSTANCE_ID=$instance_id
-COMPOSE_PROFILES=production
+COMPOSE_PROFILES=$compose_profiles
 DOCKER_GID=$docker_gid
 VARDO_DOMAIN=${VARDO_DOMAIN}
 VARDO_BASE_DOMAIN=${VARDO_BASE_DOMAIN}
@@ -1352,16 +1359,25 @@ run_env_migrations() {
     log "Renamed HOST_* → VARDO_* env vars"
   fi
 
-  # Ensure COMPOSE_PROFILES=production (skip for dev role)
+  # Ensure COMPOSE_PROFILES includes production (skip for dev role)
+  # and gpu when NVIDIA devices are present
   load_env_display
   if ! is_dev; then
-    if ! grep -q "^COMPOSE_PROFILES=.*production" "$env_file" 2>/dev/null; then
+    local target_profiles="production"
+    if [ -e /dev/nvidia0 ] && [ -e /dev/nvidiactl ]; then
+      target_profiles="production,gpu"
+    fi
+
+    local current_profiles
+    current_profiles=$(grep "^COMPOSE_PROFILES=" "$env_file" 2>/dev/null | cut -d= -f2 || echo "")
+
+    if [[ "$current_profiles" != "$target_profiles" ]]; then
       if grep -q "^COMPOSE_PROFILES=" "$env_file"; then
-        _sed_i 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=production/' "$env_file"
+        _sed_i "s/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=$target_profiles/" "$env_file"
       else
-        echo "COMPOSE_PROFILES=production" >> "$env_file"
+        echo "COMPOSE_PROFILES=$target_profiles" >> "$env_file"
       fi
-      log "Set COMPOSE_PROFILES=production"
+      log "Set COMPOSE_PROFILES=$target_profiles"
     fi
   fi
 

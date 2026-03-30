@@ -85,7 +85,7 @@ const execFileAsync = promisify(execFile);
 const PROJECTS_DIR = resolve(process.env.VARDO_PROJECTS_DIR || "./.host/projects");
 const NETWORK_NAME = "vardo-network";
 
-const HEALTH_CHECK_TIMEOUT_MS = 60000;
+const DEFAULT_HEALTH_CHECK_TIMEOUT_MS = 60000;
 const HEALTH_CHECK_INTERVAL_MS = 2000;
 
 export type DeployStage = "clone" | "build" | "deploy" | "healthcheck" | "routing" | "cleanup" | "done";
@@ -671,6 +671,15 @@ export async function runDeployment(
       detectedPort = parseInt(envMap.PORT);
     }
 
+    // Fall back to the primary domain's port (set during import from Traefik labels)
+    if (!detectedPort && app.domains.length > 0) {
+      const primaryDomain = app.domains.find((d) => d.isPrimary) ?? app.domains[0];
+      if (primaryDomain.port) {
+        detectedPort = primaryDomain.port;
+        log(`[deploy] Using port ${detectedPort} from domain ${primaryDomain.domain}`);
+      }
+    }
+
     const containerPort = detectedPort || 3000;
     if (!app.containerPort) {
       log(`[deploy] Using port ${containerPort}${detectedPort ? " (auto-detected)" : " (default)"}`);
@@ -919,8 +928,12 @@ export async function runDeployment(
         ["compose", "-f", composePath, "-p", newProjectName, "up", "-d", "--pull", pullPolicy],
         { cwd: slotDir, timeout: 120000 }
       );
-      if (stdout.trim()) logs.push(`[deploy][compose] ${stdout.trim()}`);
-      if (stderr.trim()) logs.push(`[deploy][compose] ${stderr.trim()}`);
+      for (const line of stdout.split(/\r?\n|\r/).filter(Boolean)) {
+        logs.push(`[deploy][compose] ${line.trim()}`);
+      }
+      for (const line of stderr.split(/\r?\n|\r/).filter(Boolean)) {
+        logs.push(`[deploy][compose] ${line.trim()}`);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       throw new Error(`docker compose up (${newSlot}) failed: ${message}`);
@@ -931,7 +944,8 @@ export async function runDeployment(
     stage("deploy", "success");
     stage("healthcheck", "running");
     log(`[deploy] Waiting for ${newSlot} to be healthy...`);
-    const healthy = await waitForHealthy(newProjectName, composePath, slotDir, logs);
+    const healthTimeoutMs = (app.healthCheckTimeout ?? 0) * 1000 || DEFAULT_HEALTH_CHECK_TIMEOUT_MS;
+    const healthy = await waitForHealthy(newProjectName, composePath, slotDir, logs, healthTimeoutMs);
     if (!healthy) {
       // Grab container logs before tearing down
       log(`[deploy] Health check failed — fetching container logs...`);
@@ -1645,9 +1659,10 @@ async function waitForHealthy(
   projectName: string,
   composePath: string,
   cwd: string,
-  logs: { push: (line: string) => void }
+  logs: { push: (line: string) => void },
+  timeoutMs: number = DEFAULT_HEALTH_CHECK_TIMEOUT_MS,
 ): Promise<boolean> {
-  const deadline = Date.now() + HEALTH_CHECK_TIMEOUT_MS;
+  const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
     try {
@@ -1686,7 +1701,7 @@ async function waitForHealthy(
     await sleep(HEALTH_CHECK_INTERVAL_MS);
   }
 
-  logs.push(`[health] Timeout after ${HEALTH_CHECK_TIMEOUT_MS / 1000}s`);
+  logs.push(`[health] Timeout after ${timeoutMs / 1000}s`);
   return false;
 }
 
@@ -1887,8 +1902,12 @@ export async function recreateProject(
       ["compose", "-f", composePath, "-p", composeProject, "up", "-d", "--force-recreate"],
       { cwd: slotDir, timeout: 60000 }
     );
-    if (stdout.trim()) logs.push(stdout.trim());
-    if (stderr.trim()) logs.push(stderr.trim());
+    for (const line of stdout.split(/\r?\n|\r/).filter(Boolean)) {
+      logs.push(`[deploy][compose] ${line.trim()}`);
+    }
+    for (const line of stderr.split(/\r?\n|\r/).filter(Boolean)) {
+      logs.push(`[deploy][compose] ${line.trim()}`);
+    }
 
     // Clear needsRedeploy flag since containers were recreated with fresh env
     await db
