@@ -267,6 +267,18 @@ export function runAsyncContainerMigration(params: MigrationParams): void {
 // ---------------------------------------------------------------------------
 
 /**
+ * Returns true when an env var key name suggests it holds a sensitive value
+ * (password, token, secret, private key, API key, credential, etc.).
+ *
+ * Used during container import to route sensitive vars to the encrypted
+ * envContent field rather than inlining them in plaintext compose content.
+ * The match is intentionally broad — false positives are safer than misses.
+ */
+export function isSensitiveEnvKey(key: string): boolean {
+  return /password|passwd|secret|token|private_key|api_key|access_key|credential/i.test(key);
+}
+
+/**
  * Parse a Docker env array (`["KEY=VALUE", ...]`) into a plain object.
  *
  * Values containing `${` are omitted — Docker Compose would treat them as

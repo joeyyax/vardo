@@ -18,11 +18,13 @@ import type { ComposeFile } from "@/lib/docker/compose";
 import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
 import { recordActivity } from "@/lib/activity";
 import { createDeployment } from "@/lib/docker/deploy";
+import { encrypt } from "@/lib/crypto/encrypt";
 import {
   resolveProjectForImport,
   getPgErrorCode,
   runAsyncContainerMigration,
   parseContainerEnvVars,
+  isSensitiveEnvKey,
 } from "@/lib/docker/import";
 
 type RouteParams = {
@@ -136,6 +138,12 @@ async function handler(request: NextRequest, { params }: RouteParams) {
     type ServiceMount = { appId: string; mount: { name: string; source: string; destination: string; type: string } };
     const allMounts: Omit<ServiceMount, "appId">["mount"][] = [];
 
+    // Sensitive env vars collected across all services for encrypted envContent.
+    // All services with sensitive vars will reference the shared .env file.
+    // When multiple services define the same key with different values, the last
+    // service processed wins — a known limitation of the single envContent field.
+    const allSensitiveVars: Record<string, string> = {};
+
     const warnings: string[] = [];
 
     for (const detail of validDetails) {
@@ -150,6 +158,20 @@ async function handler(request: NextRequest, { params }: RouteParams) {
           `Service "${serviceName}": ${skippedKeys.length} env var(s) skipped (values contain \${...} interpolation syntax): ${skippedKeys.join(", ")}`
         );
       }
+
+      // Split env vars into sensitive (routed to encrypted envContent) and
+      // non-sensitive (inlined in the compose environment: block).
+      const publicVars: Record<string, string> = {};
+      const sensitiveVars: Record<string, string> = {};
+      for (const [k, v] of Object.entries(envVars)) {
+        if (isSensitiveEnvKey(k)) {
+          sensitiveVars[k] = v;
+        } else {
+          publicVars[k] = v;
+        }
+      }
+      // Accumulate sensitive vars for the shared envContent written after the loop.
+      Object.assign(allSensitiveVars, sensitiveVars);
 
       const singleFile = generateComposeFromContainer(serviceName, {
         image: detail.image,
@@ -176,17 +198,15 @@ async function handler(request: NextRequest, { params }: RouteParams) {
         entrypoint: detail.entrypoint,
         command: detail.command,
         labels: detail.labels,
-        // Env vars are inlined in the environment: block. Group compose imports
-        // use the environment: key directly rather than an env_file because each
-        // service has its own vars and multi-service env file routing is not yet
-        // supported. hasEnvVars controls the env_file directive only.
-        hasEnvVars: false,
+        // hasEnvVars adds env_file: [".env"] to the service. Set it when this
+        // service has sensitive vars that will be written to the encrypted env file.
+        hasEnvVars: Object.keys(sensitiveVars).length > 0,
       });
 
-      // Inline env vars for this service directly in the compose.
+      // Inline non-sensitive env vars for this service directly in the compose.
       const composeSvc = singleFile.services[serviceName];
-      if (composeSvc && Object.keys(envVars).length > 0) {
-        composeSvc.environment = envVars;
+      if (composeSvc && Object.keys(publicVars).length > 0) {
+        composeSvc.environment = publicVars;
       }
 
       // Inject Traefik labels for services that have a detectable domain but no
@@ -236,6 +256,15 @@ async function handler(request: NextRequest, { params }: RouteParams) {
 
     const composeContent = composeToYaml(merged);
 
+    // Encrypt sensitive vars collected across all services.
+    let envContent: string | null = null;
+    if (Object.keys(allSensitiveVars).length > 0) {
+      const envLines = Object.entries(allSensitiveVars)
+        .map(([k, v]) => `${k}=${v}`)
+        .join("\n");
+      envContent = encrypt(envLines, orgId);
+    }
+
     let result: { app: (typeof apps)["$inferSelect"] };
     try {
       result = await db.transaction(async (tx) => {
@@ -265,6 +294,7 @@ async function handler(request: NextRequest, { params }: RouteParams) {
             // would overwrite service-specific routing configs.
             autoTraefikLabels: false,
             projectId: resolvedProjectId,
+            envContent,
             importedComposeProject: composeProject,
             status: "active",
           })
