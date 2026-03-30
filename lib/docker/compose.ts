@@ -536,12 +536,12 @@ export function injectTraefikLabels(
     }
   }
 
-  // Remove host port bindings — Traefik handles external access
-  // Keep only the internal port exposure for Docker networking
+  // Preserve host port bindings from the compose content — they may be needed
+  // for non-HTTP services, setup wizards, or Docker-in-Docker containers.
+  // Traefik ignores host port mappings so they don't conflict with routing.
   const updatedService: ComposeService = {
     ...existing,
     labels,
-    ports: undefined,
   };
 
   return {
