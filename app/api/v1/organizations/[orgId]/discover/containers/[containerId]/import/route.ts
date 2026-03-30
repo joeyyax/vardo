@@ -6,7 +6,7 @@ import { apps, environments, domains, volumes } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
-import { getContainerDetail, isLocalImage } from "@/lib/docker/discover";
+import { getContainerDetail, hasAtFileTraefikLabels, isLocalImage } from "@/lib/docker/discover";
 import { resolveContainerPort } from "@/lib/docker/resolve-port";
 import { generateComposeFromContainer, injectTraefikLabels, composeToYaml } from "@/lib/docker/compose";
 import { encrypt } from "@/lib/crypto/encrypt";
@@ -282,6 +282,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     if (bindMounts.length > 0) {
       warnings.push(
         `${bindMounts.length} bind mount(s) reference host paths — they've been imported but Vardo won't manage the data.`
+      );
+    }
+
+    if (hasAtFileTraefikLabels(detail.labels)) {
+      warnings.push(
+        "One or more Traefik labels reference external @file provider configs — make sure those configurations exist in your Traefik setup."
       );
     }
 
