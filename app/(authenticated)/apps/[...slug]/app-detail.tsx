@@ -440,15 +440,15 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                     <>
                       <DropdownMenuItem disabled={deploying} onClick={handleDeploy}>
                         <Rocket className="mr-2 size-4" />
-                        Update
+                        Deploy
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={handleRestart}>
                         <RotateCcw className="mr-2 size-4" />
-                        Restart
+                        Restart containers
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={handleRecreate}>
                         <RefreshCw className="mr-2 size-4" />
-                        Recreate
+                        Rebuild containers
                       </DropdownMenuItem>
                     </>
                   ) : (
