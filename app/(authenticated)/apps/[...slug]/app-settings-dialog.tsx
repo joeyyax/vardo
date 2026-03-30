@@ -69,7 +69,7 @@ export function AppSettingsDialog({
   const [cpuLimit, setCpuLimit] = useState(app.cpuLimit?.toString() || "");
   const [memoryLimit, setMemoryLimit] = useState(app.memoryLimit?.toString() || "");
   const [gpuEnabled, setGpuEnabled] = useState(app.gpuEnabled ?? false);
-  const [backendProtocol, setBackendProtocol] = useState<"" | "http" | "https">(app.backendProtocol ?? "");
+  const [backendProtocol, setBackendProtocol] = useState<"auto" | "http" | "https">(app.backendProtocol || "auto");
   const [diskWriteAlertThreshold, setDiskWriteAlertThreshold] = useState(app.diskWriteAlertThreshold ? (app.diskWriteAlertThreshold / 1_073_741_824).toString() : "");
   const [autoRollback, setAutoRollback] = useState(app.autoRollback ?? false);
   const [rollbackGracePeriod, setRollbackGracePeriod] = useState(app.rollbackGracePeriod?.toString() || "60");
@@ -108,7 +108,7 @@ export function AppSettingsDialog({
       body.cpuLimit = cpuLimit ? parseFloat(cpuLimit) : null;
       body.memoryLimit = memoryLimit ? parseInt(memoryLimit, 10) : null;
       body.gpuEnabled = gpuEnabled;
-      body.backendProtocol = backendProtocol || null;
+      body.backendProtocol = backendProtocol === "auto" ? null : backendProtocol;
       body.diskWriteAlertThreshold = diskWriteAlertThreshold ? Math.round(parseFloat(diskWriteAlertThreshold) * 1_073_741_824) : null;
       body.autoRollback = autoRollback;
       body.rollbackGracePeriod = rollbackGracePeriod ? parseInt(rollbackGracePeriod, 10) : 60;
@@ -126,7 +126,7 @@ export function AppSettingsDialog({
         (body.containerPort !== app.containerPort) ||
         (body.restartPolicy !== (app.restartPolicy || "unless-stopped")) ||
         (body.rootDirectory !== (app.rootDirectory || null)) ||
-        (body.backendProtocol !== (app.backendProtocol ?? null))
+        ((backendProtocol === "auto" ? null : backendProtocol) !== (app.backendProtocol ?? null))
       );
 
       const res = await fetch(
@@ -317,12 +317,12 @@ export function AppSettingsDialog({
             {/* Backend Protocol */}
             <div className="grid gap-2 sm:w-1/2">
               <Label>Backend Protocol</Label>
-              <Select value={backendProtocol} onValueChange={(v) => setBackendProtocol(v as "" | "http" | "https")}>
+              <Select value={backendProtocol} onValueChange={(v) => setBackendProtocol(v as "auto" | "http" | "https")}>
                 <SelectTrigger>
                   <SelectValue placeholder="Auto-detect" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Auto-detect</SelectItem>
+                  <SelectItem value="auto">Auto-detect</SelectItem>
                   <SelectItem value="http">HTTP</SelectItem>
                   <SelectItem value="https">HTTPS</SelectItem>
                 </SelectContent>
