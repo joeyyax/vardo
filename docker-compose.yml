@@ -141,7 +141,6 @@ services:
       retries: 5
     networks:
       - internal
-      - vardo-network
 
   redis:
     container_name: vardo-redis
@@ -158,7 +157,6 @@ services:
       retries: 3
     networks:
       - internal
-      - vardo-network
 
   traefik:
     container_name: vardo-traefik
@@ -252,7 +250,6 @@ services:
       - loki_data:/loki
     networks:
       - internal
-      - vardo-network
     mem_limit: 512m
 
   wireguard:
@@ -300,7 +297,6 @@ services:
       - loki
     networks:
       - internal
-      - vardo-network
     mem_limit: 128m
 
 volumes:
