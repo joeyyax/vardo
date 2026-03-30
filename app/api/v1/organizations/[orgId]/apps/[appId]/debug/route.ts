@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { apps, volumes } from "@/lib/db/schema";
+import { apps, volumes, projects } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { isAdmin } from "@/lib/auth/permissions";
@@ -51,6 +51,19 @@ async function handler(_request: NextRequest, { params }: RouteParams) {
       .filter((v) => v.persistent)
       .map((v) => ({ name: v.name, mountPath: v.mountPath }));
 
+    // Resolve per-project bind mount permission so the preview matches deploy.
+    const orgTrusted = org.organization.trusted ?? false;
+    let projectAllowBindMounts = false;
+    if (orgTrusted) {
+      projectAllowBindMounts = true;
+    } else if (app.projectId) {
+      const project = await db.query.projects.findFirst({
+        where: eq(projects.id, app.projectId),
+        columns: { allowBindMounts: true },
+      });
+      projectAllowBindMounts = project?.allowBindMounts ?? false;
+    }
+
     // Resolve the effective backend protocol for the debug preview
     const resolvedProtocol = resolveBackendProtocol(
       narrowBackendProtocol(app.backendProtocol),
@@ -82,7 +95,8 @@ async function handler(_request: NextRequest, { params }: RouteParams) {
       },
       volumesList,
       NETWORK_NAME,
-      org.organization.trusted ?? false,
+      orgTrusted,
+      projectAllowBindMounts,
     );
 
     const compose = composeParsed ? composeToYaml(composeParsed) : null;

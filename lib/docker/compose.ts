@@ -1219,6 +1219,7 @@ export function buildComposePreview(
   volumesList: { name: string; mountPath: string }[],
   networkName: string,
   orgTrusted?: boolean,
+  allowBindMounts?: boolean,
 ): ComposeFile | null {
   let compose: ComposeFile | null = null;
 
@@ -1229,7 +1230,7 @@ export function buildComposePreview(
       if (orgTrusted) {
         compose = parsed;
       } else {
-        const { compose: sanitized } = sanitizeCompose(parsed, { allowBindMounts: true });
+        const { compose: sanitized } = sanitizeCompose(parsed, { allowBindMounts: allowBindMounts ?? false });
         compose = sanitized;
       }
     } catch {
@@ -1250,7 +1251,7 @@ export function buildComposePreview(
       if (orgTrusted) {
         compose = parsed;
       } else {
-        const { compose: sanitized } = sanitizeCompose(parsed, { allowBindMounts: true });
+        const { compose: sanitized } = sanitizeCompose(parsed, { allowBindMounts: allowBindMounts ?? false });
         compose = sanitized;
       }
     } catch {

@@ -248,6 +248,16 @@ async function handler(request: NextRequest, { params }: RouteParams) {
         }
       }
 
+      // Merge network declarations so named Docker networks referenced by
+      // services are declared at the top level. Without this, Docker Compose
+      // would try to create the network instead of using the existing one.
+      if (singleFile.networks) {
+        merged.networks ??= {};
+        for (const [netName, netDef] of Object.entries(singleFile.networks)) {
+          merged.networks[netName] = netDef;
+        }
+      }
+
       // Accumulate mounts for volume DB records
       for (const mount of detail.mounts) {
         allMounts.push(mount);

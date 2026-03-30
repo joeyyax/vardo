@@ -179,7 +179,31 @@ export function runAsyncContainerMigration(params: MigrationParams): void {
       } catch {
         // If we can't stop a container, optionally bail so the deploy is not
         // attempted with the original still running (e.g. port conflicts).
-        if (bailOnFirstStopFailure) return;
+        if (bailOnFirstStopFailure) {
+          // Restart any containers we already stopped so services keep running.
+          for (const id of stoppedIds) {
+            try { await startContainer(id); } catch { /* best effort */ }
+          }
+
+          await db
+            .update(deployments)
+            .set({ status: "failed", finishedAt: new Date() })
+            .where(eq(deployments.id, deploymentId));
+
+          await db
+            .update(apps)
+            .set({ status: "active", updatedAt: new Date() })
+            .where(eq(apps.id, appId));
+
+          publishEvent(appChannel(appId), {
+            event: "deploy:failed",
+            appId,
+            deploymentId,
+            message: "Import migration aborted — could not stop original container",
+          }).catch(() => {});
+
+          return;
+        }
       }
     }
 
