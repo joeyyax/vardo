@@ -51,6 +51,7 @@ import {
 import { LogViewer } from "@/components/log-viewer";
 import dynamic from "next/dynamic";
 import { detectAppType } from "@/lib/ui/app-type";
+import { statusDotColor, envTypeDotColor } from "@/lib/ui/status-colors";
 import { AppMetrics } from "./app-metrics";
 import { AppBackupHistory } from "@/components/backups/app-backup-history";
 
@@ -83,17 +84,6 @@ import { AppDebug } from "./app-debug";
 
 import type { AppDetailProps, Environment } from "./types";
 
-function statusDotColor(status: string) {
-  return status === "active" ? "bg-status-success"
-    : status === "error" ? "bg-status-error"
-    : "bg-status-neutral";
-}
-
-function envTypeDotColor(type: string) {
-  return type === "production" ? "bg-status-success"
-    : type === "staging" ? "bg-status-warning"
-    : "bg-status-info";
-}
 
 function deployTypeLabel(deployType: string) {
   switch (deployType) {
