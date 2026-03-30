@@ -813,6 +813,58 @@ export async function getPerProjectDiskUsage(): Promise<Map<string, number>> {
 }
 
 // ---------------------------------------------------------------------------
+// Image management
+// ---------------------------------------------------------------------------
+
+export type ImageInfo = {
+  id: string;
+  repoTags: string[];
+  size: number;
+};
+
+export async function listImages(filters?: Record<string, string[]>): Promise<ImageInfo[]> {
+  const query = filters
+    ? `?filters=${encodeURIComponent(JSON.stringify(filters))}`
+    : "";
+  const images = await dockerRequest<{ Id: string; RepoTags: string[] | null; Size: number }[]>(
+    "GET",
+    `/images/json${query}`,
+  );
+  return images.map((img) => ({
+    id: img.Id,
+    repoTags: img.RepoTags ?? [],
+    size: img.Size,
+  }));
+}
+
+export async function removeImage(nameOrId: string, opts?: { force?: boolean }): Promise<void> {
+  const query = opts?.force ? "?force=true" : "";
+  await dockerRequest("DELETE", `/images/${encodeURIComponent(nameOrId)}${query}`);
+}
+
+export async function pruneImages(filters?: Record<string, string[]>): Promise<{ spaceReclaimed: number; count: number }> {
+  const query = filters
+    ? `?filters=${encodeURIComponent(JSON.stringify(filters))}`
+    : "";
+  const result = await dockerRequest<{
+    ImagesDeleted?: { Untagged?: string; Deleted?: string }[] | null;
+    SpaceReclaimed: number;
+  }>("POST", `/images/prune${query}`);
+  return {
+    spaceReclaimed: result.SpaceReclaimed ?? 0,
+    count: (result.ImagesDeleted ?? []).length,
+  };
+}
+
+export async function pruneBuildCache(filters?: Record<string, string[]>): Promise<{ spaceReclaimed: number }> {
+  const query = filters
+    ? `?filters=${encodeURIComponent(JSON.stringify(filters))}`
+    : "";
+  const result = await dockerRequest<{ SpaceReclaimed: number }>("POST", `/build/prune${query}`);
+  return { spaceReclaimed: result.SpaceReclaimed ?? 0 };
+}
+
+// ---------------------------------------------------------------------------
 // System Info
 // ---------------------------------------------------------------------------
 
