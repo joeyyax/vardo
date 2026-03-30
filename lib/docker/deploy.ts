@@ -994,7 +994,12 @@ export async function runDeployment(
       if (builtLocally) {
         const currentImageName = `host/${app.name}:${deploymentId.slice(0, 8)}`;
         const appImages = await listImages({ reference: [`host/${app.name}`] });
-        const staleImages = appImages.filter((img) => !img.repoTags.includes(currentImageName));
+        const imagePrefix = `host/${app.name}:`;
+        const staleImages = appImages.filter(
+          (img) =>
+            img.repoTags.some((tag) => tag.startsWith(imagePrefix)) &&
+            !img.repoTags.includes(currentImageName),
+        );
 
         let removedCount = 0;
         for (const img of staleImages) {
