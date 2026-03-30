@@ -41,9 +41,17 @@ type TraefikServersTransportConfig = {
   insecureSkipVerify: boolean;
 };
 
+type TraefikServiceConfig = {
+  loadBalancer: {
+    servers: Array<{ url: string }>;
+    serversTransport?: string;
+  };
+};
+
 type TraefikDynamicConfig = {
   http: {
     routers: Record<string, TraefikRouterConfig>;
+    services?: Record<string, TraefikServiceConfig>;
     middlewares?: Record<string, TraefikMiddlewareConfig>;
     serversTransports?: Record<string, TraefikServersTransportConfig>;
   };
@@ -69,13 +77,33 @@ export function buildTraefikConfigYaml(
   appName: string,
   appDomains: AppDomainEntry[],
   backendProtocol?: "http" | "https" | null,
+  containerName?: string | null,
+  containerPort?: number | null,
 ): string | null {
   if (appDomains.length === 0) return null;
 
   const routers: Record<string, TraefikRouterConfig> = {};
   const middlewares: Record<string, TraefikMiddlewareConfig> = {};
   const serversTransports: Record<string, TraefikServersTransportConfig> = {};
-  const dockerServiceRef = `${appName}@docker`;
+  const services: Record<string, TraefikServiceConfig> = {};
+
+  // Define the service inline so the file config is self-contained.
+  // Falls back to @docker only when the container name is unknown.
+  const protocol = backendProtocol === "https" ? "https" : "http";
+  const port = containerPort ?? 3000;
+  let serviceRef: string;
+
+  if (containerName) {
+    serviceRef = appName;
+    services[appName] = {
+      loadBalancer: {
+        servers: [{ url: `${protocol}://${containerName}:${port}` }],
+        ...(backendProtocol === "https" && { serversTransport: `${appName}-insecure` }),
+      },
+    };
+  } else {
+    serviceRef = `${appName}@docker`;
+  }
 
   for (const domain of appDomains) {
     const routerName = `${appName}-${domain.id.slice(0, 8)}`;
@@ -99,7 +127,7 @@ export function buildTraefikConfigYaml(
       if (ssl && !isLocal) {
         routers[routerName] = {
           rule: `Host(\`${domain.domain}\`)`,
-          service: dockerServiceRef,
+          service: serviceRef,
           entryPoints: ["websecure"],
           tls: { certResolver },
           middlewares: [redirectMw],
@@ -107,7 +135,7 @@ export function buildTraefikConfigYaml(
         };
         routers[`${routerName}-http`] = {
           rule: `Host(\`${domain.domain}\`)`,
-          service: dockerServiceRef,
+          service: serviceRef,
           entryPoints: ["web"],
           middlewares: [redirectMw],
           priority: 100,
@@ -115,7 +143,7 @@ export function buildTraefikConfigYaml(
       } else if (ssl && isLocal) {
         routers[routerName] = {
           rule: `Host(\`${domain.domain}\`)`,
-          service: dockerServiceRef,
+          service: serviceRef,
           entryPoints: ["websecure"],
           tls: {},
           middlewares: [redirectMw],
@@ -123,7 +151,7 @@ export function buildTraefikConfigYaml(
         };
         routers[`${routerName}-http`] = {
           rule: `Host(\`${domain.domain}\`)`,
-          service: dockerServiceRef,
+          service: serviceRef,
           entryPoints: ["web"],
           middlewares: [redirectMw],
           priority: 100,
@@ -131,7 +159,7 @@ export function buildTraefikConfigYaml(
       } else {
         routers[routerName] = {
           rule: `Host(\`${domain.domain}\`)`,
-          service: dockerServiceRef,
+          service: serviceRef,
           entryPoints: ["web"],
           middlewares: [redirectMw],
           priority: 100,
@@ -143,7 +171,7 @@ export function buildTraefikConfigYaml(
     if (ssl && !isLocal) {
       routers[routerName] = {
         rule: `Host(\`${domain.domain}\`)`,
-        service: dockerServiceRef,
+        service: serviceRef,
         entryPoints: ["websecure"],
         tls: { certResolver },
         priority: 100,
@@ -152,7 +180,7 @@ export function buildTraefikConfigYaml(
       const redirectMiddleware = `${routerName}-https-redirect`;
       routers[httpRouterName] = {
         rule: `Host(\`${domain.domain}\`)`,
-        service: dockerServiceRef,
+        service: serviceRef,
         entryPoints: ["web"],
         middlewares: [redirectMiddleware],
         priority: 100,
@@ -166,21 +194,21 @@ export function buildTraefikConfigYaml(
     } else if (ssl && isLocal) {
       routers[routerName] = {
         rule: `Host(\`${domain.domain}\`)`,
-        service: dockerServiceRef,
+        service: serviceRef,
         entryPoints: ["websecure"],
         tls: {},
         priority: 100,
       };
       routers[`${routerName}-http`] = {
         rule: `Host(\`${domain.domain}\`)`,
-        service: dockerServiceRef,
+        service: serviceRef,
         entryPoints: ["web"],
         priority: 100,
       };
     } else {
       routers[routerName] = {
         rule: `Host(\`${domain.domain}\`)`,
-        service: dockerServiceRef,
+        service: serviceRef,
         entryPoints: ["web"],
         priority: 100,
       };
@@ -194,6 +222,7 @@ export function buildTraefikConfigYaml(
   const config: TraefikDynamicConfig = {
     http: {
       routers,
+      ...(Object.keys(services).length > 0 && { services }),
       ...(Object.keys(middlewares).length > 0 && { middlewares }),
       ...(Object.keys(serversTransports).length > 0 && { serversTransports }),
     },
@@ -214,7 +243,7 @@ export function buildTraefikConfigYaml(
 export async function regenerateAppRouteConfig(appId: string): Promise<void> {
   const app = await db.query.apps.findFirst({
     where: eq(apps.id, appId),
-    columns: { id: true, name: true, containerPort: true, backendProtocol: true },
+    columns: { id: true, name: true, containerPort: true, containerName: true, backendProtocol: true },
     with: { domains: true },
   });
 
@@ -238,7 +267,7 @@ export async function regenerateAppRouteConfig(appId: string): Promise<void> {
     app.containerPort ?? 3000,
   );
 
-  const configYaml = buildTraefikConfigYaml(app.name, appDomains, resolvedProtocol);
+  const configYaml = buildTraefikConfigYaml(app.name, appDomains, resolvedProtocol, app.containerName, app.containerPort);
   if (!configYaml) {
     await removeAppRouteConfig(app.name);
     return;
