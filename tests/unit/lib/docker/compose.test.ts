@@ -18,6 +18,7 @@ import {
   type ComposeFile,
   type ContainerConfig,
 } from "@/lib/docker/compose";
+import { mergeComposeFile } from "@/lib/docker/import";
 
 function makeCompose(volumes: string[]): ComposeFile {
   return {
@@ -1136,6 +1137,22 @@ describe("generateComposeFromContainer", () => {
     expect(compose.networks!["my-overlay"]).toEqual({ external: true });
   });
 
+  it("network declarations from multiple containers can be merged for group import", () => {
+    // Regression: group import merged services and volumes but not network
+    // declarations. Containers on named Docker networks had their top-level
+    // network declarations silently dropped, causing Docker Compose to fail.
+    const a = generateComposeFromContainer("svc-a", makeContainerConfig({ networkMode: "overlay-1" }));
+    const b = generateComposeFromContainer("svc-b", makeContainerConfig({ networkMode: "overlay-2" }));
+
+    const merged: ComposeFile = { services: {} };
+    mergeComposeFile(merged, a);
+    mergeComposeFile(merged, b);
+
+    expect(merged.networks).toBeDefined();
+    expect(merged.networks!["overlay-1"]).toEqual({ external: true });
+    expect(merged.networks!["overlay-2"]).toEqual({ external: true });
+  });
+
   it("does not add default network_mode for omitted networkMode", () => {
     const compose = generateComposeFromContainer("myapp", makeContainerConfig({ networkMode: "default" }));
     expect(compose.services.myapp.network_mode).toBeUndefined();
@@ -1824,7 +1841,28 @@ const BASE_PREVIEW_APP = {
 describe("buildComposePreview", () => {
   const networkName = "vardo-network";
 
-  it("returns a preview for a compose app with a safe bind mount", () => {
+  it("strips bind mounts in preview when allowBindMounts is false", () => {
+    const compose = `
+services:
+  app:
+    image: nginx:latest
+    volumes:
+      - /home/user/data:/data
+      - named-vol:/app/data
+`;
+    const result = buildComposePreview(
+      { ...BASE_PREVIEW_APP, composeContent: compose },
+      [],
+      networkName,
+      false,
+      false,
+    );
+    expect(result).not.toBeNull();
+    expect(result!.services.app.volumes).not.toContain("/home/user/data:/data");
+    expect(result!.services.app.volumes).toContain("named-vol:/app/data");
+  });
+
+  it("preserves safe bind mounts in preview when allowBindMounts is true", () => {
     const compose = `
 services:
   app:
@@ -1836,12 +1874,14 @@ services:
       { ...BASE_PREVIEW_APP, composeContent: compose },
       [],
       networkName,
+      false,
+      true,
     );
     expect(result).not.toBeNull();
     expect(result!.services.app.volumes).toContain("/home/user/data:/data");
   });
 
-  it("returns null for a denied bind mount path when org is not trusted", () => {
+  it("returns null for a denied bind mount path when allowBindMounts is true", () => {
     const compose = `
 services:
   app:
@@ -1853,6 +1893,8 @@ services:
       { ...BASE_PREVIEW_APP, composeContent: compose },
       [],
       networkName,
+      false,
+      true,
     );
     expect(result).toBeNull();
   });
@@ -1869,6 +1911,7 @@ services:
       { ...BASE_PREVIEW_APP, composeContent: compose },
       [],
       networkName,
+      true,
       true,
     );
     expect(result).not.toBeNull();
@@ -1890,6 +1933,7 @@ services:
       [],
       networkName,
       true,
+      true,
     );
     expect(result).not.toBeNull();
     expect(result!.services.app.volumes).toContain("/etc/myconfig:/etc/myconfig:ro");
@@ -1909,6 +1953,7 @@ services:
       { ...BASE_PREVIEW_APP, composeContent: compose },
       [],
       networkName,
+      true,
       true,
     );
     expect(result).not.toBeNull();
@@ -1930,6 +1975,7 @@ services:
       { ...BASE_PREVIEW_APP, composeContent: compose },
       [],
       networkName,
+      true,
       true,
     );
     expect(result).not.toBeNull();

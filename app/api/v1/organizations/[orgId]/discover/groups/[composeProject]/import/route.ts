@@ -25,6 +25,9 @@ import {
   runAsyncContainerMigration,
   parseContainerEnvVars,
   isSensitiveEnvKey,
+  parseComposeDependsOn,
+  isComposeProjectNetwork,
+  mergeComposeFile,
 } from "@/lib/docker/import";
 
 type RouteParams = {
@@ -173,11 +176,21 @@ async function handler(request: NextRequest, { params }: RouteParams) {
       // Accumulate sensitive vars for the shared envContent written after the loop.
       Object.assign(allSensitiveVars, sensitiveVars);
 
+      // Strip the compose-project default network from networkMode so the
+      // generated compose doesn't declare an external network that will be
+      // orphaned after the original containers are removed. Docker Compose
+      // creates a shared default network for all services in the same file,
+      // so inter-service DNS resolution works without explicitly preserving
+      // the old project's network.
+      const effectiveNetworkMode = isComposeProjectNetwork(detail.networkMode, composeProject)
+        ? ""
+        : detail.networkMode;
+
       const singleFile = generateComposeFromContainer(serviceName, {
         image: detail.image,
         ports: detail.ports,
         mounts: detail.mounts,
-        networkMode: detail.networkMode,
+        networkMode: effectiveNetworkMode,
         restartPolicy: detail.restartPolicy,
         capAdd: detail.capAdd,
         capDrop: detail.capDrop,
@@ -202,6 +215,15 @@ async function handler(request: NextRequest, { params }: RouteParams) {
         // service has sensitive vars that will be written to the encrypted env file.
         hasEnvVars: Object.keys(sensitiveVars).length > 0,
       });
+
+      // Reconstruct depends_on from Docker Compose labels. The container label
+      // com.docker.compose.depends_on encodes the original dependency graph
+      // (e.g. "redis:service_started:false,postgres:service_healthy:false").
+      // The object form preserves health-check conditions (service_healthy).
+      const dependsOn = parseComposeDependsOn(detail.labels);
+      if (Object.keys(dependsOn).length > 0) {
+        singleFile.services[serviceName].depends_on = dependsOn;
+      }
 
       // Inline non-sensitive env vars for this service directly in the compose.
       const composeSvc = singleFile.services[serviceName];
@@ -235,23 +257,21 @@ async function handler(request: NextRequest, { params }: RouteParams) {
         serviceDomains.push({ serviceName, domain: detail.domain, port: containerPort });
       }
 
-      // Merge this service into the combined file
-      for (const [name, mergedSvc] of Object.entries(singleFile.services)) {
-        merged.services[name] = mergedSvc;
-      }
-
-      // Merge named volume declarations
-      if (singleFile.volumes) {
-        merged.volumes ??= {};
-        for (const [volName, volDef] of Object.entries(singleFile.volumes)) {
-          merged.volumes[volName] = volDef;
-        }
-      }
+      // Merge this service's compose file into the combined file.
+      // Networks matching the compose project's default pattern are excluded —
+      // they are ephemeral and will not exist after the original containers
+      // are removed.
+      mergeComposeFile(merged, singleFile, composeProject);
 
       // Accumulate mounts for volume DB records
       for (const mount of detail.mounts) {
         allMounts.push(mount);
       }
+    }
+
+    // Clean up empty network declarations
+    if (merged.networks && Object.keys(merged.networks).length === 0) {
+      delete merged.networks;
     }
 
     const composeContent = composeToYaml(merged);
@@ -260,7 +280,7 @@ async function handler(request: NextRequest, { params }: RouteParams) {
     let envContent: string | null = null;
     if (Object.keys(allSensitiveVars).length > 0) {
       const envLines = Object.entries(allSensitiveVars)
-        .map(([k, v]) => `${k}=${v}`)
+        .map(([k, v]) => `${k}=${v.replace(/\r?\n/g, "\\n")}`)
         .join("\n");
       envContent = encrypt(envLines, orgId);
     }

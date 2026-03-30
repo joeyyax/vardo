@@ -15,6 +15,7 @@ import { stopContainer, startContainer, removeContainer, inspectContainer } from
 import { requestDeploy } from "@/lib/docker/deploy-cancel";
 import { publishEvent, appChannel } from "@/lib/events";
 import { recordActivity } from "@/lib/activity";
+import type { ComposeFile } from "@/lib/docker/compose";
 
 // Infer the Drizzle transaction type from the db.transaction callback signature.
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -179,7 +180,33 @@ export function runAsyncContainerMigration(params: MigrationParams): void {
       } catch {
         // If we can't stop a container, optionally bail so the deploy is not
         // attempted with the original still running (e.g. port conflicts).
-        if (bailOnFirstStopFailure) return;
+        if (bailOnFirstStopFailure) {
+          // Restart any containers we already stopped so services keep running.
+          for (const id of stoppedIds) {
+            try { await startContainer(id); } catch { /* best effort */ }
+          }
+
+          await db.transaction(async (tx) => {
+            await tx
+              .update(deployments)
+              .set({ status: "failed", finishedAt: new Date() })
+              .where(eq(deployments.id, deploymentId));
+
+            await tx
+              .update(apps)
+              .set({ status: "active", updatedAt: new Date() })
+              .where(eq(apps.id, appId));
+          });
+
+          publishEvent(appChannel(appId), {
+            event: "deploy:failed",
+            appId,
+            deploymentId,
+            message: "Import migration aborted — could not stop original container",
+          }).catch(() => {});
+
+          return;
+        }
       }
     }
 
@@ -263,6 +290,52 @@ export function runAsyncContainerMigration(params: MigrationParams): void {
 }
 
 // ---------------------------------------------------------------------------
+// Compose group helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Check whether a network name is the default network created by a Docker
+ * Compose project. Compose generates networks named `{project}_default` (or
+ * just `{project}` in some older versions). These networks are ephemeral —
+ * they won't exist after the original containers are removed, so referencing
+ * them as `external: true` in the imported compose file would cause deploy
+ * failures.
+ */
+export function isComposeProjectNetwork(networkName: string, composeProject: string): boolean {
+  if (!networkName || !composeProject) return false;
+  const lower = networkName.toLowerCase();
+  const project = composeProject.toLowerCase();
+  return lower === `${project}_default` || lower === project;
+}
+
+/**
+ * Parse the `com.docker.compose.depends_on` label into a depends_on object
+ * that preserves condition info. Docker Compose stores dependency info as a
+ * comma-separated list of `service:condition:restart` triples (e.g.
+ * "redis:service_started:false,postgres:service_healthy:false").
+ *
+ * Returns an empty object if the label is absent or empty.
+ */
+export function parseComposeDependsOn(
+  labels: Record<string, string>,
+): Record<string, { condition: "service_healthy" | "service_started" | "service_completed_successfully" }> {
+  const raw = labels["com.docker.compose.depends_on"];
+  if (!raw) return {};
+
+  const result: Record<string, { condition: "service_healthy" | "service_started" | "service_completed_successfully" }> = {};
+  for (const entry of raw.split(",").map((e) => e.trim()).filter(Boolean)) {
+    const [serviceName, condition] = entry.split(":");
+    if (!serviceName) continue;
+    const cond = (condition?.trim() ?? "service_started") as
+      | "service_healthy"
+      | "service_started"
+      | "service_completed_successfully";
+    result[serviceName.trim()] = { condition: cond };
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // Env var parsing
 // ---------------------------------------------------------------------------
 
@@ -275,7 +348,7 @@ export function runAsyncContainerMigration(params: MigrationParams): void {
  * The match is intentionally broad — false positives are safer than misses.
  */
 export function isSensitiveEnvKey(key: string): boolean {
-  return /password|passwd|secret|token|private_key|api_key|access_key|credential/i.test(key);
+  return /password|passwd|secret|token|private_key|api_key|access_key|credential|url|uri|dsn|connection/i.test(key);
 }
 
 /**
@@ -305,4 +378,41 @@ export function parseContainerEnvVars(env: string[]): {
   }
 
   return { vars, skippedKeys };
+}
+
+// ---------------------------------------------------------------------------
+// Compose file merging
+// ---------------------------------------------------------------------------
+
+/**
+ * Merge services, volumes, and networks from `source` into `target`.
+ *
+ * When `composeProject` is provided, networks matching the compose project's
+ * default network pattern are excluded — they are ephemeral and will not exist
+ * after the original containers are removed.
+ */
+export function mergeComposeFile(
+  target: ComposeFile,
+  source: ComposeFile,
+  composeProject?: string,
+): void {
+  for (const [name, svc] of Object.entries(source.services)) {
+    target.services[name] = svc;
+  }
+
+  if (source.volumes) {
+    target.volumes ??= {};
+    for (const [volName, volDef] of Object.entries(source.volumes)) {
+      target.volumes[volName] = volDef;
+    }
+  }
+
+  if (source.networks) {
+    target.networks ??= {};
+    for (const [netName, netDef] of Object.entries(source.networks)) {
+      if (!composeProject || !isComposeProjectNetwork(netName, composeProject)) {
+        target.networks[netName] = netDef;
+      }
+    }
+  }
 }
