@@ -1001,15 +1001,8 @@ export async function runDeployment(
             !img.repoTags.includes(currentImageName),
         );
 
-        let removedCount = 0;
-        for (const img of staleImages) {
-          try {
-            await removeImage(img.id);
-            removedCount++;
-          } catch {
-            // Image may still be referenced (e.g. a parallel deployment) — skip
-          }
-        }
+        const removeResults = await Promise.allSettled(staleImages.map((img) => removeImage(img.id)));
+        const removedCount = removeResults.filter((r) => r.status === "fulfilled").length;
 
         if (removedCount > 0) {
           log(`[deploy] Removed ${removedCount} old image(s) for ${app.name}`);
