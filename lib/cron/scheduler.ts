@@ -57,6 +57,7 @@ function startDailySecurityScans(): void {
 
       const orgs = await db.query.organizations.findMany({
         columns: { id: true },
+        limit: 500,
       });
 
       log.info(`Daily security scan: scanning ${orgs.length} organizations`);

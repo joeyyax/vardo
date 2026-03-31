@@ -1,7 +1,7 @@
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db";
 import { appSecurityScans, apps } from "@/lib/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { and, eq, desc, inArray } from "drizzle-orm";
 import { logger } from "@/lib/logger";
 import { checkFileExposure } from "./file-exposure";
 import { checkSecurityHeaders } from "./headers";
@@ -10,6 +10,9 @@ import { checkExposedPorts } from "./ports";
 import type { SecurityFinding, ScanTrigger } from "./types";
 
 const log = logger.child("security");
+
+/** Maximum apps fetched per org during a scheduled sweep. */
+const MAX_APPS_PER_ORG = 500;
 
 type RunScanOpts = {
   appId: string;
@@ -25,6 +28,19 @@ type RunScanOpts = {
  */
 export async function runSecurityScan(opts: RunScanOpts): Promise<string | null> {
   const { appId, organizationId, trigger } = opts;
+
+  // Guard against concurrent scans for the same app.
+  const existingRunning = await db.query.appSecurityScans.findFirst({
+    where: and(
+      eq(appSecurityScans.appId, appId),
+      eq(appSecurityScans.status, "running"),
+    ),
+    columns: { id: true },
+  });
+  if (existingRunning) {
+    log.info(`Scan already running for app ${appId} — skipping`);
+    return null;
+  }
 
   const scanId = nanoid();
   const startedAt = new Date();
@@ -43,9 +59,9 @@ export async function runSecurityScan(opts: RunScanOpts): Promise<string | null>
   });
 
   try {
-    // Load app with domains and exposed ports
+    // Load app with domains and exposed ports, scoped to the org for defense-in-depth.
     const app = await db.query.apps.findFirst({
-      where: eq(apps.id, appId),
+      where: and(eq(apps.id, appId), eq(apps.organizationId, organizationId)),
       columns: { id: true, name: true, displayName: true, exposedPorts: true },
       with: {
         domains: {
@@ -58,7 +74,8 @@ export async function runSecurityScan(opts: RunScanOpts): Promise<string | null>
       await db
         .update(appSecurityScans)
         .set({ status: "failed", completedAt: new Date() })
-        .where(eq(appSecurityScans.id, scanId));
+        .where(eq(appSecurityScans.id, scanId))
+        .catch((e) => log.error(`Failed to mark scan ${scanId} as failed:`, e));
       return null;
     }
 
@@ -110,7 +127,8 @@ export async function runSecurityScan(opts: RunScanOpts): Promise<string | null>
         warningCount,
         completedAt: new Date(),
       })
-      .where(eq(appSecurityScans.id, scanId));
+      .where(eq(appSecurityScans.id, scanId))
+      .catch((e) => log.error(`Failed to persist completed scan ${scanId}:`, e));
 
     log.info(
       `[${appName}] Scan complete — ${criticalCount} critical, ${warningCount} warning, ${allFindings.length} total findings`,
@@ -150,7 +168,7 @@ export async function runSecurityScan(opts: RunScanOpts): Promise<string | null>
       .update(appSecurityScans)
       .set({ status: "failed", completedAt: new Date() })
       .where(eq(appSecurityScans.id, scanId))
-      .catch(() => {});
+      .catch((e) => log.error(`Failed to mark scan ${scanId} as failed after error:`, e));
     return null;
   }
 }
@@ -170,11 +188,9 @@ async function pruneOldScans(appId: string): Promise<void> {
     if (recent.length <= 10) return;
 
     const toDelete = recent.slice(10).map((s) => s.id);
-    for (const id of toDelete) {
-      await db.delete(appSecurityScans).where(eq(appSecurityScans.id, id));
-    }
-  } catch {
-    // Pruning failure is non-fatal
+    await db.delete(appSecurityScans).where(inArray(appSecurityScans.id, toDelete));
+  } catch (err) {
+    log.warn(`Failed to prune old scans for app ${appId}:`, err);
   }
 }
 
@@ -189,6 +205,7 @@ export async function runScheduledScans(organizationId: string): Promise<void> {
     with: {
       domains: { columns: { domain: true }, limit: 1 },
     },
+    limit: MAX_APPS_PER_ORG,
   });
 
   const scannable = activeApps.filter(

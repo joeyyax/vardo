@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyOrgAccess } from "@/lib/api/verify-access";
-import { db } from "@/lib/db";
-import { apps } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { verifyAppAccess } from "@/lib/api/verify-access";
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { runSecurityScan } from "@/lib/security/scanner";
 
 type RouteParams = {
@@ -15,18 +13,12 @@ type RouteParams = {
  * Trigger an on-demand security scan for an app. Runs the scan inline
  * and returns the scan ID when complete.
  */
-export async function POST(_request: NextRequest, { params }: RouteParams) {
+async function handler(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
 
-    const org = await verifyOrgAccess(orgId);
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
-    const app = await db.query.apps.findFirst({
-      where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
-      columns: { id: true },
-    });
-    if (!app) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    const app = await verifyAppAccess(orgId, appId);
+    if (!app) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const scanId = await runSecurityScan({
       appId,
@@ -44,3 +36,5 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
+
+export const POST = withRateLimit(handler, { tier: "mutation" });

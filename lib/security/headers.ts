@@ -1,3 +1,4 @@
+import { assertPublicDomain } from "./validate-domain";
 import type { SecurityFinding } from "./types";
 
 type HeaderCheck = {
@@ -62,6 +63,8 @@ const TIMEOUT_MS = 5_000;
  * Returns SecurityFinding[] for each missing or misconfigured header.
  */
 export async function checkSecurityHeaders(domain: string): Promise<SecurityFinding[]> {
+  await assertPublicDomain(domain);
+
   const findings: SecurityFinding[] = [];
 
   let headers: Headers;

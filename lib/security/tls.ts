@@ -1,4 +1,5 @@
 import * as tls from "tls";
+import { assertPublicDomain } from "./validate-domain";
 import type { SecurityFinding } from "./types";
 
 const TLS_EXPIRY_WARNING_DAYS = 14;
@@ -9,6 +10,8 @@ const CONNECT_TIMEOUT_MS = 5_000;
  * Returns SecurityFinding[] for cert errors or imminent expiry.
  */
 export async function checkTls(domain: string): Promise<SecurityFinding[]> {
+  await assertPublicDomain(domain);
+
   return new Promise((resolve) => {
     const findings: SecurityFinding[] = [];
     let settled = false;
