@@ -78,6 +78,9 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - vardo_projects:/var/lib/vardo/projects
       - traefik_dynamic:/etc/traefik/dynamic
+      # External projects — read-only access to compose projects for git auto-detection.
+      # Set EXTERNAL_PROJECTS_PATH in .env (e.g., /mnt/docker or /home/user/projects).
+      - ${EXTERNAL_PROJECTS_PATH:-/dev/null}:${EXTERNAL_PROJECTS_PATH:-/dev/null}:ro
     labels:
       - "traefik.enable=true"
       # Primary router — domain with TLS
