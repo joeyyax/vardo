@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   sanitizeCompose,
   parseCompose,
@@ -15,10 +15,21 @@ import {
   resolveBackendProtocol,
   narrowBackendProtocol,
   buildComposePreview,
+  stripVardoInjections,
+  buildVardoOverlay,
+  slotComposeFiles,
   type ComposeFile,
   type ContainerConfig,
 } from "@/lib/docker/compose";
 import { mergeComposeFile } from "@/lib/docker/import";
+import * as fsp from "fs/promises";
+
+// vi.mock is hoisted above imports by vitest, so compose.ts gets the mocked
+// access function. Other fs/promises exports remain real.
+vi.mock("fs/promises", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("fs/promises")>();
+  return { ...mod, access: vi.fn() };
+});
 
 function makeCompose(volumes: string[]): ComposeFile {
   return {
@@ -1981,5 +1992,444 @@ services:
     expect(result).not.toBeNull();
     // Network should be injected by applyDeployTransforms
     expect(result!.networks).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// stripVardoInjections
+// ---------------------------------------------------------------------------
+
+describe("stripVardoInjections", () => {
+  it("removes traefik labels from services", () => {
+    const compose: ComposeFile = {
+      services: {
+        app: {
+          name: "app",
+          image: "nginx:latest",
+          labels: {
+            "traefik.enable": "true",
+            "traefik.http.routers.app.rule": "Host(`app.example.com`)",
+            "app.custom": "keep-me",
+          },
+        },
+      },
+    };
+    const result = stripVardoInjections(compose);
+    expect(result.services.app.labels).toEqual({ "app.custom": "keep-me" });
+  });
+
+  it("removes vardo.* labels from services", () => {
+    const compose: ComposeFile = {
+      services: {
+        app: {
+          name: "app",
+          image: "nginx:latest",
+          labels: {
+            "vardo.app": "myapp",
+            "vardo.env": "production",
+            "user.label": "stays",
+          },
+        },
+      },
+    };
+    const result = stripVardoInjections(compose);
+    expect(result.services.app.labels).toEqual({ "user.label": "stays" });
+  });
+
+  it("removes the vardo network from service networks", () => {
+    const compose: ComposeFile = {
+      services: {
+        app: {
+          name: "app",
+          image: "nginx:latest",
+          networks: ["vardo-network", "custom-net"],
+        },
+      },
+      networks: { "vardo-network": { external: true }, "custom-net": {} },
+    };
+    const result = stripVardoInjections(compose, "vardo-network");
+    expect(result.services.app.networks).toEqual(["custom-net"]);
+    expect((result.networks as Record<string, unknown>)?.["vardo-network"]).toBeUndefined();
+    expect((result.networks as Record<string, unknown>)?.["custom-net"]).toBeDefined();
+  });
+
+  it("sets labels to undefined when all labels are stripped", () => {
+    const compose: ComposeFile = {
+      services: {
+        app: {
+          name: "app",
+          image: "nginx:latest",
+          labels: { "traefik.enable": "true" },
+        },
+      },
+    };
+    const result = stripVardoInjections(compose);
+    expect(result.services.app.labels).toBeUndefined();
+  });
+
+  it("does not mutate the original compose", () => {
+    const compose: ComposeFile = {
+      services: {
+        app: {
+          name: "app",
+          image: "nginx:latest",
+          labels: { "traefik.enable": "true", "user.label": "stays" },
+          networks: ["vardo-network"],
+        },
+      },
+    };
+    stripVardoInjections(compose);
+    expect(compose.services.app.labels).toHaveProperty("traefik.enable");
+    expect(compose.services.app.networks).toContain("vardo-network");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildVardoOverlay
+// ---------------------------------------------------------------------------
+
+describe("buildVardoOverlay", () => {
+  const networkName = "vardo-network";
+
+  function composeWithLabels(labels: Record<string, string>): ComposeFile {
+    return {
+      services: {
+        app: {
+          name: "app",
+          image: "nginx:latest",
+          labels,
+          networks: [networkName],
+        },
+      },
+      networks: { [networkName]: { external: true } },
+    };
+  }
+
+  it("extracts traefik labels into the overlay", () => {
+    const compose = composeWithLabels({
+      "traefik.enable": "true",
+      "traefik.http.routers.app.rule": "Host(`example.com`)",
+      "user.label": "value",
+    });
+    const overlay = buildVardoOverlay({ fullCompose: compose, networkName });
+    expect(overlay.services.app.labels).toHaveProperty("traefik.enable", "true");
+    expect(overlay.services.app.labels).not.toHaveProperty("user.label");
+  });
+
+  it("extracts vardo.* labels into the overlay", () => {
+    const compose = composeWithLabels({
+      "vardo.app": "myapp",
+      "user.label": "skip",
+    });
+    const overlay = buildVardoOverlay({ fullCompose: compose, networkName });
+    expect(overlay.services.app.labels).toHaveProperty("vardo.app", "myapp");
+    expect(overlay.services.app.labels).not.toHaveProperty("user.label");
+  });
+
+  it("includes the vardo network in the overlay when a service uses it", () => {
+    const compose = composeWithLabels({});
+    const overlay = buildVardoOverlay({ fullCompose: compose, networkName });
+    expect(overlay.networks).toEqual({ [networkName]: { external: true } });
+  });
+
+  it("does not include network declaration when no service uses it", () => {
+    const compose: ComposeFile = {
+      services: { app: { name: "app", image: "nginx:latest" } },
+    };
+    const overlay = buildVardoOverlay({ fullCompose: compose, networkName });
+    expect(overlay.networks).toBeUndefined();
+  });
+
+  it("injects cpu and memory limits from params", () => {
+    const compose: ComposeFile = {
+      services: { app: { name: "app", image: "nginx:latest" } },
+    };
+    const overlay = buildVardoOverlay({
+      fullCompose: compose,
+      networkName,
+      cpuLimit: 2,
+      memoryLimit: 512,
+    });
+    expect(overlay.services.app.deploy?.resources?.limits).toEqual({
+      cpus: "2",
+      memory: "512M",
+    });
+  });
+
+  it("does not add resource limits when none provided", () => {
+    const compose: ComposeFile = {
+      services: { app: { name: "app", image: "nginx:latest" } },
+    };
+    const overlay = buildVardoOverlay({ fullCompose: compose, networkName });
+    expect(overlay.services.app.deploy?.resources?.limits).toBeUndefined();
+  });
+
+  it("includes externalized volumes that appear in bareVolumeNames", () => {
+    const compose: ComposeFile = {
+      services: { app: { name: "app", image: "nginx:latest" } },
+      volumes: { data: { external: true, name: "myapp-data" } },
+    };
+    const overlay = buildVardoOverlay({
+      fullCompose: compose,
+      networkName,
+      externalVolumes: { data: { external: true, name: "myapp-data" } },
+      bareVolumeNames: ["data"],
+    });
+    expect(overlay.volumes).toHaveProperty("data");
+  });
+
+  it("does not include volumes that are not in bareVolumeNames", () => {
+    const compose: ComposeFile = {
+      services: { app: { name: "app", image: "nginx:latest" } },
+      volumes: { data: { external: true } },
+    };
+    const overlay = buildVardoOverlay({
+      fullCompose: compose,
+      networkName,
+      externalVolumes: { data: { external: true } },
+      bareVolumeNames: [],
+    });
+    expect(overlay.volumes).toBeUndefined();
+  });
+
+  it("multi-service: each service gets only its own labels in the overlay", () => {
+    const compose: ComposeFile = {
+      services: {
+        web: {
+          name: "web",
+          image: "nginx:latest",
+          labels: {
+            "traefik.enable": "true",
+            "traefik.http.routers.web.rule": "Host(`web.example.com`)",
+            "user.label": "keep",
+          },
+          networks: [networkName],
+        },
+        worker: {
+          name: "worker",
+          image: "myapp:latest",
+          labels: {
+            "user.label": "worker-keep",
+          },
+          networks: [networkName],
+        },
+      },
+      networks: { [networkName]: { external: true } },
+    };
+
+    const overlay = buildVardoOverlay({ fullCompose: compose, networkName });
+
+    // web gets its traefik labels
+    expect(overlay.services.web.labels).toHaveProperty("traefik.enable", "true");
+    expect(overlay.services.web.labels).toHaveProperty("traefik.http.routers.web.rule");
+    expect(overlay.services.web.labels).not.toHaveProperty("user.label");
+
+    // worker has no traefik/vardo labels — overlay service should have no labels
+    expect(overlay.services.worker.labels).toBeUndefined();
+
+    // vardo-network declared because both services use it
+    expect(overlay.networks).toEqual({ [networkName]: { external: true } });
+  });
+
+  it("gpu: pulls GPU devices from fullCompose into the overlay when gpuEnabled", () => {
+    const gpuDevice = { driver: "nvidia", count: 1, capabilities: ["gpu"] };
+    const compose: ComposeFile = {
+      services: {
+        app: {
+          name: "app",
+          image: "myapp:latest",
+          networks: [networkName],
+          deploy: {
+            resources: {
+              reservations: {
+                devices: [gpuDevice],
+              },
+            },
+          },
+        },
+      },
+      networks: { [networkName]: { external: true } },
+    };
+
+    const overlay = buildVardoOverlay({ fullCompose: compose, networkName, gpuEnabled: true });
+
+    expect(overlay.services.app.deploy?.resources?.reservations?.devices).toEqual([gpuDevice]);
+  });
+
+  it("gpu: does not add reservations when gpuEnabled but no gpu devices in fullCompose", () => {
+    const compose: ComposeFile = {
+      services: { app: { name: "app", image: "myapp:latest" } },
+    };
+
+    const overlay = buildVardoOverlay({ fullCompose: compose, networkName, gpuEnabled: true });
+
+    expect(overlay.services.app.deploy?.resources?.reservations).toBeUndefined();
+  });
+
+  it("gpu: ignores non-gpu devices even when gpuEnabled", () => {
+    const compose: ComposeFile = {
+      services: {
+        app: {
+          name: "app",
+          image: "myapp:latest",
+          deploy: {
+            resources: {
+              reservations: {
+                devices: [{ driver: "fpga", count: 1, capabilities: ["compute"] }],
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const overlay = buildVardoOverlay({ fullCompose: compose, networkName, gpuEnabled: true });
+
+    expect(overlay.services.app.deploy?.resources?.reservations).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// slotComposeFiles
+// ---------------------------------------------------------------------------
+
+describe("slotComposeFiles", () => {
+  afterEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it("returns both -f args when the overlay file exists", async () => {
+    vi.mocked(fsp.access).mockResolvedValue(undefined);
+
+    const result = await slotComposeFiles("/slots/blue");
+
+    expect(result).toEqual([
+      "-f",
+      "/slots/blue/docker-compose.yml",
+      "-f",
+      "/slots/blue/docker-compose.vardo.yml",
+    ]);
+  });
+
+  it("returns only the base -f arg when the overlay file is absent", async () => {
+    vi.mocked(fsp.access).mockRejectedValue(new Error("ENOENT"));
+
+    const result = await slotComposeFiles("/slots/blue");
+
+    expect(result).toEqual(["-f", "/slots/blue/docker-compose.yml"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Round-trip integration: strip → overlay → merged = original
+// ---------------------------------------------------------------------------
+
+describe("round-trip: stripVardoInjections + buildVardoOverlay", () => {
+  const networkName = "vardo-network";
+
+  it("bare and overlay together cover a realistic multi-service compose without loss", () => {
+    // A full compose as Vardo would produce it after injectNetwork + injectTraefikLabels
+    const fullCompose: ComposeFile = {
+      services: {
+        web: {
+          name: "web",
+          image: "nginx:1.25",
+          ports: ["80:80"],
+          environment: { NODE_ENV: "production" },
+          volumes: ["data:/app/data"],
+          labels: {
+            "traefik.enable": "true",
+            "traefik.http.routers.web.rule": "Host(`app.example.com`)",
+            "vardo.app": "myapp",
+            "user.custom": "preserved",
+          },
+          networks: [networkName, "internal"],
+          deploy: {
+            resources: {
+              limits: { cpus: "2", memory: "512M" },
+            },
+          },
+        },
+        worker: {
+          name: "worker",
+          image: "myapp:latest",
+          environment: { QUEUE: "default" },
+          labels: { "user.worker": "yes" },
+          networks: [networkName],
+        },
+      },
+      networks: {
+        [networkName]: { external: true },
+        internal: { driver: "bridge" },
+      },
+      volumes: { data: { external: true, name: "myapp-data" } },
+    };
+
+    const bare = stripVardoInjections(fullCompose, networkName);
+    const overlay = buildVardoOverlay({
+      fullCompose,
+      networkName,
+      cpuLimit: 2,
+      memoryLimit: 512,
+      externalVolumes: { data: { external: true, name: "myapp-data" } },
+      bareVolumeNames: ["data"],
+    });
+
+    // --- bare: no injected labels, no vardo network, original service fields preserved ---
+
+    // web: user label stays, traefik/vardo labels stripped
+    expect(bare.services.web.labels).toEqual({ "user.custom": "preserved" });
+    // web: vardo-network removed, internal stays
+    expect(bare.services.web.networks).toEqual(["internal"]);
+    // web: structural fields intact
+    expect(bare.services.web.image).toBe("nginx:1.25");
+    expect(bare.services.web.ports).toEqual(["80:80"]);
+    expect(bare.services.web.environment).toEqual({ NODE_ENV: "production" });
+    expect(bare.services.web.volumes).toEqual(["data:/app/data"]);
+
+    // worker: user label stays
+    expect(bare.services.worker.labels).toEqual({ "user.worker": "yes" });
+    // worker: vardo-network removed
+    expect(bare.services.worker.networks).toBeUndefined();
+
+    // top-level: vardo-network stripped, internal stays
+    expect((bare.networks as Record<string, unknown>)?.[networkName]).toBeUndefined();
+    expect((bare.networks as Record<string, unknown>)?.internal).toBeDefined();
+
+    // --- overlay: injected labels captured, user labels absent ---
+
+    // web: traefik + vardo labels
+    expect(overlay.services.web.labels).toHaveProperty("traefik.enable", "true");
+    expect(overlay.services.web.labels).toHaveProperty("vardo.app", "myapp");
+    expect(overlay.services.web.labels).not.toHaveProperty("user.custom");
+    // web: vardo-network
+    expect(overlay.services.web.networks).toEqual([networkName]);
+    // web: resource limits
+    expect(overlay.services.web.deploy?.resources?.limits).toEqual({ cpus: "2", memory: "512M" });
+    // web: no structural fields (image, ports, volumes are not overlay concerns)
+    expect(overlay.services.web.image).toBeUndefined();
+    expect(overlay.services.web.ports).toBeUndefined();
+
+    // worker: no traefik/vardo labels → overlay has no labels
+    expect(overlay.services.worker.labels).toBeUndefined();
+    // worker: vardo-network
+    expect(overlay.services.worker.networks).toEqual([networkName]);
+
+    // overlay includes vardo-network declaration
+    expect(overlay.networks).toHaveProperty(networkName);
+    // overlay includes externalized volume
+    expect(overlay.volumes).toHaveProperty("data");
+
+    // --- label union per service covers original labels exactly ---
+
+    const webBareLabels = bare.services.web.labels ?? {};
+    const webOverlayLabels = overlay.services.web.labels ?? {};
+    const webFullLabels = fullCompose.services.web.labels ?? {};
+    expect({ ...webBareLabels, ...webOverlayLabels }).toEqual(webFullLabels);
+
+    const workerBareLabels = bare.services.worker.labels ?? {};
+    const workerOverlayLabels = overlay.services.worker.labels ?? {};
+    const workerFullLabels = fullCompose.services.worker.labels ?? {};
+    expect({ ...workerBareLabels, ...workerOverlayLabels }).toEqual(workerFullLabels);
   });
 });
