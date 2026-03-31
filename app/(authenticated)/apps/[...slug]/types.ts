@@ -68,6 +68,16 @@ export type RollbackPreview = {
   envKeyChanges: { added: string[]; removed: string[]; changed: string[] } | null;
 };
 
+export type ChildApp = {
+  id: string;
+  name: string;
+  displayName: string;
+  composeService: string | null;
+  status: string;
+  imageName: string | null;
+  domains: { domain: string; isPrimary: boolean | null }[];
+};
+
 export type App = {
   id: string;
   name: string;
@@ -79,6 +89,9 @@ export type App = {
   gitBranch: string | null;
   imageName: string | null;
   composeFilePath: string | null;
+  composeContent: string | null;
+  composeService: string | null;
+  parentAppId: string | null;
   dockerfilePath: string | null;
   rootDirectory: string | null;
   containerPort: number | null;
@@ -109,6 +122,7 @@ export type App = {
   environments: Environment[];
   appTags?: { tag: Tag }[];
   project?: { id: string; name: string; displayName: string; color: string | null } | null;
+  childApps?: ChildApp[];
 };
 
 export type AppDetailProps = {
@@ -124,4 +138,5 @@ export type AppDetailProps = {
   initialEnv?: string;
   initialSubView?: string;
   featureFlags: FeatureFlags;
+  parentApp?: { id: string; name: string; displayName: string } | null;
 };
