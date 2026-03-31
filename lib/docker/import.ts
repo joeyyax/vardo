@@ -416,3 +416,94 @@ export function mergeComposeFile(
     }
   }
 }
+
+// ---------------------------------------------------------------------------
+// Git repo detection for compose projects
+// ---------------------------------------------------------------------------
+
+import { readFile, access, constants } from "fs/promises";
+import { join } from "path";
+import { promisify } from "util";
+import { execFile } from "child_process";
+import { parseCompose } from "@/lib/docker/compose";
+
+const execFileAsync = promisify(execFile);
+
+export type GitBuildContext = {
+  gitUrl: string;
+  gitBranch: string | null;
+  hasBuildDirectives: boolean;
+};
+
+/**
+ * Detect git repository info and build directives from a compose project directory.
+ *
+ * Reads the original docker-compose.yml from the working directory (if accessible),
+ * checks for build: directives, and extracts the git remote URL.
+ *
+ * Returns null if the directory is not accessible or not a git repo.
+ */
+export async function detectGitBuildContext(
+  workingDir: string,
+  configFiles: string,
+): Promise<GitBuildContext | null> {
+  // Check if we have access to the directory
+  try {
+    await access(workingDir, constants.R_OK);
+  } catch {
+    return null; // Directory not accessible (not mounted or doesn't exist)
+  }
+
+  // Resolve compose file path (may be absolute or relative)
+  const composeFile = configFiles.startsWith("/")
+    ? configFiles
+    : join(workingDir, configFiles.split(",")[0] ?? "docker-compose.yml");
+
+  // Read and parse compose file
+  let hasBuildDirectives = false;
+  try {
+    const content = await readFile(composeFile, "utf-8");
+    const compose = parseCompose(content);
+    hasBuildDirectives = Object.values(compose.services).some((svc) => svc.build);
+  } catch {
+    // Can't read compose file
+    return null;
+  }
+
+  // Get git remote URL
+  let gitUrl: string | null = null;
+  let gitBranch: string | null = null;
+  try {
+    const { stdout: remoteUrl } = await execFileAsync(
+      "git",
+      ["-C", workingDir, "remote", "get-url", "origin"],
+      { timeout: 5000 },
+    );
+    gitUrl = remoteUrl.trim();
+
+    // Convert SSH URL to HTTPS if needed
+    if (gitUrl.startsWith("git@")) {
+      gitUrl = gitUrl.replace(/^git@([^:]+):/, "https://$1/").replace(/\.git$/, "");
+    }
+
+    // Get current branch
+    const { stdout: branch } = await execFileAsync(
+      "git",
+      ["-C", workingDir, "rev-parse", "--abbrev-ref", "HEAD"],
+      { timeout: 5000 },
+    );
+    gitBranch = branch.trim();
+    if (gitBranch === "HEAD") gitBranch = null; // Detached HEAD
+  } catch {
+    // Not a git repo or git not available
+    return null;
+  }
+
+  if (!gitUrl) return null;
+
+  return {
+    gitUrl,
+    gitBranch,
+    hasBuildDirectives,
+  };
+}
