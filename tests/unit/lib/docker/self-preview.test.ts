@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // Hoisted mock factories
 // ---------------------------------------------------------------------------
 
-const { dbMock } = vi.hoisted(() => {
+const { dbMock, execFileAsyncMock, execFileMock } = vi.hoisted(() => {
   // Builder chain returned by db.select()
   const limitFn = vi.fn(async () => [{ id: "org-1" }]);
   const orderByFn = vi.fn(() => ({ limit: limitFn }));
@@ -19,7 +19,20 @@ const { dbMock } = vi.hoisted(() => {
     select: vi.fn(() => ({ from: fromFn })),
     _internals: { limitFn, orderByFn, fromFn },
   };
-  return { dbMock };
+
+  // The source code calls `promisify(execFile)` which uses execFile's custom
+  // promisify symbol (nodejs.util.promisify.custom) to resolve with
+  // { stdout, stderr }. We expose execFileAsyncMock so tests can control
+  // what the promisified call resolves/rejects with.
+  const execFileAsyncMock = vi.fn().mockResolvedValue({ stdout: "", stderr: "" });
+  const execFileMock = vi.fn();
+  Object.defineProperty(execFileMock, Symbol.for("nodejs.util.promisify.custom"), {
+    value: execFileAsyncMock,
+    configurable: true,
+    writable: true,
+  });
+
+  return { dbMock, execFileAsyncMock, execFileMock };
 });
 
 vi.mock("@/lib/db", () => ({ db: dbMock }));
@@ -29,7 +42,7 @@ vi.mock("@/lib/system-settings", () => ({
 }));
 
 vi.mock("child_process", () => ({
-  execFile: vi.fn(),
+  execFile: execFileMock,
 }));
 
 vi.mock("fs/promises", () => ({
@@ -42,11 +55,16 @@ vi.mock("fs/promises", () => ({
 // Imports after mocks
 // ---------------------------------------------------------------------------
 
+import { rm, mkdir, writeFile } from "fs/promises";
+import { getInstanceConfig } from "@/lib/system-settings";
+
 import {
   buildEnvFile,
   buildPreviewCompose,
   getSystemManagedApp,
   createVardoPreview,
+  destroyVardoPreview,
+  cleanupStaleSelfPreviews,
 } from "@/lib/docker/self-preview";
 
 // ---------------------------------------------------------------------------
@@ -207,6 +225,46 @@ describe("getSystemManagedApp", () => {
     dbMock.query.apps.findFirst.mockResolvedValue(null);
     await getSystemManagedApp("acme/vardo");
     expect(dbMock.query.apps.findFirst).toHaveBeenCalledOnce();
+    // The where clause is a Drizzle SQL expression with circular references.
+    // Use a circular-safe serializer to find the gitUrl string inside it.
+    const callArg = dbMock.query.apps.findFirst.mock.calls[0][0];
+    const seen = new WeakSet();
+    const encoded = JSON.stringify(callArg, (_k, v) => {
+      if (typeof v === "symbol" || typeof v === "function") return undefined;
+      if (typeof v === "object" && v !== null) {
+        if (seen.has(v)) return "[Circular]";
+        seen.add(v);
+      }
+      return v;
+    });
+    expect(encoded).toContain("https://github.com/acme/vardo.git");
+  });
+
+  it("constructs distinct URLs for different repos", async () => {
+    dbMock.query.apps.findFirst.mockResolvedValue(null);
+    await getSystemManagedApp("acme/vardo");
+
+    // Reset and call with a different repo
+    vi.clearAllMocks();
+    const limitFn = vi.fn(async () => [{ id: "org-1" }]);
+    const orderByFn = vi.fn(() => ({ limit: limitFn }));
+    const fromFn = vi.fn(() => ({ orderBy: orderByFn }));
+    dbMock.select.mockReturnValue({ from: fromFn });
+    dbMock.query.apps.findFirst.mockResolvedValue(null);
+    await getSystemManagedApp("other/repo");
+
+    const callArg = dbMock.query.apps.findFirst.mock.calls[0][0];
+    const seen = new WeakSet();
+    const encoded = JSON.stringify(callArg, (_k, v) => {
+      if (typeof v === "symbol" || typeof v === "function") return undefined;
+      if (typeof v === "object" && v !== null) {
+        if (seen.has(v)) return "[Circular]";
+        seen.add(v);
+      }
+      return v;
+    });
+    expect(encoded).toContain("https://github.com/other/repo.git");
+    expect(encoded).not.toContain("acme/vardo");
   });
 
   it("returns null when no organization exists", async () => {
@@ -311,5 +369,191 @@ describe("createVardoPreview input validation", () => {
     await expect(
       createVardoPreview({ prNumber: 42, branch: "feat/test", repoFullName: "acme/vardo" })
     ).rejects.toThrow("Invalid baseDomain");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createVardoPreview — happy path
+// ---------------------------------------------------------------------------
+
+// Helper: make the promisified execFile succeed with empty output.
+// Uses execFileAsyncMock (the promisify.custom implementation) so that the
+// source code's `promisify(execFile)` resolves with { stdout, stderr }.
+function makeExecSucceed() {
+  execFileAsyncMock.mockResolvedValue({ stdout: "", stderr: "" });
+}
+
+describe("createVardoPreview — happy path", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getInstanceConfig).mockResolvedValue({ baseDomain: "example.com" } as never);
+    makeExecSucceed();
+  });
+
+  it("returns the correct domain and projectName for a valid input", async () => {
+    const result = await createVardoPreview({
+      prNumber: 42,
+      branch: "feat/my-feature",
+      repoFullName: "acme/vardo",
+    });
+
+    expect(result.domain).toBe("vardo-pr-42.example.com");
+    expect(result.projectName).toBe("vardo-preview-pr-42");
+  });
+
+  it("creates the preview directory and writes env and compose files", async () => {
+    await createVardoPreview({
+      prNumber: 42,
+      branch: "feat/my-feature",
+      repoFullName: "acme/vardo",
+    });
+
+    expect(vi.mocked(mkdir)).toHaveBeenCalled();
+    // Two writeFile calls: env file and compose file
+    expect(vi.mocked(writeFile)).toHaveBeenCalledTimes(2);
+  });
+
+  it("clones the repo and runs docker compose up", async () => {
+    await createVardoPreview({
+      prNumber: 42,
+      branch: "feat/my-feature",
+      repoFullName: "acme/vardo",
+    });
+
+    expect(execFileAsyncMock).toHaveBeenCalledWith(
+      "git",
+      expect.arrayContaining(["clone", "--branch", "feat/my-feature"]),
+      expect.any(Object)
+    );
+    expect(execFileAsyncMock).toHaveBeenCalledWith(
+      "docker",
+      expect.arrayContaining(["compose", "up", "-d", "--build"]),
+      expect.any(Object)
+    );
+  });
+
+  it("throws when docker compose up fails", async () => {
+    // execFileAsync call order: 1=docker-down (teardown), 2=git-clone, 3=docker-up (fail)
+    execFileAsyncMock
+      .mockResolvedValueOnce({ stdout: "", stderr: "" }) // docker compose down
+      .mockResolvedValueOnce({ stdout: "", stderr: "" }) // git clone
+      .mockRejectedValueOnce(new Error("build failed"));  // docker compose up
+
+    await expect(
+      createVardoPreview({ prNumber: 42, branch: "feat/my-feature", repoFullName: "acme/vardo" })
+    ).rejects.toThrow("Vardo preview build failed for PR #42");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// destroyVardoPreview
+// ---------------------------------------------------------------------------
+
+describe("destroyVardoPreview", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    makeExecSucceed();
+  });
+
+  it("calls docker compose down with the correct project name", async () => {
+    await destroyVardoPreview(42);
+
+    expect(execFileAsyncMock).toHaveBeenCalledWith(
+      "docker",
+      expect.arrayContaining(["compose", "-p", "vardo-preview-pr-42", "down", "--volumes"]),
+      expect.any(Object)
+    );
+  });
+
+  it("removes the temp directory after tearing down containers", async () => {
+    await destroyVardoPreview(42);
+    expect(vi.mocked(rm)).toHaveBeenCalled();
+  });
+
+  it("still removes the temp dir even when docker compose down fails", async () => {
+    // docker compose down fails (containers already gone or docker not running)
+    execFileAsyncMock.mockRejectedValueOnce(new Error("no such project"));
+
+    // Should not throw — _teardown swallows errors
+    await destroyVardoPreview(99);
+    expect(vi.mocked(rm)).toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// cleanupStaleSelfPreviews
+// ---------------------------------------------------------------------------
+
+describe("cleanupStaleSelfPreviews", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Default: all execFileAsync calls succeed with empty output
+    execFileAsyncMock.mockResolvedValue({ stdout: "", stderr: "" });
+  });
+
+  it("returns 0 when docker ps fails", async () => {
+    execFileAsyncMock.mockRejectedValueOnce(new Error("docker not found"));
+
+    const result = await cleanupStaleSelfPreviews();
+    expect(result).toBe(0);
+  });
+
+  it("returns 0 when no preview containers are running", async () => {
+    execFileAsyncMock.mockResolvedValueOnce({ stdout: "", stderr: "" });
+
+    const result = await cleanupStaleSelfPreviews();
+    expect(result).toBe(0);
+  });
+
+  it("destroys containers older than maxAgeHours", async () => {
+    // 100 hours ago — well past the 72-hour default threshold
+    const staleDate = new Date(Date.now() - 100 * 60 * 60 * 1000).toISOString();
+    const psOutput = `vardo-preview-pr-42-vardo-1\t${staleDate}`;
+
+    execFileAsyncMock
+      .mockResolvedValueOnce({ stdout: psOutput, stderr: "" }) // docker ps
+      .mockResolvedValue({ stdout: "", stderr: "" }); // docker compose down
+
+    const result = await cleanupStaleSelfPreviews();
+    expect(result).toBe(1);
+  });
+
+  it("does not destroy containers younger than maxAgeHours", async () => {
+    // 1 hour ago — well within the 72-hour threshold
+    const recentDate = new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString();
+    const psOutput = `vardo-preview-pr-43-vardo-1\t${recentDate}`;
+
+    execFileAsyncMock.mockResolvedValueOnce({ stdout: psOutput, stderr: "" });
+
+    const result = await cleanupStaleSelfPreviews(72);
+    expect(result).toBe(0);
+  });
+
+  it("counts each PR number only once even with multiple containers", async () => {
+    const staleDate = new Date(Date.now() - 100 * 60 * 60 * 1000).toISOString();
+    const psOutput = [
+      `vardo-preview-pr-42-vardo-1\t${staleDate}`,
+      `vardo-preview-pr-42-redis-1\t${staleDate}`, // same PR, different service
+    ].join("\n");
+
+    execFileAsyncMock
+      .mockResolvedValueOnce({ stdout: psOutput, stderr: "" }) // docker ps
+      .mockResolvedValue({ stdout: "", stderr: "" }); // docker compose down
+
+    const result = await cleanupStaleSelfPreviews();
+    expect(result).toBe(1); // PR #42 cleaned once despite two containers
+  });
+
+  it("respects a custom maxAgeHours threshold", async () => {
+    // 5 hours ago — stale under a 2-hour threshold but not the default 72
+    const date5HoursAgo = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString();
+    const psOutput = `vardo-preview-pr-55-vardo-1\t${date5HoursAgo}`;
+
+    execFileAsyncMock
+      .mockResolvedValueOnce({ stdout: psOutput, stderr: "" }) // docker ps
+      .mockResolvedValue({ stdout: "", stderr: "" }); // docker compose down
+
+    const result = await cleanupStaleSelfPreviews(2); // 2-hour threshold
+    expect(result).toBe(1);
   });
 });

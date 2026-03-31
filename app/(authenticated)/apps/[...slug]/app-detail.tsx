@@ -19,6 +19,7 @@ import {
   Container,
   EllipsisVertical,
   Cpu,
+  Wrench,
 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { PageToolbar } from "@/components/page-toolbar";
@@ -492,52 +493,63 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                 )}
               </Button>
             ))}
-            <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
-              <Pencil className="mr-1.5 size-4" />
-              Edit
-            </Button>
-            {canDelete && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    size="icon-sm"
-                    variant="outline"
-                  >
-                    <EllipsisVertical className="size-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  {/* Parent switcher */}
-                  {!app.project && allParentApps.length > 0 && (
-                    <>
-                      <DropdownMenuItem
-                        className="text-muted-foreground"
-                        onClick={() => setEditOpen(true)}
+            {app.isSystemManaged ? (
+              <Button size="sm" variant="outline" asChild className="border-status-warning/40 bg-status-warning-muted text-status-warning hover:bg-status-warning/20">
+                <Link href="/admin/settings/maintenance">
+                  <Wrench className="mr-1.5 size-4" />
+                  Manage in Maintenance
+                </Link>
+              </Button>
+            ) : (
+              <>
+                <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
+                  <Pencil className="mr-1.5 size-4" />
+                  Edit
+                </Button>
+                {canDelete && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        size="icon-sm"
+                        variant="outline"
                       >
-                        <Plus className="mr-2 size-3.5" />
-                        Assign parent
+                        <EllipsisVertical className="size-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      {/* Parent switcher */}
+                      {!app.project && allParentApps.length > 0 && (
+                        <>
+                          <DropdownMenuItem
+                            className="text-muted-foreground"
+                            onClick={() => setEditOpen(true)}
+                          >
+                            <Plus className="mr-2 size-3.5" />
+                            Assign parent
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                        </>
+                      )}
+                      {!isProduction && selectedEnv && (
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={() => setDeleteEnvOpen(true)}
+                        >
+                          <X className="mr-2 size-4" />
+                          Delete {selectedEnv.name} environment
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onClick={() => setDeleteOpen(true)}
+                      >
+                        <Trash2 className="mr-2 size-4" />
+                        Delete app
                       </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                    </>
-                  )}
-                  {!isProduction && selectedEnv && (
-                    <DropdownMenuItem
-                      className="text-destructive focus:text-destructive"
-                      onClick={() => setDeleteEnvOpen(true)}
-                    >
-                      <X className="mr-2 size-4" />
-                      Delete {selectedEnv.name} environment
-                    </DropdownMenuItem>
-                  )}
-                  <DropdownMenuItem
-                    className="text-destructive focus:text-destructive"
-                    onClick={() => setDeleteOpen(true)}
-                  >
-                    <Trash2 className="mr-2 size-4" />
-                    Delete app
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </>
             )}
           </div>
         }

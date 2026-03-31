@@ -132,7 +132,7 @@ function ProjectCard({
   return (
     <Link
       href={`/projects/${project.name}`}
-      className={`squircle relative flex flex-col rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50 overflow-hidden cursor-pointer${isSystem ? " ring-2 ring-amber-500/50" : ""}`}
+      className={`squircle relative flex flex-col rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50 overflow-hidden cursor-pointer${isSystem ? " ring-2 ring-status-warning/50" : ""}`}
     >
       {aggregatedCpu.length > 0 && (
         <Sparkline

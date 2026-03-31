@@ -988,7 +988,7 @@ export function ProjectDetail({
         actions={
           <div className="flex items-center gap-2">
             {project.isSystemManaged ? (
-              <Button size="sm" variant="outline" asChild className="border-amber-500/40 bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-400">
+              <Button size="sm" variant="outline" asChild className="border-status-warning/40 bg-status-warning-muted text-status-warning hover:bg-status-warning/20">
                 <Link href="/admin/settings/maintenance">
                   <Wrench className="mr-1.5 size-4" />
                   Manage in Maintenance
