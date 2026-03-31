@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { join, resolve } from "path";
+import { access } from "fs/promises";
 import { listContainers, inspectContainer } from "./client";
 import { publishEvent, appChannel } from "@/lib/events";
 import { recordActivity } from "@/lib/activity";
@@ -14,6 +15,17 @@ const log = logger.child("rollback-monitor");
 const execFileAsync = promisify(execFile);
 const PROJECTS_DIR = resolve(process.env.VARDO_PROJECTS_DIR || "./.host/projects");
 const POLL_INTERVAL_MS = 5000;
+
+async function slotComposeFiles(slotDir: string): Promise<string[]> {
+  const base = join(slotDir, "docker-compose.yml");
+  const overlay = join(slotDir, "docker-compose.vardo.yml");
+  try {
+    await access(overlay);
+    return ["-f", base, "-f", overlay];
+  } catch {
+    return ["-f", base];
+  }
+}
 
 /** In-memory set of app IDs currently being monitored. Prevents concurrent monitors. */
 const activeMonitors = new Set<string>();
@@ -178,12 +190,12 @@ async function performRollback(opts: PerformRollbackOpts): Promise<void> {
   // Step 1: Tear down the crashing slot
   const crashedSlotDir = join(appDir, currentSlot);
   const crashedProjectName = `${appName}-${envName}-${currentSlot}`;
-  const crashedComposePath = join(crashedSlotDir, "docker-compose.yml");
+  const crashedComposeFileArgs = await slotComposeFiles(crashedSlotDir);
 
   try {
     await execFileAsync(
       "docker",
-      ["compose", "-f", crashedComposePath, "-p", crashedProjectName, "down", "--remove-orphans"],
+      ["compose", ...crashedComposeFileArgs, "-p", crashedProjectName, "down", "--remove-orphans"],
       { cwd: crashedSlotDir, timeout: 30000 }
     );
   } catch (err) {
@@ -196,12 +208,12 @@ async function performRollback(opts: PerformRollbackOpts): Promise<void> {
   // Step 2: Bring the previous slot back up
   const prevSlotDir = join(appDir, previousSlot);
   const prevProjectName = `${appName}-${envName}-${previousSlot}`;
-  const prevComposePath = join(prevSlotDir, "docker-compose.yml");
+  const prevComposeFileArgs = await slotComposeFiles(prevSlotDir);
 
   try {
     await execFileAsync(
       "docker",
-      ["compose", "-f", prevComposePath, "-p", prevProjectName, "up", "-d"],
+      ["compose", ...prevComposeFileArgs, "-p", prevProjectName, "up", "-d"],
       { cwd: prevSlotDir, timeout: 60000 }
     );
   } catch (err) {

@@ -10,7 +10,7 @@ import { nanoid } from "nanoid";
 import { publishEvent, appChannel } from "@/lib/events";
 import { execFile, spawn as nodeSpawn} from "child_process";
 import { promisify } from "util";
-import { mkdir, writeFile, readFile, rm } from "fs/promises";
+import { mkdir, writeFile, readFile, rm, access } from "fs/promises";
 import { join, resolve } from "path";
 import {
   generateComposeForImage,
@@ -26,6 +26,8 @@ import {
   validateCompose,
   composeToYaml,
   stripTraefikLabels,
+  stripVardoInjections,
+  buildVardoOverlay,
   type ComposeFile,
 } from "./compose";
 import { ensureNetwork, detectExposedPorts, listContainers, inspectContainer, removeContainer, stripDockerProjectPrefix, listImages, removeImage, pruneImages, pruneBuildCache } from "./client";
@@ -86,6 +88,23 @@ const PROJECTS_DIR = resolve(process.env.VARDO_PROJECTS_DIR || "./.host/projects
 const NETWORK_NAME = "vardo-network";
 
 const DEFAULT_HEALTH_CHECK_TIMEOUT_MS = 60000;
+
+/**
+ * Return the compose -f arguments for a slot directory, using both
+ * docker-compose.yml and docker-compose.vardo.yml when the overlay exists.
+ * Falls back to just docker-compose.yml for slots deployed before the split
+ * was introduced (backward compat).
+ */
+async function slotComposeFiles(slotDir: string): Promise<string[]> {
+  const base = join(slotDir, "docker-compose.yml");
+  const overlay = join(slotDir, "docker-compose.vardo.yml");
+  try {
+    await access(overlay);
+    return ["-f", base, "-f", overlay];
+  } catch {
+    return ["-f", base];
+  }
+}
 
 /**
  * Parse a Docker duration string (e.g. "1m", "30s", "1m30s", "500ms") to milliseconds.
@@ -663,6 +682,11 @@ export async function runDeployment(
       throw new Error("No image, git repo, or compose content configured");
     }
 
+    // Capture the bare compose before any Vardo injections. Strip any
+    // existing Traefik/vardo labels that came in via import — they will be
+    // regenerated fresh in the overlay.
+    const bareCompose = stripVardoInjections(compose, NETWORK_NAME);
+
     if (app.cpuLimit || app.memoryLimit) {
       compose = injectResourceLimits(compose, { cpuLimit: app.cpuLimit, memoryLimit: app.memoryLimit });
     }
@@ -856,8 +880,27 @@ export async function runDeployment(
       }
     }
 
-    const composePath = join(slotDir, "docker-compose.yml");
-    await writeFile(composePath, composeToYaml(compose), "utf-8");
+    // Step 5b: Write the two physical compose files.
+    // docker-compose.yml — the bare user compose, runnable standalone without Vardo.
+    // docker-compose.vardo.yml — Vardo's overlay: Traefik labels, vardo-network,
+    //   resource limits, GPU devices, externalized volume declarations.
+    const bareComposePath = join(slotDir, "docker-compose.yml");
+    const vardoOverlayPath = join(slotDir, "docker-compose.vardo.yml");
+
+    const overlayCompose = buildVardoOverlay({
+      fullCompose: compose,
+      networkName: NETWORK_NAME,
+      cpuLimit: app.cpuLimit,
+      memoryLimit: app.memoryLimit,
+      gpuEnabled: app.gpuEnabled ?? false,
+      externalVolumes: compose.volumes ?? {},
+      bareVolumeNames: Object.keys(bareCompose.volumes ?? {}),
+    });
+
+    await writeFile(bareComposePath, composeToYaml(bareCompose), "utf-8");
+    await writeFile(vardoOverlayPath, composeToYaml(overlayCompose), "utf-8");
+
+    const composeFileArgs = ["-f", bareComposePath, "-f", vardoOverlayPath];
 
     // Write .env — resolve template expressions using the full resolution engine
     if (Object.keys(envMap).length > 0) {
@@ -1005,7 +1048,7 @@ export async function runDeployment(
     try {
       const { stdout, stderr } = await execFileAsync(
         "docker",
-        ["compose", "-f", composePath, "-p", newProjectName, "up", "-d", ...(hasBuild ? ["--build"] : []), "--pull", pullPolicy],
+        ["compose", ...composeFileArgs, "-p", newProjectName, "up", "-d", ...(hasBuild ? ["--build"] : []), "--pull", pullPolicy],
         { cwd: slotDir, timeout: composeUpTimeout }
       );
       for (const line of stdout.split(/\r?\n|\r/).filter(Boolean)) {
@@ -1043,14 +1086,14 @@ export async function runDeployment(
         }
       }
     }
-    const healthy = await waitForHealthy(newProjectName, composePath, slotDir, logs, healthTimeoutMs);
+    const healthy = await waitForHealthy(newProjectName, composeFileArgs, slotDir, logs, healthTimeoutMs);
     if (!healthy) {
       // Grab container logs before tearing down
       log(`[deploy] Health check failed — fetching container logs...`);
       try {
         const { stdout } = await execFileAsync(
           "docker",
-          ["compose", "-f", composePath, "-p", newProjectName, "logs", "--tail", "30"],
+          ["compose", ...composeFileArgs, "-p", newProjectName, "logs", "--tail", "30"],
           { cwd: slotDir, timeout: 10000 }
         );
         if (stdout.trim()) {
@@ -1063,7 +1106,7 @@ export async function runDeployment(
       log(`[deploy] Tearing down ${newSlot}`);
       await execFileAsync(
         "docker",
-        ["compose", "-f", composePath, "-p", newProjectName, "down", "--remove-orphans"],
+        ["compose", ...composeFileArgs, "-p", newProjectName, "down", "--remove-orphans"],
         { cwd: slotDir, timeout: 30000 }
       ).catch(() => {});
       throw new Error(`${newSlot} slot did not become healthy — container may have crashed (see logs above)`);
@@ -1081,11 +1124,11 @@ export async function runDeployment(
     if (activeSlot) {
       const oldSlotDir = join(appDir, activeSlot);
       const oldProjectName = `${app.name}-${envName}-${activeSlot}`;
-      const oldComposePath = join(oldSlotDir, "docker-compose.yml");
+      const oldComposeFileArgs = await slotComposeFiles(oldSlotDir);
       try {
         await execFileAsync(
           "docker",
-          ["compose", "-f", oldComposePath, "-p", oldProjectName, "down", "--remove-orphans"],
+          ["compose", ...oldComposeFileArgs, "-p", oldProjectName, "down", "--remove-orphans"],
           { cwd: oldSlotDir, timeout: 30000 }
         );
         log(`[deploy] Old slot (${activeSlot}) removed`);
@@ -1773,7 +1816,7 @@ function spawnStream(
 
 async function waitForHealthy(
   projectName: string,
-  composePath: string,
+  composeFileArgs: string[],
   cwd: string,
   logs: { push: (line: string) => void },
   timeoutMs: number = DEFAULT_HEALTH_CHECK_TIMEOUT_MS,
@@ -1784,7 +1827,7 @@ async function waitForHealthy(
     try {
       const { stdout } = await execFileAsync(
         "docker",
-        ["compose", "-f", composePath, "-p", projectName, "ps", "--format", "json"],
+        ["compose", ...composeFileArgs, "-p", projectName, "ps", "--format", "json"],
         { cwd, timeout: 10000 }
       );
 
@@ -1877,13 +1920,13 @@ async function stopSlotInDir(
   }
 
   const slotDir = join(dir, activeSlot);
-  const composePath = join(slotDir, "docker-compose.yml");
   const composeProject = `${projectPrefix}-${activeSlot}`;
+  const composeFileArgs = await slotComposeFiles(slotDir);
 
   try {
     const { stdout, stderr } = await execFileAsync(
       "docker",
-      ["compose", "-f", composePath, "-p", composeProject, "down"],
+      ["compose", ...composeFileArgs, "-p", composeProject, "down"],
       { cwd: slotDir, timeout: 60000 }
     );
     if (stdout.trim()) logs.push(stdout.trim());
@@ -1970,12 +2013,12 @@ export async function restartContainers(
     }
 
     const slotDir = join(dir, activeSlot);
-    const composePath = join(slotDir, "docker-compose.yml");
     const composeProject = `${prefix}-${activeSlot}`;
+    const composeFileArgs = await slotComposeFiles(slotDir);
 
     const { stdout, stderr } = await execFileAsync(
       "docker",
-      ["compose", "-f", composePath, "-p", composeProject, "restart"],
+      ["compose", ...composeFileArgs, "-p", composeProject, "restart"],
       { cwd: slotDir, timeout: 60000 }
     );
     if (stdout.trim()) logs.push(stdout.trim());
@@ -2010,12 +2053,12 @@ export async function recreateProject(
     }
 
     const slotDir = join(dir, activeSlot);
-    const composePath = join(slotDir, "docker-compose.yml");
     const composeProject = `${prefix}-${activeSlot}`;
+    const composeFileArgs = await slotComposeFiles(slotDir);
 
     const { stdout, stderr } = await execFileAsync(
       "docker",
-      ["compose", "-f", composePath, "-p", composeProject, "up", "-d", "--force-recreate"],
+      ["compose", ...composeFileArgs, "-p", composeProject, "up", "-d", "--force-recreate"],
       { cwd: slotDir, timeout: 60000 }
     );
     for (const line of stdout.split(/\r?\n|\r/).filter(Boolean)) {
