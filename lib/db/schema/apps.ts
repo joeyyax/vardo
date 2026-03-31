@@ -10,6 +10,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
@@ -107,6 +108,8 @@ export const apps = pgTable(
     unique("app_imported_compose_project_uniq").on(t.organizationId, t.importedComposeProject),
     index("app_org_id_idx").on(t.organizationId),
     index("app_parent_app_id_idx").on(t.parentAppId),
+    index("app_git_url_idx").on(t.gitUrl),
+    uniqueIndex("app_system_managed_git_url_uniq").on(t.gitUrl).where(sql`is_system_managed = true`),
   ]
 );
 
