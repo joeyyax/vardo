@@ -2324,6 +2324,185 @@ describe("slotComposeFiles", () => {
 // Round-trip integration: strip → overlay → merged = original
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// stripVardoInjections — edge cases
+// ---------------------------------------------------------------------------
+
+describe("stripVardoInjections — edge cases", () => {
+  it("handles a compose with no services gracefully", () => {
+    const compose: ComposeFile = { services: {} };
+    const result = stripVardoInjections(compose);
+    expect(result.services).toEqual({});
+  });
+
+  it("leaves a service with no labels unchanged", () => {
+    const compose: ComposeFile = {
+      services: {
+        app: { name: "app", image: "nginx:latest" },
+      },
+    };
+    const result = stripVardoInjections(compose);
+    expect(result.services.app.labels).toBeUndefined();
+  });
+
+  it("leaves a service with no networks unchanged", () => {
+    const compose: ComposeFile = {
+      services: {
+        app: { name: "app", image: "nginx:latest", labels: { "user.label": "stays" } },
+      },
+    };
+    const result = stripVardoInjections(compose);
+    expect(result.services.app.networks).toBeUndefined();
+  });
+
+  it("sets networks to undefined when the only network is the vardo network", () => {
+    const compose: ComposeFile = {
+      services: {
+        app: { name: "app", image: "nginx:latest", networks: ["vardo-network"] },
+      },
+      networks: { "vardo-network": { external: true } },
+    };
+    const result = stripVardoInjections(compose);
+    expect(result.services.app.networks).toBeUndefined();
+  });
+
+  it("removes the top-level networks map when it only contains the vardo network", () => {
+    const compose: ComposeFile = {
+      services: {
+        app: { name: "app", image: "nginx:latest", networks: ["vardo-network"] },
+      },
+      networks: { "vardo-network": { external: true } },
+    };
+    const result = stripVardoInjections(compose);
+    expect(result.networks).toBeUndefined();
+  });
+
+  it("preserves non-vardo structural fields on the service", () => {
+    const compose: ComposeFile = {
+      services: {
+        app: {
+          name: "app",
+          image: "myapp:1.0",
+          ports: ["8080:80"],
+          environment: { API_KEY: "abc" },
+          labels: { "traefik.enable": "true", "user.keep": "yes" },
+          networks: ["vardo-network"],
+        },
+      },
+    };
+    const result = stripVardoInjections(compose);
+    expect(result.services.app.image).toBe("myapp:1.0");
+    expect(result.services.app.ports).toEqual(["8080:80"]);
+    expect(result.services.app.environment).toEqual({ API_KEY: "abc" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildVardoOverlay — edge cases
+// ---------------------------------------------------------------------------
+
+describe("buildVardoOverlay — edge cases", () => {
+  const networkName = "vardo-network";
+
+  it("handles a compose with no services gracefully", () => {
+    const compose: ComposeFile = { services: {} };
+    const overlay = buildVardoOverlay({ fullCompose: compose, networkName });
+    expect(overlay.services).toEqual({});
+    expect(overlay.networks).toBeUndefined();
+  });
+
+  it("injects only cpuLimit when memoryLimit is not set", () => {
+    const compose: ComposeFile = {
+      services: { app: { name: "app", image: "nginx:latest" } },
+    };
+    const overlay = buildVardoOverlay({ fullCompose: compose, networkName, cpuLimit: 1 });
+    expect(overlay.services.app.deploy?.resources?.limits).toEqual({ cpus: "1" });
+    expect(overlay.services.app.deploy?.resources?.limits?.memory).toBeUndefined();
+  });
+
+  it("injects only memoryLimit when cpuLimit is not set", () => {
+    const compose: ComposeFile = {
+      services: { app: { name: "app", image: "nginx:latest" } },
+    };
+    const overlay = buildVardoOverlay({ fullCompose: compose, networkName, memoryLimit: 256 });
+    expect(overlay.services.app.deploy?.resources?.limits).toEqual({ memory: "256M" });
+    expect(overlay.services.app.deploy?.resources?.limits?.cpus).toBeUndefined();
+  });
+
+  it("does not add resource limits when cpuLimit is 0", () => {
+    const compose: ComposeFile = {
+      services: { app: { name: "app", image: "nginx:latest" } },
+    };
+    const overlay = buildVardoOverlay({ fullCompose: compose, networkName, cpuLimit: 0 });
+    expect(overlay.services.app.deploy?.resources?.limits).toBeUndefined();
+  });
+
+  it("produces a service entry with only a name when service has no injected config", () => {
+    const compose: ComposeFile = {
+      services: { app: { name: "app", image: "nginx:latest" } },
+    };
+    const overlay = buildVardoOverlay({ fullCompose: compose, networkName });
+    expect(overlay.services.app).toEqual({ name: "app" });
+  });
+
+  it("does not include overlay image or ports — only injected config", () => {
+    const compose: ComposeFile = {
+      services: {
+        app: {
+          name: "app",
+          image: "myapp:latest",
+          ports: ["3000:3000"],
+          labels: { "traefik.enable": "true" },
+          networks: [networkName],
+        },
+      },
+      networks: { [networkName]: { external: true } },
+    };
+    const overlay = buildVardoOverlay({ fullCompose: compose, networkName });
+    expect(overlay.services.app.image).toBeUndefined();
+    expect(overlay.services.app.ports).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// slotComposeFiles — edge cases
+// ---------------------------------------------------------------------------
+
+describe("slotComposeFiles — edge cases", () => {
+  afterEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it("falls back to single file when access throws EACCES", async () => {
+    const err = Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" });
+    vi.mocked(fsp.access).mockRejectedValue(err);
+
+    const result = await slotComposeFiles("/slots/blue");
+
+    expect(result).toEqual(["-f", "/slots/blue/docker-compose.yml"]);
+  });
+
+  it("checks for the overlay file inside the given slot directory", async () => {
+    vi.mocked(fsp.access).mockResolvedValue(undefined);
+
+    await slotComposeFiles("/deploy/slots/green");
+
+    expect(fsp.access).toHaveBeenCalledWith("/deploy/slots/green/docker-compose.vardo.yml");
+  });
+
+  it("includes the base compose path inside the given slot directory", async () => {
+    vi.mocked(fsp.access).mockRejectedValue(new Error("ENOENT"));
+
+    const result = await slotComposeFiles("/deploy/slots/green");
+
+    expect(result[1]).toBe("/deploy/slots/green/docker-compose.yml");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Round-trip integration: strip → overlay → merged = original
+// ---------------------------------------------------------------------------
+
 describe("round-trip: stripVardoInjections + buildVardoOverlay", () => {
   const networkName = "vardo-network";
 
