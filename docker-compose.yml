@@ -102,6 +102,16 @@ services:
       - "traefik.http.routers.vardo-fallback-https.priority=1"
       - "traefik.http.routers.vardo-fallback-https.tls=true"
       - "traefik.http.routers.vardo-fallback-https.service=vardo"
+      # Unknown-host assets — serve /_next without path rewrite so CSS/JS loads correctly
+      - "traefik.http.routers.vardo-unknown-host-assets.rule=HostRegexp(`.*[a-zA-Z].*`) && PathPrefix(`/_next`)"
+      - "traefik.http.routers.vardo-unknown-host-assets.entrypoints=websecure"
+      - "traefik.http.routers.vardo-unknown-host-assets.tls=true"
+      - "traefik.http.routers.vardo-unknown-host-assets.priority=3"
+      - "traefik.http.routers.vardo-unknown-host-assets.service=vardo"
+      - "traefik.http.routers.vardo-unknown-host-assets-http.rule=HostRegexp(`.*[a-zA-Z].*`) && PathPrefix(`/_next`)"
+      - "traefik.http.routers.vardo-unknown-host-assets-http.entrypoints=web"
+      - "traefik.http.routers.vardo-unknown-host-assets-http.priority=3"
+      - "traefik.http.routers.vardo-unknown-host-assets-http.service=vardo"
       # Unknown-host router — catches unrecognized hostnames and shows service-not-found page
       # Regex requires at least one letter, so raw IP access falls through to vardo-fallback-https
       - "traefik.http.routers.vardo-unknown-host.rule=HostRegexp(`.*[a-zA-Z].*`)"
