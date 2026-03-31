@@ -28,6 +28,8 @@ const LEGACY_TO_BUS: Record<NotificationEventType, BusEventType> = {
   "system-alert-restart": "system.restart-loop",
   "system-alert-cert": "system.cert-expiring",
   "system-alert-update": "system.update-available",
+  "security-file-exposed": "security.file-exposed",
+  "security-scan-findings": "security.scan-findings",
   "weekly-digest": "digest.weekly",
 };
 
@@ -115,6 +117,8 @@ const NUMERIC_FIELDS = new Set([
   "backupsFailed",
   "cronTotal",
   "cronFailed",
+  "criticalCount",
+  "warningCount",
 ]);
 
 function coerceNumerics(obj: Record<string, unknown>): Record<string, unknown> {

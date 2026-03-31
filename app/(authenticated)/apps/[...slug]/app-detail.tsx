@@ -82,6 +82,7 @@ import { AppConnect } from "./app-connect";
 import { AppSettingsDialog } from "./app-settings-dialog";
 import { AppDebug } from "./app-debug";
 import { ComposeDetail } from "./compose-detail";
+import { AppSecurity } from "./app-security";
 
 import type { AppDetailProps, Environment } from "./types";
 
@@ -921,6 +922,9 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
               Backups
             </TabsTrigger>
           )}
+          <TabsTrigger value="security">
+            Security
+          </TabsTrigger>
           {isAdmin(userRole) && (
             <TabsTrigger value="debug">
               Debug
@@ -1022,6 +1026,10 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
             <AppBackupHistory orgId={orgId} appId={app.id} />
           </TabsContent>
         )}
+
+        <TabsContent value="security">
+          <AppSecurity appId={app.id} orgId={orgId} />
+        </TabsContent>
 
         {isAdmin(userRole) && (
           <TabsContent value="debug">
