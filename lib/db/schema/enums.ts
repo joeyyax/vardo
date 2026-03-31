@@ -81,6 +81,11 @@ export const meshPeerStatusEnum = pgEnum("mesh_peer_status", [
   "unreachable",
 ]);
 
+export const meshPeerConnectionTypeEnum = pgEnum("mesh_peer_connection_type", [
+  "direct",
+  "visible",
+]);
+
 export const backupTargetTypeEnum = pgEnum("backup_target_type", [
   "s3",
   "r2",

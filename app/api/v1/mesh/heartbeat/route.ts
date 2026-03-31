@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { meshPeers } from "@/lib/db/schema";
 import { eq, ne } from "drizzle-orm";
 import { requireMeshPeer } from "@/lib/mesh/auth";
+import { getHubAddress } from "@/lib/mesh";
 import { getInstanceId } from "@/lib/constants";
 import { getInstanceConfig } from "@/lib/system-settings";
 
@@ -29,28 +30,36 @@ export async function POST(request: NextRequest) {
 
     // Return the full peer list so the caller can see all mesh members.
     // Exclude the calling peer itself and strip sensitive fields.
+    // instanceId and publicKey are included so the receiver can upsert
+    // visible peers into its own DB without ambiguity.
     const allPeers = await db.query.meshPeers.findMany({
       where: ne(meshPeers.id, peer.id),
       columns: {
         id: true,
+        instanceId: true,
         name: true,
         type: true,
         status: true,
         internalIp: true,
+        allowedIps: true,
+        publicKey: true,
         endpoint: true,
         lastSeenAt: true,
       },
     });
 
     const instanceId = await getInstanceId();
-    const config = await getInstanceConfig();
+    const [config, internalIp] = await Promise.all([
+      getInstanceConfig(),
+      getHubAddress(),
+    ]);
 
     return NextResponse.json({
       ok: true,
       instance: {
         id: instanceId,
         name: config.instanceName,
-        internalIp: "10.99.0.1",
+        internalIp,
       },
       peers: allPeers,
     });
