@@ -29,14 +29,19 @@ export async function POST(request: NextRequest) {
 
     // Return the full peer list so the caller can see all mesh members.
     // Exclude the calling peer itself and strip sensitive fields.
+    // instanceId and publicKey are included so the receiver can upsert
+    // visible peers into its own DB without ambiguity.
     const allPeers = await db.query.meshPeers.findMany({
       where: ne(meshPeers.id, peer.id),
       columns: {
         id: true,
+        instanceId: true,
         name: true,
         type: true,
         status: true,
         internalIp: true,
+        allowedIps: true,
+        publicKey: true,
         endpoint: true,
         lastSeenAt: true,
       },
