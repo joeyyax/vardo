@@ -53,6 +53,18 @@ export async function ensureVardoProject(): Promise<void> {
   const vardoDir = process.env.VARDO_DIR;
   if (!vardoDir) return;
 
+  // Warn operators who haven't configured an isolated preview database.
+  // Without PREVIEW_DATABASE_URL, preview containers fall back to the
+  // production DATABASE_URL — acceptable only for private repos with
+  // trusted contributors, but easy to misconfigure silently.
+  if (!process.env.PREVIEW_DATABASE_URL) {
+    log.warn(
+      "selfManagement is enabled but PREVIEW_DATABASE_URL is not set — " +
+      "preview containers will use the production database. " +
+      "Set PREVIEW_DATABASE_URL in .env to point previews at an isolated database."
+    );
+  }
+
   // Read and parse the compose file to discover service names.
   const composePath = join(vardoDir, "docker-compose.yml");
   const composeContent = await readFile(composePath, "utf-8");
