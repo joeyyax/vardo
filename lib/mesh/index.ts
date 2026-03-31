@@ -7,6 +7,7 @@ export {
   isWireguardRunning,
   getWgStatus,
   getHubPublicKey,
+  getHubAddress,
   ensureHubConfig,
 } from "./wireguard";
 export type { WgPeer } from "./wireguard";

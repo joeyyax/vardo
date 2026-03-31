@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { HUB_IP } from "./ip-allocator";
 
 const execFileAsync = promisify(execFile);
 
@@ -219,6 +220,27 @@ export async function ensureHubConfig(hubIp: string): Promise<string> {
   ]);
 
   return publicKey;
+}
+
+/**
+ * Read the hub's WireGuard interface address from the running container.
+ * Falls back to HUB_IP if the interface isn't reachable (e.g. dev mode).
+ */
+export async function getHubAddress(): Promise<string> {
+  try {
+    const { stdout } = await execFileAsync("docker", [
+      "exec",
+      WG_CONTAINER,
+      "sh",
+      "-c",
+      "ip -4 addr show wg0 2>/dev/null | awk '/inet /{split($2,a,\"/\"); print a[1]; exit}'",
+    ]);
+    const ip = stdout.trim();
+    if (ip && /^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) return ip;
+  } catch {
+    // WireGuard not running or not in container
+  }
+  return HUB_IP;
 }
 
 /** Read the hub's WireGuard public key from the running container. */

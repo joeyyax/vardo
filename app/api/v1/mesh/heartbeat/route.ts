@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { meshPeers } from "@/lib/db/schema";
 import { eq, ne } from "drizzle-orm";
 import { requireMeshPeer } from "@/lib/mesh/auth";
-import { HUB_IP } from "@/lib/mesh";
+import { getHubAddress } from "@/lib/mesh";
 import { getInstanceId } from "@/lib/constants";
 import { getInstanceConfig } from "@/lib/system-settings";
 
@@ -49,14 +49,17 @@ export async function POST(request: NextRequest) {
     });
 
     const instanceId = await getInstanceId();
-    const config = await getInstanceConfig();
+    const [config, internalIp] = await Promise.all([
+      getInstanceConfig(),
+      getHubAddress(),
+    ]);
 
     return NextResponse.json({
       ok: true,
       instance: {
         id: instanceId,
         name: config.instanceName,
-        internalIp: HUB_IP,
+        internalIp,
       },
       peers: allPeers,
     });

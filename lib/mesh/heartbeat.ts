@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { meshPeers } from "@/lib/db/schema";
-import { and, eq, notInArray, sql } from "drizzle-orm";
+import { and, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { logger } from "@/lib/logger";
 import { meshFetch } from "./client";
@@ -76,9 +76,9 @@ export async function sendHeartbeatToPeer(peerId: string): Promise<boolean> {
     .where(eq(meshPeers.id, peerId));
 
   // If the hub returned a peer manifest, sync visible peers into our local DB.
-  if (ok && body?.peers && body.peers.length > 0) {
+  if (ok && body?.peers && body.peers.length > 0 && body.instance?.id) {
     try {
-      await syncVisiblePeers(body.peers);
+      await syncVisiblePeers(body.peers, body.instance.id);
     } catch (err) {
       log.warn(`Failed to sync visible peers from hub: ${err}`);
     }
@@ -99,9 +99,17 @@ export async function sendHeartbeatToPeer(peerId: string): Promise<boolean> {
  *   concurrent heartbeats from multiple hubs with overlapping manifests.
  * - On conflict: update name/status/lastSeenAt only for visible peers.
  *   Direct peers keep all existing values untouched.
- * - Prune visible peers that are no longer present in the hub's manifest.
+ * - Pre-delete stale visible rows whose publicKey or internalIp would collide
+ *   with incoming data on a different instanceId (key rotation / reassignment).
+ * - Prune visible peers sourced from this hub that are no longer in the manifest.
+ *   Scoped to this hub only so we don't clobber entries provided by other hubs.
+ * - All mutations run inside a single transaction to prevent races between
+ *   concurrent heartbeat timers.
  */
-async function syncVisiblePeers(peers: PeerManifestEntry[]): Promise<void> {
+async function syncVisiblePeers(
+  peers: PeerManifestEntry[],
+  hubInstanceId: string
+): Promise<void> {
   if (peers.length === 0) return;
 
   // Validate hub-provided fields before inserting — reject obviously malformed
@@ -131,49 +139,83 @@ async function syncVisiblePeers(peers: PeerManifestEntry[]): Promise<void> {
   if (valid.length === 0) return;
 
   const now = new Date();
-
-  // Single atomic upsert — no read-then-write race under concurrent heartbeats.
-  // On conflict on instanceId:
-  //   direct peers  → all CASE branches fall through to existing values (no-op)
-  //   visible peers → name, status, lastSeenAt, updatedAt are refreshed
-  await db
-    .insert(meshPeers)
-    .values(
-      valid.map((p) => ({
-        id: nanoid(),
-        instanceId: p.instanceId,
-        name: p.name,
-        type: p.type,
-        status: p.status,
-        internalIp: p.internalIp,
-        allowedIps: p.allowedIps ?? toCidr(p.internalIp),
-        publicKey: p.publicKey,
-        endpoint: p.endpoint ?? null,
-        connectionType: "visible" as const,
-        lastSeenAt: p.lastSeenAt ? new Date(p.lastSeenAt) : null,
-        createdAt: now,
-        updatedAt: now,
-      }))
-    )
-    .onConflictDoUpdate({
-      target: meshPeers.instanceId,
-      set: {
-        name: sql`CASE WHEN ${meshPeers.connectionType} = 'visible' THEN EXCLUDED.name ELSE ${meshPeers.name} END`,
-        status: sql`CASE WHEN ${meshPeers.connectionType} = 'visible' THEN EXCLUDED.status ELSE ${meshPeers.status} END`,
-        lastSeenAt: sql`CASE WHEN ${meshPeers.connectionType} = 'visible' THEN EXCLUDED.last_seen_at ELSE ${meshPeers.lastSeenAt} END`,
-        updatedAt: sql`CASE WHEN ${meshPeers.connectionType} = 'visible' THEN EXCLUDED.updated_at ELSE ${meshPeers.updatedAt} END`,
-      },
-    });
-
-  // Remove visible peers that are no longer in the hub's manifest.
-  // This keeps the Instances page accurate as peers are deregistered from the hub.
   const instanceIds = valid.map((p) => p.instanceId);
-  await db
-    .delete(meshPeers)
-    .where(
-      and(
-        eq(meshPeers.connectionType, "visible"),
-        notInArray(meshPeers.instanceId, instanceIds)
+  const publicKeys = valid.map((p) => p.publicKey);
+  const internalIps = valid.map((p) => p.internalIp);
+
+  await db.transaction(async (tx) => {
+    // Remove stale visible rows whose publicKey or internalIp would collide
+    // with an incoming peer on a *different* instanceId (e.g. key rotation or
+    // IP reassignment on the hub). Without this, the batch upsert below would
+    // throw a unique-constraint violation that the ON CONFLICT clause doesn't
+    // cover (it only targets instanceId).
+    await tx
+      .delete(meshPeers)
+      .where(
+        and(
+          eq(meshPeers.connectionType, "visible"),
+          notInArray(meshPeers.instanceId, instanceIds),
+          inArray(meshPeers.publicKey, publicKeys)
+        )
+      );
+
+    await tx
+      .delete(meshPeers)
+      .where(
+        and(
+          eq(meshPeers.connectionType, "visible"),
+          notInArray(meshPeers.instanceId, instanceIds),
+          inArray(meshPeers.internalIp, internalIps)
+        )
+      );
+
+    // Single atomic upsert — no read-then-write race under concurrent heartbeats.
+    // On conflict on instanceId:
+    //   direct peers  → all CASE branches fall through to existing values (no-op)
+    //   visible peers → name, status, sourceHubInstanceId, lastSeenAt, updatedAt refreshed
+    await tx
+      .insert(meshPeers)
+      .values(
+        valid.map((p) => ({
+          id: nanoid(),
+          instanceId: p.instanceId,
+          name: p.name,
+          type: p.type,
+          status: p.status,
+          internalIp: p.internalIp,
+          allowedIps: p.allowedIps ?? toCidr(p.internalIp),
+          publicKey: p.publicKey,
+          endpoint: p.endpoint ?? null,
+          connectionType: "visible" as const,
+          sourceHubInstanceId: hubInstanceId,
+          lastSeenAt: p.lastSeenAt ? new Date(p.lastSeenAt) : null,
+          createdAt: now,
+          updatedAt: now,
+        }))
       )
-    );
+      .onConflictDoUpdate({
+        target: meshPeers.instanceId,
+        set: {
+          name: sql`CASE WHEN ${meshPeers.connectionType} = 'visible' THEN EXCLUDED.name ELSE ${meshPeers.name} END`,
+          status: sql`CASE WHEN ${meshPeers.connectionType} = 'visible' THEN EXCLUDED.status ELSE ${meshPeers.status} END`,
+          sourceHubInstanceId: sql`CASE WHEN ${meshPeers.connectionType} = 'visible' THEN EXCLUDED.source_hub_instance_id ELSE ${meshPeers.sourceHubInstanceId} END`,
+          lastSeenAt: sql`CASE WHEN ${meshPeers.connectionType} = 'visible' THEN EXCLUDED.last_seen_at ELSE ${meshPeers.lastSeenAt} END`,
+          updatedAt: sql`CASE WHEN ${meshPeers.connectionType} = 'visible' THEN EXCLUDED.updated_at ELSE ${meshPeers.updatedAt} END`,
+        },
+      });
+
+    // Prune visible peers sourced from this hub that are no longer in the
+    // manifest. Scoped to this hub's entries only — other hubs' visible peers
+    // are untouched, which prevents heartbeats from one hub silently removing
+    // peers registered through another hub.
+    await tx
+      .delete(meshPeers)
+      .where(
+        and(
+          eq(meshPeers.connectionType, "visible"),
+          eq(meshPeers.sourceHubInstanceId, hubInstanceId),
+          notInArray(meshPeers.instanceId, instanceIds)
+        )
+      );
+  });
 }

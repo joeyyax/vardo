@@ -27,6 +27,7 @@ export const meshPeers = pgTable("mesh_peer", {
   tokenHash: text("token_hash").unique(), // SHA-256 hash of the token we gave this peer (inbound auth)
   outboundToken: text("outbound_token"), // token the peer gave us for calling their API (outbound auth)
   connectionType: meshPeerConnectionTypeEnum("connection_type").notNull().default("direct"), // direct = WireGuard tunnel, visible = seen through hub manifest
+  sourceHubInstanceId: text("source_hub_instance_id"), // for visible peers: instanceId of the hub that provided this entry
   lastSeenAt: timestamp("last_seen_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
