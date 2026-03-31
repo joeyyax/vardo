@@ -62,7 +62,6 @@ function parseResourceLimits(svc: ComposeService): {
  */
 function parseServiceVolumes(
   svc: ComposeService,
-  composeVolumes?: Record<string, unknown>
 ): { name: string; mountPath: string }[] {
   if (!svc.volumes) return [];
 
@@ -174,7 +173,7 @@ export async function syncComposeServices(opts: {
       const containerName = `${parentAppName}-${serviceName}-1`;
       const displayName = humanizeServiceName(serviceName);
       const { cpuLimit, memoryLimit } = parseResourceLimits(svc);
-      const volumes = parseServiceVolumes(svc, compose.volumes);
+      const volumes = parseServiceVolumes(svc);
 
       // Map compose depends_on to child app names (prefixed with parent).
       // depends_on may be a string[] or an object keyed by service name.
@@ -201,6 +200,7 @@ export async function syncComposeServices(opts: {
             memoryLimit,
             persistentVolumes: volumes.length > 0 ? volumes : null,
             dependsOn,
+            projectId,
             updatedAt: new Date(),
           })
           .where(eq(apps.id, existing.id));
