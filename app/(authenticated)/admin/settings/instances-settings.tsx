@@ -393,15 +393,19 @@ export function InstancesSettings() {
                         />
                         <span className="sr-only">{peer.status === "online" ? "Online" : "Offline"}</span>
                         <div className="min-w-0">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
                             <p className="text-sm font-medium truncate">
                               {peer.name}
                             </p>
-                            <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 shrink-0">
                               {peer.type}
                             </Badge>
                             {peer.connectionType === "visible" && (
-                              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                              <Badge
+                                variant="secondary"
+                                className="text-[10px] px-1.5 py-0 shrink-0"
+                                title="Seen through hub — no direct tunnel"
+                              >
                                 via hub
                               </Badge>
                             )}
