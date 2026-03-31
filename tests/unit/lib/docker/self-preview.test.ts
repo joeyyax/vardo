@@ -190,7 +190,7 @@ describe("buildPreviewCompose", () => {
     expect(content).toContain("traefik.http.services.vardo-pr-42.loadbalancer.server.port=3000");
   });
 
-  it("references the vardo-network as external", () => {
+  it("references the default vardo-network as external when VARDO_NETWORK is unset", () => {
     const content = buildPreviewCompose({ domain: "vardo-pr-1.example.com", routerName: "vardo-pr-1" });
     expect(content).toContain("vardo-network");
     expect(content).toContain("external: true");
@@ -583,5 +583,69 @@ describe("cleanupStaleSelfPreviews", () => {
 
     const result = await cleanupStaleSelfPreviews(2); // 2-hour threshold
     expect(result).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// VARDO_NETWORK — module-level validation and env var propagation
+//
+// VARDO_NETWORK is read and validated at module load time, so testing requires
+// vi.resetModules() + dynamic re-import to see the effect of different env values.
+// ---------------------------------------------------------------------------
+
+describe("VARDO_NETWORK", () => {
+  let savedVardoNetwork: string | undefined;
+
+  beforeEach(() => {
+    savedVardoNetwork = process.env.VARDO_NETWORK;
+  });
+
+  afterEach(() => {
+    if (savedVardoNetwork === undefined) {
+      delete process.env.VARDO_NETWORK;
+    } else {
+      process.env.VARDO_NETWORK = savedVardoNetwork;
+    }
+    vi.resetModules();
+  });
+
+  it("throws at module load when VARDO_NETWORK contains YAML-special characters", async () => {
+    process.env.VARDO_NETWORK = "bad:network";
+    vi.resetModules();
+    await expect(import("@/lib/docker/self-preview")).rejects.toThrow(/Invalid VARDO_NETWORK/);
+  });
+
+  it("throws at module load when VARDO_NETWORK contains a newline", async () => {
+    process.env.VARDO_NETWORK = "evil\ninjected";
+    vi.resetModules();
+    await expect(import("@/lib/docker/self-preview")).rejects.toThrow(/Invalid VARDO_NETWORK/);
+  });
+
+  it("throws at module load when VARDO_NETWORK starts with a non-alphanumeric character", async () => {
+    process.env.VARDO_NETWORK = "-bad-start";
+    vi.resetModules();
+    await expect(import("@/lib/docker/self-preview")).rejects.toThrow(/Invalid VARDO_NETWORK/);
+  });
+
+  it("accepts the default vardo-network when VARDO_NETWORK is unset", async () => {
+    delete process.env.VARDO_NETWORK;
+    vi.resetModules();
+    const mod = await import("@/lib/docker/self-preview");
+    const content = mod.buildPreviewCompose({ domain: "test.example.com", routerName: "test" });
+    expect(content).toContain("vardo-network");
+    expect(content).toContain("external: true");
+  });
+
+  it("uses the VARDO_NETWORK value in both network positions in compose output", async () => {
+    process.env.VARDO_NETWORK = "my-custom-net";
+    vi.resetModules();
+    const mod = await import("@/lib/docker/self-preview");
+    const content = mod.buildPreviewCompose({ domain: "test.example.com", routerName: "test" });
+    // Appears as both the network reference under services.vardo.networks and
+    // the top-level network key under networks:
+    const occurrences = content.split("my-custom-net").length - 1;
+    expect(occurrences).toBeGreaterThanOrEqual(2);
+    expect(content).toContain("external: true");
+    expect(content).not.toContain("vardo-network");
   });
 });
