@@ -10,7 +10,7 @@ import { nanoid } from "nanoid";
 import { publishEvent, appChannel } from "@/lib/events";
 import { execFile, spawn as nodeSpawn} from "child_process";
 import { promisify } from "util";
-import { mkdir, writeFile, readFile, rm, access } from "fs/promises";
+import { mkdir, writeFile, readFile, rm } from "fs/promises";
 import { join, resolve } from "path";
 import {
   generateComposeForImage,
@@ -18,7 +18,6 @@ import {
   injectNetwork,
   resolveBackendProtocol,
   narrowBackendProtocol,
-  injectResourceLimits,
   injectGpuDevices,
   isAnonymousVolume,
   parseCompose,
@@ -28,6 +27,7 @@ import {
   stripTraefikLabels,
   stripVardoInjections,
   buildVardoOverlay,
+  slotComposeFiles,
   type ComposeFile,
 } from "./compose";
 import { ensureNetwork, detectExposedPorts, listContainers, inspectContainer, removeContainer, stripDockerProjectPrefix, listImages, removeImage, pruneImages, pruneBuildCache } from "./client";
@@ -88,23 +88,6 @@ const PROJECTS_DIR = resolve(process.env.VARDO_PROJECTS_DIR || "./.host/projects
 const NETWORK_NAME = "vardo-network";
 
 const DEFAULT_HEALTH_CHECK_TIMEOUT_MS = 60000;
-
-/**
- * Return the compose -f arguments for a slot directory, using both
- * docker-compose.yml and docker-compose.vardo.yml when the overlay exists.
- * Falls back to just docker-compose.yml for slots deployed before the split
- * was introduced (backward compat).
- */
-async function slotComposeFiles(slotDir: string): Promise<string[]> {
-  const base = join(slotDir, "docker-compose.yml");
-  const overlay = join(slotDir, "docker-compose.vardo.yml");
-  try {
-    await access(overlay);
-    return ["-f", base, "-f", overlay];
-  } catch {
-    return ["-f", base];
-  }
-}
 
 /**
  * Parse a Docker duration string (e.g. "1m", "30s", "1m30s", "500ms") to milliseconds.
@@ -686,10 +669,6 @@ export async function runDeployment(
     // existing Traefik/vardo labels that came in via import — they will be
     // regenerated fresh in the overlay.
     const bareCompose = stripVardoInjections(compose, NETWORK_NAME);
-
-    if (app.cpuLimit || app.memoryLimit) {
-      compose = injectResourceLimits(compose, { cpuLimit: app.cpuLimit, memoryLimit: app.memoryLimit });
-    }
 
     if (app.gpuEnabled) {
       compose = injectGpuDevices(compose);

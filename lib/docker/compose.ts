@@ -6,6 +6,8 @@
 // and swap the implementations of `composeToYaml` and `parseCompose`.
 // ---------------------------------------------------------------------------
 
+import { access } from "fs/promises";
+import { join } from "path";
 import type { ContainerRuntimeOptions } from "./client";
 
 // ---------------------------------------------------------------------------
@@ -576,6 +578,27 @@ export function stripTraefikLabels(compose: ComposeFile): ComposeFile {
     updatedServices[svcName] = { ...svc, labels: stripped };
   }
   return { ...compose, services: updatedServices };
+}
+
+// ---------------------------------------------------------------------------
+// Slot compose file helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Return the compose -f arguments for a slot directory, using both
+ * docker-compose.yml and docker-compose.vardo.yml when the overlay exists.
+ * Falls back to just docker-compose.yml for slots deployed before the split
+ * was introduced (backward compat).
+ */
+export async function slotComposeFiles(slotDir: string): Promise<string[]> {
+  const base = join(slotDir, "docker-compose.yml");
+  const overlay = join(slotDir, "docker-compose.vardo.yml");
+  try {
+    await access(overlay);
+    return ["-f", base, "-f", overlay];
+  } catch {
+    return ["-f", base];
+  }
 }
 
 // ---------------------------------------------------------------------------

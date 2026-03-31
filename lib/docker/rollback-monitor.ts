@@ -4,8 +4,8 @@ import { eq } from "drizzle-orm";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { join, resolve } from "path";
-import { access } from "fs/promises";
 import { listContainers, inspectContainer } from "./client";
+import { slotComposeFiles } from "./compose";
 import { publishEvent, appChannel } from "@/lib/events";
 import { recordActivity } from "@/lib/activity";
 import { logger } from "@/lib/logger";
@@ -15,17 +15,6 @@ const log = logger.child("rollback-monitor");
 const execFileAsync = promisify(execFile);
 const PROJECTS_DIR = resolve(process.env.VARDO_PROJECTS_DIR || "./.host/projects");
 const POLL_INTERVAL_MS = 5000;
-
-async function slotComposeFiles(slotDir: string): Promise<string[]> {
-  const base = join(slotDir, "docker-compose.yml");
-  const overlay = join(slotDir, "docker-compose.vardo.yml");
-  try {
-    await access(overlay);
-    return ["-f", base, "-f", overlay];
-  } catch {
-    return ["-f", base];
-  }
-}
 
 /** In-memory set of app IDs currently being monitored. Prevents concurrent monitors. */
 const activeMonitors = new Set<string>();
