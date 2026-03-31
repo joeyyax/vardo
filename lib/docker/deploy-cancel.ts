@@ -286,7 +286,7 @@ export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
   // Guarantees at most VARDO_MAX_DEPLOY_CONCURRENCY deploys run at once
   // across all apps. Deploys beyond the limit wait in FIFO order until a
   // slot opens. The queue is backed by Redis and survives process restarts
-  // (the sweeper marks orphaned queued records as failed on recovery).
+  // (the sweeper marks orphaned queued records as cancelled on recovery).
   // ------------------------------------------------------------------
   let concurrencySlotHeld = false;
   try {
