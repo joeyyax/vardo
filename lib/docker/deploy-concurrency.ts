@@ -47,7 +47,8 @@ const POLL_INTERVAL_MS = 250;
 const QUEUE_TIMEOUT_MS = 9 * 60 * 1000; // 9 minutes
 
 export function getConcurrencyLimit(): number {
-  return Math.max(1, parseInt(process.env.VARDO_MAX_DEPLOY_CONCURRENCY ?? "2", 10));
+  const parsed = parseInt(process.env.VARDO_MAX_DEPLOY_CONCURRENCY ?? "2", 10);
+  return Math.max(1, isNaN(parsed) ? 2 : parsed);
 }
 
 // ---------------------------------------------------------------------------
@@ -163,8 +164,9 @@ export async function waitForConcurrencySlot(
         String(limit),
       );
       if (result === 1) return; // Slot acquired
-    } catch {
+    } catch (err) {
       // Redis hiccup — proceed without enforcement rather than blocking forever
+      log.warn("Redis error while polling for concurrency slot — proceeding without enforcement:", err);
       return;
     }
 
@@ -179,8 +181,8 @@ export async function waitForConcurrencySlot(
 export async function releaseConcurrencySlot(): Promise<void> {
   try {
     await redis.eval(LUA_RELEASE, 1, ACTIVE_KEY);
-  } catch {
-    // Non-fatal — the sweeper will reconcile if the counter drifts
+  } catch (err) {
+    log.warn("Failed to release concurrency slot — counter may drift until next reconciliation:", err);
   }
 }
 
@@ -191,8 +193,8 @@ export async function releaseConcurrencySlot(): Promise<void> {
 export async function removeFromQueue(deploymentId: string): Promise<void> {
   try {
     await redis.lrem(QUEUE_KEY, 0, deploymentId);
-  } catch {
-    // Non-fatal
+  } catch (err) {
+    log.warn(`Failed to remove deployment ${deploymentId} from concurrency queue:`, err);
   }
 }
 
@@ -227,6 +229,28 @@ export async function getConcurrencyState(): Promise<{
 }
 
 /**
+ * Reconcile the Redis queue against a set of deployment IDs that are legitimately
+ * queued or running. Removes any orphaned entries — e.g. an ID pushed by
+ * enqueueAndTryAcquire whose subsequent eval threw, leaving a ghost at the queue
+ * head that would block all subsequent deploys until the 9-min poll timeout.
+ *
+ * Safe to call at any time — only removes entries not present in activeIds.
+ */
+export async function reconcileQueue(activeIds: Set<string>): Promise<void> {
+  try {
+    const queued = await redis.lrange(QUEUE_KEY, 0, -1);
+    for (const id of queued) {
+      if (!activeIds.has(id)) {
+        await redis.lrem(QUEUE_KEY, 0, id);
+        log.warn(`Removed orphaned concurrency queue entry for deployment ${id}`);
+      }
+    }
+  } catch (err) {
+    log.warn("Failed to reconcile concurrency queue:", err);
+  }
+}
+
+/**
  * Reconcile the active counter against the number of deployments currently in
  * "running" status in the database. Called by the deploy sweeper after it cleans
  * up stuck deployments to prevent the counter from drifting above the true count.
@@ -250,7 +274,7 @@ export async function reconcileActiveCounter(runningDeployCount: number): Promis
         await redis.set(ACTIVE_KEY, String(expected));
       }
     }
-  } catch {
-    // Non-fatal
+  } catch (err) {
+    log.warn("Failed to reconcile active deploy counter:", err);
   }
 }

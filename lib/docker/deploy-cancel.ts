@@ -27,6 +27,10 @@
 // ---------------------------------------------------------------------------
 
 import { redis } from "@/lib/redis";
+import { db } from "@/lib/db";
+import { deployments } from "@/lib/db/schema/apps";
+import { eq, and } from "drizzle-orm";
+import { logger } from "@/lib/logger";
 import { createDeployment, runDeployment } from "./deploy";
 import type { DeployOpts, DeployResult, DeployStage } from "./deploy";
 import {
@@ -36,6 +40,8 @@ import {
   removeFromQueue,
   getConcurrencyLimit,
 } from "./deploy-concurrency";
+
+const log = logger.child("deploy-cancel");
 
 // ---------------------------------------------------------------------------
 // Redis key helpers
@@ -337,9 +343,23 @@ export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
     return result;
   } catch (err) {
     // If the deploy never started (e.g. queue timeout or cancelled while waiting),
-    // remove from the queue so the slot isn't leaked.
+    // remove from the queue so the slot isn't leaked and immediately update the
+    // DB record to cancelled. Without this the record stays in "queued" status
+    // until sweepStuckQueuedDeployments fires (~30 min default), leaving users
+    // with no real-time feedback.
     if (!concurrencySlotHeld) {
       await removeFromQueue(newDeploymentId).catch(() => {});
+      const now = new Date();
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      await db
+        .update(deployments)
+        .set({
+          status: "cancelled",
+          log: `[${now.toISOString()}] [CANCELLED] ${errorMessage}`,
+          finishedAt: now,
+        })
+        .where(and(eq(deployments.id, newDeploymentId), eq(deployments.status, "queued")))
+        .catch((dbErr) => log.warn("Failed to update cancelled deployment status:", dbErr));
     }
     throw err;
   } finally {

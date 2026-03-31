@@ -4,8 +4,8 @@ import { apps } from "@/lib/db/schema/apps";
 import { publishEvent, appChannel } from "@/lib/events";
 import { acquireLock } from "@/lib/redis-lock";
 import { logger } from "@/lib/logger";
-import { eq, and, lt, count } from "drizzle-orm";
-import { reconcileActiveCounter, removeFromQueue } from "@/lib/docker/deploy-concurrency";
+import { eq, and, lt, count, or } from "drizzle-orm";
+import { reconcileActiveCounter, reconcileQueue, removeFromQueue } from "@/lib/docker/deploy-concurrency";
 
 const log = logger.child("deploy-sweeper");
 
@@ -32,6 +32,27 @@ export async function sweepStuckDeployments(): Promise<void> {
         lt(deployments.startedAt, cutoff),
       ),
     );
+
+  // Always reconcile the concurrency counter — the counter can drift whenever
+  // a process crashes mid-deploy, not just when a stuck deployment is found.
+  // Running this unconditionally ensures the counter self-heals even when all
+  // deploys finish cleanly but a release failed silently.
+  try {
+    const activeDeployments = await db
+      .select({ id: deployments.id, status: deployments.status })
+      .from(deployments)
+      .where(or(eq(deployments.status, "running"), eq(deployments.status, "queued")));
+
+    const runningCount = activeDeployments.filter((d) => d.status === "running").length;
+    await reconcileActiveCounter(runningCount);
+
+    // Reconcile the Redis queue against DB state — removes orphaned entries left
+    // by a partial Redis failure (rpush succeeded but subsequent eval threw).
+    const activeIds = new Set(activeDeployments.map((d) => d.id));
+    await reconcileQueue(activeIds);
+  } catch (err) {
+    log.warn("Failed to reconcile deploy concurrency state:", err);
+  }
 
   if (stuck.length === 0) return;
 
@@ -112,18 +133,6 @@ export async function sweepStuckDeployments(): Promise<void> {
     }
   }
 
-  // After sweeping stuck running deploys, reconcile the concurrency counter
-  // against the true number of running deployments so the counter doesn't
-  // drift if a process crashed mid-deploy without releasing its slot.
-  try {
-    const [{ value: runningCount }] = await db
-      .select({ value: count() })
-      .from(deployments)
-      .where(eq(deployments.status, "running"));
-    await reconcileActiveCounter(runningCount);
-  } catch (err) {
-    log.warn("Failed to reconcile deploy concurrency counter:", err);
-  }
 }
 
 /**
@@ -183,6 +192,38 @@ export async function sweepStuckQueuedDeployments(): Promise<void> {
 
       // Remove from the Redis queue in case the entry is still there
       await removeFromQueue(deploy.id).catch(() => {});
+
+      // Notify connected SSE clients so the UI updates in real-time
+      publishEvent(appChannel(deploy.appId), {
+        event: "deploy:complete",
+        status: "cancelled",
+        deploymentId: deploy.id,
+        success: false,
+        durationMs,
+      }).catch(() => {});
+
+      // Emit notification
+      try {
+        const { emit } = await import("@/lib/notifications/dispatch");
+        const app = await db.query.apps.findFirst({
+          where: eq(apps.id, deploy.appId),
+          columns: { organizationId: true, name: true, displayName: true },
+        });
+        if (app) {
+          const projectName = app.displayName || app.name;
+          emit(app.organizationId, {
+            type: "deploy.failed",
+            title: `Deploy cancelled: ${projectName}`,
+            message: `Deployment was stuck in the queue for ${queueTimeoutMinutes} minutes and was cancelled.`,
+            projectName,
+            appId: deploy.appId,
+            deploymentId: deploy.id,
+            errorMessage: `Deployment stuck in queue for ${queueTimeoutMinutes} minutes`,
+          });
+        }
+      } catch {
+        // notification failure is non-fatal
+      }
 
       log.info(
         `Cancelled queued deployment ${deploy.id} (app ${deploy.appId}) — stuck in queue for ${queueTimeoutMinutes}m`,
