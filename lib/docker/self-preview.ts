@@ -20,8 +20,8 @@ import { mkdir, writeFile, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import { db } from "@/lib/db";
-import { apps } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { apps, organizations } from "@/lib/db/schema";
+import { eq, and, asc } from "drizzle-orm";
 import { getInstanceConfig } from "@/lib/system-settings";
 import { logger } from "@/lib/logger";
 
@@ -58,13 +58,29 @@ export type VardoPreviewResult = {
 /**
  * Find an app that is system-managed and linked to the given GitHub repo.
  * Returns null if no matching app exists.
+ *
+ * Scoped to the first-created organization — the same org selfManagement
+ * registers apps under (see self-register.ts). This matches the org-scoped
+ * pattern used everywhere else and ensures results never cross tenant
+ * boundaries if the partial unique index is ever relaxed.
  */
 export async function getSystemManagedApp(repoFullName: string) {
   const gitUrl = `https://github.com/${repoFullName}.git`;
+
+  // selfManagement registers apps under the first-created organization.
+  const [org] = await db
+    .select({ id: organizations.id })
+    .from(organizations)
+    .orderBy(asc(organizations.createdAt))
+    .limit(1);
+
+  if (!org) return null;
+
   return db.query.apps.findFirst({
     where: and(
       eq(apps.gitUrl, gitUrl),
-      eq(apps.isSystemManaged, true)
+      eq(apps.isSystemManaged, true),
+      eq(apps.organizationId, org.id)
     ),
   });
 }
@@ -98,10 +114,26 @@ export async function createVardoPreview(
     throw new Error(`Invalid branch name: ${branch}`);
   }
 
+  // Validate repoFullName before constructing the clone URL.
+  // HMAC verification upstream makes exploitation unlikely, but this function
+  // runs git clone and manages temp dirs — defensive validation is appropriate.
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repoFullName)) {
+    throw new Error(`Invalid repo name: ${repoFullName}`);
+  }
+
   const projectName = `${PREVIEW_PROJECT_PREFIX}-${prNumber}`;
   const previewDir = join(tmpdir(), projectName);
 
   const { baseDomain } = await getInstanceConfig();
+
+  // Validate baseDomain before string-concatenating it into YAML labels.
+  // baseDomain is admin-configured, so direct user exploitation isn't possible,
+  // but a stray backtick, newline, or YAML-special char would produce malformed
+  // compose output.
+  if (!/^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$/.test(baseDomain)) {
+    throw new Error(`Invalid baseDomain in instance config: ${baseDomain}`);
+  }
+
   const domain = `vardo-pr-${prNumber}.${baseDomain}`;
 
   // Tear down any existing preview for this PR before rebuilding
@@ -267,17 +299,16 @@ async function _teardown(projectName: string): Promise<void> {
  * are intentionally excluded so PR contributors cannot access production
  * secrets or forge session tokens.
  *
- * SECURITY NOTE — production database access:
- * DATABASE_URL and REDIS_URL point at the live production database. This is an
- * accepted architectural tradeoff: the preview container needs a working DB to
- * render the UI. ENCRYPTION_MASTER_KEY and BETTER_AUTH_SECRET are excluded, so
- * stored secrets stay encrypted and session tokens cannot be forged. However, a
- * malicious PR author could still read or corrupt production data.
+ * DATABASE isolation:
+ * Set PREVIEW_DATABASE_URL (and optionally PREVIEW_REDIS_URL) to point preview
+ * containers at an isolated database — a read-only replica, a seeded sandbox,
+ * or a separate Postgres role with restricted permissions. This is strongly
+ * recommended when selfManagement is enabled.
  *
- * Mitigations required when selfManagement is enabled:
- *   - Restrict repository write access (PR creation) to trusted contributors.
- *   - Do NOT use selfManagement on public repositories.
- *   - Consider a read-replica DATABASE_URL if the threat model demands it.
+ * If PREVIEW_DATABASE_URL is not set, DATABASE_URL (production) is used as a
+ * fallback. This exposes the production database to preview container code.
+ * Only acceptable when PR access is restricted to trusted contributors and the
+ * repo is not public. See the selfManagement feature docs for details.
  */
 export function buildEnvFile(): string {
   const lines = [
@@ -285,21 +316,19 @@ export function buildEnvFile(): string {
     "SKIP_MIGRATIONS=true",
   ];
 
-  // Only pass through what a frontend-only preview needs.
+  // Prefer isolated preview DB/cache; fall back to production if not configured.
   // ENCRYPTION_MASTER_KEY and BETTER_AUTH_SECRET are intentionally omitted —
   // preview instances do not need to decrypt stored secrets or issue sessions.
-  const passthroughKeys = [
-    "DATABASE_URL",
-    "REDIS_URL",
-  ];
+  const dbUrl = process.env.PREVIEW_DATABASE_URL || process.env.DATABASE_URL;
+  if (dbUrl) {
+    const sanitized = dbUrl.replace(/\r?\n/g, " ");
+    lines.push(`DATABASE_URL=${sanitized}`);
+  }
 
-  for (const key of passthroughKeys) {
-    const value = process.env[key];
-    if (value) {
-      // Sanitize values to prevent newline injection into the env file.
-      const sanitized = value.replace(/\r?\n/g, " ");
-      lines.push(`${key}=${sanitized}`);
-    }
+  const redisUrl = process.env.PREVIEW_REDIS_URL || process.env.REDIS_URL;
+  if (redisUrl) {
+    const sanitized = redisUrl.replace(/\r?\n/g, " ");
+    lines.push(`REDIS_URL=${sanitized}`);
   }
 
   return lines.join("\n") + "\n";

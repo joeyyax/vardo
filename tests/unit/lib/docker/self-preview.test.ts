@@ -5,12 +5,19 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // ---------------------------------------------------------------------------
 
 const { dbMock } = vi.hoisted(() => {
+  // Builder chain returned by db.select()
+  const limitFn = vi.fn(async () => [{ id: "org-1" }]);
+  const orderByFn = vi.fn(() => ({ limit: limitFn }));
+  const fromFn = vi.fn(() => ({ orderBy: orderByFn }));
+
   const dbMock = {
     query: {
       apps: {
         findFirst: vi.fn(),
       },
     },
+    select: vi.fn(() => ({ from: fromFn })),
+    _internals: { limitFn, orderByFn, fromFn },
   };
   return { dbMock };
 });
@@ -50,7 +57,7 @@ describe("buildEnvFile", () => {
   const savedEnv: Record<string, string | undefined> = {};
 
   beforeEach(() => {
-    for (const key of ["DATABASE_URL", "REDIS_URL", "ENCRYPTION_MASTER_KEY", "BETTER_AUTH_SECRET"]) {
+    for (const key of ["DATABASE_URL", "REDIS_URL", "PREVIEW_DATABASE_URL", "PREVIEW_REDIS_URL", "ENCRYPTION_MASTER_KEY", "BETTER_AUTH_SECRET"]) {
       savedEnv[key] = process.env[key];
       delete process.env[key];
     }
@@ -106,6 +113,28 @@ describe("buildEnvFile", () => {
     const content = buildEnvFile();
     expect(content).not.toContain("DATABASE_URL");
     expect(content).not.toContain("REDIS_URL");
+  });
+
+  it("prefers PREVIEW_DATABASE_URL over DATABASE_URL", () => {
+    process.env.DATABASE_URL = "postgres://prod/db";
+    process.env.PREVIEW_DATABASE_URL = "postgres://preview/db";
+    const content = buildEnvFile();
+    expect(content).toContain("DATABASE_URL=postgres://preview/db");
+    expect(content).not.toContain("postgres://prod/db");
+  });
+
+  it("prefers PREVIEW_REDIS_URL over REDIS_URL", () => {
+    process.env.REDIS_URL = "redis://prod:6379";
+    process.env.PREVIEW_REDIS_URL = "redis://preview:6379";
+    const content = buildEnvFile();
+    expect(content).toContain("REDIS_URL=redis://preview:6379");
+    expect(content).not.toContain("redis://prod:6379");
+  });
+
+  it("uses DATABASE_URL when PREVIEW_DATABASE_URL is not set", () => {
+    process.env.DATABASE_URL = "postgres://prod/db";
+    const content = buildEnvFile();
+    expect(content).toContain("DATABASE_URL=postgres://prod/db");
   });
 
   it("sanitizes newlines in values to prevent env file injection", () => {
@@ -167,12 +196,28 @@ describe("buildPreviewCompose", () => {
 describe("getSystemManagedApp", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default: org exists
+    const limitFn = vi.fn(async () => [{ id: "org-1" }]);
+    const orderByFn = vi.fn(() => ({ limit: limitFn }));
+    const fromFn = vi.fn(() => ({ orderBy: orderByFn }));
+    dbMock.select.mockReturnValue({ from: fromFn });
   });
 
   it("queries by git_url constructed from repoFullName", async () => {
     dbMock.query.apps.findFirst.mockResolvedValue(null);
     await getSystemManagedApp("acme/vardo");
     expect(dbMock.query.apps.findFirst).toHaveBeenCalledOnce();
+  });
+
+  it("returns null when no organization exists", async () => {
+    const limitFn = vi.fn(async () => []);
+    const orderByFn = vi.fn(() => ({ limit: limitFn }));
+    const fromFn = vi.fn(() => ({ orderBy: orderByFn }));
+    dbMock.select.mockReturnValue({ from: fromFn });
+
+    const result = await getSystemManagedApp("acme/vardo");
+    expect(result).toBeNull();
+    expect(dbMock.query.apps.findFirst).not.toHaveBeenCalled();
   });
 
   it("returns null when no matching app exists", async () => {
@@ -237,5 +282,34 @@ describe("createVardoPreview input validation", () => {
     await expect(
       createVardoPreview({ prNumber: NaN, branch: "feat/test", repoFullName: "acme/vardo" })
     ).rejects.toThrow("Invalid PR number");
+  });
+
+  it("rejects repoFullName missing a slash", async () => {
+    await expect(
+      createVardoPreview({ prNumber: 42, branch: "feat/test", repoFullName: "nodash" })
+    ).rejects.toThrow("Invalid repo name");
+  });
+
+  it("rejects repoFullName with shell-special characters", async () => {
+    await expect(
+      createVardoPreview({ prNumber: 42, branch: "feat/test", repoFullName: "acme/vardo;evil" })
+    ).rejects.toThrow("Invalid repo name");
+    await expect(
+      createVardoPreview({ prNumber: 42, branch: "feat/test", repoFullName: "acme/vardo\nevil" })
+    ).rejects.toThrow("Invalid repo name");
+  });
+
+  it("rejects repoFullName with spaces", async () => {
+    await expect(
+      createVardoPreview({ prNumber: 42, branch: "feat/test", repoFullName: "acme/my repo" })
+    ).rejects.toThrow("Invalid repo name");
+  });
+
+  it("rejects an invalid baseDomain from instance config", async () => {
+    const { getInstanceConfig } = await import("@/lib/system-settings");
+    vi.mocked(getInstanceConfig).mockResolvedValueOnce({ baseDomain: "evil\ndomain.com" } as never);
+    await expect(
+      createVardoPreview({ prNumber: 42, branch: "feat/test", repoFullName: "acme/vardo" })
+    ).rejects.toThrow("Invalid baseDomain");
   });
 });
