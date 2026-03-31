@@ -6,6 +6,8 @@
 // and swap the implementations of `composeToYaml` and `parseCompose`.
 // ---------------------------------------------------------------------------
 
+import { access } from "fs/promises";
+import { join } from "path";
 import type { ContainerRuntimeOptions } from "./client";
 
 // ---------------------------------------------------------------------------
@@ -576,6 +578,184 @@ export function stripTraefikLabels(compose: ComposeFile): ComposeFile {
     updatedServices[svcName] = { ...svc, labels: stripped };
   }
   return { ...compose, services: updatedServices };
+}
+
+// ---------------------------------------------------------------------------
+// Slot compose file helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Return the compose -f arguments for a slot directory, using both
+ * docker-compose.yml and docker-compose.vardo.yml when the overlay exists.
+ * Falls back to just docker-compose.yml for slots deployed before the split
+ * was introduced (backward compat).
+ */
+export async function slotComposeFiles(slotDir: string): Promise<string[]> {
+  const base = join(slotDir, "docker-compose.yml");
+  const overlay = join(slotDir, "docker-compose.vardo.yml");
+  try {
+    await access(overlay);
+    return ["-f", base, "-f", overlay];
+  } catch {
+    return ["-f", base];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Vardo overlay generation
+// ---------------------------------------------------------------------------
+
+const VARDO_LABEL_PREFIX = "vardo.";
+
+/**
+ * Strip all Vardo-injected fields from a compose file, producing the bare user
+ * compose. Removes Traefik labels, vardo.* labels, and the Vardo network from
+ * services. Used to write the user-facing docker-compose.yml that can be run
+ * standalone without Vardo.
+ * Returns a new ComposeFile — does not mutate the original.
+ */
+export function stripVardoInjections(
+  compose: ComposeFile,
+  networkName: string = "vardo-network",
+): ComposeFile {
+  const updatedServices: Record<string, ComposeService> = {};
+  for (const [name, svc] of Object.entries(compose.services)) {
+    const strippedLabels = svc.labels
+      ? Object.fromEntries(
+          Object.entries(svc.labels).filter(
+            ([k]) => !k.startsWith(TRAEFIK_LABEL_PREFIX) && !k.startsWith(VARDO_LABEL_PREFIX),
+          ),
+        )
+      : undefined;
+    const strippedNetworks = svc.networks?.filter((n) => n !== networkName);
+    updatedServices[name] = {
+      ...svc,
+      ...(strippedLabels && Object.keys(strippedLabels).length > 0
+        ? { labels: strippedLabels }
+        : { labels: undefined }),
+      ...(strippedNetworks && strippedNetworks.length > 0
+        ? { networks: strippedNetworks }
+        : { networks: undefined }),
+    };
+  }
+
+  const strippedTopLevelNetworks =
+    compose.networks &&
+    Object.fromEntries(
+      Object.entries(compose.networks as Record<string, unknown>).filter(
+        ([k]) => k !== networkName,
+      ),
+    );
+
+  return {
+    ...compose,
+    services: updatedServices,
+    ...(strippedTopLevelNetworks && Object.keys(strippedTopLevelNetworks).length > 0
+      ? { networks: strippedTopLevelNetworks }
+      : { networks: undefined }),
+  };
+}
+
+/**
+ * Build the Vardo overlay compose file containing only Vardo-injected config:
+ * Traefik labels, vardo.* labels, vardo-network, resource limits from app
+ * settings, GPU devices, and externalized volume declarations.
+ *
+ * This file is merged with the bare user compose at deploy time:
+ *   docker compose -f docker-compose.yml -f docker-compose.vardo.yml up -d
+ */
+export function buildVardoOverlay(opts: {
+  fullCompose: ComposeFile;
+  networkName: string;
+  cpuLimit?: number | null;
+  memoryLimit?: number | null;
+  gpuEnabled?: boolean;
+  externalVolumes?: Record<string, unknown>;
+  bareVolumeNames?: string[];
+}): ComposeFile {
+  const {
+    fullCompose,
+    networkName,
+    cpuLimit,
+    memoryLimit,
+    gpuEnabled,
+    externalVolumes = {},
+    bareVolumeNames = [],
+  } = opts;
+
+  const overlayServices: Record<string, ComposeService> = {};
+  for (const [name, svc] of Object.entries(fullCompose.services)) {
+    const vardoLabels = svc.labels
+      ? Object.fromEntries(
+          Object.entries(svc.labels).filter(
+            ([k]) => k.startsWith(TRAEFIK_LABEL_PREFIX) || k.startsWith(VARDO_LABEL_PREFIX),
+          ),
+        )
+      : undefined;
+
+    const vardoNetworks = svc.networks?.includes(networkName) ? [networkName] : undefined;
+
+    const overlayService: ComposeService = { name };
+
+    if (vardoLabels && Object.keys(vardoLabels).length > 0) {
+      overlayService.labels = vardoLabels;
+    }
+    if (vardoNetworks) {
+      overlayService.networks = vardoNetworks;
+    }
+
+    // App-level resource limits set via Vardo UI (not from the user's compose)
+    if (cpuLimit || memoryLimit) {
+      const limits: ResourceLimits = {};
+      if (cpuLimit) limits.cpus = String(cpuLimit);
+      if (memoryLimit) limits.memory = `${memoryLimit}M`;
+      overlayService.deploy = {
+        ...(overlayService.deploy ?? {}),
+        resources: {
+          ...(overlayService.deploy?.resources ?? {}),
+          limits: { ...(overlayService.deploy?.resources?.limits ?? {}), ...limits },
+        },
+      };
+    }
+
+    // GPU devices (Vardo UI setting)
+    if (gpuEnabled) {
+      const existingDevices = svc.deploy?.resources?.reservations?.devices ?? [];
+      const gpuDevices = existingDevices.filter((d) => d.capabilities?.includes("gpu"));
+      if (gpuDevices.length > 0) {
+        overlayService.deploy = {
+          ...(overlayService.deploy ?? {}),
+          resources: {
+            ...(overlayService.deploy?.resources ?? {}),
+            reservations: { devices: gpuDevices },
+          },
+        };
+      }
+    }
+
+    overlayServices[name] = overlayService;
+  }
+
+  // Include the vardo network declaration if any service uses it
+  const hasVardoNetwork = Object.values(fullCompose.services).some((svc) =>
+    svc.networks?.includes(networkName),
+  );
+
+  // Include externalized volume declarations for volumes that were in the
+  // user's original compose (bareVolumeNames). These override the user's
+  // bare declarations so Docker Compose uses the stable external volume.
+  const overlayVolumes: Record<string, unknown> = {};
+  for (const volName of bareVolumeNames) {
+    if (volName in externalVolumes) {
+      overlayVolumes[volName] = externalVolumes[volName];
+    }
+  }
+
+  return {
+    services: overlayServices,
+    ...(hasVardoNetwork ? { networks: { [networkName]: { external: true } } } : {}),
+    ...(Object.keys(overlayVolumes).length > 0 ? { volumes: overlayVolumes } : {}),
+  };
 }
 
 // ---------------------------------------------------------------------------
