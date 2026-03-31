@@ -10,8 +10,9 @@ const log = logger.child("mesh-heartbeat");
 
 // WireGuard Curve25519 public key — 32 bytes base64-encoded = 44 chars ending in =
 const WG_KEY_RE = /^[A-Za-z0-9+/]{43}=$/;
-// Bare IPv4 or IPv4 CIDR (e.g. 10.99.0.2 or 10.99.0.2/32)
-const IP_OR_CIDR_RE = /^\d{1,3}(\.\d{1,3}){3}(\/\d{1,2})?$/;
+// Bare IPv4 or IPv4 CIDR (e.g. 10.99.0.2 or 10.99.0.2/32) — octets validated 0-255
+const IP_OR_CIDR_RE =
+  /^(25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)(\.(25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)){3}(\/\d{1,2})?$/;
 
 type PeerManifestEntry = {
   id: string;
@@ -106,7 +107,7 @@ export async function sendHeartbeatToPeer(peerId: string): Promise<boolean> {
  * - All mutations run inside a single transaction to prevent races between
  *   concurrent heartbeat timers.
  */
-async function syncVisiblePeers(
+export async function syncVisiblePeers(
   peers: PeerManifestEntry[],
   hubInstanceId: string
 ): Promise<void> {
@@ -115,6 +116,10 @@ async function syncVisiblePeers(
   // Validate hub-provided fields before inserting — reject obviously malformed
   // entries to limit blast radius if a hub is misconfigured or compromised.
   const valid = peers.filter((p) => {
+    if (!p.instanceId || p.instanceId.length > 128) {
+      log.warn(`syncVisiblePeers: skipping peer — invalid instanceId`);
+      return false;
+    }
     if (!WG_KEY_RE.test(p.publicKey)) {
       log.warn(
         `syncVisiblePeers: skipping peer ${p.instanceId} — invalid publicKey`
@@ -183,7 +188,7 @@ async function syncVisiblePeers(
           type: p.type,
           status: p.status,
           internalIp: p.internalIp,
-          allowedIps: p.allowedIps ?? toCidr(p.internalIp),
+          allowedIps: p.allowedIps || toCidr(p.internalIp),
           publicKey: p.publicKey,
           endpoint: p.endpoint ?? null,
           connectionType: "visible" as const,
