@@ -90,8 +90,11 @@ export async function createVardoPreview(
     throw new Error(`Invalid PR number: ${prNumber}`);
   }
 
-  // Reject branch names that could be interpreted as git flags (option injection).
-  if (branch.startsWith("-")) {
+  // Allowlist branch name characters. Must start with an alphanumeric character
+  // (rules out git flag injection like --upload-pack) and only contain the chars
+  // that appear in real-world branch names. execFile already prevents shell
+  // injection, but an allowlist is a stronger guarantee.
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9/_.~-]*$/.test(branch)) {
     throw new Error(`Invalid branch name: ${branch}`);
   }
 
@@ -263,6 +266,18 @@ async function _teardown(projectName: string): Promise<void> {
  * required for the frontend-only preview — encryption keys and auth secrets
  * are intentionally excluded so PR contributors cannot access production
  * secrets or forge session tokens.
+ *
+ * SECURITY NOTE — production database access:
+ * DATABASE_URL and REDIS_URL point at the live production database. This is an
+ * accepted architectural tradeoff: the preview container needs a working DB to
+ * render the UI. ENCRYPTION_MASTER_KEY and BETTER_AUTH_SECRET are excluded, so
+ * stored secrets stay encrypted and session tokens cannot be forged. However, a
+ * malicious PR author could still read or corrupt production data.
+ *
+ * Mitigations required when selfManagement is enabled:
+ *   - Restrict repository write access (PR creation) to trusted contributors.
+ *   - Do NOT use selfManagement on public repositories.
+ *   - Consider a read-replica DATABASE_URL if the threat model demands it.
  */
 export function buildEnvFile(): string {
   const lines = [

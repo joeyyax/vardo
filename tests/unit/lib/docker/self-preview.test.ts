@@ -224,6 +224,15 @@ describe("createVardoPreview input validation", () => {
     ).rejects.toThrow("Invalid branch name");
   });
 
+  it("rejects branch names with disallowed characters", async () => {
+    await expect(
+      createVardoPreview({ prNumber: 42, branch: "feat/bad branch", repoFullName: "acme/vardo" })
+    ).rejects.toThrow("Invalid branch name");
+    await expect(
+      createVardoPreview({ prNumber: 42, branch: "feat/bad;injection", repoFullName: "acme/vardo" })
+    ).rejects.toThrow("Invalid branch name");
+  });
+
   it("rejects NaN as prNumber", async () => {
     await expect(
       createVardoPreview({ prNumber: NaN, branch: "feat/test", repoFullName: "acme/vardo" })
