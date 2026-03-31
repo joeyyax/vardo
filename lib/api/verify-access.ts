@@ -15,14 +15,14 @@ export async function verifyOrgAccess(orgId: string) {
 
 /**
  * Verify the caller has access to an app within the given org.
- * Returns the app (id only) or null if forbidden/not found.
+ * Returns the app (id, isSystemManaged) or null if forbidden/not found.
  */
 export async function verifyAppAccess(orgId: string, appId: string) {
   const org = await verifyOrgAccess(orgId);
   if (!org) return null;
   const app = await db.query.apps.findFirst({
     where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
-    columns: { id: true },
+    columns: { id: true, isSystemManaged: true },
   });
   return app;
 }

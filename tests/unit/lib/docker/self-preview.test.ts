@@ -100,13 +100,13 @@ describe("buildEnvFile", () => {
   it("includes DATABASE_URL when set", () => {
     process.env.DATABASE_URL = "postgres://user:pass@localhost/db";
     const content = buildEnvFile();
-    expect(content).toContain("DATABASE_URL=postgres://user:pass@localhost/db");
+    expect(content).toContain('DATABASE_URL="postgres://user:pass@localhost/db"');
   });
 
   it("includes REDIS_URL when set", () => {
     process.env.REDIS_URL = "redis://localhost:6379";
     const content = buildEnvFile();
-    expect(content).toContain("REDIS_URL=redis://localhost:6379");
+    expect(content).toContain('REDIS_URL="redis://localhost:6379"');
   });
 
   it("omits keys that are not set", () => {
@@ -119,7 +119,7 @@ describe("buildEnvFile", () => {
     process.env.DATABASE_URL = "postgres://prod/db";
     process.env.PREVIEW_DATABASE_URL = "postgres://preview/db";
     const content = buildEnvFile();
-    expect(content).toContain("DATABASE_URL=postgres://preview/db");
+    expect(content).toContain('DATABASE_URL="postgres://preview/db"');
     expect(content).not.toContain("postgres://prod/db");
   });
 
@@ -127,14 +127,14 @@ describe("buildEnvFile", () => {
     process.env.REDIS_URL = "redis://prod:6379";
     process.env.PREVIEW_REDIS_URL = "redis://preview:6379";
     const content = buildEnvFile();
-    expect(content).toContain("REDIS_URL=redis://preview:6379");
+    expect(content).toContain('REDIS_URL="redis://preview:6379"');
     expect(content).not.toContain("redis://prod:6379");
   });
 
   it("uses DATABASE_URL when PREVIEW_DATABASE_URL is not set", () => {
     process.env.DATABASE_URL = "postgres://prod/db";
     const content = buildEnvFile();
-    expect(content).toContain("DATABASE_URL=postgres://prod/db");
+    expect(content).toContain('DATABASE_URL="postgres://prod/db"');
   });
 
   it("sanitizes newlines in values to prevent env file injection", () => {

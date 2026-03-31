@@ -18,11 +18,18 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
 
     const app = await db.query.apps.findFirst({
       where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
-      columns: { id: true, name: true },
+      columns: { id: true, name: true, isSystemManaged: true },
     });
 
     if (!app) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    if (app.isSystemManaged) {
+      return NextResponse.json(
+        { error: "System-managed apps cannot be recreated via the API" },
+        { status: 403 }
+      );
     }
 
     const result = await recreateProject(appId, app.name);

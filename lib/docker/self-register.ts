@@ -97,90 +97,95 @@ export async function ensureVardoProject(): Promise<void> {
     // Not a git repo or no remote — proceed without git info.
   }
 
-  // Upsert the project.
-  const [project] = await db
-    .insert(projects)
-    .values({
-      id: nanoid(),
-      organizationId: org.id,
-      name: "vardo",
-      displayName: "Vardo",
-      isSystemManaged: true,
-      allowBindMounts: true,
-    })
-    .onConflictDoUpdate({
-      target: [projects.organizationId, projects.name],
-      set: {
-        displayName: "Vardo",
-        isSystemManaged: true,
-        allowBindMounts: true,
-        updatedAt: new Date(),
-      },
-    })
-    .returning({ id: projects.id });
-
-  if (!project) throw new Error("failed to upsert Vardo project");
-
-  // Upsert the parent app (the compose app for the full Vardo stack).
-  const [parentApp] = await db
-    .insert(apps)
-    .values({
-      id: nanoid(),
-      organizationId: org.id,
-      projectId: project.id,
-      name: "vardo",
-      displayName: "Vardo",
-      source: "git",
-      gitUrl,
-      gitBranch: gitBranch ?? "main",
-      isSystemManaged: true,
-      deployType: "compose",
-      composeContent,
-    })
-    .onConflictDoUpdate({
-      target: [apps.organizationId, apps.name],
-      set: {
-        projectId: project.id,
-        gitUrl,
-        gitBranch: gitBranch ?? "main",
-        isSystemManaged: true,
-        composeContent,
-        updatedAt: new Date(),
-      },
-    })
-    .returning({ id: apps.id });
-
-  if (!parentApp) throw new Error("failed to upsert Vardo parent app");
-
-  // Upsert child apps for each infrastructure service present in the compose file.
   const infraServices = Object.keys(compose.services).filter((name) =>
     INFRA_SERVICES.has(name),
   );
 
-  for (const service of infraServices) {
-    await db
+  // Wrap all upserts in a transaction so a partial failure doesn't leave the
+  // registration in an inconsistent state. All writes are idempotent upserts,
+  // so the transaction is safe to re-run on restart if it fails mid-way.
+  await db.transaction(async (tx) => {
+    // Upsert the project.
+    const [project] = await tx
+      .insert(projects)
+      .values({
+        id: nanoid(),
+        organizationId: org.id,
+        name: "vardo",
+        displayName: "Vardo",
+        isSystemManaged: true,
+        allowBindMounts: true,
+      })
+      .onConflictDoUpdate({
+        target: [projects.organizationId, projects.name],
+        set: {
+          displayName: "Vardo",
+          isSystemManaged: true,
+          allowBindMounts: true,
+          updatedAt: new Date(),
+        },
+      })
+      .returning({ id: projects.id });
+
+    if (!project) throw new Error("failed to upsert Vardo project");
+
+    // Upsert the parent app (the compose app for the full Vardo stack).
+    const [parentApp] = await tx
       .insert(apps)
       .values({
         id: nanoid(),
         organizationId: org.id,
         projectId: project.id,
-        name: `vardo-${service}`,
-        displayName: service,
-        source: "direct",
+        name: "vardo",
+        displayName: "Vardo",
+        source: "git",
+        gitUrl,
+        gitBranch: gitBranch ?? "main",
         isSystemManaged: true,
         deployType: "compose",
-        parentAppId: parentApp.id,
-        composeService: service,
+        composeContent,
       })
       .onConflictDoUpdate({
         target: [apps.organizationId, apps.name],
         set: {
           projectId: project.id,
-          parentAppId: parentApp.id,
-          composeService: service,
+          gitUrl,
+          gitBranch: gitBranch ?? "main",
           isSystemManaged: true,
+          composeContent,
           updatedAt: new Date(),
         },
-      });
-  }
+      })
+      .returning({ id: apps.id });
+
+    if (!parentApp) throw new Error("failed to upsert Vardo parent app");
+
+    // Upsert child apps for each infrastructure service present in the compose file.
+    for (const service of infraServices) {
+      await tx
+        .insert(apps)
+        .values({
+          id: nanoid(),
+          organizationId: org.id,
+          projectId: project.id,
+          name: `vardo-${service}`,
+          displayName: service,
+          source: "direct",
+          isSystemManaged: true,
+          deployType: "compose",
+          parentAppId: parentApp.id,
+          composeService: service,
+        })
+        .onConflictDoUpdate({
+          target: [apps.organizationId, apps.name],
+          set: {
+            projectId: project.id,
+            parentAppId: parentApp.id,
+            composeService: service,
+            isSystemManaged: true,
+            updatedAt: new Date(),
+          },
+        });
+    }
+  });
 }

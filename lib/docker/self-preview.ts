@@ -65,7 +65,9 @@ export type VardoPreviewResult = {
  * boundaries if the partial unique index is ever relaxed.
  */
 export async function getSystemManagedApp(repoFullName: string) {
-  const gitUrl = `https://github.com/${repoFullName}.git`;
+  // Must match the URL format stored by ensureVardoProject in self-register.ts,
+  // which strips the .git suffix when normalizing SSH remotes to HTTPS.
+  const gitUrl = `https://github.com/${repoFullName}`;
 
   // selfManagement registers apps under the first-created organization.
   const [org] = await db
@@ -319,16 +321,19 @@ export function buildEnvFile(): string {
   // Prefer isolated preview DB/cache; fall back to production if not configured.
   // ENCRYPTION_MASTER_KEY and BETTER_AUTH_SECRET are intentionally omitted —
   // preview instances do not need to decrypt stored secrets or issue sessions.
+  //
+  // Values are double-quoted so env parsers don't truncate on '#' in connection
+  // strings. Newlines are stripped first to avoid breaking the quoted value.
   const dbUrl = process.env.PREVIEW_DATABASE_URL || process.env.DATABASE_URL;
   if (dbUrl) {
     const sanitized = dbUrl.replace(/\r?\n/g, " ");
-    lines.push(`DATABASE_URL=${sanitized}`);
+    lines.push(`DATABASE_URL="${sanitized}"`);
   }
 
   const redisUrl = process.env.PREVIEW_REDIS_URL || process.env.REDIS_URL;
   if (redisUrl) {
     const sanitized = redisUrl.replace(/\r?\n/g, " ");
-    lines.push(`REDIS_URL=${sanitized}`);
+    lines.push(`REDIS_URL="${sanitized}"`);
   }
 
   return lines.join("\n") + "\n";
