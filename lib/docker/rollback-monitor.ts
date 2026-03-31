@@ -5,6 +5,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import { join, resolve } from "path";
 import { listContainers, inspectContainer } from "./client";
+import { slotComposeFiles } from "./compose";
 import { publishEvent, appChannel } from "@/lib/events";
 import { recordActivity } from "@/lib/activity";
 import { logger } from "@/lib/logger";
@@ -178,12 +179,12 @@ async function performRollback(opts: PerformRollbackOpts): Promise<void> {
   // Step 1: Tear down the crashing slot
   const crashedSlotDir = join(appDir, currentSlot);
   const crashedProjectName = `${appName}-${envName}-${currentSlot}`;
-  const crashedComposePath = join(crashedSlotDir, "docker-compose.yml");
+  const crashedComposeFileArgs = await slotComposeFiles(crashedSlotDir);
 
   try {
     await execFileAsync(
       "docker",
-      ["compose", "-f", crashedComposePath, "-p", crashedProjectName, "down", "--remove-orphans"],
+      ["compose", ...crashedComposeFileArgs, "-p", crashedProjectName, "down", "--remove-orphans"],
       { cwd: crashedSlotDir, timeout: 30000 }
     );
   } catch (err) {
@@ -196,12 +197,12 @@ async function performRollback(opts: PerformRollbackOpts): Promise<void> {
   // Step 2: Bring the previous slot back up
   const prevSlotDir = join(appDir, previousSlot);
   const prevProjectName = `${appName}-${envName}-${previousSlot}`;
-  const prevComposePath = join(prevSlotDir, "docker-compose.yml");
+  const prevComposeFileArgs = await slotComposeFiles(prevSlotDir);
 
   try {
     await execFileAsync(
       "docker",
-      ["compose", "-f", prevComposePath, "-p", prevProjectName, "up", "-d"],
+      ["compose", ...prevComposeFileArgs, "-p", prevProjectName, "up", "-d"],
       { cwd: prevSlotDir, timeout: 60000 }
     );
   } catch (err) {
