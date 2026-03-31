@@ -44,6 +44,7 @@ async function emitAll(event: BusEvent): Promise<void> {
 // ---------------------------------------------------------------------------
 
 const previousServiceStatus = new Map<string, "healthy" | "unhealthy" | "unconfigured">();
+const unhealthyStreak = new Map<string, number>();
 
 async function checkServiceAlerts(health: Awaited<ReturnType<typeof getSystemHealth>>): Promise<void> {
   try {
@@ -51,8 +52,19 @@ async function checkServiceAlerts(health: Awaited<ReturnType<typeof getSystemHea
       const prev = previousServiceStatus.get(service.name);
       previousServiceStatus.set(service.name, service.status);
 
-      // Only alert on healthy → unhealthy transitions
-      if (service.status === "unhealthy" && prev === "healthy") {
+      // Track consecutive unhealthy checks — require 3 in a row to filter
+      // out brief blips during deploys or container restarts.
+      if (service.status === "unhealthy") {
+        unhealthyStreak.set(service.name, (unhealthyStreak.get(service.name) ?? 0) + 1);
+      } else {
+        unhealthyStreak.set(service.name, 0);
+      }
+
+      const streak = unhealthyStreak.get(service.name) ?? 0;
+
+      // Only alert after 3 consecutive unhealthy checks (~3 min) and
+      // skip when prev is undefined (first check after startup).
+      if (service.status === "unhealthy" && prev !== undefined && streak >= 3) {
         if (!shouldFire("service-degraded", service.name)) continue;
         markFired("service-degraded", service.name);
 
