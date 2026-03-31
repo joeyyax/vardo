@@ -7,8 +7,15 @@ import { logger } from "@/lib/logger";
 
 const log = logger.child("admin:maintenance:restart");
 
+// Service names must match the vardo- prefix used in docker-compose.yml and
+// satisfy docker compose naming rules (lowercase alphanumeric + hyphens).
+const SERVICE_NAME_RE = /^vardo-[a-z][a-z0-9-]*$/;
+
 const restartSchema = z.object({
-  service: z.string().optional(),
+  service: z
+    .string()
+    .regex(SERVICE_NAME_RE, "service must match vardo-<name> (lowercase alphanumeric with hyphens)")
+    .optional(),
 });
 
 // POST /api/v1/admin/maintenance/restart

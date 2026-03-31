@@ -26,7 +26,7 @@ type ServiceStatus = {
 
 type MaintenanceStatus = {
   services: ServiceStatus[];
-  vardoDir: string | null;
+  hasVardoDir: boolean;
 };
 
 type MountsConfig = {
@@ -267,7 +267,7 @@ export function MaintenanceSettings() {
             Pull the latest code from git, rebuild the frontend image, and restart the stack.
             The current session will be interrupted while the container restarts.
           </p>
-          {!status?.vardoDir && (
+          {!status?.hasVardoDir && (
             <div className="flex items-start gap-2 text-sm text-amber-600 dark:text-amber-400">
               <AlertCircle className="size-4 shrink-0 mt-0.5" />
               <span>
@@ -279,7 +279,7 @@ export function MaintenanceSettings() {
           <Button
             variant="outline"
             onClick={() => void handleUpdate()}
-            disabled={updating || restarting !== null || !status?.vardoDir}
+            disabled={updating || restarting !== null || !status?.hasVardoDir}
             className="squircle"
             aria-label="Update Vardo"
           >

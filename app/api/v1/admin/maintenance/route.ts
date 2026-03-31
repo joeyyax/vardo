@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
-import { execSync } from "child_process";
+import { execFile } from "child_process";
+import { promisify } from "util";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { handleRouteError } from "@/lib/api/error-response";
 import { logger } from "@/lib/logger";
+
+const execFileAsync = promisify(execFile);
 
 const log = logger.child("admin:maintenance");
 
@@ -22,17 +25,17 @@ export async function GET() {
   try {
     await requireAppAdmin();
 
-    const vardoDir = process.env.VARDO_DIR ?? null;
+    const hasVardoDir = !!process.env.VARDO_DIR;
     const services: ServiceStatus[] = [];
 
     try {
-      const output = execSync(
-        'docker ps -a --filter "name=vardo-" --format "{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.State}}\t{{.Image}}"',
+      const { stdout } = await execFileAsync(
+        "docker",
+        ["ps", "-a", "--filter", "name=vardo-", "--format", "{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.State}}\t{{.Image}}"],
         { timeout: 10000 },
-      )
-        .toString()
-        .trim();
+      );
 
+      const output = stdout.trim();
       if (output) {
         for (const line of output.split("\n")) {
           const [containerId, name, status, state, image] = line.split("\t");
@@ -45,7 +48,7 @@ export async function GET() {
       log.error(`Failed to query docker ps: ${err}`);
     }
 
-    return NextResponse.json({ services, vardoDir });
+    return NextResponse.json({ services, hasVardoDir });
   } catch (error) {
     return handleRouteError(error);
   }

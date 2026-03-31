@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { spawn } from "child_process";
-import { execSync } from "child_process";
+import { spawn, execFileSync } from "child_process";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { handleRouteError } from "@/lib/api/error-response";
 import { logger } from "@/lib/logger";
@@ -27,13 +26,15 @@ export async function POST() {
     }
 
     // git pull — run synchronously so we can report fetch errors immediately
-    let pullOutput = "";
     try {
-      pullOutput = execSync(`git -C ${vardoDir} pull`, { timeout: 30000 }).toString().trim();
+      const pullOutput = execFileSync("git", ["-C", vardoDir, "pull"], { timeout: 30000 }).toString().trim();
       log.info(`git pull: ${pullOutput}`);
     } catch (err) {
       log.error(`git pull failed: ${err}`);
-      return NextResponse.json({ error: `git pull failed: ${err}` }, { status: 500 });
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : "git pull failed" },
+        { status: 500 },
+      );
     }
 
     // Rebuild + restart detached — the container will go down as part of up -d
@@ -62,7 +63,6 @@ export async function POST() {
 
     return NextResponse.json({
       ok: true,
-      pullOutput,
       message: "Update initiated — rebuilding and restarting in the background.",
     });
   } catch (error) {

@@ -8,11 +8,21 @@ import { logger } from "@/lib/logger";
 
 const log = logger.child("admin:maintenance:mounts");
 
+// Mount path values are written directly into .env — reject newlines to
+// prevent injecting additional lines, and require an absolute path so we
+// don't produce malformed volume mount strings.
+const mountPathField = z
+  .string()
+  .min(1, "path must not be empty")
+  .regex(/^[^\n\r]*$/, "path must not contain newline characters")
+  .regex(/^\//, "path must be an absolute path")
+  .optional();
+
 const mountsSchema = z.object({
-  vardoData: z.string().optional(),
-  vardoProjects: z.string().optional(),
-  vardoMount1: z.string().optional(),
-  vardoMount2: z.string().optional(),
+  vardoData: mountPathField,
+  vardoProjects: mountPathField,
+  vardoMount1: mountPathField,
+  vardoMount2: mountPathField,
 });
 
 // GET /api/v1/admin/maintenance/mounts
