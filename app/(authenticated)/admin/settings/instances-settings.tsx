@@ -48,6 +48,7 @@ type MeshPeer = {
   allowedIps: string;
   internalIp: string;
   apiUrl: string | null;
+  connectionType: "direct" | "visible";
   lastSeenAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -399,6 +400,11 @@ export function InstancesSettings() {
                             <Badge variant="outline" className="text-[10px] px-1.5 py-0">
                               {peer.type}
                             </Badge>
+                            {peer.connectionType === "visible" && (
+                              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                                via hub
+                              </Badge>
+                            )}
                           </div>
                           <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
                             <span className="font-mono">{peer.internalIp}</span>
@@ -413,33 +419,38 @@ export function InstancesSettings() {
                         <span className="text-xs text-muted-foreground">
                           {formatRelativeTime(peer.lastSeenAt)}
                         </span>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="size-8 p-0"
-                              aria-label={`Actions for ${peer.name}`}
-                            >
-                              <MoreHorizontal className="size-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="squircle">
-                            <DropdownMenuItem
-                              onClick={() => copyToClipboard(peer.publicKey, "Public key")}
-                            >
-                              <Copy className="size-4" />
-                              Copy public key
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="text-destructive focus:text-destructive"
-                              onClick={() => setDeleteTarget(peer)}
-                            >
-                              <Trash2 className="size-4" />
-                              Remove peer
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        {peer.connectionType === "direct" ? (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="size-8 p-0"
+                                aria-label={`Actions for ${peer.name}`}
+                              >
+                                <MoreHorizontal className="size-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="squircle">
+                              <DropdownMenuItem
+                                onClick={() => copyToClipboard(peer.publicKey, "Public key")}
+                              >
+                                <Copy className="size-4" />
+                                Copy public key
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                onClick={() => setDeleteTarget(peer)}
+                              >
+                                <Trash2 className="size-4" />
+                                Remove peer
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        ) : (
+                          // Visible peers are read-only — managed on the hub
+                          <div className="size-8" aria-hidden="true" />
+                        )}
                       </div>
                     </div>
                   ))}
