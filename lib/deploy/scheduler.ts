@@ -1,4 +1,4 @@
-import { sweepStuckDeployments } from "./sweeper";
+import { sweepStuckDeployments, sweepStuckQueuedDeployments } from "./sweeper";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("deploy-sweeper");
@@ -12,6 +12,7 @@ export function startDeploySweeper(): void {
   interval = setInterval(async () => {
     try {
       await sweepStuckDeployments();
+      await sweepStuckQueuedDeployments();
     } catch (err) {
       log.error("Sweep error:", err);
     }
