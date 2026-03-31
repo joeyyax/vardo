@@ -2,8 +2,10 @@
 set -e
 
 # Set up mesh routing if WireGuard gateway is configured.
+# ip route replace is idempotent — adds or updates the route without failing
+# if it already exists (e.g. on a warm container restart).
 if [ -n "${WIREGUARD_GATEWAY:-}" ]; then
-  ip route add 10.99.0.0/24 via "$WIREGUARD_GATEWAY" 2>/dev/null || true
+  ip route replace 10.99.0.0/24 via "$WIREGUARD_GATEWAY"
 fi
 
 # Ensure nextjs user has access to the Docker socket.
