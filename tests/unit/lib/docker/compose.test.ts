@@ -15,6 +15,8 @@ import {
   resolveBackendProtocol,
   narrowBackendProtocol,
   buildComposePreview,
+  stripVardoInjections,
+  buildVardoOverlay,
   type ComposeFile,
   type ContainerConfig,
 } from "@/lib/docker/compose";
@@ -1981,5 +1983,203 @@ services:
     expect(result).not.toBeNull();
     // Network should be injected by applyDeployTransforms
     expect(result!.networks).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// stripVardoInjections
+// ---------------------------------------------------------------------------
+
+describe("stripVardoInjections", () => {
+  it("removes traefik labels from services", () => {
+    const compose: ComposeFile = {
+      services: {
+        app: {
+          name: "app",
+          image: "nginx:latest",
+          labels: {
+            "traefik.enable": "true",
+            "traefik.http.routers.app.rule": "Host(`app.example.com`)",
+            "app.custom": "keep-me",
+          },
+        },
+      },
+    };
+    const result = stripVardoInjections(compose);
+    expect(result.services.app.labels).toEqual({ "app.custom": "keep-me" });
+  });
+
+  it("removes vardo.* labels from services", () => {
+    const compose: ComposeFile = {
+      services: {
+        app: {
+          name: "app",
+          image: "nginx:latest",
+          labels: {
+            "vardo.app": "myapp",
+            "vardo.env": "production",
+            "user.label": "stays",
+          },
+        },
+      },
+    };
+    const result = stripVardoInjections(compose);
+    expect(result.services.app.labels).toEqual({ "user.label": "stays" });
+  });
+
+  it("removes the vardo network from service networks", () => {
+    const compose: ComposeFile = {
+      services: {
+        app: {
+          name: "app",
+          image: "nginx:latest",
+          networks: ["vardo-network", "custom-net"],
+        },
+      },
+      networks: { "vardo-network": { external: true }, "custom-net": {} },
+    };
+    const result = stripVardoInjections(compose, "vardo-network");
+    expect(result.services.app.networks).toEqual(["custom-net"]);
+    expect((result.networks as Record<string, unknown>)?.["vardo-network"]).toBeUndefined();
+    expect((result.networks as Record<string, unknown>)?.["custom-net"]).toBeDefined();
+  });
+
+  it("sets labels to undefined when all labels are stripped", () => {
+    const compose: ComposeFile = {
+      services: {
+        app: {
+          name: "app",
+          image: "nginx:latest",
+          labels: { "traefik.enable": "true" },
+        },
+      },
+    };
+    const result = stripVardoInjections(compose);
+    expect(result.services.app.labels).toBeUndefined();
+  });
+
+  it("does not mutate the original compose", () => {
+    const compose: ComposeFile = {
+      services: {
+        app: {
+          name: "app",
+          image: "nginx:latest",
+          labels: { "traefik.enable": "true", "user.label": "stays" },
+          networks: ["vardo-network"],
+        },
+      },
+    };
+    stripVardoInjections(compose);
+    expect(compose.services.app.labels).toHaveProperty("traefik.enable");
+    expect(compose.services.app.networks).toContain("vardo-network");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildVardoOverlay
+// ---------------------------------------------------------------------------
+
+describe("buildVardoOverlay", () => {
+  const networkName = "vardo-network";
+
+  function composeWithLabels(labels: Record<string, string>): ComposeFile {
+    return {
+      services: {
+        app: {
+          name: "app",
+          image: "nginx:latest",
+          labels,
+          networks: [networkName],
+        },
+      },
+      networks: { [networkName]: { external: true } },
+    };
+  }
+
+  it("extracts traefik labels into the overlay", () => {
+    const compose = composeWithLabels({
+      "traefik.enable": "true",
+      "traefik.http.routers.app.rule": "Host(`example.com`)",
+      "user.label": "value",
+    });
+    const overlay = buildVardoOverlay({ fullCompose: compose, networkName });
+    expect(overlay.services.app.labels).toHaveProperty("traefik.enable", "true");
+    expect(overlay.services.app.labels).not.toHaveProperty("user.label");
+  });
+
+  it("extracts vardo.* labels into the overlay", () => {
+    const compose = composeWithLabels({
+      "vardo.app": "myapp",
+      "user.label": "skip",
+    });
+    const overlay = buildVardoOverlay({ fullCompose: compose, networkName });
+    expect(overlay.services.app.labels).toHaveProperty("vardo.app", "myapp");
+    expect(overlay.services.app.labels).not.toHaveProperty("user.label");
+  });
+
+  it("includes the vardo network in the overlay when a service uses it", () => {
+    const compose = composeWithLabels({});
+    const overlay = buildVardoOverlay({ fullCompose: compose, networkName });
+    expect(overlay.networks).toEqual({ [networkName]: { external: true } });
+  });
+
+  it("does not include network declaration when no service uses it", () => {
+    const compose: ComposeFile = {
+      services: { app: { name: "app", image: "nginx:latest" } },
+    };
+    const overlay = buildVardoOverlay({ fullCompose: compose, networkName });
+    expect(overlay.networks).toBeUndefined();
+  });
+
+  it("injects cpu and memory limits from params", () => {
+    const compose: ComposeFile = {
+      services: { app: { name: "app", image: "nginx:latest" } },
+    };
+    const overlay = buildVardoOverlay({
+      fullCompose: compose,
+      networkName,
+      cpuLimit: 2,
+      memoryLimit: 512,
+    });
+    expect(overlay.services.app.deploy?.resources?.limits).toEqual({
+      cpus: "2",
+      memory: "512M",
+    });
+  });
+
+  it("does not add resource limits when none provided", () => {
+    const compose: ComposeFile = {
+      services: { app: { name: "app", image: "nginx:latest" } },
+    };
+    const overlay = buildVardoOverlay({ fullCompose: compose, networkName });
+    expect(overlay.services.app.deploy?.resources?.limits).toBeUndefined();
+  });
+
+  it("includes externalized volumes that appear in bareVolumeNames", () => {
+    const compose: ComposeFile = {
+      services: { app: { name: "app", image: "nginx:latest" } },
+      volumes: { data: { external: true, name: "myapp-data" } },
+    };
+    const overlay = buildVardoOverlay({
+      fullCompose: compose,
+      networkName,
+      externalVolumes: { data: { external: true, name: "myapp-data" } },
+      bareVolumeNames: ["data"],
+    });
+    expect(overlay.volumes).toHaveProperty("data");
+  });
+
+  it("does not include volumes that are not in bareVolumeNames", () => {
+    const compose: ComposeFile = {
+      services: { app: { name: "app", image: "nginx:latest" } },
+      volumes: { data: { external: true } },
+    };
+    const overlay = buildVardoOverlay({
+      fullCompose: compose,
+      networkName,
+      externalVolumes: { data: { external: true } },
+      bareVolumeNames: [],
+    });
+    expect(overlay.volumes).toBeUndefined();
   });
 });
