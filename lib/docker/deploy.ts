@@ -323,6 +323,32 @@ export async function runDeployment(
     });
     const volumesList = appVolumes.filter((v) => v.persistent).map((v) => ({ name: v.name, mountPath: v.mountPath }));
 
+    // Auto-upgrade to git source when compose has build: directives but source is direct
+    let effectiveSource = app.source;
+    if (app.source === "direct" && app.composeContent && app.deployType === "compose") {
+      try {
+        const preCheck = parseCompose(app.composeContent);
+        const hasBuildDirective = Object.values(preCheck.services).some((svc) => svc.build);
+        if (hasBuildDirective) {
+          if (app.gitUrl) {
+            log(`[deploy] Compose has build: directives — upgrading to git source`);
+            effectiveSource = "git";
+          } else {
+            throw new Error(
+              "Compose has build: directives but no git repo configured. " +
+              "Either set a git URL to provide build context, or use pre-built images."
+            );
+          }
+        }
+      } catch (err) {
+        // If it's our own error about missing git URL, rethrow
+        if (err instanceof Error && err.message.includes("build: directives")) {
+          throw err;
+        }
+        // Otherwise parsing failed — let it fail later with better context
+      }
+    }
+
     if (app.deployType === "image" && app.imageName) {
       // Image deploy — no clone needed
       stage("clone", "skipped");
@@ -347,7 +373,7 @@ export async function runDeployment(
         if (exposedPorts?.length) log(`[deploy] ${exposedPorts.length} exposed port(s)`);
         log(`[deploy] Generated compose for image: ${app.imageName}`);
       }
-    } else if (app.source === "git" && app.gitUrl) {
+    } else if (effectiveSource === "git" && app.gitUrl) {
       // Git source — clone/pull repo with GitHub App auth if needed
       // Repo lives at app level (shared across environments)
       repoDir = join(appBaseDir, "repo");
