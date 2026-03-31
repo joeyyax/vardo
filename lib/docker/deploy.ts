@@ -86,6 +86,29 @@ const PROJECTS_DIR = resolve(process.env.VARDO_PROJECTS_DIR || "./.host/projects
 const NETWORK_NAME = "vardo-network";
 
 const DEFAULT_HEALTH_CHECK_TIMEOUT_MS = 60000;
+
+/**
+ * Parse a Docker duration string (e.g. "1m", "30s", "1m30s", "500ms") to milliseconds.
+ * Returns 0 for undefined/unparseable values.
+ */
+function parseDuration(d: string | undefined): number {
+  if (!d) return 0;
+  let ms = 0;
+  const parts = d.match(/(\d+)(ms|s|m|h)/g);
+  if (!parts) return 0;
+  for (const part of parts) {
+    const match = part.match(/^(\d+)(ms|s|m|h)$/);
+    if (!match) continue;
+    const val = parseInt(match[1], 10);
+    switch (match[2]) {
+      case "ms": ms += val; break;
+      case "s": ms += val * 1000; break;
+      case "m": ms += val * 60000; break;
+      case "h": ms += val * 3600000; break;
+    }
+  }
+  return ms;
+}
 const HEALTH_CHECK_INTERVAL_MS = 2000;
 
 export type DeployStage = "clone" | "build" | "deploy" | "healthcheck" | "routing" | "cleanup" | "done";
@@ -1001,7 +1024,25 @@ export async function runDeployment(
     stage("deploy", "success");
     stage("healthcheck", "running");
     log(`[deploy] Waiting for ${newSlot} to be healthy...`);
-    const healthTimeoutMs = (app.healthCheckTimeout ?? 0) * 1000 || DEFAULT_HEALTH_CHECK_TIMEOUT_MS;
+
+    // Compute a smart timeout: if any service defines a healthcheck with a long
+    // interval or start_period, we need to wait at least that long before giving up.
+    // Otherwise Docker hasn't even run its first check before we time out.
+    let healthTimeoutMs = (app.healthCheckTimeout ?? 0) * 1000 || DEFAULT_HEALTH_CHECK_TIMEOUT_MS;
+    if (!app.healthCheckTimeout) {
+      for (const svc of Object.values(compose.services)) {
+        if (svc.healthcheck) {
+          const interval = parseDuration(svc.healthcheck.interval);
+          const startPeriod = parseDuration(svc.healthcheck.start_period);
+          const retries = svc.healthcheck.retries ?? 3;
+          const needed = startPeriod + (interval * retries) + 10000; // +10s buffer
+          if (needed > healthTimeoutMs) {
+            healthTimeoutMs = needed;
+            log(`[deploy] Extended health timeout to ${Math.round(needed / 1000)}s (service healthcheck interval: ${svc.healthcheck.interval || "default"})`);
+          }
+        }
+      }
+    }
     const healthy = await waitForHealthy(newProjectName, composePath, slotDir, logs, healthTimeoutMs);
     if (!healthy) {
       // Grab container logs before tearing down
