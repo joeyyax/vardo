@@ -28,6 +28,7 @@ import {
   parseComposeDependsOn,
   isComposeProjectNetwork,
   mergeComposeFile,
+  detectGitBuildContext,
 } from "@/lib/docker/import";
 
 type RouteParams = {
@@ -121,6 +122,25 @@ async function handler(request: NextRequest, { params }: RouteParams) {
         { error: "No importable containers found in this compose group" },
         { status: 404 }
       );
+    }
+
+    // Auto-detect git URL from compose project directory if not provided.
+    // Uses container labels to find the original compose file location.
+    let effectiveGitUrl = data.gitUrl;
+    let effectiveGitBranch = data.gitBranch;
+    let autoDetectedGit = false;
+    if (!effectiveGitUrl) {
+      const firstContainer = validDetails[0];
+      const workingDir = firstContainer.labels["com.docker.compose.project.working_dir"];
+      const configFiles = firstContainer.labels["com.docker.compose.project.config_files"];
+      if (workingDir && configFiles) {
+        const gitContext = await detectGitBuildContext(workingDir, configFiles);
+        if (gitContext?.gitUrl && gitContext.hasBuildDirectives) {
+          effectiveGitUrl = gitContext.gitUrl;
+          effectiveGitBranch = gitContext.gitBranch ?? undefined;
+          autoDetectedGit = true;
+        }
+      }
     }
 
     const sslConfig = await getSslConfig();
@@ -326,10 +346,10 @@ async function handler(request: NextRequest, { params }: RouteParams) {
 
         // Insert parent app record for the compose stack
         const appId = nanoid();
-        // When gitUrl is provided, use git source so Vardo clones the repo and
-        // builds from docker-compose.yml with build: directives. Otherwise fall
-        // back to direct source using the generated compose with image: refs.
-        const useGitSource = !!data.gitUrl;
+        // When gitUrl is provided (or auto-detected), use git source so Vardo
+        // clones the repo and builds from docker-compose.yml with build: directives.
+        // Otherwise fall back to direct source using the generated compose with image: refs.
+        const useGitSource = !!effectiveGitUrl;
         const [app] = await tx
           .insert(apps)
           .values({
@@ -342,8 +362,8 @@ async function handler(request: NextRequest, { params }: RouteParams) {
             // When using git source, don't store composeContent — let deploy
             // read the compose file from the cloned repo instead.
             composeContent: useGitSource ? null : composeContent,
-            gitUrl: data.gitUrl ?? null,
-            gitBranch: data.gitBranch ?? null,
+            gitUrl: effectiveGitUrl ?? null,
+            gitBranch: effectiveGitBranch ?? null,
             // autoTraefikLabels is false — Traefik config is baked into the
             // compose content either from the original container labels or via
             // explicit injectTraefikLabels above. Regenerating at deploy time
@@ -446,7 +466,8 @@ async function handler(request: NextRequest, { params }: RouteParams) {
     for (const detail of validDetails) {
       const svcName =
         (detail.labels["com.docker.compose.service"] ?? slugify(detail.name)) || slugify(detail.name);
-      if (isLocalImage(detail.image)) {
+      // Only warn about local images if we're not using git source (which will build them)
+      if (isLocalImage(detail.image) && !useGitSource) {
         warnings.push(
           `Service "${svcName}" uses a local image — Vardo won't be able to redeploy without pushing to a registry first.`
         );
@@ -473,6 +494,7 @@ async function handler(request: NextRequest, { params }: RouteParams) {
         displayName: data.displayName,
         composeProject,
         serviceCount: validDetails.length,
+        ...(autoDetectedGit && { gitAutoDetected: true, gitUrl: effectiveGitUrl }),
       },
     });
 
@@ -496,7 +518,13 @@ async function handler(request: NextRequest, { params }: RouteParams) {
       activityMetadata: { composeProject, source: "group-import" },
     });
 
-    return NextResponse.json({ app, warnings, deploymentId, migrated: false }, { status: 201 });
+    return NextResponse.json({
+      app,
+      warnings,
+      deploymentId,
+      migrated: false,
+      ...(autoDetectedGit && { gitAutoDetected: true, gitUrl: effectiveGitUrl }),
+    }, { status: 201 });
   } catch (error) {
     return handleRouteError(error, "Error importing compose group");
   }
