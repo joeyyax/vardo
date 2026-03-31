@@ -109,6 +109,8 @@ import {
   removeFromQueue,
   getConcurrencyState,
   reconcileActiveCounter,
+  reconcileQueue,
+  getConcurrencyLimit,
   ACTIVE_KEY,
   QUEUE_KEY,
 } from "@/lib/docker/deploy-concurrency";
@@ -238,6 +240,38 @@ describe("deploy-concurrency", () => {
       await expect(waitPromise).rejects.toThrow("cancelled while waiting");
       expect((redisList[QUEUE_KEY] ?? []).includes("deploy-1")).toBe(false);
     });
+
+    it("throws and cleans up when the 9-min deadline expires", async () => {
+      // deploy-timeout is behind another deploy and slots are full — will never advance
+      redisList[QUEUE_KEY] = ["deploy-ahead", "deploy-timeout"];
+      redisState[ACTIVE_KEY] = "2";
+
+      // First Date.now() sets the deadline; all subsequent calls return past it
+      const frozenNow = Date.now();
+      let calls = 0;
+      const dateSpy = vi.spyOn(Date, "now").mockImplementation(() => {
+        return calls++ === 0 ? frozenNow : frozenNow + 10 * 60 * 1000;
+      });
+
+      try {
+        await expect(waitForConcurrencySlot("deploy-timeout")).rejects.toThrow(
+          "waited too long for a concurrency slot",
+        );
+        expect((redisList[QUEUE_KEY] ?? []).includes("deploy-timeout")).toBe(false);
+      } finally {
+        dateSpy.mockRestore();
+      }
+    });
+
+    it("proceeds without enforcement on Redis error during poll", async () => {
+      // Slot is not available, but eval throws on first attempt
+      redisList[QUEUE_KEY] = ["deploy-redis-err"];
+      redisState[ACTIVE_KEY] = "2";
+
+      redisMock.eval.mockRejectedValueOnce(new Error("Redis connection failed"));
+
+      await expect(waitForConcurrencySlot("deploy-redis-err")).resolves.not.toThrow();
+    });
   });
 
   describe("getConcurrencyState", () => {
@@ -256,6 +290,46 @@ describe("deploy-concurrency", () => {
       const state = await getConcurrencyState();
       expect(state.active).toBe(0);
       expect(state.queued).toBe(0);
+    });
+  });
+
+  describe("getConcurrencyLimit", () => {
+    it("returns the default limit when env var is not set", () => {
+      expect(getConcurrencyLimit()).toBe(2);
+    });
+
+    it("returns the default limit when env var is not a valid integer", () => {
+      process.env.VARDO_MAX_DEPLOY_CONCURRENCY = "banana";
+      expect(getConcurrencyLimit()).toBe(2);
+    });
+
+    it("clamps to a minimum of 1", () => {
+      process.env.VARDO_MAX_DEPLOY_CONCURRENCY = "0";
+      expect(getConcurrencyLimit()).toBe(1);
+    });
+  });
+
+  describe("reconcileQueue", () => {
+    it("removes orphaned IDs not present in activeIds", async () => {
+      redisList[QUEUE_KEY] = ["deploy-legit", "deploy-orphan"];
+      await reconcileQueue(new Set(["deploy-legit"]));
+      expect(redisList[QUEUE_KEY]).toEqual(["deploy-legit"]);
+    });
+
+    it("preserves all IDs when they are all legitimate", async () => {
+      redisList[QUEUE_KEY] = ["deploy-1", "deploy-2"];
+      await reconcileQueue(new Set(["deploy-1", "deploy-2"]));
+      expect(redisList[QUEUE_KEY]).toEqual(["deploy-1", "deploy-2"]);
+    });
+
+    it("is a no-op when the queue is empty", async () => {
+      await expect(reconcileQueue(new Set(["deploy-1"]))).resolves.not.toThrow();
+      expect(redisList[QUEUE_KEY] ?? []).toHaveLength(0);
+    });
+
+    it("handles Redis errors gracefully without throwing", async () => {
+      redisMock.lrange.mockRejectedValueOnce(new Error("Redis connection lost"));
+      await expect(reconcileQueue(new Set())).resolves.not.toThrow();
     });
   });
 
