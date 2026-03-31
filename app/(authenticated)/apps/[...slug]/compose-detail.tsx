@@ -236,12 +236,17 @@ function ComposeEditor({
         </div>
       </div>
       {editing ? (
-        <textarea
-          className="w-full min-h-96 font-mono text-sm bg-muted/30 border rounded-lg p-4 resize-y focus:outline-none focus:ring-2 focus:ring-ring"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          spellCheck={false}
-        />
+        <>
+          <p className="text-xs text-muted-foreground">
+            Compose YAML is stored as plaintext. Use the Variables tab for secrets — env vars are encrypted at rest.
+          </p>
+          <textarea
+            className="w-full min-h-96 font-mono text-sm bg-muted/30 border rounded-lg p-4 resize-y focus:outline-none focus:ring-2 focus:ring-ring"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            spellCheck={false}
+          />
+        </>
       ) : (
         <pre className="w-full overflow-auto bg-muted/30 border rounded-lg p-4 text-sm font-mono text-muted-foreground whitespace-pre-wrap break-all">
           {app.composeContent}
