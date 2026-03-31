@@ -1,5 +1,6 @@
 import { tickCronJobs } from "./engine";
 import { logger } from "@/lib/logger";
+import { cleanupStaleSelfPreviews } from "@/lib/docker/self-preview";
 
 const log = logger.child("cron");
 
@@ -69,6 +70,18 @@ function startDailySecurityScans(): void {
       }
     } catch (err) {
       log.error("Daily security scan error:", err);
+    }
+
+    // Clean up self-preview containers that have been running too long.
+    // Handles missed PR close webhooks — containers join the production network
+    // and must not run indefinitely.
+    try {
+      const cleaned = await cleanupStaleSelfPreviews();
+      if (cleaned > 0) {
+        log.info(`Cleaned up ${cleaned} stale self-preview(s)`);
+      }
+    } catch (err) {
+      log.error("Stale self-preview cleanup error:", err);
     }
   }, 60 * 60 * 1000); // Every hour
 }

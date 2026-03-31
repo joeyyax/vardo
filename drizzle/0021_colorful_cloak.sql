@@ -1,0 +1,2 @@
+CREATE INDEX "app_git_url_idx" ON "app" USING btree ("git_url");--> statement-breakpoint
+CREATE UNIQUE INDEX "app_system_managed_git_url_uniq" ON "app" USING btree ("git_url") WHERE is_system_managed = true;

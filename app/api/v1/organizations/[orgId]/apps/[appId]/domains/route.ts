@@ -39,6 +39,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    if (app.isSystemManaged) {
+      return NextResponse.json(
+        { error: "Domains for system-managed apps cannot be modified via the API" },
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
     const parsed = createDomainSchema.safeParse(body);
 
@@ -121,6 +128,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    if (app.isSystemManaged) {
+      return NextResponse.json(
+        { error: "Domains for system-managed apps cannot be modified via the API" },
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
     const parsed = updateDomainSchema.safeParse(body);
 
@@ -174,6 +188,13 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     if (!app) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    if (app.isSystemManaged) {
+      return NextResponse.json(
+        { error: "Domains for system-managed apps cannot be modified via the API" },
+        { status: 403 }
+      );
     }
 
     const body = await request.json();

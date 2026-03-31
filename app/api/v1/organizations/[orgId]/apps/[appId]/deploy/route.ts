@@ -27,11 +27,18 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
         eq(apps.id, appId),
         eq(apps.organizationId, orgId)
       ),
-      columns: { id: true, projectId: true },
+      columns: { id: true, projectId: true, isSystemManaged: true },
     });
 
     if (!app) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    if (app.isSystemManaged) {
+      return NextResponse.json(
+        { error: "System-managed apps cannot be deployed via the API" },
+        { status: 403 }
+      );
     }
 
     // Parse optional environmentId, groupEnvironmentId, and deployAll flag from body

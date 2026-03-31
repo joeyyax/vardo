@@ -23,6 +23,7 @@ export const projects = pgTable(
     description: text("description"),
     color: text("color").default("#6366f1"),
     allowBindMounts: boolean("allow_bind_mounts").default(false).notNull(),
+    isSystemManaged: boolean("is_system_managed").default(false).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

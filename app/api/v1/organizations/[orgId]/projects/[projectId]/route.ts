@@ -40,10 +40,12 @@ async function findProject(orgId: string, projectId: string) {
 async function findProjectBasic(orgId: string, projectId: string) {
   let project = await db.query.projects.findFirst({
     where: and(eq(projects.organizationId, orgId), eq(projects.id, projectId)),
+    columns: { id: true, name: true, organizationId: true, isSystemManaged: true },
   });
   if (!project) {
     project = await db.query.projects.findFirst({
       where: and(eq(projects.organizationId, orgId), eq(projects.name, projectId)),
+      columns: { id: true, name: true, organizationId: true, isSystemManaged: true },
     });
   }
   return project;
@@ -113,6 +115,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
 
+    if (existing.isSystemManaged) {
+      return NextResponse.json(
+        { error: "System-managed projects cannot be modified via the API" },
+        { status: 403 }
+      );
+    }
+
     // Check for name conflicts when renaming
     if (parsed.data.name && parsed.data.name !== existing.name) {
       const conflict = await db.query.projects.findFirst({
@@ -180,6 +189,13 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
 
     if (!existing) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
+    }
+
+    if (existing.isSystemManaged) {
+      return NextResponse.json(
+        { error: "System-managed projects cannot be deleted via the API" },
+        { status: 403 }
+      );
     }
 
     // Detach apps from this project (don't delete them)

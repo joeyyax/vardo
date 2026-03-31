@@ -108,6 +108,21 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    // Verify the app exists and check isSystemManaged before updating
+    const existingApp = await db.query.apps.findFirst({
+      where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
+      columns: { id: true, projectId: true, isSystemManaged: true },
+    });
+    if (!existingApp) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    if (existingApp.isSystemManaged) {
+      return NextResponse.json(
+        { error: "System-managed apps cannot be modified via the API" },
+        { status: 403 }
+      );
+    }
+
     // Validate projectId changes — must belong to same org
     let oldProjectId: string | null = null;
     if ("projectId" in parsed.data) {
@@ -120,12 +135,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
           return NextResponse.json({ error: "Project not found" }, { status: 400 });
         }
       }
-      // Track old project for cleanup
-      const existing = await db.query.apps.findFirst({
-        where: eq(apps.id, appId),
-        columns: { projectId: true },
-      });
-      oldProjectId = existing?.projectId ?? null;
+      oldProjectId = existingApp.projectId ?? null;
     }
 
     const [updated] = await db
@@ -182,11 +192,18 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     // Fetch app before deleting
     const app = await db.query.apps.findFirst({
       where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
-      columns: { id: true, name: true, projectId: true },
+      columns: { id: true, name: true, projectId: true, isSystemManaged: true },
     });
 
     if (!app) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    if (app.isSystemManaged) {
+      return NextResponse.json(
+        { error: "System-managed apps cannot be deleted via the API" },
+        { status: 403 }
+      );
     }
 
     // Stop containers before deleting

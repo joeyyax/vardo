@@ -10,6 +10,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
@@ -89,6 +90,7 @@ export const apps = pgTable(
     healthCheckTimeout: integer("health_check_timeout"), // Seconds to wait for healthy containers (null = system default 60s)
     autoRollback: boolean("auto_rollback").default(false), // Rollback on crash after deploy
     rollbackGracePeriod: integer("rollback_grace_period").default(60), // Seconds to monitor after deploy
+    isSystemManaged: boolean("is_system_managed").default(false).notNull(), // Managed by Vardo itself — deploy engine blocked
     backendProtocol: text("backend_protocol", { enum: ["http", "https"] }), // Backend scheme Traefik uses to reach the container. Null = auto (https if port 443/8443)
     envContent: text("env_content"), // Encrypted env file blob (AES-256-GCM)
     // Compose decomposition: child service records point to parent compose app
@@ -106,6 +108,8 @@ export const apps = pgTable(
     unique("app_imported_compose_project_uniq").on(t.organizationId, t.importedComposeProject),
     index("app_org_id_idx").on(t.organizationId),
     index("app_parent_app_id_idx").on(t.parentAppId),
+    index("app_git_url_idx").on(t.gitUrl),
+    uniqueIndex("app_system_managed_git_url_uniq").on(t.gitUrl).where(sql`is_system_managed = true`),
   ]
 );
 

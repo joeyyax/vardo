@@ -18,7 +18,8 @@ export type FeatureFlag =
   | "cron"
   | "passwordAuth"
   | "mesh"
-  | "bindMounts";
+  | "bindMounts"
+  | "selfManagement";
 
 type FlagConfig = {
   label: string;
@@ -61,6 +62,12 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
     label: "Bind Mounts",
     description:
       "Allow host path mounts in compose definitions. Required for homelab services with local config or NFS mounts. Disabled by default for security on shared instances.",
+    defaultValue: false,
+  },
+  selfManagement: {
+    label: "Self-Management",
+    description:
+      "Register Vardo as a managed project visible in the dashboard. Enables PR preview deployments against the Vardo repo.",
     defaultValue: false,
   },
 };
