@@ -1,8 +1,17 @@
 import { db } from "@/lib/db";
 import { meshPeers } from "@/lib/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, notInArray, sql } from "drizzle-orm";
+import { nanoid } from "nanoid";
+import { logger } from "@/lib/logger";
 import { meshFetch } from "./client";
 import { toCidr } from "./ip-allocator";
+
+const log = logger.child("mesh-heartbeat");
+
+// WireGuard Curve25519 public key — 32 bytes base64-encoded = 44 chars ending in =
+const WG_KEY_RE = /^[A-Za-z0-9+/]{43}=$/;
+// Bare IPv4 or IPv4 CIDR (e.g. 10.99.0.2 or 10.99.0.2/32)
+const IP_OR_CIDR_RE = /^\d{1,3}(\.\d{1,3}){3}(\/\d{1,2})?$/;
 
 type PeerManifestEntry = {
   id: string;
@@ -68,7 +77,11 @@ export async function sendHeartbeatToPeer(peerId: string): Promise<boolean> {
 
   // If the hub returned a peer manifest, sync visible peers into our local DB.
   if (ok && body?.peers && body.peers.length > 0) {
-    await syncVisiblePeers(body.peers);
+    try {
+      await syncVisiblePeers(body.peers);
+    } catch (err) {
+      log.warn(`Failed to sync visible peers from hub: ${err}`);
+    }
   }
 
   return ok;
@@ -80,32 +93,54 @@ export async function sendHeartbeatToPeer(peerId: string): Promise<boolean> {
  * mesh but have no direct WireGuard tunnel to them.
  *
  * Rules:
- * - Insert new peers that we haven't seen before.
- * - Update name/status/lastSeenAt for existing visible peers.
- * - Never downgrade a "direct" peer to "visible".
+ * - Validate hub-provided fields before touching the DB.
+ * - Use a local nanoid() for the primary key — never adopt the hub's ID.
+ * - Single atomic INSERT … ON CONFLICT DO UPDATE on instanceId — safe under
+ *   concurrent heartbeats from multiple hubs with overlapping manifests.
+ * - On conflict: update name/status/lastSeenAt only for visible peers.
+ *   Direct peers keep all existing values untouched.
+ * - Prune visible peers that are no longer present in the hub's manifest.
  */
 async function syncVisiblePeers(peers: PeerManifestEntry[]): Promise<void> {
   if (peers.length === 0) return;
 
-  const instanceIds = peers.map((p) => p.instanceId);
-  const existing = await db.query.meshPeers.findMany({
-    where: inArray(meshPeers.instanceId, instanceIds),
-    columns: { instanceId: true, connectionType: true },
+  // Validate hub-provided fields before inserting — reject obviously malformed
+  // entries to limit blast radius if a hub is misconfigured or compromised.
+  const valid = peers.filter((p) => {
+    if (!WG_KEY_RE.test(p.publicKey)) {
+      log.warn(
+        `syncVisiblePeers: skipping peer ${p.instanceId} — invalid publicKey`
+      );
+      return false;
+    }
+    if (!IP_OR_CIDR_RE.test(p.internalIp)) {
+      log.warn(
+        `syncVisiblePeers: skipping peer ${p.instanceId} — invalid internalIp`
+      );
+      return false;
+    }
+    if (p.allowedIps && !IP_OR_CIDR_RE.test(p.allowedIps)) {
+      log.warn(
+        `syncVisiblePeers: skipping peer ${p.instanceId} — invalid allowedIps`
+      );
+      return false;
+    }
+    return true;
   });
 
-  const existingByInstanceId = new Map(
-    existing.map((p) => [p.instanceId, p.connectionType])
-  );
+  if (valid.length === 0) return;
 
   const now = new Date();
 
-  for (const p of peers) {
-    const existingType = existingByInstanceId.get(p.instanceId);
-
-    if (!existingType) {
-      // New peer — insert as visible
-      await db.insert(meshPeers).values({
-        id: p.id,
+  // Single atomic upsert — no read-then-write race under concurrent heartbeats.
+  // On conflict on instanceId:
+  //   direct peers  → all CASE branches fall through to existing values (no-op)
+  //   visible peers → name, status, lastSeenAt, updatedAt are refreshed
+  await db
+    .insert(meshPeers)
+    .values(
+      valid.map((p) => ({
+        id: nanoid(),
         instanceId: p.instanceId,
         name: p.name,
         type: p.type,
@@ -114,23 +149,31 @@ async function syncVisiblePeers(peers: PeerManifestEntry[]): Promise<void> {
         allowedIps: p.allowedIps ?? toCidr(p.internalIp),
         publicKey: p.publicKey,
         endpoint: p.endpoint ?? null,
-        connectionType: "visible",
+        connectionType: "visible" as const,
         lastSeenAt: p.lastSeenAt ? new Date(p.lastSeenAt) : null,
         createdAt: now,
         updatedAt: now,
-      });
-    } else if (existingType === "visible") {
-      // Refresh name, status and last-seen for visible peers
-      await db
-        .update(meshPeers)
-        .set({
-          name: p.name,
-          status: p.status,
-          lastSeenAt: p.lastSeenAt ? new Date(p.lastSeenAt) : null,
-          updatedAt: now,
-        })
-        .where(eq(meshPeers.instanceId, p.instanceId));
-    }
-    // Direct connections keep their own status — don't touch them.
-  }
+      }))
+    )
+    .onConflictDoUpdate({
+      target: meshPeers.instanceId,
+      set: {
+        name: sql`CASE WHEN ${meshPeers.connectionType} = 'visible' THEN EXCLUDED.name ELSE ${meshPeers.name} END`,
+        status: sql`CASE WHEN ${meshPeers.connectionType} = 'visible' THEN EXCLUDED.status ELSE ${meshPeers.status} END`,
+        lastSeenAt: sql`CASE WHEN ${meshPeers.connectionType} = 'visible' THEN EXCLUDED.last_seen_at ELSE ${meshPeers.lastSeenAt} END`,
+        updatedAt: sql`CASE WHEN ${meshPeers.connectionType} = 'visible' THEN EXCLUDED.updated_at ELSE ${meshPeers.updatedAt} END`,
+      },
+    });
+
+  // Remove visible peers that are no longer in the hub's manifest.
+  // This keeps the Instances page accurate as peers are deregistered from the hub.
+  const instanceIds = valid.map((p) => p.instanceId);
+  await db
+    .delete(meshPeers)
+    .where(
+      and(
+        eq(meshPeers.connectionType, "visible"),
+        notInArray(meshPeers.instanceId, instanceIds)
+      )
+    );
 }

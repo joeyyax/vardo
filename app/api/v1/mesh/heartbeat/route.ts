@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { meshPeers } from "@/lib/db/schema";
 import { eq, ne } from "drizzle-orm";
 import { requireMeshPeer } from "@/lib/mesh/auth";
+import { HUB_IP } from "@/lib/mesh";
 import { getInstanceId } from "@/lib/constants";
 import { getInstanceConfig } from "@/lib/system-settings";
 
@@ -55,7 +56,7 @@ export async function POST(request: NextRequest) {
       instance: {
         id: instanceId,
         name: config.instanceName,
-        internalIp: "10.99.0.1",
+        internalIp: HUB_IP,
       },
       peers: allPeers,
     });
