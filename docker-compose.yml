@@ -56,6 +56,7 @@ services:
       NEXT_PUBLIC_BETTER_AUTH_URL: https://${VARDO_DOMAIN:-localhost}
       NEXT_PUBLIC_APP_URL: https://${VARDO_DOMAIN:-localhost}
       VARDO_PROJECTS_DIR: /var/lib/vardo/projects
+      VARDO_DIR: ${VARDO_DIR:-/opt/vardo}
       CADVISOR_URL: http://vardo-cadvisor:8080
       LOKI_URL: http://vardo-loki:3100
       WIREGUARD_GATEWAY: 10.88.0.2
@@ -78,9 +79,15 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - vardo_projects:/var/lib/vardo/projects
       - traefik_dynamic:/etc/traefik/dynamic
-      # External projects — read-only access to compose projects for git auto-detection.
-      # Set EXTERNAL_PROJECTS_PATH in .env (e.g., /mnt/docker or /home/user/projects).
-      - ${EXTERNAL_PROJECTS_PATH:-/dev/null}:${EXTERNAL_PROJECTS_PATH:-/dev/null}:ro
+      # Vardo installation directory — required for self-management (docker compose up -d, .env writes).
+      # Set VARDO_DIR in .env to the directory where docker-compose.yml lives (default: /opt/vardo).
+      - ${VARDO_DIR:-/opt/vardo}:${VARDO_DIR:-/opt/vardo}
+      # Additional host mounts — pre-defined slots for mounting host paths into Vardo.
+      # Set VARDO_DATA or VARDO_PROJECTS in .env to enable. Unused slots default to /dev/null (no-op).
+      - ${VARDO_DATA:-/dev/null}:${VARDO_DATA:-/dev/null}:ro
+      - ${VARDO_PROJECTS:-/dev/null}:${VARDO_PROJECTS:-/dev/null}:ro
+      - ${VARDO_MOUNT_1:-/dev/null}:${VARDO_MOUNT_1:-/dev/null}:ro
+      - ${VARDO_MOUNT_2:-/dev/null}:${VARDO_MOUNT_2:-/dev/null}:ro
     labels:
       - "traefik.enable=true"
       # Primary router — domain with TLS

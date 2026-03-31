@@ -17,7 +17,7 @@ const BASE_NAV_ITEMS = [
   { label: "Domain & SSL", href: "/admin/settings/domain" },
   { label: "Traefik", href: "/admin/settings/traefik" },
   { label: "External routes", href: "/admin/settings/external-routes" },
-  { label: "Docker", href: "/admin/settings/docker" },
+  { label: "Maintenance", href: "/admin/settings/maintenance" },
   { label: "Config", href: "/admin/settings/config" },
 ];
 
