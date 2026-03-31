@@ -35,7 +35,7 @@ export default async function ProjectsPage() {
           with: { tag: true },
         },
         project: {
-          columns: { id: true, name: true, displayName: true, color: true },
+          columns: { id: true, name: true, displayName: true, color: true, isSystemManaged: true },
         },
         childApps: {
           columns: { id: true, displayName: true, status: true },
@@ -48,7 +48,7 @@ export default async function ProjectsPage() {
     }),
     db.query.projects.findMany({
       where: eq(projects.organizationId, orgId),
-      columns: { id: true, name: true, displayName: true, color: true },
+      columns: { id: true, name: true, displayName: true, color: true, isSystemManaged: true },
     }),
   ]);
 

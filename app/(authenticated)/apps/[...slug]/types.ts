@@ -114,6 +114,7 @@ export type App = {
   status: "active" | "stopped" | "error" | "deploying";
   needsRedeploy: boolean | null;
   importedContainerId: string | null;
+  isSystemManaged: boolean;
   createdAt: Date;
   updatedAt: Date;
   deployments: Deployment[];

@@ -107,6 +107,11 @@ export async function register() {
         })
         .catch((err) => log.error("Failed to start mesh heartbeat scheduler:", err)),
 
+      import("./lib/docker/self-register")
+        .then(({ ensureVardoProject }) => ensureVardoProject())
+        .then(() => log.info("Vardo self-registration complete"))
+        .catch((err) => log.warn("Vardo self-registration skipped:", err)),
+
       Promise.resolve().then(() => {
         const domainLog = logger.child("domain-monitor");
         let ticking = false;

@@ -57,6 +57,7 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
       columns: {
         id: true,
         organizationId: true,
+        isSystemManaged: true,
         gitUrl: true,
         gitBranch: true,
         imageName: true,
@@ -74,6 +75,13 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
 
     if (!app) {
       return NextResponse.json({ error: "App not found" }, { status: 404 });
+    }
+
+    if (app.isSystemManaged) {
+      return NextResponse.json(
+        { error: "System-managed apps cannot be rolled back via the API" },
+        { status: 403 }
+      );
     }
 
     // Fetch the target deployment (the one we are rolling back to)
