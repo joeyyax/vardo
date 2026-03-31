@@ -1,0 +1,1 @@
+ALTER TABLE "mesh_peer" ADD COLUMN "source_hub_instance_id" text;

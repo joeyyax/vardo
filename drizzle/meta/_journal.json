@@ -120,6 +120,20 @@
       "when": 1743379200000,
       "tag": "0016_add_imported_compose_project",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1774979283273,
+      "tag": "0017_chemical_dakota_north",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1774982050915,
+      "tag": "0018_adorable_talos",
+      "breakpoints": true
     }
   ]
 }
