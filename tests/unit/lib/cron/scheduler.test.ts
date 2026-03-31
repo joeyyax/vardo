@@ -56,11 +56,12 @@ describe("selfManagement feature gate in daily scheduler", () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    // Set system clock to 2:00 AM so the hourly interval fires the daily job.
-    const twoAM = new Date();
-    twoAM.setHours(2, 0, 0, 0);
+    // Set system clock to 1:00 AM so when the hourly interval fires one hour
+    // later the clock reads 2:00 AM and passes the daily-job gate.
+    const oneAM = new Date();
+    oneAM.setHours(1, 0, 0, 0);
     vi.useFakeTimers();
-    vi.setSystemTime(twoAM);
+    vi.setSystemTime(oneAM);
   });
 
   afterEach(() => {
