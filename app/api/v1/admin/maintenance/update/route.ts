@@ -1,18 +1,22 @@
-import { NextResponse } from "next/server";
-import { spawn, execFileSync } from "child_process";
+import { NextRequest, NextResponse } from "next/server";
+import { spawn, execFile } from "child_process";
+import { promisify } from "util";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { handleRouteError } from "@/lib/api/error-response";
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { logger } from "@/lib/logger";
+
+const execFileAsync = promisify(execFile);
 
 const log = logger.child("admin:maintenance:update");
 
 // POST /api/v1/admin/maintenance/update
 //
 // Pulls latest code from git, rebuilds the frontend image, and restarts
-// the stack. The git pull runs synchronously so any fetch errors surface
-// immediately. The rebuild + restart run detached in the background — the
-// container will restart itself once the new image is ready.
-export async function POST() {
+// the stack. The git pull runs first so any fetch errors surface before
+// the rebuild begins. The rebuild + restart run detached in the background —
+// the container will restart itself once the new image is ready.
+async function handlePost(_request: NextRequest) {
   try {
     await requireAppAdmin();
 
@@ -25,10 +29,10 @@ export async function POST() {
       );
     }
 
-    // git pull — run synchronously so we can report fetch errors immediately
+    // git pull — async so the event loop stays responsive
     try {
-      const pullOutput = execFileSync("git", ["-C", vardoDir, "pull"], { timeout: 30000 }).toString().trim();
-      log.info(`git pull: ${pullOutput}`);
+      const { stdout } = await execFileAsync("git", ["-C", vardoDir, "pull"], { timeout: 30000 });
+      log.info(`git pull: ${stdout.trim()}`);
     } catch (err) {
       log.error(`git pull failed: ${err}`);
       return NextResponse.json(
@@ -69,3 +73,5 @@ export async function POST() {
     return handleRouteError(error);
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "critical", key: "maintenance:update" });

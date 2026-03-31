@@ -1,8 +1,9 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { spawn } from "child_process";
 import { z } from "zod";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { handleRouteError } from "@/lib/api/error-response";
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("admin:maintenance:restart");
@@ -25,7 +26,7 @@ const restartSchema = z.object({
 //
 // Uses docker compose up -d rather than docker restart so that config
 // changes and image updates are picked up on recreate.
-export async function POST(request: Request) {
+async function handlePost(request: NextRequest) {
   try {
     await requireAppAdmin();
 
@@ -70,3 +71,5 @@ export async function POST(request: Request) {
     return handleRouteError(error);
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "critical", key: "maintenance:restart" });
