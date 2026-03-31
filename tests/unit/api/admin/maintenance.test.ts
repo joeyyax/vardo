@@ -1,10 +1,13 @@
-import { describe, it, expect } from "vitest";
-import { z } from "zod";
+import { describe, it, expect, vi } from "vitest";
+import { mountsSchema, restartSchema } from "@/lib/api/admin/maintenance-schemas";
 
 // ---------------------------------------------------------------------------
 // Maintenance API — validation schemas and core logic
 //
-// These tests mirror the validation rules in:
+// These tests import schemas directly from the shared lib module so any
+// change to the actual validation rules is immediately reflected here.
+//
+// Routes covered:
 //   app/api/v1/admin/maintenance/route.ts
 //   app/api/v1/admin/maintenance/restart/route.ts
 //   app/api/v1/admin/maintenance/update/route.ts
@@ -48,20 +51,55 @@ describe("maintenance GET — hasVardoDir shape", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Auth guard — requireAppAdmin() propagation
+//
+// All five endpoints call requireAppAdmin() before any logic runs. The guard
+// throws Error("Unauthorized") or Error("Forbidden"), which handleRouteError
+// converts to 401 / 403. These tests verify the error-to-status mapping that
+// every endpoint depends on.
+// ---------------------------------------------------------------------------
+
+describe("auth guard — error-to-status mapping", () => {
+  // Mirrors the logic in lib/api/error-response.ts
+  function handleRouteError(error: unknown): { status: number; body: { error: string } } {
+    if (error instanceof Error && error.message === "Unauthorized") {
+      return { status: 401, body: { error: "Unauthorized" } };
+    }
+    if (error instanceof Error && error.message === "Forbidden") {
+      return { status: 403, body: { error: "Forbidden" } };
+    }
+    return { status: 500, body: { error: "Internal server error" } };
+  }
+
+  it("maps Unauthorized to 401", () => {
+    const res = handleRouteError(new Error("Unauthorized"));
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe("Unauthorized");
+  });
+
+  it("maps Forbidden to 403 — non-admin authenticated users", () => {
+    const res = handleRouteError(new Error("Forbidden"));
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe("Forbidden");
+  });
+
+  it("maps unknown errors to 500", () => {
+    const res = handleRouteError(new Error("something unexpected"));
+    expect(res.status).toBe(500);
+  });
+
+  it("maps non-Error throws to 500", () => {
+    const res = handleRouteError("string error");
+    expect(res.status).toBe(500);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // POST /api/v1/admin/maintenance/restart — service name validation
 //
 // Service names must match the vardo-<name> pattern (lowercase alphanumeric
 // + hyphens). Arbitrary strings are rejected before they reach docker compose.
 // ---------------------------------------------------------------------------
-
-const SERVICE_NAME_RE = /^vardo-[a-z][a-z0-9-]*$/;
-
-const restartSchema = z.object({
-  service: z
-    .string()
-    .regex(SERVICE_NAME_RE, "service must match vardo-<name> (lowercase alphanumeric with hyphens)")
-    .optional(),
-});
 
 describe("restart — service name validation", () => {
   it("accepts a valid service name", () => {
@@ -164,21 +202,6 @@ describe("mounts GET — response shape", () => {
 // with no newline characters (which would inject lines into .env).
 // ---------------------------------------------------------------------------
 
-const mountPathField = z
-  .string()
-  .refine(
-    (v) => v === "" || (v.startsWith("/") && !/[\n\r]/.test(v)),
-    "path must be an absolute path without newline characters, or empty to clear",
-  )
-  .optional();
-
-const mountsSchema = z.object({
-  vardoData: mountPathField,
-  vardoProjects: mountPathField,
-  vardoMount1: mountPathField,
-  vardoMount2: mountPathField,
-});
-
 describe("mounts POST — mountPathField validation", () => {
   it("accepts a valid absolute path", () => {
     expect(mountsSchema.safeParse({ vardoData: "/mnt/data" }).success).toBe(true);
@@ -232,5 +255,79 @@ describe("mounts POST — mountPathField validation", () => {
 
   it("rejects a path that starts with a newline", () => {
     expect(mountsSchema.safeParse({ vardoData: "\n/mnt/data" }).success).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/v1/admin/maintenance/mounts — update logic
+//
+// Early-return: when no recognized fields are provided, returns ok:true
+// immediately without calling writeEnvKey.
+//
+// Error path: when writeEnvKey throws, the handler returns 500 instead of
+// propagating the exception.
+// ---------------------------------------------------------------------------
+
+type UpdateResult = { ok: boolean; status: number; error?: string };
+
+async function processMountsUpdate(
+  updates: Array<[string, string]>,
+  writer: (key: string, value: string) => Promise<void>,
+): Promise<UpdateResult> {
+  if (updates.length === 0) {
+    return { ok: true, status: 200 };
+  }
+  try {
+    for (const [key, value] of updates) {
+      await writer(key, value);
+    }
+    return { ok: true, status: 200 };
+  } catch {
+    return { ok: false, status: 500, error: "Could not update .env — check server permissions" };
+  }
+}
+
+describe("mounts POST — update logic", () => {
+  it("returns ok:true immediately when no fields are provided (empty-update early return)", async () => {
+    const writer = vi.fn();
+    const result = await processMountsUpdate([], writer);
+    expect(result.ok).toBe(true);
+    expect(result.status).toBe(200);
+    expect(writer).not.toHaveBeenCalled();
+  });
+
+  it("calls writer for each update and returns ok:true on success", async () => {
+    const writer = vi.fn().mockResolvedValue(undefined);
+    const result = await processMountsUpdate(
+      [["VARDO_DATA", "/mnt/data"], ["VARDO_PROJECTS", "/home/user/projects"]],
+      writer,
+    );
+    expect(result.ok).toBe(true);
+    expect(result.status).toBe(200);
+    expect(writer).toHaveBeenCalledTimes(2);
+    expect(writer).toHaveBeenCalledWith("VARDO_DATA", "/mnt/data");
+    expect(writer).toHaveBeenCalledWith("VARDO_PROJECTS", "/home/user/projects");
+  });
+
+  it("returns 500 when writeEnvKey throws (file I/O error path)", async () => {
+    const writer = vi.fn().mockRejectedValue(new Error("EACCES: permission denied"));
+    const result = await processMountsUpdate([["VARDO_DATA", "/mnt/data"]], writer);
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(500);
+    expect(result.error).toContain("Could not update .env");
+  });
+
+  it("stops after the first write failure and does not call writer again", async () => {
+    const writer = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("EROFS: read-only file system"));
+    const result = await processMountsUpdate(
+      [["VARDO_DATA", "/mnt/data"], ["VARDO_PROJECTS", "/home/user/projects"]],
+      writer,
+    );
+    expect(result.status).toBe(500);
+    // writer called once for VARDO_DATA (ok), then rejected on VARDO_PROJECTS
+    expect(writer).toHaveBeenCalledTimes(2);
   });
 });

@@ -1,30 +1,12 @@
 import { NextResponse } from "next/server";
 import { join } from "path";
-import { z } from "zod";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { writeEnvKey } from "@/lib/env/write-env-key";
 import { handleRouteError } from "@/lib/api/error-response";
+import { mountsSchema } from "@/lib/api/admin/maintenance-schemas";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("admin:maintenance:mounts");
-
-// Mount path values are written directly into .env. Empty string clears the
-// mount. Non-empty values must be absolute paths with no newline characters
-// (newlines would inject additional lines into the .env file).
-const mountPathField = z
-  .string()
-  .refine(
-    (v) => v === "" || (v.startsWith("/") && !/[\n\r]/.test(v)),
-    "path must be an absolute path without newline characters, or empty to clear",
-  )
-  .optional();
-
-const mountsSchema = z.object({
-  vardoData: mountPathField,
-  vardoProjects: mountPathField,
-  vardoMount1: mountPathField,
-  vardoMount2: mountPathField,
-});
 
 // GET /api/v1/admin/maintenance/mounts
 //
