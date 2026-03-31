@@ -170,7 +170,8 @@ export async function waitForConcurrencySlot(
       return;
     }
 
-    await new Promise<void>((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+    const jitter = Math.random() * POLL_INTERVAL_MS;
+    await new Promise<void>((resolve) => setTimeout(resolve, POLL_INTERVAL_MS + jitter));
   }
 }
 
@@ -239,12 +240,13 @@ export async function getConcurrencyState(): Promise<{
 export async function reconcileQueue(activeIds: Set<string>): Promise<void> {
   try {
     const queued = await redis.lrange(QUEUE_KEY, 0, -1);
-    for (const id of queued) {
-      if (!activeIds.has(id)) {
+    const orphaned = queued.filter((id) => !activeIds.has(id));
+    await Promise.all(
+      orphaned.map(async (id) => {
         await redis.lrem(QUEUE_KEY, 0, id);
         log.warn(`Removed orphaned concurrency queue entry for deployment ${id}`);
-      }
-    }
+      }),
+    );
   } catch (err) {
     log.warn("Failed to reconcile concurrency queue:", err);
   }

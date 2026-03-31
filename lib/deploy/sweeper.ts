@@ -4,7 +4,7 @@ import { apps } from "@/lib/db/schema/apps";
 import { publishEvent, appChannel } from "@/lib/events";
 import { acquireLock } from "@/lib/redis-lock";
 import { logger } from "@/lib/logger";
-import { eq, and, lt, count, or } from "drizzle-orm";
+import { eq, and, lt, or, inArray } from "drizzle-orm";
 import { reconcileActiveCounter, reconcileQueue, removeFromQueue } from "@/lib/docker/deploy-concurrency";
 
 const log = logger.child("deploy-sweeper");
@@ -58,6 +58,19 @@ export async function sweepStuckDeployments(): Promise<void> {
 
   log.info(`Found ${stuck.length} stuck deployment(s)`);
 
+  // Batch-fetch app metadata for all stuck deployments up front
+  const stuckAppIds = [...new Set(stuck.map((d) => d.appId))];
+  const appRows = await db
+    .select({
+      id: apps.id,
+      organizationId: apps.organizationId,
+      name: apps.name,
+      displayName: apps.displayName,
+    })
+    .from(apps)
+    .where(inArray(apps.id, stuckAppIds));
+  const appMap = new Map(appRows.map((a) => [a.id, a]));
+
   for (const deploy of stuck) {
     // Distributed lock prevents double-processing across instances
     const lockKey = `sweep:deploy:${deploy.id}`;
@@ -105,10 +118,7 @@ export async function sweepStuckDeployments(): Promise<void> {
       // Emit notification
       try {
         const { emit } = await import("@/lib/notifications/dispatch");
-        const app = await db.query.apps.findFirst({
-          where: eq(apps.id, deploy.appId),
-          columns: { organizationId: true, name: true, displayName: true },
-        });
+        const app = appMap.get(deploy.appId);
         if (app) {
           const projectName = app.displayName || app.name;
           emit(app.organizationId, {
@@ -168,6 +178,19 @@ export async function sweepStuckQueuedDeployments(): Promise<void> {
 
   log.info(`Found ${stuck.length} stuck queued deployment(s)`);
 
+  // Batch-fetch app metadata for all stuck deployments up front
+  const stuckAppIds = [...new Set(stuck.map((d) => d.appId))];
+  const appRows = await db
+    .select({
+      id: apps.id,
+      organizationId: apps.organizationId,
+      name: apps.name,
+      displayName: apps.displayName,
+    })
+    .from(apps)
+    .where(inArray(apps.id, stuckAppIds));
+  const appMap = new Map(appRows.map((a) => [a.id, a]));
+
   for (const deploy of stuck) {
     const lockKey = `sweep:queued:${deploy.id}`;
     const acquired = await acquireLock(lockKey, 60_000);
@@ -205,10 +228,7 @@ export async function sweepStuckQueuedDeployments(): Promise<void> {
       // Emit notification
       try {
         const { emit } = await import("@/lib/notifications/dispatch");
-        const app = await db.query.apps.findFirst({
-          where: eq(apps.id, deploy.appId),
-          columns: { organizationId: true, name: true, displayName: true },
-        });
+        const app = appMap.get(deploy.appId);
         if (app) {
           const projectName = app.displayName || app.name;
           emit(app.organizationId, {
