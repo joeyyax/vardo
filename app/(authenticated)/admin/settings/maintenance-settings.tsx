@@ -7,6 +7,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
   Loader2,
   RefreshCw,
   ArrowUpCircle,
@@ -115,12 +126,19 @@ export function MaintenanceSettings() {
       const data = await res.json();
       toast.success(data.message ?? "Restart initiated");
       if (!service || service === "vardo-frontend") {
+        // Keep the button disabled through the reload window — don't clear restarting
         setTimeout(() => window.location.reload(), 6000);
+        return;
       }
+      // Re-fetch status so per-service badge reflects the new state
+      void fetchStatus();
     } catch {
       toast.error(service ? `Failed to restart ${service}` : "Failed to restart services");
     } finally {
-      setRestarting(null);
+      // Only clear restarting if we're not waiting on a page reload
+      if (service && service !== "vardo-frontend") {
+        setRestarting(null);
+      }
     }
   }
 
@@ -148,15 +166,18 @@ export function MaintenanceSettings() {
     e.preventDefault();
     setSavingMounts(true);
     try {
+      // Send all fields — empty string clears the mount, non-empty sets it.
+      // Fields that aren't absolute paths are omitted to avoid a 400.
+      const payload: Record<string, string> = {};
+      if (mounts.vardoData !== null) payload.vardoData = mounts.vardoData;
+      if (mounts.vardoProjects !== null) payload.vardoProjects = mounts.vardoProjects;
+      if (mounts.vardoMount1 !== null) payload.vardoMount1 = mounts.vardoMount1;
+      if (mounts.vardoMount2 !== null) payload.vardoMount2 = mounts.vardoMount2;
+
       const res = await fetch("/api/v1/admin/maintenance/mounts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          vardoData: mounts.vardoData ?? "",
-          vardoProjects: mounts.vardoProjects ?? "",
-          vardoMount1: mounts.vardoMount1 ?? "",
-          vardoMount2: mounts.vardoMount2 ?? "",
-        }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -190,21 +211,38 @@ export function MaintenanceSettings() {
             Services
           </CardTitle>
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="squircle"
-              onClick={() => void handleRestart()}
-              disabled={restarting !== null || updating}
-              aria-label="Restart all services"
-            >
-              {restarting === "__all__" ? (
-                <Loader2 className="size-3 animate-spin" />
-              ) : (
-                <RefreshCw className="size-3" />
-              )}
-              {restarting === "__all__" ? "Restarting..." : "Restart all"}
-            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="squircle"
+                  disabled={restarting !== null || updating}
+                  aria-label="Restart all services"
+                >
+                  {restarting === "__all__" ? (
+                    <Loader2 className="size-3 animate-spin" />
+                  ) : (
+                    <RefreshCw className="size-3" />
+                  )}
+                  {restarting === "__all__" ? "Restarting..." : "Restart all"}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent size="sm">
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Restart all services?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will restart the entire Vardo stack and interrupt all active sessions.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => void handleRestart()}>
+                    Restart
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         </CardHeader>
         <CardContent>
@@ -267,7 +305,7 @@ export function MaintenanceSettings() {
             Pull the latest code from git, rebuild the frontend image, and restart the stack.
             The current session will be interrupted while the container restarts.
           </p>
-          {!status?.hasVardoDir && (
+          {!loadingStatus && !status?.hasVardoDir && (
             <div className="flex items-start gap-2 text-sm text-amber-600 dark:text-amber-400">
               <AlertCircle className="size-4 shrink-0 mt-0.5" />
               <span>
@@ -276,25 +314,43 @@ export function MaintenanceSettings() {
               </span>
             </div>
           )}
-          <Button
-            variant="outline"
-            onClick={() => void handleUpdate()}
-            disabled={updating || restarting !== null || !status?.hasVardoDir}
-            className="squircle"
-            aria-label="Update Vardo"
-          >
-            {updating ? (
-              <>
-                <Loader2 className="size-4 animate-spin" />
-                Updating...
-              </>
-            ) : (
-              <>
-                <ArrowUpCircle className="size-4" />
-                Pull &amp; rebuild
-              </>
-            )}
-          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                disabled={updating || restarting !== null || loadingStatus || !status?.hasVardoDir}
+                className="squircle"
+                aria-label="Update Vardo"
+              >
+                {updating ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    Updating...
+                  </>
+                ) : (
+                  <>
+                    <ArrowUpCircle className="size-4" />
+                    Pull &amp; rebuild
+                  </>
+                )}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent size="sm">
+              <AlertDialogHeader>
+                <AlertDialogTitle>Pull and rebuild?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will run git pull, rebuild the frontend image, and restart the stack.
+                  All active sessions will be interrupted during the restart.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={() => void handleUpdate()}>
+                  Update
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </CardContent>
       </Card>
 
@@ -316,6 +372,7 @@ export function MaintenanceSettings() {
               <p className="text-sm text-muted-foreground">
                 Host paths to mount into the Vardo container. Changes require a stack restart to
                 take effect — the paths are written to <code className="text-xs font-mono">.env</code>.
+                Leave a field blank to clear that mount.
               </p>
 
               <div className="grid gap-4 sm:grid-cols-2">
