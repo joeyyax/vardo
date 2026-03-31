@@ -15,9 +15,10 @@ import { InstancesSettings } from "../instances-settings";
 import { ConfigSettings } from "../config-settings";
 import { TraefikSettings } from "../traefik-settings";
 import { ExternalRoutesSettings } from "../external-routes-settings";
+import { DockerSettings } from "../docker-settings";
 import { BackupPage } from "@/components/backups/backup-page";
 
-const VALID_TABS = ["general", "email", "authentication", "feature-flags", "backup", "github", "domain", "traefik", "external-routes", "instances", "config"] as const;
+const VALID_TABS = ["general", "email", "authentication", "feature-flags", "backup", "github", "domain", "traefik", "external-routes", "docker", "instances", "config"] as const;
 type ValidTab = (typeof VALID_TABS)[number];
 
 const TAB_COMPONENTS: Record<ValidTab, React.ComponentType> = {
@@ -30,6 +31,7 @@ const TAB_COMPONENTS: Record<ValidTab, React.ComponentType> = {
   "domain": DomainSettings,
   "traefik": TraefikSettings,
   "external-routes": ExternalRoutesSettings,
+  "docker": DockerSettings,
   "instances": InstancesSettings,
   "config": ConfigSettings,
 };

@@ -333,6 +333,11 @@ async function handler(request: NextRequest, { params }: RouteParams) {
       envContent = encrypt(envLines, orgId);
     }
 
+    // When gitUrl is provided (or auto-detected), use git source so Vardo
+    // clones the repo and builds from docker-compose.yml with build: directives.
+    // Otherwise fall back to direct source using the generated compose with image: refs.
+    const useGitSource = !!effectiveGitUrl;
+
     let result: { app: (typeof apps)["$inferSelect"] };
     try {
       result = await db.transaction(async (tx) => {
@@ -346,10 +351,6 @@ async function handler(request: NextRequest, { params }: RouteParams) {
 
         // Insert parent app record for the compose stack
         const appId = nanoid();
-        // When gitUrl is provided (or auto-detected), use git source so Vardo
-        // clones the repo and builds from docker-compose.yml with build: directives.
-        // Otherwise fall back to direct source using the generated compose with image: refs.
-        const useGitSource = !!effectiveGitUrl;
         const [app] = await tx
           .insert(apps)
           .values({
