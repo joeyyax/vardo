@@ -94,9 +94,11 @@ async function handlePush(payload: Record<string, unknown>): Promise<NextRespons
     ),
   });
 
-  // Filter to matching branch
+  // Filter to matching branch, excluding system-managed apps — those are
+  // managed by the self-preview path and must not go through the generic
+  // deploy engine.
   const matching = allApps.filter(
-    (a) => (a.gitBranch || "main") === branch
+    (a) => !a.isSystemManaged && (a.gitBranch || "main") === branch
   );
 
   if (matching.length === 0) {
@@ -144,6 +146,11 @@ async function handlePullRequest(payload: Record<string, unknown>): Promise<Next
   const prUrl = pr.html_url as string;
   const branch = (pr.head as Record<string, unknown>)?.ref as string;
   const author = (pr.user as Record<string, unknown>)?.login as string;
+
+  if (!Number.isInteger(prNumber) || prNumber <= 0) {
+    log.error(`Invalid PR number in webhook payload: ${prNumber}`);
+    return NextResponse.json({ ok: true, skipped: "invalid PR number" });
+  }
 
   log.info(`PR #${prNumber} ${action} on ${repoFullName}:${branch} by ${author}`);
 
