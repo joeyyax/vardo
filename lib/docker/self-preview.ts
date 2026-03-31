@@ -32,6 +32,15 @@ const execFileAsync = promisify(execFile);
 const PREVIEW_PROJECT_PREFIX = "vardo-preview-pr";
 const VARDO_NETWORK = process.env.VARDO_NETWORK ?? "vardo-network";
 
+// Validate VARDO_NETWORK at startup — used in two positions in the compose
+// template (network reference and network key). A value with newlines or
+// YAML-special chars would produce malformed compose output. baseDomain is
+// already validated with a regex before use in the same template; this applies
+// the same treatment to VARDO_NETWORK.
+if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(VARDO_NETWORK)) {
+  throw new Error(`Invalid VARDO_NETWORK: "${VARDO_NETWORK}"`);
+}
+
 // Stale preview threshold: tear down previews older than this many hours when
 // cleanupStaleSelfPreviews() runs. Handles missed PR close webhooks.
 const STALE_PREVIEW_MAX_AGE_HOURS = 72;
