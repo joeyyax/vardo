@@ -29,7 +29,7 @@ const createAppSchema = z
     gitUrl: z.string().url().refine((url) => url.startsWith("https://"), { message: "Only HTTPS git URLs are allowed" }).optional(),
     gitBranch: z.string().regex(/^[a-zA-Z0-9._\-/]+$/, "Invalid branch name").optional(),
     imageName: z.string().optional(),
-    composeContent: z.string().optional(),
+    composeContent: z.string().max(512000).optional(),
     composeFilePath: z.string().regex(/^[a-zA-Z0-9._-][a-zA-Z0-9._\-/]*$/, "Invalid file path").optional(),
     dockerfilePath: z.string().regex(/^[a-zA-Z0-9._-][a-zA-Z0-9._\-/]*$/, "Invalid file path").optional(),
     rootDirectory: z.string().optional(),
