@@ -1056,26 +1056,6 @@ generate_env() {
   fi
   # Development role: no domain prompts at all
 
-  # External projects path — optional mount for auto-detecting git repos during import
-  if [ -z "${EXTERNAL_PROJECTS_PATH:-}" ] && ! $UNATTENDED && [[ "$VARDO_ROLE" != "development" ]]; then
-    if has_tty; then
-      echo ""
-      echo -e "  ${BOLD}External compose projects${RESET}"
-      echo -e "  If you have existing Docker Compose projects you want to import into Vardo,"
-      echo -e "  Vardo can auto-detect their git repos if it has read access to the project directories."
-      echo ""
-      read -rp "  Path to compose projects (e.g. /mnt/docker, press Enter to skip): " EXTERNAL_PROJECTS_PATH < /dev/tty
-      if [ -n "${EXTERNAL_PROJECTS_PATH:-}" ]; then
-        if [ ! -d "$EXTERNAL_PROJECTS_PATH" ]; then
-          warn "Directory $EXTERNAL_PROJECTS_PATH does not exist — skipping"
-          EXTERNAL_PROJECTS_PATH=""
-        else
-          log "External projects: $EXTERNAL_PROJECTS_PATH"
-        fi
-      fi
-    fi
-  fi
-
   if $DRY_RUN; then
     info "[dry-run] Would generate .env at $env_file"
     return
@@ -1113,6 +1093,7 @@ generate_env() {
     # Dev .env — minimal, no TLS/domain config
     cat > "$env_file" <<EOF
 VARDO_ROLE=development
+VARDO_DIR=$VARDO_DIR
 VARDO_INSTANCE_ID=$instance_id
 DOCKER_GID=$docker_gid
 DB_PASSWORD=$db_pass
@@ -1124,6 +1105,7 @@ EOF
     # Staging without domain — no TLS, no Traefik auth
     cat > "$env_file" <<EOF
 VARDO_ROLE=staging
+VARDO_DIR=$VARDO_DIR
 VARDO_INSTANCE_ID=$instance_id
 COMPOSE_PROFILES=$compose_profiles
 DOCKER_GID=$docker_gid
@@ -1140,6 +1122,7 @@ EOF
 
     cat > "$env_file" <<EOF
 VARDO_ROLE=${VARDO_ROLE}
+VARDO_DIR=$VARDO_DIR
 VARDO_INSTANCE_ID=$instance_id
 COMPOSE_PROFILES=$compose_profiles
 DOCKER_GID=$docker_gid
@@ -1174,13 +1157,6 @@ EOF
       echo "${env_var}=${current}" >> "$env_file"
     fi
   done
-
-  # External projects path for git auto-detection during compose import
-  if [ -n "${EXTERNAL_PROJECTS_PATH:-}" ]; then
-    echo "" >> "$env_file"
-    echo "# External projects path — read-only mount for git auto-detection" >> "$env_file"
-    echo "EXTERNAL_PROJECTS_PATH=${EXTERNAL_PROJECTS_PATH}" >> "$env_file"
-  fi
 
   chmod 600 "$env_file"
   log "Configuration saved"
