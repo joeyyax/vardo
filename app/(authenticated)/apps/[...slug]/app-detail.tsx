@@ -83,6 +83,7 @@ import { AppSettingsDialog } from "./app-settings-dialog";
 import { AppDebug } from "./app-debug";
 import { ComposeDetail } from "./compose-detail";
 import { AppSecurity } from "./app-security";
+import { SystemBadge } from "@/components/system-badge";
 
 import type { AppDetailProps, Environment } from "./types";
 
@@ -595,11 +596,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
             {app.displayName}
           </h1>
         )}
-        {app.isSystemManaged && (
-          <span className="inline-flex items-center rounded-full bg-amber-500/15 px-2.5 py-1 text-xs font-medium text-amber-600 dark:text-amber-400">
-            System Managed
-          </span>
-        )}
+        {app.isSystemManaged && <SystemBadge label="System Managed" />}
         {!isChildService && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

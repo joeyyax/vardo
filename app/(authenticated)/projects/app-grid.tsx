@@ -9,6 +9,7 @@ import { detectAppType } from "@/lib/ui/app-type";
 import { statusDotColor } from "@/lib/ui/status-colors";
 import { StatusIndicator, AppIcon } from "@/components/app-status";
 import { ChildAppChipList } from "@/components/child-app-chip";
+import { SystemBadge } from "@/components/system-badge";
 import {
   type AppMetrics,
   type MetricKey,
@@ -163,11 +164,7 @@ function ProjectCard({
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
               <h3 className="text-base font-semibold truncate">{project.displayName}</h3>
-              {isSystem && (
-                <span className="shrink-0 inline-flex items-center rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
-                  System
-                </span>
-              )}
+              {isSystem && <SystemBadge compact className="shrink-0" />}
               <EndpointsPopover endpoints={projectApps.flatMap((a) => a.domains.map((d) => ({ label: a.displayName, domain: d.domain })))} />
             </div>
             {projectApps.length > 0 ? (

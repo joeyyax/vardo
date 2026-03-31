@@ -64,6 +64,7 @@ import { ProjectMetrics } from "./project-metrics";
 import { AddAppDropdown } from "../add-app-dropdown";
 import { ProjectInstances } from "@/components/mesh/project-instances";
 import { AppBackupHistory } from "@/components/backups/app-backup-history";
+import { SystemBadge } from "@/components/system-badge";
 import type { MeshPeerSummary, ProjectInstanceSummary } from "@/lib/mesh/types";
 
 // ---------------------------------------------------------------------------
@@ -1078,11 +1079,7 @@ export function ProjectDetail({
           <h1 className="text-2xl font-semibold tracking-tight">
             {project.displayName}
           </h1>
-          {project.isSystemManaged && (
-            <span className="inline-flex items-center rounded-full bg-amber-500/15 px-2.5 py-1 text-xs font-medium text-amber-600 dark:text-amber-400">
-              System
-            </span>
-          )}
+          {project.isSystemManaged && <SystemBadge />}
           {/* Environment switcher */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
