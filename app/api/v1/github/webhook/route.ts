@@ -5,6 +5,8 @@ import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { requestDeploy } from "@/lib/docker/deploy-cancel";
 import { createPreview, destroyPreview } from "@/lib/docker/preview";
+import { getSystemManagedApp, createVardoPreview, destroyVardoPreview } from "@/lib/docker/self-preview";
+import { isFeatureEnabled } from "@/lib/config/features";
 import { getGitHubAppConfig } from "@/lib/system-settings";
 import { logger } from "@/lib/logger";
 
@@ -14,6 +16,12 @@ const log = logger.child("webhook");
 
 // POST /api/v1/github/webhook — GitHub App webhook receiver
 async function handler(request: NextRequest) {
+  // Recursion guard: preview instances receive the same webhooks but must not
+  // attempt to spin up further previews (infinite loop prevention).
+  if (process.env.VARDO_PREVIEW === "true") {
+    return NextResponse.json({ ok: true, skipped: "preview instance" });
+  }
+
   try {
     const body = await request.text();
     const event = request.headers.get("x-github-event");
@@ -138,6 +146,38 @@ async function handlePullRequest(payload: Record<string, unknown>): Promise<Next
   const author = (pr.user as Record<string, unknown>)?.login as string;
 
   log.info(`PR #${prNumber} ${action} on ${repoFullName}:${branch} by ${author}`);
+
+  // Vardo self-preview: if this repo is a system-managed app and the feature
+  // is enabled, deploy a frontend-only preview instead of the generic flow.
+  const vardoApp = await getSystemManagedApp(repoFullName);
+  if (vardoApp && isFeatureEnabled("selfManagement")) {
+    if (action === "opened" || action === "reopened" || action === "synchronize") {
+      try {
+        const result = await createVardoPreview({ prNumber, branch, repoFullName });
+        try {
+          await postPreviewComment(repoFullName, prNumber, [
+            { appName: "vardo", domain: result.domain },
+          ]);
+        } catch (err) {
+          log.error("Failed to post PR comment:", err);
+        }
+        return NextResponse.json({ ok: true, preview: result });
+      } catch (err) {
+        log.error(`Vardo preview creation failed for PR #${prNumber}:`, err);
+        return NextResponse.json({ ok: true, error: "Vardo preview creation failed" });
+      }
+    }
+    if (action === "closed") {
+      try {
+        await destroyVardoPreview(prNumber);
+        log.info(`Vardo preview for PR #${prNumber} destroyed`);
+      } catch (err) {
+        log.error(`Vardo preview cleanup failed for PR #${prNumber}:`, err);
+      }
+      return NextResponse.json({ ok: true, destroyed: true });
+    }
+    return NextResponse.json({ ok: true, skipped: `PR action: ${action}` });
+  }
 
   if (action === "opened" || action === "reopened" || action === "synchronize") {
     // Create or update preview
