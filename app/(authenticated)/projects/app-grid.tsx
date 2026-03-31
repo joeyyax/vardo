@@ -39,7 +39,7 @@ type AppWithRelations = {
   domains: { domain: string; isPrimary: boolean | null }[];
   deployments: { id: string; status: string; startedAt: Date; finishedAt: Date | null }[];
   appTags: { tag: Tag }[];
-  project: { id: string; name: string; displayName: string; color: string | null } | null;
+  project: { id: string; name: string; displayName: string; color: string | null; isSystemManaged: boolean } | null;
   childApps?: { id: string; displayName: string; status: string }[];
 };
 
@@ -48,6 +48,7 @@ type EmptyProject = {
   name: string;
   displayName: string;
   color: string | null;
+  isSystemManaged: boolean;
 };
 
 type AppGridProps = {
@@ -125,10 +126,12 @@ function ProjectCard({
     return result;
   }, [projectApps]);
 
+  const isSystem = project.isSystemManaged;
+
   return (
     <Link
       href={`/projects/${project.name}`}
-      className="squircle relative flex flex-col rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50 overflow-hidden cursor-pointer"
+      className={`squircle relative flex flex-col rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50 overflow-hidden cursor-pointer${isSystem ? " ring-2 ring-amber-500/50" : ""}`}
     >
       {aggregatedCpu.length > 0 && (
         <Sparkline
@@ -160,6 +163,11 @@ function ProjectCard({
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
               <h3 className="text-base font-semibold truncate">{project.displayName}</h3>
+              {isSystem && (
+                <span className="shrink-0 inline-flex items-center rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
+                  System
+                </span>
+              )}
               <EndpointsPopover endpoints={projectApps.flatMap((a) => a.domains.map((d) => ({ label: a.displayName, domain: d.domain })))} />
             </div>
             {projectApps.length > 0 ? (

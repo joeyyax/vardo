@@ -422,7 +422,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
       <PageToolbar
         actions={
           <div className="flex items-center gap-2">
-            {!isChildService && (app.status === "active" ? (
+            {!app.isSystemManaged && !isChildService && (app.status === "active" ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button size="sm" className={app.needsRedeploy
@@ -594,6 +594,11 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           <h1 className="text-2xl font-semibold tracking-tight">
             {app.displayName}
           </h1>
+        )}
+        {app.isSystemManaged && (
+          <span className="inline-flex items-center rounded-full bg-amber-500/15 px-2.5 py-1 text-xs font-medium text-amber-600 dark:text-amber-400">
+            System Managed
+          </span>
         )}
         {!isChildService && (
           <DropdownMenu>
