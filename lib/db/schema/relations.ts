@@ -39,6 +39,7 @@ import {
 import { cronJobs, cronJobRuns } from "./cron";
 import { meshPeers, projectInstances } from "./mesh";
 import { activities } from "./monitoring";
+import { appSecurityScans } from "./security";
 
 // ---------------------------------------------------------------------------
 // Relations
@@ -134,6 +135,7 @@ export const appsRelations = relations(apps, ({ one, many }) => ({
   volumeLimit: many(volumeLimits),
   cronJobs: many(cronJobs),
   transfers: many(appTransfers),
+  securityScans: many(appSecurityScans),
 }));
 
 export const deploymentsRelations = relations(deployments, ({ one }) => ({
@@ -495,3 +497,14 @@ export const projectInstancesRelations = relations(
     }),
   })
 );
+
+export const appSecurityScansRelations = relations(appSecurityScans, ({ one }) => ({
+  app: one(apps, {
+    fields: [appSecurityScans.appId],
+    references: [apps.id],
+  }),
+  organization: one(organizations, {
+    fields: [appSecurityScans.organizationId],
+    references: [organizations.id],
+  }),
+}));

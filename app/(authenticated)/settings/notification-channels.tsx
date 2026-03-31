@@ -38,6 +38,7 @@ const EVENT_LABELS: Record<BusEventType, string> = {
   "org.invitation-sent": "Invitation sent",
   "org.invitation-accepted": "Invitation accepted",
   "security.file-exposed": "Sensitive file exposed",
+  "security.scan-findings": "Security scan findings",
   "system.service-down": "Service down",
   "system.disk-alert": "Disk space alert",
   "system.restart-loop": "Vardo restarted",

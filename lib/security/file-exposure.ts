@@ -1,5 +1,7 @@
 import pLimit from "p-limit";
 import { logger } from "@/lib/logger";
+import { assertPublicDomain } from "./validate-domain";
+import type { SecurityFinding } from "./types";
 
 const log = logger.child("security");
 
@@ -18,24 +20,36 @@ const PROBE_PATHS: { path: string; heuristic?: (body: string) => boolean }[] = [
   { path: "/server.key" },
   { path: "/.ssh/id_rsa", heuristic: (b) => b.includes("PRIVATE KEY") },
   { path: "/phpinfo.php", heuristic: (b) => b.includes("phpinfo()") || b.includes("PHP Version") },
+  { path: "/server-status", heuristic: (b) => b.includes("Apache") || b.includes("Server Status") },
+  { path: "/debug.log", heuristic: (b) => b.length > 0 },
   { path: "/.svn/entries" },
   { path: "/backup.sql", heuristic: (b) => b.includes("INSERT INTO") || b.includes("CREATE TABLE") },
   { path: "/dump.sql", heuristic: (b) => b.includes("INSERT INTO") || b.includes("CREATE TABLE") },
   { path: "/.npmrc", heuristic: (b) => b.includes("registry") || b.includes("//") },
   { path: "/.docker/config.json", heuristic: (b) => b.includes("auths") },
-  { path: "/config.yml", heuristic: (b) => b.includes(":") },
+  // Match YAML key-value lines (word-char key followed by colon+space or colon+newline)
+  // to avoid matching every HTML/JSON/XML response.
+  { path: "/config.yml", heuristic: (b) => /^[\w-]+\s*:/m.test(b) },
 ];
+
+/** Paths that are critical (private keys, credentials) vs warning-level */
+const CRITICAL_PATHS = new Set(["/.env", "/.git/config", "/.git/HEAD", "/server.key", "/.ssh/id_rsa", "/wp-config.php"]);
 
 const TIMEOUT_MS = 3_000;
 const CONCURRENCY = 5;
 
+/** Maximum response body size to read — guards against large/slow responses. */
+const MAX_BODY_BYTES = 64 * 1024; // 64 KB
+
 /**
  * Probe a deployed domain for commonly exposed sensitive files.
- * Returns an array of paths that appear to be publicly accessible.
+ * Returns SecurityFinding[] for each exposed path found.
  */
-export async function checkFileExposure(domain: string): Promise<string[]> {
+export async function checkFileExposure(domain: string): Promise<SecurityFinding[]> {
+  await assertPublicDomain(domain);
+
   const limit = pLimit(CONCURRENCY);
-  const exposed: string[] = [];
+  const findings: SecurityFinding[] = [];
 
   const tasks = PROBE_PATHS.map(({ path, heuristic }) =>
     limit(async () => {
@@ -53,17 +67,26 @@ export async function checkFileExposure(domain: string): Promise<string[]> {
 
         if (res.status !== 200) return;
 
-        const body = await res.text();
+        // Read response body with a hard size cap to prevent unbounded memory use.
+        const buffer = await res.arrayBuffer();
+        if (buffer.byteLength === 0) return;
 
-        if (heuristic) {
-          if (heuristic(body)) {
-            exposed.push(path);
-            log.warn(`Exposed file detected: https://${domain}${path}`);
-          }
-        } else if (body.length > 0) {
-          exposed.push(path);
-          log.warn(`Exposed file detected: https://${domain}${path}`);
-        }
+        const slice = buffer.byteLength > MAX_BODY_BYTES
+          ? buffer.slice(0, MAX_BODY_BYTES)
+          : buffer;
+        const body = new TextDecoder().decode(slice);
+
+        const isExposed = heuristic ? heuristic(body) : true;
+        if (!isExposed) return;
+
+        log.warn(`Exposed file detected: https://${domain}${path}`);
+        findings.push({
+          type: "file-exposure",
+          severity: CRITICAL_PATHS.has(path) ? "critical" : "warning",
+          title: `Sensitive file exposed: ${path}`,
+          description: `The file at ${path} is publicly accessible. This may expose credentials or server internals.`,
+          detail: path,
+        });
       } catch {
         // Timeout or network error — not exposed
       }
@@ -71,5 +94,5 @@ export async function checkFileExposure(domain: string): Promise<string[]> {
   );
 
   await Promise.all(tasks);
-  return exposed;
+  return findings;
 }

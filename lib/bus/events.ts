@@ -17,7 +17,7 @@ export const EVENT_CATEGORIES = {
   volume: ["volume.drift"],
   disk: ["disk.write-alert"],
   org: ["org.invitation-sent", "org.invitation-accepted"],
-  security: ["security.file-exposed"],
+  security: ["security.file-exposed", "security.scan-findings"],
   system: [
     "system.service-down",
     "system.disk-alert",
@@ -194,6 +194,18 @@ export type SecurityFileExposedEvent = {
   exposedPaths: string[];
 };
 
+export type SecurityScanFindingsEvent = {
+  type: "security.scan-findings";
+  title: string;
+  message: string;
+  appId: string;
+  appName: string;
+  scanId: string;
+  criticalCount: number;
+  warningCount: number;
+  domain?: string;
+};
+
 export type DigestWeeklyEvent = {
   type: "digest.weekly";
   title: string;
@@ -230,6 +242,7 @@ export type BusEvent =
   | SystemCertExpiringEvent
   | SystemUpdateAvailableEvent
   | SecurityFileExposedEvent
+  | SecurityScanFindingsEvent
   | DigestWeeklyEvent;
 
 export type BusEventType = BusEvent["type"];

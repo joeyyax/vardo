@@ -1638,26 +1638,18 @@ async function sendDeployNotification(
         triggeredBy: triggeredByName,
       });
 
-      // Post-deploy security probe — delayed to allow the app to become ready
-      if (domain) {
-        const probeDomain = domain;
-        setTimeout(async () => {
-          try {
-            const { checkFileExposure } = await import("@/lib/security/file-exposure");
-            const exposed = await checkFileExposure(probeDomain);
-            if (exposed.length > 0) {
-              emit(app.organizationId!, {
-                type: "security.file-exposed",
-                title: `Exposed files detected: ${projectName}`,
-                message: `${exposed.length} sensitive file(s) publicly accessible on ${probeDomain}: ${exposed.join(", ")}`,
-                appName: projectName,
-                domain: probeDomain,
-                exposedPaths: exposed,
-              });
-            }
-          } catch { /* probe failure is non-fatal */ }
-        }, 10_000);
-      }
+      // Post-deploy security scan — delayed to allow the app to become ready
+      setTimeout(() => {
+        import("@/lib/security/scanner")
+          .then(({ runSecurityScan }) =>
+            runSecurityScan({
+              appId: app.id,
+              organizationId: app.organizationId!,
+              trigger: "deploy",
+            }),
+          )
+          .catch(() => {});
+      }, 10_000);
     } else {
       emit(app.organizationId, {
         type: "deploy.failed",
