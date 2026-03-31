@@ -79,7 +79,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - vardo_projects:/var/lib/vardo/projects
       - traefik_dynamic:/etc/traefik/dynamic
-      # Vardo installation directory — required for self-management (docker compose up -d, .env writes).
+      # Vardo installation directory — mounted read-write because Vardo writes to .env and runs
+      # git pull inside this directory during self-updates. All other host mounts below are read-only.
       # Set VARDO_DIR in .env to the directory where docker-compose.yml lives (default: /opt/vardo).
       - ${VARDO_DIR:-/opt/vardo}:${VARDO_DIR:-/opt/vardo}
       # Additional host mounts — pre-defined slots for mounting host paths into Vardo.
