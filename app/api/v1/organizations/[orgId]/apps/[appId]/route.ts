@@ -23,7 +23,7 @@ const updateAppSchema = z.object({
   rootDirectory: z.string().nullable().optional(),
   source: z.enum(["git", "direct"]).optional(),
   deployType: z.enum(["compose", "dockerfile", "image", "static", "nixpacks", "railpack"]).optional(),
-  composeContent: z.string().nullable().optional(),
+  composeContent: z.string().max(512000).nullable().optional(),
   composeFilePath: z.string().regex(/^[a-zA-Z0-9._-][a-zA-Z0-9._\-/]*$/, "Invalid file path").nullable().optional(),
   dockerfilePath: z.string().regex(/^[a-zA-Z0-9._-][a-zA-Z0-9._\-/]*$/, "Invalid file path").nullable().optional(),
   gitUrl: z.string().nullable().optional(),
