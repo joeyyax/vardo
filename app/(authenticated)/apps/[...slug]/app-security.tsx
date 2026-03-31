@@ -72,7 +72,7 @@ function ScanSummary({ scan }: { scan: Scan }) {
           {scan.status === "failed" && <span className="text-status-error">Scan failed</span>}
           {scan.status === "completed" && findings.length === 0 && (
             <span className="flex items-center gap-1.5 text-status-success">
-              <ShieldCheck className="size-4" />
+              <ShieldCheck className="size-4" aria-hidden="true" />
               No findings
             </span>
           )}
@@ -105,7 +105,7 @@ function ScanSummary({ scan }: { scan: Scan }) {
         <div className="space-y-2">
           {/* Critical first, then warning, then info */}
           {[...critical, ...warning, ...info].map((finding, i) => (
-            <FindingCard key={i} finding={finding} />
+            <FindingCard key={`${finding.type}-${finding.title}-${i}`} finding={finding} />
           ))}
         </div>
       )}
@@ -131,6 +131,7 @@ export function AppSecurity({ appId, orgId }: AppSecurityProps) {
       setScans(data.scans);
     } catch {
       setScans([]);
+      toast.error("Failed to load security scans");
     } finally {
       setLoading(false);
     }
@@ -139,6 +140,14 @@ export function AppSecurity({ appId, orgId }: AppSecurityProps) {
   useEffect(() => {
     fetchScans();
   }, [fetchScans]);
+
+  // Auto-poll while the latest scan is still running (e.g. triggered by a
+  // deploy or scheduled job before the user opened this tab).
+  useEffect(() => {
+    if (!scans || scans[0]?.status !== "running") return;
+    const timer = setInterval(() => void fetchScans(), 5_000);
+    return () => clearInterval(timer);
+  }, [scans, fetchScans]);
 
   const handleScan = useCallback(async () => {
     setScanning(true);
