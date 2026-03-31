@@ -4,6 +4,7 @@ export type MeshPeerSummary = {
   name: string;
   type: string;
   status: string;
+  connectionType: "direct" | "visible";
 };
 
 /** Lightweight project instance summary for UI components. */

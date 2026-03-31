@@ -126,7 +126,7 @@ export default async function ProjectDetailPage({
     isFeatureEnabledAsync("mesh"),
     // Peers are system-level (not org-scoped) — all peers visible to admins
     db.query.meshPeers.findMany({
-      columns: { id: true, name: true, type: true, status: true },
+      columns: { id: true, name: true, type: true, status: true, connectionType: true },
     }).then((p) => p as MeshPeerSummary[]).catch(() => [] as MeshPeerSummary[]),
     db.query.projectInstances.findMany({
       where: eq(projectInstances.projectId, project.id),
