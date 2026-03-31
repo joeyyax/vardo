@@ -147,36 +147,38 @@ async function handlePullRequest(payload: Record<string, unknown>): Promise<Next
 
   log.info(`PR #${prNumber} ${action} on ${repoFullName}:${branch} by ${author}`);
 
-  // Vardo self-preview: if this repo is a system-managed app and the feature
-  // is enabled, deploy a frontend-only preview instead of the generic flow.
-  const vardoApp = await getSystemManagedApp(repoFullName);
-  if (vardoApp && isFeatureEnabled("selfManagement")) {
-    if (action === "opened" || action === "reopened" || action === "synchronize") {
-      try {
-        const result = await createVardoPreview({ prNumber, branch, repoFullName });
+  // Vardo self-preview: if selfManagement is enabled and this repo is a
+  // system-managed app, deploy a frontend-only preview instead of the generic flow.
+  if (isFeatureEnabled("selfManagement")) {
+    const vardoApp = await getSystemManagedApp(repoFullName);
+    if (vardoApp) {
+      if (action === "opened" || action === "reopened" || action === "synchronize") {
         try {
-          await postPreviewComment(repoFullName, prNumber, [
-            { appName: "vardo", domain: result.domain },
-          ]);
+          const result = await createVardoPreview({ prNumber, branch, repoFullName });
+          try {
+            await postPreviewComment(repoFullName, prNumber, [
+              { appName: "vardo", domain: result.domain },
+            ]);
+          } catch (err) {
+            log.error("Failed to post PR comment:", err);
+          }
+          return NextResponse.json({ ok: true, preview: result });
         } catch (err) {
-          log.error("Failed to post PR comment:", err);
+          log.error(`Vardo preview creation failed for PR #${prNumber}:`, err);
+          return NextResponse.json({ ok: true, error: "Vardo preview creation failed" });
         }
-        return NextResponse.json({ ok: true, preview: result });
-      } catch (err) {
-        log.error(`Vardo preview creation failed for PR #${prNumber}:`, err);
-        return NextResponse.json({ ok: true, error: "Vardo preview creation failed" });
       }
-    }
-    if (action === "closed") {
-      try {
-        await destroyVardoPreview(prNumber);
-        log.info(`Vardo preview for PR #${prNumber} destroyed`);
-      } catch (err) {
-        log.error(`Vardo preview cleanup failed for PR #${prNumber}:`, err);
+      if (action === "closed") {
+        try {
+          await destroyVardoPreview(prNumber);
+          log.info(`Vardo preview for PR #${prNumber} destroyed`);
+        } catch (err) {
+          log.error(`Vardo preview cleanup failed for PR #${prNumber}:`, err);
+        }
+        return NextResponse.json({ ok: true, destroyed: true });
       }
-      return NextResponse.json({ ok: true, destroyed: true });
+      return NextResponse.json({ ok: true, skipped: `PR action: ${action}` });
     }
-    return NextResponse.json({ ok: true, skipped: `PR action: ${action}` });
   }
 
   if (action === "opened" || action === "reopened" || action === "synchronize") {
