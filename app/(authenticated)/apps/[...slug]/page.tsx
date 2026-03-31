@@ -7,7 +7,7 @@ import { nanoid } from "nanoid";
 import { AppDetail } from "./app-detail";
 import { getFeatureFlags } from "@/lib/config/features";
 
-const VALID_TABS = ["apps", "deployments", "connect", "variables", "networking", "logs", "volumes", "cron", "terminal", "metrics", "backups", "debug"] as const;
+const VALID_TABS = ["apps", "deployments", "connect", "variables", "networking", "logs", "volumes", "cron", "terminal", "metrics", "backups", "debug", "services", "compose"] as const;
 type ValidTab = (typeof VALID_TABS)[number];
 
 type PageProps = {
@@ -104,6 +104,21 @@ export default async function AppDetailPage({ params }: PageProps) {
     },
     project: {
       columns: { id: true, name: true, displayName: true, color: true },
+    },
+    childApps: {
+      columns: {
+        id: true,
+        name: true,
+        displayName: true,
+        composeService: true,
+        status: true,
+        containerName: true,
+        imageName: true,
+        dependsOn: true,
+      },
+      with: {
+        domains: { columns: { domain: true, isPrimary: true } },
+      },
     },
   } as const;
 
@@ -208,7 +223,21 @@ export default async function AppDetailPage({ params }: PageProps) {
   const allParentApps = allProjectsList
     .map((p) => ({ id: p.id, name: p.name, color: p.color || "#6366f1" }));
 
+  // Fetch parent app for breadcrumb when this is a compose child service
+  let parentApp: { id: string; name: string; displayName: string } | null = null;
+  if (app.parentAppId) {
+    parentApp = await db.query.apps.findFirst({
+      where: and(eq(apps.id, app.parentAppId), eq(apps.organizationId, orgId)),
+      columns: { id: true, name: true, displayName: true },
+    }) ?? null;
+  }
+
   const featureFlags = await getFeatureFlags();
+
+  // Compose parents default to the services tab; child services default to logs
+  const isComposeParent = (app.childApps?.length ?? 0) > 0;
+  const isChildService = !!app.parentAppId;
+  const defaultTab = isComposeParent ? "services" : isChildService ? "logs" : "deployments";
 
   // If the requested tab is gated by a disabled feature flag, fall back to default
   const gatedTabs: Record<string, keyof typeof featureFlags> = {
@@ -216,8 +245,8 @@ export default async function AppDetailPage({ params }: PageProps) {
     terminal: "terminal",
   };
   const effectiveTab = tab && gatedTabs[tab] && !featureFlags[gatedTabs[tab]]
-    ? "deployments"
-    : tab || "deployments";
+    ? defaultTab
+    : tab || defaultTab;
 
   return (
     <AppDetail
@@ -233,6 +262,7 @@ export default async function AppDetailPage({ params }: PageProps) {
       initialEnv={envSegment}
       initialSubView={subSegment}
       featureFlags={featureFlags}
+      parentApp={parentApp}
     />
   );
 }

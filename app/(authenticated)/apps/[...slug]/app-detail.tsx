@@ -81,6 +81,7 @@ import { AppNetworking } from "./app-networking";
 import { AppConnect } from "./app-connect";
 import { AppSettingsDialog } from "./app-settings-dialog";
 import { AppDebug } from "./app-debug";
+import { ComposeDetail } from "./compose-detail";
 
 import type { AppDetailProps, Environment } from "./types";
 
@@ -107,7 +108,7 @@ function buildAppPath(appName: string, environments: Environment[], envId: strin
   return tab && tab !== "deployments" ? `${base}/${tab}` : base;
 }
 
-export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = [], allAppNames = [], orgVarKeys = [], siblings = [], initialTab = "deployments", initialEnv, initialSubView, featureFlags }: AppDetailProps) {
+export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = [], allAppNames = [], orgVarKeys = [], siblings = [], initialTab = "deployments", initialEnv, initialSubView, featureFlags, parentApp = null }: AppDetailProps) {
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -394,6 +395,22 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     }
   }
 
+  // Compose parent apps get their own dedicated layout
+  if ((app.childApps?.length ?? 0) > 0) {
+    return (
+      <ComposeDetail
+        app={app as Parameters<typeof ComposeDetail>[0]["app"]}
+        orgId={orgId}
+        userRole={userRole}
+        initialTab={initialTab}
+        featureFlags={featureFlags}
+      />
+    );
+  }
+
+  // Child services are stack-level operations managed from the parent
+  const isChildService = !!app.parentAppId;
+
   return (
     <div className="space-y-6">
       {/* Visually-hidden live region for deploy outcome announcements */}
@@ -403,7 +420,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
       <PageToolbar
         actions={
           <div className="flex items-center gap-2">
-            {app.status === "active" ? (
+            {!isChildService && (app.status === "active" ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button size="sm" className={app.needsRedeploy
@@ -471,7 +488,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                   <><Rocket className="mr-1.5 size-4" />{app.status === "error" ? "Retry" : "Deploy"}</>
                 )}
               </Button>
-            )}
+            ))}
             <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
               <Pencil className="mr-1.5 size-4" />
               Edit
@@ -522,7 +539,20 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           </div>
         }
       >
-        {app.project ? (
+        {isChildService && parentApp ? (
+          <>
+            <Link
+              href={`/apps/${parentApp.name}`}
+              className="text-2xl font-semibold tracking-tight text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {parentApp.displayName}
+            </Link>
+            <span className="text-muted-foreground/40 text-xl">›</span>
+            <h1 className="text-2xl font-semibold tracking-tight">
+              {app.displayName}
+            </h1>
+          </>
+        ) : app.project ? (
           <>
             <Link
               href={`/projects/${app.project.name}`}
@@ -563,51 +593,53 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
             {app.displayName}
           </h1>
         )}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className={`gap-1.5 ${!isProduction ? (
-                selectedEnv?.type === "staging"
-                  ? "border-status-warning/40 bg-status-warning-muted text-status-warning"
-                  : "border-status-info/40 bg-status-info-muted text-status-info"
-              ) : ""}`}
-            >
-              <span className={`size-2 rounded-full ${envTypeDotColor(selectedEnv?.type ?? "production")}`} />
-              {selectedEnv?.name ?? "production"}
-              <ChevronDown className="size-3.5 opacity-60" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            {app.environments.map((env) => (
-              <DropdownMenuItem
-                key={env.id}
-                onClick={() => setSelectedEnvId(env.id)}
+        {!isChildService && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className={`gap-1.5 ${!isProduction ? (
+                  selectedEnv?.type === "staging"
+                    ? "border-status-warning/40 bg-status-warning-muted text-status-warning"
+                    : "border-status-info/40 bg-status-info-muted text-status-info"
+                ) : ""}`}
               >
-                <span className={`mr-2 size-2 rounded-full ${envTypeDotColor(env.type)}`} />
-                {env.name}
-                {env.gitBranch && env.type !== "production" && (
-                  <span className="ml-1 text-xs text-muted-foreground font-mono">{env.gitBranch}</span>
-                )}
-                {env.id === selectedEnvId && <Check className="ml-auto size-3.5" />}
+                <span className={`size-2 rounded-full ${envTypeDotColor(selectedEnv?.type ?? "production")}`} />
+                {selectedEnv?.name ?? "production"}
+                <ChevronDown className="size-3.5 opacity-60" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              {app.environments.map((env) => (
+                <DropdownMenuItem
+                  key={env.id}
+                  onClick={() => setSelectedEnvId(env.id)}
+                >
+                  <span className={`mr-2 size-2 rounded-full ${envTypeDotColor(env.type)}`} />
+                  {env.name}
+                  {env.gitBranch && env.type !== "production" && (
+                    <span className="ml-1 text-xs text-muted-foreground font-mono">{env.gitBranch}</span>
+                  )}
+                  {env.id === selectedEnvId && <Check className="ml-auto size-3.5" />}
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="text-muted-foreground"
+                onClick={() => {
+                  setNewEnvCloneFrom(
+                    isProduction ? "__production" : (selectedEnvId ?? "__production")
+                  );
+                  setNewEnvOpen(true);
+                }}
+              >
+                <Plus className="mr-2 size-3.5" />
+                New environment
               </DropdownMenuItem>
-            ))}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              className="text-muted-foreground"
-              onClick={() => {
-                setNewEnvCloneFrom(
-                  isProduction ? "__production" : (selectedEnvId ?? "__production")
-                );
-                setNewEnvOpen(true);
-              }}
-            >
-              <Plus className="mr-2 size-3.5" />
-              New environment
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </PageToolbar>
 
       {/* Error banner — only show if the current environment has a failed deploy */}
@@ -836,27 +868,31 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
       {/* Tabbed sections */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList variant="line">
-          <TabsTrigger value="deployments">
-            Deployments
-            {filteredDeployments.length > 0 && (
-              <Badge variant="secondary" className="ml-1.5 text-xs">
-                {filteredDeployments.length}
-              </Badge>
-            )}
-          </TabsTrigger>
+          {!isChildService && (
+            <TabsTrigger value="deployments">
+              Deployments
+              {filteredDeployments.length > 0 && (
+                <Badge variant="secondary" className="ml-1.5 text-xs">
+                  {filteredDeployments.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+          )}
           {app.connectionInfo && app.connectionInfo.length > 0 && (
             <TabsTrigger value="connect">
               Connect
             </TabsTrigger>
           )}
-          <TabsTrigger value="variables">
-            Variables
-            {app.envVars.length > 0 && (
-              <Badge variant="secondary" className="ml-1.5 text-xs">
-                {app.envVars.length}
-              </Badge>
-            )}
-          </TabsTrigger>
+          {!isChildService && (
+            <TabsTrigger value="variables">
+              Variables
+              {app.envVars.length > 0 && (
+                <Badge variant="secondary" className="ml-1.5 text-xs">
+                  {app.envVars.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+          )}
           <TabsTrigger value="networking">
             Networking
           </TabsTrigger>
