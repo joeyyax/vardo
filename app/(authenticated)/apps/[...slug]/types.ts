@@ -74,9 +74,7 @@ export type ChildApp = {
   displayName: string;
   composeService: string | null;
   status: string;
-  containerName: string | null;
   imageName: string | null;
-  dependsOn: string[] | null;
   domains: { domain: string; isPrimary: boolean | null }[];
 };
 

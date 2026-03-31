@@ -396,10 +396,10 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
   }
 
   // Compose parent apps get their own dedicated layout
-  if ((app.childApps?.length ?? 0) > 0) {
+  if (app.childApps && app.childApps.length > 0) {
     return (
       <ComposeDetail
-        app={app as Parameters<typeof ComposeDetail>[0]["app"]}
+        app={{ ...app, childApps: app.childApps }}
         orgId={orgId}
         userRole={userRole}
         initialTab={initialTab}

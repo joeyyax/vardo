@@ -112,9 +112,7 @@ export default async function AppDetailPage({ params }: PageProps) {
         displayName: true,
         composeService: true,
         status: true,
-        containerName: true,
         imageName: true,
-        dependsOn: true,
       },
       with: {
         domains: { columns: { domain: true, isPrimary: true } },

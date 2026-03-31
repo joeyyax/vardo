@@ -67,6 +67,40 @@ function ServiceCard({ service }: { service: ChildApp }) {
 }
 
 // ---------------------------------------------------------------------------
+// Shared service selector buttons
+// ---------------------------------------------------------------------------
+
+function ServiceSelector({
+  services,
+  selectedId,
+  onSelect,
+}: {
+  services: ChildApp[];
+  selectedId: string;
+  onSelect: (id: string) => void;
+}) {
+  if (services.length <= 1) return null;
+  return (
+    <div role="group" aria-label="Select service" className="flex gap-1.5 flex-wrap">
+      {services.map((s) => (
+        <button
+          key={s.id}
+          type="button"
+          onClick={() => onSelect(s.id)}
+          className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+            selectedId === s.id
+              ? "bg-foreground text-background"
+              : "bg-muted text-muted-foreground hover:bg-accent"
+          }`}
+        >
+          {s.displayName}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Logs tab with per-service selector
 // ---------------------------------------------------------------------------
 
@@ -84,24 +118,7 @@ function ComposeLogs({ services, orgId }: { services: ChildApp[]; orgId: string 
 
   return (
     <div className="space-y-3">
-      {services.length > 1 && (
-        <div className="flex gap-1.5 flex-wrap">
-          {services.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => setSelectedId(s.id)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                selectedId === s.id
-                  ? "bg-foreground text-background"
-                  : "bg-muted text-muted-foreground hover:bg-accent"
-              }`}
-            >
-              {s.displayName}
-            </button>
-          ))}
-        </div>
-      )}
+      <ServiceSelector services={services} selectedId={selectedId} onSelect={setSelectedId} />
       <LogViewer
         key={`logs-${selected.id}`}
         streamUrl={`/api/v1/organizations/${orgId}/apps/${selected.id}/logs/stream`}
@@ -128,24 +145,7 @@ function ComposeMetrics({ services, orgId }: { services: ChildApp[]; orgId: stri
 
   return (
     <div className="space-y-4">
-      {services.length > 1 && (
-        <div className="flex gap-1.5 flex-wrap">
-          {services.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => setSelectedId(s.id)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                selectedId === s.id
-                  ? "bg-foreground text-background"
-                  : "bg-muted text-muted-foreground hover:bg-accent"
-              }`}
-            >
-              {s.displayName}
-            </button>
-          ))}
-        </div>
-      )}
+      <ServiceSelector services={services} selectedId={selectedId} onSelect={setSelectedId} />
       <AppMetrics key={`metrics-${selected.id}`} orgId={orgId} appId={selected.id} />
     </div>
   );
@@ -248,7 +248,7 @@ function ComposeEditor({
           />
         </>
       ) : (
-        <pre className="w-full overflow-auto bg-muted/30 border rounded-lg p-4 text-sm font-mono text-muted-foreground whitespace-pre-wrap break-all">
+        <pre className="w-full overflow-auto bg-muted/30 border rounded-lg p-4 text-sm font-mono text-muted-foreground whitespace-pre-wrap break-words">
           {app.composeContent}
         </pre>
       )}
