@@ -4,7 +4,8 @@ import { apps } from "@/lib/db/schema/apps";
 import { publishEvent, appChannel } from "@/lib/events";
 import { acquireLock } from "@/lib/redis-lock";
 import { logger } from "@/lib/logger";
-import { eq, and, lt } from "drizzle-orm";
+import { eq, and, lt, count } from "drizzle-orm";
+import { reconcileActiveCounter, removeFromQueue } from "@/lib/docker/deploy-concurrency";
 
 const log = logger.child("deploy-sweeper");
 
@@ -108,6 +109,86 @@ export async function sweepStuckDeployments(): Promise<void> {
       );
     } catch (err) {
       log.error(`Failed to sweep deployment ${deploy.id}:`, err);
+    }
+  }
+
+  // After sweeping stuck running deploys, reconcile the concurrency counter
+  // against the true number of running deployments so the counter doesn't
+  // drift if a process crashed mid-deploy without releasing its slot.
+  try {
+    const [{ value: runningCount }] = await db
+      .select({ value: count() })
+      .from(deployments)
+      .where(eq(deployments.status, "running"));
+    await reconcileActiveCounter(runningCount);
+  } catch (err) {
+    log.warn("Failed to reconcile deploy concurrency counter:", err);
+  }
+}
+
+/**
+ * Find deployments stuck in "queued" status for longer than the timeout
+ * threshold and mark them as cancelled.
+ *
+ * A deployment is created with status "queued" and only transitions to
+ * "running" once it acquires a concurrency slot. If the process that was
+ * waiting for a slot crashes, the DB record stays "queued" indefinitely.
+ * This sweep catches those orphans.
+ */
+export async function sweepStuckQueuedDeployments(): Promise<void> {
+  // Give queued deploys a bit more runway than running ones — they may be
+  // waiting in a long queue. Use 2× the running timeout as a reasonable bound.
+  const queueTimeoutMinutes = TIMEOUT_MINUTES * 2;
+  const cutoff = new Date(Date.now() - queueTimeoutMinutes * 60_000);
+
+  const stuck = await db
+    .select({
+      id: deployments.id,
+      appId: deployments.appId,
+      startedAt: deployments.startedAt,
+    })
+    .from(deployments)
+    .where(
+      and(
+        eq(deployments.status, "queued"),
+        lt(deployments.startedAt, cutoff),
+      ),
+    );
+
+  if (stuck.length === 0) return;
+
+  log.info(`Found ${stuck.length} stuck queued deployment(s)`);
+
+  for (const deploy of stuck) {
+    const lockKey = `sweep:queued:${deploy.id}`;
+    const acquired = await acquireLock(lockKey, 60_000);
+    if (!acquired) continue;
+
+    try {
+      const now = new Date();
+      const durationMs = now.getTime() - new Date(deploy.startedAt).getTime();
+      const timeoutLine = `[${now.toISOString()}] [TIMEOUT] Deployment was stuck in queue for ${queueTimeoutMinutes} minutes and was cancelled`;
+
+      await db
+        .update(deployments)
+        .set({
+          status: "cancelled",
+          log: timeoutLine,
+          finishedAt: now,
+          durationMs,
+        })
+        .where(
+          and(eq(deployments.id, deploy.id), eq(deployments.status, "queued")),
+        );
+
+      // Remove from the Redis queue in case the entry is still there
+      await removeFromQueue(deploy.id).catch(() => {});
+
+      log.info(
+        `Cancelled queued deployment ${deploy.id} (app ${deploy.appId}) — stuck in queue for ${queueTimeoutMinutes}m`,
+      );
+    } catch (err) {
+      log.error(`Failed to sweep queued deployment ${deploy.id}:`, err);
     }
   }
 }

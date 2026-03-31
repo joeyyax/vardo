@@ -29,6 +29,13 @@
 import { redis } from "@/lib/redis";
 import { createDeployment, runDeployment } from "./deploy";
 import type { DeployOpts, DeployResult, DeployStage } from "./deploy";
+import {
+  enqueueAndTryAcquire,
+  waitForConcurrencySlot,
+  releaseConcurrencySlot,
+  removeFromQueue,
+  getConcurrencyLimit,
+} from "./deploy-concurrency";
 
 // ---------------------------------------------------------------------------
 // Redis key helpers
@@ -273,7 +280,27 @@ export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
   localRegistry.set(appId, active);
   await setActiveInRedis(appId, newDeploymentId, "clone");
 
+  // ------------------------------------------------------------------
+  // 4. Acquire a system-level concurrency slot (FIFO queue)
+  //
+  // Guarantees at most VARDO_MAX_DEPLOY_CONCURRENCY deploys run at once
+  // across all apps. Deploys beyond the limit wait in FIFO order until a
+  // slot opens. The queue is backed by Redis and survives process restarts
+  // (the sweeper marks orphaned queued records as failed on recovery).
+  // ------------------------------------------------------------------
+  let concurrencySlotHeld = false;
   try {
+    const immediate = await enqueueAndTryAcquire(newDeploymentId);
+    if (!immediate) {
+      const limit = getConcurrencyLimit();
+      opts.onLog?.(
+        `[queue] Waiting for a concurrency slot (${limit} max simultaneous deploy${limit === 1 ? "" : "s"})`,
+      );
+      await waitForConcurrencySlot(newDeploymentId, controller.signal);
+      opts.onLog?.("[queue] Concurrency slot acquired — starting deploy");
+    }
+    concurrencySlotHeld = true;
+
     const result = await runDeployment(newDeploymentId, {
       ...opts,
       signal: controller.signal,
@@ -308,7 +335,17 @@ export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
       },
     });
     return result;
+  } catch (err) {
+    // If the deploy never started (e.g. queue timeout or cancelled while waiting),
+    // remove from the queue so the slot isn't leaked.
+    if (!concurrencySlotHeld) {
+      await removeFromQueue(newDeploymentId).catch(() => {});
+    }
+    throw err;
   } finally {
+    if (concurrencySlotHeld) {
+      await releaseConcurrencySlot();
+    }
     // Only remove from the local registry if we are still the active deploy for
     // this app. A deploy that started after us may have already replaced the
     // entry (e.g. rapid pushes).
