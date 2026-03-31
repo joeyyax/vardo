@@ -237,7 +237,7 @@ describe("getSystemManagedApp", () => {
       }
       return v;
     });
-    expect(encoded).toContain("https://github.com/acme/vardo.git");
+    expect(encoded).toContain("https://github.com/acme/vardo");
   });
 
   it("constructs distinct URLs for different repos", async () => {
@@ -263,7 +263,7 @@ describe("getSystemManagedApp", () => {
       }
       return v;
     });
-    expect(encoded).toContain("https://github.com/other/repo.git");
+    expect(encoded).toContain("https://github.com/other/repo");
     expect(encoded).not.toContain("acme/vardo");
   });
 
@@ -285,7 +285,7 @@ describe("getSystemManagedApp", () => {
   });
 
   it("returns the app when a system-managed app is found", async () => {
-    const fakeApp = { id: "app-1", isSystemManaged: true, gitUrl: "https://github.com/acme/vardo.git" };
+    const fakeApp = { id: "app-1", isSystemManaged: true, gitUrl: "https://github.com/acme/vardo" };
     dbMock.query.apps.findFirst.mockResolvedValue(fakeApp);
     const result = await getSystemManagedApp("acme/vardo");
     expect(result).toEqual(fakeApp);
