@@ -89,6 +89,7 @@ export const apps = pgTable(
     healthCheckTimeout: integer("health_check_timeout"), // Seconds to wait for healthy containers (null = system default 60s)
     autoRollback: boolean("auto_rollback").default(false), // Rollback on crash after deploy
     rollbackGracePeriod: integer("rollback_grace_period").default(60), // Seconds to monitor after deploy
+    isSystemManaged: boolean("is_system_managed").default(false).notNull(), // Managed by Vardo itself — deploy engine blocked
     backendProtocol: text("backend_protocol", { enum: ["http", "https"] }), // Backend scheme Traefik uses to reach the container. Null = auto (https if port 443/8443)
     envContent: text("env_content"), // Encrypted env file blob (AES-256-GCM)
     // Compose decomposition: child service records point to parent compose app
