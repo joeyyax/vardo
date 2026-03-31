@@ -207,7 +207,7 @@ export function MaintenanceSettings() {
       <Card className="squircle">
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <Server className="size-4" />
+            <Server className="size-4" aria-hidden="true" />
             Services
           </CardTitle>
           <div className="flex items-center gap-2">
@@ -221,9 +221,9 @@ export function MaintenanceSettings() {
                   aria-label="Restart all services"
                 >
                   {restarting === "__all__" ? (
-                    <Loader2 className="size-3 animate-spin" />
+                    <Loader2 className="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />
                   ) : (
-                    <RefreshCw className="size-3" />
+                    <RefreshCw className="size-3" aria-hidden="true" />
                   )}
                   {restarting === "__all__" ? "Restarting..." : "Restart all"}
                 </Button>
@@ -248,17 +248,17 @@ export function MaintenanceSettings() {
         <CardContent>
           {loadingStatus ? (
             <div className="flex items-center justify-center py-6">
-              <Loader2 className="size-5 animate-spin text-muted-foreground" />
+              <Loader2 className="size-5 animate-spin motion-reduce:animate-none text-muted-foreground" aria-hidden="true" />
             </div>
           ) : !status?.services.length ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
-              <AlertCircle className="size-4 shrink-0" />
+              <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
               No Vardo services found. Make sure the docker socket is mounted.
             </div>
           ) : (
-            <div className="divide-y">
+            <ul className="divide-y">
               {status.services.map((svc) => (
-                <div
+                <li
                   key={svc.containerId}
                   className="flex items-center justify-between py-3 first:pt-0 last:pb-0"
                 >
@@ -279,15 +279,15 @@ export function MaintenanceSettings() {
                       aria-label={`Restart ${svc.name}`}
                     >
                       {restarting === svc.name ? (
-                        <Loader2 className="size-3 animate-spin" />
+                        <Loader2 className="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />
                       ) : (
-                        <RefreshCw className="size-3" />
+                        <RefreshCw className="size-3" aria-hidden="true" />
                       )}
                     </Button>
                   </div>
-                </div>
+                </li>
               ))}
-            </div>
+            </ul>
           )}
         </CardContent>
       </Card>
@@ -296,7 +296,7 @@ export function MaintenanceSettings() {
       <Card className="squircle">
         <CardHeader>
           <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <ArrowUpCircle className="size-4" />
+            <ArrowUpCircle className="size-4" aria-hidden="true" />
             Update Vardo
           </CardTitle>
         </CardHeader>
@@ -307,7 +307,7 @@ export function MaintenanceSettings() {
           </p>
           {!loadingStatus && !status?.hasVardoDir && (
             <div className="flex items-start gap-2 text-sm text-amber-600 dark:text-amber-400">
-              <AlertCircle className="size-4 shrink-0 mt-0.5" />
+              <AlertCircle className="size-4 shrink-0 mt-0.5" aria-hidden="true" />
               <span>
                 <code className="text-xs font-mono">VARDO_DIR</code> is not set. Update requires
                 access to the installation directory.
@@ -320,16 +320,15 @@ export function MaintenanceSettings() {
                 variant="outline"
                 disabled={updating || restarting !== null || loadingStatus || !status?.hasVardoDir}
                 className="squircle"
-                aria-label="Update Vardo"
               >
                 {updating ? (
                   <>
-                    <Loader2 className="size-4 animate-spin" />
+                    <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
                     Updating...
                   </>
                 ) : (
                   <>
-                    <ArrowUpCircle className="size-4" />
+                    <ArrowUpCircle className="size-4" aria-hidden="true" />
                     Pull &amp; rebuild
                   </>
                 )}
@@ -358,14 +357,14 @@ export function MaintenanceSettings() {
       <Card className="squircle">
         <CardHeader>
           <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <HardDrive className="size-4" />
+            <HardDrive className="size-4" aria-hidden="true" />
             Host Mounts
           </CardTitle>
         </CardHeader>
         <CardContent>
           {loadingMounts ? (
             <div className="flex items-center justify-center py-6">
-              <Loader2 className="size-5 animate-spin text-muted-foreground" />
+              <Loader2 className="size-5 animate-spin motion-reduce:animate-none text-muted-foreground" aria-hidden="true" />
             </div>
           ) : (
             <form onSubmit={(e) => void handleSaveMounts(e)} className="space-y-4">
@@ -434,7 +433,7 @@ export function MaintenanceSettings() {
               </div>
 
               <Button type="submit" className="squircle" disabled={savingMounts}>
-                {savingMounts && <Loader2 className="size-4 animate-spin" />}
+                {savingMounts && <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />}
                 Save mounts
               </Button>
             </form>
