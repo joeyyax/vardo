@@ -8,14 +8,15 @@ import { logger } from "@/lib/logger";
 
 const log = logger.child("admin:maintenance:mounts");
 
-// Mount path values are written directly into .env — reject newlines to
-// prevent injecting additional lines, and require an absolute path so we
-// don't produce malformed volume mount strings.
+// Mount path values are written directly into .env. Empty string clears the
+// mount. Non-empty values must be absolute paths with no newline characters
+// (newlines would inject additional lines into the .env file).
 const mountPathField = z
   .string()
-  .min(1, "path must not be empty")
-  .regex(/^[^\n\r]*$/, "path must not contain newline characters")
-  .regex(/^\//, "path must be an absolute path")
+  .refine(
+    (v) => v === "" || (v.startsWith("/") && !/[\n\r]/.test(v)),
+    "path must be an absolute path without newline characters, or empty to clear",
+  )
   .optional();
 
 const mountsSchema = z.object({
