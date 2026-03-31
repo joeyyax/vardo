@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useImperativeHandle, useState, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   Loader2,
@@ -28,54 +28,33 @@ import { DeploymentStatusBadge, formatDuration } from "@/components/app-status";
 import { toast } from "@/lib/messenger";
 import { Uptime } from "./timer";
 import { InProgressDeployCard } from "./in-progress-deploy-card";
-import { useDeploy } from "./hooks/use-deploy";
 
+import type { useDeploy } from "./hooks/use-deploy";
 import type { Deployment } from "./types";
 
 export interface AppDeployPanelProps {
   orgId: string;
   appId: string;
-  selectedEnvId: string | undefined;
   filteredDeployments: Deployment[];
   serverRunningDeploy: Deployment | null | undefined;
   appStatus: string;
   gitUrl: string | null;
   source: string;
   autoDeploy: boolean | null;
-  onDeployStarted?: () => void;
-  onDeployingChange?: (deploying: boolean) => void;
-  onAnnouncement?: (message: string) => void;
+  deploy: ReturnType<typeof useDeploy>;
 }
 
-export interface AppDeployPanelHandle {
-  handleDeploy: () => Promise<void>;
-  setViewingLogId: (id: string | null) => void;
-}
-
-export const AppDeployPanel = forwardRef<AppDeployPanelHandle, AppDeployPanelProps>(function AppDeployPanel({
+export function AppDeployPanel({
   orgId,
   appId,
-  selectedEnvId,
   filteredDeployments,
   serverRunningDeploy,
   appStatus,
   gitUrl,
   source,
   autoDeploy,
-  onDeployStarted,
-  onDeployingChange,
-  onAnnouncement,
-}, ref) {
-  const deploy = useDeploy({
-    orgId,
-    appId,
-    selectedEnvId,
-    serverRunningDeploy,
-    onDeployStarted,
-    onDeployingChange,
-    onAnnouncement,
-  });
-
+  deploy,
+}: AppDeployPanelProps) {
   const {
     deploying,
     deployStages,
@@ -129,11 +108,6 @@ export const AppDeployPanel = forwardRef<AppDeployPanelHandle, AppDeployPanelPro
       });
     }
   }, [orgId, appId, router]);
-
-  useImperativeHandle(ref, () => ({
-    handleDeploy: deploy.handleDeploy,
-    setViewingLogId: deploy.setViewingLogId,
-  }), [deploy.handleDeploy, deploy.setViewingLogId]);
 
   return (
     <>
@@ -506,4 +480,4 @@ export const AppDeployPanel = forwardRef<AppDeployPanelHandle, AppDeployPanelPro
       </BottomSheet>
     </>
   );
-});
+}

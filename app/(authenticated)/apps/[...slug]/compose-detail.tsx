@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -28,7 +28,7 @@ import { AppMetrics } from "./app-metrics";
 import { AppBackupHistory } from "@/components/backups/app-backup-history";
 import { statusDotColor } from "@/lib/ui/status-colors";
 import { AppDeployPanel } from "./app-deploy-panel";
-import type { AppDeployPanelHandle } from "./app-deploy-panel";
+import { useDeploy } from "./hooks/use-deploy";
 import type { App, ChildApp } from "./types";
 import type { FeatureFlags } from "@/lib/config/features";
 
@@ -275,10 +275,6 @@ export function ComposeDetail({
 }) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState(initialTab);
-  const [deploying, setDeploying] = useState(false);
-  const [deployAnnouncement, setDeployAnnouncement] = useState("");
-
-  const deployPanelRef = useRef<AppDeployPanelHandle>(null);
 
   const services = app.childApps;
 
@@ -320,19 +316,25 @@ export function ComposeDetail({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [app.id, orgId]);
 
-  const handleDeploy = useCallback(() => {
-    deployPanelRef.current?.handleDeploy();
-  }, []);
-
   const serverRunningDeploy =
     app.deployments.find((d) => d.status === "running" || d.status === "queued") ?? null;
+
+  const deploy = useDeploy({
+    orgId,
+    appId: app.id,
+    selectedEnvId: app.environments.find((e) => e.type === "production")?.id,
+    serverRunningDeploy,
+    onDeployStarted: () => setActiveTabAndUrl("deployments"),
+  });
+
+  const handleDeploy = deploy.handleDeploy;
 
   const totalDeployments = app.deployments.length;
 
   return (
     <div className="space-y-6">
       <span className="sr-only" aria-live="assertive" aria-atomic="true">
-        {deployAnnouncement}
+        {deploy.deployAnnouncement}
       </span>
 
       <PageToolbar
@@ -358,15 +360,15 @@ export function ComposeDetail({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem disabled={deploying} onClick={handleDeploy}>
+                  <DropdownMenuItem disabled={deploy.deploying} onClick={handleDeploy}>
                     <Rocket className="mr-2 size-4" />
                     Redeploy Stack
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : (
-              <Button size="sm" disabled={deploying} onClick={handleDeploy}>
-                {deploying ? (
+              <Button size="sm" disabled={deploy.deploying} onClick={handleDeploy}>
+                {deploy.deploying ? (
                   <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
                 ) : (
                   <><Rocket className="mr-1.5 size-4" />Deploy Stack</>
@@ -449,19 +451,15 @@ export function ComposeDetail({
 
         <TabsContent value="deployments">
           <AppDeployPanel
-            ref={deployPanelRef}
             orgId={orgId}
             appId={app.id}
-            selectedEnvId={app.environments.find((e) => e.type === "production")?.id}
             filteredDeployments={app.deployments}
             serverRunningDeploy={serverRunningDeploy}
             appStatus={app.status}
             gitUrl={app.gitUrl}
             source={app.source}
             autoDeploy={app.autoDeploy}
-            onDeployStarted={() => setActiveTabAndUrl("deployments")}
-            onDeployingChange={setDeploying}
-            onAnnouncement={setDeployAnnouncement}
+            deploy={deploy}
           />
         </TabsContent>
 
