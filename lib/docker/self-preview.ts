@@ -30,7 +30,7 @@ const log = logger.child("self-preview");
 const execFileAsync = promisify(execFile);
 
 const PREVIEW_PROJECT_PREFIX = "vardo-preview-pr";
-const VARDO_NETWORK = "vardo-network";
+const VARDO_NETWORK = process.env.VARDO_NETWORK ?? "vardo-network";
 
 // Stale preview threshold: tear down previews older than this many hours when
 // cleanupStaleSelfPreviews() runs. Handles missed PR close webhooks.
@@ -204,6 +204,10 @@ export async function createVardoPreview(
  * temporary directory.
  */
 export async function destroyVardoPreview(prNumber: number): Promise<void> {
+  if (!Number.isInteger(prNumber) || prNumber <= 0) {
+    throw new Error(`Invalid PR number: ${prNumber}`);
+  }
+
   const projectName = `${PREVIEW_PROJECT_PREFIX}-${prNumber}`;
   const previewDir = join(tmpdir(), projectName);
 
@@ -262,7 +266,11 @@ export async function cleanupStaleSelfPreviews(
     seen.add(prNumber);
 
     const createdMs = new Date(createdAt).getTime();
-    if (isNaN(createdMs) || createdMs > cutoffMs) continue;
+    if (isNaN(createdMs)) {
+      log.warn(`[self-preview] Unparseable timestamp for container ${containerName}: ${createdAt}`);
+      continue;
+    }
+    if (createdMs > cutoffMs) continue;
 
     log.info(`[self-preview] Cleaning up stale preview for PR #${prNumber} (created: ${createdAt})`);
     try {

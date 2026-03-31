@@ -455,6 +455,22 @@ describe("destroyVardoPreview", () => {
     makeExecSucceed();
   });
 
+  it("rejects a non-integer prNumber", async () => {
+    await expect(destroyVardoPreview(1.5)).rejects.toThrow("Invalid PR number");
+  });
+
+  it("rejects prNumber of zero", async () => {
+    await expect(destroyVardoPreview(0)).rejects.toThrow("Invalid PR number");
+  });
+
+  it("rejects a negative prNumber", async () => {
+    await expect(destroyVardoPreview(-1)).rejects.toThrow("Invalid PR number");
+  });
+
+  it("rejects NaN as prNumber", async () => {
+    await expect(destroyVardoPreview(NaN)).rejects.toThrow("Invalid PR number");
+  });
+
   it("calls docker compose down with the correct project name", async () => {
     await destroyVardoPreview(42);
 
@@ -542,6 +558,18 @@ describe("cleanupStaleSelfPreviews", () => {
 
     const result = await cleanupStaleSelfPreviews();
     expect(result).toBe(1); // PR #42 cleaned once despite two containers
+  });
+
+  it("logs a warning and skips containers with unparseable timestamps", async () => {
+    const psOutput = `vardo-preview-pr-77-vardo-1\tnot-a-date`;
+
+    execFileAsyncMock.mockResolvedValueOnce({ stdout: psOutput, stderr: "" });
+
+    const result = await cleanupStaleSelfPreviews();
+    // Container skipped — nothing cleaned
+    expect(result).toBe(0);
+    // No docker compose down call (only the docker ps call happened)
+    expect(execFileAsyncMock).toHaveBeenCalledTimes(1);
   });
 
   it("respects a custom maxAgeHours threshold", async () => {
