@@ -17,6 +17,7 @@ export const CHANNEL_TYPE_DEFAULTS: Record<string, boolean> = {
 export const CRITICAL_EVENT_TYPES: ReadonlySet<BusEventType> = new Set([
   "deploy.failed",
   "security.file-exposed",
+  "security.scan-findings",
   "system.service-down",
   "system.disk-alert",
 ] as BusEventType[]);

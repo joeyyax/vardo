@@ -14,6 +14,8 @@ export type NotificationEventType =
   | "system-alert-restart"
   | "system-alert-cert"
   | "system-alert-update"
+  | "security-file-exposed"
+  | "security-scan-findings"
   | "weekly-digest";
 
 export type NotificationEvent = {
