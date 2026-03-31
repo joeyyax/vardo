@@ -42,6 +42,11 @@ const importGroupSchema = z.object({
     .string()
     .min(1, "Name is required")
     .regex(/^[a-z0-9-]+$/, "Name must be lowercase alphanumeric with hyphens"),
+  // Optional git URL for compose projects that need to build from source.
+  // When provided, Vardo clones the repo and uses docker-compose.yml with
+  // build: directives instead of pulling pre-built images.
+  gitUrl: z.string().url().optional(),
+  gitBranch: z.string().max(255).optional(),
 });
 
 // POST /api/v1/organizations/[orgId]/discover/groups/[composeProject]/import
@@ -321,6 +326,10 @@ async function handler(request: NextRequest, { params }: RouteParams) {
 
         // Insert parent app record for the compose stack
         const appId = nanoid();
+        // When gitUrl is provided, use git source so Vardo clones the repo and
+        // builds from docker-compose.yml with build: directives. Otherwise fall
+        // back to direct source using the generated compose with image: refs.
+        const useGitSource = !!data.gitUrl;
         const [app] = await tx
           .insert(apps)
           .values({
@@ -328,9 +337,13 @@ async function handler(request: NextRequest, { params }: RouteParams) {
             organizationId: orgId,
             name: data.name,
             displayName: data.displayName,
-            source: "direct",
+            source: useGitSource ? "git" : "direct",
             deployType: "compose",
-            composeContent,
+            // When using git source, don't store composeContent — let deploy
+            // read the compose file from the cloned repo instead.
+            composeContent: useGitSource ? null : composeContent,
+            gitUrl: data.gitUrl ?? null,
+            gitBranch: data.gitBranch ?? null,
             // autoTraefikLabels is false — Traefik config is baked into the
             // compose content either from the original container labels or via
             // explicit injectTraefikLabels above. Regenerating at deploy time
