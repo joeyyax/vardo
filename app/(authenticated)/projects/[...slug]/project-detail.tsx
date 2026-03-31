@@ -17,6 +17,7 @@ import {
   Variable,
   FileText,
   Activity,
+  Wrench,
 } from "lucide-react";
 import {
   type AppMetrics as AppMetricsType,
@@ -63,6 +64,7 @@ import { ProjectMetrics } from "./project-metrics";
 import { AddAppDropdown } from "../add-app-dropdown";
 import { ProjectInstances } from "@/components/mesh/project-instances";
 import { AppBackupHistory } from "@/components/backups/app-backup-history";
+import { SystemBadge } from "@/components/system-badge";
 import type { MeshPeerSummary, ProjectInstanceSummary } from "@/lib/mesh/types";
 
 // ---------------------------------------------------------------------------
@@ -131,6 +133,7 @@ type ProjectApp = {
   parentAppId: string | null;
   composeService: string | null;
   containerName: string | null;
+  isSystemManaged: boolean;
   domains: { domain: string; isPrimary: boolean | null }[];
   deployments: Deployment[];
   envVars: EnvVar[];
@@ -144,6 +147,7 @@ type Project = {
   description: string | null;
   color: string | null;
   allowBindMounts: boolean;
+  isSystemManaged: boolean;
   apps: ProjectApp[];
   groupEnvironments: GroupEnvironment[];
 };
@@ -983,80 +987,91 @@ export function ProjectDetail({
       <PageToolbar
         actions={
           <div className="flex items-center gap-2">
-            {topLevelApps.length > 0 && (() => {
-              const allActive = topLevelApps.every((a) => a.status === "active");
-              const anyNeedsRedeploy = topLevelApps.some((a) => a.needsRedeploy);
+            {project.isSystemManaged ? (
+              <Button size="sm" variant="outline" asChild className="border-status-warning/40 bg-status-warning-muted text-status-warning hover:bg-status-warning/20">
+                <Link href="/admin/settings/maintenance">
+                  <Wrench className="mr-1.5 size-4" />
+                  Manage in Maintenance
+                </Link>
+              </Button>
+            ) : (
+              <>
+                {topLevelApps.length > 0 && (() => {
+                  const allActive = topLevelApps.every((a) => a.status === "active");
+                  const anyNeedsRedeploy = topLevelApps.some((a) => a.needsRedeploy);
 
-              if (allActive && !deploying) {
-                return (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button size="sm" className={anyNeedsRedeploy
-                        ? "bg-status-warning-muted text-status-warning hover:bg-status-warning/20"
-                        : "bg-status-success-muted text-status-success hover:bg-status-success/20"
-                      }>
-                        {anyNeedsRedeploy ? (
-                          <><RotateCcw className="mr-1.5 size-3.5" />Restart Needed</>
-                        ) : (
-                          <><span className="mr-1.5 size-2 rounded-full bg-status-success animate-pulse" />Running</>
-                        )}
-                        <ChevronDown className="ml-1.5 size-3.5" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem disabled={deploying} onClick={handleDeployAll}>
-                        <Rocket className="mr-2 size-4" />
-                        Redeploy All
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={handleRestartAll}>
-                        <RotateCcw className="mr-2 size-4" />
-                        Restart All
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        className="text-destructive focus:text-destructive"
-                        onClick={() => setStopAllOpen(true)}
-                      >
-                        <Square className="mr-2 size-4" />
-                        Stop All
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                );
-              }
+                  if (allActive && !deploying) {
+                    return (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button size="sm" className={anyNeedsRedeploy
+                            ? "bg-status-warning-muted text-status-warning hover:bg-status-warning/20"
+                            : "bg-status-success-muted text-status-success hover:bg-status-success/20"
+                          }>
+                            {anyNeedsRedeploy ? (
+                              <><RotateCcw className="mr-1.5 size-3.5" />Restart Needed</>
+                            ) : (
+                              <><span className="mr-1.5 size-2 rounded-full bg-status-success animate-pulse" />Running</>
+                            )}
+                            <ChevronDown className="ml-1.5 size-3.5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem disabled={deploying} onClick={handleDeployAll}>
+                            <Rocket className="mr-2 size-4" />
+                            Redeploy All
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={handleRestartAll}>
+                            <RotateCcw className="mr-2 size-4" />
+                            Restart All
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            onClick={() => setStopAllOpen(true)}
+                          >
+                            <Square className="mr-2 size-4" />
+                            Stop All
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    );
+                  }
 
-              return (
-                <Button size="sm" disabled={deploying} onClick={handleDeployAll}>
-                  {deploying ? (
-                    <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
-                  ) : (
-                    <><Rocket className="mr-1.5 size-4" />Deploy All</>
-                  )}
-                </Button>
-              );
-            })()}
-            <AddAppDropdown projectId={project.id} />
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button size="icon-sm" variant="outline">
-                  <EllipsisVertical className="size-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => setEditOpen(true)}>
-                  <Pencil className="mr-2 size-4" />
-                  Edit project
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
-                  onClick={() => setDeleteOpen(true)}
-                >
-                  <Trash2 className="mr-2 size-4" />
-                  Delete project
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  return (
+                    <Button size="sm" disabled={deploying} onClick={handleDeployAll}>
+                      {deploying ? (
+                        <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
+                      ) : (
+                        <><Rocket className="mr-1.5 size-4" />Deploy All</>
+                      )}
+                    </Button>
+                  );
+                })()}
+                <AddAppDropdown projectId={project.id} />
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="icon-sm" variant="outline">
+                      <EllipsisVertical className="size-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => setEditOpen(true)}>
+                      <Pencil className="mr-2 size-4" />
+                      Edit project
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onClick={() => setDeleteOpen(true)}
+                    >
+                      <Trash2 className="mr-2 size-4" />
+                      Delete project
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </>
+            )}
           </div>
         }
       >
@@ -1064,6 +1079,7 @@ export function ProjectDetail({
           <h1 className="text-2xl font-semibold tracking-tight">
             {project.displayName}
           </h1>
+          {project.isSystemManaged && <SystemBadge />}
           {/* Environment switcher */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

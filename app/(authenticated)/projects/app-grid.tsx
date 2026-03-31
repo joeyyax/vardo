@@ -9,6 +9,7 @@ import { detectAppType } from "@/lib/ui/app-type";
 import { statusDotColor } from "@/lib/ui/status-colors";
 import { StatusIndicator, AppIcon } from "@/components/app-status";
 import { ChildAppChipList } from "@/components/child-app-chip";
+import { SystemBadge } from "@/components/system-badge";
 import {
   type AppMetrics,
   type MetricKey,
@@ -39,7 +40,7 @@ type AppWithRelations = {
   domains: { domain: string; isPrimary: boolean | null }[];
   deployments: { id: string; status: string; startedAt: Date; finishedAt: Date | null }[];
   appTags: { tag: Tag }[];
-  project: { id: string; name: string; displayName: string; color: string | null } | null;
+  project: { id: string; name: string; displayName: string; color: string | null; isSystemManaged: boolean } | null;
   childApps?: { id: string; displayName: string; status: string }[];
 };
 
@@ -48,6 +49,7 @@ type EmptyProject = {
   name: string;
   displayName: string;
   color: string | null;
+  isSystemManaged: boolean;
 };
 
 type AppGridProps = {
@@ -125,10 +127,12 @@ function ProjectCard({
     return result;
   }, [projectApps]);
 
+  const isSystem = project.isSystemManaged;
+
   return (
     <Link
       href={`/projects/${project.name}`}
-      className="squircle relative flex flex-col rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50 overflow-hidden cursor-pointer"
+      className={`squircle relative flex flex-col rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50 overflow-hidden cursor-pointer${isSystem ? " ring-2 ring-status-warning/50" : ""}`}
     >
       {aggregatedCpu.length > 0 && (
         <Sparkline
@@ -160,6 +164,7 @@ function ProjectCard({
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
               <h3 className="text-base font-semibold truncate">{project.displayName}</h3>
+              {isSystem && <SystemBadge compact className="shrink-0" />}
               <EndpointsPopover endpoints={projectApps.flatMap((a) => a.domains.map((d) => ({ label: a.displayName, domain: d.domain })))} />
             </div>
             {projectApps.length > 0 ? (

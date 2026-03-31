@@ -21,6 +21,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    if (app.isSystemManaged) {
+      return NextResponse.json(
+        { error: "Env vars for system-managed apps cannot be accessed via the API" },
+        { status: 403 }
+      );
+    }
+
     const reveal = request.nextUrl.searchParams.get("reveal") === "true";
 
     const record = await db.query.apps.findFirst({
@@ -77,6 +84,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const app = await verifyAppAccess(orgId, appId);
     if (!app) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    if (app.isSystemManaged) {
+      return NextResponse.json(
+        { error: "Env vars for system-managed apps cannot be modified via the API" },
+        { status: 403 }
+      );
     }
 
     const body = await request.json();

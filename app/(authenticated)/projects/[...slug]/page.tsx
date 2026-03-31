@@ -64,6 +64,7 @@ export default async function ProjectDetailPage({
           parentAppId: true,
           composeService: true,
           containerName: true,
+          isSystemManaged: true,
         },
         with: {
           domains: { columns: { domain: true, isPrimary: true } },
