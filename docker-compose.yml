@@ -164,6 +164,9 @@ services:
     restart: unless-stopped
     command:
       - "--api.insecure=true"
+      - "--accesslog=true"
+      - "--accesslog.format=json"
+      - "--accesslog.fields.headers.defaultmode=drop"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--providers.docker.network=${TRAEFIK_DOCKER_NETWORK-vardo-network}"
