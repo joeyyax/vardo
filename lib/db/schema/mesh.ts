@@ -5,7 +5,7 @@ import {
   timestamp,
   unique,
 } from "drizzle-orm/pg-core";
-import { appStatusEnum, meshPeerStatusEnum, meshPeerTypeEnum } from "./enums";
+import { appStatusEnum, meshPeerConnectionTypeEnum, meshPeerStatusEnum, meshPeerTypeEnum } from "./enums";
 import { projects } from "./projects";
 
 // ---------------------------------------------------------------------------
@@ -26,6 +26,7 @@ export const meshPeers = pgTable("mesh_peer", {
   publicApiUrl: text("public_api_url"), // public URL reachable without tunnel (e.g. https://console.vardo.run)
   tokenHash: text("token_hash").unique(), // SHA-256 hash of the token we gave this peer (inbound auth)
   outboundToken: text("outbound_token"), // token the peer gave us for calling their API (outbound auth)
+  connectionType: meshPeerConnectionTypeEnum("connection_type").notNull().default("direct"), // direct = WireGuard tunnel, visible = seen through hub manifest
   lastSeenAt: timestamp("last_seen_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
