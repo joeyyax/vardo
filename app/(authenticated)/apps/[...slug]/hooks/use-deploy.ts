@@ -13,30 +13,18 @@ export function useDeploy({
   selectedEnvId,
   serverRunningDeploy,
   onDeployStarted,
-  onDeployingChange,
-  onAnnouncement,
 }: {
   orgId: string;
   appId: string;
   selectedEnvId: string | undefined;
   serverRunningDeploy: Deployment | null | undefined;
   onDeployStarted?: () => void;
-  onDeployingChange?: (deploying: boolean) => void;
-  onAnnouncement?: (message: string) => void;
 }) {
   // Keep stable refs for callbacks to avoid re-triggering effects
   const onDeployStartedRef = useRef(onDeployStarted);
   onDeployStartedRef.current = onDeployStarted;
-  const onDeployingChangeRef = useRef(onDeployingChange);
-  onDeployingChangeRef.current = onDeployingChange;
-  const onAnnouncementRef = useRef(onAnnouncement);
-  onAnnouncementRef.current = onAnnouncement;
   const router = useRouter();
-  const [deploying, setDeployingRaw] = useState(false);
-  const setDeploying = useCallback((value: boolean) => {
-    setDeployingRaw(value);
-    onDeployingChangeRef.current?.(value);
-  }, []);
+  const [deploying, setDeploying] = useState(false);
   const [deployLog, setDeployLog] = useState<string[]>([]);
   const [deployStartTime, setDeployStartTime] = useState<number | null>(null);
   const [deployStages, setDeployStages] = useState<
@@ -47,7 +35,6 @@ export function useDeploy({
   const [deployAnnouncement, setDeployAnnouncement] = useState("");
   const announce = useCallback((message: string) => {
     setDeployAnnouncement(message);
-    onAnnouncementRef.current?.(message);
   }, []);
   const [viewingLogId, setViewingLogId] = useState<string | null>(null);
 
