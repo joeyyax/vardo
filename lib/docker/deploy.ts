@@ -1042,6 +1042,44 @@ export async function runDeployment(
       log(`[deploy] Warning: network — ${err instanceof Error ? err.message : err}`);
     }
 
+    // Step 6b: Stop old-slot services that mount externalized volumes.
+    // Stateful services (databases, caches) hold exclusive locks on their data
+    // directories. If the new slot tries to start postgres on the same volume
+    // while the old slot is still running, it fails with a lock conflict.
+    // We stop only the stateful services — app containers stay up for zero-downtime.
+    if (activeSlot && compose.volumes && Object.keys(compose.volumes).length > 0) {
+      const externalVolumeNames = new Set(
+        Object.keys(compose.volumes).filter((v) => !isAnonymousVolume(v))
+      );
+
+      // Find services that mount any externalized volume
+      const statefulServices: string[] = [];
+      for (const [svcName, svc] of Object.entries(compose.services)) {
+        const mounts = svc.volumes ?? [];
+        const usesExternalVol = mounts.some((m) => {
+          const src = m.split(":")[0];
+          return externalVolumeNames.has(src);
+        });
+        if (usesExternalVol) statefulServices.push(svcName);
+      }
+
+      if (statefulServices.length > 0) {
+        const oldSlotDir = join(appDir, activeSlot);
+        const oldProjectName = `${app.name}-${envName}-${activeSlot}`;
+        const oldComposeFileArgs = await slotComposeFiles(oldSlotDir);
+        log(`[deploy] Stopping stateful services in old slot: ${statefulServices.join(", ")}`);
+        try {
+          await execFileAsync(
+            "docker",
+            ["compose", ...oldComposeFileArgs, "-p", oldProjectName, "stop", ...statefulServices],
+            { cwd: oldSlotDir, timeout: 30000 }
+          );
+        } catch (err) {
+          log(`[deploy] Warning: could not stop old stateful services — ${err instanceof Error ? err.message : err}`);
+        }
+      }
+    }
+
     // Step 7: Pull and start new slot (no traffic yet)
     // Use --pull missing when compose has build directives or locally-built images,
     // --pull always for remote-only images
