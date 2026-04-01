@@ -10,7 +10,7 @@ import { nanoid } from "nanoid";
 import { publishEvent, appChannel } from "@/lib/events";
 import { execFile, spawn as nodeSpawn} from "child_process";
 import { promisify } from "util";
-import { mkdir, writeFile, readFile, rm, symlink, readlink } from "fs/promises";
+import { mkdir, writeFile, readFile, rm, symlink } from "fs/promises";
 import { join, resolve } from "path";
 import {
   generateComposeForImage,
