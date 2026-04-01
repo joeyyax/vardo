@@ -10,7 +10,7 @@ import { nanoid } from "nanoid";
 import { publishEvent, appChannel } from "@/lib/events";
 import { execFile, spawn as nodeSpawn} from "child_process";
 import { promisify } from "util";
-import { mkdir, writeFile, readFile, rm } from "fs/promises";
+import { mkdir, writeFile, readFile, rm, symlink, readlink } from "fs/promises";
 import { join, resolve } from "path";
 import {
   generateComposeForImage,
@@ -1200,6 +1200,18 @@ export async function runDeployment(
 
     // Step 11: Record active slot
     await writeFile(join(appDir, ".active-slot"), newSlot, "utf-8");
+
+    // Step 11a: Create 'current' symlink for filesystem visibility
+    const currentSymlinkPath = join(appDir, "current");
+    try {
+      // Remove existing symlink if present
+      await rm(currentSymlinkPath, { force: true });
+      // Create new symlink pointing to the active slot directory
+      await symlink(newSlot, currentSymlinkPath, "dir");
+      log(`[deploy] Created 'current' symlink -> ${newSlot}`);
+    } catch (err) {
+      log(`[deploy] Warning: Failed to create 'current' symlink: ${err instanceof Error ? err.message : err}`);
+    }
 
     // Step 11.5: Prune old Docker images
     try {
