@@ -12,15 +12,35 @@ const log = logger.child("admin:maintenance:mounts");
 // GET /api/v1/admin/maintenance/mounts
 //
 // Returns the current host mount configuration from environment variables.
+// Each mount is returned as { source, destination } if set, or null if not configured.
+// Handles both new source:destination:ro format and legacy single-path format.
+function parseMountPair(value: string | undefined): { source: string; destination: string } | null {
+  if (!value || value === "/dev/null") return null;
+
+  // Strip :ro suffix if present (new format)
+  const mountValue = value.endsWith(":ro") ? value.slice(0, -3) : value;
+
+  const colonIndex = mountValue.indexOf(":");
+  if (colonIndex === -1) {
+    // Legacy single-path format — assume source = destination
+    return { source: mountValue, destination: mountValue };
+  }
+
+  const source = mountValue.slice(0, colonIndex);
+  const destination = mountValue.slice(colonIndex + 1);
+  if (!source || !destination) return null;
+  return { source, destination };
+}
+
 export async function GET() {
   try {
     await requireAppAdmin();
 
     return NextResponse.json({
-      vardoData: process.env.VARDO_DATA || null,
-      vardoProjects: process.env.VARDO_PROJECTS || null,
-      vardoMount1: process.env.VARDO_MOUNT_1 || null,
-      vardoMount2: process.env.VARDO_MOUNT_2 || null,
+      vardoData: parseMountPair(process.env.VARDO_DATA),
+      vardoProjects: parseMountPair(process.env.VARDO_PROJECTS),
+      vardoMount1: parseMountPair(process.env.VARDO_MOUNT_1),
+      vardoMount2: parseMountPair(process.env.VARDO_MOUNT_2),
     });
   } catch (error) {
     return handleRouteError(error);
@@ -31,6 +51,16 @@ export async function GET() {
 //
 // Updates host mount configuration by writing to the .env file.
 // Requires a Vardo restart to take effect.
+// Each mount is sent as { source, destination } and stored as "source:destination".
+// For docker-compose compatibility, we append :ro to make it "source:destination:ro".
+function formatMountForEnv(value: string | undefined): string {
+  if (!value) return "";
+  // If already has :ro suffix, return as-is
+  if (value.endsWith(":ro")) return value;
+  // Append :ro for read-only mount
+  return `${value}:ro`;
+}
+
 export async function POST(request: Request) {
   try {
     await requireAppAdmin();
@@ -48,16 +78,16 @@ export async function POST(request: Request) {
     const updates: Array<[string, string]> = [];
 
     if (parsed.data.vardoData !== undefined) {
-      updates.push(["VARDO_DATA", parsed.data.vardoData]);
+      updates.push(["VARDO_DATA", formatMountForEnv(parsed.data.vardoData)]);
     }
     if (parsed.data.vardoProjects !== undefined) {
-      updates.push(["VARDO_PROJECTS", parsed.data.vardoProjects]);
+      updates.push(["VARDO_PROJECTS", formatMountForEnv(parsed.data.vardoProjects)]);
     }
     if (parsed.data.vardoMount1 !== undefined) {
-      updates.push(["VARDO_MOUNT_1", parsed.data.vardoMount1]);
+      updates.push(["VARDO_MOUNT_1", formatMountForEnv(parsed.data.vardoMount1)]);
     }
     if (parsed.data.vardoMount2 !== undefined) {
-      updates.push(["VARDO_MOUNT_2", parsed.data.vardoMount2]);
+      updates.push(["VARDO_MOUNT_2", formatMountForEnv(parsed.data.vardoMount2)]);
     }
 
     if (updates.length === 0) {
