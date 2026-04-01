@@ -145,14 +145,6 @@ export async function getFeatureFlags(): Promise<FeatureFlags> {
   return { terminal, cron, backups };
 }
 
-/**
- * Flags exposed in the admin settings UI.
- * Excludes "ui" — that's a hard kill switch, not a user-facing toggle.
- */
-export const ADMIN_FLAGS: FeatureFlag[] = (
-  Object.keys(FLAG_CONFIG) as FeatureFlag[]
-).filter((f) => f !== "ui");
-
 export type FeatureFlagInfo = {
   flag: FeatureFlag;
   enabled: boolean;
