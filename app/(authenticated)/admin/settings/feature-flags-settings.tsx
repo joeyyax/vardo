@@ -13,7 +13,7 @@ type FlagState = {
   enabled: boolean;
 };
 
-const ALL_FLAGS = ["terminal", "environments", "backups", "cron", "mesh", "passwordAuth", "selfManagement"];
+const ALL_FLAGS = ["terminal", "environments", "backups", "cron", "mesh", "passwordAuth", "bindMounts", "selfManagement"];
 
 export function FeatureFlagsSettings() {
   const [loading, setLoading] = useState(true);
