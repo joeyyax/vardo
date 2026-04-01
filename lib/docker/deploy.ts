@@ -229,12 +229,6 @@ export async function runDeployment(
 
     if (!app) throw new Error("App not found");
 
-    if (app.isSystemManaged) {
-      throw new DeployBlockedError(
-        "System-managed apps cannot be deployed through the deploy engine. Use Admin > Maintenance."
-      );
-    }
-
     // Fetch org once — used for trusted flag and env var resolution later
     const org = await db.query.organizations.findFirst({
       where: eq(organizations.id, opts.organizationId),
