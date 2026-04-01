@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminAuth } from "@/lib/auth/admin";
 import { getFeatureFlagsConfig, setSystemSetting } from "@/lib/system-settings";
+import { ADMIN_FLAGS } from "@/lib/config/admin-flags";
 import {
-  ADMIN_FLAGS,
   getFlagConfig,
   isFeatureEnabledAsync,
 } from "@/lib/config/features";
