@@ -987,15 +987,7 @@ export function ProjectDetail({
       <PageToolbar
         actions={
           <div className="flex items-center gap-2">
-            {project.isSystemManaged ? (
-              <Button size="sm" variant="outline" asChild className="border-status-warning/40 bg-status-warning-muted text-status-warning hover:bg-status-warning/20">
-                <Link href="/admin/settings/maintenance">
-                  <Wrench className="mr-1.5 size-4" />
-                  Manage in Maintenance
-                </Link>
-              </Button>
-            ) : (
-              <>
+            <>
                 {topLevelApps.length > 0 && (() => {
                   const allActive = topLevelApps.every((a) => a.status === "active");
                   const anyNeedsRedeploy = topLevelApps.some((a) => a.needsRedeploy);
@@ -1048,30 +1040,34 @@ export function ProjectDetail({
                     </Button>
                   );
                 })()}
-                <AddAppDropdown projectId={project.id} />
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button size="icon-sm" variant="outline">
-                      <EllipsisVertical className="size-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => setEditOpen(true)}>
-                      <Pencil className="mr-2 size-4" />
-                      Edit project
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      className="text-destructive focus:text-destructive"
-                      onClick={() => setDeleteOpen(true)}
-                    >
-                      <Trash2 className="mr-2 size-4" />
-                      Delete project
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                {!project.isSystemManaged && (
+                  <>
+                    <AddAppDropdown projectId={project.id} />
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button size="icon-sm" variant="outline">
+                          <EllipsisVertical className="size-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => setEditOpen(true)}>
+                          <Pencil className="mr-2 size-4" />
+                          Edit project
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={() => setDeleteOpen(true)}
+                        >
+                          <Trash2 className="mr-2 size-4" />
+                          Delete project
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </>
+                )}
               </>
-            )}
+
           </div>
         }
       >

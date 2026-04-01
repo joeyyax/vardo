@@ -424,7 +424,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
       <PageToolbar
         actions={
           <div className="flex items-center gap-2">
-            {!app.isSystemManaged && !isChildService && (app.status === "active" ? (
+            {!isChildService && (app.status === "active" ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button size="sm" className={app.needsRedeploy
@@ -493,14 +493,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                 )}
               </Button>
             ))}
-            {app.isSystemManaged ? (
-              <Button size="sm" variant="outline" asChild className="border-status-warning/40 bg-status-warning-muted text-status-warning hover:bg-status-warning/20">
-                <Link href="/admin/settings/maintenance">
-                  <Wrench className="mr-1.5 size-4" />
-                  Manage in Maintenance
-                </Link>
-              </Button>
-            ) : (
+            {!app.isSystemManaged && (
               <>
                 <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
                   <Pencil className="mr-1.5 size-4" />
