@@ -6,8 +6,6 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
 import { toast } from "@/lib/messenger";
-import { ADMIN_FLAGS } from "@/lib/config/features";
-
 type FlagState = {
   flag: string;
   label: string;
@@ -83,9 +81,7 @@ export function FeatureFlagsSettings() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        {flags
-          .filter((f) => (ADMIN_FLAGS as string[]).includes(f.flag))
-          .map((f) => (
+        {flags.map((f) => (
             <div key={f.flag} className="flex items-center justify-between rounded-lg border p-4">
               <div className="space-y-0.5">
                 <Label htmlFor={`flag-${f.flag}`} className="text-sm font-medium">
