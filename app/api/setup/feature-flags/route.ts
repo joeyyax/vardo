@@ -3,34 +3,15 @@ import { z } from "zod";
 import { requireAdminAuth } from "@/lib/auth/admin";
 import { getFeatureFlagsConfig, setSystemSetting } from "@/lib/system-settings";
 import {
-  type FeatureFlag,
+  ADMIN_FLAGS,
   getFlagConfig,
   isFeatureEnabledAsync,
 } from "@/lib/config/features";
 
-/** Flags exposed in the admin UI (skip "ui" — it's a hard kill switch). */
-const ADMIN_FLAGS: FeatureFlag[] = [
-  "terminal",
-  "environments",
-  "backups",
-  "cron",
-  "passwordAuth",
-  "mesh",
-  "bindMounts",
-  "selfManagement",
-];
-
-/** Only accept known feature flag keys (excluding "ui" kill switch). */
-const flagsSchema = z.object({
-  terminal: z.boolean().optional(),
-  environments: z.boolean().optional(),
-  backups: z.boolean().optional(),
-  cron: z.boolean().optional(),
-  passwordAuth: z.boolean().optional(),
-  mesh: z.boolean().optional(),
-  bindMounts: z.boolean().optional(),
-  selfManagement: z.boolean().optional(),
-}).strict();
+/** Only accept known admin feature flag keys. Derived from ADMIN_FLAGS. */
+const flagsSchema = z.object(
+  Object.fromEntries(ADMIN_FLAGS.map((f) => [f, z.boolean().optional()]))
+).strict();
 
 export async function GET(request: NextRequest) {
   await requireAdminAuth(request);
