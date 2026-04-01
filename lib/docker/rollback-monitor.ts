@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { join, resolve } from "path";
+import { rm, symlink, writeFile } from "fs/promises";
 import { listContainers, inspectContainer } from "./client";
 import { slotComposeFiles } from "./compose";
 import { publishEvent, appChannel } from "@/lib/events";
@@ -217,8 +218,17 @@ async function performRollback(opts: PerformRollbackOpts): Promise<void> {
   }
 
   // Step 3: Swap active slot marker back
-  const { writeFile } = await import("fs/promises");
   await writeFile(join(appDir, ".active-slot"), previousSlot, "utf-8");
+
+  // Step 3a: Update 'current' symlink for filesystem visibility
+  const currentSymlinkPath = join(appDir, "current");
+  try {
+    await rm(currentSymlinkPath, { force: true });
+    await symlink(previousSlot, currentSymlinkPath, "dir");
+    log.info(`[rollback] Updated 'current' symlink -> ${previousSlot}`);
+  } catch (err) {
+    log.warn(`[rollback] Failed to create 'current' symlink: ${err instanceof Error ? err.message : err}`);
+  }
 
   // Step 4: Update deployment status to rolled_back
   await db
