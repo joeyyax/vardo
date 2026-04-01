@@ -10,6 +10,15 @@ import { registerGetPreviewStatus } from "./get-preview-status";
 import { registerGetPreviewUrl } from "./get-preview-url";
 import { registerDestroyPreview } from "./destroy-preview";
 import { registerGetDeployLogs } from "./get-deploy-logs";
+import { registerDeployApp } from "./deploy-app";
+import { registerGetDeployStatus } from "./get-deploy-status";
+import { registerGetAppConfig } from "./get-app-config";
+import { registerUpdateApp } from "./update-app";
+import { registerGetEnvVars } from "./get-env-vars";
+import { registerSetEnvVars } from "./set-env-vars";
+import { registerRestartApp } from "./restart-app";
+import { registerStopApp } from "./stop-app";
+import { registerRollbackApp } from "./rollback-app";
 
 /**
  * Register all MCP tools on the server instance.
@@ -28,4 +37,13 @@ export function registerAllTools(
   registerGetPreviewUrl(server, context);
   registerDestroyPreview(server, context);
   registerGetDeployLogs(server, context);
+  registerDeployApp(server, context);
+  registerGetDeployStatus(server, context);
+  registerGetAppConfig(server, context);
+  registerUpdateApp(server, context);
+  registerGetEnvVars(server, context);
+  registerSetEnvVars(server, context);
+  registerRestartApp(server, context);
+  registerStopApp(server, context);
+  registerRollbackApp(server, context);
 }
