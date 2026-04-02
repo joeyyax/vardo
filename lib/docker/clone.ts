@@ -120,6 +120,44 @@ export async function createGroupEnvironment(
     appEnvMap.set(app.name, nanoid());
   }
 
+  // Build domain replacement map: production domain → preview domain
+  // Used during env var cloning to rewrite domain references automatically.
+  const domainReplacements = new Map<string, string>();
+  if (opts.type === "preview" && opts.prNumber) {
+    for (const app of projectApps) {
+      const previewDomain = generatePreviewSubdomain(
+        app.name,
+        opts.prNumber,
+        org?.baseDomain
+      );
+      // Load production domains for this app
+      const appDomains = await db.query.domains.findMany({
+        where: eq(domains.appId, app.id),
+      });
+      for (const d of appDomains) {
+        if (d.domain && previewDomain) {
+          domainReplacements.set(d.domain, previewDomain);
+        }
+      }
+    }
+  } else if (opts.type === "staging") {
+    for (const app of projectApps) {
+      const stagingDomain = generateEnvironmentSubdomain(
+        app.name,
+        opts.name,
+        org?.baseDomain
+      );
+      const appDomains = await db.query.domains.findMany({
+        where: eq(domains.appId, app.id),
+      });
+      for (const d of appDomains) {
+        if (d.domain && stagingDomain) {
+          domainReplacements.set(d.domain, stagingDomain);
+        }
+      }
+    }
+  }
+
   for (const app of projectApps) {
     const override = opts.appOverrides?.[app.id];
     const strategy = override?.strategy ?? app.cloneStrategy ?? "clone";
@@ -186,14 +224,14 @@ export async function createGroupEnvironment(
       ),
     });
 
-    // Clone vars with cross-app ref updates
+    // Clone vars, rewriting any domain references to point to the
+    // environment-specific domains (e.g. agents.yax.me → agents-pr-166.yax.me)
     let clonedCount = 0;
     for (const sourceVar of sourceVars) {
-      const clonedValue = sourceVar.value;
-
-      // Update cross-app refs to point to cloned environment services
-      // (the refs themselves don't change, resolution at deploy time will
-      //  pick up the correct environment-scoped values)
+      let clonedValue = sourceVar.value;
+      for (const [prodDomain, envDomain2] of domainReplacements) {
+        clonedValue = clonedValue.replaceAll(prodDomain, envDomain2);
+      }
 
       await db.insert(envVars).values({
         id: nanoid(),
