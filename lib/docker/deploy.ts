@@ -2020,16 +2020,17 @@ async function stopSlotInDir(
   dir: string,
   projectPrefix: string,
   logs: string[],
+  removeVolumes = false,
 ): Promise<void> {
   const { slotDir, composeProject } = await resolveActiveSlot(dir, projectPrefix);
   const composeFileArgs = await slotComposeFiles(slotDir);
 
   try {
-    const { stdout, stderr } = await execFileAsync(
-      "docker",
-      ["compose", ...composeFileArgs, "-p", composeProject, "down"],
-      { cwd: slotDir, timeout: 60000 }
-    );
+    const args = ["compose", ...composeFileArgs, "-p", composeProject, "down"];
+    if (removeVolumes) {
+      args.push("--volumes");
+    }
+    const { stdout, stderr } = await execFileAsync("docker", args, { cwd: slotDir, timeout: 60000 });
     if (stdout.trim()) logs.push(stdout.trim());
     if (stderr.trim()) logs.push(stderr.trim());
   } catch (err) {
@@ -2041,13 +2042,14 @@ export async function stopProject(
   appId: string,
   appName: string,
   environmentName?: string,
+  removeVolumes = false,
 ): Promise<{ success: boolean; log: string }> {
   const logs: string[] = [];
   try {
     if (environmentName) {
       // Stop specific environment
       const envDir = appEnvDir(appName, environmentName);
-      await stopSlotInDir(envDir, `${appName}-${environmentName}`, logs);
+      await stopSlotInDir(envDir, `${appName}-${environmentName}`, logs, removeVolumes);
     } else {
       // Stop all environments — try env-aware layout first
       const baseDir = appBaseDir(appName);
@@ -2059,19 +2061,19 @@ export async function stopProject(
           for (const entry of envDirs) {
             // Skip blue/green slot dirs at app root (legacy layout)
             if (entry.name === "blue" || entry.name === "green") {
-              await stopSlotInDir(baseDir, appName, logs);
+              await stopSlotInDir(baseDir, appName, logs, removeVolumes);
               break;
             }
             const envDir = join(baseDir, entry.name);
-            await stopSlotInDir(envDir, `${appName}-${entry.name}`, logs);
+            await stopSlotInDir(envDir, `${appName}-${entry.name}`, logs, removeVolumes);
           }
         } else {
           // Legacy: slot dirs directly under app
-          await stopSlotInDir(baseDir, appName, logs);
+          await stopSlotInDir(baseDir, appName, logs, removeVolumes);
         }
       } catch {
         // Fallback to legacy layout
-        await stopSlotInDir(baseDir, appName, logs);
+        await stopSlotInDir(baseDir, appName, logs, removeVolumes);
       }
     }
 
