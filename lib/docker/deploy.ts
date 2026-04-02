@@ -11,7 +11,8 @@ import { publishEvent, appChannel } from "@/lib/events";
 import { execFile, spawn as nodeSpawn} from "child_process";
 import { promisify } from "util";
 import { mkdir, writeFile, readFile, rm, symlink } from "fs/promises";
-import { join, resolve } from "path";
+import { join } from "path";
+import { appBaseDir, appEnvDir } from "@/lib/paths";
 import {
   generateComposeForImage,
   injectTraefikLabels,
@@ -84,7 +85,6 @@ import {
 
 const execFileAsync = promisify(execFile);
 
-const PROJECTS_DIR = resolve(process.env.VARDO_PROJECTS_DIR || "./.host/projects");
 const NETWORK_NAME = "vardo-network";
 
 const DEFAULT_HEALTH_CHECK_TIMEOUT_MS = 60000;
@@ -313,8 +313,8 @@ export async function runDeployment(
     let hostConfig: import("@/lib/config/host-config").HostConfig | null = null;
     let repoDir: string | null = null;
     // App-level dir holds the repo; env-level dir holds slots
-    const appBaseDir = join(PROJECTS_DIR, app.name);
-    const appDir = join(appBaseDir, envName);
+    const appBase = appBaseDir(app.name);
+    const appDir = appEnvDir(app.name, envName);
     await mkdir(appDir, { recursive: true });
 
     // Load volumes from the volumes table
@@ -376,7 +376,7 @@ export async function runDeployment(
     } else if (effectiveSource === "git" && app.gitUrl) {
       // Git source — clone/pull repo with GitHub App auth if needed
       // Repo lives at app level (shared across environments)
-      repoDir = join(appBaseDir, "repo");
+      repoDir = join(appBase, "repo");
       const branch = envBranchOverride || app.gitBranch || "main";
       assertSafeBranch(branch);
 
@@ -887,10 +887,10 @@ export async function runDeployment(
 
     // Step 5b: Write the two physical compose files.
     // docker-compose.yml — the bare user compose, runnable standalone without Vardo.
-    // docker-compose.vardo.yml — Vardo's overlay: Traefik labels, vardo-network,
-    //   resource limits, GPU devices, externalized volume declarations.
+    // docker-compose.override.yml — Vardo's overlay (auto-loaded by Docker Compose):
+    //   Traefik labels, vardo-network, resource limits, GPU devices, externalized volumes.
     const bareComposePath = join(slotDir, "docker-compose.yml");
-    const vardoOverlayPath = join(slotDir, "docker-compose.vardo.yml");
+    const overridePath = join(slotDir, "docker-compose.override.yml");
 
     const overlayCompose = buildVardoOverlay({
       fullCompose: compose,
@@ -903,9 +903,10 @@ export async function runDeployment(
     });
 
     await writeFile(bareComposePath, composeToYaml(bareCompose), "utf-8");
-    await writeFile(vardoOverlayPath, composeToYaml(overlayCompose), "utf-8");
+    await writeFile(overridePath, composeToYaml(overlayCompose), "utf-8");
 
-    const composeFileArgs = ["-f", bareComposePath, "-f", vardoOverlayPath];
+    // docker-compose.override.yml is auto-loaded — only need to specify the base file
+    const composeFileArgs = ["-f", bareComposePath];
 
     // Write .env — resolve template expressions using the full resolution engine
     if (Object.keys(envMap).length > 0) {
@@ -1992,11 +1993,11 @@ export async function stopProject(
   try {
     if (environmentName) {
       // Stop specific environment
-      const envDir = join(PROJECTS_DIR, appName, environmentName);
+      const envDir = appEnvDir(appName, environmentName);
       await stopSlotInDir(envDir, `${appName}-${environmentName}`, logs);
     } else {
       // Stop all environments — try env-aware layout first
-      const baseDir = join(PROJECTS_DIR, appName);
+      const baseDir = appBaseDir(appName);
       try {
         const { readdir } = await import("fs/promises");
         const entries = await readdir(baseDir, { withFileTypes: true });
@@ -2045,9 +2046,7 @@ export async function restartContainers(
 ): Promise<{ success: boolean; log: string }> {
   const logs: string[] = [];
   try {
-    const dir = environmentName
-      ? join(PROJECTS_DIR, appName, environmentName)
-      : join(PROJECTS_DIR, appName);
+    const dir = appEnvDir(appName, environmentName);
     const prefix = environmentName
       ? `${appName}-${environmentName}`
       : appName;
@@ -2085,9 +2084,7 @@ export async function recreateProject(
 ): Promise<{ success: boolean; log: string }> {
   const logs: string[] = [];
   try {
-    const dir = environmentName
-      ? join(PROJECTS_DIR, appName, environmentName)
-      : join(PROJECTS_DIR, appName);
+    const dir = appEnvDir(appName, environmentName);
     const prefix = environmentName
       ? `${appName}-${environmentName}`
       : appName;

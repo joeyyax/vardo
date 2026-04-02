@@ -3,7 +3,8 @@ import { deployments, apps } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { join, resolve } from "path";
+import { join } from "path";
+import { appEnvDir } from "@/lib/paths";
 import { rm, symlink, writeFile } from "fs/promises";
 import { listContainers, inspectContainer } from "./client";
 import { slotComposeFiles } from "./compose";
@@ -14,7 +15,6 @@ import { logger } from "@/lib/logger";
 const log = logger.child("rollback-monitor");
 
 const execFileAsync = promisify(execFile);
-const PROJECTS_DIR = resolve(process.env.VARDO_PROJECTS_DIR || "./.host/projects");
 const POLL_INTERVAL_MS = 5000;
 
 /** In-memory set of app IDs currently being monitored. Prevents concurrent monitors. */
@@ -175,7 +175,7 @@ async function performRollback(opts: PerformRollbackOpts): Promise<void> {
     envName,
   } = opts;
 
-  const appDir = join(PROJECTS_DIR, appName, envName);
+  const appDir = appEnvDir(appName, envName);
 
   // Step 1: Tear down the crashing slot
   const crashedSlotDir = join(appDir, currentSlot);

@@ -6,7 +6,7 @@
 //
 // Safety constraints:
 //   - No Docker socket mount
-//   - No VARDO_DIR mount
+//   - No VARDO_HOME_DIR mount
 //   - SKIP_MIGRATIONS=true (prevents DB migrations on boot)
 //   - VARDO_PREVIEW=true (webhook handler returns early on preview instances)
 //
