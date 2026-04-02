@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { z } from "zod";
+import { db } from "@/lib/db";
+import { apps } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 import {
   getAllIntegrations,
   connectAppIntegration,
@@ -65,6 +68,13 @@ export async function POST(request: NextRequest) {
     let integration;
 
     if (data.mode === "app") {
+      const app = await db.query.apps.findFirst({
+        where: eq(apps.id, data.appId),
+        columns: { id: true },
+      });
+      if (!app) {
+        return NextResponse.json({ error: "App not found" }, { status: 404 });
+      }
       integration = await connectAppIntegration(data.type, data.appId, data.config);
     } else {
       integration = await connectExternalIntegration(

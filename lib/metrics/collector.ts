@@ -15,7 +15,6 @@ let started = false;
 let tickCount = 0;
 let consecutiveFailures = 0;
 const DEGRADED_THRESHOLD = 3; // mark integration degraded after 3 consecutive failures
-const RECOVERED_THRESHOLD = 1; // mark recovered after 1 success
 
 const FAST_INTERVAL_MS = 5000;   // First 20 ticks: every 5s
 const NORMAL_INTERVAL_MS = 30000; // After warmup: every 30s

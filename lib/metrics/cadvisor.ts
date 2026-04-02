@@ -39,10 +39,10 @@ type V2SpecEntry = {
   memory?: { limit: number };
 };
 
-// Module-level cache for specs (rarely change)
-let cachedSpecs: Record<string, V2SpecEntry> | null = null;
-let specsCachedAt = 0;
 const SPECS_TTL_MS = 60_000; // 60 seconds
+
+// Per-URL spec cache — keyed by base URL to avoid stale data on provider swap
+const specsCacheByUrl = new Map<string, { specs: Record<string, V2SpecEntry>; cachedAt: number }>();
 
 /**
  * Fetch metrics for all Docker containers from cAdvisor v2 API.
@@ -56,10 +56,11 @@ export async function fetchAllContainerMetrics(baseUrl = CADVISOR_URL): Promise<
   if (!statsRes.ok) throw new Error(`cAdvisor stats returned ${statsRes.status}`);
   const statsData = (await statsRes.json()) as Record<string, V2StatEntry[]>;
 
-  // Only refetch specs if cache is stale or missing
+  // Only refetch specs if cache is stale or missing (keyed per URL)
   let specsData: Record<string, V2SpecEntry>;
-  if (cachedSpecs && Date.now() - specsCachedAt < SPECS_TTL_MS) {
-    specsData = cachedSpecs;
+  const cached = specsCacheByUrl.get(baseUrl);
+  if (cached && Date.now() - cached.cachedAt < SPECS_TTL_MS) {
+    specsData = cached.specs;
   } else {
     const specsRes = await fetch(
       `${baseUrl}/api/v2.0/spec?type=docker&recursive=true`,
@@ -67,8 +68,7 @@ export async function fetchAllContainerMetrics(baseUrl = CADVISOR_URL): Promise<
     );
     if (!specsRes.ok) throw new Error(`cAdvisor spec returned ${specsRes.status}`);
     specsData = (await specsRes.json()) as Record<string, V2SpecEntry>;
-    cachedSpecs = specsData;
-    specsCachedAt = Date.now();
+    specsCacheByUrl.set(baseUrl, { specs: specsData, cachedAt: Date.now() });
   }
 
   const metrics: ContainerMetrics[] = [];

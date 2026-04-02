@@ -211,26 +211,33 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
       await stopProject(appId, app.name);
     } catch { /* containers may not be running */ }
 
-    // Disconnect any integration backed by this app
+    // Check if this app backs an integration before deleting
+    let backedIntegrationType: string | null = null;
     try {
       const { integrations } = await import("@/lib/db/schema");
       const backedIntegration = await db.query.integrations.findFirst({
         where: eq(integrations.appId, appId),
         columns: { type: true },
       });
-      if (backedIntegration) {
-        const { disconnectIntegration } = await import("@/lib/integrations");
-        await disconnectIntegration(backedIntegration.type as "metrics" | "error_tracking" | "uptime" | "logging");
-        if (backedIntegration.type === "metrics") {
-          const { reinitMetricsProvider } = await import("@/lib/metrics/config");
-          await reinitMetricsProvider();
-        }
-      }
-    } catch { /* integration cleanup is best-effort */ }
+      if (backedIntegration) backedIntegrationType = backedIntegration.type;
+    } catch { /* best-effort */ }
 
+    // Delete app first — FK cascade sets integration.appId to null
     await db
       .delete(apps)
       .where(and(eq(apps.id, appId), eq(apps.organizationId, orgId)));
+
+    // Then clean up integration status
+    if (backedIntegrationType) {
+      try {
+        const { disconnectIntegration } = await import("@/lib/integrations");
+        await disconnectIntegration(backedIntegrationType as "metrics" | "error_tracking" | "uptime" | "logging");
+        if (backedIntegrationType === "metrics") {
+          const { reinitMetricsProvider } = await import("@/lib/metrics/config");
+          await reinitMetricsProvider();
+        }
+      } catch { /* best-effort */ }
+    }
 
     // Clean up empty projects — if this was the last app, delete the project
     if (app.projectId) {

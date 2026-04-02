@@ -43,8 +43,8 @@ export async function getAllIntegrations(): Promise<Integration[]> {
 
 /** Remove encrypted credentials from integration for API responses. */
 function stripCredentials(integration: Integration): Integration {
-  const { ...rest } = integration;
-  return { ...rest, credentials: undefined } as unknown as Integration;
+  const { credentials: _, ...rest } = integration as Integration & { credentials?: unknown };
+  return rest as Integration;
 }
 
 /**
