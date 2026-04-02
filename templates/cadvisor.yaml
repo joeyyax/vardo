@@ -1,0 +1,20 @@
+version: "1"
+name: cadvisor
+displayName: cAdvisor
+description: Container resource metrics (CPU, memory, network, disk). Connect as a Vardo metrics integration.
+icon: https://cdn.simpleicons.org/google/4285F4
+category: monitoring
+source: direct
+deployType: compose
+defaultPort: 8080
+
+composeContent: |
+  services:
+    cadvisor:
+      image: gcr.io/cadvisor/cadvisor:latest
+      privileged: true
+      volumes:
+        - /:/rootfs:ro
+        - /var/run:/var/run:ro
+        - /sys:/sys:ro
+        - /var/lib/docker/:/var/lib/docker:ro

@@ -1,6 +1,6 @@
 import { logger } from "@/lib/logger";
-import { isMetricsEnabled } from "./config";
-import { fetchAllContainerMetrics } from "./cadvisor";
+import { isMetricsEnabled, initMetricsProvider } from "./config";
+import { fetchAllMetrics } from "./provider";
 import { storeMetrics, storeDiskUsage, storeDiskWrite, storeGpuMetrics, storeProjectDisk, storeBusinessMetric, storeOrgBusinessMetric } from "./store";
 import { checkDiskWriteAlerts } from "./disk-write-alerts";
 import { getSystemDiskUsage, getPerProjectDiskUsage } from "@/lib/docker/client";
@@ -13,6 +13,8 @@ const log = logger.child("collector");
 let timeout: ReturnType<typeof setTimeout> | null = null;
 let started = false;
 let tickCount = 0;
+let consecutiveFailures = 0;
+const DEGRADED_THRESHOLD = 3; // mark integration degraded after 3 consecutive failures
 
 const FAST_INTERVAL_MS = 5000;   // First 20 ticks: every 5s
 const NORMAL_INTERVAL_MS = 30000; // After warmup: every 30s
@@ -26,10 +28,11 @@ export function isCollectorRunning() {
   return started;
 }
 
-export function startCollector() {
+export async function startCollector() {
   if (started) return;
+  await initMetricsProvider(); // ensure provider is ready
   if (!isMetricsEnabled()) {
-    log.info("Metrics collection disabled (METRICS_ENABLED=false)");
+    log.info("Metrics collection disabled — no provider configured");
     return;
   }
   started = true;
@@ -49,9 +52,9 @@ function scheduleTick() {
 }
 
 async function collect() {
-  let metrics: Awaited<ReturnType<typeof fetchAllContainerMetrics>> = [];
+  let metrics: Awaited<ReturnType<typeof fetchAllMetrics>> = [];
   try {
-    metrics = await fetchAllContainerMetrics();
+    metrics = await fetchAllMetrics();
     const results = await Promise.allSettled(
       metrics.flatMap((m) => {
         const ops = [
@@ -80,8 +83,18 @@ async function collect() {
     if (failed > 0) {
       log.error(`${results.length - failed} stored, ${failed} failed:`, (results.find((r) => r.status === "rejected") as PromiseRejectedResult)?.reason);
     }
+
+    // Recovered — mark integration connected if it was degraded
+    if (consecutiveFailures >= DEGRADED_THRESHOLD) {
+      updateIntegrationHealth("connected");
+    }
+    consecutiveFailures = 0;
   } catch (err) {
     log.error("Error:", (err as Error).message);
+    consecutiveFailures++;
+    if (consecutiveFailures === DEGRADED_THRESHOLD) {
+      updateIntegrationHealth("degraded");
+    }
   }
 
   // Disk write alert check: every 6th tick after warmup (~3 min at 30s interval)
@@ -182,4 +195,18 @@ export function stopCollector() {
     timeout = null;
   }
   started = false;
+}
+
+/** Update metrics integration status (best-effort, non-blocking). */
+function updateIntegrationHealth(status: "connected" | "degraded") {
+  import("@/lib/integrations")
+    .then(({ getIntegration, updateIntegrationStatus }) =>
+      getIntegration("metrics").then((integration) => {
+        if (integration && integration.status !== "disconnected") {
+          return updateIntegrationStatus("metrics", status);
+        }
+      })
+    )
+    .then(() => log.info(`Metrics integration → ${status}`))
+    .catch(() => {}); // best-effort
 }

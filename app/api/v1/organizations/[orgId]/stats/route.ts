@@ -3,7 +3,7 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { fetchAllContainerMetrics } from "@/lib/metrics/cadvisor";
+import { fetchAllMetrics } from "@/lib/metrics/provider";
 import { queryMetrics, queryMetricsPoints } from "@/lib/metrics/store";
 import type { MetricsPoint } from "@/lib/metrics/types";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
@@ -92,7 +92,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     // Live snapshot
     try {
-      const allMetrics = await fetchAllContainerMetrics();
+      const allMetrics = await fetchAllMetrics();
       const appNames = new Set(orgApps.map((p) => p.name));
 
       // Group by project

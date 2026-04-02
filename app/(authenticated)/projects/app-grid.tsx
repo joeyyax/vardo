@@ -10,6 +10,7 @@ import { statusDotColor } from "@/lib/ui/status-colors";
 import { StatusIndicator, AppIcon } from "@/components/app-status";
 import { ChildAppChipList } from "@/components/child-app-chip";
 import { SystemBadge } from "@/components/system-badge";
+import { PlatformBadge } from "@/components/platform-badge";
 import {
   type AppMetrics,
   type MetricKey,
@@ -57,6 +58,7 @@ type AppGridProps = {
   allTags: Tag[];
   orgId: string;
   emptyProjects?: EmptyProject[];
+  integrationAppIds?: Set<string>;
 };
 
 
@@ -80,12 +82,14 @@ function ProjectCard({
   metrics,
   history,
   historyTick,
+  integrationAppIds,
 }: {
   project: NonNullable<AppWithRelations["project"]>;
   projectApps: AppWithRelations[];
   metrics: Map<string, AppMetrics>;
   history: Map<string, MetricsHistory>;
   historyTick: number;
+  integrationAppIds: Set<string>;
 }) {
   const color = "#a1a1aa"; // neutral zinc-400 — project color is unused
 
@@ -229,6 +233,7 @@ function ProjectCard({
             >
               <span aria-hidden="true" className={`size-1.5 rounded-full ${statusDotColor(a.status)}`} />
               {a.displayName}
+              {integrationAppIds.has(a.id) && <PlatformBadge compact className="shrink-0 text-[10px] px-1.5 py-0" />}
               {a.gpuEnabled && (
                 <Cpu className="size-3 text-muted-foreground/50" aria-label="GPU passthrough enabled" />
               )}
@@ -246,10 +251,12 @@ function AppCard({
   app,
   metrics,
   history,
+  isPlatform,
 }: {
   app: AppWithRelations;
   metrics?: AppMetrics;
   history: MetricsHistory;
+  isPlatform?: boolean;
 }) {
   const lastDeploy = app.deployments[0];
   const projectColor = app.project?.color || "#6366f1";
@@ -277,6 +284,7 @@ function AppCard({
               <h3 className="text-base font-semibold truncate">
                 {app.displayName}
               </h3>
+              {isPlatform && <PlatformBadge compact className="shrink-0" />}
               {app.gpuEnabled && (
                 <Cpu className="size-3.5 shrink-0 text-muted-foreground/60" aria-label="GPU passthrough enabled" />
               )}
@@ -340,6 +348,7 @@ export function AppGrid({
   allTags,
   orgId,
   emptyProjects = [],
+  integrationAppIds = new Set(),
 }: AppGridProps) {
   const router = useRouter();
   const [activeTagIds, setActiveTagIds] = useState<Set<string>>(new Set());
@@ -448,6 +457,7 @@ export function AppGrid({
             metrics={metrics}
             history={history}
             historyTick={historyTick}
+            integrationAppIds={integrationAppIds}
           />
         ))}
         {standaloneApps.map((app) => (
@@ -456,6 +466,7 @@ export function AppGrid({
             app={app}
             metrics={metrics.get(app.id)}
             history={history.get(app.id) || EMPTY_HISTORY}
+            isPlatform={integrationAppIds.has(app.id)}
           />
         ))}
       </div>

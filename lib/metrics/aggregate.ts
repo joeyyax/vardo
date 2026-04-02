@@ -1,4 +1,4 @@
-import type { ContainerMetrics } from "./cadvisor";
+import type { ContainerMetrics } from "./types";
 import type { MetricsPoint, ContainerPoint } from "./types";
 
 /** Aggregate container metrics into a single MetricsPoint */

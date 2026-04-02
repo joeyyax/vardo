@@ -1,3 +1,24 @@
+export type ContainerMetrics = {
+  containerId: string;
+  containerName: string;
+  projectName: string;
+  organizationId: string | null;
+  cpuPercent: number;
+  memoryUsage: number;
+  memoryLimit: number;
+  memoryPercent: number;
+  networkRxBytes: number;
+  networkTxBytes: number;
+  diskUsage: number;
+  diskLimit: number;
+  diskWriteBytes: number; // cumulative block I/O writes
+  gpuUtilization: number; // percent (summed duty_cycle across accelerators)
+  gpuMemoryUsed: number; // bytes
+  gpuMemoryTotal: number; // bytes
+  gpuTemperature: number; // Celsius (average across accelerators)
+  timestamp: number;
+};
+
 export type ContainerStatsSnapshot = {
   containerId: string;
   containerName: string;

@@ -12,4 +12,5 @@ export * from "./monitoring";
 export * from "./templates";
 export * from "./external-routes";
 export * from "./security";
+export * from "./integrations";
 export * from "./relations";

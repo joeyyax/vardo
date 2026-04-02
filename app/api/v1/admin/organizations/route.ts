@@ -4,7 +4,8 @@ import { requireAppAdmin } from "@/lib/auth/admin";
 import { db } from "@/lib/db";
 import { apps, organizations, memberships, deployments } from "@/lib/db/schema";
 import { eq, sql, asc, desc } from "drizzle-orm";
-import { fetchAllContainerMetrics, type ContainerMetrics } from "@/lib/metrics/cadvisor";
+import { fetchAllMetrics } from "@/lib/metrics/provider";
+import type { ContainerMetrics } from "@/lib/metrics/types";
 import { isMetricsEnabled } from "@/lib/metrics/config";
 
 // GET /api/v1/admin/organizations
@@ -30,7 +31,7 @@ export async function GET() {
       }).from(deployments)
         .innerJoin(apps, eq(deployments.appId, apps.id))
         .groupBy(apps.organizationId),
-      isMetricsEnabled() ? fetchAllContainerMetrics().catch(() => []) : Promise.resolve([]),
+      isMetricsEnabled() ? fetchAllMetrics().catch(() => []) : Promise.resolve([]),
     ]);
 
     const memberCountMap = new Map(memberCounts.map((r) => [r.organizationId, Number(r.count)]));

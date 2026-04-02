@@ -58,7 +58,9 @@ export async function register() {
     }
 
     tasks.push(
-      import("./lib/metrics/collector")
+      import("./lib/metrics/config")
+        .then(async ({ initMetricsProvider }) => { await initMetricsProvider(); })
+        .then(() => import("./lib/metrics/collector"))
         .then(({ startCollector }) => {
           startCollector();
           log.info("Metrics collector started");
