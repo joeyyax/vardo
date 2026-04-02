@@ -67,15 +67,12 @@ export async function createPreview(
     where: eq(apps.gitUrl, gitUrl),
   });
 
-  // Filter to matching branch
-  const branchApps = matchingApps.filter(
-    (a) => (a.gitBranch || "main") === opts.branch
-  );
+  if (matchingApps.length === 0) return null;
 
-  if (branchApps.length === 0) return null;
-
-  // Find the first app that belongs to a project
-  const groupedApp = branchApps.find((a) => a.projectId);
+  // Find the first app that belongs to a project.
+  // The PR branch gets deployed into the preview — we don't filter by
+  // the app's configured gitBranch since any repo app can be previewed.
+  const groupedApp = matchingApps.find((a) => a.projectId);
   if (!groupedApp || !groupedApp.projectId) {
     // No project — can't create a group preview for standalone apps
     return null;
