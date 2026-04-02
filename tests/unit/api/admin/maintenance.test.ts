@@ -18,7 +18,7 @@ import { mountsSchema, restartSchema } from "@/lib/api/admin/maintenance-schemas
 // GET /api/v1/admin/maintenance
 //
 // Returns { services, hasVardoDir } — hasVardoDir is a boolean derived from
-// process.env.VARDO_DIR. The raw path must never be returned.
+// process.env.VARDO_HOME_DIR or VARDO_DIR. The raw path must never be returned.
 // ---------------------------------------------------------------------------
 
 describe("maintenance GET — hasVardoDir shape", () => {
@@ -136,30 +136,27 @@ describe("restart — service name validation", () => {
 });
 
 // ---------------------------------------------------------------------------
-// POST /api/v1/admin/maintenance/update — VARDO_DIR guard
+// POST /api/v1/admin/maintenance/update — VARDO_HOME_DIR resolution
 //
-// Returns 503 when VARDO_DIR is not set. The git pull and docker compose
-// commands are only run when the directory is known.
+// VARDO_HOME_DIR always has a default (/opt/vardo), so the update route
+// no longer needs a guard. This test verifies the path resolution logic.
 // ---------------------------------------------------------------------------
 
-describe("update — VARDO_DIR guard", () => {
-  function checkVardoDir(vardoDir: string | undefined): { ok: boolean; status: number } {
-    if (!vardoDir) {
-      return { ok: false, status: 503 };
-    }
-    return { ok: true, status: 200 };
+describe("update — VARDO_HOME_DIR resolution", () => {
+  function resolveHomeDir(homeDir?: string, vardoDir?: string): string {
+    return homeDir || vardoDir || "/opt/vardo";
   }
 
-  it("returns 503 when VARDO_DIR is not set", () => {
-    expect(checkVardoDir(undefined).status).toBe(503);
+  it("uses VARDO_HOME_DIR when set", () => {
+    expect(resolveHomeDir("/mnt/docker/vardo")).toBe("/mnt/docker/vardo");
   });
 
-  it("returns 503 when VARDO_DIR is empty string", () => {
-    expect(checkVardoDir("").status).toBe(503);
+  it("falls back to VARDO_DIR", () => {
+    expect(resolveHomeDir(undefined, "/opt/vardo")).toBe("/opt/vardo");
   });
 
-  it("proceeds when VARDO_DIR is set", () => {
-    expect(checkVardoDir("/opt/vardo").ok).toBe(true);
+  it("defaults to /opt/vardo when neither is set", () => {
+    expect(resolveHomeDir(undefined, undefined)).toBe("/opt/vardo");
   });
 });
 

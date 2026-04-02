@@ -5,6 +5,7 @@ import { requireAppAdmin } from "@/lib/auth/admin";
 import { handleRouteError } from "@/lib/api/error-response";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { logger } from "@/lib/logger";
+import { VARDO_HOME_DIR } from "@/lib/paths";
 
 const execFileAsync = promisify(execFile);
 
@@ -20,18 +21,9 @@ async function handlePost(_request: NextRequest) {
   try {
     await requireAppAdmin();
 
-    const vardoDir = process.env.VARDO_DIR;
-
-    if (!vardoDir) {
-      return NextResponse.json(
-        { error: "VARDO_DIR is not set — cannot run git pull or docker compose without knowing the installation path" },
-        { status: 503 },
-      );
-    }
-
     // git pull — async so the event loop stays responsive
     try {
-      const { stdout } = await execFileAsync("git", ["-C", vardoDir, "pull"], { timeout: 30000 });
+      const { stdout } = await execFileAsync("git", ["-C", VARDO_HOME_DIR, "pull"], { timeout: 30000 });
       log.info(`git pull: ${stdout.trim()}`);
     } catch (err) {
       log.error(`git pull failed: ${err}`);
@@ -47,7 +39,7 @@ async function handlePost(_request: NextRequest) {
     setTimeout(() => {
       const build = spawn(
         "docker",
-        ["compose", "-f", `${vardoDir}/docker-compose.yml`, "build", "frontend"],
+        ["compose", "-f", `${VARDO_HOME_DIR}/docker-compose.yml`, "build", "frontend"],
         { detached: true, stdio: "ignore" },
       );
       build.unref();
@@ -59,7 +51,7 @@ async function handlePost(_request: NextRequest) {
         }
         spawn(
           "docker",
-          ["compose", "-f", `${vardoDir}/docker-compose.yml`, "up", "-d"],
+          ["compose", "-f", `${VARDO_HOME_DIR}/docker-compose.yml`, "up", "-d"],
           { detached: true, stdio: "ignore" },
         ).unref();
       });

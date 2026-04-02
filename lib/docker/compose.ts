@@ -585,18 +585,21 @@ export function stripTraefikLabels(compose: ComposeFile): ComposeFile {
 // ---------------------------------------------------------------------------
 
 /**
- * Return the compose -f arguments for a slot directory, using both
- * docker-compose.yml and docker-compose.vardo.yml when the overlay exists.
- * Falls back to just docker-compose.yml for slots deployed before the split
- * was introduced (backward compat).
+ * Return the compose -f arguments for a slot directory.
+ *
+ * Docker Compose auto-loads docker-compose.override.yml when present, so we
+ * only need to pass `-f docker-compose.yml`. For backwards compat, we also
+ * check for the legacy `docker-compose.vardo.yml` and pass it explicitly.
  */
 export async function slotComposeFiles(slotDir: string): Promise<string[]> {
   const base = join(slotDir, "docker-compose.yml");
-  const overlay = join(slotDir, "docker-compose.vardo.yml");
+  // Legacy overlay — explicit -f required
+  const legacyOverlay = join(slotDir, "docker-compose.vardo.yml");
   try {
-    await access(overlay);
-    return ["-f", base, "-f", overlay];
+    await access(legacyOverlay);
+    return ["-f", base, "-f", legacyOverlay];
   } catch {
+    // docker-compose.override.yml is auto-loaded by Docker Compose
     return ["-f", base];
   }
 }
@@ -661,8 +664,8 @@ export function stripVardoInjections(
  * Traefik labels, vardo.* labels, vardo-network, resource limits from app
  * settings, GPU devices, and externalized volume declarations.
  *
- * This file is merged with the bare user compose at deploy time:
- *   docker compose -f docker-compose.yml -f docker-compose.vardo.yml up -d
+ * Written as docker-compose.override.yml so Docker Compose auto-loads it:
+ *   docker compose up -d
  */
 export function buildVardoOverlay(opts: {
   fullCompose: ComposeFile;
