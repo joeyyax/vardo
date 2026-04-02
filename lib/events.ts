@@ -118,10 +118,10 @@ function patternFor(channel: string): string {
  * PSUBSCRIBE on prefix patterns (e.g. `app:*`). Messages are routed
  * to per-channel callback sets in-process.
  */
-export function subscribe(
+export async function subscribe(
   channel: string,
   onMessage: MessageCallback,
-): () => void {
+): Promise<() => void> {
   const state = getOrCreateState();
 
   if (state.subscriberCount >= MAX_SUBSCRIBERS) {
@@ -150,7 +150,7 @@ export function subscribe(
   const pattern = patternFor(channel);
   if (!state.patterns.has(pattern)) {
     state.patterns.add(pattern);
-    state.client.psubscribe(pattern).catch((err) => {
+    await state.client.psubscribe(pattern).catch((err) => {
       log.error(
         `Failed to PSUBSCRIBE to ${pattern}:`,
         err.message,

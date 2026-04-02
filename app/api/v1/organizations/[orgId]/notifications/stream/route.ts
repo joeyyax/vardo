@@ -25,7 +25,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     let unsubscribe: () => void;
     try {
-      unsubscribe = on(orgId, (event) => {
+      unsubscribe = await on(orgId, (event) => {
         if (!controller) {
           pending.push(event);
           return;
