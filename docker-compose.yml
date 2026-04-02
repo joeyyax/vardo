@@ -55,8 +55,7 @@ services:
       REDIS_URL: redis://vardo-redis:6379
       NEXT_PUBLIC_BETTER_AUTH_URL: https://${VARDO_DOMAIN:-localhost}
       NEXT_PUBLIC_APP_URL: https://${VARDO_DOMAIN:-localhost}
-      VARDO_PROJECTS_DIR: /var/lib/vardo/projects
-      VARDO_DIR: ${VARDO_DIR:-/opt/vardo}
+      VARDO_HOME_DIR: ${VARDO_HOME_DIR:-${VARDO_DIR:-/opt/vardo}}
       CADVISOR_URL: http://vardo-cadvisor:8080
       LOKI_URL: http://vardo-loki:3100
       WIREGUARD_GATEWAY: 10.88.0.2
@@ -77,12 +76,9 @@ services:
       # the host daemon. Mitigated by admin-only auth, non-root user, and docker GID mapping.
       # Set CONTAINER_ID in .env if you run Vardo with a custom container hostname.
       - /var/run/docker.sock:/var/run/docker.sock
-      - vardo_projects:/var/lib/vardo/projects
-      - traefik_dynamic:/etc/traefik/dynamic
-      # Vardo installation directory — mounted read-write because Vardo writes to .env and runs
-      # git pull inside this directory during self-updates. All other host mounts below are read-only.
-      # Set VARDO_DIR in .env to the directory where docker-compose.yml lives (default: /opt/vardo).
-      - ${VARDO_DIR:-/opt/vardo}:${VARDO_DIR:-/opt/vardo}
+      # Vardo home directory — all app data, traefik config, and images live here.
+      # Mounted read-write for deploys, .env writes, and self-updates.
+      - ${VARDO_HOME_DIR:-${VARDO_DIR:-/opt/vardo}}:${VARDO_HOME_DIR:-${VARDO_DIR:-/opt/vardo}}
       # Additional host mounts — pre-defined slots for mounting host paths into Vardo.
       # Set VARDO_DATA or VARDO_PROJECTS in .env to enable. Unused slots default to /dev/null (no-op).
       - ${VARDO_DATA:-/dev/null}:${VARDO_DATA:-/dev/null}:ro
@@ -328,7 +324,6 @@ services:
 volumes:
   postgres_data:
   redis_data:
-  vardo_projects:
   letsencrypt:
   loki_data:
   wireguard_config:
