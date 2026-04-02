@@ -10,6 +10,8 @@ import {
   ChevronDown,
   FileCode2,
   Container,
+  Trash2,
+  EllipsisVertical,
 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { PageToolbar } from "@/components/page-toolbar";
@@ -22,6 +24,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { LogViewer } from "@/components/log-viewer";
 import { EnvEditor } from "@/components/env-editor";
 import { AppMetrics } from "./app-metrics";
@@ -29,6 +32,7 @@ import { AppBackupHistory } from "@/components/backups/app-backup-history";
 import { statusDotColor } from "@/lib/ui/status-colors";
 import { AppDeployPanel } from "./app-deploy-panel";
 import { useDeploy } from "./hooks/use-deploy";
+import { isAdmin } from "@/lib/auth/permissions";
 import type { App, ChildApp } from "./types";
 import type { FeatureFlags } from "@/lib/config/features";
 
@@ -263,7 +267,7 @@ function ComposeEditor({
 export function ComposeDetail({
   app,
   orgId,
-  userRole: _userRole,
+  userRole,
   initialTab,
   featureFlags,
 }: {
@@ -275,6 +279,33 @@ export function ComposeDetail({
 }) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState(initialTab);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const canDelete = isAdmin(userRole);
+
+  async function handleDelete() {
+    setDeleting(true);
+    try {
+      const res = await fetch(
+        `/api/v1/organizations/${orgId}/apps/${app.id}`,
+        { method: "DELETE" }
+      );
+
+      if (!res.ok) {
+        const data = await res.json();
+        toast.error(data.error || "Failed to delete");
+        return;
+      }
+
+      toast.success("App deleted");
+      router.push("/projects");
+    } catch {
+      toast.error("Failed to delete");
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   const services = app.childApps;
 
@@ -374,6 +405,24 @@ export function ComposeDetail({
                   <><Rocket className="mr-1.5 size-4" />Deploy Stack</>
                 )}
               </Button>
+            )}
+            {!app.isSystemManaged && canDelete && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="icon-sm" variant="outline">
+                    <EllipsisVertical className="size-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={() => setDeleteOpen(true)}
+                  >
+                    <Trash2 className="mr-2 size-4" />
+                    Delete app
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
           </div>
         }
@@ -503,6 +552,16 @@ export function ComposeDetail({
           <ComposeEditor app={app} orgId={orgId} />
         </TabsContent>
       </Tabs>
+
+      <ConfirmDeleteDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="Delete app"
+        description={`Are you sure you want to delete "${app.displayName}"? This will stop all services and remove all associated data. This action cannot be undone.`}
+        confirmLabel="Delete"
+        onConfirm={handleDelete}
+        loading={deleting}
+      />
     </div>
   );
 }
