@@ -20,6 +20,7 @@ import { registerSetEnvVars } from "./set-env-vars";
 import { registerRestartApp } from "./restart-app";
 import { registerStopApp } from "./stop-app";
 import { registerRollbackApp } from "./rollback-app";
+import { registerAdoptApp } from "./adopt-app";
 
 /**
  * Register all MCP tools on the server instance.
@@ -48,4 +49,5 @@ export function registerAllTools(
   registerRestartApp(server, context);
   registerStopApp(server, context);
   registerRollbackApp(server, context);
+  registerAdoptApp(server, context);
 }

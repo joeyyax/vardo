@@ -155,6 +155,13 @@
       "when": 1774992502345,
       "tag": "0021_colorful_cloak",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1775193600000,
+      "tag": "0022_add_local_environment_type",
+      "breakpoints": true
     }
   ]
 }

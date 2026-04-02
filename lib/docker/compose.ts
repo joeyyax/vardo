@@ -660,6 +660,48 @@ export function stripVardoInjections(
 }
 
 /**
+ * Remove named services from a compose file. Also strips references to excluded
+ * services from depends_on in remaining services.
+ * Returns a new ComposeFile — does not mutate the original.
+ */
+export function excludeServices(
+  compose: ComposeFile,
+  serviceNames: string[]
+): ComposeFile {
+  const excluded = new Set(serviceNames);
+  const filteredServices: Record<string, ComposeService> = {};
+
+  for (const [name, svc] of Object.entries(compose.services)) {
+    if (excluded.has(name)) continue;
+
+    // Clean depends_on references to excluded services
+    let cleanedDependsOn = svc.depends_on;
+    if (cleanedDependsOn) {
+      if (Array.isArray(cleanedDependsOn)) {
+        const filtered = cleanedDependsOn.filter((d) => !excluded.has(d));
+        cleanedDependsOn = filtered.length > 0 ? filtered : undefined;
+      } else {
+        const filtered = Object.fromEntries(
+          Object.entries(cleanedDependsOn).filter(([k]) => !excluded.has(k))
+        );
+        cleanedDependsOn =
+          Object.keys(filtered).length > 0 ? filtered : undefined;
+      }
+    }
+
+    const { depends_on: _, ...rest } = svc;
+    filteredServices[name] = cleanedDependsOn
+      ? { ...rest, depends_on: cleanedDependsOn }
+      : rest;
+  }
+
+  return {
+    ...compose,
+    services: filteredServices,
+  };
+}
+
+/**
  * Build the Vardo overlay compose file containing only Vardo-injected config:
  * Traefik labels, vardo.* labels, vardo-network, resource limits from app
  * settings, GPU devices, and externalized volume declarations.

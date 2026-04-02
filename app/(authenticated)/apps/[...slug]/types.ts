@@ -44,7 +44,7 @@ export type EnvVar = {
 export type Environment = {
   id: string;
   name: string;
-  type: "production" | "staging" | "preview";
+  type: "production" | "staging" | "preview" | "local";
   domain: string | null;
   gitBranch: string | null;
   isDefault: boolean | null;
