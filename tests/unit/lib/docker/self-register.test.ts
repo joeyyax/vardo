@@ -78,7 +78,12 @@ vi.mock("@/lib/logger", () => ({
 }));
 vi.mock("nanoid", () => ({ nanoid: () => "test-id" }));
 
-vi.mock("fs/promises", () => ({ readFile: readFileMock }));
+vi.mock("fs/promises", () => ({
+  readFile: readFileMock,
+  // access() is used to check if the slot layout compose file exists.
+  // Default: reject (legacy flat layout — falls back to VARDO_HOME_DIR).
+  access: vi.fn().mockRejectedValue(new Error("ENOENT")),
+}));
 vi.mock("child_process", () => ({ execFile: execFileMock }));
 
 // ---------------------------------------------------------------------------
