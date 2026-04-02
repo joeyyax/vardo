@@ -10,7 +10,7 @@
 
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import type { ComposeFile, ComposeService } from "./compose";
 
@@ -115,6 +115,18 @@ export async function syncComposeServices(opts: {
   log?: (line: string) => void;
 }): Promise<SyncResult> {
   const { parentAppId, organizationId, projectId, compose, parentAppName, log } = opts;
+
+  // Validate required fields - protects against undefined values being coerced to null in Drizzle transactions
+  if (!organizationId) {
+    throw new Error("syncComposeServices: organizationId is required but was undefined or empty");
+  }
+  if (!parentAppId) {
+    throw new Error("syncComposeServices: parentAppId is required but was undefined or empty");
+  }
+  if (!parentAppName) {
+    throw new Error("syncComposeServices: parentAppName is required but was undefined or empty");
+  }
+
   const result: SyncResult = { created: [], updated: [], removed: [] };
 
   const serviceNames = Object.keys(compose.services);
@@ -165,85 +177,84 @@ export async function syncComposeServices(opts: {
       .map((c) => [c.composeService!, c])
   );
 
-  // Wrap all create/update/delete operations in a transaction for atomicity
-  await db.transaction(async (tx) => {
-    // Process each service in the compose file
-    for (const [serviceName, svc] of Object.entries(compose.services)) {
-      const childName = `${parentAppName}-${serviceName}`;
-      const containerName = `${parentAppName}-${serviceName}-1`;
-      const displayName = humanizeServiceName(serviceName);
-      const { cpuLimit, memoryLimit } = parseResourceLimits(svc);
-      const volumes = parseServiceVolumes(svc);
+  // Process each service in the compose file
+  // NOTE: Not using db.transaction() due to postgres-js parameter binding issues
+  // These are display-only child records, so atomicity is less critical than correctness
+  for (const [serviceName, svc] of Object.entries(compose.services)) {
+    const childName = `${parentAppName}-${serviceName}`;
+    const containerName = `${parentAppName}-${serviceName}-1`;
+    const displayName = humanizeServiceName(serviceName);
+    const { cpuLimit, memoryLimit } = parseResourceLimits(svc);
+    const volumes = parseServiceVolumes(svc);
 
-      // Map compose depends_on to child app names (prefixed with parent).
-      // depends_on may be a string[] or an object keyed by service name.
-      const dependsOnRaw = svc.depends_on;
-      const dependsOnServiceNames = dependsOnRaw
-        ? Array.isArray(dependsOnRaw)
-          ? dependsOnRaw
-          : Object.keys(dependsOnRaw)
-        : null;
-      const dependsOn = dependsOnServiceNames?.map((dep) => `${parentAppName}-${dep}`) ?? null;
+    // Map compose depends_on to child app names (prefixed with parent).
+    // depends_on may be a string[] or an object keyed by service name.
+    const dependsOnRaw = svc.depends_on;
+    const dependsOnServiceNames = dependsOnRaw
+      ? Array.isArray(dependsOnRaw)
+        ? dependsOnRaw
+        : Object.keys(dependsOnRaw)
+      : null;
+    const dependsOn = dependsOnServiceNames?.map((dep) => `${parentAppName}-${dep}`) ?? null;
 
-      const existing = childByService.get(serviceName);
+    const existing = childByService.get(serviceName);
 
-      if (existing) {
-        // Update existing child record
-        await tx
-          .update(apps)
-          .set({
-            status: "active",
-            displayName,
-            containerName,
-            imageName: svc.image || null,
-            cpuLimit,
-            memoryLimit,
-            persistentVolumes: volumes.length > 0 ? volumes : null,
-            dependsOn,
-            projectId,
-            updatedAt: new Date(),
-          })
-          .where(eq(apps.id, existing.id));
-
-        result.updated.push(serviceName);
-        childByService.delete(serviceName);
-      } else {
-        // Create new child record
-        const id = nanoid();
-        await tx.insert(apps).values({
-          id,
-          organizationId,
-          name: childName,
-          displayName,
-          description: `Compose service: ${serviceName}`,
-          source: "direct",
-          deployType: "compose",
-          imageName: svc.image || null,
+    if (existing) {
+      // Update existing child record
+      await db
+        .update(apps)
+        .set({
           status: "active",
-          parentAppId,
-          composeService: serviceName,
+          displayName,
           containerName,
-          projectId,
+          imageName: svc.image || null,
           cpuLimit,
           memoryLimit,
           persistentVolumes: volumes.length > 0 ? volumes : null,
           dependsOn,
-          sortOrder: 0,
-        });
+          projectId,
+          updatedAt: new Date(),
+        })
+        .where(eq(apps.id, existing.id));
 
-        result.created.push(serviceName);
-      }
-    }
+      result.updated.push(serviceName);
+      childByService.delete(serviceName);
+    } else {
+      // Create new child record
+      // NOTE: Using raw SQL to bypass Drizzle/postgres-js parameter binding issues
+      const id = nanoid();
+      const now = new Date().toISOString();
+      const volsJson = volumes.length > 0 ? JSON.stringify(volumes) : null;
+      const depsJson = dependsOn ? JSON.stringify(dependsOn) : null;
 
-    // Mark orphaned children (services removed from compose YAML) as stopped
-    for (const [serviceName, child] of childByService) {
-      await tx
-        .update(apps)
-        .set({ status: "stopped", updatedAt: new Date() })
-        .where(eq(apps.id, child.id));
-      result.removed.push(serviceName);
+      await db.execute(sql`
+        INSERT INTO "app" (
+          "id", "organization_id", "name", "display_name", "description",
+          "source", "deploy_type", "image_name", "status",
+          "parent_app_id", "compose_service", "container_name", "project_id",
+          "cpu_limit", "memory_limit", "persistent_volumes", "depends_on", "sort_order",
+          "created_at", "updated_at"
+        ) VALUES (
+          ${id}, ${organizationId}, ${childName}, ${displayName}, ${`Compose service: ${serviceName}`},
+          ${"direct"}, ${"compose"}, ${svc.image || null}, ${"active"},
+          ${parentAppId}, ${serviceName}, ${containerName}, ${projectId},
+          ${cpuLimit}, ${memoryLimit}, ${volsJson}, ${depsJson}, ${0},
+          ${now}, ${now}
+        )
+      `);
+
+      result.created.push(serviceName);
     }
-  });
+  }
+
+  // Mark orphaned children (services removed from compose YAML) as stopped
+  for (const [serviceName, child] of childByService) {
+    await db
+      .update(apps)
+      .set({ status: "stopped", updatedAt: new Date() })
+      .where(eq(apps.id, child.id));
+    result.removed.push(serviceName);
+  }
 
   if (log) {
     if (result.created.length > 0) {
