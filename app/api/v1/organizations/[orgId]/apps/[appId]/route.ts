@@ -206,9 +206,9 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Stop containers before deleting
+    // Stop containers and remove volumes before deleting
     try {
-      await stopProject(appId, app.name);
+      await stopProject(appId, app.name, undefined, true);
     } catch { /* containers may not be running */ }
 
     // Check if this app backs an integration before deleting
