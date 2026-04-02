@@ -3,7 +3,7 @@ import { apps } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { emit } from "@/lib/notifications/dispatch";
 import { queryDiskWriteRange } from "./store";
-import type { ContainerMetrics } from "./cadvisor";
+import type { ContainerMetrics } from "./types";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("disk-write-alert");

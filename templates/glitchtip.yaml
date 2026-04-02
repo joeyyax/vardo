@@ -1,0 +1,92 @@
+version: "1"
+name: glitchtip
+displayName: GlitchTip
+description: Open-source error tracking (Sentry-compatible). Connect as a Vardo error tracking integration.
+icon: https://glitchtip.com/assets/images/glitchtip-logo.svg
+category: monitoring
+source: direct
+deployType: compose
+defaultPort: 8000
+
+composeContent: |
+  services:
+    web:
+      image: glitchtip/glitchtip:latest
+      depends_on:
+        - postgres
+        - redis
+      env_file:
+        - .env
+      volumes:
+        - uploads:/code/uploads
+
+    worker:
+      image: glitchtip/glitchtip:latest
+      command: ./bin/run-celery-with-beat.sh
+      depends_on:
+        - postgres
+        - redis
+      env_file:
+        - .env
+      volumes:
+        - uploads:/code/uploads
+
+    postgres:
+      image: postgres:17
+      env_file:
+        - .env
+      volumes:
+        - postgres-data:/var/lib/postgresql/data
+
+    redis:
+      image: redis:7-alpine
+      volumes:
+        - redis-data:/data
+
+  volumes:
+    uploads: {}
+    postgres-data: {}
+    redis-data: {}
+
+envVars:
+  - key: DATABASE_URL
+    description: PostgreSQL connection string
+    required: true
+    defaultValue: "postgres://glitchtip:glitchtip@postgres:5432/glitchtip"
+  - key: REDIS_URL
+    description: Redis connection string
+    required: true
+    defaultValue: "redis://redis:6379/0"
+  - key: SECRET_KEY
+    description: Django secret key (generate a random string)
+    required: true
+  - key: GLITCHTIP_DOMAIN
+    description: Public URL for GlitchTip (e.g. https://errors.example.com)
+    required: true
+  - key: DEFAULT_FROM_EMAIL
+    description: Email sender address for notifications
+    required: false
+    defaultValue: "glitchtip@example.com"
+  - key: POSTGRES_DB
+    description: PostgreSQL database name
+    required: false
+    defaultValue: glitchtip
+  - key: POSTGRES_USER
+    description: PostgreSQL user
+    required: false
+    defaultValue: glitchtip
+  - key: POSTGRES_PASSWORD
+    description: PostgreSQL password
+    required: true
+    defaultValue: glitchtip
+
+volumes:
+  - name: uploads
+    mountPath: /code/uploads
+    description: GlitchTip file uploads
+  - name: postgres-data
+    mountPath: /var/lib/postgresql/data
+    description: PostgreSQL data files
+  - name: redis-data
+    mountPath: /data
+    description: Redis data

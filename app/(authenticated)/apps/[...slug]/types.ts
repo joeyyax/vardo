@@ -115,6 +115,7 @@ export type App = {
   needsRedeploy: boolean | null;
   importedContainerId: string | null;
   isSystemManaged: boolean;
+  configSource: string | null;
   createdAt: Date;
   updatedAt: Date;
   deployments: Deployment[];
@@ -140,4 +141,5 @@ export type AppDetailProps = {
   initialSubView?: string;
   featureFlags: FeatureFlags;
   parentApp?: { id: string; name: string; displayName: string } | null;
+  backedIntegrationType?: string | null;
 };
