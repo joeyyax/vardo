@@ -13,6 +13,9 @@ const log = logger.child("collector");
 let timeout: ReturnType<typeof setTimeout> | null = null;
 let started = false;
 let tickCount = 0;
+let consecutiveFailures = 0;
+const DEGRADED_THRESHOLD = 3; // mark integration degraded after 3 consecutive failures
+const RECOVERED_THRESHOLD = 1; // mark recovered after 1 success
 
 const FAST_INTERVAL_MS = 5000;   // First 20 ticks: every 5s
 const NORMAL_INTERVAL_MS = 30000; // After warmup: every 30s
@@ -81,8 +84,18 @@ async function collect() {
     if (failed > 0) {
       log.error(`${results.length - failed} stored, ${failed} failed:`, (results.find((r) => r.status === "rejected") as PromiseRejectedResult)?.reason);
     }
+
+    // Recovered — mark integration connected if it was degraded
+    if (consecutiveFailures >= DEGRADED_THRESHOLD) {
+      updateIntegrationHealth("connected");
+    }
+    consecutiveFailures = 0;
   } catch (err) {
     log.error("Error:", (err as Error).message);
+    consecutiveFailures++;
+    if (consecutiveFailures === DEGRADED_THRESHOLD) {
+      updateIntegrationHealth("degraded");
+    }
   }
 
   // Disk write alert check: every 6th tick after warmup (~3 min at 30s interval)
@@ -183,4 +196,18 @@ export function stopCollector() {
     timeout = null;
   }
   started = false;
+}
+
+/** Update metrics integration status (best-effort, non-blocking). */
+function updateIntegrationHealth(status: "connected" | "degraded") {
+  import("@/lib/integrations")
+    .then(({ getIntegration, updateIntegrationStatus }) =>
+      getIntegration("metrics").then((integration) => {
+        if (integration && integration.status !== "disconnected") {
+          return updateIntegrationStatus("metrics", status);
+        }
+      })
+    )
+    .then(() => log.info(`Metrics integration → ${status}`))
+    .catch(() => {}); // best-effort
 }

@@ -21,7 +21,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Unplug, Plug, ExternalLink } from "lucide-react";
+import { Loader2, Unplug, Plug, ExternalLink, Rocket } from "lucide-react";
+import Link from "next/link";
 import { toast } from "@/lib/messenger";
 
 type Integration = {
@@ -45,24 +46,28 @@ const INTEGRATION_TYPES = [
     label: "Metrics",
     description: "Container resource metrics (CPU, memory, network, disk). Requires a cAdvisor-compatible source.",
     defaultPort: 8080,
+    templateName: "cadvisor",
   },
   {
     type: "error_tracking",
     label: "Error Tracking",
     description: "Application error monitoring. Injects SENTRY_DSN into deployed apps. Requires GlitchTip or Sentry-compatible instance.",
     defaultPort: 8000,
+    templateName: "glitchtip",
   },
   {
     type: "uptime",
     label: "Uptime Monitoring",
     description: "Auto-creates monitors for deployed apps and domains. Requires Uptime Kuma or compatible instance.",
     defaultPort: 3001,
+    templateName: "uptime-kuma",
   },
   {
     type: "logging",
     label: "Log Aggregation",
     description: "Centralized log collection and search. Requires Grafana + Loki or compatible stack.",
     defaultPort: 3000,
+    templateName: null,
   },
 ] as const;
 
@@ -180,22 +185,32 @@ export function IntegrationsSettings() {
                     Disconnect
                   </Button>
                 ) : (
-                  <ConnectDialog
-                    type={def.type}
-                    label={def.label}
-                    apps={apps}
-                    onConnected={(integration) => {
-                      setIntegrations((prev) => {
-                        const existing = prev.findIndex((i) => i.type === def.type);
-                        if (existing >= 0) {
-                          const next = [...prev];
-                          next[existing] = integration;
-                          return next;
-                        }
-                        return [...prev, integration];
-                      });
-                    }}
-                  />
+                  <>
+                    {def.templateName && (
+                      <Button variant="outline" size="sm" className="squircle" asChild>
+                        <Link href={`/apps/new?template=${def.templateName}`}>
+                          <Rocket className="size-3.5 mr-1.5" />
+                          Deploy
+                        </Link>
+                      </Button>
+                    )}
+                    <ConnectDialog
+                      type={def.type}
+                      label={def.label}
+                      apps={apps}
+                      onConnected={(integration) => {
+                        setIntegrations((prev) => {
+                          const existing = prev.findIndex((i) => i.type === def.type);
+                          if (existing >= 0) {
+                            const next = [...prev];
+                            next[existing] = integration;
+                            return next;
+                          }
+                          return [...prev, integration];
+                        });
+                      }}
+                    />
+                  </>
                 )}
               </div>
             </div>
