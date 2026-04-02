@@ -173,7 +173,8 @@ export async function resolveIntegrationUrl(type: IntegrationType): Promise<stri
   // External instance — use the URL directly
   if (integration.externalUrl) return integration.externalUrl;
 
-  // App-backed — resolve from the app's container network
+  // App-backed — resolve via Docker network DNS (same node as Vardo console).
+  // Remote instances should use the external URL path instead.
   if (integration.appId) {
     const app = await db.query.apps.findFirst({
       where: eq(apps.id, integration.appId),
