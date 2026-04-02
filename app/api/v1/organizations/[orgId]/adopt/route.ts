@@ -10,7 +10,6 @@ import { z } from "zod";
 import {
   parseCompose,
   sanitizeCompose,
-  injectTraefikLabels,
   injectNetwork,
   composeToYaml,
   excludeServices,
@@ -20,6 +19,8 @@ import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
 import { recordActivity } from "@/lib/activity";
 import { encrypt } from "@/lib/crypto/encrypt";
 import { resolveProjectForImport } from "@/lib/docker/import";
+import { regenerateAppRouteConfig } from "@/lib/traefik/generate-config";
+import { logger } from "@/lib/logger";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -127,17 +128,7 @@ async function handler(request: NextRequest, { params }: RouteParams) {
     const sslConfig = await getSslConfig();
     const certResolver = getPrimaryIssuer(sslConfig);
 
-    // Find the primary service (first in compose)
-    const primaryServiceName = Object.keys(compose.services)[0];
-    if (primaryServiceName) {
-      compose = injectTraefikLabels(compose, {
-        projectName: data.name,
-        domain,
-        containerPort,
-        serviceName: primaryServiceName,
-        certResolver,
-      });
-    }
+    // Inject shared network for all services
     compose = injectNetwork(compose, "vardo-network");
 
     const composeContent = composeToYaml(compose);
@@ -164,7 +155,7 @@ async function handler(request: NextRequest, { params }: RouteParams) {
           source: "direct",
           deployType: "compose",
           composeContent,
-          autoTraefikLabels: false,
+          autoTraefikLabels: true,
           containerPort,
           projectId: resolvedProjectId,
           envContent,
@@ -194,6 +185,11 @@ async function handler(request: NextRequest, { params }: RouteParams) {
 
       return { app };
     });
+
+    // Generate Traefik config (app-level label management)
+    regenerateAppRouteConfig(result.app.id).catch((err) =>
+      logger.child("adopt").error("Failed to regenerate route config:", err)
+    );
 
     recordActivity({
       organizationId: orgId,

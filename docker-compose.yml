@@ -85,6 +85,9 @@ services:
       - ${VARDO_PROJECTS:-/dev/null}:${VARDO_PROJECTS:-/dev/null}:ro
       - ${VARDO_MOUNT_1:-/dev/null}:${VARDO_MOUNT_1:-/dev/null}:ro
       - ${VARDO_MOUNT_2:-/dev/null}:${VARDO_MOUNT_2:-/dev/null}:ro
+      # Traefik dynamic config — shared volume for file-provider route configs.
+      # Frontend writes YAML files here; Traefik watches and reloads automatically.
+      - traefik_dynamic:/etc/traefik/dynamic:rw
     labels:
       - "traefik.enable=true"
       # Primary router — domain with TLS
