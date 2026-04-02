@@ -112,12 +112,22 @@ export async function createPreview(
     };
   }
 
+  // Build branch overrides — set the PR branch on all git-sourced apps
+  // so the deploy checks out the feature branch instead of main.
+  const appOverrides: Record<string, { gitBranch: string }> = {};
+  for (const app of matchingApps) {
+    if (app.projectId === projectId) {
+      appOverrides[app.id] = { gitBranch: opts.branch };
+    }
+  }
+
   // Create new preview environment
   const result = await createGroupEnvironment({
     projectId,
     organizationId,
     name: envName,
     type: "preview",
+    appOverrides,
     prNumber: opts.prNumber,
     prUrl: opts.prUrl,
     expiresAt: new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000),
