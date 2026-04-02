@@ -12,6 +12,9 @@ set -euo pipefail
 COMPOSE_FILE="docker-compose.yml"
 REPO_URL="https://github.com/joeyyax/vardo.git"
 
+# Blue/green slot layout — Vardo manages itself as an app in apps/vardo/env/.
+VARDO_SLOT_DIR=""       # resolved at runtime: apps/vardo/env/{blue|green}
+
 BOLD="\033[1m"
 DIM="\033[2m"
 GREEN="\033[32m"
@@ -417,9 +420,11 @@ _sed_i() {
 }
 
 get_version() {
-  if [ -d "$VARDO_DIR/.git" ]; then
-    git -C "$VARDO_DIR" describe --tags --always 2>/dev/null \
-      || git -C "$VARDO_DIR" rev-parse --short HEAD 2>/dev/null \
+  local src_dir
+  src_dir=$(resolve_source_dir)
+  if [ -d "$src_dir/.git" ]; then
+    git -C "$src_dir" describe --tags --always 2>/dev/null \
+      || git -C "$src_dir" rev-parse --short HEAD 2>/dev/null \
       || echo "unknown"
   else
     echo "unknown"
@@ -449,13 +454,64 @@ is_dev() { [[ "${VARDO_ROLE:-}" == "development" ]]; }
 # ── Detection ─────────────────────────────────────────────────────────────────
 
 is_installed() {
-  [[ -d "$VARDO_DIR" && -f "$VARDO_DIR/$COMPOSE_FILE" && -f "$VARDO_DIR/.env" ]]
+  [[ -d "$VARDO_DIR" && -f "$VARDO_DIR/.env" ]]
+}
+
+# True if the slot-based layout exists (current symlink is the source of truth)
+has_slot_layout() {
+  [[ -L "$VARDO_DIR/apps/vardo/env/current" ]]
+}
+
+# Read the active slot from .active-slot, default to "blue"
+read_active_slot() {
+  local slot_file="$VARDO_DIR/apps/vardo/env/.active-slot"
+  if [[ -f "$slot_file" ]]; then
+    cat "$slot_file"
+  else
+    echo "blue"
+  fi
+}
+
+# Return the inactive slot (opposite of active)
+inactive_slot() {
+  local active
+  active=$(read_active_slot)
+  if [[ "$active" == "blue" ]]; then
+    echo "green"
+  else
+    echo "blue"
+  fi
+}
+
+# Resolve the slot directory for the active slot
+active_slot_dir() {
+  echo "$VARDO_DIR/apps/vardo/env/$(read_active_slot)"
+}
+
+# Resolve the compose file — slot layout or legacy flat
+resolve_compose_file() {
+  if has_slot_layout; then
+    echo "$VARDO_DIR/apps/vardo/env/current/$COMPOSE_FILE"
+  else
+    echo "$VARDO_DIR/$COMPOSE_FILE"
+  fi
+}
+
+# Resolve the source dir — slot layout or legacy flat
+resolve_source_dir() {
+  if has_slot_layout; then
+    active_slot_dir
+  else
+    echo "$VARDO_DIR"
+  fi
 }
 
 container_count() {
   local status="${1:-running}"
+  local compose_file
+  compose_file=$(resolve_compose_file)
   local count
-  count=$(docker compose -f "$VARDO_DIR/$COMPOSE_FILE" ps --status "$status" --format json 2>/dev/null \
+  count=$(docker compose -f "$compose_file" ps --status "$status" --format json 2>/dev/null \
     | { grep -c '"Name"' 2>/dev/null || true; })
   echo "${count:-0}"
 }
@@ -920,23 +976,78 @@ EOF
 clone_repo() {
   step "Installation"
 
-  if [ -d "$VARDO_DIR" ]; then
-    log "Existing installation at $VARDO_DIR"
-    cd "$VARDO_DIR"
+  local slot_dir="$VARDO_DIR/apps/vardo/env/blue"
+
+  if has_slot_layout; then
+    # Slot layout already exists — pull into the active slot
+    local active_dir
+    active_dir=$(active_slot_dir)
+    log "Existing slot installation at $active_dir"
+    cd "$active_dir"
     if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
       warn "Local changes detected, stashing..."
       run_cmd git stash --quiet
     fi
     if ! run_cmd git pull --quiet; then
-      fail "git pull failed in $VARDO_DIR. This may be caused by merge conflicts or authentication issues. Run 'cd $VARDO_DIR && git status' to inspect."
+      fail "git pull failed in $active_dir. Run 'cd $active_dir && git status' to inspect."
     fi
+    VARDO_SLOT_DIR="$active_dir"
     log "Updated to latest"
+  elif [ -d "$VARDO_DIR" ] && [ -f "$VARDO_DIR/$COMPOSE_FILE" ]; then
+    # Legacy flat layout — migrate to slot layout
+    migrate_to_slots
   else
-    info "Cloning to $VARDO_DIR..."
-    run_cmd git clone --depth 1 "$REPO_URL" "$VARDO_DIR"
-    cd "$VARDO_DIR"
-    log "Installed to $VARDO_DIR"
+    # Fresh install — clone into blue slot
+    mkdir -p "$VARDO_DIR/apps/vardo/env"
+    info "Cloning to $slot_dir..."
+    run_cmd git clone --depth 1 "$REPO_URL" "$slot_dir"
+    VARDO_SLOT_DIR="$slot_dir"
+    ln -sfn "$slot_dir" "$VARDO_DIR/apps/vardo/env/current"
+    echo "blue" > "$VARDO_DIR/apps/vardo/env/.active-slot"
+    cd "$slot_dir"
+    log "Installed to $slot_dir"
   fi
+}
+
+# Migrate a legacy flat install to the slot-based layout.
+# Moves the repo contents into apps/vardo/env/blue/ and creates the
+# .active-slot file and current symlink.
+migrate_to_slots() {
+  info "Migrating to slot-based layout..."
+
+  local env_dir="$VARDO_DIR/apps/vardo/env"
+  local slot_dir="$env_dir/blue"
+  mkdir -p "$env_dir"
+
+  # Move everything except apps/, backups/, images/, and .env to the blue slot.
+  # Create the slot dir first, then move items selectively.
+  mkdir -p "$slot_dir"
+
+  cd "$VARDO_DIR"
+  for item in *; do
+    case "$item" in
+      apps|backups|images|.env) continue ;;
+      *) mv "$item" "$slot_dir/" 2>/dev/null || true ;;
+    esac
+  done
+
+  # Move hidden files too (except .env)
+  for item in .[!.]*; do
+    case "$item" in
+      .env) continue ;;
+      *) mv "$item" "$slot_dir/" 2>/dev/null || true ;;
+    esac
+  done
+
+  ln -sfn "$slot_dir" "$env_dir/current"
+  echo "blue" > "$env_dir/.active-slot"
+
+  # Copy install.sh back to root so the vardo wrapper keeps working
+  cp "$slot_dir/install.sh" "$VARDO_DIR/install.sh"
+
+  VARDO_SLOT_DIR="$slot_dir"
+  cd "$slot_dir"
+  log "Migrated to $slot_dir"
 }
 
 generate_env() {
@@ -944,6 +1055,10 @@ generate_env() {
 
   if [ -f "$env_file" ]; then
     log "Configuration exists at $env_file"
+    # Symlink .env into the active slot so docker compose picks it up
+    if [ -n "${VARDO_SLOT_DIR:-}" ] && [ ! -e "$VARDO_SLOT_DIR/.env" ]; then
+      ln -sfn "$env_file" "$VARDO_SLOT_DIR/.env"
+    fi
     return
   fi
 
@@ -1183,6 +1298,12 @@ EOF
   fi
 
   chmod 600 "$env_file"
+
+  # Symlink .env into the active slot so docker compose picks it up
+  if [ -n "${VARDO_SLOT_DIR:-}" ] && [ ! -e "$VARDO_SLOT_DIR/.env" ]; then
+    ln -sfn "$env_file" "$VARDO_SLOT_DIR/.env"
+  fi
+
   log "Configuration saved"
 }
 
@@ -1194,14 +1315,19 @@ build_and_start() {
 
   run_cmd docker network create vardo-network > /dev/null 2>&1 || true
 
+  local compose_file
+  compose_file=$(resolve_compose_file)
+
   if is_dev; then
     # Dev mode: start infrastructure only (no frontend profile)
     info "Starting infrastructure services (Postgres, Redis, Traefik)..."
-    run_cmd docker compose -f "$VARDO_DIR/$COMPOSE_FILE" up -d
+    run_cmd docker compose -f "$compose_file" up -d
   else
-    export GIT_SHA=$(git -C "$VARDO_DIR" rev-parse --short HEAD 2>/dev/null || true)
-    run_with_spinner "Building containers (this may take a few minutes)" docker compose -f "$VARDO_DIR/$COMPOSE_FILE" build
-    run_with_spinner "Starting services" docker compose -f "$VARDO_DIR/$COMPOSE_FILE" up -d
+    local src_dir
+    src_dir=$(resolve_source_dir)
+    export GIT_SHA=$(git -C "$src_dir" rev-parse --short HEAD 2>/dev/null || true)
+    run_with_spinner "Building containers (this may take a few minutes)" docker compose -f "$compose_file" build
+    run_with_spinner "Starting services" docker compose -f "$compose_file" up -d
   fi
 }
 
@@ -1216,6 +1342,8 @@ wait_healthy() {
     return 0
   fi
 
+  local compose_file
+  compose_file=$(resolve_compose_file)
   local attempts=$((timeout / interval))
   local attempt=0
   local tty_out
@@ -1224,7 +1352,7 @@ wait_healthy() {
   while [ $elapsed -lt "$timeout" ]; do
     attempt=$((attempt + 1))
     printf "\r  ${CYAN}⠹${RESET} Waiting for healthy... (attempt %d/%d, %ds/%ds)" "$attempt" "$attempts" "$elapsed" "$timeout" > "$tty_out"
-    if docker compose -f "$VARDO_DIR/$COMPOSE_FILE" exec -T "$container" \
+    if docker compose -f "$compose_file" exec -T "$container" \
       curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
       printf "\r                                                              \r" > "$tty_out"
       log "Vardo is healthy"
@@ -1235,13 +1363,15 @@ wait_healthy() {
   done
 
   printf "\r"
-  warn "Health check timed out after ${timeout}s — may still be starting. Check logs with: docker compose -f $VARDO_DIR/$COMPOSE_FILE logs frontend"
+  warn "Health check timed out after ${timeout}s — may still be starting. Check logs with: docker compose -f $compose_file logs frontend"
   return 1
 }
 
 seed_templates() {
   if $DRY_RUN; then return 0; fi
-  docker compose -f "$VARDO_DIR/$COMPOSE_FILE" exec -T frontend node -e "
+  local compose_file
+  compose_file=$(resolve_compose_file)
+  docker compose -f "$compose_file" exec -T frontend node -e "
     fetch('http://localhost:3000/api/v1/templates/seed', { method: 'POST' })
       .then(r => r.json())
       .then(d => console.log('Templates:', JSON.stringify(d)))
@@ -1256,18 +1386,24 @@ install_shortcut() {
   # then append the rest of the script with a quoted heredoc so $@ etc. are preserved.
   printf '#!/usr/bin/env bash\nVARDO_DIR="%s"\n' "$VARDO_DIR" > /usr/local/bin/vardo
   cat >> /usr/local/bin/vardo <<'WRAPPER'
-COMPOSE_FILE="docker-compose.yml"
+
+# Resolve compose file — slot layout or legacy flat
+if [ -L "$VARDO_DIR/apps/vardo/env/current" ]; then
+  COMPOSE_PATH="$VARDO_DIR/apps/vardo/env/current/docker-compose.yml"
+else
+  COMPOSE_PATH="$VARDO_DIR/docker-compose.yml"
+fi
 
 case "${1:-}" in
-  logs)     shift; docker compose -f "$VARDO_DIR/$COMPOSE_FILE" logs -f "$@" ;;
-  restart)  docker compose -f "$VARDO_DIR/$COMPOSE_FILE" restart ;;
-  stop)     docker compose -f "$VARDO_DIR/$COMPOSE_FILE" stop ;;
-  start)    docker compose -f "$VARDO_DIR/$COMPOSE_FILE" up -d ;;
-  ps)       docker compose -f "$VARDO_DIR/$COMPOSE_FILE" ps ;;
+  logs)     shift; docker compose -f "$COMPOSE_PATH" logs -f "$@" ;;
+  restart)  docker compose -f "$COMPOSE_PATH" restart ;;
+  stop)     docker compose -f "$COMPOSE_PATH" stop ;;
+  start)    docker compose -f "$COMPOSE_PATH" up -d ;;
+  ps)       docker compose -f "$COMPOSE_PATH" ps ;;
   update)   shift; bash "$VARDO_DIR/install.sh" update "$@" ;;
   doctor)   shift; bash "$VARDO_DIR/install.sh" doctor "$@" ;;
   uninstall) bash "$VARDO_DIR/install.sh" uninstall "$@" ;;
-  shell)    shift; docker compose -f "$VARDO_DIR/$COMPOSE_FILE" exec frontend "${@:-sh}" ;;
+  shell)    shift; docker compose -f "$COMPOSE_PATH" exec frontend "${@:-sh}" ;;
   *)
     echo "Usage: vardo <command>"
     echo ""
@@ -1305,9 +1441,11 @@ print_install_summary() {
   fi
 
   if is_dev; then
+    local dev_dir
+    dev_dir=$(resolve_source_dir)
     echo ""
     echo -e "  ${BOLD}Next steps${RESET}"
-    dimln "  1. cd $VARDO_DIR"
+    dimln "  1. cd $dev_dir"
     dimln "  2. pnpm install"
     dimln "  3. pnpm dev"
     dimln "  4. Visit http://localhost:3000 to complete setup"
@@ -1416,6 +1554,10 @@ run_env_migrations() {
 do_update() {
   [[ "$PLATFORM" != "macos" ]] && check_root
 
+  # Migrate legacy flat installs to slot layout before proceeding
+  if ! has_slot_layout && [ -d "$VARDO_DIR/.git" ]; then
+    migrate_to_slots
+  fi
 
   echo ""
   warn "The Vardo dashboard will be briefly unavailable during the update."
@@ -1431,21 +1573,28 @@ do_update() {
   step "Preflight"
 
   [ -d "$VARDO_DIR" ] || fail "Vardo not found at $VARDO_DIR. Run 'bash install.sh' to install first."
-  [ -f "$VARDO_DIR/$COMPOSE_FILE" ] || fail "No $COMPOSE_FILE in $VARDO_DIR. The installation may be corrupted — try reinstalling."
   [ -f "$VARDO_DIR/.env" ] || fail "No .env in $VARDO_DIR. Run 'bash install.sh' to regenerate configuration."
   command -v docker &>/dev/null || fail "Docker is not installed. Install Docker first: https://docs.docker.com/engine/install/"
   docker compose version &>/dev/null || fail "Docker Compose plugin not found. Install it: https://docs.docker.com/compose/install/"
-  [ -d "$VARDO_DIR/.git" ] || fail "$VARDO_DIR is not a git repository. Cannot update without git history."
+  has_slot_layout || fail "Slot layout not found. Run a fresh install to set it up."
 
-  cd "$VARDO_DIR"
+  local active new_slot active_dir new_slot_dir
+  active=$(read_active_slot)
+  new_slot=$(inactive_slot)
+  active_dir="$VARDO_DIR/apps/vardo/env/$active"
+  new_slot_dir="$VARDO_DIR/apps/vardo/env/$new_slot"
 
-  local current_version current_branch previous_commit
+  [ -d "$active_dir/.git" ] || fail "Active slot ($active_dir) is not a git repository."
+
+  cd "$active_dir"
+
+  local current_version current_branch
   current_version=$(get_version)
   current_branch=$(git rev-parse --abbrev-ref HEAD)
-  previous_commit=$(git rev-parse HEAD)
 
   log "Version: $current_version"
   log "Branch: $current_branch"
+  log "Active slot: $active → deploying to $new_slot"
 
   # Env migrations
   run_env_migrations
@@ -1453,7 +1602,7 @@ do_update() {
   # Ensure network
   run_cmd docker network create vardo-network > /dev/null 2>&1 || true
 
-  # Check for updates
+  # Check for updates using the active slot
   step "Checking for updates"
 
   git fetch origin "$current_branch" --quiet 2>/dev/null || git fetch --quiet
@@ -1470,13 +1619,15 @@ do_update() {
     info "No new commits, but --force specified — rebuilding"
   fi
 
-  local commit_count
-  commit_count=$(echo "$incoming" | wc -l | tr -d ' ')
-  info "$commit_count incoming commit(s):"
-  echo ""
-  echo -e "${DIM}"
-  git log HEAD..origin/"$current_branch" --oneline --no-decorate | head -20
-  echo -e "${RESET}"
+  if [ -n "$incoming" ]; then
+    local commit_count
+    commit_count=$(echo "$incoming" | wc -l | tr -d ' ')
+    info "$commit_count incoming commit(s):"
+    echo ""
+    echo -e "${DIM}"
+    git log HEAD..origin/"$current_branch" --oneline --no-decorate | head -20
+    echo -e "${RESET}"
+  fi
 
   if ! $UNATTENDED && ! $AUTO_YES; then
     if ! confirm "Apply update?"; then
@@ -1488,6 +1639,8 @@ do_update() {
   # Backup database
   step "Backup"
 
+  local compose_file
+  compose_file=$(resolve_compose_file)
   local backup_dir="$VARDO_DIR/backups"
   local backup_file
   backup_file="$backup_dir/pre-update-$(date +%Y%m%d%H%M%S).sql"
@@ -1495,7 +1648,7 @@ do_update() {
 
   info "Dumping database..."
   touch "$backup_file" && chmod 600 "$backup_file"
-  if docker compose -f "$COMPOSE_FILE" exec -T postgres pg_dump -U host host > "$backup_file" 2>/dev/null; then
+  if docker compose -f "$compose_file" exec -T postgres pg_dump -U host host > "$backup_file" 2>/dev/null; then
     local backup_size
     backup_size=$(du -h "$backup_file" | cut -f1)
     log "Backup: $backup_file ($backup_size)"
@@ -1505,26 +1658,122 @@ do_update() {
     backup_file=""
   fi
 
-  # Pull
-  step "Pulling updates"
+  # Clone/pull into the inactive slot
+  step "Preparing $new_slot slot"
 
-  if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
-    warn "Local changes detected, stashing..."
-    run_cmd git stash --quiet
-  fi
-
-  if run_cmd git pull origin "$current_branch" --quiet; then
-    local new_version
-    new_version=$(get_version)
-    log "Updated: $current_version → $new_version"
+  if [ -d "$new_slot_dir/.git" ]; then
+    cd "$new_slot_dir"
+    if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
+      run_cmd git stash --quiet 2>/dev/null || true
+    fi
+    run_cmd git fetch origin "$current_branch" --quiet
+    run_cmd git checkout "$current_branch" --quiet 2>/dev/null || true
+    if run_cmd git pull origin "$current_branch" --quiet; then
+      log "Updated $new_slot slot"
+    else
+      fail "git pull failed in $new_slot_dir."
+    fi
   else
-    fail "git pull failed — resolve conflicts manually in $VARDO_DIR. Run 'cd $VARDO_DIR && git status' to see what went wrong."
+    info "Cloning into $new_slot slot..."
+    rm -rf "$new_slot_dir"
+    run_cmd git clone --depth 1 --branch "$current_branch" "$REPO_URL" "$new_slot_dir"
+    cd "$new_slot_dir"
+    log "Cloned into $new_slot_dir"
   fi
+
+  # Symlink shared .env into the new slot
+  ln -sfn "$VARDO_DIR/.env" "$new_slot_dir/.env"
+
+  local new_version
+  new_version=$(git -C "$new_slot_dir" describe --tags --always 2>/dev/null \
+    || git -C "$new_slot_dir" rev-parse --short HEAD 2>/dev/null \
+    || echo "unknown")
+  log "New version: $new_version"
 
   # Run env migrations from the updated code
   run_env_migrations
 
-  _do_rebuild
+  # Build the new frontend image from the inactive slot.
+  # Only the frontend service swaps — infra (postgres, redis, traefik, etc.)
+  # keeps running throughout. Container names are hardcoded in compose, so we
+  # can't run two frontends simultaneously. The swap is: build → stop old →
+  # start new → health check. Brief downtime, but with rollback capability.
+  step "Building $new_slot slot"
+
+  local new_compose="$new_slot_dir/$COMPOSE_FILE"
+  export GIT_SHA=$(git -C "$new_slot_dir" rev-parse --short HEAD 2>/dev/null || true)
+  run_with_spinner "Building frontend" docker compose -f "$new_compose" build frontend
+
+  # Stop the old frontend before starting the new one (container name collision)
+  step "Swapping frontend"
+
+  local active_compose="$active_dir/$COMPOSE_FILE"
+  info "Stopping old frontend..."
+  docker compose -f "$active_compose" stop frontend 2>/dev/null || true
+  docker compose -f "$active_compose" rm -f frontend 2>/dev/null || true
+
+  info "Starting new frontend..."
+  run_cmd docker compose -f "$new_compose" up -d frontend
+
+  # Health check the new frontend
+  step "Health check"
+
+  local hc_timeout=120
+  local hc_interval=3
+  local hc_elapsed=0
+  local hc_attempts=$((hc_timeout / hc_interval))
+  local hc_attempt=0
+  local hc_tty_out
+  if has_tty; then hc_tty_out="/dev/tty"; else hc_tty_out="/dev/stderr"; fi
+
+  local healthy=false
+  while [ $hc_elapsed -lt "$hc_timeout" ]; do
+    hc_attempt=$((hc_attempt + 1))
+    printf "\r  ${CYAN}⠹${RESET} Waiting for healthy... (attempt %d/%d, %ds/%ds)" "$hc_attempt" "$hc_attempts" "$hc_elapsed" "$hc_timeout" > "$hc_tty_out"
+    if docker compose -f "$new_compose" exec -T frontend \
+      curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
+      printf "\r                                                              \r" > "$hc_tty_out"
+      log "New frontend is healthy"
+      healthy=true
+      break
+    fi
+    sleep "$hc_interval"
+    hc_elapsed=$((hc_elapsed + hc_interval))
+  done
+
+  if ! $healthy; then
+    printf "\r"
+    warn "Health check failed — rolling back to $active slot"
+    docker compose -f "$new_compose" stop frontend 2>/dev/null || true
+    docker compose -f "$new_compose" rm -f frontend 2>/dev/null || true
+    info "Restarting old frontend..."
+    docker compose -f "$active_compose" up -d frontend 2>/dev/null || true
+    fail "Update aborted: new frontend did not become healthy within ${hc_timeout}s. Rolled back to $active slot."
+  fi
+
+  # Swap: update symlink first (atomic on Linux), then .active-slot
+  step "Finalizing"
+
+  ln -sfn "$new_slot_dir" "$VARDO_DIR/apps/vardo/env/current"
+  echo "$new_slot" > "$VARDO_DIR/apps/vardo/env/.active-slot"
+  log "Active slot: $new_slot"
+
+  # Copy install.sh to root so the wrapper keeps working
+  cp "$new_slot_dir/install.sh" "$VARDO_DIR/install.sh"
+
+  # Refresh the /usr/local/bin/vardo wrapper
+  install_shortcut
+
+  # Summary
+  load_env_display
+
+  echo ""
+  echo -e "${GREEN}${BOLD}  Update complete!${RESET}"
+  echo ""
+  echo -e "  ${BOLD}Dashboard${RESET}   https://${VARDO_DOMAIN:-localhost}"
+  echo -e "  ${BOLD}Version${RESET}     $current_version → $new_version"
+  echo -e "  ${BOLD}Slot${RESET}        $active → $new_slot"
+  echo ""
 }
 
 _do_rebuild() {
@@ -1541,13 +1790,22 @@ _do_rebuild() {
     info "Migrated acme.json → acme-le.json"
   fi
 
-  export GIT_SHA=$(git -C "$VARDO_DIR" rev-parse --short HEAD 2>/dev/null || true)
-  run_with_spinner "Building containers" docker compose -f "$COMPOSE_FILE" build
+  local compose_file src_dir
+  compose_file=$(resolve_compose_file)
+  src_dir=$(resolve_source_dir)
+
+  export GIT_SHA=$(git -C "$src_dir" rev-parse --short HEAD 2>/dev/null || true)
+  run_with_spinner "Building containers" docker compose -f "$compose_file" build
 
   info "Restarting services..."
-  run_cmd docker compose -f "$COMPOSE_FILE" up -d
+  run_cmd docker compose -f "$compose_file" up -d
 
   wait_healthy 120 3 || true
+
+  # Copy install.sh to root if running from a slot
+  if has_slot_layout; then
+    cp "$src_dir/install.sh" "$VARDO_DIR/install.sh" 2>/dev/null || true
+  fi
 
   # Summary
   local new_version
@@ -1660,16 +1918,22 @@ do_doctor() {
     doctor_fail ".env not found"
   fi
 
-  if [ -d "$VARDO_DIR/.git" ]; then
+  local doctor_src
+  doctor_src=$(resolve_source_dir)
+  if [ -d "$doctor_src/.git" ]; then
     local version branch
     version=$(get_version)
-    branch=$(git -C "$VARDO_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+    branch=$(git -C "$doctor_src" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
     doctor_pass "Git: $version ($branch)"
 
+    if has_slot_layout; then
+      doctor_pass "Slot layout: $(read_active_slot) active"
+    fi
+
     # Check for available updates
-    git -C "$VARDO_DIR" fetch --quiet 2>/dev/null || true
+    git -C "$doctor_src" fetch --quiet 2>/dev/null || true
     local behind
-    behind=$(git -C "$VARDO_DIR" rev-list HEAD..origin/"$branch" --count 2>/dev/null || echo "0")
+    behind=$(git -C "$doctor_src" rev-list HEAD..origin/"$branch" --count 2>/dev/null || echo "0")
     if [ "$behind" -gt 0 ]; then
       doctor_warn "$behind update(s) available"
     else
@@ -1718,9 +1982,11 @@ do_doctor() {
 
   step "Containers"
 
-  if [ -f "$VARDO_DIR/$COMPOSE_FILE" ]; then
+  local doctor_compose
+  doctor_compose=$(resolve_compose_file)
+  if [ -f "$doctor_compose" ]; then
     local containers
-    containers=$(docker compose -f "$VARDO_DIR/$COMPOSE_FILE" ps --format "{{.Name}}\t{{.Status}}" 2>/dev/null || true)
+    containers=$(docker compose -f "$doctor_compose" ps --format "{{.Name}}\t{{.Status}}" 2>/dev/null || true)
 
     if [ -z "$containers" ]; then
       doctor_fail "No containers running"
@@ -1742,14 +2008,14 @@ do_doctor() {
   step "Connectivity"
 
   # PostgreSQL
-  if docker compose -f "$VARDO_DIR/$COMPOSE_FILE" exec -T postgres pg_isready -U host -q 2>/dev/null; then
+  if docker compose -f "$doctor_compose" exec -T postgres pg_isready -U host -q 2>/dev/null; then
     doctor_pass "PostgreSQL: accepting connections"
   else
     doctor_fail "PostgreSQL: not responding"
   fi
 
   # Redis
-  if docker compose -f "$VARDO_DIR/$COMPOSE_FILE" exec -T redis redis-cli ping 2>/dev/null | grep -q PONG; then
+  if docker compose -f "$doctor_compose" exec -T redis redis-cli ping 2>/dev/null | grep -q PONG; then
     doctor_pass "Redis: PONG"
   else
     doctor_fail "Redis: not responding"
@@ -1764,7 +2030,7 @@ do_doctor() {
       doctor_warn "App: dev server not running on localhost:3000"
     fi
   else
-    if docker compose -f "$VARDO_DIR/$COMPOSE_FILE" exec -T frontend \
+    if docker compose -f "$doctor_compose" exec -T frontend \
       curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
       doctor_pass "App: /api/health OK"
     else
@@ -1893,8 +2159,10 @@ do_uninstall() {
   fi
 
   # Stop containers
+  local uninstall_compose
+  uninstall_compose=$(resolve_compose_file)
   info "Stopping containers..."
-  run_cmd docker compose -f "$VARDO_DIR/$COMPOSE_FILE" down 2>/dev/null || true
+  run_cmd docker compose -f "$uninstall_compose" down 2>/dev/null || true
   log "Containers stopped"
 
   if $PURGE; then
@@ -1915,7 +2183,7 @@ do_uninstall() {
     sleep 5
 
     info "Removing Docker volumes..."
-    run_cmd docker compose -f "$VARDO_DIR/$COMPOSE_FILE" down -v 2>/dev/null || true
+    run_cmd docker compose -f "$uninstall_compose" down -v 2>/dev/null || true
     if ! $DRY_RUN; then log "Volumes removed"; fi
 
     info "Removing $VARDO_DIR..."
@@ -1937,7 +2205,7 @@ do_uninstall() {
     echo ""
     dimln "Data and configuration preserved at $VARDO_DIR"
     dimln "To remove everything: sudo bash install.sh uninstall --purge"
-    dimln "To start again:       docker compose -f $VARDO_DIR/$COMPOSE_FILE up -d"
+    dimln "To start again:       docker compose -f $uninstall_compose up -d"
   fi
   echo ""
 }
