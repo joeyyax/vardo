@@ -25,7 +25,7 @@ export async function GET() {
   try {
     await requireAppAdmin();
 
-    const hasVardoDir = !!process.env.VARDO_DIR;
+    const hasVardoDir = !!(process.env.VARDO_HOME_DIR || process.env.VARDO_DIR);
     const services: ServiceStatus[] = [];
 
     try {

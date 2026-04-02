@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------------
 // Vardo self-registration.
 //
-// When the selfManagement feature flag is on and VARDO_DIR is set, this
+// When the selfManagement feature flag is on, this
 // module upserts a project + apps representing Vardo itself into the database
 // so it appears as a managed project in the dashboard.
 //
@@ -20,6 +20,7 @@ import { apps, organizations, projects } from "@/lib/db/schema";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { parseCompose } from "@/lib/docker/compose";
 import { logger } from "@/lib/logger";
+import { VARDO_HOME_DIR } from "@/lib/paths";
 
 const execFileAsync = promisify(execFile);
 
@@ -39,7 +40,7 @@ const INFRA_SERVICES = new Set([
 /**
  * Ensure Vardo is registered as a managed project in the database.
  *
- * Checks the selfManagement feature flag and VARDO_DIR before doing anything.
+ * Checks the selfManagement feature flag before doing anything.
  * Creates or updates:
  *   - A project named "vardo"
  *   - A parent compose app representing the full Vardo stack
@@ -50,8 +51,7 @@ const INFRA_SERVICES = new Set([
 export async function ensureVardoProject(): Promise<void> {
   if (!(await isFeatureEnabledAsync("selfManagement"))) return;
 
-  const vardoDir = process.env.VARDO_DIR;
-  if (!vardoDir) return;
+  const vardoDir = VARDO_HOME_DIR;
 
   // Warn operators who haven't configured an isolated preview database.
   // Without PREVIEW_DATABASE_URL, preview containers fall back to the

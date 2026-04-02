@@ -5,6 +5,7 @@ import { writeEnvKey } from "@/lib/env/write-env-key";
 import { handleRouteError } from "@/lib/api/error-response";
 import { mountsSchema } from "@/lib/api/admin/maintenance-schemas";
 import { logger } from "@/lib/logger";
+import { VARDO_HOME_DIR } from "@/lib/paths";
 
 const log = logger.child("admin:maintenance:mounts");
 
@@ -43,7 +44,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const envPath = join(process.env.VARDO_DIR ?? "/opt/vardo", ".env");
+    const envPath = join(VARDO_HOME_DIR, ".env");
     const updates: Array<[string, string]> = [];
 
     if (parsed.data.vardoData !== undefined) {

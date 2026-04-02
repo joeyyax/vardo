@@ -309,7 +309,7 @@ export function MaintenanceSettings() {
             <div className="flex items-start gap-2 text-sm text-amber-600 dark:text-amber-400">
               <AlertCircle className="size-4 shrink-0 mt-0.5" aria-hidden="true" />
               <span>
-                <code className="text-xs font-mono">VARDO_DIR</code> is not set. Update requires
+                <code className="text-xs font-mono">VARDO_HOME_DIR</code> is not set. Update requires
                 access to the installation directory.
               </span>
             </div>

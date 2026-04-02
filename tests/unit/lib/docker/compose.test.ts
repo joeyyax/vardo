@@ -2298,7 +2298,7 @@ describe("slotComposeFiles", () => {
     vi.resetAllMocks();
   });
 
-  it("returns both -f args when the overlay file exists", async () => {
+  it("returns both -f args when the legacy vardo overlay exists", async () => {
     vi.mocked(fsp.access).mockResolvedValue(undefined);
 
     const result = await slotComposeFiles("/slots/blue");
@@ -2311,7 +2311,7 @@ describe("slotComposeFiles", () => {
     ]);
   });
 
-  it("returns only the base -f arg when the overlay file is absent", async () => {
+  it("returns only the base -f arg when no legacy overlay exists (override.yml auto-loaded)", async () => {
     vi.mocked(fsp.access).mockRejectedValue(new Error("ENOENT"));
 
     const result = await slotComposeFiles("/slots/blue");
@@ -2482,7 +2482,7 @@ describe("slotComposeFiles — edge cases", () => {
     expect(result).toEqual(["-f", "/slots/blue/docker-compose.yml"]);
   });
 
-  it("checks for the overlay file inside the given slot directory", async () => {
+  it("checks for the legacy overlay file inside the given slot directory", async () => {
     vi.mocked(fsp.access).mockResolvedValue(undefined);
 
     await slotComposeFiles("/deploy/slots/green");
