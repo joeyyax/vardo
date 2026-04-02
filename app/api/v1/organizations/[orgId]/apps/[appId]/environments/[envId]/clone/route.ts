@@ -20,7 +20,7 @@ const cloneSchema = z.object({
       /^[a-z0-9][a-z0-9-]*[a-z0-9]$/,
       "Name must be lowercase alphanumeric with hyphens"
     ),
-  type: z.enum(["production", "staging", "preview"]).optional(),
+  type: z.enum(["production", "staging", "preview", "local"]).optional(),
   domain: z.string().optional(),
 }).strict();
 

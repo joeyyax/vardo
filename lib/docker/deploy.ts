@@ -237,7 +237,7 @@ export async function runDeployment(
     const orgTrusted = org?.trusted ?? false;
 
     // Resolve per-project bind mount permission.
-    // Trusted orgs bypass the per-project flag — all bind mounts are allowed.
+    // Trusted orgs and local environments bypass the per-project flag — all bind mounts are allowed.
     let projectAllowBindMounts = false;
     if (orgTrusted) {
       projectAllowBindMounts = true;
@@ -262,18 +262,25 @@ export async function runDeployment(
     }
 
     let envName = "production";
+    let envType: "production" | "staging" | "preview" | "local" = "production";
     let envBranchOverride: string | null = null;
     if (opts.environmentId) {
       const env = await db.query.environments.findFirst({
         where: eq(environments.id, opts.environmentId),
-        columns: { name: true, gitBranch: true },
+        columns: { name: true, type: true, gitBranch: true },
       });
       if (env) {
         envName = env.name;
+        envType = env.type;
         envBranchOverride = env.gitBranch;
       }
     }
-    log(`[deploy] Environment: ${envName}`);
+    log(`[deploy] Environment: ${envName} (${envType})`);
+
+    // Local environments always allow bind mounts
+    if (envType === "local") {
+      projectAllowBindMounts = true;
+    }
 
     stage("clone", "running");
     log(`[deploy] App: ${app.displayName} (${app.name})`);
@@ -815,16 +822,28 @@ export async function runDeployment(
       };
     }
 
-    // Step 4: Blue-green slot management
+    // Step 4: Blue-green slot management (skipped for local environments)
+    const isLocalEnv = envType === "local";
     let activeSlot: "blue" | "green" | null = null;
-    try {
-      const slotFile = await readFile(join(appDir, ".active-slot"), "utf-8");
-      activeSlot = slotFile.trim() as "blue" | "green";
-    } catch { /* no active slot yet */ }
+    let newSlot: string;
+    let newProjectName: string;
+    let slotDir: string;
 
-    const newSlot = activeSlot === "blue" ? "green" : "blue";
-    const newProjectName = `${app.name}-${envName}-${newSlot}`;
-    const slotDir = join(appDir, newSlot);
+    if (isLocalEnv) {
+      // Local environments use a single "local" directory — no slot switching
+      newSlot = "local";
+      newProjectName = `${app.name}-${envName}`;
+      slotDir = join(appDir, "local");
+    } else {
+      try {
+        const slotFile = await readFile(join(appDir, ".active-slot"), "utf-8");
+        activeSlot = slotFile.trim() as "blue" | "green";
+      } catch { /* no active slot yet */ }
+
+      newSlot = activeSlot === "blue" ? "green" : "blue";
+      newProjectName = `${app.name}-${envName}-${newSlot}`;
+      slotDir = join(appDir, newSlot);
+    }
     await mkdir(slotDir, { recursive: true });
 
     checkAbort();
@@ -1048,7 +1067,8 @@ export async function runDeployment(
     // directories. If the new slot tries to start postgres on the same volume
     // while the old slot is still running, it fails with a lock conflict.
     // We stop only the stateful services — app containers stay up for zero-downtime.
-    if (activeSlot && compose.volumes && Object.keys(compose.volumes).length > 0) {
+    // (Skipped for local environments — no slot switching.)
+    if (activeSlot && !isLocalEnv && compose.volumes && Object.keys(compose.volumes).length > 0) {
       const externalVolumeNames = new Set(
         Object.keys(compose.volumes).filter((v) => !isAnonymousVolume(v))
       );
@@ -1164,8 +1184,8 @@ export async function runDeployment(
     log(`[deploy] Traffic routed to ${newSlot}`);
     stage("routing", "success");
     stage("cleanup", "running");
-    // Step 10: Tear down old slot
-    if (activeSlot) {
+    // Step 10: Tear down old slot (skipped for local environments)
+    if (activeSlot && !isLocalEnv) {
       const oldSlotDir = join(appDir, activeSlot);
       const oldProjectName = `${app.name}-${envName}-${activeSlot}`;
       const oldComposeFileArgs = await slotComposeFiles(oldSlotDir);
@@ -1199,19 +1219,21 @@ export async function runDeployment(
       await db.update(apps).set({ importedContainerId: null, updatedAt: new Date() }).where(eq(apps.id, opts.appId));
     }
 
-    // Step 11: Record active slot
-    await writeFile(join(appDir, ".active-slot"), newSlot, "utf-8");
+    // Step 11: Record active slot (skipped for local — single directory)
+    if (!isLocalEnv) {
+      await writeFile(join(appDir, ".active-slot"), newSlot, "utf-8");
 
-    // Step 11a: Create 'current' symlink for filesystem visibility
-    const currentSymlinkPath = join(appDir, "current");
-    try {
-      // Remove existing symlink if present
-      await rm(currentSymlinkPath, { force: true });
-      // Create new symlink pointing to the active slot directory
-      await symlink(newSlot, currentSymlinkPath, "dir");
-      log(`[deploy] Created 'current' symlink -> ${newSlot}`);
-    } catch (err) {
-      log(`[deploy] Warning: Failed to create 'current' symlink: ${err instanceof Error ? err.message : err}`);
+      // Step 11a: Create 'current' symlink for filesystem visibility
+      const currentSymlinkPath = join(appDir, "current");
+      try {
+        // Remove existing symlink if present
+        await rm(currentSymlinkPath, { force: true });
+        // Create new symlink pointing to the active slot directory
+        await symlink(newSlot, currentSymlinkPath, "dir");
+        log(`[deploy] Created 'current' symlink -> ${newSlot}`);
+      } catch (err) {
+        log(`[deploy] Warning: Failed to create 'current' symlink: ${err instanceof Error ? err.message : err}`);
+      }
     }
 
     // Step 11.5: Prune old Docker images
@@ -1516,8 +1538,8 @@ export async function runDeployment(
     // Send success notification (non-blocking)
     sendDeployNotification(app, deploymentId, true, durationMs).catch(() => {});
 
-    // Start auto-rollback monitor if enabled
-    if (app.autoRollback && activeSlot) {
+    // Start auto-rollback monitor if enabled (no rollback for local environments)
+    if (app.autoRollback && activeSlot && !isLocalEnv) {
       const gracePeriod = app.rollbackGracePeriod ?? 60;
       log(`[deploy] Auto-rollback enabled — monitoring for ${gracePeriod}s`);
       try {
@@ -1528,7 +1550,7 @@ export async function runDeployment(
           organizationId: opts.organizationId,
           deploymentId,
           gracePeriodSeconds: gracePeriod,
-          currentSlot: newSlot,
+          currentSlot: newSlot as "blue" | "green",
           previousSlot: activeSlot,
           envName,
         });
@@ -1955,11 +1977,32 @@ function sleep(ms: number): Promise<void> {
 // Stop / Restart
 // ---------------------------------------------------------------------------
 
-async function stopSlotInDir(
+/**
+ * Resolve the active slot directory and compose project name.
+ * Local environments use a single `local/` directory with no slot suffix.
+ * Blue-green environments read `.active-slot` and fall back to `"blue"`.
+ */
+async function resolveActiveSlot(
   dir: string,
   projectPrefix: string,
-  logs: string[],
-): Promise<void> {
+): Promise<{ slotDir: string; composeProject: string }> {
+  // Check for local environment first
+  const { access: fsAccess } = await import("fs/promises");
+  try {
+    await fsAccess(join(dir, "local"));
+    // No .active-slot file + local/ exists = local environment
+    try {
+      await readFile(join(dir, ".active-slot"), "utf-8");
+    } catch {
+      return {
+        slotDir: join(dir, "local"),
+        composeProject: projectPrefix,
+      };
+    }
+  } catch {
+    // No local/ directory — standard blue-green
+  }
+
   let activeSlot: string;
   try {
     activeSlot = (await readFile(join(dir, ".active-slot"), "utf-8")).trim();
@@ -1967,8 +2010,18 @@ async function stopSlotInDir(
     activeSlot = "blue";
   }
 
-  const slotDir = join(dir, activeSlot);
-  const composeProject = `${projectPrefix}-${activeSlot}`;
+  return {
+    slotDir: join(dir, activeSlot),
+    composeProject: `${projectPrefix}-${activeSlot}`,
+  };
+}
+
+async function stopSlotInDir(
+  dir: string,
+  projectPrefix: string,
+  logs: string[],
+): Promise<void> {
+  const { slotDir, composeProject } = await resolveActiveSlot(dir, projectPrefix);
   const composeFileArgs = await slotComposeFiles(slotDir);
 
   try {
@@ -2051,15 +2104,7 @@ export async function restartContainers(
       ? `${appName}-${environmentName}`
       : appName;
 
-    let activeSlot: string;
-    try {
-      activeSlot = (await readFile(join(dir, ".active-slot"), "utf-8")).trim();
-    } catch {
-      activeSlot = "blue";
-    }
-
-    const slotDir = join(dir, activeSlot);
-    const composeProject = `${prefix}-${activeSlot}`;
+    const { slotDir, composeProject } = await resolveActiveSlot(dir, prefix);
     const composeFileArgs = await slotComposeFiles(slotDir);
 
     const { stdout, stderr } = await execFileAsync(
@@ -2089,15 +2134,7 @@ export async function recreateProject(
       ? `${appName}-${environmentName}`
       : appName;
 
-    let activeSlot: string;
-    try {
-      activeSlot = (await readFile(join(dir, ".active-slot"), "utf-8")).trim();
-    } catch {
-      activeSlot = "blue";
-    }
-
-    const slotDir = join(dir, activeSlot);
-    const composeProject = `${prefix}-${activeSlot}`;
+    const { slotDir, composeProject } = await resolveActiveSlot(dir, prefix);
     const composeFileArgs = await slotComposeFiles(slotDir);
 
     const { stdout, stderr } = await execFileAsync(

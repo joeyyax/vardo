@@ -18,6 +18,7 @@ import {
   stripVardoInjections,
   buildVardoOverlay,
   slotComposeFiles,
+  excludeServices,
   type ComposeFile,
   type ContainerConfig,
 } from "@/lib/docker/compose";
@@ -2610,5 +2611,103 @@ describe("round-trip: stripVardoInjections + buildVardoOverlay", () => {
     const workerOverlayLabels = overlay.services.worker.labels ?? {};
     const workerFullLabels = fullCompose.services.worker.labels ?? {};
     expect({ ...workerBareLabels, ...workerOverlayLabels }).toEqual(workerFullLabels);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// excludeServices
+// ---------------------------------------------------------------------------
+
+describe("excludeServices", () => {
+  it("removes named services from the compose file", () => {
+    const compose: ComposeFile = {
+      services: {
+        web: { name: "web", image: "nginx" },
+        caddy: { name: "caddy", image: "caddy:latest" },
+        db: { name: "db", image: "postgres:17" },
+      },
+    };
+    const result = excludeServices(compose, ["caddy"]);
+    expect(Object.keys(result.services)).toEqual(["web", "db"]);
+    expect(result.services.caddy).toBeUndefined();
+  });
+
+  it("removes depends_on references (string[] form)", () => {
+    const compose: ComposeFile = {
+      services: {
+        web: { name: "web", image: "nginx", depends_on: ["caddy", "db"] },
+        caddy: { name: "caddy", image: "caddy:latest" },
+        db: { name: "db", image: "postgres:17" },
+      },
+    };
+    const result = excludeServices(compose, ["caddy"]);
+    expect(result.services.web.depends_on).toEqual(["db"]);
+  });
+
+  it("removes depends_on references (object form)", () => {
+    const compose: ComposeFile = {
+      services: {
+        web: {
+          name: "web",
+          image: "nginx",
+          depends_on: {
+            caddy: { condition: "service_started" },
+            db: { condition: "service_healthy" },
+          },
+        },
+        caddy: { name: "caddy", image: "caddy:latest" },
+        db: { name: "db", image: "postgres:17" },
+      },
+    };
+    const result = excludeServices(compose, ["caddy"]);
+    expect(result.services.web.depends_on).toEqual({
+      db: { condition: "service_healthy" },
+    });
+  });
+
+  it("removes depends_on entirely when all refs are excluded", () => {
+    const compose: ComposeFile = {
+      services: {
+        web: { name: "web", image: "nginx", depends_on: ["caddy"] },
+        caddy: { name: "caddy", image: "caddy:latest" },
+      },
+    };
+    const result = excludeServices(compose, ["caddy"]);
+    expect(result.services.web.depends_on).toBeUndefined();
+  });
+
+  it("handles multiple exclusions", () => {
+    const compose: ComposeFile = {
+      services: {
+        web: { name: "web", image: "nginx" },
+        caddy: { name: "caddy", image: "caddy:latest" },
+        redis: { name: "redis", image: "redis:7" },
+        db: { name: "db", image: "postgres:17" },
+      },
+    };
+    const result = excludeServices(compose, ["caddy", "redis"]);
+    expect(Object.keys(result.services)).toEqual(["web", "db"]);
+  });
+
+  it("does not mutate the original compose file", () => {
+    const compose: ComposeFile = {
+      services: {
+        web: { name: "web", image: "nginx" },
+        caddy: { name: "caddy", image: "caddy:latest" },
+      },
+    };
+    excludeServices(compose, ["caddy"]);
+    expect(Object.keys(compose.services)).toEqual(["web", "caddy"]);
+  });
+
+  it("returns unchanged compose when no services match", () => {
+    const compose: ComposeFile = {
+      services: {
+        web: { name: "web", image: "nginx" },
+        db: { name: "db", image: "postgres:17" },
+      },
+    };
+    const result = excludeServices(compose, ["nonexistent"]);
+    expect(Object.keys(result.services)).toEqual(["web", "db"]);
   });
 });
