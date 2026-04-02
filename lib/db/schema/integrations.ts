@@ -4,6 +4,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { pgEnum } from "drizzle-orm/pg-core";
 import { apps } from "./apps";
@@ -49,7 +50,7 @@ export const integrations = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => [
-    index("integration_type_idx").on(t.type),
+    uniqueIndex("integration_type_idx").on(t.type),
     index("integration_app_id_idx").on(t.appId),
   ],
 );

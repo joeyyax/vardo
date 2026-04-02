@@ -176,6 +176,13 @@
       "when": 1775152319715,
       "tag": "0024_blue_jetstream",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1775153113701,
+      "tag": "0025_superb_mad_thinker",
+      "breakpoints": true
     }
   ]
 }

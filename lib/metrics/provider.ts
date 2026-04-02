@@ -18,7 +18,7 @@ export interface MetricsProvider {
 
 let provider: MetricsProvider | null = null;
 
-export function setMetricsProvider(p: MetricsProvider) {
+export function setMetricsProvider(p: MetricsProvider | null) {
   provider = p;
 }
 

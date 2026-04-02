@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { integrations } from "@/lib/db/schema";
+import { apps, integrations } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { decryptSystemOrFallback, encryptSystem } from "@/lib/crypto/encrypt";
@@ -34,61 +34,63 @@ export async function getIntegration(type: IntegrationType): Promise<Integration
 }
 
 /**
- * Get all configured integrations.
+ * Get all configured integrations (strips encrypted credentials).
  */
 export async function getAllIntegrations(): Promise<Integration[]> {
   const rows = await db.query.integrations.findMany();
-  return rows as Integration[];
+  return (rows as Integration[]).map(stripCredentials);
+}
+
+/** Remove encrypted credentials from integration for API responses. */
+function stripCredentials(integration: Integration): Integration {
+  const { ...rest } = integration;
+  return { ...rest, credentials: undefined } as unknown as Integration;
 }
 
 /**
  * Connect an integration backed by a Vardo-deployed app.
+ * Atomic upsert — safe against concurrent requests.
  */
 export async function connectAppIntegration(
   type: IntegrationType,
   appId: string,
   config?: Record<string, unknown>,
 ): Promise<Integration> {
-  const id = nanoid();
   const now = new Date();
 
-  // Upsert — only one integration per type
-  const existing = await getIntegration(type);
-  if (existing) {
-    const [updated] = await db
-      .update(integrations)
-      .set({
+  const [result] = await db
+    .insert(integrations)
+    .values({
+      id: nanoid(),
+      type,
+      status: "connected",
+      appId,
+      externalUrl: null,
+      credentials: null,
+      config: config ?? null,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: integrations.type,
+      set: {
         status: "connected",
         appId,
         externalUrl: null,
         credentials: null,
         config: config ?? null,
         updatedAt: now,
-      })
-      .where(eq(integrations.id, existing.id))
-      .returning();
-    log.info(`Updated ${type} integration → app ${appId}`);
-    return updated as Integration;
-  }
-
-  const [created] = await db
-    .insert(integrations)
-    .values({
-      id,
-      type,
-      status: "connected",
-      appId,
-      config: config ?? null,
-      createdAt: now,
-      updatedAt: now,
+      },
     })
     .returning();
+
   log.info(`Connected ${type} integration → app ${appId}`);
-  return created as Integration;
+  return result as Integration;
 }
 
 /**
  * Connect an integration backed by an external instance.
+ * Atomic upsert — safe against concurrent requests.
  */
 export async function connectExternalIntegration(
   type: IntegrationType,
@@ -96,52 +98,52 @@ export async function connectExternalIntegration(
   apiToken?: string,
   config?: Record<string, unknown>,
 ): Promise<Integration> {
-  const id = nanoid();
   const now = new Date();
   const encryptedCreds = apiToken ? encryptSystem(apiToken) : null;
 
-  const existing = await getIntegration(type);
-  if (existing) {
-    const [updated] = await db
-      .update(integrations)
-      .set({
-        status: "connected",
-        appId: null,
-        externalUrl,
-        credentials: encryptedCreds,
-        config: config ?? null,
-        updatedAt: now,
-      })
-      .where(eq(integrations.id, existing.id))
-      .returning();
-    log.info(`Updated ${type} integration → ${externalUrl}`);
-    return updated as Integration;
-  }
-
-  const [created] = await db
+  const [result] = await db
     .insert(integrations)
     .values({
-      id,
+      id: nanoid(),
       type,
       status: "connected",
+      appId: null,
       externalUrl,
       credentials: encryptedCreds,
       config: config ?? null,
       createdAt: now,
       updatedAt: now,
     })
+    .onConflictDoUpdate({
+      target: integrations.type,
+      set: {
+        status: "connected",
+        appId: null,
+        externalUrl,
+        credentials: encryptedCreds,
+        config: config ?? null,
+        updatedAt: now,
+      },
+    })
     .returning();
+
   log.info(`Connected ${type} integration → ${externalUrl}`);
-  return created as Integration;
+  return result as Integration;
 }
 
 /**
- * Disconnect an integration. Keeps the row but marks it disconnected.
+ * Disconnect an integration. Clears sensitive fields.
  */
 export async function disconnectIntegration(type: IntegrationType): Promise<void> {
   await db
     .update(integrations)
-    .set({ status: "disconnected", updatedAt: new Date() })
+    .set({
+      status: "disconnected",
+      appId: null,
+      externalUrl: null,
+      credentials: null,
+      updatedAt: new Date(),
+    })
     .where(eq(integrations.type, type));
   log.info(`Disconnected ${type} integration`);
 }
@@ -160,7 +162,7 @@ export async function updateIntegrationStatus(
 }
 
 /**
- * Resolve the URL for a metrics integration.
+ * Resolve the URL for an integration.
  * App-backed: derives from Docker network DNS.
  * External: returns the configured URL.
  */
@@ -174,7 +176,7 @@ export async function resolveIntegrationUrl(type: IntegrationType): Promise<stri
   // App-backed — resolve from the app's container network
   if (integration.appId) {
     const app = await db.query.apps.findFirst({
-      where: eq((await import("@/lib/db/schema")).apps.id, integration.appId),
+      where: eq(apps.id, integration.appId),
       columns: { name: true },
     });
     if (!app) return null;

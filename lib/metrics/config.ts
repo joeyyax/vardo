@@ -18,8 +18,21 @@ export function isMetricsEnabled(): boolean {
  * (backwards-compatible with existing installs).
  */
 export async function initMetricsProvider() {
-  if (getMetricsProvider()) return; // already initialized
+  if (getMetricsProvider()) return;
+  await resolveProvider();
+}
 
+/**
+ * Re-resolve the metrics provider from integration settings.
+ * Call after connecting or disconnecting a metrics integration.
+ */
+export async function reinitMetricsProvider() {
+  setMetricsProvider(null);
+  await resolveProvider();
+}
+
+/** Shared resolution logic for init and reinit. */
+async function resolveProvider() {
   try {
     const { getIntegration, resolveIntegrationUrl } = await import("@/lib/integrations");
     const integration = await getIntegration("metrics");
@@ -33,10 +46,9 @@ export async function initMetricsProvider() {
       }
     }
   } catch {
-    // DB not ready yet (first boot, migrations) — fall through to default
+    // DB not ready — fall through
   }
 
-  // Default: use CADVISOR_URL env var (backwards-compatible)
   setMetricsProvider(new CadvisorProvider());
   log.info("Metrics provider: default cAdvisor");
 }

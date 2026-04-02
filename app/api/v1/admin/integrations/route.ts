@@ -75,6 +75,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Hot-swap the metrics provider if this is a metrics integration
+    if (data.type === "metrics") {
+      const { reinitMetricsProvider } = await import("@/lib/metrics/config");
+      await reinitMetricsProvider();
+    }
+
     return NextResponse.json({ integration }, { status: 201 });
   } catch (error) {
     if (error instanceof Error && error.message === "Forbidden") {
@@ -98,6 +104,13 @@ export async function DELETE(request: NextRequest) {
     }
 
     await disconnectIntegration(type as IntegrationType);
+
+    // Hot-swap the metrics provider back to default
+    if (type === "metrics") {
+      const { reinitMetricsProvider } = await import("@/lib/metrics/config");
+      await reinitMetricsProvider();
+    }
+
     return NextResponse.json({ ok: true });
   } catch (error) {
     if (error instanceof Error && error.message === "Forbidden") {
