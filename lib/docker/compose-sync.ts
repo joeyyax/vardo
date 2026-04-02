@@ -10,7 +10,7 @@
 
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, inArray } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import type { ComposeFile, ComposeService } from "./compose";
 
@@ -174,19 +174,21 @@ export async function syncComposeServices(opts: {
   // Also fetch any existing records by name that might be orphaned (no parentAppId)
   // This handles cleanup from previous failed attempts
   const childNames = serviceNames.map((svc) => `${parentAppName}-${svc}`);
-  const existingByName = await db.query.apps.findMany({
-    where: and(
-      eq(apps.organizationId, organizationId),
-      sql`${apps.name} IN (${sql.join(childNames.map((n) => sql`${n}`))})`,
-    ),
-    columns: {
-      id: true,
-      name: true,
-      composeService: true,
-      status: true,
-      parentAppId: true,
-    },
-  });
+  const existingByName = childNames.length > 0
+    ? await db.query.apps.findMany({
+        where: and(
+          eq(apps.organizationId, organizationId),
+          inArray(apps.name, childNames),
+        ),
+        columns: {
+          id: true,
+          name: true,
+          composeService: true,
+          status: true,
+          parentAppId: true,
+        },
+      })
+    : [];
 
   // Merge: childByService for matching by composeService
   const childByService = new Map(
