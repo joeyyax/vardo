@@ -84,7 +84,7 @@ type BusCallback = (event: BusEvent) => void;
  * Only events with `source: "bus"` are forwarded — other messages on
  * the org channel (app state changes, etc.) are silently ignored.
  */
-export function on(orgId: string, cb: BusCallback): () => void {
+export async function on(orgId: string, cb: BusCallback): Promise<() => void> {
   return subscribe(orgChannel(orgId), (data) => {
     if (data.source !== "bus") return;
     cb(data as unknown as BusEvent);

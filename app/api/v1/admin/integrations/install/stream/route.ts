@@ -220,7 +220,7 @@ export async function POST(request: NextRequest) {
           let deploySuccess = false;
           const deployChannel = appChannel(appId);
 
-          const unsub = subscribe(deployChannel, (data) => {
+          const unsub = await subscribe(deployChannel, (data) => {
             const event = data.event as string;
 
             if (event === "deploy:log") {
