@@ -429,8 +429,9 @@ async function performHealthCheck(appId: string, appName: string): Promise<{ hea
       // List containers and look for one with matching app label
       const containers = await listContainers();
       const container = containers.find(c =>
-        c.labels["vardo.appId"] === appId ||
-        c.labels["host.appId"] === appId ||
+        c.labels["vardo.project.id"] === appId ||
+        c.labels["host.project.id"] === appId ||
+        c.labels["vardo.project"] === appName ||
         c.name === appName
       );
 
