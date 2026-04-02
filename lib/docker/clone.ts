@@ -79,12 +79,19 @@ export async function createGroupEnvironment(
 
   if (!project) throw new Error("Project not found");
 
-  // Load org for base domain
+  // Load org for base domain, fall back to instance config
   const { organizations } = await import("@/lib/db/schema");
   const org = await db.query.organizations.findFirst({
     where: eq(organizations.id, opts.organizationId),
     columns: { baseDomain: true },
   });
+  if (!org?.baseDomain) {
+    const { getInstanceConfig } = await import("@/lib/system-settings");
+    const instanceConfig = await getInstanceConfig();
+    if (instanceConfig.baseDomain && org) {
+      (org as { baseDomain: string | null }).baseDomain = instanceConfig.baseDomain;
+    }
+  }
 
   // Create group environment record
   const groupEnvId = nanoid();
