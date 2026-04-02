@@ -4,6 +4,7 @@ import { registerListApps } from "./list-apps";
 import { registerGetAppStatus } from "./get-app-status";
 import { registerGetAppLogs } from "./get-app-logs";
 import { registerListProjects } from "./list-projects";
+import { registerCreateProject } from "./create-project";
 import { registerCreatePreview } from "./create-preview";
 import { registerListPreviews } from "./list-previews";
 import { registerGetPreviewStatus } from "./get-preview-status";
@@ -31,6 +32,7 @@ export function registerAllTools(
   registerGetAppStatus(server, context);
   registerGetAppLogs(server, context);
   registerListProjects(server, context);
+  registerCreateProject(server, context);
   registerCreatePreview(server, context);
   registerListPreviews(server, context);
   registerGetPreviewStatus(server, context);
