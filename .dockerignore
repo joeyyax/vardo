@@ -12,5 +12,8 @@
 docs
 .github
 .screenshots
+apps
+images
+.host
 *.md
 !drizzle/**
