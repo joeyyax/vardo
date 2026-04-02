@@ -171,10 +171,33 @@ export async function syncComposeServices(opts: {
     },
   });
 
+  // Also fetch any existing records by name that might be orphaned (no parentAppId)
+  // This handles cleanup from previous failed attempts
+  const childNames = serviceNames.map((svc) => `${parentAppName}-${svc}`);
+  const existingByName = await db.query.apps.findMany({
+    where: and(
+      eq(apps.organizationId, organizationId),
+      sql`${apps.name} IN (${sql.join(childNames.map((n) => sql`${n}`))})`,
+    ),
+    columns: {
+      id: true,
+      name: true,
+      composeService: true,
+      status: true,
+      parentAppId: true,
+    },
+  });
+
+  // Merge: childByService for matching by composeService
   const childByService = new Map(
     existingChildren
       .filter((c) => c.composeService)
       .map((c) => [c.composeService!, c])
+  );
+
+  // childByName for matching by generated name (catches orphaned records)
+  const childByName = new Map(
+    existingByName.map((c) => [c.name, c])
   );
 
   // Process each service in the compose file
@@ -197,10 +220,10 @@ export async function syncComposeServices(opts: {
       : null;
     const dependsOn = dependsOnServiceNames?.map((dep) => `${parentAppName}-${dep}`) ?? null;
 
-    const existing = childByService.get(serviceName);
+    const existing = childByService.get(serviceName) ?? childByName.get(childName);
 
     if (existing) {
-      // Update existing child record
+      // Update existing child record (may be orphaned from previous failed attempt)
       await db
         .update(apps)
         .set({
@@ -213,12 +236,15 @@ export async function syncComposeServices(opts: {
           persistentVolumes: volumes.length > 0 ? volumes : null,
           dependsOn,
           projectId,
+          parentAppId, // Re-parent if it was orphaned
+          composeService: serviceName, // Set if it was missing
           updatedAt: new Date(),
         })
         .where(eq(apps.id, existing.id));
 
       result.updated.push(serviceName);
       childByService.delete(serviceName);
+      childByName.delete(childName);
     } else {
       // Create new child record
       // NOTE: Using raw SQL to bypass Drizzle/postgres-js parameter binding issues
@@ -248,12 +274,13 @@ export async function syncComposeServices(opts: {
   }
 
   // Mark orphaned children (services removed from compose YAML) as stopped
-  for (const [serviceName, child] of childByService) {
+  const orphanedChildren = new Map([...childByService, ...childByName]);
+  for (const [serviceName, child] of orphanedChildren) {
     await db
       .update(apps)
       .set({ status: "stopped", updatedAt: new Date() })
       .where(eq(apps.id, child.id));
-    result.removed.push(serviceName);
+    result.removed.push(child.composeService || serviceName);
   }
 
   if (log) {
