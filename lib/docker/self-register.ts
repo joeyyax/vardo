@@ -8,7 +8,7 @@
 // Safe to call on every startup — all writes are idempotent upserts.
 // ---------------------------------------------------------------------------
 
-import { readFile } from "fs/promises";
+import { readFile, access } from "fs/promises";
 import { join } from "path";
 import { promisify } from "util";
 import { execFile } from "child_process";
@@ -20,7 +20,7 @@ import { apps, organizations, projects } from "@/lib/db/schema";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { parseCompose } from "@/lib/docker/compose";
 import { logger } from "@/lib/logger";
-import { VARDO_HOME_DIR } from "@/lib/paths";
+import { VARDO_HOME_DIR, VARDO_CURRENT_DIR } from "@/lib/paths";
 
 const execFileAsync = promisify(execFile);
 
@@ -51,7 +51,14 @@ const INFRA_SERVICES = new Set([
 export async function ensureVardoProject(): Promise<void> {
   if (!(await isFeatureEnabledAsync("selfManagement"))) return;
 
-  const vardoDir = VARDO_HOME_DIR;
+  // Resolve the Vardo source directory — prefer the active slot (blue/green
+  // layout), fall back to VARDO_HOME_DIR root for legacy flat installs.
+  let vardoDir = VARDO_CURRENT_DIR;
+  try {
+    await access(join(vardoDir, "docker-compose.yml"));
+  } catch {
+    vardoDir = VARDO_HOME_DIR;
+  }
 
   // Warn operators who haven't configured an isolated preview database.
   // Without PREVIEW_DATABASE_URL, preview containers fall back to the
