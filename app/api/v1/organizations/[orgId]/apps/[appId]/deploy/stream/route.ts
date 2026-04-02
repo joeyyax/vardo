@@ -42,7 +42,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     // client connected to a stream that never delivers events.
     let unsubscribe: () => void;
     try {
-      unsubscribe = subscribe(appChannel(appId), (data) => {
+      unsubscribe = await subscribe(appChannel(appId), (data) => {
         const event = data.event as string;
         if (event === "deploy:log") {
           send("log", { deploymentId: data.deploymentId, message: data.message });
