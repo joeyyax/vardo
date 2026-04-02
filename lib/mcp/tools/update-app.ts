@@ -13,6 +13,7 @@ const UPDATE_RATE_WINDOW_MS = 5 * 60 * 1000;
 const updateSchema = z.object({
   displayName: z.string().min(1).optional(),
   description: z.string().nullable().optional(),
+  projectId: z.string().nullable().optional(),
   containerPort: z.number().int().positive().nullable().optional(),
   autoTraefikLabels: z.boolean().optional(),
   autoDeploy: z.boolean().optional(),
@@ -41,7 +42,7 @@ export function registerUpdateApp(
 ) {
   server.tool(
     "vardo_update_app",
-    "Update configuration for a specific app. Pass any subset of fields to update: displayName, description, containerPort, gitBranch, deployType, resource limits, etc. Does not trigger a deploy — use vardo_deploy_app after updating if needed.",
+    "Update configuration for a specific app. Pass any subset of fields to update: displayName, description, projectId, containerPort, gitBranch, deployType, resource limits, etc. Does not trigger a deploy — use vardo_deploy_app after updating if needed.",
     {
       appId: z.string().describe("The app ID to update"),
       config: updateSchema.describe("Partial config object with fields to update"),
