@@ -40,6 +40,7 @@ import { cronJobs, cronJobRuns } from "./cron";
 import { meshPeers, projectInstances } from "./mesh";
 import { activities } from "./monitoring";
 import { appSecurityScans } from "./security";
+import { integrations } from "./integrations";
 
 // ---------------------------------------------------------------------------
 // Relations
@@ -136,6 +137,7 @@ export const appsRelations = relations(apps, ({ one, many }) => ({
   cronJobs: many(cronJobs),
   transfers: many(appTransfers),
   securityScans: many(appSecurityScans),
+  integrations: many(integrations),
 }));
 
 export const deploymentsRelations = relations(deployments, ({ one }) => ({
@@ -506,5 +508,12 @@ export const appSecurityScansRelations = relations(appSecurityScans, ({ one }) =
   organization: one(organizations, {
     fields: [appSecurityScans.organizationId],
     references: [organizations.id],
+  }),
+}));
+
+export const integrationsRelations = relations(integrations, ({ one }) => ({
+  app: one(apps, {
+    fields: [integrations.appId],
+    references: [apps.id],
   }),
 }));

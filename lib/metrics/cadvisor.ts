@@ -1,25 +1,7 @@
-const CADVISOR_URL = process.env.CADVISOR_URL || "http://localhost:7300";
+import type { MetricsProvider } from "./provider";
+import type { ContainerMetrics } from "./types";
 
-export type ContainerMetrics = {
-  containerId: string;
-  containerName: string;
-  projectName: string;
-  organizationId: string | null;
-  cpuPercent: number;
-  memoryUsage: number;
-  memoryLimit: number;
-  memoryPercent: number;
-  networkRxBytes: number;
-  networkTxBytes: number;
-  diskUsage: number;
-  diskLimit: number;
-  diskWriteBytes: number; // cumulative block I/O writes
-  gpuUtilization: number; // percent (summed duty_cycle across accelerators)
-  gpuMemoryUsed: number; // bytes
-  gpuMemoryTotal: number; // bytes
-  gpuTemperature: number; // Celsius (average across accelerators)
-  timestamp: number;
-};
+const CADVISOR_URL = process.env.CADVISOR_URL || "http://localhost:7300";
 
 type V2Accelerator = {
   id: string;
@@ -57,36 +39,36 @@ type V2SpecEntry = {
   memory?: { limit: number };
 };
 
-// Module-level cache for specs (rarely change)
-let cachedSpecs: Record<string, V2SpecEntry> | null = null;
-let specsCachedAt = 0;
 const SPECS_TTL_MS = 60_000; // 60 seconds
+
+// Per-URL spec cache — keyed by base URL to avoid stale data on provider swap
+const specsCacheByUrl = new Map<string, { specs: Record<string, V2SpecEntry>; cachedAt: number }>();
 
 /**
  * Fetch metrics for all Docker containers from cAdvisor v2 API.
  */
-export async function fetchAllContainerMetrics(): Promise<ContainerMetrics[]> {
+export async function fetchAllContainerMetrics(baseUrl = CADVISOR_URL): Promise<ContainerMetrics[]> {
   // Always fetch fresh stats
   const statsRes = await fetch(
-    `${CADVISOR_URL}/api/v2.0/stats?type=docker&recursive=true&count=2`,
+    `${baseUrl}/api/v2.0/stats?type=docker&recursive=true&count=2`,
     { signal: AbortSignal.timeout(5000) }
   );
   if (!statsRes.ok) throw new Error(`cAdvisor stats returned ${statsRes.status}`);
   const statsData = (await statsRes.json()) as Record<string, V2StatEntry[]>;
 
-  // Only refetch specs if cache is stale or missing
+  // Only refetch specs if cache is stale or missing (keyed per URL)
   let specsData: Record<string, V2SpecEntry>;
-  if (cachedSpecs && Date.now() - specsCachedAt < SPECS_TTL_MS) {
-    specsData = cachedSpecs;
+  const cached = specsCacheByUrl.get(baseUrl);
+  if (cached && Date.now() - cached.cachedAt < SPECS_TTL_MS) {
+    specsData = cached.specs;
   } else {
     const specsRes = await fetch(
-      `${CADVISOR_URL}/api/v2.0/spec?type=docker&recursive=true`,
+      `${baseUrl}/api/v2.0/spec?type=docker&recursive=true`,
       { signal: AbortSignal.timeout(5000) }
     );
     if (!specsRes.ok) throw new Error(`cAdvisor spec returned ${specsRes.status}`);
     specsData = (await specsRes.json()) as Record<string, V2SpecEntry>;
-    cachedSpecs = specsData;
-    specsCachedAt = Date.now();
+    specsCacheByUrl.set(baseUrl, { specs: specsData, cachedAt: Date.now() });
   }
 
   const metrics: ContainerMetrics[] = [];
@@ -198,8 +180,9 @@ export async function fetchAllContainerMetrics(): Promise<ContainerMetrics[]> {
 export async function fetchProjectMetrics(
   projectName: string,
   environmentName?: string,
+  baseUrl = CADVISOR_URL,
 ): Promise<ContainerMetrics[]> {
-  const all = await fetchAllContainerMetrics();
+  const all = await fetchAllContainerMetrics(baseUrl);
   // Container names follow: {project}-{env}-{slot}-{service}-{n}
   // Match by project name prefix, then optionally filter by environment
   const projectContainers = all.filter(
@@ -213,4 +196,24 @@ export async function fetchProjectMetrics(
   return projectContainers.filter(
     (m) => m.containerName.startsWith(envPrefix) || m.projectName.startsWith(envPrefix)
   );
+}
+
+/**
+ * cAdvisor metrics provider — implements MetricsProvider interface.
+ * Optionally accepts a URL override (for integration-configured instances).
+ */
+export class CadvisorProvider implements MetricsProvider {
+  private url: string;
+
+  constructor(url?: string) {
+    this.url = url ?? CADVISOR_URL;
+  }
+
+  async fetchAll(): Promise<ContainerMetrics[]> {
+    return fetchAllContainerMetrics(this.url);
+  }
+
+  async fetchByProject(projectName: string, environmentName?: string): Promise<ContainerMetrics[]> {
+    return fetchProjectMetrics(projectName, environmentName, this.url);
+  }
 }

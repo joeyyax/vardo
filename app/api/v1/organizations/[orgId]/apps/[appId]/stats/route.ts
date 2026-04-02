@@ -3,7 +3,7 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { fetchProjectMetrics } from "@/lib/metrics/cadvisor";
+import { fetchProjectMetrics } from "@/lib/metrics/provider";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;

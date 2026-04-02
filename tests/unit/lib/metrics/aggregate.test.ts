@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { aggregateContainers } from "@/lib/metrics/aggregate";
-import type { ContainerMetrics } from "@/lib/metrics/cadvisor";
+import type { ContainerMetrics } from "@/lib/metrics/types";
 
 // ---------------------------------------------------------------------------
 // aggregateContainers — GPU metric aggregation

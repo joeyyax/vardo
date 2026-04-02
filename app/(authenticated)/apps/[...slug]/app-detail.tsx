@@ -85,6 +85,7 @@ import { AppDebug } from "./app-debug";
 import { ComposeDetail } from "./compose-detail";
 import { AppSecurity } from "./app-security";
 import { SystemBadge } from "@/components/system-badge";
+import { PlatformBadge } from "@/components/platform-badge";
 
 import type { AppDetailProps, Environment } from "./types";
 
@@ -111,7 +112,7 @@ function buildAppPath(appName: string, environments: Environment[], envId: strin
   return tab && tab !== "deployments" ? `${base}/${tab}` : base;
 }
 
-export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = [], allAppNames = [], orgVarKeys = [], siblings = [], initialTab = "deployments", initialEnv, initialSubView, featureFlags, parentApp = null }: AppDetailProps) {
+export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = [], allAppNames = [], orgVarKeys = [], siblings = [], initialTab = "deployments", initialEnv, initialSubView, featureFlags, parentApp = null, backedIntegrationType = null }: AppDetailProps) {
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -602,6 +603,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           </h1>
         )}
         {app.isSystemManaged && <SystemBadge label="System Managed" />}
+        {backedIntegrationType && <PlatformBadge />}
         {!isChildService && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -986,6 +988,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
             orgId={orgId}
             activeTab={activeTab}
             initialSubView={activeTab === "networking" ? initialSubView : undefined}
+            configSource={app.configSource}
           />
         </TabsContent>
 
@@ -1166,7 +1169,11 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
         title="Delete app"
-        description={`Are you sure you want to delete "${app.displayName}"? This will remove all environments, deployments, domains, and environment variables. This action cannot be undone.`}
+        description={
+          backedIntegrationType
+            ? `This app backs the ${backedIntegrationType.replace("_", " ")} integration. Deleting it will disable that integration and Vardo will fall back to defaults. Are you sure you want to delete "${app.displayName}"?`
+            : `Are you sure you want to delete "${app.displayName}"? This will remove all environments, deployments, domains, and environment variables. This action cannot be undone.`
+        }
         onConfirm={handleDelete}
         loading={deleting}
       />

@@ -1,4 +1,5 @@
-import { fetchAllContainerMetrics, type ContainerMetrics } from "./cadvisor";
+import { fetchAllMetrics } from "./provider";
+import type { ContainerMetrics } from "./types";
 import { isMetricsEnabled } from "./config";
 
 // ---------------------------------------------------------------------------
@@ -70,7 +71,7 @@ async function poll() {
   if (!isMetricsEnabled()) return;
 
   try {
-    const metrics = await fetchAllContainerMetrics();
+    const metrics = await fetchAllMetrics();
     latestMetrics = metrics;
 
     // Dispatch to all listeners
