@@ -1,6 +1,6 @@
 import { logger } from "@/lib/logger";
-import { isMetricsEnabled } from "./config";
-import { fetchAllContainerMetrics } from "./cadvisor";
+import { isMetricsEnabled, initMetricsProvider } from "./config";
+import { fetchAllMetrics } from "./provider";
 import { storeMetrics, storeDiskUsage, storeDiskWrite, storeGpuMetrics, storeProjectDisk, storeBusinessMetric, storeOrgBusinessMetric } from "./store";
 import { checkDiskWriteAlerts } from "./disk-write-alerts";
 import { getSystemDiskUsage, getPerProjectDiskUsage } from "@/lib/docker/client";
@@ -26,10 +26,11 @@ export function isCollectorRunning() {
   return started;
 }
 
-export function startCollector() {
+export async function startCollector() {
   if (started) return;
+  await initMetricsProvider(); // ensure provider is ready
   if (!isMetricsEnabled()) {
-    log.info("Metrics collection disabled (METRICS_ENABLED=false)");
+    log.info("Metrics collection disabled — no provider configured");
     return;
   }
   started = true;
@@ -49,9 +50,9 @@ function scheduleTick() {
 }
 
 async function collect() {
-  let metrics: Awaited<ReturnType<typeof fetchAllContainerMetrics>> = [];
+  let metrics: Awaited<ReturnType<typeof fetchAllMetrics>> = [];
   try {
-    metrics = await fetchAllContainerMetrics();
+    metrics = await fetchAllMetrics();
     const results = await Promise.allSettled(
       metrics.flatMap((m) => {
         const ops = [

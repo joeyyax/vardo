@@ -3,7 +3,7 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps, projects } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { fetchAllContainerMetrics } from "@/lib/metrics/cadvisor";
+import { fetchAllMetrics } from "@/lib/metrics/provider";
 import { isMetricsEnabled } from "@/lib/metrics/config";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 type RouteParams = {
@@ -34,7 +34,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       columns: { id: true, name: true, displayName: true, status: true },
     });
 
-    const allMetrics = await fetchAllContainerMetrics();
+    const allMetrics = await fetchAllMetrics();
     const appNames = new Set(projectApps.map((a) => a.name));
 
     const appStats = projectApps.map((app) => {

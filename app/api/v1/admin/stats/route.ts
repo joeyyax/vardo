@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
-import { fetchAllContainerMetrics } from "@/lib/metrics/cadvisor";
+import { fetchAllMetrics } from "@/lib/metrics/provider";
 import { queryAllPoints } from "@/lib/metrics/store";
 import { isMetricsEnabled } from "@/lib/metrics/config";
 import { requireAppAdmin } from "@/lib/auth/admin";
@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
       }),
       // Only fetch fast data synchronously — disk and system info are slow (3s+)
       // and will arrive via the SSE stream instead
-      fetchAllContainerMetrics(),
+      fetchAllMetrics(),
     ]);
 
     // Index metrics by projectName to avoid O(apps * metrics) nested scans
