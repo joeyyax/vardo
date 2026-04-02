@@ -93,7 +93,7 @@ const createEnvironmentSchema = z.object({
       /^[a-z0-9][a-z0-9-]*[a-z0-9]$/,
       "Name must be lowercase alphanumeric with hyphens, and cannot start or end with a hyphen"
     ),
-  type: z.enum(["production", "staging", "preview"]),
+  type: z.enum(["production", "staging", "preview", "local"]),
   domain: z.string().optional(),
   cloneFrom: z.string().optional(), // environment ID to clone env vars from
   gitBranch: z.string().optional(), // override git branch for this environment

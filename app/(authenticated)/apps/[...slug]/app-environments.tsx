@@ -27,7 +27,7 @@ import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 type Environment = {
   id: string;
   name: string;
-  type: "production" | "staging" | "preview";
+  type: "production" | "staging" | "preview" | "local";
   domain: string | null;
   isDefault: boolean | null;
   createdAt: Date;
@@ -60,6 +60,12 @@ function EnvironmentTypeBadge({ type }: { type: Environment["type"] }) {
           preview
         </Badge>
       );
+    case "local":
+      return (
+        <Badge className="border-transparent bg-muted text-muted-foreground text-xs">
+          local
+        </Badge>
+      );
   }
 }
 
@@ -73,7 +79,7 @@ export function AppEnvironments({
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [newName, setNewName] = useState("");
-  const [newType, setNewType] = useState<"production" | "staging" | "preview">("staging");
+  const [newType, setNewType] = useState<"production" | "staging" | "preview" | "local">("staging");
   const [newDomain, setNewDomain] = useState("");
 
   const [cloning, setCloning] = useState<string | null>(null);
@@ -270,7 +276,7 @@ export function AppEnvironments({
         <div>
           <h3 className="text-sm font-medium">Environments</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Separate configurations for production, staging, and preview deployments.
+            Separate configurations for production, staging, preview, and local deployments.
           </p>
         </div>
         <Button
@@ -312,6 +318,7 @@ export function AppEnvironments({
                 <SelectItem value="production">Production</SelectItem>
                 <SelectItem value="staging">Staging</SelectItem>
                 <SelectItem value="preview">Preview</SelectItem>
+                <SelectItem value="local">Local</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -346,7 +353,7 @@ export function AppEnvironments({
               // Default first, then by type priority, then by name
               if (a.isDefault && !b.isDefault) return -1;
               if (!a.isDefault && b.isDefault) return 1;
-              const typePriority = { production: 0, staging: 1, preview: 2 };
+              const typePriority: Record<string, number> = { production: 0, staging: 1, preview: 2, local: 3 };
               const diff = typePriority[a.type] - typePriority[b.type];
               if (diff !== 0) return diff;
               return a.name.localeCompare(b.name);
@@ -374,6 +381,8 @@ export function AppEnvironments({
                             ? "bg-status-success"
                             : env.type === "staging"
                             ? "bg-status-warning"
+                            : env.type === "local"
+                            ? "bg-muted-foreground"
                             : "bg-status-info"
                         }`}
                       />

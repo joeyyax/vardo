@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { apps, deployments } from "@/lib/db/schema";
+import { apps, deployments, environments } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { createDeployment } from "@/lib/docker/deploy";
 import { slidingWindowRateLimit } from "@/lib/api/rate-limit";
@@ -63,6 +63,28 @@ export function registerRollbackApp(
             {
               type: "text" as const,
               text: JSON.stringify({ error: "App not found or access denied" }),
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      // Local environments don't support rollback — no blue-green slots to swap
+      const defaultEnv = await db.query.environments.findFirst({
+        where: and(
+          eq(environments.appId, appId),
+          eq(environments.isDefault, true),
+        ),
+        columns: { type: true },
+      });
+      if (defaultEnv?.type === "local") {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                error: "Rollback is not supported for local environments",
+              }),
             },
           ],
           isError: true,
