@@ -6,13 +6,7 @@ import { join } from "path";
 import YAML from "yaml";
 import { logger } from "@/lib/logger";
 import { resolveBackendProtocol, narrowBackendProtocol } from "@/lib/docker/compose";
-
-/**
- * Directory where Traefik dynamic config files are written.
- * Shared volume between the frontend and traefik containers.
- */
-const TRAEFIK_DYNAMIC_DIR =
-  process.env.TRAEFIK_DYNAMIC_DIR || "/etc/traefik/dynamic";
+import { TRAEFIK_DYNAMIC_DIR } from "@/lib/paths";
 
 type TraefikRouterConfig = {
   rule: string;

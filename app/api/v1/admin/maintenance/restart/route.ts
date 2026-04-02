@@ -5,6 +5,7 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { restartSchema } from "@/lib/api/admin/maintenance-schemas";
 import { logger } from "@/lib/logger";
+import { VARDO_HOME_DIR } from "@/lib/paths";
 
 const log = logger.child("admin:maintenance:restart");
 
@@ -29,16 +30,8 @@ async function handlePost(request: NextRequest) {
     }
 
     const { service } = parsed.data;
-    const vardoDir = process.env.VARDO_DIR;
 
-    if (!vardoDir) {
-      return NextResponse.json(
-        { error: "VARDO_DIR is not set — cannot run docker compose without knowing the installation path" },
-        { status: 503 },
-      );
-    }
-
-    const args = ["compose", "-f", `${vardoDir}/docker-compose.yml`, "up", "-d"];
+    const args = ["compose", "-f", `${VARDO_HOME_DIR}/docker-compose.yml`, "up", "-d"];
     if (service) {
       args.push("--no-deps", service);
     }

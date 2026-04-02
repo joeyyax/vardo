@@ -9,7 +9,7 @@ import { readFile } from "fs/promises";
 import { createSSEResponse } from "@/lib/api/sse";
 import { isLokiAvailable, queryRange, tailLogs, buildLogQLQuery } from "@/lib/loki/client";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
-const PROJECTS_DIR = resolve(process.env.VARDO_PROJECTS_DIR || "./.host/projects");
+import { appEnvDir, appBaseDir } from "@/lib/paths";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -84,12 +84,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     return createSSEResponse(request, async (sendEvent) => {
       sendEvent("source", "docker");
 
-      let appDir = resolve(PROJECTS_DIR, app.name, environmentName);
+      let appDir = appEnvDir(app.name, environmentName);
       let activeSlot = "blue";
       try {
         activeSlot = (await readFile(resolve(appDir, ".active-slot"), "utf-8")).trim();
       } catch {
-        appDir = resolve(PROJECTS_DIR, app.name);
+        appDir = appBaseDir(app.name);
         try {
           activeSlot = (await readFile(resolve(appDir, ".active-slot"), "utf-8")).trim();
         } catch { /* default to blue */ }
