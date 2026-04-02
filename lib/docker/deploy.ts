@@ -1475,6 +1475,44 @@ export async function runDeployment(
       }
     }
 
+    // Update container names to match the active slot for Traefik routing
+    // Blue-green deploys change the project name (e.g., app-production-blue), so
+    // container names must be updated to reflect the new slot's actual containers
+    if (!isLocalEnv && app.autoTraefikLabels) {
+      try {
+        const serviceNames = Object.keys(compose.services);
+        const primaryServiceName = serviceNames[0];
+
+        // Update parent app's container name (primary service)
+        if (primaryServiceName) {
+          const parentContainerName = `${newProjectName}-${primaryServiceName}-1`;
+          await db
+            .update(apps)
+            .set({ containerName: parentContainerName, updatedAt: new Date() })
+            .where(eq(apps.id, opts.appId));
+          log(`[deploy] Updated container name: ${parentContainerName}`);
+        }
+
+        // Update child app container names for multi-service compose
+        if (serviceNames.length > 1) {
+          for (const serviceName of serviceNames) {
+            const childContainerName = `${newProjectName}-${serviceName}-1`;
+            const childName = `${app.name}-${serviceName}`;
+            await db
+              .update(apps)
+              .set({ containerName: childContainerName, updatedAt: new Date() })
+              .where(and(eq(apps.parentAppId, opts.appId), eq(apps.name, childName)));
+          }
+        }
+
+        // Regenerate Traefik config with updated container names
+        await regenerateAppRouteConfig(opts.appId);
+        log(`[deploy] Regenerated Traefik route config`);
+      } catch (err) {
+        log(`[deploy] Warning: failed to update container names — ${err instanceof Error ? err.message : err}`);
+      }
+    }
+
     // Mark app as active
     await db
       .update(apps)

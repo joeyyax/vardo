@@ -133,6 +133,12 @@ async function handler(request: NextRequest, { params }: RouteParams) {
 
     const composeContent = composeToYaml(compose);
 
+    // Determine primary service and container name for Traefik routing
+    const primaryServiceName = Object.keys(compose.services)[0];
+    const containerName = primaryServiceName
+      ? `${data.name}-${primaryServiceName}-1`
+      : `${data.name}-1`;
+
     // Build encrypted env content if project config declares env vars
     let envContent: string | null = null;
 
@@ -157,6 +163,7 @@ async function handler(request: NextRequest, { params }: RouteParams) {
           composeContent,
           autoTraefikLabels: true,
           containerPort,
+          containerName,
           projectId: resolvedProjectId,
           envContent,
           status: "active",
