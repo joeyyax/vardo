@@ -99,6 +99,7 @@ export const apps = pgTable(
     containerName: text("container_name"), // computed: {projectName}-{serviceName}-1
     importedContainerId: text("imported_container_id"), // original container ID when imported from Docker
     importedComposeProject: text("imported_compose_project"), // original compose project name when imported as a group
+    configSource: text("config_source"), // "vardo.yml" when managed by config-as-code, null for UI-managed
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

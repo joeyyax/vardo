@@ -85,6 +85,20 @@ export type VardoConfig = {
   };
 };
 
+/**
+ * Per-environment config from a user's vardo.yml project section.
+ * Used by config-as-code sync to manage domains and networking.
+ */
+export type VardoEnvConfig = {
+  domain?: string;
+  exclude?: string[];
+  networking?: {
+    domain?: string;
+    ssl?: boolean;
+    redirects?: string[];
+  };
+};
+
 export type VardoSecrets = {
   encryptionKey?: string;
   authSecret?: string;

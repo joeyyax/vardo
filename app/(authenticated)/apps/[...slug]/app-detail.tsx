@@ -988,7 +988,6 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
             orgId={orgId}
             activeTab={activeTab}
             initialSubView={activeTab === "networking" ? initialSubView : undefined}
-            configSource={app.configSource}
           />
         </TabsContent>
 
