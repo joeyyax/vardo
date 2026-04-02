@@ -97,7 +97,9 @@ describe("ensureVardoProject", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     savedEnv["VARDO_DIR"] = process.env["VARDO_DIR"];
+    savedEnv["VARDO_HOME_DIR"] = process.env["VARDO_HOME_DIR"];
     delete process.env["VARDO_DIR"];
+    delete process.env["VARDO_HOME_DIR"];
 
     // Reset insert queue
     dbMock._insertResponses.splice(0);
@@ -121,6 +123,11 @@ describe("ensureVardoProject", () => {
     } else {
       process.env["VARDO_DIR"] = savedEnv["VARDO_DIR"];
     }
+    if (savedEnv["VARDO_HOME_DIR"] === undefined) {
+      delete process.env["VARDO_HOME_DIR"];
+    } else {
+      process.env["VARDO_HOME_DIR"] = savedEnv["VARDO_HOME_DIR"];
+    }
   });
 
   it("returns without touching the DB when selfManagement feature is disabled", async () => {
@@ -132,19 +139,8 @@ describe("ensureVardoProject", () => {
     expect(readFileMock).not.toHaveBeenCalled();
   });
 
-  it("returns without touching the DB when VARDO_DIR is not set", async () => {
-    isFeatureEnabledMock.mockResolvedValue(true);
-    // VARDO_DIR is deleted in beforeEach
-
-    await ensureVardoProject();
-
-    expect(dbMock.insert).not.toHaveBeenCalled();
-    expect(readFileMock).not.toHaveBeenCalled();
-  });
-
   it("throws when the compose file cannot be read", async () => {
     isFeatureEnabledMock.mockResolvedValue(true);
-    process.env["VARDO_DIR"] = "/opt/vardo";
     readFileMock.mockRejectedValue(new Error("ENOENT: no such file or directory"));
 
     await expect(ensureVardoProject()).rejects.toThrow("ENOENT");
@@ -153,7 +149,7 @@ describe("ensureVardoProject", () => {
 
   it("returns without upserting when no organization exists", async () => {
     isFeatureEnabledMock.mockResolvedValue(true);
-    process.env["VARDO_DIR"] = "/opt/vardo";
+    process.env["VARDO_HOME_DIR"] = "/opt/vardo";
     readFileMock.mockResolvedValue("services:\n  vardo:\n    image: vardo\n");
 
     // No org found
@@ -169,7 +165,7 @@ describe("ensureVardoProject", () => {
 
   it("upserts the project and parent app on the happy path", async () => {
     isFeatureEnabledMock.mockResolvedValue(true);
-    process.env["VARDO_DIR"] = "/opt/vardo";
+    process.env["VARDO_HOME_DIR"] = "/opt/vardo";
     readFileMock.mockResolvedValue("services:\n  vardo:\n    image: vardo\n");
 
     execFileAsyncMock
@@ -183,7 +179,7 @@ describe("ensureVardoProject", () => {
 
   it("proceeds without git info when git commands fail", async () => {
     isFeatureEnabledMock.mockResolvedValue(true);
-    process.env["VARDO_DIR"] = "/opt/vardo";
+    process.env["VARDO_HOME_DIR"] = "/opt/vardo";
     readFileMock.mockResolvedValue("services:\n  vardo:\n    image: vardo\n");
 
     // git commands fail — not a git repo

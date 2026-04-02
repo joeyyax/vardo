@@ -5,6 +5,7 @@ import { requireAdminAuth } from "@/lib/auth/admin";
 import { getTraefikConfig, setSystemSetting, invalidateSettingsCache } from "@/lib/system-settings";
 import { writeEnvKey } from "@/lib/env/write-env-key";
 import { logger } from "@/lib/logger";
+import { VARDO_HOME_DIR } from "@/lib/paths";
 
 const log = logger.child("admin:traefik");
 
@@ -37,7 +38,7 @@ export async function POST(request: NextRequest) {
   // Write TRAEFIK_DOCKER_NETWORK to the host .env file so the Traefik
   // container picks it up on restart. Empty value = no network filter
   // (external routing); "vardo-network" = restrict to vardo-network only.
-  const envPath = join(process.env.VARDO_DIR ?? "/opt/vardo", ".env");
+  const envPath = join(VARDO_HOME_DIR, ".env");
   const networkValue = parsed.data.externalRouting ? "" : "vardo-network";
 
   try {

@@ -4,9 +4,7 @@ import { join } from "path";
 import YAML from "yaml";
 import { logger } from "@/lib/logger";
 import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
-
-const TRAEFIK_DYNAMIC_DIR =
-  process.env.TRAEFIK_DYNAMIC_DIR || "/etc/traefik/dynamic";
+import { TRAEFIK_DYNAMIC_DIR } from "@/lib/paths";
 
 const EXTERNAL_ROUTES_FILE = "external-routes.yaml";
 
