@@ -43,6 +43,7 @@ export const environmentTypeEnum = pgEnum("environment_type", [
   "production",
   "staging",
   "preview",
+  "local",
 ]);
 
 export const cloneStrategyEnum = pgEnum("clone_strategy", [

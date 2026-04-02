@@ -61,6 +61,28 @@ export type VardoConfig = {
     dnsProvider?: "cloudflare";
   };
   features?: Record<string, boolean>;
+
+  // ---------------------------------------------------------------------------
+  // Project-level fields (used in vardo.yml inside a user's app repo)
+  // ---------------------------------------------------------------------------
+
+  project?: {
+    name?: string;
+    environments?: Record<
+      string,
+      {
+        domain?: string;
+        /** Services to exclude from compose processing (e.g., ["caddy"]) */
+        exclude?: string[];
+      }
+    >;
+    /** Env var names the app expects (documentation, not values) */
+    env?: string[];
+    resources?: {
+      memory?: string;
+      cpus?: string;
+    };
+  };
 };
 
 export type VardoSecrets = {
@@ -424,6 +446,23 @@ export async function importVardoConfig(
   invalidateSettingsCache();
   invalidateConfigCache();
   return imported;
+}
+
+// ---------------------------------------------------------------------------
+// Project config: read vardo.yml from an arbitrary directory (e.g. adopt target)
+// ---------------------------------------------------------------------------
+
+/**
+ * Read a vardo.yml from the given directory and return its project section.
+ * Returns null if the file doesn't exist or has no project section.
+ */
+export async function readProjectConfig(
+  dir: string
+): Promise<VardoConfig["project"] | null> {
+  const path = resolve(dir, "vardo.yml");
+  if (!(await fileExists(path))) return null;
+  const config = await readYaml<VardoConfig>(path);
+  return config?.project ?? null;
 }
 
 /**
