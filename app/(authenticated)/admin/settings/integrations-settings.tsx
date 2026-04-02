@@ -22,7 +22,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Loader2, Unplug, Plug, ExternalLink, Rocket } from "lucide-react";
-import Link from "next/link";
 import { toast } from "@/lib/messenger";
 
 type Integration = {
@@ -114,6 +113,55 @@ export function IntegrationsSettings() {
     return integrations.find((i) => i.type === type);
   }
 
+  const [installing, setInstalling] = useState<string | null>(null);
+
+  async function install(type: string, label: string) {
+    setInstalling(type);
+    const toastId = toast.loading(`Installing ${label}...`, { duration: Infinity });
+
+    try {
+      const res = await fetch("/api/v1/admin/integrations/install", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to install");
+      }
+
+      const data = await res.json();
+      toast.dismiss(toastId);
+      toast.success(`${label} installed and connected`, {
+        description: `Deploying ${data.app.displayName} in the background`,
+      });
+
+      setIntegrations((prev) => {
+        const existing = prev.findIndex((i) => i.type === type);
+        const newIntegration: Integration = {
+          id: data.integration.appId,
+          type,
+          status: "connected",
+          appId: data.integration.appId,
+          externalUrl: null,
+          config: null,
+        };
+        if (existing >= 0) {
+          const next = [...prev];
+          next[existing] = newIntegration;
+          return next;
+        }
+        return [...prev, newIntegration];
+      });
+    } catch (err) {
+      toast.dismiss(toastId);
+      toast.error(err instanceof Error ? err.message : "Failed to install");
+    } finally {
+      setInstalling(null);
+    }
+  }
+
   async function disconnect(type: string) {
     try {
       const res = await fetch(`/api/v1/admin/integrations?type=${type}`, { method: "DELETE" });
@@ -187,11 +235,19 @@ export function IntegrationsSettings() {
                 ) : (
                   <>
                     {def.templateName && (
-                      <Button variant="outline" size="sm" className="squircle" asChild>
-                        <Link href={`/apps/new?template=${def.templateName}`}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="squircle"
+                        disabled={installing === def.type}
+                        onClick={() => install(def.type, def.label)}
+                      >
+                        {installing === def.type ? (
+                          <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                        ) : (
                           <Rocket className="size-3.5 mr-1.5" />
-                          Deploy
-                        </Link>
+                        )}
+                        Install
                       </Button>
                     )}
                     <ConnectDialog
