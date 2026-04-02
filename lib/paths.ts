@@ -15,6 +15,7 @@
 // ---------------------------------------------------------------------------
 
 import { resolve, join } from "path";
+import { accessSync } from "fs";
 
 /** Root directory for all Vardo data. */
 export const VARDO_HOME_DIR = resolve(
@@ -58,4 +59,60 @@ export function appEnvDir(appName: string, envName?: string): string {
 /** Specific slot directory (blue or green) within an app environment. */
 export function appSlotDir(appName: string, envName: string, slot: string): string {
   return join(appEnvDir(appName, envName), slot);
+}
+
+// ---------------------------------------------------------------------------
+// Vardo self-management paths
+//
+// Vardo manages itself as an app in apps/vardo/env/blue|green|current/.
+// These helpers resolve paths within that structure. The `current` symlink
+// points to the active slot — all runtime references should go through it.
+// ---------------------------------------------------------------------------
+
+/** Root of Vardo's self-managed app directory: $VARDO_HOME_DIR/apps/vardo */
+export const VARDO_APP_DIR = join(PROJECTS_DIR, "vardo");
+
+/** Environment directory for Vardo's slots: apps/vardo/env/ */
+export const VARDO_ENV_DIR = join(VARDO_APP_DIR, "env");
+
+/** The `current` symlink — always points to the active slot. */
+export const VARDO_CURRENT_DIR = join(VARDO_ENV_DIR, "current");
+
+/** Compose file in the active slot. */
+export const VARDO_COMPOSE_FILE = join(VARDO_CURRENT_DIR, "docker-compose.yml");
+
+/** Resolve a specific slot directory (blue or green). */
+export function vardoSlotDir(slot: "blue" | "green"): string {
+  return join(VARDO_ENV_DIR, slot);
+}
+
+/**
+ * Resolve Vardo's compose file at runtime with legacy fallback.
+ *
+ * Returns VARDO_COMPOSE_FILE (active slot) if the current symlink exists,
+ * otherwise falls back to $VARDO_HOME_DIR/docker-compose.yml for legacy
+ * flat installs that haven't migrated yet.
+ */
+export function resolveVardoComposeFile(): string {
+  try {
+    accessSync(VARDO_COMPOSE_FILE);
+    return VARDO_COMPOSE_FILE;
+  } catch {
+    return join(VARDO_HOME_DIR, "docker-compose.yml");
+  }
+}
+
+/**
+ * Resolve Vardo's source directory at runtime with legacy fallback.
+ *
+ * Returns VARDO_CURRENT_DIR if the slot layout exists, otherwise
+ * VARDO_HOME_DIR for legacy flat installs.
+ */
+export function resolveVardoDir(): string {
+  try {
+    accessSync(VARDO_CURRENT_DIR);
+    return VARDO_CURRENT_DIR;
+  } catch {
+    return VARDO_HOME_DIR;
+  }
 }
