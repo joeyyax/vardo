@@ -7,6 +7,31 @@ import { z } from "zod";
 // source — changes to these schemas are immediately reflected in tests.
 // ---------------------------------------------------------------------------
 
+/**
+ * Parse a mount pair string into source and destination paths.
+ * Supports both new "source:destination:ro" format and legacy single-path format.
+ * Returns null for empty or "/dev/null" values.
+ */
+export function parseMountPair(
+  value: string | undefined,
+): { source: string; destination: string } | null {
+  if (!value || value === "/dev/null") return null;
+
+  // Strip :ro suffix if present (new format)
+  const mountValue = value.endsWith(":ro") ? value.slice(0, -3) : value;
+
+  const colonIndex = mountValue.indexOf(":");
+  if (colonIndex === -1) {
+    // Legacy single-path format — assume source = destination
+    return { source: mountValue, destination: mountValue };
+  }
+
+  const source = mountValue.slice(0, colonIndex);
+  const destination = mountValue.slice(colonIndex + 1);
+  if (!source || !destination) return null;
+  return { source, destination };
+}
+
 // Service names must match the vardo- prefix used in docker-compose.yml and
 // satisfy docker compose naming rules (lowercase alphanumeric + hyphens).
 export const SERVICE_NAME_RE = /^vardo-[a-z][a-z0-9-]*$/;
