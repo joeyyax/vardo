@@ -21,8 +21,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Unplug, Plug, ExternalLink, Rocket } from "lucide-react";
+import { Loader2, Unplug, Plug, ExternalLink, Info } from "lucide-react";
 import { toast } from "@/lib/messenger";
+import { InstallIntegrationModal } from "@/components/install-integration-modal";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 type Integration = {
   id: string;
@@ -46,6 +53,16 @@ const INTEGRATION_TYPES = [
     description: "Container resource metrics (CPU, memory, network, disk). Requires a cAdvisor-compatible source.",
     defaultPort: 8080,
     templateName: "cadvisor",
+    supportsGpu: true,
+    explainer: {
+      title: "What is Metrics integration?",
+      content: [
+        "Collects real-time container metrics from all your deployed apps.",
+        "Uses cAdvisor to scrape CPU, memory, network, and disk usage.",
+        "Data is displayed in the Vardo dashboard for each app.",
+        "Enable GPU support if your host has NVIDIA GPUs for GPU metrics.",
+      ],
+    },
   },
   {
     type: "error_tracking",
@@ -53,6 +70,16 @@ const INTEGRATION_TYPES = [
     description: "Application error monitoring. Injects SENTRY_DSN into deployed apps. Requires GlitchTip or Sentry-compatible instance.",
     defaultPort: 8000,
     templateName: "glitchtip",
+    supportsGpu: false,
+    explainer: {
+      title: "What is Error Tracking?",
+      content: [
+        "Captures errors and exceptions from your deployed applications.",
+        "Uses GlitchTip (open-source Sentry alternative) as the backend.",
+        "Automatically injects SENTRY_DSN environment variable into apps.",
+        "View and manage errors through the GlitchTip web interface.",
+      ],
+    },
   },
   {
     type: "uptime",
@@ -60,6 +87,16 @@ const INTEGRATION_TYPES = [
     description: "Auto-creates monitors for deployed apps and domains. Requires Uptime Kuma or compatible instance.",
     defaultPort: 3001,
     templateName: "uptime-kuma",
+    supportsGpu: false,
+    explainer: {
+      title: "What is Uptime Monitoring?",
+      content: [
+        "Monitors the availability of your apps and domains.",
+        "Uses Uptime Kuma as the monitoring backend.",
+        "Automatically creates monitors for each deployed app.",
+        "Get notified when services go down or become unhealthy.",
+      ],
+    },
   },
   {
     type: "logging",
@@ -67,6 +104,16 @@ const INTEGRATION_TYPES = [
     description: "Centralized log collection and search. Requires Grafana + Loki or compatible stack.",
     defaultPort: 3000,
     templateName: null,
+    supportsGpu: false,
+    explainer: {
+      title: "What is Log Aggregation?",
+      content: [
+        "Collects logs from all your containers in one place.",
+        "Uses Grafana for visualization and Loki for log storage.",
+        "Search and filter logs across all your applications.",
+        "Set up alerts based on log patterns and errors.",
+      ],
+    },
   },
 ] as const;
 
@@ -113,55 +160,6 @@ export function IntegrationsSettings() {
     return integrations.find((i) => i.type === type);
   }
 
-  const [installing, setInstalling] = useState<string | null>(null);
-
-  async function install(type: string, label: string) {
-    setInstalling(type);
-    const toastId = toast.loading(`Installing ${label}...`, { duration: Infinity });
-
-    try {
-      const res = await fetch("/api/v1/admin/integrations/install", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Failed to install");
-      }
-
-      const data = await res.json();
-      toast.dismiss(toastId);
-      toast.success(`${label} installed and connected`, {
-        description: `Deploying ${data.app.displayName} in the background`,
-      });
-
-      setIntegrations((prev) => {
-        const existing = prev.findIndex((i) => i.type === type);
-        const newIntegration: Integration = {
-          id: data.integration.appId,
-          type,
-          status: "connected",
-          appId: data.integration.appId,
-          externalUrl: null,
-          config: null,
-        };
-        if (existing >= 0) {
-          const next = [...prev];
-          next[existing] = newIntegration;
-          return next;
-        }
-        return [...prev, newIntegration];
-      });
-    } catch (err) {
-      toast.dismiss(toastId);
-      toast.error(err instanceof Error ? err.message : "Failed to install");
-    } finally {
-      setInstalling(null);
-    }
-  }
-
   async function disconnect(type: string) {
     try {
       const res = await fetch(`/api/v1/admin/integrations?type=${type}`, { method: "DELETE" });
@@ -173,6 +171,19 @@ export function IntegrationsSettings() {
     } catch {
       toast.error("Failed to disconnect");
     }
+  }
+
+  function handleIntegrationInstalled(type: string, integration: Integration) {
+    setIntegrations((prev) => {
+      const existing = prev.findIndex((i) => i.type === type);
+      if (existing >= 0) {
+        const next = [...prev];
+        next[existing] = integration;
+        return next;
+      }
+      return [...prev, integration];
+    });
+    toast.success(`${INTEGRATION_TYPES.find(t => t.type === type)?.label || type} connected successfully`);
   }
 
   if (loading) {
@@ -206,6 +217,27 @@ export function IntegrationsSettings() {
                   <Badge variant={isConnected ? statusColor(integration!.status) : "outline"}>
                     {isConnected ? statusLabel(integration!.status) : "Not configured"}
                   </Badge>
+                  {def.explainer && (
+                    <TooltipProvider delayDuration={100}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button variant="ghost" size="icon" className="size-6">
+                            <Info className="size-3.5 text-muted-foreground" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="right" className="max-w-xs">
+                          <div className="space-y-2">
+                            <p className="font-medium">{def.explainer.title}</p>
+                            <ul className="space-y-1 text-xs list-disc list-inside">
+                              {def.explainer.content.map((item, i) => (
+                                <li key={i}>{item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
                 </div>
                 <div className="text-xs text-muted-foreground">{def.description}</div>
                 {isConnected && integration?.appId && (
@@ -235,35 +267,21 @@ export function IntegrationsSettings() {
                 ) : (
                   <>
                     {def.templateName && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="squircle"
-                        disabled={installing === def.type}
-                        onClick={() => install(def.type, def.label)}
-                      >
-                        {installing === def.type ? (
-                          <Loader2 className="size-3.5 mr-1.5 animate-spin" />
-                        ) : (
-                          <Rocket className="size-3.5 mr-1.5" />
-                        )}
-                        Install
-                      </Button>
+                      <InstallIntegrationModal
+                        type={def.type}
+                        label={def.label}
+                        description={def.description}
+                        defaultAppName={def.templateName}
+                        supportsGpu={def.supportsGpu}
+                        onInstalled={(integration) => handleIntegrationInstalled(def.type, { ...integration, status: "connected" as const, externalUrl: null, config: null })}
+                      />
                     )}
                     <ConnectDialog
                       type={def.type}
                       label={def.label}
                       apps={apps}
                       onConnected={(integration) => {
-                        setIntegrations((prev) => {
-                          const existing = prev.findIndex((i) => i.type === def.type);
-                          if (existing >= 0) {
-                            const next = [...prev];
-                            next[existing] = integration;
-                            return next;
-                          }
-                          return [...prev, integration];
-                        });
+                        handleIntegrationInstalled(def.type, integration);
                       }}
                     />
                   </>
