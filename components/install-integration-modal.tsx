@@ -27,6 +27,14 @@ import {
   Info,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { TerminalOutput, detectLogLevel, highlightLogLine } from "@/components/log-viewer";
+
+type LogLine = {
+  id: number;
+  text: string;
+  html: string;
+  level?: "error" | "warn" | "info" | "debug" | "other";
+};
 
 type InstallStage =
   | "template_render"
@@ -99,16 +107,9 @@ export function InstallIntegrationModal({
     message: "Loading template...",
     progress: 0,
   });
-  const [logs, setLogs] = useState<string[]>([]);
-  const logsEndRef = useRef<HTMLDivElement>(null);
+  const [logs, setLogs] = useState<LogLine[]>([]);
   const abortControllerRef = useRef<AbortController | null>(null);
-
-  // Auto-scroll logs
-  useEffect(() => {
-    if (logsEndRef.current) {
-      logsEndRef.current.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [logs]);
+  const logIdRef = useRef(0);
 
   // Cleanup on unmount - abort any active SSE connection
   useEffect(() => {
@@ -141,6 +142,7 @@ export function InstallIntegrationModal({
   const handleInstall = useCallback(async () => {
     setStep("installing");
     setLogs([]);
+    logIdRef.current = 0;
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -208,7 +210,16 @@ export function InstallIntegrationModal({
                   setStep("error");
                 }
               } else if (eventName === "log") {
-                setLogs((prev) => [...prev, data.message]);
+                const text = data.message as string;
+                setLogs((prev) => [
+                  ...prev,
+                  {
+                    id: ++logIdRef.current,
+                    text,
+                    html: highlightLogLine(text),
+                    level: detectLogLevel(text),
+                  },
+                ]);
               }
             }
           }
@@ -238,6 +249,7 @@ export function InstallIntegrationModal({
       progress: 0,
     });
     setLogs([]);
+    logIdRef.current = 0;
   }, []);
 
   const CurrentIcon = STAGE_ICONS[installState.stage];
@@ -367,12 +379,11 @@ export function InstallIntegrationModal({
             {logs.length > 0 && (
               <div className="space-y-2">
                 <Label className="text-xs text-muted-foreground">Deploy logs</Label>
-                <div className="h-32 overflow-auto rounded-md bg-black text-green-400 font-mono text-xs p-3">
-                  {logs.map((log, i) => (
-                    <div key={i} className="py-0.5">{log}</div>
-                  ))}
-                  <div ref={logsEndRef} />
-                </div>
+                <TerminalOutput
+                  lines={logs}
+                  height="h-48"
+                  showFilters={logs.length > 5}
+                />
               </div>
             )}
 
