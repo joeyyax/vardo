@@ -484,9 +484,11 @@ export async function runDeployment(
                 throw new Error(`Refusing to docker-rm path outside apps dir: ${repoDir}`);
               }
               log(`[deploy] Permission denied removing ${repoDir}, retrying as root via docker`);
-              // Remove contents, not the mount point itself (rm on a mount root fails with "Resource busy")
+              // Remove contents and fix ownership — the mount root can't be removed
+              // ("Resource busy") so clear contents and chown to the app user (1001).
               await execFileAsync("docker", [
-                "run", "--rm", "-v", `${repoDir}:/target`, "alpine", "sh", "-c", "rm -rf /target/* /target/.[!.]* /target/..?*",
+                "run", "--rm", "-v", `${repoDir}:/target`, "alpine",
+                "sh", "-c", "rm -rf /target/* /target/.[!.]* /target/..?* 2>/dev/null; chown 1001:1001 /target",
               ], { timeout: 30000 });
             } else {
               throw rmErr;
