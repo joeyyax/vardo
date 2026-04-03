@@ -1223,7 +1223,15 @@ export async function runDeployment(
         }
       }
     }
-    const healthy = await waitForHealthy(newProjectName, composeFileArgs, slotDir, logs, healthTimeoutMs);
+    // Build HTTP probe for the primary service — used when containers lack Docker healthchecks
+    const primarySvcName = Object.keys(compose.services).find(
+      (k) => !compose.services[k].network_mode || compose.services[k].network_mode === "bridge"
+    );
+    const httpProbe = primarySvcName
+      ? { containerName: `${newProjectName}-${primarySvcName}-1`, port: containerPort }
+      : undefined;
+
+    const healthy = await waitForHealthy(newProjectName, composeFileArgs, slotDir, logs, healthTimeoutMs, httpProbe);
     if (!healthy) {
       // Grab container logs before tearing down
       log(`[deploy] Health check failed — fetching container logs...`);
@@ -2002,8 +2010,10 @@ async function waitForHealthy(
   cwd: string,
   logs: { push: (line: string) => void },
   timeoutMs: number = DEFAULT_HEALTH_CHECK_TIMEOUT_MS,
+  httpProbe?: { containerName: string; port: number },
 ): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
+  let httpProbeNeeded = false;
 
   while (Date.now() < deadline) {
     try {
@@ -2020,6 +2030,7 @@ async function waitForHealthy(
       }
 
       let allReady = true;
+      httpProbeNeeded = false;
       for (const line of lines) {
         try {
           const container = JSON.parse(line);
@@ -2031,12 +2042,38 @@ async function waitForHealthy(
             return false;
           }
 
-          if (health && health !== "healthy") allReady = false;
-          else if (!health && state !== "running") allReady = false;
+          if (health && health !== "healthy") {
+            allReady = false;
+          } else if (!health && state === "running") {
+            // Container has no Docker healthcheck — need HTTP probe
+            httpProbeNeeded = true;
+          } else if (!health && state !== "running") {
+            allReady = false;
+          }
         } catch { /* skip */ }
       }
 
-      if (allReady) return true;
+      if (allReady && httpProbeNeeded && httpProbe) {
+        // All containers are running but at least one lacks a Docker healthcheck.
+        // Do an HTTP probe against the primary service to verify it's actually ready.
+        try {
+          const probeUrl = `http://${httpProbe.containerName}:${httpProbe.port}/`;
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 3000);
+          const res = await fetch(probeUrl, {
+            signal: controller.signal,
+            redirect: "manual",
+          });
+          clearTimeout(timer);
+          // Any response (even 4xx/5xx) means the server is listening
+          if (res.status > 0) return true;
+        } catch {
+          // Server not ready yet — keep waiting
+          allReady = false;
+        }
+      } else if (allReady) {
+        return true;
+      }
     } catch { /* retry */ }
 
     await sleep(HEALTH_CHECK_INTERVAL_MS);
