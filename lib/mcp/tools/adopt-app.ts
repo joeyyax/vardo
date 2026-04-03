@@ -7,7 +7,6 @@ import { nanoid } from "nanoid";
 import {
   parseCompose,
   sanitizeCompose,
-  injectTraefikLabels,
   injectNetwork,
   composeToYaml,
   excludeServices,
@@ -149,19 +148,11 @@ export function registerAdoptApp(
         domain ?? envConfig?.domain ?? `${effectiveName}.localhost`;
       const effectivePort = containerPort ?? 3000;
 
-      // Inject Traefik + network
+      // Inject shared network only - Traefik labels are handled by file-provider
+      // since autoTraefikLabels=true. This avoids conflicts between Docker provider
+      // discovery and explicit file config.
       const sslConfig = await getSslConfig();
       const certResolver = getPrimaryIssuer(sslConfig);
-      const primaryService = Object.keys(compose.services)[0];
-      if (primaryService) {
-        compose = injectTraefikLabels(compose, {
-          projectName: effectiveName,
-          domain: effectiveDomain,
-          containerPort: effectivePort,
-          serviceName: primaryService,
-          certResolver,
-        });
-      }
       compose = injectNetwork(compose, "vardo-network");
 
       const finalCompose = composeToYaml(compose);
