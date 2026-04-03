@@ -322,7 +322,17 @@ export async function runDeployment(
     // App-level dir holds the repo; env-level dir holds slots
     const appBase = appBaseDir(app.name);
     const appDir = appEnvDir(app.name, envName);
-    await mkdir(appDir, { recursive: true });
+    try {
+      await mkdir(appDir, { recursive: true });
+    } catch (err: unknown) {
+      if (err && typeof err === "object" && "code" in err && err.code === "EACCES") {
+        throw new Error(
+          `Permission denied creating ${appDir}. ` +
+          `Fix ownership on the host: sudo chown -R 1001:1001 ${appBase}`,
+        );
+      }
+      throw err;
+    }
 
     // Load volumes from the volumes table
     const appVolumes = await db.query.volumes.findMany({

@@ -998,8 +998,9 @@ clone_repo() {
     migrate_to_slots
   else
     # Fresh install — clone into blue slot
-    mkdir -p "$VARDO_DIR/apps/vardo/env"
-    chown -R 1001:1001 "$VARDO_DIR/apps"
+    mkdir -p "$VARDO_DIR/apps/vardo/env" "$VARDO_DIR/images"
+    chown 1001:1001 "$VARDO_DIR" "$VARDO_DIR/apps" "$VARDO_DIR/images"
+    chown -R 1001:1001 "$VARDO_DIR/apps/vardo"
     info "Cloning to $slot_dir..."
     run_cmd git clone --depth 1 "$REPO_URL" "$slot_dir"
     VARDO_SLOT_DIR="$slot_dir"
