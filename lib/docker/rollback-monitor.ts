@@ -229,11 +229,9 @@ async function performRollback(opts: PerformRollbackOpts): Promise<void> {
     log.warn(`[rollback] Failed to create 'current' symlink: ${err instanceof Error ? err.message : err}`);
   }
 
-  // Step 3a: Update container name + Traefik config to point at the restored slot.
-  // Without this, Traefik routes to the crashed slot's container names → 502.
+  // Step 3a: Update container name in DB (for logs/UI — not routing).
+  // Traefik discovers the restored containers via their Docker labels automatically.
   try {
-    const { regenerateAppRouteConfig } = await import("@/lib/traefik/generate-config");
-    // List running containers for the restored project to find the primary container name
     const containers = await listContainers(prevProjectName);
     if (containers.length > 0) {
       await db
@@ -241,10 +239,8 @@ async function performRollback(opts: PerformRollbackOpts): Promise<void> {
         .set({ containerName: containers[0].name, updatedAt: new Date() })
         .where(eq(apps.id, appId));
     }
-    await regenerateAppRouteConfig(appId);
-    log.info(`[rollback] Regenerated Traefik route config`);
   } catch (err) {
-    log.warn(`[rollback] Failed to regenerate Traefik config: ${err instanceof Error ? err.message : err}`);
+    log.warn(`[rollback] Failed to update container name: ${err instanceof Error ? err.message : err}`);
   }
 
   // Step 4: Update deployment status to rolled_back
