@@ -140,7 +140,7 @@ async function handler(request: NextRequest, { params }: RouteParams) {
       : `${data.name}-1`;
 
     // Build encrypted env content if project config declares env vars
-    let envContent: string | null = null;
+    const envContent: string | null = null;
 
     const result = await db.transaction(async (tx) => {
       const resolvedProjectId = await resolveProjectForImport(
