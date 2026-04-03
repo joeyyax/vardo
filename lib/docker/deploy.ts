@@ -1295,7 +1295,9 @@ export async function runDeployment(
 
     // Step 11: Record active slot (skipped for local — single directory)
     if (!isLocalEnv) {
-      await writeFile(join(appDir, ".active-slot"), newSlot, "utf-8");
+      const slotFilePath = join(appDir, ".active-slot");
+      try { await rm(slotFilePath, { force: true }); } catch { /* gone already */ }
+      await writeFile(slotFilePath, newSlot, "utf-8");
 
       // Step 11a: Create 'current' symlink for filesystem visibility
       const currentSymlinkPath = join(appDir, "current");
