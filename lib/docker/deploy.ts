@@ -26,6 +26,7 @@ import {
   validateCompose,
   composeToYaml,
   stripTraefikLabels,
+  stripHostPorts,
   stripVardoInjections,
   buildVardoOverlay,
   slotComposeFiles,
@@ -808,6 +809,18 @@ export async function runDeployment(
       regenerateAppRouteConfig(app.id).catch((err) =>
         log(`[deploy] Warning: failed to write Traefik dynamic config — ${err}`)
       );
+
+      // Strip host port bindings from the primary (Traefik-routed) service.
+      // Host ports are unnecessary when Traefik handles routing and cause
+      // "port already allocated" failures when they collide with other services.
+      if (app.domains.length > 0) {
+        const primaryServiceName = Object.keys(compose.services).find(
+          (k) => !compose.services[k].network_mode || compose.services[k].network_mode === "bridge"
+        );
+        if (primaryServiceName) {
+          compose = stripHostPorts(compose, primaryServiceName);
+        }
+      }
     } else {
       log(`[deploy] Skipping Traefik labels — all services use custom network modes: ${servicesWithCustomNetwork.join(", ")}`);
       removeAppRouteConfig(app.name).catch(() => {});
