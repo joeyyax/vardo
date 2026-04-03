@@ -171,6 +171,73 @@ describe("analyzeCompose", () => {
       expect(result.counts["inline-env"]).toBe(2);
     });
   });
+
+  describe("edge cases", () => {
+    it("handles empty services", () => {
+      const compose: ComposeFile = { services: {} };
+      const result = analyzeCompose(compose);
+      expect(result.findings).toHaveLength(0);
+    });
+
+    it("handles service with no ports or env", () => {
+      const compose: ComposeFile = {
+        services: { app: { name: "app", image: "nginx:latest" } },
+      };
+      const result = analyzeCompose(compose);
+      // Only a restart policy finding (missing)
+      expect(result.findings.every((f) => f.category === "restart-policy")).toBe(true);
+    });
+
+    it("skips non-HTTP images from private registries", () => {
+      const compose: ComposeFile = {
+        services: {
+          db: { name: "db", image: "ghcr.io/org/postgres-custom:latest", ports: ["5432:5432"] },
+        },
+      };
+      const result = analyzeCompose(compose, { routedServices: new Set(["db"]) });
+      const portFindings = result.findings.filter((f) => f.category === "host-port");
+      expect(portFindings).toHaveLength(0);
+    });
+
+    it("skips non-HTTP images without tags", () => {
+      const compose: ComposeFile = {
+        services: {
+          cache: { name: "cache", image: "redis", ports: ["6379:6379"] },
+        },
+      };
+      const result = analyzeCompose(compose);
+      const portFindings = result.findings.filter((f) => f.category === "host-port");
+      expect(portFindings).toHaveLength(0);
+    });
+
+    it("handles build-only service with no image", () => {
+      const compose: ComposeFile = {
+        services: {
+          app: { name: "app", build: "./app", ports: ["8080:3000"] } as ComposeFile["services"][string],
+        },
+      };
+      const result = analyzeCompose(compose, { routedServices: new Set(["app"]) });
+      // Build-only service with no image — isNonHttpService returns false, so port is flagged
+      const portFindings = result.findings.filter((f) => f.category === "host-port");
+      expect(portFindings).toHaveLength(1);
+    });
+
+    it("skips empty env var values", () => {
+      const compose = makeCompose({ environment: { EMPTY: "", UNDEF: undefined as unknown as string } });
+      const result = analyzeCompose(compose);
+      const envFindings = result.findings.filter((f) => f.category === "inline-env");
+      expect(envFindings).toHaveLength(0);
+    });
+
+    it("skips $HOME-style variable references (no braces)", () => {
+      const compose = makeCompose({ environment: { PATH: "$HOME/bin", PORT: "3000" } });
+      const result = analyzeCompose(compose);
+      const envFindings = result.findings.filter((f) => f.category === "inline-env");
+      // $HOME matches the regex /\$\{?[A-Z_]/ so it's skipped; PORT is a literal
+      expect(envFindings).toHaveLength(1);
+      expect(envFindings[0].detail.key).toBe("PORT");
+    });
+  });
 });
 
 describe("analyzeRawCompose", () => {

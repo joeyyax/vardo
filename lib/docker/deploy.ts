@@ -12,7 +12,7 @@ import { execFile, spawn as nodeSpawn} from "child_process";
 import { promisify } from "util";
 import { mkdir, writeFile, readFile, rm, symlink } from "fs/promises";
 import { join } from "path";
-import { appBaseDir, appEnvDir } from "@/lib/paths";
+import { appBaseDir, appEnvDir, PROJECTS_DIR } from "@/lib/paths";
 import {
   generateComposeForImage,
   injectTraefikLabels,
@@ -32,7 +32,7 @@ import {
   type ComposeFile,
 } from "./compose";
 import { ensureNetwork, detectExposedPorts, listContainers, inspectContainer, removeContainer, stripDockerProjectPrefix, listImages, removeImage, pruneImages, pruneBuildCache } from "./client";
-import { normalizeCompose } from "./compose-normalize";
+import { normalizeCompose, getRoutedServices } from "./compose-normalize";
 import { isFeatureEnabled } from "@/lib/config/features";
 
 import { assertSafeBranch } from "./validate";
@@ -479,6 +479,10 @@ export async function runDeployment(
             await rm(repoDir, { recursive: true, force: true });
           } catch (rmErr: unknown) {
             if (rmErr && typeof rmErr === "object" && "code" in rmErr && rmErr.code === "EACCES") {
+              // Safety: only allow docker rm on paths within the Vardo apps directory
+              if (!repoDir.startsWith(PROJECTS_DIR + "/")) {
+                throw new Error(`Refusing to docker-rm path outside apps dir: ${repoDir}`);
+              }
               log(`[deploy] Permission denied removing ${repoDir}, retrying as root via docker`);
               await execFileAsync("docker", [
                 "run", "--rm", "-v", `${repoDir}:/target`, "alpine", "rm", "-rf", "/target",
@@ -730,14 +734,7 @@ export async function runDeployment(
 
     // Normalize: treat the user's compose as intent, produce safe runtime config.
     // This strips host ports from Traefik-routed services and normalizes restart policies.
-    const routedServices = new Set<string>();
-    if (app.domains.length > 0) {
-      // The primary service (first bridge-network service) is routed via Traefik
-      const primary = Object.keys(compose.services).find(
-        (k) => !compose.services[k].network_mode || compose.services[k].network_mode === "bridge"
-      );
-      if (primary) routedServices.add(primary);
-    }
+    const routedServices = getRoutedServices(compose, app.domains.length);
     const normalized = normalizeCompose(compose, { routedServices });
     compose = normalized.compose;
     for (const change of normalized.changes) {

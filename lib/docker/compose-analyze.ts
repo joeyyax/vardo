@@ -265,7 +265,7 @@ export function analyzeRawCompose(
 
   // Also check the raw YAML for fields the parser drops
   try {
-    const raw = YAML.parse(yamlContent);
+    const raw = YAML.parse(yamlContent, { maxAliasCount: 100 });
     if (raw?.services && typeof raw.services === "object") {
       for (const [name, svc] of Object.entries(raw.services as Record<string, Record<string, unknown>>)) {
         if (typeof svc?.container_name === "string") {
