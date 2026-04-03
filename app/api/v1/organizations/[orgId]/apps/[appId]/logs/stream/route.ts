@@ -5,7 +5,7 @@ import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { spawn } from "child_process";
 import { resolve } from "path";
-import { readFile } from "fs/promises";
+import { readlink } from "fs/promises";
 import { createSSEResponse } from "@/lib/api/sse";
 import { isLokiAvailable, queryRange, tailLogs, buildLogQLQuery } from "@/lib/loki/client";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
@@ -87,11 +87,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       let appDir = appEnvDir(app.name, environmentName);
       let activeSlot = "blue";
       try {
-        activeSlot = (await readFile(resolve(appDir, ".active-slot"), "utf-8")).trim();
+        activeSlot = (await readlink(resolve(appDir, "current"))).trim();
       } catch {
         appDir = appBaseDir(app.name);
         try {
-          activeSlot = (await readFile(resolve(appDir, ".active-slot"), "utf-8")).trim();
+          activeSlot = (await readlink(resolve(appDir, "current"))).trim();
         } catch { /* default to blue */ }
       }
 

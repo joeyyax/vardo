@@ -10,7 +10,7 @@ import { nanoid } from "nanoid";
 import { publishEvent, appChannel } from "@/lib/events";
 import { execFile, spawn as nodeSpawn} from "child_process";
 import { promisify } from "util";
-import { mkdir, writeFile, readFile, rm, symlink } from "fs/promises";
+import { mkdir, writeFile, readFile, rm, symlink, readlink } from "fs/promises";
 import { join } from "path";
 import { appBaseDir, appEnvDir, PROJECTS_DIR } from "@/lib/paths";
 import {
@@ -894,8 +894,7 @@ export async function runDeployment(
       slotDir = join(appDir, "local");
     } else {
       try {
-        const slotFile = await readFile(join(appDir, ".active-slot"), "utf-8");
-        activeSlot = slotFile.trim() as "blue" | "green";
+        activeSlot = (await readlink(join(appDir, "current"))).trim() as "blue" | "green";
       } catch { /* no active slot yet */ }
 
       newSlot = activeSlot === "blue" ? "green" : "blue";
@@ -1295,11 +1294,9 @@ export async function runDeployment(
 
     // Step 11: Record active slot (skipped for local — single directory)
     if (!isLocalEnv) {
-      const slotFilePath = join(appDir, ".active-slot");
-      try { await rm(slotFilePath, { force: true }); } catch { /* gone already */ }
-      await writeFile(slotFilePath, newSlot, "utf-8");
+      // Clean up legacy .active-slot file if present
+      try { await rm(join(appDir, ".active-slot"), { force: true }); } catch { /* gone already */ }
 
-      // Step 11a: Create 'current' symlink for filesystem visibility
       const currentSymlinkPath = join(appDir, "current");
       try {
         // Remove existing symlink if present
@@ -2095,7 +2092,7 @@ function sleep(ms: number): Promise<void> {
 /**
  * Resolve the active slot directory and compose project name.
  * Local environments use a single `local/` directory with no slot suffix.
- * Blue-green environments read `.active-slot` and fall back to `"blue"`.
+ * Blue-green environments read the `current` symlink and fall back to `"blue"`.
  */
 async function resolveActiveSlot(
   dir: string,
@@ -2105,9 +2102,9 @@ async function resolveActiveSlot(
   const { access: fsAccess } = await import("fs/promises");
   try {
     await fsAccess(join(dir, "local"));
-    // No .active-slot file + local/ exists = local environment
+    // No current symlink + local/ exists = local environment
     try {
-      await readFile(join(dir, ".active-slot"), "utf-8");
+      await readlink(join(dir, "current"));
     } catch {
       return {
         slotDir: join(dir, "local"),
@@ -2120,7 +2117,7 @@ async function resolveActiveSlot(
 
   let activeSlot: string;
   try {
-    activeSlot = (await readFile(join(dir, ".active-slot"), "utf-8")).trim();
+    activeSlot = (await readlink(join(dir, "current"))).trim();
   } catch {
     activeSlot = "blue";
   }

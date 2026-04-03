@@ -462,11 +462,11 @@ has_slot_layout() {
   [[ -L "$VARDO_DIR/apps/vardo/env/current" ]]
 }
 
-# Read the active slot from .active-slot, default to "blue"
+# Read the active slot from 'current' symlink, default to "blue"
 read_active_slot() {
-  local slot_file="$VARDO_DIR/apps/vardo/env/.active-slot"
-  if [[ -f "$slot_file" ]]; then
-    cat "$slot_file"
+  local current_link="$VARDO_DIR/apps/vardo/env/current"
+  if [[ -L "$current_link" ]]; then
+    readlink "$current_link"
   else
     echo "blue"
   fi
@@ -1012,7 +1012,6 @@ clone_repo() {
     run_cmd git clone --depth 1 "$REPO_URL" "$slot_dir"
     VARDO_SLOT_DIR="$slot_dir"
     ln -sfn "$slot_dir" "$VARDO_DIR/apps/vardo/env/current"
-    echo "blue" > "$VARDO_DIR/apps/vardo/env/.active-slot"
     cd "$slot_dir"
     log "Installed to $slot_dir"
   fi
@@ -1020,7 +1019,7 @@ clone_repo() {
 
 # Migrate a legacy flat install to the slot-based layout.
 # Moves the repo contents into apps/vardo/env/blue/ and creates the
-# .active-slot file and current symlink.
+# current symlink.
 migrate_to_slots() {
   info "Migrating to slot-based layout..."
 
@@ -1050,7 +1049,6 @@ migrate_to_slots() {
   done
 
   ln -sfn "$slot_dir" "$env_dir/current"
-  echo "blue" > "$env_dir/.active-slot"
 
   # Copy install.sh back to root so the vardo wrapper keeps working
   cp "$slot_dir/install.sh" "$VARDO_DIR/install.sh"
@@ -1775,11 +1773,10 @@ do_update() {
     fail "Update aborted: new frontend did not become healthy within ${hc_timeout}s. Rolled back to $active slot."
   fi
 
-  # Swap: update symlink first (atomic on Linux), then .active-slot
+  # Swap: update current symlink (atomic on Linux)
   step "Finalizing"
 
   ln -sfn "$new_slot_dir" "$VARDO_DIR/apps/vardo/env/current"
-  echo "$new_slot" > "$VARDO_DIR/apps/vardo/env/.active-slot"
   log "Active slot: $new_slot"
 
   # Copy install.sh to root so the wrapper keeps working
