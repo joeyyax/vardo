@@ -15,7 +15,8 @@
 // ---------------------------------------------------------------------------
 
 import { resolve, join } from "path";
-import { accessSync } from "fs";
+import { accessSync, constants } from "fs";
+import { mkdir, access, writeFile, unlink } from "fs/promises";
 
 /** Root directory for all Vardo data. */
 export const VARDO_HOME_DIR = resolve(
@@ -84,6 +85,44 @@ export const VARDO_COMPOSE_FILE = join(VARDO_CURRENT_DIR, "docker-compose.yml");
 /** Resolve a specific slot directory (blue or green). */
 export function vardoSlotDir(slot: "blue" | "green"): string {
   return join(VARDO_ENV_DIR, slot);
+}
+
+// ---------------------------------------------------------------------------
+// Startup directory verification
+// ---------------------------------------------------------------------------
+
+/**
+ * Ensure required data directories exist and are writable.
+ *
+ * Called once at startup from instrumentation.ts. Returns a list of
+ * directories that failed — empty means everything is fine.
+ *
+ * Cannot fix ownership (we don't run as root), but creates missing dirs
+ * if the parent is writable and reports clear errors when not.
+ */
+export async function ensureDataDirs(): Promise<string[]> {
+  const dirs = [VARDO_HOME_DIR, PROJECTS_DIR, IMAGES_DIR];
+  const failures: string[] = [];
+
+  for (const dir of dirs) {
+    try {
+      await mkdir(dir, { recursive: true });
+    } catch {
+      // mkdir failed — parent not writable
+    }
+
+    try {
+      await access(dir, constants.W_OK);
+      // Verify actual write capability (NFS/FUSE mounts can lie about W_OK)
+      const probe = join(dir, `.vardo-write-probe-${process.pid}`);
+      await writeFile(probe, "");
+      await unlink(probe);
+    } catch {
+      failures.push(dir);
+    }
+  }
+
+  return failures;
 }
 
 /**
