@@ -927,8 +927,8 @@ export async function runDeployment(
     await writeFile(bareComposePath, composeToYaml(bareCompose), "utf-8");
     await writeFile(overridePath, composeToYaml(overlayCompose), "utf-8");
 
-    // docker-compose.override.yml is auto-loaded — only need to specify the base file
-    const composeFileArgs = ["-f", bareComposePath];
+    // Explicit -f disables auto-loading, so include both files
+    const composeFileArgs = ["-f", bareComposePath, "-f", overridePath];
 
     // Write .env — resolve template expressions using the full resolution engine
     if (Object.keys(envMap).length > 0) {
