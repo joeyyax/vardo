@@ -52,6 +52,22 @@ const COMMON_HTTP_PORTS = new Set([
   80, 443, 3000, 3001, 4000, 5000, 5173, 8000, 8080, 8443, 8888, 9000,
 ]);
 
+// Image name patterns for services that need direct host port access.
+// These services use non-HTTP protocols (SQL, Redis, MQTT, etc.) and
+// should never have their ports stripped.
+const NON_HTTP_IMAGE_PATTERNS = [
+  /postgres/i, /mysql/i, /mariadb/i, /mongo/i, /redis/i, /memcached/i,
+  /rabbitmq/i, /mosquitto/i, /nats/i, /kafka/i, /zookeeper/i,
+  /clickhouse/i, /influxdb/i, /timescaledb/i, /cockroach/i,
+  /minio/i, /consul/i, /etcd/i, /vault/i,
+];
+
+/** Returns true if the image name matches a known non-HTTP service. */
+function isNonHttpService(image: string | undefined): boolean {
+  if (!image) return false;
+  return NON_HTTP_IMAGE_PATTERNS.some((re) => re.test(image));
+}
+
 // ---------------------------------------------------------------------------
 // Main analyzer
 // ---------------------------------------------------------------------------
@@ -98,6 +114,10 @@ function analyzeHostPorts(
 ): void {
   if (!svc.ports) return;
 
+  // Skip entirely for known non-HTTP services (databases, brokers, etc.)
+  // — they genuinely need host port access
+  if (isNonHttpService(svc.image)) return;
+
   for (const raw of svc.ports) {
     const parsed = parsePortString(raw);
     if (!parsed || parsed.external === undefined) continue;
@@ -124,7 +144,7 @@ function analyzeHostPorts(
         autoFixed: false,
       });
     }
-    // Non-HTTP ports on non-routed services (databases, etc.) are fine — no finding
+    // Non-HTTP ports on non-routed services are fine — no finding
   }
 }
 
