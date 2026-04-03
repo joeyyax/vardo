@@ -51,11 +51,50 @@ describe("analyzeCompose", () => {
     });
 
     it("does not flag non-HTTP ports on non-routed services", () => {
-      const compose = makeCompose({ ports: ["5432:5432"] }); // postgres
+      const compose = makeCompose({ ports: ["5432:5432"] }); // non-standard port
       const result = analyzeCompose(compose);
 
       const portFindings = result.findings.filter((f) => f.category === "host-port");
       expect(portFindings).toHaveLength(0);
+    });
+
+    it("skips port analysis entirely for known non-HTTP services", () => {
+      const compose: ComposeFile = {
+        services: {
+          db: {
+            name: "db",
+            image: "postgres:16",
+            ports: ["5432:5432"],
+          },
+          cache: {
+            name: "cache",
+            image: "redis:7-alpine",
+            ports: ["6379:6379"],
+          },
+        },
+      };
+      const result = analyzeCompose(compose, {
+        routedServices: new Set(["db", "cache"]), // even if marked as routed
+      });
+
+      const portFindings = result.findings.filter((f) => f.category === "host-port");
+      expect(portFindings).toHaveLength(0);
+    });
+
+    it("still flags HTTP services even when mixed with non-HTTP", () => {
+      const compose: ComposeFile = {
+        services: {
+          app: { name: "app", image: "nginx:latest", ports: ["8080:3000"] },
+          db: { name: "db", image: "mysql:8", ports: ["3306:3306"] },
+        },
+      };
+      const result = analyzeCompose(compose, {
+        routedServices: new Set(["app"]),
+      });
+
+      const portFindings = result.findings.filter((f) => f.category === "host-port");
+      expect(portFindings).toHaveLength(1);
+      expect(portFindings[0].service).toBe("app");
     });
   });
 
