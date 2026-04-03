@@ -16,6 +16,14 @@ if [ -n "${DOCKER_GID:-}" ]; then
   adduser nextjs "$(getent group "$DOCKER_GID" | cut -d: -f1)" 2>/dev/null || true
 fi
 
+# Ensure the app user can write to the Vardo home directory (host-mounted volume).
+# Without this, deploys fail with EACCES when creating app directories.
+# Only chown the top-level dirs — NOT recursive, to avoid slow startup and
+# breaking apps that need root-owned files internally.
+VARDO_HOME="${VARDO_HOME_DIR:-${VARDO_DIR:-/opt/vardo}}"
+mkdir -p "$VARDO_HOME/apps" "$VARDO_HOME/images"
+chown nextjs:nodejs "$VARDO_HOME" "$VARDO_HOME/apps" "$VARDO_HOME/images"
+
 # Ensure the Traefik dynamic config directory is owned by the app user.
 # Docker named volumes are initialised as root — chown here so writes succeed
 # after privilege drop. Traefik (running as root) can still read/watch the dir.
