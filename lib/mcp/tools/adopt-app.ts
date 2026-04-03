@@ -186,7 +186,7 @@ export function registerAdoptApp(
             source: "direct",
             deployType: "compose",
             composeContent: finalCompose,
-            autoTraefikLabels: false,
+            autoTraefikLabels: true,
             containerPort: effectivePort,
             projectId: resolvedProjectId,
             status: "active",
