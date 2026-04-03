@@ -2312,7 +2312,22 @@ describe("slotComposeFiles", () => {
     ]);
   });
 
-  it("returns only the base -f arg when no legacy overlay exists (override.yml auto-loaded)", async () => {
+  it("returns both -f args when override.yml exists and no legacy overlay", async () => {
+    vi.mocked(fsp.access)
+      .mockRejectedValueOnce(new Error("ENOENT")) // legacy overlay missing
+      .mockResolvedValueOnce(undefined); // override exists
+
+    const result = await slotComposeFiles("/slots/blue");
+
+    expect(result).toEqual([
+      "-f",
+      "/slots/blue/docker-compose.yml",
+      "-f",
+      "/slots/blue/docker-compose.override.yml",
+    ]);
+  });
+
+  it("returns only the base -f arg when neither overlay exists", async () => {
     vi.mocked(fsp.access).mockRejectedValue(new Error("ENOENT"));
 
     const result = await slotComposeFiles("/slots/blue");
@@ -2474,7 +2489,7 @@ describe("slotComposeFiles — edge cases", () => {
     vi.resetAllMocks();
   });
 
-  it("falls back to single file when access throws EACCES", async () => {
+  it("falls back to single file when both overlays throw EACCES", async () => {
     const err = Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" });
     vi.mocked(fsp.access).mockRejectedValue(err);
 

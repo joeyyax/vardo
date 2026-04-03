@@ -599,8 +599,15 @@ export async function slotComposeFiles(slotDir: string): Promise<string[]> {
     await access(legacyOverlay);
     return ["-f", base, "-f", legacyOverlay];
   } catch {
-    // docker-compose.override.yml is auto-loaded by Docker Compose
-    return ["-f", base];
+    // docker-compose.override.yml is NOT auto-loaded when -f is passed,
+    // so we must include it explicitly.
+    const override = join(slotDir, "docker-compose.override.yml");
+    try {
+      await access(override);
+      return ["-f", base, "-f", override];
+    } catch {
+      return ["-f", base];
+    }
   }
 }
 
