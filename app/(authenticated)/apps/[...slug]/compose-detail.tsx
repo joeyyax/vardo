@@ -7,10 +7,12 @@ import {
   Rocket,
   Loader2,
   RotateCcw,
+  RefreshCw,
   ChevronDown,
   FileCode2,
   Container,
   Trash2,
+  Square,
   EllipsisVertical,
 } from "lucide-react";
 import { toast } from "@/lib/messenger";
@@ -22,6 +24,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
@@ -282,8 +285,42 @@ export function ComposeDetail({
   const [activeTab, setActiveTab] = useState(initialTab);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [stopOpen, setStopOpen] = useState(false);
 
   const canDelete = isAdmin(userRole);
+
+  const handleRestart = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/restart`, { method: "POST" });
+      const data = await res.json();
+      data.success ? toast.success("Stack restarted") : toast.error(data.error || "Restart failed");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Restart failed");
+    }
+    router.refresh();
+  }, [orgId, app.id, router]);
+
+  const handleRecreate = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/recreate`, { method: "POST" });
+      const data = await res.json();
+      data.success ? toast.success("Stack rebuilt") : toast.error(data.error || "Rebuild failed");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Rebuild failed");
+    }
+    router.refresh();
+  }, [orgId, app.id, router]);
+
+  async function handleStop() {
+    try {
+      const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/stop`, { method: "POST" });
+      const data = await res.json();
+      data.success ? toast.success("Stack stopped") : toast.error(data.error || "Stop failed");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Stop failed");
+    }
+    router.refresh();
+  }
 
   async function handleDelete() {
     setDeleting(true);
@@ -404,6 +441,22 @@ export function ComposeDetail({
                   <DropdownMenuItem disabled={deploy.deploying} onClick={handleDeployClick}>
                     <Rocket className="mr-2 size-4" />
                     Redeploy Stack
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleRestart}>
+                    <RotateCcw className="mr-2 size-4" />
+                    Restart Stack
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleRecreate}>
+                    <RefreshCw className="mr-2 size-4" />
+                    Rebuild Stack
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={() => setStopOpen(true)}
+                  >
+                    <Square className="mr-2 size-4" />
+                    Stop Stack
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -562,6 +615,15 @@ export function ComposeDetail({
           <ComposeEditor app={app} orgId={orgId} />
         </TabsContent>
       </Tabs>
+
+      <ConfirmDeleteDialog
+        open={stopOpen}
+        onOpenChange={setStopOpen}
+        title="Stop stack"
+        description={`Are you sure you want to stop all services in "${app.displayName}"?`}
+        confirmLabel="Stop"
+        onConfirm={handleStop}
+      />
 
       <ConfirmDeleteDialog
         open={deleteOpen}
