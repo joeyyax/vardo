@@ -247,7 +247,7 @@ async function main() {
 
   if (!orgId) {
     try {
-      const orgRes = await fetch(`${apiUrl}/api/v1/admin/organizations`, {
+      const orgRes = await fetch(`${apiUrl}/api/v1/organizations`, {
         headers: {
           Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
@@ -270,7 +270,7 @@ async function main() {
         process.exit(1);
       }
 
-      // Use the first organization
+      // Use the first organization the user belongs to
       orgId = orgs[0].id;
       console.log(`  Organization: ${orgs[0].name} (${orgId})`);
     } catch (err) {
