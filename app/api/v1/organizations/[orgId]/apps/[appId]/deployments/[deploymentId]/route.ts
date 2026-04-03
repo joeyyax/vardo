@@ -6,8 +6,7 @@ import { eq, and } from "drizzle-orm";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { publishKillSignal } from "@/lib/docker/deploy-cancel";
 import { publishEvent, appChannel } from "@/lib/events";
-// Container cleanup for force-cancelled deploys is handled by the sweeper
-// (lib/deploy/sweeper.ts), which can safely resolve the correct slot.
+import { releaseConcurrencySlot, removeFromQueue } from "@/lib/docker/deploy-concurrency";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string; deploymentId: string }>;
@@ -47,6 +46,11 @@ async function forceCancel(deploymentId: string, appId: string): Promise<void> {
     .update(apps)
     .set({ status: "stopped", updatedAt: now })
     .where(and(eq(apps.id, appId), eq(apps.status, "deploying")));
+
+  // Release the concurrency slot and remove from queue so the next deploy
+  // can start immediately instead of waiting for the sweeper to reconcile.
+  await releaseConcurrencySlot().catch(() => {});
+  await removeFromQueue(deploymentId).catch(() => {});
 
   publishEvent(appChannel(appId), {
     event: "deploy:complete",
@@ -105,6 +109,9 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
       .update(deployments)
       .set({ status: "cancelled", finishedAt: new Date() })
       .where(eq(deployments.id, deploymentId));
+
+    // Remove from the concurrency queue so it doesn't block other deploys.
+    await removeFromQueue(deploymentId).catch(() => {});
 
     return NextResponse.json({ ok: true });
   } catch (error) {
