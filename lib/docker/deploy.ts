@@ -753,45 +753,48 @@ export async function runDeployment(
     const allServicesCustomNetwork = servicesWithCustomNetwork.length === Object.keys(compose.services).length;
 
     if (!allServicesCustomNetwork) {
-      // Strip stale Traefik labels from the stored compose before re-injecting.
-      // The stored compose may contain router names from a prior import or deploy
-      // (e.g. "appname" from import vs "appname-abc123" from deploy) — clear them
-      // all so we don't end up with duplicate routers pointing at the same domain.
-      compose = stripTraefikLabels(compose);
-
-      // Find the first bridge-network service in compose file order (Object.keys preserves
-      // insertion order for string keys, matching the order services appear in the compose file).
-      // This ensures Traefik labels target a service reachable on vardo-network rather than
-      // a host-network, service:X, or container:X service that Traefik can't reach.
-      const primaryServiceName = Object.keys(compose.services).find(
-        (k) => !compose.services[k].network_mode || compose.services[k].network_mode === "bridge"
-      );
-      const narrowedProtocol = narrowBackendProtocol(app.backendProtocol);
-      for (const domain of app.domains) {
-        const port = domain.port || containerPort;
-        const resolvedProtocol = resolveBackendProtocol(
-          narrowedProtocol,
-          port,
+      // When autoTraefikLabels is true, use file-provider config only (no Docker labels).
+      // This avoids conflicts between Docker provider discovery and explicit file config.
+      if (app.autoTraefikLabels) {
+        // Strip all Traefik labels - routing is handled by file-provider
+        compose = stripTraefikLabels(compose);
+        log(`[deploy] Using file-provider routing (autoTraefikLabels=true)`);
+      } else {
+        // Legacy mode: Inject Traefik labels into compose for Docker provider discovery
+        // Find the first bridge-network service in compose file order (Object.keys preserves
+        // insertion order for string keys, matching the order services appear in the compose file).
+        // This ensures Traefik labels target a service reachable on vardo-network.
+        const primaryServiceName = Object.keys(compose.services).find(
+          (k) => !compose.services[k].network_mode || compose.services[k].network_mode === "bridge"
         );
-        compose = injectTraefikLabels(compose, {
-          projectName: `${app.name}-${domain.id.slice(0, 6)}`,
-          appName: app.name,
-          domain: domain.domain,
-          containerPort: port,
-          certResolver: domain.certResolver || "le",
-          ssl: domain.sslEnabled ?? true,
-          redirectTo: domain.redirectTo ?? undefined,
-          redirectCode: domain.redirectCode ?? 301,
-          serviceName: primaryServiceName,
-          backendProtocol: resolvedProtocol,
-        });
-        if (domain.redirectTo) {
-          log(`[deploy] Traefik: ${domain.domain} → redirect ${domain.redirectCode ?? 301} ${domain.redirectTo}`);
-        } else {
-          log(`[deploy] Traefik: ${domain.domain} → :${port}${(domain.sslEnabled ?? true) ? " (TLS)" : ""}`);
+        const narrowedProtocol = narrowBackendProtocol(app.backendProtocol);
+        for (const domain of app.domains) {
+          const port = domain.port || containerPort;
+          const resolvedProtocol = resolveBackendProtocol(
+            narrowedProtocol,
+            port,
+          );
+          compose = injectTraefikLabels(compose, {
+            projectName: `${app.name}-${domain.id.slice(0, 8)}`,
+            appName: app.name,
+            domain: domain.domain,
+            containerPort: port,
+            certResolver: domain.certResolver || "le",
+            ssl: domain.sslEnabled ?? true,
+            redirectTo: domain.redirectTo ?? undefined,
+            redirectCode: domain.redirectCode ?? 301,
+            serviceName: primaryServiceName,
+            backendProtocol: resolvedProtocol,
+          });
+          if (domain.redirectTo) {
+            log(`[deploy] Traefik: ${domain.domain} → redirect ${domain.redirectCode ?? 301} ${domain.redirectTo}`);
+          } else {
+            log(`[deploy] Traefik: ${domain.domain} → :${port}${(domain.sslEnabled ?? true) ? " (TLS)" : ""}`);
+          }
         }
       }
 
+      // Always regenerate file-provider config for consistency
       regenerateAppRouteConfig(app.id).catch((err) =>
         log(`[deploy] Warning: failed to write Traefik dynamic config — ${err}`)
       );
