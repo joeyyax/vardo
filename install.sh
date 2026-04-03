@@ -1419,6 +1419,15 @@ case "${1:-}" in
   doctor)   shift; bash "$INSTALL_SH" doctor "$@" ;;
   uninstall) bash "$INSTALL_SH" uninstall "$@" ;;
   shell)    shift; docker compose -f "$COMPOSE_PATH" exec frontend "${@:-sh}" ;;
+  adopt)
+    shift
+    if [ -f "$VARDO_DIR/apps/vardo/env/current/scripts/adopt-cli.ts" ]; then
+      tsx "$VARDO_DIR/apps/vardo/env/current/scripts/adopt-cli.ts" "$@"
+    else
+      echo "Error: adopt-cli.ts not found. Make sure Vardo is up to date."
+      exit 1
+    fi
+    ;;
   *)
     echo "Usage: vardo <command>"
     echo ""
@@ -1430,6 +1439,7 @@ case "${1:-}" in
     echo "  ps               Show running containers"
     echo "  update           Pull latest and rebuild"
     echo "  doctor           Run health checks"
+    echo "  adopt <path>     Onboard existing repo with vardo.yaml"
     echo "  shell [cmd]      Open shell in frontend container"
     echo "  uninstall        Remove Vardo"
     ;;
