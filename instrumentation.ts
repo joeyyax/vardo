@@ -10,6 +10,17 @@ export async function register() {
     // Dedup guard — prevents duplicate schedulers on hot reload
     if (globalForInit.__vardo_initialized) return;
     globalForInit.__vardo_initialized = true;
+    // Verify data directories are writable — must run first so deploys don't
+    // fail with cryptic EACCES errors later.
+    const { ensureDataDirs } = await import("./lib/paths");
+    const badDirs = await ensureDataDirs();
+    if (badDirs.length > 0) {
+      log.error(
+        `Data directories not writable: ${badDirs.join(", ")}. ` +
+        `Deploys will fail. Fix ownership: chown -R 1001:1001 ${badDirs.join(" ")}`,
+      );
+    }
+
     // Load feature flags into sync cache — must run early so isFeatureEnabled()
     // returns real values instead of defaults for the rest of startup
     const { loadFeatureFlags } = await import("./lib/config/features");
