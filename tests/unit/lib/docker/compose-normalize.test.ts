@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { normalizeCompose } from "@/lib/docker/compose-normalize";
+import { normalizeCompose, getRoutedServices } from "@/lib/docker/compose-normalize";
+import { analyzeCompose } from "@/lib/docker/compose-analyze";
 import type { ComposeFile } from "@/lib/docker/compose";
 
 function makeCompose(services?: Record<string, Partial<ComposeFile["services"][string]>>): ComposeFile {
@@ -150,6 +151,64 @@ describe("normalizeCompose", () => {
 
       // port strip from app + restart add for app + restart add for worker
       expect(changes.length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  describe("immutability", () => {
+    it("does not modify the original compose object", () => {
+      const compose = makeCompose({
+        app: { image: "nginx:latest", ports: ["8080:3000"] },
+      });
+
+      const originalPorts = [...(compose.services.app.ports ?? [])];
+      normalizeCompose(compose, { routedServices: new Set(["app"]) });
+
+      expect(compose.services.app.ports).toEqual(originalPorts);
+    });
+  });
+
+  describe("round-trip", () => {
+    it("analyze after normalize produces zero auto-fixable findings", () => {
+      const compose = makeCompose({
+        app: { image: "nginx:latest", ports: ["8080:3000", "3000"] },
+        worker: { image: "worker:latest" },
+      });
+
+      const routedServices = new Set(["app"]);
+      const { compose: normalized } = normalizeCompose(compose, { routedServices });
+      const analysis = analyzeCompose(normalized, { routedServices });
+
+      const autoFixable = analysis.findings.filter((f) => f.autoFixed);
+      expect(autoFixable).toHaveLength(0);
+    });
+  });
+
+  describe("getRoutedServices", () => {
+    it("returns primary bridge-network service when domains exist", () => {
+      const compose = makeCompose({
+        app: { image: "nginx:latest" },
+        db: { image: "postgres:16" },
+      });
+
+      const routed = getRoutedServices(compose, 2);
+      expect(routed).toEqual(new Set(["app"]));
+    });
+
+    it("returns empty set when no domains", () => {
+      const compose = makeCompose({ app: { image: "nginx:latest" } });
+      const routed = getRoutedServices(compose, 0);
+      expect(routed).toEqual(new Set());
+    });
+
+    it("skips services with custom network_mode", () => {
+      const compose: ComposeFile = {
+        services: {
+          vpn: { name: "vpn", image: "wireguard", network_mode: "host" },
+          app: { name: "app", image: "nginx:latest" },
+        },
+      };
+      const routed = getRoutedServices(compose, 1);
+      expect(routed).toEqual(new Set(["app"]));
     });
   });
 });

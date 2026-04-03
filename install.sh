@@ -979,7 +979,10 @@ clone_repo() {
   local slot_dir="$VARDO_DIR/apps/vardo/env/blue"
 
   # Mark slot dirs as safe for git — installer runs as root but repo is owned by uid 1001
+  # Idempotent — unset first to avoid stacking duplicates on repeated runs
+  git config --global --unset-all safe.directory "$VARDO_DIR/apps/vardo/env/blue" 2>/dev/null || true
   git config --global --add safe.directory "$VARDO_DIR/apps/vardo/env/blue" 2>/dev/null || true
+  git config --global --unset-all safe.directory "$VARDO_DIR/apps/vardo/env/green" 2>/dev/null || true
   git config --global --add safe.directory "$VARDO_DIR/apps/vardo/env/green" 2>/dev/null || true
 
   if has_slot_layout; then
@@ -1594,7 +1597,10 @@ do_update() {
   [ -d "$active_dir/.git" ] || fail "Active slot ($active_dir) is not a git repository."
 
   # Mark slot dirs as safe for git — installer runs as root but repo is owned by uid 1001
+  # Idempotent — unset first to avoid stacking duplicates on repeated runs
+  git config --global --unset-all safe.directory "$active_dir" 2>/dev/null || true
   git config --global --add safe.directory "$active_dir" 2>/dev/null || true
+  git config --global --unset-all safe.directory "$new_slot_dir" 2>/dev/null || true
   git config --global --add safe.directory "$new_slot_dir" 2>/dev/null || true
 
   cd "$active_dir"
