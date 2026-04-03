@@ -538,9 +538,8 @@ export function injectTraefikLabels(
     }
   }
 
-  // Preserve host port bindings from the compose content — they may be needed
-  // for non-HTTP services, setup wizards, or Docker-in-Docker containers.
-  // Traefik ignores host port mappings so they don't conflict with routing.
+  // Host port bindings are stripped separately by stripHostPorts() in the
+  // deploy flow for the primary service. Secondary services keep their ports.
   const updatedService: ComposeService = {
     ...existing,
     labels,
@@ -980,6 +979,44 @@ function parsePortString(
   }
 
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Host port stripping
+// ---------------------------------------------------------------------------
+
+/**
+ * Remove host port bindings from a specific service.
+ *
+ * When Traefik handles routing for a service, host port mappings are
+ * unnecessary and cause "port already allocated" conflicts. This strips
+ * external port bindings while keeping internal-only expose declarations.
+ *
+ * Example: "8080:3000" → removed, "3000" → kept (internal only).
+ */
+export function stripHostPorts(
+  compose: ComposeFile,
+  serviceName: string,
+): ComposeFile {
+  const svc = compose.services[serviceName];
+  if (!svc?.ports) return compose;
+
+  const kept = svc.ports.filter((raw) => {
+    const parsed = parsePortString(raw);
+    // Keep entries that have no external (host) mapping
+    return parsed && parsed.external === undefined;
+  });
+
+  const { ports: _, ...svcWithoutPorts } = svc;
+  return {
+    ...compose,
+    services: {
+      ...compose.services,
+      [serviceName]: kept.length > 0
+        ? { ...svcWithoutPorts, ports: kept }
+        : svcWithoutPorts,
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
