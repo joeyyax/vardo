@@ -25,7 +25,6 @@ import {
   sanitizeCompose,
   validateCompose,
   composeToYaml,
-  stripTraefikLabels,
   stripVardoInjections,
   buildVardoOverlay,
   slotComposeFiles,
@@ -76,7 +75,7 @@ import { githubAppInstallations, memberships } from "@/lib/db/schema";
 import { detectPreventiveFixes, detectCompatIssues, applyCompatFixes } from "./compat";
 import { syncComposeServices } from "./compose-sync";
 import { recordActivity } from "@/lib/activity";
-import { regenerateAppRouteConfig, removeAppRouteConfig } from "@/lib/traefik/generate-config";
+import { removeAppRouteConfig } from "@/lib/traefik/generate-config";
 import {
   getDecryptedPrivateKey,
   writeTemporaryKeyFile,
@@ -817,56 +816,41 @@ export async function runDeployment(
     const allServicesCustomNetwork = servicesWithCustomNetwork.length === Object.keys(compose.services).length;
 
     if (!allServicesCustomNetwork) {
-      // When autoTraefikLabels is true, use file-provider config only (no Docker labels).
-      // This avoids conflicts between Docker provider discovery and explicit file config.
-      if (app.autoTraefikLabels) {
-        // Strip all Traefik labels - routing is handled by file-provider
-        compose = stripTraefikLabels(compose);
-        log(`[deploy] Using file-provider routing (autoTraefikLabels=true)`);
-      } else {
-        // Legacy mode: Inject Traefik labels into compose for Docker provider discovery
-        // Find the first bridge-network service in compose file order (Object.keys preserves
-        // insertion order for string keys, matching the order services appear in the compose file).
-        // This ensures Traefik labels target a service reachable on vardo-network.
-        const primaryServiceName = Object.keys(compose.services).find(
-          (k) => !compose.services[k].network_mode || compose.services[k].network_mode === "bridge"
+      // Inject Traefik labels into the compose — Traefik's Docker provider discovers
+      // these dynamically. No file-provider config needed for deployed apps.
+      const primaryServiceName = Object.keys(compose.services).find(
+        (k) => !compose.services[k].network_mode || compose.services[k].network_mode === "bridge"
+      );
+      const narrowedProtocol = narrowBackendProtocol(app.backendProtocol);
+      for (const domain of app.domains) {
+        const port = domain.port || containerPort;
+        const resolvedProtocol = resolveBackendProtocol(
+          narrowedProtocol,
+          port,
         );
-        const narrowedProtocol = narrowBackendProtocol(app.backendProtocol);
-        for (const domain of app.domains) {
-          const port = domain.port || containerPort;
-          const resolvedProtocol = resolveBackendProtocol(
-            narrowedProtocol,
-            port,
-          );
-          compose = injectTraefikLabels(compose, {
-            projectName: `${app.name}-${domain.id.slice(0, 8)}`,
-            appName: app.name,
-            domain: domain.domain,
-            containerPort: port,
-            certResolver: domain.certResolver || "le",
-            ssl: domain.sslEnabled ?? true,
-            redirectTo: domain.redirectTo ?? undefined,
-            redirectCode: domain.redirectCode ?? 301,
-            serviceName: primaryServiceName,
-            backendProtocol: resolvedProtocol,
-          });
-          if (domain.redirectTo) {
-            log(`[deploy] Traefik: ${domain.domain} → redirect ${domain.redirectCode ?? 301} ${domain.redirectTo}`);
-          } else {
-            log(`[deploy] Traefik: ${domain.domain} → :${port}${(domain.sslEnabled ?? true) ? " (TLS)" : ""}`);
-          }
+        compose = injectTraefikLabels(compose, {
+          projectName: `${app.name}-${domain.id.slice(0, 8)}`,
+          appName: app.name,
+          domain: domain.domain,
+          containerPort: port,
+          certResolver: domain.certResolver || "le",
+          ssl: domain.sslEnabled ?? true,
+          redirectTo: domain.redirectTo ?? undefined,
+          redirectCode: domain.redirectCode ?? 301,
+          serviceName: primaryServiceName,
+          backendProtocol: resolvedProtocol,
+        });
+        if (domain.redirectTo) {
+          log(`[deploy] Traefik: ${domain.domain} → redirect ${domain.redirectCode ?? 301} ${domain.redirectTo}`);
+        } else {
+          log(`[deploy] Traefik: ${domain.domain} → :${port}${(domain.sslEnabled ?? true) ? " (TLS)" : ""}`);
         }
       }
 
-      // Always regenerate file-provider config for consistency
-      try {
-        await regenerateAppRouteConfig(app.id);
-      } catch (err) {
-        log(`[deploy] Warning: failed to write Traefik dynamic config — ${err}`);
-      }
+      // Clean up any stale file-provider config from before this change
+      removeAppRouteConfig(app.name).catch(() => {});
     } else {
       log(`[deploy] Skipping Traefik labels — all services use custom network modes: ${servicesWithCustomNetwork.join(", ")}`);
-      removeAppRouteConfig(app.name).catch(() => {});
     }
     compose = injectNetwork(compose, NETWORK_NAME);
 
@@ -1284,9 +1268,8 @@ export async function runDeployment(
     stage("routing", "running");
     log(`[deploy] ${newSlot} healthy`);
 
-    // Step 9: Update container names + Traefik config BEFORE tearing down old slot.
-    // The new slot is running and healthy — point Traefik at it first so there's
-    // no window where the config references containers we're about to remove.
+    // Step 9: Update container names in DB (for logs, status, UI — not routing).
+    // Traefik discovers routing via Docker labels, no file-provider regen needed.
     if (!isLocalEnv) {
       try {
         const serviceNames = Object.keys(compose.services);
@@ -1311,9 +1294,6 @@ export async function runDeployment(
               .where(and(eq(apps.parentAppId, opts.appId), eq(apps.name, childName)));
           }
         }
-
-        await regenerateAppRouteConfig(opts.appId);
-        log(`[deploy] Regenerated Traefik route config`);
       } catch (err) {
         log(`[deploy] Warning: failed to update container names — ${err instanceof Error ? err.message : err}`);
       }
@@ -1615,7 +1595,7 @@ export async function runDeployment(
       }
     }
 
-    // Container names + Traefik config already updated in Step 9 (before old slot teardown)
+    // Container names already updated in Step 9 (before old slot teardown)
 
     // Mark app as active
     await db

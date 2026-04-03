@@ -7,8 +7,8 @@ import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { verifyAppAccess } from "@/lib/api/verify-access";
-import { regenerateAppRouteConfig } from "@/lib/traefik/generate-config";
 import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
+import { apps } from "@/lib/db/schema";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -89,9 +89,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       })
       .returning();
 
-    // Regenerate Traefik file-provider config so the new domain takes effect
-    // immediately without a redeploy
-    regenerateAppRouteConfig(appId).catch((err) => logger.child("traefik").error("Failed to regenerate route config:", err));
+    // Mark app for redeploy — Traefik labels are the source of truth for routing,
+    // so domain changes take effect on the next deploy.
+    await db.update(apps).set({ needsRedeploy: true, updatedAt: new Date() }).where(eq(apps.id, appId));
 
     return NextResponse.json({ domain: created }, { status: 201 });
   } catch (error) {
@@ -171,8 +171,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    // Regenerate Traefik config so domain changes take effect immediately
-    regenerateAppRouteConfig(appId).catch((err) => logger.child("traefik").error("Failed to regenerate route config:", err));
+    // Domain changes require a redeploy to update Traefik labels
+    await db.update(apps).set({ needsRedeploy: true, updatedAt: new Date() }).where(eq(apps.id, appId));
 
     return NextResponse.json({ domain: updated });
   } catch (error) {
@@ -221,8 +221,8 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    // Regenerate Traefik config (removes the deleted domain's routing)
-    regenerateAppRouteConfig(appId).catch((err) => logger.child("traefik").error("Failed to regenerate route config:", err));
+    // Domain deletion requires a redeploy to remove Traefik labels
+    await db.update(apps).set({ needsRedeploy: true, updatedAt: new Date() }).where(eq(apps.id, appId));
 
     return NextResponse.json({ success: true });
   } catch (error) {

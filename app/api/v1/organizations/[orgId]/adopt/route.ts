@@ -19,7 +19,6 @@ import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
 import { recordActivity } from "@/lib/activity";
 import { encrypt } from "@/lib/crypto/encrypt";
 import { resolveProjectForImport } from "@/lib/docker/import";
-import { regenerateAppRouteConfig } from "@/lib/traefik/generate-config";
 import { logger } from "@/lib/logger";
 
 type RouteParams = {
@@ -193,10 +192,7 @@ async function handler(request: NextRequest, { params }: RouteParams) {
       return { app };
     });
 
-    // Generate Traefik config (app-level label management)
-    regenerateAppRouteConfig(result.app.id).catch((err) =>
-      logger.child("adopt").error("Failed to regenerate route config:", err)
-    );
+    // Traefik labels are injected during the first deploy — no file-provider config needed.
 
     recordActivity({
       organizationId: orgId,
