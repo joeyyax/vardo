@@ -5,7 +5,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import { join } from "path";
 import { appEnvDir } from "@/lib/paths";
-import { rm, symlink, writeFile } from "fs/promises";
+import { rm, symlink, rename } from "fs/promises";
 import { listContainers, inspectContainer } from "./client";
 import { slotComposeFiles } from "./compose";
 import { publishEvent, appChannel } from "@/lib/events";
@@ -217,14 +217,34 @@ async function performRollback(opts: PerformRollbackOpts): Promise<void> {
     return;
   }
 
-  // Step 3: Swap active slot back via 'current' symlink
+  // Step 3: Atomic symlink swap back to previous slot
   const currentSymlinkPath = join(appDir, "current");
+  const tmpSymlinkPath = join(appDir, "current.tmp");
   try {
-    await rm(currentSymlinkPath, { force: true });
-    await symlink(previousSlot, currentSymlinkPath, "dir");
+    await rm(tmpSymlinkPath, { force: true });
+    await symlink(previousSlot, tmpSymlinkPath, "dir");
+    await rename(tmpSymlinkPath, currentSymlinkPath);
     log.info(`[rollback] Updated 'current' symlink -> ${previousSlot}`);
   } catch (err) {
     log.warn(`[rollback] Failed to create 'current' symlink: ${err instanceof Error ? err.message : err}`);
+  }
+
+  // Step 3a: Update container name + Traefik config to point at the restored slot.
+  // Without this, Traefik routes to the crashed slot's container names → 502.
+  try {
+    const { regenerateAppRouteConfig } = await import("@/lib/traefik/generate-config");
+    // List running containers for the restored project to find the primary container name
+    const containers = await listContainers(prevProjectName);
+    if (containers.length > 0) {
+      await db
+        .update(apps)
+        .set({ containerName: containers[0].name, updatedAt: new Date() })
+        .where(eq(apps.id, appId));
+    }
+    await regenerateAppRouteConfig(appId);
+    log.info(`[rollback] Regenerated Traefik route config`);
+  } catch (err) {
+    log.warn(`[rollback] Failed to regenerate Traefik config: ${err instanceof Error ? err.message : err}`);
   }
 
   // Step 4: Update deployment status to rolled_back

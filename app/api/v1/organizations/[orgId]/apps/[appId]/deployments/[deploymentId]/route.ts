@@ -6,6 +6,8 @@ import { eq, and } from "drizzle-orm";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { publishKillSignal } from "@/lib/docker/deploy-cancel";
 import { publishEvent, appChannel } from "@/lib/events";
+// Container cleanup for force-cancelled deploys is handled by the sweeper
+// (lib/deploy/sweeper.ts), which can safely resolve the correct slot.
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string; deploymentId: string }>;
@@ -14,14 +16,15 @@ type RouteParams = {
 /**
  * After publishing a kill signal, wait briefly for the deploy process to
  * self-cancel. If it doesn't respond (crashed process, stuck subprocess),
- * force-mark the deployment as cancelled in the DB so the UI unsticks.
+ * force-mark the deployment as cancelled, stop any running containers,
+ * and update the UI.
  */
 async function forceCancel(deploymentId: string, appId: string): Promise<void> {
   await new Promise((r) => setTimeout(r, 5_000));
 
   const deploy = await db.query.deployments.findFirst({
     where: and(eq(deployments.id, deploymentId), eq(deployments.status, "running")),
-    columns: { id: true, startedAt: true, log: true },
+    columns: { id: true, startedAt: true, log: true, environmentId: true },
   });
 
   if (!deploy) return; // already handled by the deploy process

@@ -10,7 +10,7 @@ import { nanoid } from "nanoid";
 import { publishEvent, appChannel } from "@/lib/events";
 import { execFile, spawn as nodeSpawn} from "child_process";
 import { promisify } from "util";
-import { mkdir, writeFile, readFile, rm, symlink, readlink } from "fs/promises";
+import { mkdir, writeFile, readFile, rm, symlink, readlink, rename } from "fs/promises";
 import { join } from "path";
 import { appBaseDir, appEnvDir, PROJECTS_DIR } from "@/lib/paths";
 import {
@@ -204,7 +204,12 @@ export async function runDeployment(
     }).catch(() => {});
   }
 
+  // Track the current stage so the error handler knows whether containers
+  // need cleanup (only if we got past the "deploy" stage).
+  let currentStage: DeployStage = "clone";
+
   function stage(s: DeployStage, status: "running" | "success" | "failed" | "skipped") {
+    currentStage = s;
     opts.onStage?.(s, status);
 
     // Track current stage in Redis so cancel logic can make two-tier decisions.
@@ -227,6 +232,10 @@ export async function runDeployment(
 
   // Proxy for helper functions that expect { push }
   const logs = { push: log };
+
+  // Hoisted so the catch block can clean up containers on failure
+  let slotDir = "";
+  let newProjectName = "";
 
   try {
     await db
@@ -850,9 +859,11 @@ export async function runDeployment(
       }
 
       // Always regenerate file-provider config for consistency
-      regenerateAppRouteConfig(app.id).catch((err) =>
-        log(`[deploy] Warning: failed to write Traefik dynamic config — ${err}`)
-      );
+      try {
+        await regenerateAppRouteConfig(app.id);
+      } catch (err) {
+        log(`[deploy] Warning: failed to write Traefik dynamic config — ${err}`);
+      }
     } else {
       log(`[deploy] Skipping Traefik labels — all services use custom network modes: ${servicesWithCustomNetwork.join(", ")}`);
       removeAppRouteConfig(app.name).catch(() => {});
@@ -884,8 +895,6 @@ export async function runDeployment(
     const isLocalEnv = envType === "local";
     let activeSlot: "blue" | "green" | null = null;
     let newSlot: string;
-    let newProjectName: string;
-    let slotDir: string;
 
     if (isLocalEnv) {
       // Local environments use a single "local" directory — no slot switching
@@ -940,6 +949,21 @@ export async function runDeployment(
           }
         }
       }
+
+      // Remove stale entries in the slot dir that no longer exist in the repo.
+      // Without this, files deleted between deploys persist and can pollute builds.
+      const repoEntrySet = new Set(entries);
+      const MANAGED_FILES = new Set(["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml", "docker-compose.override.yml", ".env"]);
+      try {
+        const slotEntries = await readdir(slotDir);
+        for (const entry of slotEntries) {
+          if (MANAGED_FILES.has(entry)) continue;
+          if (repoEntrySet.has(entry)) continue;
+          try {
+            await rm(join(slotDir, entry), { recursive: true, force: true });
+          } catch { /* best effort */ }
+        }
+      } catch { /* slot dir may not exist yet */ }
     }
     // Step 5a: Externalize named volumes so they persist across blue-green swaps.
     // Docker Compose scopes named volumes to the project name, so blue and green
@@ -1260,8 +1284,41 @@ export async function runDeployment(
     stage("routing", "running");
     log(`[deploy] ${newSlot} healthy`);
 
-    // Step 9: Traffic is already routed — labels were included from the start
-    // Traefik discovers the container via labels on the Docker network
+    // Step 9: Update container names + Traefik config BEFORE tearing down old slot.
+    // The new slot is running and healthy — point Traefik at it first so there's
+    // no window where the config references containers we're about to remove.
+    if (!isLocalEnv) {
+      try {
+        const serviceNames = Object.keys(compose.services);
+        const primaryServiceName = serviceNames[0];
+
+        if (primaryServiceName) {
+          const parentContainerName = `${newProjectName}-${primaryServiceName}-1`;
+          await db
+            .update(apps)
+            .set({ containerName: parentContainerName, updatedAt: new Date() })
+            .where(eq(apps.id, opts.appId));
+          log(`[deploy] Updated container name: ${parentContainerName}`);
+        }
+
+        if (serviceNames.length > 1) {
+          for (const serviceName of serviceNames) {
+            const childContainerName = `${newProjectName}-${serviceName}-1`;
+            const childName = `${app.name}-${serviceName}`;
+            await db
+              .update(apps)
+              .set({ containerName: childContainerName, updatedAt: new Date() })
+              .where(and(eq(apps.parentAppId, opts.appId), eq(apps.name, childName)));
+          }
+        }
+
+        await regenerateAppRouteConfig(opts.appId);
+        log(`[deploy] Regenerated Traefik route config`);
+      } catch (err) {
+        log(`[deploy] Warning: failed to update container names — ${err instanceof Error ? err.message : err}`);
+      }
+    }
+
     log(`[deploy] Traffic routed to ${newSlot}`);
     stage("routing", "success");
     stage("cleanup", "running");
@@ -1305,12 +1362,14 @@ export async function runDeployment(
       // Clean up legacy .active-slot file if present
       try { await rm(join(appDir, ".active-slot"), { force: true }); } catch { /* gone already */ }
 
+      // Atomic symlink swap: create temp symlink then rename over the target.
+      // rename() is atomic on Linux/macOS — no window where 'current' is missing.
       const currentSymlinkPath = join(appDir, "current");
+      const tmpSymlinkPath = join(appDir, "current.tmp");
       try {
-        // Remove existing symlink if present
-        await rm(currentSymlinkPath, { force: true });
-        // Create new symlink pointing to the active slot directory
-        await symlink(newSlot, currentSymlinkPath, "dir");
+        await rm(tmpSymlinkPath, { force: true });
+        await symlink(newSlot, tmpSymlinkPath, "dir");
+        await rename(tmpSymlinkPath, currentSymlinkPath);
         log(`[deploy] Created 'current' symlink -> ${newSlot}`);
       } catch (err) {
         log(`[deploy] Warning: Failed to create 'current' symlink: ${err instanceof Error ? err.message : err}`);
@@ -1556,44 +1615,7 @@ export async function runDeployment(
       }
     }
 
-    // Update container names to match the active slot for Traefik routing
-    // Blue-green deploys change the project name (e.g., app-production-blue), so
-    // container names must be updated to reflect the new slot's actual containers
-    // This is needed for all production/staging deploys to ensure Traefik can route correctly
-    if (!isLocalEnv) {
-      try {
-        const serviceNames = Object.keys(compose.services);
-        const primaryServiceName = serviceNames[0];
-
-        // Update parent app's container name (primary service)
-        if (primaryServiceName) {
-          const parentContainerName = `${newProjectName}-${primaryServiceName}-1`;
-          await db
-            .update(apps)
-            .set({ containerName: parentContainerName, updatedAt: new Date() })
-            .where(eq(apps.id, opts.appId));
-          log(`[deploy] Updated container name: ${parentContainerName}`);
-        }
-
-        // Update child app container names for multi-service compose
-        if (serviceNames.length > 1) {
-          for (const serviceName of serviceNames) {
-            const childContainerName = `${newProjectName}-${serviceName}-1`;
-            const childName = `${app.name}-${serviceName}`;
-            await db
-              .update(apps)
-              .set({ containerName: childContainerName, updatedAt: new Date() })
-              .where(and(eq(apps.parentAppId, opts.appId), eq(apps.name, childName)));
-          }
-        }
-
-        // Regenerate Traefik config with updated container names
-        await regenerateAppRouteConfig(opts.appId);
-        log(`[deploy] Regenerated Traefik route config`);
-      } catch (err) {
-        log(`[deploy] Warning: failed to update container names — ${err instanceof Error ? err.message : err}`);
-      }
-    }
+    // Container names + Traefik config already updated in Step 9 (before old slot teardown)
 
     // Mark app as active
     await db
@@ -1759,6 +1781,24 @@ export async function runDeployment(
     }
 
     log(`[deploy] ERROR: ${message}`);
+
+    // If we got past the deploy stage, containers may be running — tear them down.
+    // The health check failure path has its own cleanup, but any other error
+    // (compose write, network creation, routing, etc.) would leave orphans.
+    const CONTAINER_STAGES: Set<DeployStage> = new Set(["deploy", "healthcheck", "routing", "cleanup", "done"]);
+    if (CONTAINER_STAGES.has(currentStage) && slotDir && newProjectName) {
+      try {
+        const cleanupComposeArgs = await slotComposeFiles(slotDir);
+        await execFileAsync(
+          "docker",
+          ["compose", ...cleanupComposeArgs, "-p", newProjectName, "down", "--remove-orphans"],
+          { cwd: slotDir, timeout: 30000 }
+        );
+        log(`[deploy] Cleaned up containers after failure`);
+      } catch {
+        // Best effort — containers may not have started
+      }
+    }
 
     await db
       .update(deployments)
