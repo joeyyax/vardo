@@ -5,10 +5,54 @@ import { deployments, apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { publishKillSignal } from "@/lib/docker/deploy-cancel";
+import { publishEvent, appChannel } from "@/lib/events";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string; deploymentId: string }>;
 };
+
+/**
+ * After publishing a kill signal, wait briefly for the deploy process to
+ * self-cancel. If it doesn't respond (crashed process, stuck subprocess),
+ * force-mark the deployment as cancelled in the DB so the UI unsticks.
+ */
+async function forceCancel(deploymentId: string, appId: string): Promise<void> {
+  await new Promise((r) => setTimeout(r, 5_000));
+
+  const deploy = await db.query.deployments.findFirst({
+    where: and(eq(deployments.id, deploymentId), eq(deployments.status, "running")),
+    columns: { id: true, startedAt: true, log: true },
+  });
+
+  if (!deploy) return; // already handled by the deploy process
+
+  const now = new Date();
+  const durationMs = now.getTime() - new Date(deploy.startedAt).getTime();
+  const cancelLine = `\n[${now.toISOString()}] [CANCELLED] Force-cancelled by user (deploy process unresponsive)`;
+
+  await db
+    .update(deployments)
+    .set({
+      status: "cancelled",
+      log: (deploy.log ?? "") + cancelLine,
+      finishedAt: now,
+      durationMs,
+    })
+    .where(and(eq(deployments.id, deploymentId), eq(deployments.status, "running")));
+
+  await db
+    .update(apps)
+    .set({ status: "stopped", updatedAt: now })
+    .where(and(eq(apps.id, appId), eq(apps.status, "deploying")));
+
+  publishEvent(appChannel(appId), {
+    event: "deploy:complete",
+    status: "cancelled",
+    deploymentId,
+    success: false,
+    durationMs,
+  }).catch(() => {});
+}
 
 // DELETE /api/v1/organizations/[orgId]/apps/[appId]/deployments/[deploymentId]
 // Cancel a queued or running deployment
@@ -46,10 +90,10 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
 
     if (deployment.status === "running") {
       // Signal the running deploy process to abort at the next stage boundary.
-      // The worker checks this key in deploy-cancel.ts and aborts its AbortController.
       await publishKillSignal(deploymentId);
-      // The worker updates the status to "cancelled" when it handles the signal.
-      // We return immediately — the UI will reflect the cancellation via the event stream.
+      // If the deploy process doesn't respond within 5s (crashed, stuck subprocess),
+      // force-mark it as cancelled so the UI isn't stuck forever.
+      forceCancel(deploymentId, appId).catch(() => {});
       return NextResponse.json({ ok: true });
     }
 
