@@ -1404,15 +1404,22 @@ else
   COMPOSE_PATH="$VARDO_DIR/docker-compose.yml"
 fi
 
+# Resolve install.sh — prefer active slot, fall back to root
+if [ -L "$VARDO_DIR/apps/vardo/env/current" ] && [ -f "$VARDO_DIR/apps/vardo/env/current/install.sh" ]; then
+  INSTALL_SH="$VARDO_DIR/apps/vardo/env/current/install.sh"
+else
+  INSTALL_SH="$VARDO_DIR/install.sh"
+fi
+
 case "${1:-}" in
   logs)     shift; docker compose -f "$COMPOSE_PATH" logs -f "$@" ;;
   restart)  docker compose -f "$COMPOSE_PATH" restart ;;
   stop)     docker compose -f "$COMPOSE_PATH" stop ;;
   start)    docker compose -f "$COMPOSE_PATH" up -d ;;
   ps)       docker compose -f "$COMPOSE_PATH" ps ;;
-  update)   shift; bash "$VARDO_DIR/install.sh" update "$@" ;;
-  doctor)   shift; bash "$VARDO_DIR/install.sh" doctor "$@" ;;
-  uninstall) bash "$VARDO_DIR/install.sh" uninstall "$@" ;;
+  update)   shift; bash "$INSTALL_SH" update "$@" ;;
+  doctor)   shift; bash "$INSTALL_SH" doctor "$@" ;;
+  uninstall) bash "$INSTALL_SH" uninstall "$@" ;;
   shell)    shift; docker compose -f "$COMPOSE_PATH" exec frontend "${@:-sh}" ;;
   *)
     echo "Usage: vardo <command>"
