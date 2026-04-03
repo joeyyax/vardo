@@ -35,6 +35,7 @@ import { useDeploy } from "./hooks/use-deploy";
 import { isAdmin } from "@/lib/auth/permissions";
 import type { App, ChildApp } from "./types";
 import type { FeatureFlags } from "@/lib/config/features";
+import { ComposeReview } from "@/components/compose-review";
 
 // ---------------------------------------------------------------------------
 // Service card for the Services tab
@@ -358,7 +359,16 @@ export function ComposeDetail({
     onDeployStarted: () => setActiveTabAndUrl("deployments"),
   });
 
-  const handleDeploy = deploy.handleDeploy;
+  const [showComposeReview, setShowComposeReview] = useState(false);
+
+  const handleDeployClick = useCallback(() => {
+    // Show review for first deploy of compose apps that have content
+    if (app.composeContent && app.deployments.length === 0) {
+      setShowComposeReview(true);
+    } else {
+      deploy.handleDeploy();
+    }
+  }, [app.composeContent, app.deployments.length, deploy]);
 
   const totalDeployments = app.deployments.length;
 
@@ -391,14 +401,14 @@ export function ComposeDetail({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem disabled={deploy.deploying} onClick={handleDeploy}>
+                  <DropdownMenuItem disabled={deploy.deploying} onClick={handleDeployClick}>
                     <Rocket className="mr-2 size-4" />
                     Redeploy Stack
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : (
-              <Button size="sm" disabled={deploy.deploying} onClick={handleDeploy}>
+              <Button size="sm" disabled={deploy.deploying} onClick={handleDeployClick}>
                 {deploy.deploying ? (
                   <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
                 ) : (
@@ -562,6 +572,17 @@ export function ComposeDetail({
         onConfirm={handleDelete}
         loading={deleting}
       />
+
+      {app.composeContent && (
+        <ComposeReview
+          open={showComposeReview}
+          onOpenChange={setShowComposeReview}
+          composeContent={app.composeContent}
+          orgId={orgId}
+          appId={app.id}
+          onProceed={deploy.handleDeploy}
+        />
+      )}
     </div>
   );
 }
