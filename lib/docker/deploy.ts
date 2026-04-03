@@ -921,6 +921,15 @@ export async function runDeployment(
         if (entry === "docker-compose.yml" || entry === "docker-compose.yaml" || entry === "compose.yml" || entry === "compose.yaml" || entry === ".env") continue;
         const source = join(repoDir, entry);
         const target = join(slotDir, entry);
+        // Remove stale symlinks/copies so we always point at the current repo.
+        // lstat succeeds on broken symlinks, so a previous deploy's dead link
+        // would silently block a fresh one from being created.
+        try {
+          const st = await lstat(target);
+          if (st.isSymbolicLink()) {
+            await rm(target);
+          }
+        } catch { /* doesn't exist — fine */ }
         try {
           await lstat(target);
         } catch {
