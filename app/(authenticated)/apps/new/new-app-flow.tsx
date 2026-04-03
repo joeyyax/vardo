@@ -34,6 +34,7 @@ import { generateWordPair } from "@/lib/domains/auto-domain";
 import { isReservedSlug } from "@/lib/domains/reserved";
 import { EnvEditor } from "@/components/env-editor";
 import { BranchSelect } from "@/components/branch-select";
+import { ComposeReview } from "@/components/compose-review";
 
 type Source = "git" | "direct";
 type DeployType = "compose" | "dockerfile" | "image" | "static" | "nixpacks" | "railpack";
@@ -169,6 +170,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
   const [cpuLimit, setCpuLimit] = useState("");
   const [memoryLimit, setMemoryLimit] = useState("");
   const [diskWriteAlertThreshold, setDiskWriteAlertThreshold] = useState("");
+  const [showComposeReview, setShowComposeReview] = useState(false);
 
   // Domain
   const [generateDomain, setGenerateDomain] = useState(true);
@@ -1063,7 +1065,14 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
           {/* Actions */}
           <div className="flex items-center gap-3 pt-2">
             <Button
-              onClick={handleSubmit}
+              onClick={() => {
+                // Show compose review dialog when there's compose content to analyze
+                if (deployType === "compose" && composeContent.trim()) {
+                  setShowComposeReview(true);
+                } else {
+                  handleSubmit();
+                }
+              }}
               disabled={creating || !displayName.trim() || !name.trim() || hasRequiredEnvVars}
             >
               {creating ? (
@@ -1076,6 +1085,14 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
               Cancel
             </Button>
           </div>
+
+          <ComposeReview
+            open={showComposeReview}
+            onOpenChange={setShowComposeReview}
+            composeContent={composeContent}
+            orgId={orgId}
+            onProceed={handleSubmit}
+          />
         </div>
       )}
     </div>

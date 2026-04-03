@@ -951,7 +951,7 @@ export function detectPorts(compose: ComposeFile): PortMapping[] {
   return results;
 }
 
-function parsePortString(
+export function parsePortString(
   raw: string,
 ): { internal: number; external?: number } | null {
   // Strip protocol suffix (e.g. /tcp, /udp)

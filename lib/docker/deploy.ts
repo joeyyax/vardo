@@ -26,13 +26,13 @@ import {
   validateCompose,
   composeToYaml,
   stripTraefikLabels,
-  stripHostPorts,
   stripVardoInjections,
   buildVardoOverlay,
   slotComposeFiles,
   type ComposeFile,
 } from "./compose";
 import { ensureNetwork, detectExposedPorts, listContainers, inspectContainer, removeContainer, stripDockerProjectPrefix, listImages, removeImage, pruneImages, pruneBuildCache } from "./client";
+import { normalizeCompose } from "./compose-normalize";
 import { isFeatureEnabled } from "@/lib/config/features";
 
 import { assertSafeBranch } from "./validate";
@@ -728,6 +728,22 @@ export async function runDeployment(
     // regenerated fresh in the overlay.
     const bareCompose = stripVardoInjections(compose, NETWORK_NAME);
 
+    // Normalize: treat the user's compose as intent, produce safe runtime config.
+    // This strips host ports from Traefik-routed services and normalizes restart policies.
+    const routedServices = new Set<string>();
+    if (app.domains.length > 0) {
+      // The primary service (first bridge-network service) is routed via Traefik
+      const primary = Object.keys(compose.services).find(
+        (k) => !compose.services[k].network_mode || compose.services[k].network_mode === "bridge"
+      );
+      if (primary) routedServices.add(primary);
+    }
+    const normalized = normalizeCompose(compose, { routedServices });
+    compose = normalized.compose;
+    for (const change of normalized.changes) {
+      log(`[deploy] Normalize: ${change.service}.${change.field} ${change.action}${change.before ? ` (was: ${change.before})` : ""} — ${change.reason}`);
+    }
+
     if (app.gpuEnabled) {
       compose = injectGpuDevices(compose);
     }
@@ -823,18 +839,6 @@ export async function runDeployment(
       regenerateAppRouteConfig(app.id).catch((err) =>
         log(`[deploy] Warning: failed to write Traefik dynamic config — ${err}`)
       );
-
-      // Strip host port bindings from the primary (Traefik-routed) service.
-      // Host ports are unnecessary when Traefik handles routing and cause
-      // "port already allocated" failures when they collide with other services.
-      if (app.domains.length > 0) {
-        const primaryServiceName = Object.keys(compose.services).find(
-          (k) => !compose.services[k].network_mode || compose.services[k].network_mode === "bridge"
-        );
-        if (primaryServiceName) {
-          compose = stripHostPorts(compose, primaryServiceName);
-        }
-      }
     } else {
       log(`[deploy] Skipping Traefik labels — all services use custom network modes: ${servicesWithCustomNetwork.join(", ")}`);
       removeAppRouteConfig(app.name).catch(() => {});
