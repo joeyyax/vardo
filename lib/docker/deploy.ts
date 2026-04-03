@@ -472,8 +472,22 @@ export async function runDeployment(
           await execFileAsync("git", ["-C", repoDir, "reset", "--hard", `origin/${branch}`], execOpts);
           log(`[deploy] Pulled latest from ${branch}`);
         } catch {
-          // Remove stale repo directory left behind by a previously failed clone
-          await rm(repoDir, { recursive: true, force: true });
+          // Remove stale repo directory left behind by a previously failed clone.
+          // Use docker to rm as root — the repo may contain files owned by root
+          // from a previous deploy or git submodule that the app user can't delete.
+          try {
+            await rm(repoDir, { recursive: true, force: true });
+          } catch (rmErr: unknown) {
+            if (rmErr && typeof rmErr === "object" && "code" in rmErr && rmErr.code === "EACCES") {
+              log(`[deploy] Permission denied removing ${repoDir}, retrying as root via docker`);
+              await execFileAsync("docker", [
+                "run", "--rm", "-v", `${repoDir}:/target`, "alpine", "rm", "-rf", "/target",
+              ], { timeout: 30000 });
+              await mkdir(repoDir, { recursive: true });
+            } else {
+              throw rmErr;
+            }
+          }
           // Fresh clone
           await execFileAsync("git", ["clone", "--depth", "1", "--branch", branch, cloneUrl, repoDir], execOpts);
           log(`[deploy] Cloned repo (${branch})`);
