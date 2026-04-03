@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { mountsSchema, restartSchema } from "@/lib/api/admin/maintenance-schemas";
+import { mountsSchema, restartSchema, parseMountPair } from "@/lib/api/admin/maintenance-schemas";
 
 // ---------------------------------------------------------------------------
 // Maintenance API — validation schemas and core logic
@@ -168,20 +168,6 @@ describe("update — VARDO_HOME_DIR resolution", () => {
 // ---------------------------------------------------------------------------
 
 describe("mounts GET — response shape", () => {
-  function parseMountPair(value: string | undefined): { source: string; destination: string } | null {
-    if (!value || value === "/dev/null") return null;
-    const mountValue = value.endsWith(":ro") ? value.slice(0, -3) : value;
-    const colonIndex = mountValue.indexOf(":");
-    if (colonIndex === -1) {
-      // Legacy single-path format
-      return { source: mountValue, destination: mountValue };
-    }
-    const source = mountValue.slice(0, colonIndex);
-    const destination = mountValue.slice(colonIndex + 1);
-    if (!source || !destination) return null;
-    return { source, destination };
-  }
-
   function buildMountsResponse(env: Record<string, string | undefined>) {
     return {
       vardoData: parseMountPair(env.VARDO_DATA),
