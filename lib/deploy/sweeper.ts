@@ -6,6 +6,7 @@ import { acquireLock } from "@/lib/redis-lock";
 import { logger } from "@/lib/logger";
 import { eq, and, lt, or, inArray } from "drizzle-orm";
 import { reconcileActiveCounter, reconcileQueue, removeFromQueue } from "@/lib/docker/deploy-concurrency";
+import { stopProject } from "@/lib/docker/deploy";
 
 const log = logger.child("deploy-sweeper");
 
@@ -105,6 +106,16 @@ export async function sweepStuckDeployments(): Promise<void> {
         .where(
           and(eq(apps.id, deploy.appId), eq(apps.status, "deploying")),
         );
+
+      // Stop orphaned containers left by the crashed deploy process
+      const app = appMap.get(deploy.appId);
+      if (app) {
+        try {
+          await stopProject(deploy.appId, app.name);
+        } catch {
+          // Best effort — containers may not have started
+        }
+      }
 
       // Notify any connected SSE clients
       publishEvent(appChannel(deploy.appId), {
