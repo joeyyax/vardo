@@ -217,10 +217,7 @@ async function performRollback(opts: PerformRollbackOpts): Promise<void> {
     return;
   }
 
-  // Step 3: Swap active slot marker back
-  await writeFile(join(appDir, ".active-slot"), previousSlot, "utf-8");
-
-  // Step 3a: Update 'current' symlink for filesystem visibility
+  // Step 3: Swap active slot back via 'current' symlink
   const currentSymlinkPath = join(appDir, "current");
   try {
     await rm(currentSymlinkPath, { force: true });

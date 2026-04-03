@@ -49,7 +49,7 @@ export function appBaseDir(appName: string): string {
   return join(PROJECTS_DIR, appName);
 }
 
-/** Environment directory for an app (contains .active-slot, blue/, green/, current). */
+/** Environment directory for an app (contains blue/, green/, current symlink). */
 export function appEnvDir(appName: string, envName?: string): string {
   if (envName) {
     return join(PROJECTS_DIR, appName, envName);
