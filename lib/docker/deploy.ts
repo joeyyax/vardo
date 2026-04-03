@@ -103,7 +103,7 @@ async function ensureWritableDir(dir: string): Promise<void> {
         throw new Error(`Permission denied and path outside apps dir: ${dir}`);
       }
       await execFileAsync("docker", [
-        "run", "--rm", "-v", `${dir}:/target`, "alpine", "chown", "1001:1001", "/target",
+        "run", "--rm", "-v", `${dir}:/target`, "alpine", "chown", "-R", "1001:1001", "/target",
       ], { timeout: 15000 });
     } else {
       throw err;
@@ -968,6 +968,13 @@ export async function runDeployment(
     //   Traefik labels, vardo-network, resource limits, GPU devices, externalized volumes.
     const bareComposePath = join(slotDir, "docker-compose.yml");
     const overridePath = join(slotDir, "docker-compose.override.yml");
+
+    // Remove stale compose files before writing — they may be root-owned from
+    // a previous deploy and writeFile (truncate) would fail with EACCES even
+    // though the directory itself is writable.
+    for (const stale of [bareComposePath, overridePath, join(slotDir, ".env")]) {
+      try { await rm(stale, { force: true }); } catch { /* gone already */ }
+    }
 
     const overlayCompose = buildVardoOverlay({
       fullCompose: compose,
