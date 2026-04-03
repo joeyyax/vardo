@@ -1478,7 +1478,8 @@ export async function runDeployment(
     // Update container names to match the active slot for Traefik routing
     // Blue-green deploys change the project name (e.g., app-production-blue), so
     // container names must be updated to reflect the new slot's actual containers
-    if (!isLocalEnv && app.autoTraefikLabels) {
+    // This is needed for all production/staging deploys to ensure Traefik can route correctly
+    if (!isLocalEnv) {
       try {
         const serviceNames = Object.keys(compose.services);
         const primaryServiceName = serviceNames[0];
