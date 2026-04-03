@@ -19,20 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/lib/messenger";
-
-type Finding = {
-  category: string;
-  severity: "info" | "warning" | "critical";
-  service: string | null;
-  message: string;
-  detail: Record<string, unknown>;
-  autoFixed: boolean;
-};
-
-type ComposeAnalysis = {
-  findings: Finding[];
-  counts: Record<string, number>;
-};
+import type { Finding, ComposeAnalysis } from "@/lib/docker/compose-analyze";
 
 type ComposeReviewProps = {
   open: boolean;

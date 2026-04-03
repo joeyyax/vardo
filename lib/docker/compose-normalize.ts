@@ -37,6 +37,30 @@ export type NormalizeOptions = {
 };
 
 // ---------------------------------------------------------------------------
+// Routed service detection
+// ---------------------------------------------------------------------------
+
+/**
+ * Determine which services are routed via Traefik (have domains).
+ *
+ * The primary service is the first bridge-network service in compose order.
+ * When the app has at least one domain, the primary service is Traefik-routed.
+ */
+export function getRoutedServices(
+  compose: ComposeFile,
+  domainCount: number,
+): Set<string> {
+  const routed = new Set<string>();
+  if (domainCount > 0) {
+    const primary = Object.keys(compose.services).find(
+      (k) => !compose.services[k].network_mode || compose.services[k].network_mode === "bridge"
+    );
+    if (primary) routed.add(primary);
+  }
+  return routed;
+}
+
+// ---------------------------------------------------------------------------
 // Main normalizer
 // ---------------------------------------------------------------------------
 
