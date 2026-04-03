@@ -86,6 +86,31 @@ import {
 
 const execFileAsync = promisify(execFile);
 
+/**
+ * Create a directory and ensure the app user (1001) can write to it.
+ * If the dir exists but is root-owned (from a previous deploy before the
+ * permission fix), fix ownership via docker as root.
+ */
+async function ensureWritableDir(dir: string): Promise<void> {
+  await mkdir(dir, { recursive: true });
+  try {
+    const probe = join(dir, `.write-probe-${process.pid}`);
+    await writeFile(probe, "");
+    await rm(probe);
+  } catch (err: unknown) {
+    if (err && typeof err === "object" && "code" in err && (err as { code: string }).code === "EACCES") {
+      if (!dir.startsWith(PROJECTS_DIR + "/")) {
+        throw new Error(`Permission denied and path outside apps dir: ${dir}`);
+      }
+      await execFileAsync("docker", [
+        "run", "--rm", "-v", `${dir}:/target`, "alpine", "chown", "1001:1001", "/target",
+      ], { timeout: 15000 });
+    } else {
+      throw err;
+    }
+  }
+}
+
 const NETWORK_NAME = "vardo-network";
 
 const DEFAULT_HEALTH_CHECK_TIMEOUT_MS = 60000;
@@ -323,17 +348,7 @@ export async function runDeployment(
     // App-level dir holds the repo; env-level dir holds slots
     const appBase = appBaseDir(app.name);
     const appDir = appEnvDir(app.name, envName);
-    try {
-      await mkdir(appDir, { recursive: true });
-    } catch (err: unknown) {
-      if (err && typeof err === "object" && "code" in err && err.code === "EACCES") {
-        throw new Error(
-          `Permission denied creating ${appDir}. ` +
-          `Fix ownership on the host: sudo chown -R 1001:1001 ${appBase}`,
-        );
-      }
-      throw err;
-    }
+    await ensureWritableDir(appDir);
 
     // Load volumes from the volumes table
     const appVolumes = await db.query.volumes.findMany({
@@ -887,7 +902,7 @@ export async function runDeployment(
       newProjectName = `${app.name}-${envName}-${newSlot}`;
       slotDir = join(appDir, newSlot);
     }
-    await mkdir(slotDir, { recursive: true });
+    await ensureWritableDir(slotDir);
 
     checkAbort();
     stage("build", "success");
