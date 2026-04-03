@@ -466,7 +466,7 @@ has_slot_layout() {
 read_active_slot() {
   local current_link="$VARDO_DIR/apps/vardo/env/current"
   if [[ -L "$current_link" ]]; then
-    readlink "$current_link"
+    basename "$(readlink "$current_link")"
   else
     echo "blue"
   fi
@@ -1011,7 +1011,7 @@ clone_repo() {
     info "Cloning to $slot_dir..."
     run_cmd git clone --depth 1 "$REPO_URL" "$slot_dir"
     VARDO_SLOT_DIR="$slot_dir"
-    ln -sfn "$slot_dir" "$VARDO_DIR/apps/vardo/env/current"
+    ln -sfn "$(basename "$slot_dir")" "$VARDO_DIR/apps/vardo/env/current"
     cd "$slot_dir"
     log "Installed to $slot_dir"
   fi
@@ -1048,7 +1048,7 @@ migrate_to_slots() {
     esac
   done
 
-  ln -sfn "$slot_dir" "$env_dir/current"
+  ln -sfn "$(basename "$slot_dir")" "$env_dir/current"
 
   # Copy install.sh back to root so the vardo wrapper keeps working
   cp "$slot_dir/install.sh" "$VARDO_DIR/install.sh"
@@ -1776,7 +1776,7 @@ do_update() {
   # Swap: update current symlink (atomic on Linux)
   step "Finalizing"
 
-  ln -sfn "$new_slot_dir" "$VARDO_DIR/apps/vardo/env/current"
+  ln -sfn "$new_slot" "$VARDO_DIR/apps/vardo/env/current"
   log "Active slot: $new_slot"
 
   # Copy install.sh to root so the wrapper keeps working
