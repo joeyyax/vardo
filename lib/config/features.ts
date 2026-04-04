@@ -12,10 +12,7 @@
 
 export type FeatureFlag =
   | "ui"
-  | "terminal"
   | "environments"
-  | "backups"
-  | "cron"
   | "passwordAuth"
   | "mesh"
   | "bindMounts"
@@ -32,21 +29,9 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
     label: "Web UI",
     description: "Web dashboard for managing projects, apps, and deployments",
   },
-  terminal: {
-    label: "Terminal",
-    description: "Web-based shell access to running containers. Disabling removes the Terminal tab from app detail pages.",
-  },
   environments: {
     label: "Environments",
     description: "Multiple deployment environments per app (staging, preview). Disabling limits apps to a single production environment.",
-  },
-  backups: {
-    label: "Backups",
-    description: "Scheduled volume snapshots to S3-compatible storage. Also required for mesh volume transfers between instances.",
-  },
-  cron: {
-    label: "Cron Jobs",
-    description: "Scheduled command execution inside containers. Disabling removes the Cron tab from app detail pages.",
   },
   passwordAuth: {
     label: "Password Auth",
@@ -122,7 +107,9 @@ export function getFlagConfig(flag: FeatureFlag): FlagConfig {
 }
 
 /**
- * Feature flags that gate UI tabs and their corresponding API endpoints.
+ * Plugin-derived flags that gate UI tabs.
+ * Terminal, cron, and backups are now controlled by their plugin enabled state
+ * rather than separate feature flags.
  */
 export type UIGatedFlag = "terminal" | "cron" | "backups";
 
@@ -133,14 +120,15 @@ export type UIGatedFlag = "terminal" | "cron" | "backups";
 export type FeatureFlags = Record<UIGatedFlag, boolean>;
 
 /**
- * Get the feature flags needed for UI tab gating.
- * Async — reads from config file or DB.
+ * Get the plugin-derived flags needed for UI tab gating.
+ * Checks whether the corresponding plugin is enabled.
  */
 export async function getFeatureFlags(): Promise<FeatureFlags> {
+  const { isPluginEnabledAsync } = await import("@/lib/plugins/registry");
   const [terminal, cron, backups] = await Promise.all([
-    isFeatureEnabledAsync("terminal"),
-    isFeatureEnabledAsync("cron"),
-    isFeatureEnabledAsync("backups"),
+    isPluginEnabledAsync("terminal"),
+    isPluginEnabledAsync("cron"),
+    isPluginEnabledAsync("backups"),
   ]);
   return { terminal, cron, backups };
 }
