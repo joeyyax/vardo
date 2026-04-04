@@ -5,7 +5,7 @@ import { deployments, apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { publishKillSignal } from "@/lib/docker/deploy-cancel";
-import { publishEvent, appChannel } from "@/lib/events";
+import { addEvent } from "@/lib/stream/producer";
 import { releaseConcurrencySlot, removeFromQueue } from "@/lib/docker/deploy-concurrency";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -20,7 +20,7 @@ type RouteParams = {
  * force-mark the deployment as cancelled, stop any running containers,
  * and update the UI.
  */
-async function forceCancel(deploymentId: string, appId: string): Promise<void> {
+async function forceCancel(deploymentId: string, appId: string, orgId: string): Promise<void> {
   await new Promise((r) => setTimeout(r, 5_000));
 
   const deploy = await db.query.deployments.findFirst({
@@ -54,10 +54,13 @@ async function forceCancel(deploymentId: string, appId: string): Promise<void> {
   await releaseConcurrencySlot().catch(() => {});
   await removeFromQueue(deploymentId).catch(() => {});
 
-  publishEvent(appChannel(appId), {
-    event: "deploy:complete",
-    status: "cancelled",
+  addEvent(orgId, {
+    type: "deploy.status",
+    title: "Deploy force-cancelled",
+    message: "Force-cancelled by user (deploy process unresponsive)",
+    appId,
     deploymentId,
+    status: "cancelled",
     success: false,
     durationMs,
   }).catch(() => {});
@@ -102,7 +105,7 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
       await publishKillSignal(deploymentId);
       // If the deploy process doesn't respond within 5s (crashed, stuck subprocess),
       // force-mark it as cancelled so the UI isn't stuck forever.
-      forceCancel(deploymentId, appId).catch(() => {});
+      forceCancel(deploymentId, appId, orgId).catch(() => {});
       return NextResponse.json({ ok: true });
     }
 

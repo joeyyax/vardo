@@ -7,13 +7,13 @@
 // ---------------------------------------------------------------------------
 
 // Producer
-export { addEvent, addDeployLog, addToast } from "./producer";
+export { addEvent, addDeployLog, addToast, addInstallEvent } from "./producer";
 
 // Consumer
 export { readStream, consumeGroup } from "./consumer";
 
 // Key naming
-export { eventStream, deployStream, toastStream } from "./keys";
+export { eventStream, deployStream, toastStream, installStream } from "./keys";
 
 // Types
 export type {

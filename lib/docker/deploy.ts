@@ -7,7 +7,7 @@ import { eq, and } from "drizzle-orm";
 import { logger } from "@/lib/logger";
 import { resolveAllEnvVars, type ResolveContext } from "@/lib/env/resolve";
 import { nanoid } from "nanoid";
-import { publishEvent, appChannel } from "@/lib/events";
+import { addEvent } from "@/lib/stream/producer";
 import { execFile, spawn as nodeSpawn} from "child_process";
 import { promisify } from "util";
 import { mkdir, writeFile, readFile, rm, symlink, readlink, rename } from "fs/promises";
@@ -255,18 +255,9 @@ export async function runDeployment(
   const streamLogger = createDeployLogger(deploymentId);
 
   function log(line: string) {
-    // Write to Redis Stream (new — single source of truth)
     const sanitized = streamLogger.log(line);
     logLines.push(sanitized);
     opts.onLog?.(sanitized);
-
-    // Legacy: broadcast via Redis pub/sub for existing SSE consumers
-    publishEvent(appChannel(opts.appId), {
-      event: "deploy:log",
-      appId: opts.appId,
-      deploymentId,
-      message: sanitized,
-    }).catch(() => {});
   }
 
   // Track the current stage so the error handler knows whether containers
@@ -277,21 +268,11 @@ export async function runDeployment(
     currentStage = s;
     opts.onStage?.(s, status);
 
-    // Write to Redis Stream (new)
     streamLogger.stage(s, status);
 
     // Track current stage in Redis so cancel logic can make two-tier decisions.
     // Key expires after 11 minutes (slightly longer than max deploy duration).
     redis.set(`deploy:stage:${opts.appId}`, s, "EX", 660).catch(() => {});
-
-    // Legacy: broadcast via Redis pub/sub for existing SSE consumers
-    publishEvent(appChannel(opts.appId), {
-      event: "deploy:stage",
-      appId: opts.appId,
-      deploymentId,
-      stage: s,
-      status,
-    }).catch(() => {});
   }
 
   function checkAbort() {
@@ -1645,11 +1626,14 @@ export async function runDeployment(
       })
       .where(eq(deployments.id, deploymentId));
 
-    // Publish event for real-time UI updates
-    publishEvent(appChannel(opts.appId), {
-      event: "deploy:complete",
-      status: "active",
+    // Notify real-time UI via org event stream
+    addEvent(opts.organizationId, {
+      type: "deploy.status",
+      title: "Deploy succeeded",
+      message: `Deployment ${deploymentId} completed successfully`,
+      appId: opts.appId,
       deploymentId,
+      status: "active",
       success: true,
       durationMs,
     }).catch(() => {});
@@ -1723,10 +1707,14 @@ export async function runDeployment(
           })
           .where(eq(deployments.id, deploymentId));
 
-        publishEvent(appChannel(opts.appId), {
-          event: "deploy:superseded",
+        addEvent(opts.organizationId, {
+          type: "deploy.status",
+          title: "Deploy superseded",
+          message: `Deployment ${deploymentId} superseded by ${supersededById}`,
           appId: opts.appId,
           deploymentId,
+          status: "superseded",
+          success: false,
           supersededBy: supersededById,
         }).catch(() => {});
 
@@ -1745,10 +1733,13 @@ export async function runDeployment(
           })
           .where(eq(deployments.id, deploymentId));
 
-        publishEvent(appChannel(opts.appId), {
-          event: "deploy:complete",
-          status: "cancelled",
+        addEvent(opts.organizationId, {
+          type: "deploy.status",
+          title: "Deploy cancelled",
+          message: `Deployment ${deploymentId} cancelled by user`,
+          appId: opts.appId,
           deploymentId,
+          status: "cancelled",
           success: false,
           durationMs,
         }).catch(() => {});
@@ -1794,11 +1785,14 @@ export async function runDeployment(
       .set({ status: "error", updatedAt: new Date() })
       .where(eq(apps.id, opts.appId));
 
-    // Publish event for real-time UI updates
-    publishEvent(appChannel(opts.appId), {
-      event: "deploy:complete",
-      status: "error",
+    // Notify real-time UI via org event stream
+    addEvent(opts.organizationId, {
+      type: "deploy.status",
+      title: "Deploy failed",
+      message: message || `Deployment ${deploymentId} failed`,
+      appId: opts.appId,
       deploymentId,
+      status: "error",
       success: false,
       durationMs,
     }).catch(() => {});

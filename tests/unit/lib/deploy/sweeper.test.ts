@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // Hoisted mock state — vi.mock is hoisted so factories must use vi.hoisted()
 // ---------------------------------------------------------------------------
 
-const { dbMock, lockMock, removeMock, eventsMock, emitMock } = vi.hoisted(() => {
+const { dbMock, lockMock, removeMock, eventsMock, emitMock, streamMock } = vi.hoisted(() => {
   const emitMock = vi.fn();
 
   // Chainable Drizzle select mock: db.select(cols).from(table).where(cond)
@@ -43,14 +43,18 @@ const { dbMock, lockMock, removeMock, eventsMock, emitMock } = vi.hoisted(() => 
     publishEvent: vi.fn().mockResolvedValue(undefined),
     appChannel: vi.fn().mockReturnValue("app:test-channel"),
   };
+  const streamMock = {
+    addEvent: vi.fn().mockResolvedValue("stream-id-1"),
+  };
 
-  return { dbMock, lockMock, removeMock, eventsMock, emitMock };
+  return { dbMock, lockMock, removeMock, eventsMock, emitMock, streamMock };
 });
 
 vi.mock("@/lib/db", () => ({ db: dbMock }));
 vi.mock("@/lib/redis-lock", () => lockMock);
 vi.mock("@/lib/docker/deploy-concurrency", () => removeMock);
 vi.mock("@/lib/events", () => eventsMock);
+vi.mock("@/lib/stream/producer", () => streamMock);
 vi.mock("@/lib/notifications/dispatch", () => ({ emit: emitMock }));
 vi.mock("@/lib/logger", () => ({
   logger: { child: () => ({ warn: vi.fn(), info: vi.fn(), error: vi.fn() }) },
@@ -61,7 +65,7 @@ vi.mock("@/lib/logger", () => ({
 // ---------------------------------------------------------------------------
 
 import { sweepStuckQueuedDeployments } from "@/lib/deploy/sweeper";
-import { publishEvent } from "@/lib/events";
+import { addEvent } from "@/lib/stream/producer";
 import { acquireLock } from "@/lib/redis-lock";
 import { removeFromQueue } from "@/lib/docker/deploy-concurrency";
 
@@ -123,7 +127,7 @@ describe("sweepStuckQueuedDeployments", () => {
     expect(removeFromQueue).toHaveBeenCalledWith(TEST_DEPLOY.id);
 
     // SSE event published
-    expect(publishEvent).toHaveBeenCalledWith(
+    expect(addEvent).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ event: "deploy:complete", status: "cancelled" }),
     );
@@ -137,7 +141,7 @@ describe("sweepStuckQueuedDeployments", () => {
 
     expect(dbMock.update).not.toHaveBeenCalled();
     expect(removeFromQueue).not.toHaveBeenCalled();
-    expect(publishEvent).not.toHaveBeenCalled();
+    expect(addEvent).not.toHaveBeenCalled();
   });
 
   it("skips a deployment when another instance holds the lock", async () => {

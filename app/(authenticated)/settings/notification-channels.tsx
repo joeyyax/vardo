@@ -16,6 +16,7 @@ type Channel = { id: string; name: string; type: ChannelType; config: Record<str
 
 const CATEGORY_LABELS: Record<EventCategory, string> = {
   deploy: "Deploy",
+  app: "App",
   backup: "Backup",
   cron: "Cron",
   volume: "Volume",
@@ -30,6 +31,8 @@ const EVENT_LABELS: Record<BusEventType, string> = {
   "deploy.success": "Deploy succeeded",
   "deploy.failed": "Deploy failed",
   "deploy.rollback": "Auto-rollback",
+  "deploy.status": "Deploy status changed",
+  "app.state-changed": "App state changed",
   "backup.success": "Backup succeeded",
   "backup.failed": "Backup failed",
   "cron.failed": "Cron job failed",
