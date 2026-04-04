@@ -51,6 +51,7 @@ function sanitize(line: string): string {
  */
 export function createDeployLogger(deployId: string) {
   let currentStage: DeployStage = "queued";
+  let lastWrite: Promise<string> = Promise.resolve("");
 
   /**
    * Log a deploy message. Sanitizes secrets and writes to the stream.
@@ -73,17 +74,29 @@ export function createDeployLogger(deployId: string) {
   /**
    * Record a stage transition. Writes to the stream with the stage/status
    * so the frontend can render progress indicators.
+   *
+   * Terminal states (success, failed, cancelled) are awaited to ensure
+   * the SSE endpoint sees the "done" event before the connection closes.
+   * Non-terminal states are fire-and-forget.
    */
   function setStage(stage: DeployStage, status: DeployStatus): void {
     currentStage = stage;
 
-    addDeployLog(deployId, {
+    const isTerminal = status === "success" || status === "failed" || status === "cancelled";
+    const write = addDeployLog(deployId, {
       line: `[stage] ${stage}: ${status}`,
       stage,
       status,
-    }).catch((err) => {
-      log.error(`Failed to write stage for ${deployId}:`, err);
     });
+
+    if (!isTerminal) {
+      write.catch((err) => {
+        log.error(`Failed to write stage for ${deployId}:`, err);
+      });
+    }
+    // Terminal writes: the returned promise is available on `lastWrite`
+    // so callers can await it if needed
+    lastWrite = isTerminal ? write : lastWrite;
   }
 
   /** Get the current stage (for error handler context). */
@@ -91,5 +104,10 @@ export function createDeployLogger(deployId: string) {
     return currentStage;
   }
 
-  return { log: logLine, stage: setStage, getStage };
+  /** Await the last terminal write to ensure SSE consumers see the done event. */
+  async function flush(): Promise<void> {
+    try { await lastWrite; } catch { /* already logged */ }
+  }
+
+  return { log: logLine, stage: setStage, getStage, flush };
 }
