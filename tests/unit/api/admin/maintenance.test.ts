@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { mountsSchema, restartSchema } from "@/lib/api/admin/maintenance-schemas";
+import { mountsSchema, restartSchema, parseMountPair } from "@/lib/api/admin/maintenance-schemas";
 
 // ---------------------------------------------------------------------------
 // Maintenance API — validation schemas and core logic
@@ -164,15 +164,16 @@ describe("update — VARDO_HOME_DIR resolution", () => {
 // GET /api/v1/admin/maintenance/mounts — response shape
 //
 // Returns the current host mount configuration from process.env.
+// Each mount is returned as { source, destination } or null if not configured.
 // ---------------------------------------------------------------------------
 
 describe("mounts GET — response shape", () => {
   function buildMountsResponse(env: Record<string, string | undefined>) {
     return {
-      vardoData: env.VARDO_DATA || null,
-      vardoProjects: env.VARDO_PROJECTS || null,
-      vardoMount1: env.VARDO_MOUNT_1 || null,
-      vardoMount2: env.VARDO_MOUNT_2 || null,
+      vardoData: parseMountPair(env.VARDO_DATA),
+      vardoProjects: parseMountPair(env.VARDO_PROJECTS),
+      vardoMount1: parseMountPair(env.VARDO_MOUNT_1),
+      vardoMount2: parseMountPair(env.VARDO_MOUNT_2),
     };
   }
 
@@ -184,24 +185,32 @@ describe("mounts GET — response shape", () => {
     expect(res.vardoMount2).toBeNull();
   });
 
-  it("returns configured mount paths", () => {
-    const res = buildMountsResponse({ VARDO_DATA: "/mnt/data", VARDO_PROJECTS: "/home/user/projects" });
-    expect(res.vardoData).toBe("/mnt/data");
-    expect(res.vardoProjects).toBe("/home/user/projects");
+  it("returns configured mount pairs (source:destination format)", () => {
+    const res = buildMountsResponse({
+      VARDO_DATA: "/mnt/data:/var/lib/vardo/data:ro",
+      VARDO_PROJECTS: "/home/user/projects:/var/lib/vardo/projects:ro",
+    });
+    expect(res.vardoData).toEqual({ source: "/mnt/data", destination: "/var/lib/vardo/data" });
+    expect(res.vardoProjects).toEqual({ source: "/home/user/projects", destination: "/var/lib/vardo/projects" });
     expect(res.vardoMount1).toBeNull();
+  });
+
+  it("handles legacy single-path format (source = destination)", () => {
+    const res = buildMountsResponse({ VARDO_DATA: "/mnt/data" });
+    expect(res.vardoData).toEqual({ source: "/mnt/data", destination: "/mnt/data" });
   });
 });
 
 // ---------------------------------------------------------------------------
-// POST /api/v1/admin/maintenance/mounts — mountPathField validation
+// POST /api/v1/admin/maintenance/mounts — mountPairField validation
 //
-// Empty string clears the mount. Non-empty values must be absolute paths
-// with no newline characters (which would inject lines into .env).
+// Empty string clears the mount. Non-empty values must be source:destination
+// pairs where both are absolute paths with no newline characters.
 // ---------------------------------------------------------------------------
 
-describe("mounts POST — mountPathField validation", () => {
-  it("accepts a valid absolute path", () => {
-    expect(mountsSchema.safeParse({ vardoData: "/mnt/data" }).success).toBe(true);
+describe("mounts POST — mountPairField validation", () => {
+  it("accepts a valid source:destination pair", () => {
+    expect(mountsSchema.safeParse({ vardoData: "/mnt/data:/var/lib/vardo/data" }).success).toBe(true);
   });
 
   it("accepts empty string to clear a mount", () => {
@@ -212,29 +221,33 @@ describe("mounts POST — mountPathField validation", () => {
     expect(mountsSchema.safeParse({}).success).toBe(true);
   });
 
-  it("rejects relative paths", () => {
-    expect(mountsSchema.safeParse({ vardoData: "mnt/data" }).success).toBe(false);
+  it("rejects single path (no colon)", () => {
+    expect(mountsSchema.safeParse({ vardoData: "/mnt/data" }).success).toBe(false);
+  });
+
+  it("rejects relative source path", () => {
+    expect(mountsSchema.safeParse({ vardoData: "mnt/data:/var/lib/vardo/data" }).success).toBe(false);
+  });
+
+  it("rejects relative destination path", () => {
+    expect(mountsSchema.safeParse({ vardoData: "/mnt/data:var/lib/vardo/data" }).success).toBe(false);
   });
 
   it("rejects newline injection in path value", () => {
-    expect(mountsSchema.safeParse({ vardoData: "/mnt/data\nMALICIOUS=1" }).success).toBe(false);
+    expect(mountsSchema.safeParse({ vardoData: "/mnt/data\nMALICIOUS=1:/var/lib/vardo/data" }).success).toBe(false);
   });
 
   it("rejects carriage-return injection", () => {
-    expect(mountsSchema.safeParse({ vardoData: "/mnt/data\rINJECTED=1" }).success).toBe(false);
-  });
-
-  it("accepts a path with spaces (valid on some systems)", () => {
-    expect(mountsSchema.safeParse({ vardoData: "/mnt/my data" }).success).toBe(true);
+    expect(mountsSchema.safeParse({ vardoData: "/mnt/data\rINJECTED=1:/var/lib/vardo/data" }).success).toBe(false);
   });
 
   it("accepts all four mounts set at once", () => {
     expect(
       mountsSchema.safeParse({
-        vardoData: "/mnt/data",
-        vardoProjects: "/home/user/projects",
-        vardoMount1: "/opt/extra",
-        vardoMount2: "/opt/other",
+        vardoData: "/mnt/data:/var/lib/vardo/data",
+        vardoProjects: "/home/user/projects:/var/lib/vardo/projects",
+        vardoMount1: "/opt/extra:/mnt/extra",
+        vardoMount2: "/opt/other:/mnt/other",
       }).success,
     ).toBe(true);
   });
@@ -250,8 +263,12 @@ describe("mounts POST — mountPathField validation", () => {
     ).toBe(true);
   });
 
-  it("rejects a path that starts with a newline", () => {
-    expect(mountsSchema.safeParse({ vardoData: "\n/mnt/data" }).success).toBe(false);
+  it("rejects path that starts with a newline", () => {
+    expect(mountsSchema.safeParse({ vardoData: "\n/mnt/data:/var/lib/vardo/data" }).success).toBe(false);
+  });
+
+  it("rejects multiple colons (more than one separator)", () => {
+    expect(mountsSchema.safeParse({ vardoData: "/mnt/data:/var/lib/vardo/data:extra" }).success).toBe(false);
   });
 });
 
@@ -296,19 +313,19 @@ describe("mounts POST — update logic", () => {
   it("calls writer for each update and returns ok:true on success", async () => {
     const writer = vi.fn().mockResolvedValue(undefined);
     const result = await processMountsUpdate(
-      [["VARDO_DATA", "/mnt/data"], ["VARDO_PROJECTS", "/home/user/projects"]],
+      [["VARDO_DATA", "/mnt/data:/var/lib/vardo/data:ro"], ["VARDO_PROJECTS", "/home/user/projects:/var/lib/vardo/projects:ro"]],
       writer,
     );
     expect(result.ok).toBe(true);
     expect(result.status).toBe(200);
     expect(writer).toHaveBeenCalledTimes(2);
-    expect(writer).toHaveBeenCalledWith("VARDO_DATA", "/mnt/data");
-    expect(writer).toHaveBeenCalledWith("VARDO_PROJECTS", "/home/user/projects");
+    expect(writer).toHaveBeenCalledWith("VARDO_DATA", "/mnt/data:/var/lib/vardo/data:ro");
+    expect(writer).toHaveBeenCalledWith("VARDO_PROJECTS", "/home/user/projects:/var/lib/vardo/projects:ro");
   });
 
   it("returns 500 when writeEnvKey throws (file I/O error path)", async () => {
     const writer = vi.fn().mockRejectedValue(new Error("EACCES: permission denied"));
-    const result = await processMountsUpdate([["VARDO_DATA", "/mnt/data"]], writer);
+    const result = await processMountsUpdate([["VARDO_DATA", "/mnt/data:/var/lib/vardo/data:ro"]], writer);
     expect(result.ok).toBe(false);
     expect(result.status).toBe(500);
     expect(result.error).toContain("Could not update .env");
@@ -320,7 +337,7 @@ describe("mounts POST — update logic", () => {
       .mockResolvedValueOnce(undefined)
       .mockRejectedValueOnce(new Error("EROFS: read-only file system"));
     const result = await processMountsUpdate(
-      [["VARDO_DATA", "/mnt/data"], ["VARDO_PROJECTS", "/home/user/projects"]],
+      [["VARDO_DATA", "/mnt/data:/var/lib/vardo/data:ro"], ["VARDO_PROJECTS", "/home/user/projects:/var/lib/vardo/projects:ro"]],
       writer,
     );
     expect(result.status).toBe(500);

@@ -40,11 +40,13 @@ type MaintenanceStatus = {
   hasVardoDir: boolean;
 };
 
+type MountPair = { source: string; destination: string };
+
 type MountsConfig = {
-  vardoData: string | null;
-  vardoProjects: string | null;
-  vardoMount1: string | null;
-  vardoMount2: string | null;
+  vardoData: MountPair;
+  vardoProjects: MountPair;
+  vardoMount1: MountPair;
+  vardoMount2: MountPair;
 };
 
 function stateVariant(state: string): "default" | "secondary" | "destructive" | "outline" {
@@ -67,10 +69,10 @@ export function MaintenanceSettings() {
   const [loadingMounts, setLoadingMounts] = useState(true);
   const [status, setStatus] = useState<MaintenanceStatus | null>(null);
   const [mounts, setMounts] = useState<MountsConfig>({
-    vardoData: null,
-    vardoProjects: null,
-    vardoMount1: null,
-    vardoMount2: null,
+    vardoData: { source: "", destination: "" },
+    vardoProjects: { source: "", destination: "" },
+    vardoMount1: { source: "", destination: "" },
+    vardoMount2: { source: "", destination: "" },
   });
   const [restarting, setRestarting] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
@@ -100,10 +102,10 @@ export function MaintenanceSettings() {
       if (res.ok) {
         const data = await res.json();
         setMounts({
-          vardoData: data.vardoData ?? "",
-          vardoProjects: data.vardoProjects ?? "",
-          vardoMount1: data.vardoMount1 ?? "",
-          vardoMount2: data.vardoMount2 ?? "",
+          vardoData: data.vardoData ?? { source: "", destination: "" },
+          vardoProjects: data.vardoProjects ?? { source: "", destination: "" },
+          vardoMount1: data.vardoMount1 ?? { source: "", destination: "" },
+          vardoMount2: data.vardoMount2 ?? { source: "", destination: "" },
         });
       }
     } catch {
@@ -167,12 +169,20 @@ export function MaintenanceSettings() {
     setSavingMounts(true);
     try {
       // Send all fields — empty string clears the mount, non-empty sets it.
-      // Fields that aren't absolute paths are omitted to avoid a 400.
+      // Fields that aren't valid source:destination pairs are omitted to avoid a 400.
       const payload: Record<string, string> = {};
-      if (mounts.vardoData !== null) payload.vardoData = mounts.vardoData;
-      if (mounts.vardoProjects !== null) payload.vardoProjects = mounts.vardoProjects;
-      if (mounts.vardoMount1 !== null) payload.vardoMount1 = mounts.vardoMount1;
-      if (mounts.vardoMount2 !== null) payload.vardoMount2 = mounts.vardoMount2;
+      if (mounts.vardoData.source && mounts.vardoData.destination) {
+        payload.vardoData = `${mounts.vardoData.source}:${mounts.vardoData.destination}`;
+      }
+      if (mounts.vardoProjects.source && mounts.vardoProjects.destination) {
+        payload.vardoProjects = `${mounts.vardoProjects.source}:${mounts.vardoProjects.destination}`;
+      }
+      if (mounts.vardoMount1.source && mounts.vardoMount1.destination) {
+        payload.vardoMount1 = `${mounts.vardoMount1.source}:${mounts.vardoMount1.destination}`;
+      }
+      if (mounts.vardoMount2.source && mounts.vardoMount2.destination) {
+        payload.vardoMount2 = `${mounts.vardoMount2.source}:${mounts.vardoMount2.destination}`;
+      }
 
       const res = await fetch("/api/v1/admin/maintenance/mounts", {
         method: "POST",
@@ -369,66 +379,167 @@ export function MaintenanceSettings() {
           ) : (
             <form onSubmit={(e) => void handleSaveMounts(e)} className="space-y-4">
               <p className="text-sm text-muted-foreground">
-                Host paths to mount into the Vardo container. Changes require a stack restart to
-                take effect — the paths are written to <code className="text-xs font-mono">.env</code>.
-                Leave a field blank to clear that mount.
+                Host mounts for the Vardo container. Each mount is a source:destination pair.
+                Changes require a stack restart to take effect — the pairs are written to{" "}
+                <code className="text-xs font-mono">.env</code>.
+                Leave both fields blank to clear that mount.
               </p>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor="vardo-data" className="text-sm">
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label className="text-sm">
                     Data directory{" "}
                     <span className="text-xs text-muted-foreground font-mono">(VARDO_DATA)</span>
                   </Label>
-                  <Input
-                    id="vardo-data"
-                    placeholder="/mnt/data"
-                    value={mounts.vardoData ?? ""}
-                    onChange={(e) => setMounts((m) => ({ ...m, vardoData: e.target.value }))}
-                    className="squircle font-mono text-sm"
-                  />
+                  <div className="grid gap-2 sm:grid-cols-2 items-start">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="vardo-data-source" className="text-xs text-muted-foreground">
+                        Source (host path)
+                      </Label>
+                      <Input
+                        id="vardo-data-source"
+                        placeholder="/mnt/data"
+                        value={mounts.vardoData.source}
+                        onChange={(e) => setMounts((m) => ({
+                          ...m,
+                          vardoData: { source: e.target.value, destination: m.vardoData.destination },
+                        }))}
+                        className="squircle font-mono text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="vardo-data-dest" className="text-xs text-muted-foreground">
+                        Destination (container path)
+                      </Label>
+                      <Input
+                        id="vardo-data-dest"
+                        placeholder="/var/lib/vardo/data"
+                        value={mounts.vardoData.destination}
+                        onChange={(e) => setMounts((m) => ({
+                          ...m,
+                          vardoData: { source: m.vardoData.source, destination: e.target.value },
+                        }))}
+                        className="squircle font-mono text-sm"
+                      />
+                    </div>
+                  </div>
                 </div>
 
-                <div className="space-y-1.5">
-                  <Label htmlFor="vardo-projects" className="text-sm">
+                <div className="space-y-2">
+                  <Label className="text-sm">
                     Projects directory{" "}
                     <span className="text-xs text-muted-foreground font-mono">(VARDO_PROJECTS)</span>
                   </Label>
-                  <Input
-                    id="vardo-projects"
-                    placeholder="/home/user/projects"
-                    value={mounts.vardoProjects ?? ""}
-                    onChange={(e) => setMounts((m) => ({ ...m, vardoProjects: e.target.value }))}
-                    className="squircle font-mono text-sm"
-                  />
+                  <div className="grid gap-2 sm:grid-cols-2 items-start">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="vardo-projects-source" className="text-xs text-muted-foreground">
+                        Source (host path)
+                      </Label>
+                      <Input
+                        id="vardo-projects-source"
+                        placeholder="/home/user/projects"
+                        value={mounts.vardoProjects.source}
+                        onChange={(e) => setMounts((m) => ({
+                          ...m,
+                          vardoProjects: { source: e.target.value, destination: m.vardoProjects.destination },
+                        }))}
+                        className="squircle font-mono text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="vardo-projects-dest" className="text-xs text-muted-foreground">
+                        Destination (container path)
+                      </Label>
+                      <Input
+                        id="vardo-projects-dest"
+                        placeholder="/var/lib/vardo/projects"
+                        value={mounts.vardoProjects.destination}
+                        onChange={(e) => setMounts((m) => ({
+                          ...m,
+                          vardoProjects: { source: m.vardoProjects.source, destination: e.target.value },
+                        }))}
+                        className="squircle font-mono text-sm"
+                      />
+                    </div>
+                  </div>
                 </div>
 
-                <div className="space-y-1.5">
-                  <Label htmlFor="vardo-mount-1" className="text-sm">
+                <div className="space-y-2">
+                  <Label className="text-sm">
                     Extra mount 1{" "}
                     <span className="text-xs text-muted-foreground font-mono">(VARDO_MOUNT_1)</span>
                   </Label>
-                  <Input
-                    id="vardo-mount-1"
-                    placeholder="/path/to/mount"
-                    value={mounts.vardoMount1 ?? ""}
-                    onChange={(e) => setMounts((m) => ({ ...m, vardoMount1: e.target.value }))}
-                    className="squircle font-mono text-sm"
-                  />
+                  <div className="grid gap-2 sm:grid-cols-2 items-start">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="vardo-mount-1-source" className="text-xs text-muted-foreground">
+                        Source (host path)
+                      </Label>
+                      <Input
+                        id="vardo-mount-1-source"
+                        placeholder="/path/on/host"
+                        value={mounts.vardoMount1.source}
+                        onChange={(e) => setMounts((m) => ({
+                          ...m,
+                          vardoMount1: { source: e.target.value, destination: m.vardoMount1.destination },
+                        }))}
+                        className="squircle font-mono text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="vardo-mount-1-dest" className="text-xs text-muted-foreground">
+                        Destination (container path)
+                      </Label>
+                      <Input
+                        id="vardo-mount-1-dest"
+                        placeholder="/path/in/container"
+                        value={mounts.vardoMount1.destination}
+                        onChange={(e) => setMounts((m) => ({
+                          ...m,
+                          vardoMount1: { source: m.vardoMount1.source, destination: e.target.value },
+                        }))}
+                        className="squircle font-mono text-sm"
+                      />
+                    </div>
+                  </div>
                 </div>
 
-                <div className="space-y-1.5">
-                  <Label htmlFor="vardo-mount-2" className="text-sm">
+                <div className="space-y-2">
+                  <Label className="text-sm">
                     Extra mount 2{" "}
                     <span className="text-xs text-muted-foreground font-mono">(VARDO_MOUNT_2)</span>
                   </Label>
-                  <Input
-                    id="vardo-mount-2"
-                    placeholder="/path/to/mount"
-                    value={mounts.vardoMount2 ?? ""}
-                    onChange={(e) => setMounts((m) => ({ ...m, vardoMount2: e.target.value }))}
-                    className="squircle font-mono text-sm"
-                  />
+                  <div className="grid gap-2 sm:grid-cols-2 items-start">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="vardo-mount-2-source" className="text-xs text-muted-foreground">
+                        Source (host path)
+                      </Label>
+                      <Input
+                        id="vardo-mount-2-source"
+                        placeholder="/path/on/host"
+                        value={mounts.vardoMount2.source}
+                        onChange={(e) => setMounts((m) => ({
+                          ...m,
+                          vardoMount2: { source: e.target.value, destination: m.vardoMount2.destination },
+                        }))}
+                        className="squircle font-mono text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="vardo-mount-2-dest" className="text-xs text-muted-foreground">
+                        Destination (container path)
+                      </Label>
+                      <Input
+                        id="vardo-mount-2-dest"
+                        placeholder="/path/in/container"
+                        value={mounts.vardoMount2.destination}
+                        onChange={(e) => setMounts((m) => ({
+                          ...m,
+                          vardoMount2: { source: m.vardoMount2.source, destination: e.target.value },
+                        }))}
+                        className="squircle font-mono text-sm"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
 

@@ -43,20 +43,28 @@ export const restartSchema = z.object({
     .optional(),
 });
 
-// Mount path values are written directly into .env. Empty string clears the
-// mount. Non-empty values must be absolute paths with no newline characters
-// (newlines would inject additional lines into the .env file).
-export const mountPathField = z
+// Mount values are written directly into .env. Empty string clears the
+// mount. Non-empty values must be source:destination pairs with no newline
+// characters (newlines would inject additional lines into the .env file).
+// Source must be an absolute path. Destination must be an absolute path.
+export const mountPairField = z
   .string()
   .refine(
-    (v) => v === "" || (v.startsWith("/") && !/[\n\r]/.test(v)),
-    "path must be an absolute path without newline characters, or empty to clear",
+    (v) => {
+      if (v === "") return true;
+      if (/[\n\r]/.test(v)) return false;
+      const parts = v.split(":");
+      if (parts.length !== 2) return false;
+      const [source, destination] = parts;
+      return source.startsWith("/") && destination.startsWith("/");
+    },
+    "must be a source:destination pair where both are absolute paths, or empty to clear",
   )
   .optional();
 
 export const mountsSchema = z.object({
-  vardoData: mountPathField,
-  vardoProjects: mountPathField,
-  vardoMount1: mountPathField,
-  vardoMount2: mountPathField,
+  vardoData: mountPairField,
+  vardoProjects: mountPairField,
+  vardoMount1: mountPairField,
+  vardoMount2: mountPairField,
 });
