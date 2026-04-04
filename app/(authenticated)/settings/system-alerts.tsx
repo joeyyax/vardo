@@ -139,7 +139,7 @@ export function SystemAlertsPanel() {
     };
     void run();
     return () => controller.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   const handleRefresh = async () => {
