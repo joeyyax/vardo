@@ -18,6 +18,7 @@ const manifest: PluginManifest = {
         default: "http://loki:3100/ready",
         setting: "lokiUrl",
         provisionable: true,
+        templateName: "loki",
       },
     ],
   },
