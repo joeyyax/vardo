@@ -57,7 +57,52 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
       deploymentId = latest.id;
     }
 
+    // Check if stream exists; if not, fall back to DB log for historical deploys
     const streamKey = deployStream(deploymentId);
+    const streamExists = await (async () => {
+      try {
+        const len = await (await import("@/lib/redis")).redis.xlen(streamKey);
+        return len > 0;
+      } catch { return false; }
+    })();
+
+    // If stream is empty/evicted, serve historical log from DB
+    if (!streamExists) {
+      const deploy = await db.query.deployments.findFirst({
+        where: eq(deployments.id, deploymentId),
+        columns: { id: true, status: true, log: true },
+      });
+
+      if (!deploy?.log) {
+        return new Response(JSON.stringify({ error: "No log data available" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      // Serve the DB log as a completed SSE stream
+      const encoder = new TextEncoder();
+      const fallbackStream = new ReadableStream({
+        start(ctrl) {
+          for (const line of deploy.log!.split("\n")) {
+            if (line) {
+              try {
+                ctrl.enqueue(encoder.encode(`event: log\ndata: ${JSON.stringify({ deploymentId, message: line })}\n\n`));
+              } catch { break; }
+            }
+          }
+          try {
+            ctrl.enqueue(encoder.encode(`event: done\ndata: ${JSON.stringify({ deploymentId, success: deploy.status === "success", status: deploy.status })}\n\n`));
+            ctrl.close();
+          } catch { /* already closed */ }
+        },
+      });
+
+      return new Response(fallbackStream, {
+        headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" },
+      });
+    }
+
     const encoder = new TextEncoder();
     const abortController = new AbortController();
 
