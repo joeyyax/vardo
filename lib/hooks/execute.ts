@@ -29,6 +29,18 @@ const execFileAsync = promisify(execFile);
 const log = logger.child("hooks");
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+const MAX_TIMEOUT_MS = 120_000;
+
+/** Safe env vars for script hooks — no secrets, no DB credentials. */
+function buildScriptEnv(context: HookContext): NodeJS.ProcessEnv {
+  return {
+    PATH: process.env.PATH || "/usr/local/bin:/usr/bin:/bin",
+    HOME: process.env.HOME || "/tmp",
+    LANG: process.env.LANG || "en_US.UTF-8",
+    NODE_ENV: process.env.NODE_ENV,
+    HOOK_CONTEXT: JSON.stringify(context),
+  };
+}
 
 /**
  * Execute all registered hooks for a before.* event.
@@ -105,11 +117,16 @@ export async function executeHooks(
       }).catch(() => {});
     }
 
-    // Apply fail mode
+    // Apply fail mode — unknown values default to "fail" (most restrictive)
     if (!result.allowed) {
       const failMode = hook.failMode as FailMode;
 
-      if (failMode === "fail") {
+      if (failMode === "warn") {
+        log.warn(`Hook "${hook.name}" failed (warn mode, continuing): ${result.reason}`);
+      } else if (failMode === "ignore") {
+        // Silent continue
+      } else {
+        // "fail" mode or any unknown value — block the pipeline
         log.warn(`Hook "${hook.name}" blocked ${event}: ${result.reason}`);
         return {
           allowed: false,
@@ -121,11 +138,6 @@ export async function executeHooks(
           },
         };
       }
-
-      if (failMode === "warn") {
-        log.warn(`Hook "${hook.name}" failed (warn mode, continuing): ${result.reason}`);
-      }
-      // "ignore" mode: silently continue
     }
   }
 
@@ -157,7 +169,7 @@ async function executeWebhook(
   config: WebhookHookConfig,
   context: HookContext,
 ): Promise<{ allowed: boolean; reason?: string }> {
-  const timeout = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const timeout = Math.min(config.timeoutMs ?? DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS);
   const payload = JSON.stringify(context);
 
   const headers: Record<string, string> = {
@@ -191,8 +203,8 @@ async function executeWebhook(
 
     const body = await response.json() as { allow?: boolean; reason?: string };
     return {
-      allowed: body.allow !== false, // Default to allowed if field missing
-      reason: body.reason,
+      allowed: body.allow === true, // Explicit opt-in required
+      reason: body.reason || (body.allow !== true ? "Webhook did not return {allow: true}" : undefined),
     };
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
@@ -213,11 +225,8 @@ async function executeScript(
 
   try {
     const { stdout } = await execFileAsync("bash", ["-c", config.command], {
-      timeout,
-      env: {
-        ...process.env,
-        HOOK_CONTEXT: JSON.stringify(context),
-      },
+      timeout: Math.min(timeout, MAX_TIMEOUT_MS),
+      env: buildScriptEnv(context),
     });
     return { allowed: true, reason: stdout.trim() || undefined };
   } catch (err) {
