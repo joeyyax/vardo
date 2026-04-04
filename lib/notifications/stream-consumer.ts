@@ -74,7 +74,7 @@ async function dispatchEvent(orgId: string, event: BusEvent): Promise<void> {
   const memberIds = members.map((m) => m.userId);
   const prefs = await fetchEventPrefs(orgId, event.type, memberIds);
 
-  await Promise.allSettled(
+  const results = await Promise.allSettled(
     channels.map(async (row) => {
       if (!channelAcceptsEvent(row.subscribedEvents, event.type)) return;
 
@@ -94,11 +94,17 @@ async function dispatchEvent(orgId: string, event: BusEvent): Promise<void> {
         const errorMsg = err instanceof Error ? err.message : String(err);
         log.warn(`Channel "${row.name}" failed: ${errorMsg}`);
         await logDelivery(orgId, row, event, "failed", errorMsg);
-        // Throw so the consumer group doesn't ACK — entry stays pending for retry
         throw err;
       }
     }),
   );
+
+  // If any channel failed, throw so the consumer doesn't ACK.
+  // The entry stays pending and will be retried via XCLAIM.
+  const failures = results.filter((r) => r.status === "rejected");
+  if (failures.length > 0) {
+    throw new Error(`${failures.length} channel(s) failed delivery`);
+  }
 }
 
 /** Best-effort delivery log. */
@@ -184,4 +190,13 @@ export async function stopNotificationConsumer(): Promise<void> {
     stopFn = null;
     log.info("Notification consumer stopped");
   }
+}
+
+/**
+ * Restart the consumer to pick up new org streams.
+ * Call this when a new organization is created.
+ */
+export async function restartNotificationConsumer(): Promise<void> {
+  await stopNotificationConsumer();
+  await startNotificationConsumer();
 }

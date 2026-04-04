@@ -119,18 +119,14 @@ function dispatchToChannels(orgId: string, event: BusEvent): void {
   });
 }
 
-// Legacy: register as an emit hook for in-process dispatch.
-// This is kept during migration so notifications still fire even before
-// the stream consumer is started. Once the stream consumer is the primary
-// path, this hook can be removed.
-onEmit("dispatch", dispatchToChannels);
-
-// Start the stream consumer on module load (runs in background).
-// This is the new primary path — consumes from Redis Streams with
-// at-least-once delivery and automatic retry via consumer groups.
+// Stream consumer is the primary dispatch path. Consumes from Redis Streams
+// with at-least-once delivery and automatic retry via consumer groups.
+// The legacy onEmit hook is removed to prevent double dispatch.
 import { startNotificationConsumer } from "./stream-consumer";
 startNotificationConsumer().catch((err) => {
-  log.error("Failed to start notification stream consumer:", err);
+  log.error("Failed to start notification stream consumer, falling back to legacy dispatch:", err);
+  // Fallback: if stream consumer fails to start, register the legacy hook
+  onEmit("dispatch", dispatchToChannels);
 });
 
 // Re-export emit so call sites can import { emit } from "@/lib/notifications/dispatch"
