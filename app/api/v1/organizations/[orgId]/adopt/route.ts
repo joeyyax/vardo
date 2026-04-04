@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { requirePlugin } from "@/lib/api/require-plugin";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { db } from "@/lib/db";
 import { apps, domains, environments } from "@/lib/db/schema";
@@ -66,6 +67,9 @@ async function handler(request: NextRequest, { params }: RouteParams) {
 
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+    const gate = await requirePlugin("container-import");
+    if (gate) return gate;
 
     const body = await request.json();
     const parsed = adoptSchema.safeParse(body);

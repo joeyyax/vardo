@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentOrg } from "@/lib/auth/session";
+import { isCapabilityAvailable } from "@/lib/plugins/registry";
 import { db } from "@/lib/db";
 import { projects } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -19,6 +20,11 @@ export default async function DiscoverPage({
 
   if (!orgData) {
     redirect("/login");
+  }
+
+  const containerImportEnabled = await isCapabilityAvailable("container-import");
+  if (!containerImportEnabled) {
+    redirect("/projects");
   }
 
   const orgId = orgData.organization.id;
