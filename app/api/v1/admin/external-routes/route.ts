@@ -8,6 +8,8 @@ import { externalRoutes, domains } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { regenerateExternalRoutesConfig } from "@/lib/traefik/generate-external-routes-config";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 const hostnameSchema = z
   .string()
   .min(1)
@@ -41,7 +43,7 @@ export async function GET() {
 }
 
 /** POST /api/v1/admin/external-routes — create a new external route */
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     await requireAppAdmin();
 
@@ -97,3 +99,5 @@ export async function POST(request: NextRequest) {
     return handleRouteError(error, "Error creating external route");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "admin", key: "admin-external-routes" });

@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { handleRouteError, isUniqueViolation } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { environments } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { verifyAppAccess } from "@/lib/api/verify-access";
+
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string; envId: string }>;
@@ -21,7 +23,7 @@ const updateEnvironmentSchema = z.object({
 }).strict();
 
 // PATCH /api/v1/organizations/[orgId]/apps/[appId]/environments/[envId]
-export async function PATCH(request: NextRequest, { params }: RouteParams) {
+async function handlePatch(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId, envId } = await params;
     const app = await verifyAppAccess(orgId, appId);
@@ -63,11 +65,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ environment: updated });
   } catch (error) {
-    if (
-      error instanceof Error &&
-      "code" in error &&
-      (error as { code: string }).code === "23505"
-    ) {
+    if (isUniqueViolation(error)) {
       return NextResponse.json(
         { error: "An environment with this name already exists" },
         { status: 409 }
@@ -78,7 +76,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE /api/v1/organizations/[orgId]/apps/[appId]/environments/[envId]
-export async function DELETE(_request: NextRequest, { params }: RouteParams) {
+async function handleDelete(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId, envId } = await params;
     const app = await verifyAppAccess(orgId, appId);
@@ -133,3 +131,6 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error deleting environment");
   }
 }
+
+export const PATCH = withRateLimit(handlePatch, { tier: "mutation", key: "apps-environments" });
+export const DELETE = withRateLimit(handleDelete, { tier: "mutation", key: "apps-environments" });

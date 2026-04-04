@@ -8,6 +8,8 @@ import { nanoid } from "nanoid";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { logger } from "@/lib/logger";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 const log = logger.child("admin");
 
 const createUserSchema = z.object({
@@ -55,7 +57,7 @@ export async function GET() {
 
 // POST /api/v1/admin/users
 // Invite a user — creates account, sends magic link for first login
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     await requireAppAdmin();
 
@@ -132,3 +134,5 @@ export async function POST(request: NextRequest) {
     return handleRouteError(error, "Error creating user");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "admin", key: "admin-users" });

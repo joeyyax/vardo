@@ -8,6 +8,8 @@ import { z } from "zod";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { isLocalBackupsAllowed } from "@/lib/config/provider-restrictions";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 const s3ConfigSchema = z.object({
   bucket: z.string().min(1),
   region: z.string().min(1),
@@ -71,7 +73,7 @@ export async function GET() {
 }
 
 // POST /api/v1/admin/backup-targets — create app-level target
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     await requireAppAdmin();
 
@@ -115,3 +117,5 @@ export async function POST(request: NextRequest) {
     return handleRouteError(error, "Error creating admin backup target");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "admin", key: "admin-backup-targets" });

@@ -35,7 +35,7 @@ import { AppBackupHistory } from "@/components/backups/app-backup-history";
 import { statusDotColor } from "@/lib/ui/status-colors";
 import { AppDeployPanel } from "./app-deploy-panel";
 import { useDeploy } from "./hooks/use-deploy";
-import { isAdmin } from "@/lib/auth/permissions";
+import { isOrgAdmin } from "@/lib/auth/permissions";
 import type { App, ChildApp } from "./types";
 import type { FeatureFlags } from "@/lib/config/features";
 import { ComposeReview } from "@/components/compose-review";
@@ -287,7 +287,7 @@ export function ComposeDetail({
   const [deleting, setDeleting] = useState(false);
   const [stopOpen, setStopOpen] = useState(false);
 
-  const canDelete = isAdmin(userRole);
+  const canDelete = isOrgAdmin(userRole);
 
   const handleRestart = useCallback(async () => {
     try {

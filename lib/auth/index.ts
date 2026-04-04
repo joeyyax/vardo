@@ -3,9 +3,9 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { passkey } from "@better-auth/passkey";
 import { twoFactor, magicLink } from "better-auth/plugins";
 import { db } from "@/lib/db";
-import { sql } from "drizzle-orm";
 import * as schema from "@/lib/db/schema";
 import { DEFAULT_APP_NAME } from "@/lib/constants";
+import { createDefaultOrgForUser } from "@/lib/organizations/create-default-org";
 
 // GitHub OAuth credentials are stored in the database (system_settings).
 // Better Auth requires credentials at init time, so we cache them and
@@ -141,7 +141,7 @@ function buildAuth() {
   account: {
     accountLinking: {
       enabled: true,
-      trustedProviders: ["github", "google"],
+      trustedProviders: ["github"],
     },
   },
 
@@ -150,48 +150,7 @@ function buildAuth() {
     user: {
       create: {
         after: async (user) => {
-          const { eq } = await import("drizzle-orm");
-          const { nanoid } = await import("nanoid");
-
-          await db.transaction(async (tx) => {
-            const [{ count }] = await tx
-              .select({ count: sql<number>`count(*)` })
-              .from(schema.user);
-            if (Number(count) === 1) {
-              await tx
-                .update(schema.user)
-                .set({ isAppAdmin: true })
-                .where(eq(schema.user.id, user.id));
-            }
-
-            // Auto-create a default organization for the new user
-            const rawName = user.name || user.email.split("@")[0];
-            // Strip +suffix from email local parts, replace dots/underscores
-            // with spaces, and capitalize the first letter
-            const cleanedName = rawName
-              .replace(/\+.*$/, "")
-              .replace(/[._]/g, " ")
-              .replace(/^\w/, (c: string) => c.toUpperCase());
-            const baseSlug = cleanedName
-              .toLowerCase()
-              .replace(/[^a-z0-9]+/g, "-")
-              .replace(/^-|-$/g, "");
-            const slug = `${baseSlug}-${nanoid(8)}`;
-
-            const orgId = nanoid();
-            await tx.insert(schema.organizations).values({
-              id: orgId,
-              name: cleanedName,
-              slug,
-            });
-
-            await tx.insert(schema.memberships).values({
-              id: nanoid(),
-              userId: user.id,
-              organizationId: orgId,
-              role: "owner",
-            });
-          });
+          await createDefaultOrgForUser(user.id, user.name, user.email);
         },
       },
     },

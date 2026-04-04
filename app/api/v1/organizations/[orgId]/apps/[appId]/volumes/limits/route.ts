@@ -6,6 +6,8 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { verifyAppAccess } from "@/lib/api/verify-access";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
 };
@@ -55,7 +57,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 }
 
 // PUT — set/update the volume limit on all volumes for this app
-export async function PUT(request: NextRequest, { params }: RouteParams) {
+async function handlePut(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const app = await verifyAppAccess(orgId, appId);
@@ -96,7 +98,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE — remove the volume limit from all volumes for this app
-export async function DELETE(_request: NextRequest, { params }: RouteParams) {
+async function handleDelete(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const app = await verifyAppAccess(orgId, appId);
@@ -119,3 +121,6 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error deleting volume limit");
   }
 }
+
+export const PUT = withRateLimit(handlePut, { tier: "mutation", key: "volumes-limits" });
+export const DELETE = withRateLimit(handleDelete, { tier: "mutation", key: "volumes-limits" });

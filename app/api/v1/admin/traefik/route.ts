@@ -7,6 +7,8 @@ import { writeEnvKey } from "@/lib/env/write-env-key";
 import { logger } from "@/lib/logger";
 import { VARDO_HOME_DIR } from "@/lib/paths";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 const log = logger.child("admin:traefik");
 
 const traefikConfigSchema = z.object({
@@ -20,7 +22,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json(config);
 }
 
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   await requireAdminAuth(request);
 
   const body = await request.json();
@@ -55,3 +57,5 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ ok: true });
 }
+
+export const POST = withRateLimit(handlePost, { tier: "admin", key: "admin-traefik" });

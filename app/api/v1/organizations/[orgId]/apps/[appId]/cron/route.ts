@@ -7,8 +7,10 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { verifyAppAccess } from "@/lib/api/verify-access";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
-import { isAdmin } from "@/lib/auth/permissions";
+import { isOrgAdmin } from "@/lib/auth/permissions";
 import { isFeatureEnabled } from "@/lib/config/features";
+
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -61,7 +63,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 }
 
 // POST /api/v1/organizations/[orgId]/apps/[appId]/cron
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     if (!isFeatureEnabled("cron")) {
       return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
@@ -70,7 +72,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const { orgId, appId } = await params;
     const orgAccess = await verifyOrgAccess(orgId);
     if (!orgAccess) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    if (!isAdmin(orgAccess.membership.role)) {
+    if (!isOrgAdmin(orgAccess.membership.role)) {
       return NextResponse.json({ error: "Admin access required" }, { status: 403 });
     }
     const app = await verifyAppAccess(orgId, appId);
@@ -109,7 +111,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 }
 
 // PATCH /api/v1/organizations/[orgId]/apps/[appId]/cron
-export async function PATCH(request: NextRequest, { params }: RouteParams) {
+async function handlePatch(request: NextRequest, { params }: RouteParams) {
   try {
     if (!isFeatureEnabled("cron")) {
       return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
@@ -151,7 +153,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE /api/v1/organizations/[orgId]/apps/[appId]/cron
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     if (!isFeatureEnabled("cron")) {
       return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
@@ -193,3 +195,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error deleting cron job");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "mutation", key: "apps-cron" });
+export const PATCH = withRateLimit(handlePatch, { tier: "mutation", key: "apps-cron" });
+export const DELETE = withRateLimit(handleDelete, { tier: "mutation", key: "apps-cron" });

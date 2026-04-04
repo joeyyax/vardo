@@ -3,13 +3,15 @@ import { z } from "zod";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { invitations, user } from "@/lib/db/schema";
-import { requireAdmin } from "@/lib/auth/permissions";
+import { requireOrgAdmin } from "@/lib/auth/permissions";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import crypto from "crypto";
 import { sendEmail } from "@/lib/email/send";
 import { InviteEmail } from "@/lib/email/templates/invite";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 const createInvitationSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -49,13 +51,13 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
 // POST /api/v1/organizations/[orgId]/invitations
 // Create an invitation and send an email
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    requireAdmin(org.membership.role);
+    requireOrgAdmin(org.membership.role);
 
     const body = await request.json();
     const parsed = createInvitationSchema.safeParse(body);
@@ -143,3 +145,5 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error creating invitation");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "mutation", key: "organizations-invitations" });

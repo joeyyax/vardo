@@ -2,13 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { digestSettings, notificationChannels, organizations } from "@/lib/db/schema";
-import { requireAdmin } from "@/lib/auth/permissions";
+import { requireOrgAdmin } from "@/lib/auth/permissions";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { collectDigestData } from "@/lib/digest/collector";
 import { createChannel } from "@/lib/notifications/factory";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 type RouteParams = { params: Promise<{ orgId: string }> };
 
@@ -61,7 +63,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 
 // PATCH /api/v1/organizations/[orgId]/digest
 // Creates or updates digest settings for the org.
-export async function PATCH(req: NextRequest, { params }: RouteParams) {
+async function handlePatch(req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId);
@@ -115,13 +117,13 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 // POST /api/v1/organizations/[orgId]/digest
 // Trigger an immediate on-demand digest send for the org.
 // Requires admin or owner role. Returns the collected digest data as a preview.
-export async function POST(_req: NextRequest, { params }: RouteParams) {
+async function handlePost(_req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    requireAdmin(org.membership.role);
+    requireOrgAdmin(org.membership.role);
 
     const orgRecord = await db.query.organizations.findFirst({
       where: eq(organizations.id, orgId),
@@ -135,24 +137,18 @@ export async function POST(_req: NextRequest, { params }: RouteParams) {
     const data = await collectDigestData(orgRecord.id, orgRecord.name);
 
     const event = {
-      type: "weekly-digest" as const,
+      type: "digest.weekly" as const,
       title: `Weekly Digest — ${orgRecord.name}`,
       message: `Weekly health summary for ${orgRecord.name}: ${data.deploys.total} deploys, ${data.deploys.failed} failures.`,
-      metadata: {
-        orgName: orgRecord.name,
-        weekLabel: data.weekLabel,
-        deploysTotal: String(data.deploys.total),
-        deploysSucceeded: String(data.deploys.succeeded),
-        deploysFailed: String(data.deploys.failed),
-        backupsTotal: String(data.backups.total),
-        backupsSucceeded: String(data.backups.succeeded),
-        backupsFailed: String(data.backups.failed),
-        cronFailures: String(data.cron.totalFailures),
-        cronAffectedJobs: JSON.stringify(data.cron.affectedJobs),
-        diskWriteAlerts: String(data.alerts.diskWriteAlerts),
-        volumeDrifts: String(data.alerts.volumeDrifts),
-        projects: JSON.stringify(data.projects),
-      },
+      orgName: orgRecord.name,
+      weekLabel: data.weekLabel,
+      deploysTotal: data.deploys.total,
+      deploysSucceeded: data.deploys.succeeded,
+      deploysFailed: data.deploys.failed,
+      backupsTotal: data.backups.total,
+      backupsFailed: data.backups.failed,
+      cronTotal: data.cron.totalFailures,
+      cronFailed: data.cron.totalFailures,
     };
 
     // Send synchronously so the caller gets an accurate result
@@ -178,3 +174,6 @@ export async function POST(_req: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error sending on-demand digest");
   }
 }
+
+export const PATCH = withRateLimit(handlePatch, { tier: "mutation", key: "organizations-digest" });
+export const POST = withRateLimit(handlePost, { tier: "mutation", key: "organizations-digest" });

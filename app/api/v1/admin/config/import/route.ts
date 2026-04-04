@@ -3,6 +3,8 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { z } from "zod";
 import YAML from "yaml";
 import JSZip from "jszip";
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 import {
   importVardoConfig,
   writeVardoConfig,
@@ -78,7 +80,7 @@ const secretsSchema = z.object({
  * Auth: requireAdminAuth OR needsSetup (for onboarding import).
  * ?persist=true writes files to disk alongside DB import.
  */
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     // Auth: admin or fresh install (no users exist yet)
     const { needsSetup } = await import("@/lib/setup");
@@ -216,3 +218,5 @@ async function parseZip(buffer: Buffer): Promise<{
 
   return { config, secrets };
 }
+
+export const POST = withRateLimit(handlePost, { tier: "admin", key: "config-import" });

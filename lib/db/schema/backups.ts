@@ -9,7 +9,8 @@ import {
 } from "drizzle-orm/pg-core";
 import { backupStatusEnum, backupTargetTypeEnum } from "./enums";
 import { organizations } from "./organizations";
-import { apps, volumes } from "./apps";
+import { apps } from "./apps";
+import { volumes } from "./volumes";
 import { jsonb } from "drizzle-orm/pg-core";
 
 // ---------------------------------------------------------------------------

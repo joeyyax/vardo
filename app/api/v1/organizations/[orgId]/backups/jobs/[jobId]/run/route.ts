@@ -7,12 +7,14 @@ import { eq, and } from "drizzle-orm";
 import { runBackup } from "@/lib/backup/engine";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 type RouteParams = {
   params: Promise<{ orgId: string; jobId: string }>;
 };
 
 // POST /api/v1/organizations/[orgId]/backups/[jobId]/run
-export async function POST(_request: NextRequest, { params }: RouteParams) {
+async function handlePost(_request: NextRequest, { params }: RouteParams) {
   try {
     if (!isFeatureEnabled("backups")) {
       return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
@@ -47,3 +49,5 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error running backup");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "mutation", key: "jobs-run" });

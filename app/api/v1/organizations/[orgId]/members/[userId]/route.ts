@@ -2,22 +2,24 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { memberships } from "@/lib/db/schema";
-import { requireAdmin } from "@/lib/auth/permissions";
+import { requireOrgAdmin } from "@/lib/auth/permissions";
 import { eq, and } from "drizzle-orm";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 type RouteParams = {
   params: Promise<{ orgId: string; userId: string }>;
 };
 
 // PATCH /api/v1/organizations/[orgId]/members/[userId]
-export async function PATCH(request: NextRequest, { params }: RouteParams) {
+async function handlePatch(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, userId } = await params;
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    requireAdmin(org.membership.role);
+    requireOrgAdmin(org.membership.role);
 
     const body = await request.json();
     const { role } = body;
@@ -69,13 +71,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE /api/v1/organizations/[orgId]/members/[userId]
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, userId } = await params;
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    requireAdmin(org.membership.role);
+    requireOrgAdmin(org.membership.role);
 
     // Find target membership
     const targetMembership = await db.query.memberships.findFirst({
@@ -118,3 +120,6 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error removing member");
   }
 }
+
+export const PATCH = withRateLimit(handlePatch, { tier: "mutation", key: "organizations-members" });
+export const DELETE = withRateLimit(handleDelete, { tier: "mutation", key: "organizations-members" });

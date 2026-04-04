@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { handleRouteError, isUniqueViolation } from "@/lib/api/error-response";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { db } from "@/lib/db";
 import { apps, environments, volumes, domains, organizations, deployments } from "@/lib/db/schema";
@@ -407,11 +407,7 @@ export async function POST(request: NextRequest) {
       });
     }
     // Unique constraint — app name already exists
-    const pgCode = error instanceof Error
-      ? ("code" in error ? (error as { code: string }).code : null) ??
-        (error.cause && typeof error.cause === "object" && "code" in error.cause ? (error.cause as { code: string }).code : null)
-      : null;
-    if (pgCode === "23505") {
+    if (isUniqueViolation(error)) {
       return new Response(
         JSON.stringify({ error: "An app with this name already exists. Connect it manually instead." }),
         { status: 409, headers: { "Content-Type": "application/json" } }

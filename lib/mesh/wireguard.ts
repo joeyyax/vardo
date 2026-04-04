@@ -1,10 +1,9 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { HUB_IP } from "./ip-allocator";
+import { WG_CONTAINER, FRONTEND_MESH_IP, CONSOLE_PORT } from "./constants";
 
 const execFileAsync = promisify(execFile);
-
-const WG_CONTAINER = "vardo-wireguard";
 
 // WireGuard base64 key: 44 chars, A-Z a-z 0-9 + / ending with =
 const WG_KEY_RE = /^[A-Za-z0-9+/]{43}=$/;
@@ -60,17 +59,14 @@ export function buildWgConfig(
     throw new Error("Invalid WireGuard private key format");
   }
 
-  // Frontend container IP on the mesh Docker network (fixed in docker-compose.yml)
-  const FRONTEND_MESH_IP = "10.88.0.3";
-
   const lines = [
     "[Interface]",
     `PrivateKey = ${privateKey}`,
     `ListenPort = ${listenPort}`,
     `Address = ${address}/24`,
     // Forward incoming mesh traffic to the frontend container
-    `PostUp = iptables -t nat -A POSTROUTING -o wg0 -j MASQUERADE; iptables -t nat -A PREROUTING -i wg0 -p tcp --dport 3000 -j DNAT --to-destination ${FRONTEND_MESH_IP}:3000; iptables -A FORWARD -i wg0 -p tcp --dport 3000 -j ACCEPT`,
-    `PostDown = iptables -t nat -D POSTROUTING -o wg0 -j MASQUERADE; iptables -t nat -D PREROUTING -i wg0 -p tcp --dport 3000 -j DNAT --to-destination ${FRONTEND_MESH_IP}:3000; iptables -D FORWARD -i wg0 -p tcp --dport 3000 -j ACCEPT`,
+    `PostUp = iptables -t nat -A POSTROUTING -o wg0 -j MASQUERADE; iptables -t nat -A PREROUTING -i wg0 -p tcp --dport ${CONSOLE_PORT} -j DNAT --to-destination ${FRONTEND_MESH_IP}:${CONSOLE_PORT}; iptables -A FORWARD -i wg0 -p tcp --dport ${CONSOLE_PORT} -j ACCEPT`,
+    `PostDown = iptables -t nat -D POSTROUTING -o wg0 -j MASQUERADE; iptables -t nat -D PREROUTING -i wg0 -p tcp --dport ${CONSOLE_PORT} -j DNAT --to-destination ${FRONTEND_MESH_IP}:${CONSOLE_PORT}; iptables -D FORWARD -i wg0 -p tcp --dport ${CONSOLE_PORT} -j ACCEPT`,
     "",
   ];
 

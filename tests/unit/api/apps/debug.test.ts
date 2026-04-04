@@ -7,19 +7,19 @@ import { buildComposePreview } from "@/lib/docker/compose";
 // Mirrors the role check in:
 //   app/api/v1/organizations/[orgId]/apps/[appId]/debug/route.ts
 
-import { isAdmin } from "@/lib/auth/permissions";
+import { isOrgAdmin } from "@/lib/auth/permissions";
 
 describe("debug route admin gate", () => {
   it("allows owner", () => {
-    expect(isAdmin("owner")).toBe(true);
+    expect(isOrgAdmin("owner")).toBe(true);
   });
 
   it("allows admin", () => {
-    expect(isAdmin("admin")).toBe(true);
+    expect(isOrgAdmin("admin")).toBe(true);
   });
 
   it("blocks member", () => {
-    expect(isAdmin("member")).toBe(false);
+    expect(isOrgAdmin("member")).toBe(false);
   });
 });
 

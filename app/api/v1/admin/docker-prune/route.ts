@@ -7,9 +7,11 @@ import { eq } from "drizzle-orm";
 import { exec } from "child_process";
 import { promisify } from "util";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 const execAsync = promisify(exec);
 
-export async function POST(_request: NextRequest) {
+async function handlePost(_request: NextRequest) {
   try {
     const session = await requireSession();
     const dbUser = await db.query.user.findFirst({
@@ -33,3 +35,5 @@ export async function POST(_request: NextRequest) {
     return handleRouteError(error);
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "admin", key: "admin-docker-prune" });

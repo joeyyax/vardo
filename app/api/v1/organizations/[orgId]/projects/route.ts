@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { handleRouteError, isUniqueViolation } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { projects } from "@/lib/db/schema";
 import { desc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -48,7 +50,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
 // POST /api/v1/organizations/[orgId]/projects
 // Creates a new project (group) with name, displayName, color, description
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId);
@@ -80,11 +82,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ project }, { status: 201 });
   } catch (error) {
-    const pgCode = error instanceof Error
-      ? ("code" in error ? (error as { code: string }).code : null) ??
-        (error.cause && typeof error.cause === "object" && "code" in error.cause ? (error.cause as { code: string }).code : null)
-      : null;
-    if (pgCode === "23505") {
+    if (isUniqueViolation(error)) {
       return NextResponse.json(
         { error: "A project with this name already exists" },
         { status: 409 }
@@ -93,3 +91,5 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error creating project");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "mutation", key: "organizations-projects" });

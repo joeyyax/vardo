@@ -9,6 +9,8 @@ import { listContainers, inspectContainer, resolveVolumeName } from "@/lib/docke
 import { z } from "zod";
 import { recordActivity } from "@/lib/activity";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string; volumeName: string }>;
 };
@@ -37,7 +39,7 @@ const syncSchema = z.object({
  * filesystem into the named volume. Destructive syncs (deleting many files)
  * require `{ confirm: true }` in the body.
  */
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId, volumeName } = await params;
     const appRecord = await verifyAppAccess(orgId, appId);
@@ -157,3 +159,5 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error syncing files from image");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "mutation", key: "volumes-sync" });

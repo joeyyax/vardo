@@ -7,11 +7,13 @@ import { getSession } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 const acceptSchema = z.object({ token: z.string().min(1, "Token is required") }).strict();
 
 // POST /api/v1/invitations/accept
 // Accept an invitation by token
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     const body = await request.json();
     const parsed = acceptSchema.safeParse(body);
@@ -103,3 +105,5 @@ export async function POST(request: NextRequest) {
     return handleRouteError(error, "Error accepting invitation");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "mutation", key: "invitations-accept" });

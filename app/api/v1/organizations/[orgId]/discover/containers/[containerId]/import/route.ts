@@ -15,9 +15,11 @@ import { recordActivity } from "@/lib/activity";
 import { createDeployment } from "@/lib/docker/deploy";
 import {
   resolveProjectForImport,
-  getPgErrorCode,
   runAsyncContainerMigration,
 } from "@/lib/docker/import";
+import { isUniqueViolation } from "@/lib/api/error-response";
+
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 type RouteParams = {
   params: Promise<{ orgId: string; containerId: string }>;
@@ -57,7 +59,7 @@ const importSchema = z.object({
 });
 
 // POST /api/v1/organizations/[orgId]/discover/containers/[containerId]/import
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, containerId } = await params;
 
@@ -331,8 +333,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ app, warnings, deploymentId, migrated: false }, { status: 201 });
   } catch (error) {
-    const pgCode = getPgErrorCode(error);
-    if (pgCode === "23505") {
+    if (isUniqueViolation(error)) {
       const rawConstraint =
         error instanceof Error && "constraint" in error
           ? (error as { constraint: unknown }).constraint
@@ -357,3 +358,5 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error importing container");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "mutation", key: "containers-import" });
