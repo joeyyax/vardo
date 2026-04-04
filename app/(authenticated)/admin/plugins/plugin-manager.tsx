@@ -89,7 +89,7 @@ export function PluginManager() {
   const [installingBundle, setInstallingBundle] = useState<string | null>(null);
   const [bundleProgress, setBundleProgress] = useState<{ current: number; total: number } | null>(null);
   const [settingsPlugin, setSettingsPlugin] = useState<PluginData | null>(null);
-  const [compatibility, setCompatibility] = useState<Record<string, { compatible: boolean; issues: { type: string; severity: string; message: string; detail?: string }[] }>>({});
+  const [compatibility, setCompatibility] = useState<Record<string, { compatible: boolean; issues: { type: string; severity: string; message: string; detail?: string; serviceName?: string }[] }>>({});
 
   const fetchPlugins = useCallback(async () => {
     try {
@@ -497,10 +497,7 @@ export function PluginManager() {
                         const isProvisionable =
                           issue.type === "service_unavailable" &&
                           issue.severity === "warning";
-                        const serviceMatch = isProvisionable
-                          ? issue.message.match(/Service "([^"]+)"/)
-                          : null;
-                        const serviceName = serviceMatch?.[1];
+                        const serviceName = isProvisionable ? issue.serviceName : undefined;
                         const provKey = `${plugin.id}:${serviceName}`;
                         const isProvisioning = provisioning === provKey;
 
