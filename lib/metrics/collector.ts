@@ -151,6 +151,17 @@ export function stopCollector() {
 
 /** Update metrics integration status (best-effort, non-blocking). */
 function updateIntegrationHealth(status: "connected" | "degraded") {
+  // Log plugin-level health (no plugin health table yet, log only for now)
+  import("@/lib/plugins/registry")
+    .then(({ isPluginEnabledAsync }) => isPluginEnabledAsync("metrics-cadvisor"))
+    .then((pluginActive) => {
+      if (pluginActive) {
+        log.info(`Metrics plugin health: ${status}`);
+      }
+    })
+    .catch(() => {}); // best-effort
+
+  // Legacy: update integrations table if present
   import("@/lib/integrations")
     .then(({ getIntegration, updateIntegrationStatus }) =>
       getIntegration("metrics").then((integration) => {

@@ -19,7 +19,6 @@ const BASE_NAV_ITEMS = [
   { label: "External routes", href: "/admin/settings/external-routes" },
   { label: "Maintenance", href: "/admin/settings/maintenance" },
   { label: "Plugins", href: "/admin/plugins" },
-  { label: "Integrations", href: "/admin/settings/integrations" },
   { label: "Config", href: "/admin/settings/config" },
 ];
 

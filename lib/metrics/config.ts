@@ -34,13 +34,30 @@ export async function reinitMetricsProvider() {
 /** Shared resolution logic for init and reinit. */
 async function resolveProvider() {
   try {
+    // Check plugin settings first (new path)
+    const { isPluginEnabledAsync, getPluginSetting } = await import("@/lib/plugins/registry");
+    const metricsEnabled = await isPluginEnabledAsync("metrics-cadvisor");
+
+    if (metricsEnabled) {
+      const customUrl = await getPluginSetting("metrics-cadvisor", "cadvisorUrl");
+      const url = customUrl || "http://cadvisor:8080/api/v1.3/docker";
+      log.info(`Metrics provider: plugin settings → ${url}`);
+      setMetricsProvider(new CadvisorProvider(url));
+      return;
+    }
+  } catch {
+    // Plugin system not ready — fall through
+  }
+
+  try {
+    // Legacy fallback: check integrations table
     const { getIntegration, resolveIntegrationUrl } = await import("@/lib/integrations");
     const integration = await getIntegration("metrics");
 
     if (integration && integration.status === "connected") {
       const url = await resolveIntegrationUrl("metrics");
       if (url) {
-        log.info(`Metrics provider: integration → ${url}`);
+        log.info(`Metrics provider: integration (legacy) → ${url}`);
         setMetricsProvider(new CadvisorProvider(url));
         return;
       }

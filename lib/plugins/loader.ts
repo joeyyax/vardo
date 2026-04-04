@@ -123,5 +123,29 @@ export async function registerBuiltInPlugins(): Promise<void> {
     log.error("Failed to register get-started plugin:", err);
   }
 
+  // Error Tracking — GlitchTip/Sentry error aggregation
+  try {
+    const { registerErrorTrackingPlugin } = await import("./error-tracking/register");
+    await registerErrorTrackingPlugin();
+  } catch (err) {
+    log.error("Failed to register error-tracking plugin:", err);
+  }
+
+  // Uptime — endpoint availability monitoring via Uptime Kuma
+  try {
+    const { registerUptimePlugin } = await import("./uptime/register");
+    await registerUptimePlugin();
+  } catch (err) {
+    log.error("Failed to register uptime plugin:", err);
+  }
+
+  // Logging — centralized log aggregation via Loki + Grafana
+  try {
+    const { registerLoggingPlugin } = await import("./logging/register");
+    await registerLoggingPlugin();
+  } catch (err) {
+    log.error("Failed to register logging plugin:", err);
+  }
+
   log.info("Built-in plugin registration complete");
 }
