@@ -9,6 +9,7 @@ import { isFeatureEnabled } from "@/lib/config/features";
 import { SessionFooter } from "@/components/layout/session-footer";
 import { UpdateBanner } from "@/components/layout/update-banner";
 import { getVersionData } from "@/lib/version";
+import { GetStartedGuide } from "@/components/get-started-guide";
 
 export const metadata: Metadata = {
   robots: {
@@ -51,11 +52,18 @@ export default async function AppLayout({
   const organizations = await getUserOrganizations();
 
   let versionData = null;
+  let getStartedEnabled = false;
   if (session.user.isAppAdmin) {
     try {
       versionData = await getVersionData();
     } catch {
       // If version check fails, don't break the layout
+    }
+    try {
+      const { isPluginEnabledAsync } = await import("@/lib/plugins/registry");
+      getStartedEnabled = await isPluginEnabledAsync("get-started");
+    } catch {
+      // If plugin check fails, don't break the layout
     }
   }
 
@@ -80,6 +88,7 @@ export default async function AppLayout({
 
       <CommandPalette orgId={organization.id} />
       <NotificationListener orgId={organization.id} />
+      {session.user.isAppAdmin && getStartedEnabled && <GetStartedGuide />}
     </TooltipProvider>
   );
 }
