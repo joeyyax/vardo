@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { requirePlugin } from "@/lib/api/require-plugin";
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { getContainerDetail } from "@/lib/docker/discover";
 
 type RouteParams = {
@@ -9,7 +10,7 @@ type RouteParams = {
 };
 
 // GET /api/v1/organizations/[orgId]/discover/containers/[containerId]
-export async function GET(_request: Request, { params }: RouteParams) {
+async function handleGet(_request: Request, { params }: RouteParams) {
   try {
     const { orgId, containerId } = await params;
 
@@ -36,3 +37,5 @@ export async function GET(_request: Request, { params }: RouteParams) {
     return handleRouteError(error, "Error inspecting container");
   }
 }
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "discover" });
