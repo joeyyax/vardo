@@ -9,6 +9,12 @@ const manifest: PluginManifest = {
 
   provides: ["security-scanning"],
 
+  emits: [
+    "before.security.scan",
+    "after.security.scan",
+    "security.finding.critical",
+  ],
+
   hooks: [
     {
       event: "after.deploy.success",

@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { backupJobs, backupJobApps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
-import { isFeatureEnabled } from "@/lib/config/features";
+import { requirePlugin } from "@/lib/api/require-plugin";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -30,9 +30,8 @@ const updateJobSchema = z.object({
 // GET /api/v1/organizations/[orgId]/backups/[jobId]
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
-    if (!isFeatureEnabled("backups")) {
-      return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
-    }
+    const gate = await requirePlugin("backups");
+    if (gate) return gate;
 
     const { orgId, jobId } = await params;
     const org = await verifyOrgAccess(orgId);
@@ -72,9 +71,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 // PATCH /api/v1/organizations/[orgId]/backups/[jobId]
 async function handlePatch(request: NextRequest, { params }: RouteParams) {
   try {
-    if (!isFeatureEnabled("backups")) {
-      return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
-    }
+    const gate = await requirePlugin("backups");
+    if (gate) return gate;
     const { orgId, jobId } = await params;
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -130,9 +128,8 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
 // DELETE /api/v1/organizations/[orgId]/backups/[jobId]
 async function handleDelete(_request: NextRequest, { params }: RouteParams) {
   try {
-    if (!isFeatureEnabled("backups")) {
-      return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
-    }
+    const gate = await requirePlugin("backups");
+    if (gate) return gate;
     const { orgId, jobId } = await params;
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });

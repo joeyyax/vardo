@@ -16,6 +16,7 @@ import {
   slotComposeFiles,
 } from "./compose";
 import { recordActivity } from "@/lib/activity";
+import { DeployBlockedError } from "./errors";
 import { createDeployLogger } from "./deploy-logger";
 import type { DeployStage } from "./deploy-logger";
 import type { DeployContext } from "./deploy-context";
@@ -180,6 +181,33 @@ export async function runDeployment(
     // Local environments always allow bind mounts
     if (envType === "local") {
       projectAllowBindMounts = true;
+    }
+
+    // Execute before.deploy.start hooks — approval gates, pre-flight checks
+    try {
+      const { executeHooks } = await import("@/lib/hooks/execute");
+      const hookResult = await executeHooks("before.deploy.start", {
+        appId: opts.appId,
+        appName: app.displayName || app.name,
+        organizationId: opts.organizationId,
+        deploymentId,
+        deployType: app.deployType,
+        trigger: opts.trigger,
+        triggeredBy: opts.triggeredBy,
+      }, {
+        organizationId: opts.organizationId,
+        appId: opts.appId,
+        deployId: deploymentId,
+      });
+
+      if (!hookResult.allowed) {
+        throw new DeployBlockedError(
+          `Blocked by hook "${hookResult.blockedBy?.hookName}": ${hookResult.blockedBy?.reason || "Hook rejected the deploy"}`
+        );
+      }
+    } catch (err) {
+      if (err instanceof DeployBlockedError) throw err;
+      log(`[deploy] Warning: pre-deploy hooks — ${err instanceof Error ? err.message : err}`);
     }
 
     stage("clone", "running");

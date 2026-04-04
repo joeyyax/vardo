@@ -9,6 +9,13 @@ const manifest: PluginManifest = {
 
   provides: ["monitoring"],
 
+  emits: [
+    "monitoring.container.unhealthy",
+    "monitoring.restart-loop",
+    "monitoring.drift-detected",
+    "monitoring.auto-rollback",
+  ],
+
   requires: {
     features: ["metrics"],
   },
