@@ -10,6 +10,7 @@ import {
   Code2,
   Info,
   Loader2,
+  Package,
   Puzzle,
   Server,
   Settings2,
@@ -202,6 +203,35 @@ export function PluginManager() {
       }
     },
     [plugins, fetchPlugins]
+  );
+
+  const [provisioning, setProvisioning] = useState<string | null>(null);
+
+  const handleProvision = useCallback(
+    async (pluginId: string, serviceName: string) => {
+      const key = `${pluginId}:${serviceName}`;
+      setProvisioning(key);
+      try {
+        const res = await fetch(`/api/v1/plugins/${pluginId}/provision`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ serviceName }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || "Provisioning failed");
+        }
+        toast.success(`Provisioning ${serviceName} — deploy started`);
+        await fetchPlugins();
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : `Failed to provision ${serviceName}`
+        );
+      } finally {
+        setProvisioning(null);
+      }
+    },
+    [fetchPlugins]
   );
 
   const settingsFields: PluginSettingField[] =
@@ -463,14 +493,44 @@ export function PluginManager() {
 
                   {!plugin.enabled && compatibility[plugin.id]?.issues?.length > 0 && (
                     <div className="space-y-1.5 rounded-md bg-muted/50 px-3 py-2">
-                      {compatibility[plugin.id].issues.map((issue, idx) => (
-                        <div key={idx} className={`text-[11px] ${issue.severity === "error" ? "text-destructive" : "text-amber-600 dark:text-amber-400"}`}>
-                          <span className="font-medium">{issue.message}</span>
-                          {issue.detail && (
-                            <p className="mt-0.5 text-muted-foreground">{issue.detail}</p>
-                          )}
-                        </div>
-                      ))}
+                      {compatibility[plugin.id].issues.map((issue, idx) => {
+                        const isProvisionable =
+                          issue.type === "service_unavailable" &&
+                          issue.severity === "warning";
+                        const serviceMatch = isProvisionable
+                          ? issue.message.match(/Service "([^"]+)"/)
+                          : null;
+                        const serviceName = serviceMatch?.[1];
+                        const provKey = `${plugin.id}:${serviceName}`;
+                        const isProvisioning = provisioning === provKey;
+
+                        return (
+                          <div key={idx} className={`text-[11px] ${issue.severity === "error" ? "text-destructive" : "text-amber-600 dark:text-amber-400"}`}>
+                            <span className="font-medium">{issue.message}</span>
+                            {issue.detail && (
+                              <p className="mt-0.5 text-muted-foreground">{issue.detail}</p>
+                            )}
+                            {serviceName && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="squircle mt-1.5 h-7 gap-1.5 text-[11px]"
+                                disabled={isProvisioning}
+                                onClick={() =>
+                                  handleProvision(plugin.id, serviceName)
+                                }
+                              >
+                                {isProvisioning ? (
+                                  <Loader2 className="size-3 animate-spin" />
+                                ) : (
+                                  <Package className="size-3" />
+                                )}
+                                Provision {serviceName}
+                              </Button>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
 
