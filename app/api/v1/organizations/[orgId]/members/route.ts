@@ -3,10 +3,12 @@ import { z } from "zod";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { memberships, user } from "@/lib/db/schema";
-import { requireAdmin } from "@/lib/auth/permissions";
+import { requireOrgAdmin } from "@/lib/auth/permissions";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 const addMemberSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -53,13 +55,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
 // POST /api/v1/organizations/[orgId]/members
 // Add a member by email (user must already have an account)
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    requireAdmin(org.membership.role);
+    requireOrgAdmin(org.membership.role);
 
     const body = await request.json();
     const parsed = addMemberSchema.safeParse(body);
@@ -123,3 +125,5 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error adding member");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "mutation", key: "organizations-members" });

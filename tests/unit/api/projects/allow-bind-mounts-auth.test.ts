@@ -1,12 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { isAdmin } from "@/lib/auth/permissions";
+import { isOrgAdmin } from "@/lib/auth/permissions";
 
 // ---------------------------------------------------------------------------
 // Authorization gate: allowBindMounts is restricted to admin/owner roles.
 // This mirrors the guard in PATCH /api/v1/organizations/[orgId]/projects/[projectId].
 //
 // The guard reads:
-//   if (parsed.data.allowBindMounts !== undefined && !isAdmin(org.membership.role)) {
+//   if (parsed.data.allowBindMounts !== undefined && !isOrgAdmin(org.membership.role)) {
 //     return NextResponse.json({ error: "..." }, { status: 403 });
 //   }
 // ---------------------------------------------------------------------------
@@ -15,7 +15,7 @@ function allowBindMountsCheck(
   allowBindMounts: boolean | undefined,
   role: string,
 ): { allowed: boolean; status: number } {
-  if (allowBindMounts !== undefined && !isAdmin(role)) {
+  if (allowBindMounts !== undefined && !isOrgAdmin(role)) {
     return { allowed: false, status: 403 };
   }
   return { allowed: true, status: 200 };

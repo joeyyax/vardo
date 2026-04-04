@@ -5,8 +5,10 @@ import { createInvite } from "@/lib/mesh/invite";
 import { ensureHubConfig, HUB_IP } from "@/lib/mesh";
 import { getInstanceConfig } from "@/lib/system-settings";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 /** POST /api/v1/admin/mesh/invite — generate an invite code for a new peer */
-export async function POST() {
+async function handlePost() {
   try {
     await requireAppAdmin();
 
@@ -41,3 +43,5 @@ export async function POST() {
     return handleRouteError(error, "Error creating mesh invite");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "admin", key: "mesh-invite" });

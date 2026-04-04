@@ -3,7 +3,9 @@ import { requireAdminAuth } from "@/lib/auth/admin";
 import { getEmailProviderConfig } from "@/lib/system-settings";
 import nodemailer from "nodemailer";
 
-export async function POST() {
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
+async function handlePost() {
   try {
     await requireAdminAuth();
   } catch {
@@ -111,3 +113,5 @@ export async function POST() {
     return NextResponse.json({ ok: false, message: `Verification failed: ${msg}` });
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "admin", key: "email-verify" });

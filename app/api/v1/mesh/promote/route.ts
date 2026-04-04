@@ -6,6 +6,8 @@ import { importProjectBundle } from "@/lib/mesh/transfers";
 import { projectBundleSchema } from "@/lib/mesh/bundle-schema";
 import type { ProjectBundle } from "@/lib/mesh/transfers";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 const promoteSchema = z.object({
   bundle: projectBundleSchema.extend({
     transferType: z.literal("promote"),
@@ -21,7 +23,7 @@ const promoteSchema = z.object({
  * the bundle and POSTs it here. This endpoint imports the bundle and
  * creates/updates the project on this instance.
  */
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     const peer = await requireMeshPeer(request);
 
@@ -55,3 +57,5 @@ export async function POST(request: NextRequest) {
     return handleRouteError(error, "Error receiving promotion");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "public", key: "mesh-promote" });

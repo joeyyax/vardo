@@ -9,6 +9,8 @@ import { registerPeer } from "@/lib/mesh/peers";
 import { listInvites } from "@/lib/mesh/invite";
 import { getInstanceConfig } from "@/lib/system-settings";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 const WG_KEY_RE = /^[A-Za-z0-9+/]{43}=$/;
 
 const addPeerSchema = z.object({
@@ -45,7 +47,7 @@ export async function GET() {
 }
 
 /** POST /api/v1/admin/mesh/peers — register a new peer */
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     await requireAppAdmin();
 
@@ -77,3 +79,5 @@ export async function POST(request: NextRequest) {
     return handleRouteError(error, "Error registering mesh peer");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "admin", key: "mesh-peers" });

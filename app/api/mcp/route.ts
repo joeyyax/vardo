@@ -3,6 +3,8 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { authenticateRequest } from "@/lib/mcp/auth";
 import { createMcpServer } from "@/lib/mcp/server";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 /**
  * POST /api/mcp — Streamable HTTP transport for MCP.
  *
@@ -10,7 +12,7 @@ import { createMcpServer } from "@/lib/mcp/server";
  * Stateless: fresh McpServer instance per request, authenticated via
  * Bearer token bound to an organization.
  */
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   const context = await authenticateRequest(request);
   if (!context) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -53,6 +55,9 @@ export async function GET() {
  *
  * No-op in stateless mode — each request is independent.
  */
-export async function DELETE() {
+async function handleDelete() {
   return new Response(null, { status: 204 });
 }
+
+export const POST = withRateLimit(handlePost, { tier: "mutation", key: "api-mcp" });
+export const DELETE = withRateLimit(handleDelete, { tier: "mutation", key: "api-mcp" });

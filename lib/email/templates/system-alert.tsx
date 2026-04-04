@@ -8,13 +8,15 @@ import {
   styles,
 } from "./components";
 
+type SystemAlertType =
+  | "system.service-down"
+  | "system.disk-alert"
+  | "system.restart-loop"
+  | "system.cert-expiring"
+  | "system.update-available";
+
 type SystemAlertProps = {
-  alertType:
-    | "system-alert-service"
-    | "system-alert-disk"
-    | "system-alert-restart"
-    | "system-alert-cert"
-    | "system-alert-update";
+  alertType: SystemAlertType;
   title: string;
   message: string;
   details?: Record<string, string>;
@@ -22,11 +24,11 @@ type SystemAlertProps = {
 };
 
 function isCritical(
-  alertType: SystemAlertProps["alertType"],
+  alertType: SystemAlertType,
   details?: Record<string, string>,
 ): boolean {
-  if (alertType === "system-alert-service") return true;
-  if (alertType === "system-alert-disk") {
+  if (alertType === "system.service-down") return true;
+  if (alertType === "system.disk-alert") {
     const threshold = parseInt(details?.threshold ?? "0");
     return threshold >= 95;
   }
@@ -78,7 +80,7 @@ export function SystemAlertEmail({
         </WarningBox>
       )}
 
-      {alertType === "system-alert-update" && (
+      {alertType === "system.update-available" && (
         <InfoBox>
           <Text style={styles.muted}>
             Pull the latest changes and redeploy Vardo at your convenience. No
@@ -93,7 +95,7 @@ export function SystemAlertEmail({
 }
 
 SystemAlertEmail.PreviewProps = {
-  alertType: "system-alert-service" as const,
+  alertType: "system.service-down" as const,
   title: "Service degraded: PostgreSQL",
   message:
     "PostgreSQL (Primary database) is no longer responding. Check system health for details.",

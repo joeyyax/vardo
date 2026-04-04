@@ -10,6 +10,8 @@ import { encrypt, decrypt } from "@/lib/crypto/encrypt";
 import { recordActivity } from "@/lib/activity";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 const createKeySchema = z.object({ name: z.string().min(1, "Name is required").max(100).trim() }).strict();
 const deleteKeySchema = z.object({ id: z.string().min(1, "Deploy key ID is required") }).strict();
 
@@ -53,7 +55,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
 // POST /api/v1/organizations/[orgId]/deploy-keys
 // Generate a new SSH deploy key
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId);
@@ -108,7 +110,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
 // DELETE /api/v1/organizations/[orgId]/deploy-keys
 // Delete a deploy key
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId);
@@ -151,3 +153,6 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error deleting deploy key");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "mutation", key: "organizations-deploy-keys" });
+export const DELETE = withRateLimit(handleDelete, { tier: "mutation", key: "organizations-deploy-keys" });

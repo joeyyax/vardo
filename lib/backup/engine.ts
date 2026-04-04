@@ -4,7 +4,7 @@ import {
   backups,
   volumes,
 } from "@/lib/db/schema";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, desc, inArray } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { createHash } from "crypto";
 import { createReadStream } from "fs";
@@ -438,7 +438,176 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
     log.error("Backup notification error:", err);
   }
 
+  // Enforce retention policy — prune old backups
+  try {
+    await pruneBackups(jobId);
+  } catch (err) {
+    log.error("Backup retention pruning error:", err);
+  }
+
   return results;
+}
+
+// ---------------------------------------------------------------------------
+// Retention / Pruning (GFS — Grandfather-Father-Son)
+// ---------------------------------------------------------------------------
+
+type RetentionPolicy = {
+  keepAll: boolean;
+  keepLast: number | null;
+  keepHourly: number | null;
+  keepDaily: number | null;
+  keepWeekly: number | null;
+  keepMonthly: number | null;
+  keepYearly: number | null;
+};
+
+/**
+ * Decide which backup IDs to keep based on GFS retention rules.
+ * Backups must be sorted newest-first.
+ */
+function selectKeepers(
+  entries: { id: string; finishedAt: Date }[],
+  policy: RetentionPolicy,
+): Set<string> {
+  if (policy.keepAll) {
+    return new Set(entries.map((e) => e.id));
+  }
+
+  // If no retention rules are set at all, keep everything (safe default)
+  const hasAnyRule =
+    policy.keepLast != null || policy.keepHourly != null || policy.keepDaily != null ||
+    policy.keepWeekly != null || policy.keepMonthly != null || policy.keepYearly != null;
+  if (!hasAnyRule) {
+    return new Set(entries.map((e) => e.id));
+  }
+
+  const keep = new Set<string>();
+
+  // keepLast — most recent N
+  if (policy.keepLast != null && policy.keepLast > 0) {
+    for (const e of entries.slice(0, policy.keepLast)) {
+      keep.add(e.id);
+    }
+  }
+
+  // GFS buckets: for each bucket type, keep the newest backup per time period,
+  // limited to the N most recent periods.
+  const bucketDefs: { key: (d: Date) => string; limit: number | null }[] = [
+    {
+      key: (d) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}T${String(d.getUTCHours()).padStart(2, "0")}`,
+      limit: policy.keepHourly,
+    },
+    {
+      key: (d) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`,
+      limit: policy.keepDaily,
+    },
+    {
+      key: (d) => {
+        const day = new Date(d);
+        const dow = day.getUTCDay() || 7;
+        day.setUTCDate(day.getUTCDate() - dow + 1);
+        return `W${day.getUTCFullYear()}-${String(day.getUTCMonth() + 1).padStart(2, "0")}-${String(day.getUTCDate()).padStart(2, "0")}`;
+      },
+      limit: policy.keepWeekly,
+    },
+    {
+      key: (d) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`,
+      limit: policy.keepMonthly,
+    },
+    {
+      key: (d) => `${d.getUTCFullYear()}`,
+      limit: policy.keepYearly,
+    },
+  ];
+
+  for (const { key, limit } of bucketDefs) {
+    if (limit == null || limit <= 0) continue;
+
+    // Collect the newest entry per bucket (entries are sorted newest-first)
+    const bucketRepresentatives = new Map<string, string>(); // bucketKey → backupId
+    for (const e of entries) {
+      const k = key(e.finishedAt);
+      if (!bucketRepresentatives.has(k)) {
+        bucketRepresentatives.set(k, e.id);
+      }
+    }
+
+    // Keep only the N most recent buckets (Map preserves insertion order = newest first)
+    let kept = 0;
+    for (const [, backupId] of bucketRepresentatives) {
+      if (kept >= limit) break;
+      keep.add(backupId);
+      kept++;
+    }
+  }
+
+  return keep;
+}
+
+/**
+ * Prune backups for a job according to its retention policy.
+ * Deletes from storage and marks DB rows as "pruned".
+ */
+export async function pruneBackups(jobId: string): Promise<number> {
+  const job = await db.query.backupJobs.findFirst({
+    where: eq(backupJobs.id, jobId),
+    with: { target: true },
+  });
+
+  if (!job) return 0;
+
+  const policy: RetentionPolicy = {
+    keepAll: job.keepAll ?? false,
+    keepLast: job.keepLast,
+    keepHourly: job.keepHourly,
+    keepDaily: job.keepDaily,
+    keepWeekly: job.keepWeekly,
+    keepMonthly: job.keepMonthly,
+    keepYearly: job.keepYearly,
+  };
+
+  // Only prune successful backups that are finished
+  const allBackups = await db.query.backups.findMany({
+    where: and(eq(backups.jobId, jobId), eq(backups.status, "success")),
+    orderBy: [desc(backups.finishedAt)],
+  });
+
+  // Filter to entries with valid finishedAt
+  const eligible = allBackups.filter(
+    (b): b is typeof b & { finishedAt: Date } => b.finishedAt !== null,
+  );
+
+  if (eligible.length === 0) return 0;
+
+  const keepers = selectKeepers(eligible, policy);
+  const toPrune = eligible.filter((b) => !keepers.has(b.id));
+
+  if (toPrune.length === 0) return 0;
+
+  // Delete from storage, then mark as pruned
+  const storage = createBackupStorage(job.target);
+
+  for (const backup of toPrune) {
+    if (backup.storagePath) {
+      try {
+        await storage.delete(backup.storagePath);
+      } catch (err) {
+        log.warn(`Failed to delete ${backup.storagePath} from storage: ${err}`);
+        // Continue pruning other backups
+      }
+    }
+  }
+
+  // Bulk-update status to "pruned"
+  const pruneIds = toPrune.map((b) => b.id);
+  await db
+    .update(backups)
+    .set({ status: "pruned" })
+    .where(inArray(backups.id, pruneIds));
+
+  log.info(`Pruned ${pruneIds.length} backup(s) for job ${job.name}`);
+  return pruneIds.length;
 }
 
 // ---------------------------------------------------------------------------

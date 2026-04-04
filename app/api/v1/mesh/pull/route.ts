@@ -4,6 +4,8 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { requireMeshPeer } from "@/lib/mesh/auth";
 import { buildProjectBundle } from "@/lib/mesh/transfers";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 const pullSchema = z.object({
   projectId: z.string().min(1),
   includeEnvVars: z.boolean().default(false),
@@ -16,7 +18,7 @@ const pullSchema = z.object({
  * to pull this project for local development/testing. This endpoint builds
  * the bundle and returns it.
  */
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     const peer = await requireMeshPeer(request);
 
@@ -44,3 +46,5 @@ export async function POST(request: NextRequest) {
     return handleRouteError(error, "Error building pull bundle");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "public", key: "mesh-pull" });

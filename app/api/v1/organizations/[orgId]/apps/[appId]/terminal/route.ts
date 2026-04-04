@@ -9,6 +9,8 @@ import { isFeatureEnabled } from "@/lib/config/features";
 import net from "node:net";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 // ---------------------------------------------------------------------------
 // Session store — maps sessionId to exec socket and metadata
 // ---------------------------------------------------------------------------
@@ -198,7 +200,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 // POST — Send input to terminal or resize
 // ---------------------------------------------------------------------------
 
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     if (!isFeatureEnabled("terminal")) {
       return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
@@ -259,3 +261,5 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error handling terminal input");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "mutation", key: "apps-terminal" });

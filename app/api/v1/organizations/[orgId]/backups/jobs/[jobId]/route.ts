@@ -7,6 +7,8 @@ import { z } from "zod";
 import { isFeatureEnabled } from "@/lib/config/features";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 type RouteParams = {
   params: Promise<{ orgId: string; jobId: string }>;
 };
@@ -68,7 +70,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 }
 
 // PATCH /api/v1/organizations/[orgId]/backups/[jobId]
-export async function PATCH(request: NextRequest, { params }: RouteParams) {
+async function handlePatch(request: NextRequest, { params }: RouteParams) {
   try {
     if (!isFeatureEnabled("backups")) {
       return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
@@ -126,7 +128,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE /api/v1/organizations/[orgId]/backups/[jobId]
-export async function DELETE(_request: NextRequest, { params }: RouteParams) {
+async function handleDelete(_request: NextRequest, { params }: RouteParams) {
   try {
     if (!isFeatureEnabled("backups")) {
       return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
@@ -164,3 +166,6 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error deleting backup job");
   }
 }
+
+export const PATCH = withRateLimit(handlePatch, { tier: "mutation", key: "backups-jobs" });
+export const DELETE = withRateLimit(handleDelete, { tier: "mutation", key: "backups-jobs" });

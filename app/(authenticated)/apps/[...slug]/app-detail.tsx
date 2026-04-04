@@ -70,7 +70,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { isAdmin } from "@/lib/auth/permissions";
+import { isOrgAdmin } from "@/lib/auth/permissions";
 import { BranchSelect } from "@/components/branch-select";
 
 // Extracted modules
@@ -276,7 +276,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     }
   }
 
-  const canDelete = isAdmin(userRole);
+  const canDelete = isOrgAdmin(userRole);
 
   async function handleStop() {
     try {
@@ -934,7 +934,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           <TabsTrigger value="security">
             Security
           </TabsTrigger>
-          {isAdmin(userRole) && (
+          {isOrgAdmin(userRole) && (
             <TabsTrigger value="debug">
               Debug
             </TabsTrigger>
@@ -1040,7 +1040,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           <AppSecurity appId={app.id} orgId={orgId} />
         </TabsContent>
 
-        {isAdmin(userRole) && (
+        {isOrgAdmin(userRole) && (
           <TabsContent value="debug">
             <AppDebug orgId={orgId} appId={app.id} />
           </TabsContent>

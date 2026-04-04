@@ -8,6 +8,8 @@ import { publishKillSignal } from "@/lib/docker/deploy-cancel";
 import { publishEvent, appChannel } from "@/lib/events";
 import { releaseConcurrencySlot, removeFromQueue } from "@/lib/docker/deploy-concurrency";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string; deploymentId: string }>;
 };
@@ -63,7 +65,7 @@ async function forceCancel(deploymentId: string, appId: string): Promise<void> {
 
 // DELETE /api/v1/organizations/[orgId]/apps/[appId]/deployments/[deploymentId]
 // Cancel a queued or running deployment
-export async function DELETE(_request: NextRequest, { params }: RouteParams) {
+async function handleDelete(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId, deploymentId } = await params;
 
@@ -118,3 +120,5 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error cancelling deployment");
   }
 }
+
+export const DELETE = withRateLimit(handleDelete, { tier: "mutation", key: "apps-deployments" });

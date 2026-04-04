@@ -21,7 +21,6 @@ import { createDeployment } from "@/lib/docker/deploy";
 import { encrypt } from "@/lib/crypto/encrypt";
 import {
   resolveProjectForImport,
-  getPgErrorCode,
   runAsyncContainerMigration,
   parseContainerEnvVars,
   isSensitiveEnvKey,
@@ -30,6 +29,7 @@ import {
   mergeComposeFile,
   detectGitBuildContext,
 } from "@/lib/docker/import";
+import { isUniqueViolation } from "@/lib/api/error-response";
 
 type RouteParams = {
   params: Promise<{ orgId: string; composeProject: string }>;
@@ -436,7 +436,7 @@ async function handler(request: NextRequest, { params }: RouteParams) {
       // Race condition: another request inserted between our pre-check and insert.
       // Do the same lookup as the pre-checks so the client can redirect to the
       // existing app. Try by slug first, then by compose project.
-      if (getPgErrorCode(txError) === "23505") {
+      if (isUniqueViolation(txError)) {
         const existing =
           (await db.query.apps.findFirst({
             where: and(eq(apps.organizationId, orgId), eq(apps.name, data.name)),

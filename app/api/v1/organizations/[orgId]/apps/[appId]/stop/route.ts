@@ -6,11 +6,13 @@ import { eq, and } from "drizzle-orm";
 import { stopProject } from "@/lib/docker/deploy";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
 };
 
-export async function POST(_request: NextRequest, { params }: RouteParams) {
+async function handlePost(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const org = await verifyOrgAccess(orgId);
@@ -38,3 +40,5 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error stopping app");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "mutation", key: "apps-stop" });

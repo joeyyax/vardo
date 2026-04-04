@@ -6,6 +6,8 @@ import { importProjectBundle } from "@/lib/mesh/transfers";
 import { meshJsonFetch } from "@/lib/mesh/client";
 import type { ProjectBundle } from "@/lib/mesh/transfers";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 const cloneSchema = z.object({
   sourcePeerId: z.string().min(1),
   projectId: z.string().min(1),
@@ -21,7 +23,7 @@ const cloneSchema = z.object({
  * or forwards to a target peer. Clones always create fresh deployments
  * with unique names and no env vars.
  */
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     await requireAppAdmin();
 
@@ -64,3 +66,5 @@ export async function POST(request: NextRequest) {
     return handleRouteError(error, "Error cloning project");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "admin", key: "mesh-clone" });

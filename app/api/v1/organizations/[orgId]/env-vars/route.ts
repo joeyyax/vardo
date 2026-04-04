@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { handleRouteError, isUniqueViolation } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { orgEnvVars } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -8,6 +8,8 @@ import { z } from "zod";
 import { parseEnvContent } from "@/lib/env/parse-env-content";
 import { encrypt, decryptOrFallback } from "@/lib/crypto/encrypt";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -56,7 +58,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 }
 
 // POST — create single org env var
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId);
@@ -83,7 +85,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ envVar: created }, { status: 201 });
   } catch (error) {
-    if (error instanceof Error && "code" in error && (error as { code: string }).code === "23505") {
+    if (isUniqueViolation(error)) {
       return NextResponse.json({ error: "Variable already exists" }, { status: 409 });
     }
     return handleRouteError(error);
@@ -91,7 +93,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 }
 
 // PUT — bulk upsert org env vars
-export async function PUT(request: NextRequest, { params }: RouteParams) {
+async function handlePut(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId);
@@ -164,7 +166,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE — delete org env var
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId);
@@ -181,3 +183,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error);
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "mutation", key: "organizations-env-vars" });
+export const PUT = withRateLimit(handlePut, { tier: "mutation", key: "organizations-env-vars" });
+export const DELETE = withRateLimit(handleDelete, { tier: "mutation", key: "organizations-env-vars" });

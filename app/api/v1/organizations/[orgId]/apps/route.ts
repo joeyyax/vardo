@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { handleRouteError, isUniqueViolation } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps, projects, domains, organizations, environments, volumes } from "@/lib/db/schema";
 import { and, desc, eq, sql } from "drizzle-orm";
@@ -11,6 +11,8 @@ import { recordActivity } from "@/lib/activity";
 import { isReservedSlug } from "@/lib/domains/reserved";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
+
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -114,7 +116,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 }
 
 // POST /api/v1/organizations/[orgId]/apps
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId);
@@ -258,11 +260,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ app }, { status: 201 });
   } catch (error) {
     // Unique constraint violation (Postgres error code 23505)
-    const pgCode = error instanceof Error
-      ? ("code" in error ? (error as { code: string }).code : null) ??
-        (error.cause && typeof error.cause === "object" && "code" in error.cause ? (error.cause as { code: string }).code : null)
-      : null;
-    if (pgCode === "23505") {
+    if (isUniqueViolation(error)) {
       return NextResponse.json(
         { error: "An app with this name already exists" },
         { status: 409 }
@@ -271,3 +269,5 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error creating app");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "mutation", key: "organizations-apps" });

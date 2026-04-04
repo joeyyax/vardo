@@ -1,7 +1,6 @@
 import {
   bigint,
   boolean,
-  check,
   index,
   integer,
   jsonb,
@@ -11,21 +10,13 @@ import {
   timestamp,
   unique,
   uniqueIndex,
-  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import type { ConfigSnapshot } from "@/lib/types/deploy-snapshot";
-import { user } from "./auth";
 import {
   appStatusEnum,
   cloneStrategyEnum,
   deployTypeEnum,
-  deploymentStatusEnum,
-  deploymentTriggerEnum,
-  environmentTypeEnum,
-  groupEnvironmentTypeEnum,
   sourceEnum,
-  transferStatusEnum,
 } from "./enums";
 import { organizations } from "./organizations";
 import { projects } from "./projects";
@@ -114,275 +105,11 @@ export const apps = pgTable(
   ]
 );
 
-// ---------------------------------------------------------------------------
-// Deployments
-// ---------------------------------------------------------------------------
-
-export const deployments = pgTable("deployment", {
-  id: text("id").primaryKey(),
-  appId: text("app_id")
-    .notNull()
-    .references(() => apps.id, { onDelete: "cascade" }),
-  status: deploymentStatusEnum("status").notNull().default("queued"),
-  trigger: deploymentTriggerEnum("trigger").notNull(),
-  gitSha: text("git_sha"),
-  gitMessage: text("git_message"),
-  log: text("log"),
-  durationMs: integer("duration_ms"),
-  environmentId: text("environment_id").references(() => environments.id, {
-    onDelete: "set null",
-  }),
-  groupEnvironmentId: text("group_environment_id").references(
-    () => groupEnvironments.id,
-    { onDelete: "set null" }
-  ),
-  triggeredBy: text("triggered_by").references(() => user.id, {
-    onDelete: "set null",
-  }),
-  // Snapshot fields — captured on successful deploy for rollback
-  envSnapshot: text("env_snapshot"), // Encrypted env blob at deploy time (AES-256-GCM)
-  configSnapshot: jsonb("config_snapshot").$type<ConfigSnapshot>(),
-  rollbackFromId: text("rollback_from_id"),
-  // ID of the deployment that superseded this one (set when status = "superseded")
-  supersededBy: text("superseded_by").references((): AnyPgColumn => deployments.id, {
-    onDelete: "set null",
-  }),
-  startedAt: timestamp("started_at").defaultNow().notNull(),
-  finishedAt: timestamp("finished_at"),
-},
-  (t) => [
-    index("deployment_app_id_idx").on(t.appId),
-    index("deployment_app_started_at_idx").on(t.appId, t.startedAt),
-  ]
-);
-
-// ---------------------------------------------------------------------------
-// Environment Variables
-// ---------------------------------------------------------------------------
-
-export const envVars = pgTable(
-  "env_var",
-  {
-    id: text("id").primaryKey(),
-    appId: text("app_id")
-      .notNull()
-      .references(() => apps.id, { onDelete: "cascade" }),
-    key: text("key").notNull(),
-    value: text("value").notNull(), // AES-256-GCM encrypted
-    environmentId: text("environment_id").references(() => environments.id, {
-      onDelete: "cascade",
-    }),
-    isSecret: boolean("is_secret").default(true),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
-  },
-  (t) => [unique("env_var_app_key_env_uniq").on(t.appId, t.key, t.environmentId)]
-);
-
-// ---------------------------------------------------------------------------
-// Domains
-// ---------------------------------------------------------------------------
-
-export const domains = pgTable("domain", {
-  id: text("id").primaryKey(),
-  appId: text("app_id")
-    .notNull()
-    .references(() => apps.id, { onDelete: "cascade" }),
-  domain: text("domain").notNull().unique(),
-  serviceName: text("service_name"),
-  port: integer("port"),
-  middlewares: text("middlewares"),
-  certResolver: text("cert_resolver").default("le"),
-  isPrimary: boolean("is_primary").default(false),
-  sslEnabled: boolean("ssl_enabled").default(true),
-  redirectTo: text("redirect_to"),
-  redirectCode: integer("redirect_code").default(301),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-},
-  (t) => [
-    index("domain_app_id_idx").on(t.appId),
-  ]
-);
-
-// ---------------------------------------------------------------------------
-// Group Environments (staging/preview environments spanning a group)
-// ---------------------------------------------------------------------------
-
-export const groupEnvironments = pgTable(
-  "group_environment",
-  {
-    id: text("id").primaryKey(),
-    projectId: text("project_id")
-      .notNull()
-      .references(() => projects.id, { onDelete: "cascade" }),
-    name: text("name").notNull(),
-    type: groupEnvironmentTypeEnum("type").notNull().default("staging"),
-    sourceEnvironment: text("source_environment").default("production"),
-    prNumber: integer("pr_number"),
-    prUrl: text("pr_url"),
-    createdBy: text("created_by").references(() => user.id),
-    expiresAt: timestamp("expires_at"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-  },
-  (t) => [unique("group_env_project_name_uniq").on(t.projectId, t.name)]
-);
-
-// ---------------------------------------------------------------------------
-// Environments
-// ---------------------------------------------------------------------------
-
-export const environments = pgTable(
-  "environment",
-  {
-    id: text("id").primaryKey(),
-    appId: text("app_id")
-      .notNull()
-      .references(() => apps.id, { onDelete: "cascade" }),
-    name: text("name").notNull(),
-    type: environmentTypeEnum("type").notNull().default("production"),
-    domain: text("domain"),
-    gitBranch: text("git_branch"),
-    isDefault: boolean("is_default").default(false),
-    clonedFromId: text("cloned_from_id"),
-    groupEnvironmentId: text("group_environment_id").references(
-      () => groupEnvironments.id,
-      { onDelete: "cascade" }
-    ),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
-  },
-  (t) => [unique("env_app_name_uniq").on(t.appId, t.name)]
-);
-
-// ---------------------------------------------------------------------------
-// Tags (flat labels for filtering)
-// ---------------------------------------------------------------------------
-
-export const tags = pgTable(
-  "tag",
-  {
-    id: text("id").primaryKey(),
-    organizationId: text("organization_id")
-      .notNull()
-      .references(() => organizations.id, { onDelete: "cascade" }),
-    name: text("name").notNull(),
-    color: text("color").notNull().default("#6366f1"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-  },
-  (t) => [unique("tag_org_name_uniq").on(t.organizationId, t.name)]
-);
-
-export const appTags = pgTable(
-  "app_tag",
-  {
-    appId: text("app_id")
-      .notNull()
-      .references(() => apps.id, { onDelete: "cascade" }),
-    tagId: text("tag_id")
-      .notNull()
-      .references(() => tags.id, { onDelete: "cascade" }),
-  },
-  (t) => [unique("app_tag_uniq").on(t.appId, t.tagId)]
-);
-
-// ---------------------------------------------------------------------------
-// Volumes (first-class volume records with integrated limits)
-// ---------------------------------------------------------------------------
-
-export const volumes = pgTable(
-  "volume",
-  {
-    id: text("id").primaryKey(),
-    appId: text("app_id")
-      .references(() => apps.id, { onDelete: "cascade" }),
-    organizationId: text("organization_id")
-      .references(() => organizations.id, { onDelete: "cascade" }),
-    name: text("name").notNull(), // e.g. "data", "uploads"
-    mountPath: text("mount_path").notNull(), // e.g. "/var/lib/postgresql/data"
-    type: text("type", { enum: ["named", "bind"] }).notNull().default("named"), // mount type — persisted so bind mounts display correctly when container is stopped
-    source: text("source"), // nullable — host path for bind mounts, Docker volume name for named; persisted so Host: label survives container stop
-    persistent: boolean("persistent").default(true).notNull(), // survives deploys
-    shared: boolean("shared").default(false).notNull(), // can be mounted by other apps in project
-    description: text("description"),
-    maxSizeBytes: bigint("max_size_bytes", { mode: "number" }), // nullable = no limit
-    warnAtPercent: integer("warn_at_percent").default(80),
-    ignorePatterns: jsonb("ignore_patterns").$type<string[]>(), // glob patterns to ignore in diff (e.g. "uploads/**")
-    driftCount: integer("drift_count").default(0), // unignored file drift after last deploy
-    // Backup strategy: "tar" (default) for file volumes, "dump" for databases
-    backupStrategy: text("backup_strategy").default("tar").notNull(),
-    // For "dump" strategy: { dumpCmd, restoreCmd } — shell commands run via docker exec
-    backupMeta: jsonb("backup_meta").$type<{ dumpCmd: string; restoreCmd: string }>(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
-  },
-  (t) => [
-    unique("volume_app_name_uniq").on(t.appId, t.name),
-    unique("volume_app_mount_uniq").on(t.appId, t.mountPath),
-    index("volume_app_id_idx").on(t.appId),
-    index("volume_org_id_idx").on(t.organizationId),
-    check("volume_dump_requires_meta", sql`backup_strategy != 'dump' OR backup_meta IS NOT NULL`),
-  ]
-);
-
-// DEPRECATED: kept for migration only — will be dropped after migrate-volumes.ts runs
-export const volumeLimits = pgTable("volume_limit", {
-  id: text("id").primaryKey(),
-  appId: text("app_id")
-    .notNull()
-    .references(() => apps.id, { onDelete: "cascade" })
-    .unique(),
-  maxSizeBytes: bigint("max_size_bytes", { mode: "number" }).notNull(),
-  warnAtPercent: integer("warn_at_percent").default(80),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
-
-// ---------------------------------------------------------------------------
-// Domain Checks (health monitoring history)
-// ---------------------------------------------------------------------------
-
-export const domainChecks = pgTable(
-  "domain_check",
-  {
-    id: text("id").primaryKey(),
-    domainId: text("domain_id")
-      .notNull()
-      .references(() => domains.id, { onDelete: "cascade" }),
-    reachable: boolean("reachable").notNull(),
-    statusCode: integer("status_code"),
-    responseTimeMs: integer("response_time_ms"),
-    error: text("error"),
-    checkedAt: timestamp("checked_at").defaultNow().notNull(),
-  },
-  (t) => [
-    index("domain_check_domain_checked_at_idx").on(t.domainId, t.checkedAt),
-  ]
-);
-
-// ---------------------------------------------------------------------------
-// App Transfers (move apps between organizations)
-// ---------------------------------------------------------------------------
-
-export const appTransfers = pgTable("app_transfer", {
-  id: text("id").primaryKey(),
-  appId: text("app_id")
-    .notNull()
-    .references(() => apps.id, { onDelete: "cascade" }),
-  sourceOrgId: text("source_org_id")
-    .notNull()
-    .references(() => organizations.id, { onDelete: "cascade" }),
-  destinationOrgId: text("destination_org_id")
-    .notNull()
-    .references(() => organizations.id, { onDelete: "cascade" }),
-  status: transferStatusEnum("status").notNull().default("pending"),
-  initiatedBy: text("initiated_by")
-    .references(() => user.id, { onDelete: "set null" }),
-  respondedBy: text("responded_by")
-    .references(() => user.id, { onDelete: "set null" }),
-  frozenRefs: jsonb("frozen_refs").$type<
-    { key: string; originalRef: string; frozenValue: string }[]
-  >(),
-  note: text("note"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  respondedAt: timestamp("responded_at"),
-});
+// Re-export split modules for backwards compatibility
+export { deployments } from "./deployments";
+export { envVars } from "./env-vars";
+export { domains, domainChecks } from "./domains";
+export { groupEnvironments, environments } from "./environments";
+export { tags, appTags } from "./tags";
+export { volumes, volumeLimits } from "./volumes";
+export { appTransfers } from "./app-transfers";

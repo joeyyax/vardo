@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { handleRouteError, isUniqueViolation } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { environments, envVars, apps, groupEnvironments } from "@/lib/db/schema";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
@@ -8,6 +8,8 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { createGroupEnvironment } from "@/lib/docker/clone";
 import { verifyAppAccess } from "@/lib/api/verify-access";
+
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -109,7 +111,7 @@ const createEnvironmentSchema = z.object({
 }).strict();
 
 // POST /api/v1/organizations/[orgId]/apps/[appId]/environments
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const app = await verifyAppAccess(orgId, appId);
@@ -234,11 +236,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ environment: created }, { status: 201 });
   } catch (error) {
-    const pgCode = error instanceof Error
-      ? ("code" in error ? (error as { code: string }).code : null) ??
-        (error.cause && typeof error.cause === "object" && "code" in error.cause ? (error.cause as { code: string }).code : null)
-      : null;
-    if (pgCode === "23505") {
+    if (isUniqueViolation(error)) {
       return NextResponse.json(
         { error: "An environment with this name already exists" },
         { status: 409 }
@@ -249,7 +247,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE /api/v1/organizations/[orgId]/apps/[appId]/environments
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const app = await verifyAppAccess(orgId, appId);
@@ -296,3 +294,6 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error deleting environment");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "mutation", key: "apps-environments" });
+export const DELETE = withRateLimit(handleDelete, { tier: "mutation", key: "apps-environments" });

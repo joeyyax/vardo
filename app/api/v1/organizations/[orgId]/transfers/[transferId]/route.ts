@@ -8,6 +8,8 @@ import { acceptTransfer, rejectTransfer } from "@/lib/transfers/engine";
 import { recordActivity } from "@/lib/activity";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 type RouteParams = {
   params: Promise<{ orgId: string; transferId: string }>;
 };
@@ -18,7 +20,7 @@ const respondSchema = z.object({
 
 // POST /api/v1/organizations/[orgId]/transfers/[transferId]
 // Accept or reject a transfer (only owners/admins of the destination org)
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, transferId } = await params;
     const org = await verifyOrgAccess(orgId);
@@ -146,3 +148,5 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error responding to transfer");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "mutation", key: "organizations-transfers" });

@@ -8,6 +8,8 @@ import { getHubAddress } from "@/lib/mesh";
 import { getInstanceId } from "@/lib/constants";
 import { getInstanceConfig } from "@/lib/system-settings";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 /**
  * POST /api/v1/mesh/heartbeat — peer health check.
  *
@@ -15,7 +17,7 @@ import { getInstanceConfig } from "@/lib/system-settings";
  * local DB. Returns the full peer manifest so the caller can see all mesh members,
  * not just its direct connections.
  */
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     const peer = await requireMeshPeer(request);
 
@@ -67,3 +69,5 @@ export async function POST(request: NextRequest) {
     return handleRouteError(error, "Error processing heartbeat");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "public", key: "mesh-heartbeat" });

@@ -72,24 +72,8 @@ export async function resolveProjectForImport(
 // PG error helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Extract the PostgreSQL error code from an unknown thrown value.
- * Checks both the error itself and `error.cause` for the `code` property.
- */
-export function getPgErrorCode(error: unknown): string | null {
-  if (!(error instanceof Error)) return null;
-  const directCode =
-    "code" in error ? (error as { code: string }).code : null;
-  if (directCode) return directCode;
-  if (
-    error.cause &&
-    typeof error.cause === "object" &&
-    "code" in error.cause
-  ) {
-    return (error.cause as { code: string }).code;
-  }
-  return null;
-}
+// Re-export from shared location for backward compatibility
+export { getPgErrorCode, isUniqueViolation } from "@/lib/api/error-response";
 
 // ---------------------------------------------------------------------------
 // Container stop verification

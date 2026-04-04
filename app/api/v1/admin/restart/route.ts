@@ -5,6 +5,8 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { logger } from "@/lib/logger";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 const log = logger.child("admin:restart");
 
 // POST /api/v1/admin/restart
@@ -15,7 +17,7 @@ const log = logger.child("admin:restart");
 // the container runs with a custom hostname), falls back to os.hostname() which
 // matches Docker's default naming scheme. The value is passed as a positional
 // arg to `docker restart` — not interpolated into a shell string.
-export async function POST() {
+async function handlePost() {
   try {
     await requireAppAdmin();
 
@@ -36,3 +38,5 @@ export async function POST() {
     return handleRouteError(error);
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "admin", key: "admin-restart" });

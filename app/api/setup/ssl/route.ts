@@ -4,6 +4,8 @@ import { requireAdminAuth } from "@/lib/auth/admin";
 import { getSslConfig, setSystemSetting, ISSUER_LABELS } from "@/lib/system-settings";
 import { maskSecret, resolveSecret } from "@/lib/mask-secrets";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 const sslSchema = z.object({
   activeIssuers: z.array(z.enum(["le", "google", "zerossl"])).min(1, "At least one issuer must be enabled"),
   concurrentIssuers: z.number().int().min(1).max(3).default(1),
@@ -36,7 +38,7 @@ export async function GET(request: NextRequest) {
   });
 }
 
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   await requireAdminAuth(request);
 
   const body = await request.json();
@@ -74,3 +76,5 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ ok: true });
 }
+
+export const POST = withRateLimit(handlePost, { tier: "admin", key: "setup-ssl" });

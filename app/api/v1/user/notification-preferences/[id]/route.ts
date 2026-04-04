@@ -5,6 +5,8 @@ import { userNotificationPreferences } from "@/lib/db/schema";
 import { requireSession } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 type RouteParams = { params: Promise<{ id: string }> };
 
 /**
@@ -13,7 +15,7 @@ type RouteParams = { params: Promise<{ id: string }> };
  * Removes a preference row, reverting to the channel-type default for
  * that event.
  */
-export async function DELETE(
+async function handleDelete(
   _req: NextRequest,
   { params }: RouteParams,
 ) {
@@ -43,3 +45,5 @@ export async function DELETE(
     return handleRouteError(error, "Error deleting notification preference");
   }
 }
+
+export const DELETE = withRateLimit(handleDelete, { tier: "mutation", key: "user-notification-preferences" });

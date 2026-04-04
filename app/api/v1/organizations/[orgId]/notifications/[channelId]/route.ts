@@ -7,6 +7,8 @@ import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { maskChannelConfig } from "@/lib/notifications/mask-config";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 type RouteParams = { params: Promise<{ orgId: string; channelId: string }> };
 const updateSchema = z.object({ name: z.string().min(1).max(100).optional(), config: z.union([z.object({ recipients: z.array(z.string().email()).min(1) }), z.object({ url: z.string().url(), secret: z.string().optional() }), z.object({ webhookUrl: z.string().url() })]).optional(), enabled: z.boolean().optional(), subscribedEvents: z.array(z.string()).optional() }).strict();
 
@@ -21,7 +23,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
   } catch (error) { return handleRouteError(error, "Error fetching channel"); }
 }
 
-export async function PATCH(req: NextRequest, { params }: RouteParams) {
+async function handlePatch(req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, channelId } = await params;
     const org = await verifyOrgAccess(orgId);
@@ -39,7 +41,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   } catch (error) { return handleRouteError(error, "Error updating channel"); }
 }
 
-export async function DELETE(_req: NextRequest, { params }: RouteParams) {
+async function handleDelete(_req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, channelId } = await params;
     const org = await verifyOrgAccess(orgId);
@@ -49,3 +51,6 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ success: true });
   } catch (error) { return handleRouteError(error, "Error deleting channel"); }
 }
+
+export const PATCH = withRateLimit(handlePatch, { tier: "mutation", key: "organizations-notifications" });
+export const DELETE = withRateLimit(handleDelete, { tier: "mutation", key: "organizations-notifications" });

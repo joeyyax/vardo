@@ -6,6 +6,8 @@ import { importProjectBundle } from "@/lib/mesh/transfers";
 import { meshJsonFetch } from "@/lib/mesh/client";
 import type { ProjectBundle } from "@/lib/mesh/transfers";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 const pullSchema = z.object({
   sourcePeerId: z.string().min(1),
   projectId: z.string().min(1),
@@ -20,7 +22,7 @@ const pullSchema = z.object({
  * Orchestration endpoint called by the admin UI. Calls the source peer's
  * /api/v1/mesh/pull endpoint to get the bundle, then imports it locally.
  */
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     await requireAppAdmin();
 
@@ -53,3 +55,5 @@ export async function POST(request: NextRequest) {
     return handleRouteError(error, "Error pulling project");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "admin", key: "mesh-pull" });

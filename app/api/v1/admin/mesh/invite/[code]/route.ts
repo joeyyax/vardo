@@ -3,8 +3,10 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { cancelInvite } from "@/lib/mesh/invite";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 /** DELETE /api/v1/admin/mesh/invite/[code] — cancel a pending invite */
-export async function DELETE(
+async function handleDelete(
   _request: Request,
   { params }: { params: Promise<{ code: string }> }
 ) {
@@ -26,3 +28,5 @@ export async function DELETE(
     return handleRouteError(error, "Error cancelling invite");
   }
 }
+
+export const DELETE = withRateLimit(handleDelete, { tier: "admin", key: "mesh-invite" });

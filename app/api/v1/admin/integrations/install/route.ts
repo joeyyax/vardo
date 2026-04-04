@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { handleRouteError, isUniqueViolation } from "@/lib/api/error-response";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { db } from "@/lib/db";
 import { apps, environments, volumes, domains, organizations } from "@/lib/db/schema";
@@ -13,6 +13,8 @@ import { connectAppIntegration, type IntegrationType } from "@/lib/integrations"
 import { requestDeploy } from "@/lib/docker/deploy-cancel";
 import { getSession } from "@/lib/auth/session";
 import { recordActivity } from "@/lib/activity";
+
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 const VALID_TYPES = ["metrics", "error_tracking", "uptime", "logging"] as const;
 
@@ -28,7 +30,7 @@ const installSchema = z.object({
 
 // POST /api/v1/admin/integrations/install
 // One-click: create app from template + connect integration + deploy
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     const admin = await requireAppAdmin();
     const session = await getSession();
@@ -175,11 +177,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     // Unique constraint — app name already exists
-    const pgCode = error instanceof Error
-      ? ("code" in error ? (error as { code: string }).code : null) ??
-        (error.cause && typeof error.cause === "object" && "code" in error.cause ? (error.cause as { code: string }).code : null)
-      : null;
-    if (pgCode === "23505") {
+    if (isUniqueViolation(error)) {
       return NextResponse.json(
         { error: "An app with this name already exists. Connect it manually instead." },
         { status: 409 },
@@ -188,3 +186,5 @@ export async function POST(request: NextRequest) {
     return handleRouteError(error, "Error installing integration");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "admin", key: "integrations-install" });

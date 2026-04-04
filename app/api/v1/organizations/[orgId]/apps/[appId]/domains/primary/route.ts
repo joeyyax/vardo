@@ -5,12 +5,14 @@ import { apps, domains } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
 };
 
 // PUT — set primary domain
-export async function PUT(request: NextRequest, { params }: RouteParams) {
+async function handlePut(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const org = await verifyOrgAccess(orgId);
@@ -43,3 +45,5 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error);
   }
 }
+
+export const PUT = withRateLimit(handlePut, { tier: "mutation", key: "domains-primary" });

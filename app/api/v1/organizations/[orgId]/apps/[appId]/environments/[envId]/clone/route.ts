@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { handleRouteError, isUniqueViolation } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { environments, envVars } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { verifyAppAccess } from "@/lib/api/verify-access";
+
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string; envId: string }>;
@@ -25,7 +27,7 @@ const cloneSchema = z.object({
 }).strict();
 
 // POST /api/v1/organizations/[orgId]/apps/[appId]/environments/[envId]/clone
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId, envId } = await params;
     const app = await verifyAppAccess(orgId, appId);
@@ -108,11 +110,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       { status: 201 }
     );
   } catch (error) {
-    if (
-      error instanceof Error &&
-      "code" in error &&
-      (error as { code: string }).code === "23505"
-    ) {
+    if (isUniqueViolation(error)) {
       return NextResponse.json(
         { error: "An environment with this name already exists" },
         { status: 409 }
@@ -121,3 +119,5 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error cloning environment");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "mutation", key: "environments-clone" });

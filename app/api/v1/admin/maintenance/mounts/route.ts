@@ -7,6 +7,8 @@ import { mountsSchema } from "@/lib/api/admin/maintenance-schemas";
 import { logger } from "@/lib/logger";
 import { VARDO_HOME_DIR } from "@/lib/paths";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 const log = logger.child("admin:maintenance:mounts");
 
 // GET /api/v1/admin/maintenance/mounts
@@ -31,7 +33,7 @@ export async function GET() {
 //
 // Updates host mount configuration by writing to the .env file.
 // Requires a Vardo restart to take effect.
-export async function POST(request: Request) {
+async function handlePost(request: Request) {
   try {
     await requireAppAdmin();
 
@@ -83,3 +85,5 @@ export async function POST(request: Request) {
     return handleRouteError(error);
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "admin", key: "maintenance-mounts" });

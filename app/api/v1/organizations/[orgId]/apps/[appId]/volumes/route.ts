@@ -10,6 +10,8 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 const execAsync = promisify(exec);
 
 const volumeSchema = z.object({
@@ -163,7 +165,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 }
 
 // PUT — sync volumes config (replaces all volumes for this app)
-export async function PUT(request: NextRequest, { params }: RouteParams) {
+async function handlePut(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const org = await verifyOrgAccess(orgId);
@@ -243,3 +245,5 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error);
   }
 }
+
+export const PUT = withRateLimit(handlePut, { tier: "mutation", key: "apps-volumes" });

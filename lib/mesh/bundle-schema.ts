@@ -9,7 +9,7 @@ export const appBundleSchema = z.object({
   displayName: z.string().min(1),
   description: z.string().nullable(),
   source: z.enum(["git", "direct"]),
-  deployType: z.enum(["compose", "dockerfile", "image", "static", "nixpacks"]),
+  deployType: z.enum(["compose", "dockerfile", "image", "static", "nixpacks", "railpack"]),
   gitUrl: z.string().nullable(),
   gitBranch: z.string().nullable(),
   imageName: z.string().nullable(),

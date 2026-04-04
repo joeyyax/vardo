@@ -6,6 +6,8 @@ import { requireSession } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { getAppOctokit } from "@/lib/github/app";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 // GET /api/v1/github/installations — List current user's GitHub installations
 export async function GET() {
   try {
@@ -22,7 +24,7 @@ export async function GET() {
 }
 
 // DELETE /api/v1/github/installations — Remove a GitHub installation
-export async function DELETE(request: NextRequest) {
+async function handleDelete(request: NextRequest) {
   try {
     const session = await requireSession();
 
@@ -69,3 +71,5 @@ export async function DELETE(request: NextRequest) {
     return handleRouteError(error, "Error deleting GitHub installation");
   }
 }
+
+export const DELETE = withRateLimit(handleDelete, { tier: "mutation", key: "github-installations" });

@@ -9,6 +9,8 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 type RouteParams = {
   params: Promise<{ orgId: string }>;
 };
@@ -101,7 +103,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 }
 
 // POST /api/v1/organizations/[orgId]/backups/targets
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     if (!isFeatureEnabled("backups")) {
       return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
@@ -167,3 +169,5 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error creating backup target");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "mutation", key: "backups-targets" });

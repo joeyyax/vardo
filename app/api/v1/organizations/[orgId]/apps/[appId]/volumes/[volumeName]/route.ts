@@ -6,6 +6,8 @@ import { verifyAppAccess } from "@/lib/api/verify-access";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string; volumeName: string }>;
 };
@@ -18,7 +20,7 @@ const patchSchema = z.object({
 /**
  * PATCH — Update volume metadata (ignore patterns, description).
  */
-export async function PATCH(request: NextRequest, { params }: RouteParams) {
+async function handlePatch(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId, volumeName } = await params;
     const appRecord = await verifyAppAccess(orgId, appId);
@@ -61,3 +63,5 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error updating volume");
   }
 }
+
+export const PATCH = withRateLimit(handlePatch, { tier: "mutation", key: "apps-volumes" });

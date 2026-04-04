@@ -6,6 +6,8 @@ import { importProjectBundle } from "@/lib/mesh/transfers";
 import { projectBundleSchema } from "@/lib/mesh/bundle-schema";
 import type { ProjectBundle } from "@/lib/mesh/transfers";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 const cloneSchema = z.object({
   bundle: projectBundleSchema.extend({
     transferType: z.literal("clone"),
@@ -19,7 +21,7 @@ const cloneSchema = z.object({
  * Creates a new independent deployment with unique names. No env vars
  * are carried over — the clone starts fresh.
  */
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     await requireMeshPeer(request);
 
@@ -45,3 +47,5 @@ export async function POST(request: NextRequest) {
     return handleRouteError(error, "Error receiving clone");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "public", key: "mesh-clone" });

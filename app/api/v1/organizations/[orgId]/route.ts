@@ -8,6 +8,8 @@ import { recordActivity } from "@/lib/activity";
 import { eq, and } from "drizzle-orm";
 import { logger } from "@/lib/logger";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 const log = logger.child("api:organizations");
 
 const updateOrgSchema = z.object({
@@ -64,7 +66,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-export async function PATCH(request: NextRequest, { params }: RouteParams) {
+async function handlePatch(request: NextRequest, { params }: RouteParams) {
   try {
     const session = await getSession();
     if (!session?.user?.id) {
@@ -129,3 +131,5 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: "Failed to update organization" }, { status: 500 });
   }
 }
+
+export const PATCH = withRateLimit(handlePatch, { tier: "mutation", key: "organizations" });

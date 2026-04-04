@@ -4,6 +4,8 @@ import { requireAdminAuth } from "@/lib/auth/admin";
 import { needsSetup } from "@/lib/setup";
 import { getAuthConfig, setSystemSetting } from "@/lib/system-settings";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 const authSchema = z.object({
   registrationMode: z.enum(["closed", "open", "approval"]),
   sessionDurationDays: z.number().int().min(1).max(365),
@@ -21,7 +23,7 @@ export async function GET(request: NextRequest) {
   });
 }
 
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   const setup = await needsSetup();
   if (!setup) {
     await requireAdminAuth(request);
@@ -40,3 +42,5 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ ok: true });
 }
+
+export const POST = withRateLimit(handlePost, { tier: "admin", key: "setup-auth" });

@@ -2,11 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { invitations, user } from "@/lib/db/schema";
-import { requireAdmin } from "@/lib/auth/permissions";
+import { requireOrgAdmin } from "@/lib/auth/permissions";
 import { eq, and } from "drizzle-orm";
 import { sendEmail } from "@/lib/email/send";
 import { InviteEmail } from "@/lib/email/templates/invite";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 type RouteParams = {
   params: Promise<{ orgId: string; invitationId: string }>;
@@ -14,7 +16,7 @@ type RouteParams = {
 
 // DELETE /api/v1/organizations/[orgId]/invitations/[invitationId]
 // Revoke/cancel a pending invitation
-export async function DELETE(
+async function handleDelete(
   _request: NextRequest,
   { params }: RouteParams
 ) {
@@ -23,7 +25,7 @@ export async function DELETE(
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    requireAdmin(org.membership.role);
+    requireOrgAdmin(org.membership.role);
 
     const invitation = await db.query.invitations.findFirst({
       where: and(
@@ -59,7 +61,7 @@ export async function DELETE(
 
 // PATCH /api/v1/organizations/[orgId]/invitations/[invitationId]
 // Resend invitation email
-export async function PATCH(
+async function handlePatch(
   _request: NextRequest,
   { params }: RouteParams
 ) {
@@ -68,7 +70,7 @@ export async function PATCH(
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    requireAdmin(org.membership.role);
+    requireOrgAdmin(org.membership.role);
 
     const invitation = await db.query.invitations.findFirst({
       where: and(
@@ -115,3 +117,6 @@ export async function PATCH(
     return handleRouteError(error, "Error resending invitation");
   }
 }
+
+export const DELETE = withRateLimit(handleDelete, { tier: "mutation", key: "organizations-invitations" });
+export const PATCH = withRateLimit(handlePatch, { tier: "mutation", key: "organizations-invitations" });

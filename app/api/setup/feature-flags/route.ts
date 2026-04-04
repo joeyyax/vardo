@@ -4,6 +4,8 @@ import { requireAdminAuth } from "@/lib/auth/admin";
 import { getFeatureFlagsConfig, setSystemSetting } from "@/lib/system-settings";
 import { getAllFeatureFlags } from "@/lib/config/features";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 export async function GET(request: NextRequest) {
   await requireAdminAuth(request);
 
@@ -14,7 +16,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ configured: true, flags });
 }
 
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   await requireAdminAuth(request);
 
   const body = await request.json();
@@ -37,3 +39,5 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ ok: true });
 }
+
+export const POST = withRateLimit(handlePost, { tier: "admin", key: "setup-feature-flags" });

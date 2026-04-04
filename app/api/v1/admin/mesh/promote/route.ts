@@ -5,6 +5,8 @@ import { requireAppAdmin } from "@/lib/auth/admin";
 import { buildProjectBundle } from "@/lib/mesh/transfers";
 import { meshJsonFetch } from "@/lib/mesh/client";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 const promoteSchema = z.object({
   projectId: z.string().min(1),
   targetPeerId: z.string().min(1),
@@ -19,7 +21,7 @@ const promoteSchema = z.object({
  * Orchestration endpoint called by the admin UI. Builds a project bundle
  * locally, then POSTs it to the target peer's /api/v1/mesh/promote endpoint.
  */
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     await requireAppAdmin();
 
@@ -51,3 +53,5 @@ export async function POST(request: NextRequest) {
     return handleRouteError(error, "Error promoting project");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "admin", key: "mesh-promote" });

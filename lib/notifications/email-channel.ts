@@ -1,5 +1,6 @@
 import { createElement } from "react";
-import type { NotificationChannel, NotificationEvent } from "./port";
+import type { NotificationChannel } from "./port";
+import type { BusEvent } from "@/lib/bus/events";
 import { sendEmail } from "@/lib/email/send";
 import { logger } from "@/lib/logger";
 
@@ -20,7 +21,7 @@ type EmailConfig = { recipients: string[] };
 export class EmailNotificationChannel implements NotificationChannel {
   constructor(private config: EmailConfig) {}
 
-  async send(event: NotificationEvent): Promise<void> {
+  async send(event: BusEvent): Promise<void> {
     for (const recipient of this.config.recipients) {
       try {
         const template = this.buildTemplate(event);
@@ -36,151 +37,128 @@ export class EmailNotificationChannel implements NotificationChannel {
     }
   }
 
-  private buildTemplate(event: NotificationEvent) {
-    const m = event.metadata;
+  private buildTemplate(event: BusEvent) {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-    const dashboardUrl = m.appId
-      ? `${appUrl}/projects/${m.appId}`
+    const dashboardUrl = "appId" in event && event.appId
+      ? `${appUrl}/projects/${event.appId}`
       : appUrl;
 
     switch (event.type) {
-      case "deploy-success":
+      case "deploy.success":
         return DeploySuccessEmail({
-          projectName: m.projectName || "Unknown",
-          deploymentId: m.deploymentId || "",
-          domain: m.domain,
-          duration: m.duration || "unknown",
-          gitSha: m.gitSha,
-          gitMessage: m.gitMessage,
-          gitAuthor: m.gitAuthor,
-          gitBranch: m.gitBranch,
-          triggeredBy: m.triggeredBy,
-          triggerReason: m.triggerReason,
-          imageName: m.imageName,
-          imageTag: m.imageTag,
-          buildStages: m.buildStages
-            ? JSON.parse(m.buildStages)
-            : undefined,
+          projectName: event.projectName || "Unknown",
+          deploymentId: event.deploymentId || "",
+          domain: event.domain,
+          duration: event.duration || "unknown",
+          gitSha: event.gitSha,
+          gitMessage: event.gitMessage,
+          triggeredBy: event.triggeredBy,
           dashboardUrl,
         });
 
-      case "deploy-failed":
+      case "deploy.failed":
         return DeployFailedEmail({
-          projectName: m.projectName || "Unknown",
-          deploymentId: m.deploymentId || "",
-          errorMessage: m.errorMessage,
-          errorSnapshot: m.errorSnapshot,
-          failedAtStage: m.failedAtStage,
-          gitSha: m.gitSha,
-          gitMessage: m.gitMessage,
-          gitAuthor: m.gitAuthor,
-          gitBranch: m.gitBranch,
-          triggeredBy: m.triggeredBy,
-          triggerReason: m.triggerReason,
+          projectName: event.projectName || "Unknown",
+          deploymentId: event.deploymentId || "",
+          errorMessage: event.errorMessage,
+          gitSha: event.gitSha,
+          gitMessage: event.gitMessage,
+          triggeredBy: event.triggeredBy,
           dashboardUrl,
         });
 
-      case "backup-success":
+      case "backup.success":
         return BackupSuccessEmail({
-          appName: m.appName || m.projectName || "Unknown",
-          volumeNames: m.volumeNames
-            ? JSON.parse(m.volumeNames)
-            : [],
-          totalSize: m.totalSize || "unknown",
-          duration: m.duration || "unknown",
-          storageBucket: m.storageBucket,
-          storageTarget: m.storageTarget,
+          appName: event.jobName || "Unknown",
+          volumeNames: [],
+          totalSize: String(event.totalSize) || "unknown",
+          duration: "unknown",
           dashboardUrl,
         });
 
-      case "backup-failed":
+      case "backup.failed":
         return BackupFailedEmail({
-          appName: m.appName || m.projectName || "Unknown",
-          volumeName: m.volumeName,
-          errorMessage: m.errorMessage || event.message,
+          appName: event.jobName || "Unknown",
+          errorMessage: event.errors || event.message,
           dashboardUrl,
         });
 
-      case "cron-failed":
+      case "cron.failed":
         return CronFailedEmail({
-          jobName: m.jobName || "Unknown job",
-          appName: m.appName || m.projectName || "Unknown",
-          command: m.command || "",
-          errorOutput: m.errorOutput,
-          duration: m.duration,
-          exitCode: m.exitCode ? parseInt(m.exitCode) : undefined,
+          jobName: event.cronJobName || "Unknown job",
+          appName: event.projectName || "Unknown",
+          command: "",
+          duration: String(event.durationMs),
           dashboardUrl,
         });
 
-      case "disk-write-alert":
+      case "disk.write-alert":
         return DiskWriteAlertEmail({
-          appName: m.appName || m.projectName || "Unknown",
-          containerName: m.containerName,
-          writeAmount: m.writeAmount || "unknown",
-          threshold: m.threshold || "unknown",
-          period: m.period,
+          appName: event.containerName || "Unknown",
+          containerName: event.containerName,
+          writeAmount: String(event.writtenBytes) || "unknown",
+          threshold: String(event.thresholdBytes) || "unknown",
+          period: event.window,
           dashboardUrl,
         });
 
-      case "volume-drift":
+      case "volume.drift":
         return VolumeDriftEmail({
-          appName: m.appName || m.projectName || "Unknown",
-          volumeName: m.volumeName || "unknown",
-          modifiedCount: parseInt(m.modifiedCount || "0"),
-          addedCount: parseInt(m.addedCount || "0"),
-          missingCount: parseInt(m.missingCount || "0"),
-          changedFiles: m.changedFiles
-            ? JSON.parse(m.changedFiles)
-            : undefined,
+          appName: event.appName || "Unknown",
+          volumeName: "unknown",
+          modifiedCount: 0,
+          addedCount: 0,
+          missingCount: 0,
           dashboardUrl,
         });
 
-      case "auto-rollback":
+      case "deploy.rollback":
         return AutoRollbackEmail({
-          appName: m.appName || m.projectName || "Unknown",
-          reason:
-            m.reason || "Container crashed within grace period",
-          fromDeploymentId: m.fromDeploymentId || "",
-          toDeploymentId: m.toDeploymentId || "",
+          appName: event.projectName || "Unknown",
+          reason: event.rollbackSuccess
+            ? "Automatic rollback succeeded"
+            : "Automatic rollback failed",
+          fromDeploymentId: "",
+          toDeploymentId: "",
           dashboardUrl,
         });
 
-      case "system-alert-service":
-      case "system-alert-disk":
-      case "system-alert-restart":
-      case "system-alert-cert":
-      case "system-alert-update":
+      case "system.service-down":
+      case "system.disk-alert":
+      case "system.restart-loop":
+      case "system.cert-expiring":
+      case "system.update-available":
         return SystemAlertEmail({
           alertType: event.type,
           title: event.title,
           message: event.message,
-          details: m as Record<string, string>,
+          details: flattenToStrings(event),
           dashboardUrl: appUrl,
         });
 
-      case "weekly-digest":
+      case "digest.weekly":
         return WeeklyDigestEmail({
-          orgName: m.orgName || "Your Organization",
-          weekLabel: m.weekLabel || "",
+          orgName: event.orgName || "Your Organization",
+          weekLabel: event.weekLabel || "",
           deploys: {
-            total: parseInt(m.deploysTotal || "0"),
-            succeeded: parseInt(m.deploysSucceeded || "0"),
-            failed: parseInt(m.deploysFailed || "0"),
+            total: event.deploysTotal,
+            succeeded: event.deploysSucceeded,
+            failed: event.deploysFailed,
           },
           backups: {
-            total: parseInt(m.backupsTotal || "0"),
-            succeeded: parseInt(m.backupsSucceeded || "0"),
-            failed: parseInt(m.backupsFailed || "0"),
+            total: event.backupsTotal,
+            succeeded: 0,
+            failed: event.backupsFailed,
           },
           cron: {
-            totalFailures: parseInt(m.cronFailures || "0"),
-            affectedJobs: m.cronAffectedJobs ? JSON.parse(m.cronAffectedJobs) : [],
+            totalFailures: event.cronFailed,
+            affectedJobs: [],
           },
           alerts: {
-            diskWriteAlerts: parseInt(m.diskWriteAlerts || "0"),
-            volumeDrifts: parseInt(m.volumeDrifts || "0"),
+            diskWriteAlerts: 0,
+            volumeDrifts: 0,
           },
-          projects: m.projects ? JSON.parse(m.projects) : [],
+          projects: [],
           dashboardUrl,
         });
 
@@ -221,4 +199,17 @@ export class EmailNotificationChannel implements NotificationChannel {
         );
     }
   }
+}
+
+/** Flatten a BusEvent extra fields to Record<string, string> for templates that need it. */
+function flattenToStrings(event: BusEvent): Record<string, string> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { type: _type, title: _title, message: _message, ...rest } = event;
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(rest)) {
+    if (value !== undefined && value !== null) {
+      result[key] = String(value);
+    }
+  }
+  return result;
 }

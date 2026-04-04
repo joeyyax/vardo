@@ -8,6 +8,8 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { maskChannelConfig } from "@/lib/notifications/mask-config";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 type RouteParams = { params: Promise<{ orgId: string }> };
 const createSchema = z.object({ name: z.string().min(1).max(100), type: z.enum(["email", "webhook", "slack"]), config: z.union([z.object({ recipients: z.array(z.string().email()).min(1) }), z.object({ url: z.string().url(), secret: z.string().optional() }), z.object({ webhookUrl: z.string().url() })]), enabled: z.boolean().optional().default(true), subscribedEvents: z.array(z.string()).optional().default([]) }).strict();
 
@@ -22,7 +24,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
   } catch (error) { return handleRouteError(error, "Error fetching notification channels"); }
 }
 
-export async function POST(req: NextRequest, { params }: RouteParams) {
+async function handlePost(req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId);
@@ -33,3 +35,5 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ channel: maskChannelConfig(channel) }, { status: 201 });
   } catch (error) { return handleRouteError(error, "Error creating notification channel"); }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "mutation", key: "organizations-notifications" });

@@ -5,6 +5,8 @@ import { needsSetup } from "@/lib/setup";
 import { getBackupStorageConfig, setSystemSetting } from "@/lib/system-settings";
 import { maskSecret, resolveSecret } from "@/lib/mask-secrets";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 const backupSchema = z.object({
   type: z.enum(["s3", "r2", "b2"]),
   bucket: z.string().min(1, "Bucket name is required"),
@@ -33,7 +35,7 @@ export async function GET(request: NextRequest) {
   });
 }
 
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   const setup = await needsSetup();
   if (!setup) {
     await requireAdminAuth(request);
@@ -63,3 +65,5 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ ok: true });
 }
+
+export const POST = withRateLimit(handlePost, { tier: "admin", key: "setup-backup" });

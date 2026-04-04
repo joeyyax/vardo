@@ -12,9 +12,12 @@ import {
   DeleteObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { createReadStream } from "fs";
-import { writeFile, stat } from "fs/promises";
-import { Readable } from "stream";
+import { createReadStream, createWriteStream } from "fs";
+import { stat } from "fs/promises";
+import { Readable, pipeline } from "stream";
+import { promisify } from "util";
+
+const pipelineAsync = promisify(pipeline);
 import type { BackupStorage } from "./storage-port";
 
 // ---------------------------------------------------------------------------
@@ -89,13 +92,9 @@ export class S3BackupStorage implements BackupStorage {
       throw new Error(`Empty response body for key: ${key}`);
     }
 
-    // The SDK returns a web ReadableStream; convert to Buffer
+    // Stream directly to disk to avoid OOM on large archives
     const stream = response.Body as Readable;
-    const chunks: Buffer[] = [];
-    for await (const chunk of stream) {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-    }
-    await writeFile(destPath, Buffer.concat(chunks));
+    await pipelineAsync(stream, createWriteStream(destPath));
   }
 
   async delete(key: string): Promise<void> {

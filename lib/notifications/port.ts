@@ -1,30 +1,11 @@
-export type NotificationEventType =
-  | "deploy-success"
-  | "deploy-failed"
-  | "backup-success"
-  | "backup-failed"
-  | "cron-failed"
-  | "volume-drift"
-  | "disk-write-alert"
-  | "auto-rollback"
-  | "invitation-sent"
-  | "invitation-accepted"
-  | "system-alert-service"
-  | "system-alert-disk"
-  | "system-alert-restart"
-  | "system-alert-cert"
-  | "system-alert-update"
-  | "security-file-exposed"
-  | "security-scan-findings"
-  | "weekly-digest";
+/**
+ * Notification channel interface.
+ *
+ * Channels receive typed BusEvents directly — no legacy conversion layer.
+ */
 
-export type NotificationEvent = {
-  type: NotificationEventType;
-  title: string;
-  message: string;
-  metadata: Record<string, string>;
-};
+import type { BusEvent } from "@/lib/bus/events";
 
 export interface NotificationChannel {
-  send(event: NotificationEvent): Promise<void>;
+  send(event: BusEvent): Promise<void>;
 }

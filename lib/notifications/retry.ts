@@ -16,7 +16,6 @@ import { notificationChannels, notificationLogs } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { createChannel } from "./factory";
-import { toLegacyEvent } from "@/lib/bus";
 import type { BusEvent } from "@/lib/bus";
 import { logger } from "@/lib/logger";
 
@@ -24,7 +23,7 @@ const log = logger.child("notifications");
 
 const RETRY_KEY = "vardo:notification:retry";
 const MAX_ATTEMPTS = 3;
-const MAX_QUEUE_LENGTH = 500; // circuit breaker — drop oldest if exceeded
+const MAX_QUEUE_LENGTH = 500; // circuit breaker - drop oldest if exceeded
 const BACKOFF_MS = [0, 5_000, 15_000]; // immediate, 5s, 15s
 
 type RetryEntry = {
@@ -51,7 +50,7 @@ export async function enqueueRetry(entry: Omit<RetryEntry, "attempt" | "retryAft
   };
 
   await redis.lpush(RETRY_KEY, JSON.stringify(retryEntry));
-  // Circuit breaker — trim to cap if the queue is growing unboundedly
+  // Circuit breaker - trim to cap if the queue is growing unboundedly
   await redis.ltrim(RETRY_KEY, 0, MAX_QUEUE_LENGTH - 1);
 }
 
@@ -63,7 +62,7 @@ export async function tickNotificationRetries(): Promise<void> {
   const len = await redis.llen(RETRY_KEY);
   if (len === 0) return;
 
-  // Distributed lock — prevents multiple workers processing the same entries
+  // Distributed lock - prevents multiple workers processing the same entries
   const locked = await acquireLock("lock:notification-retry", 30_000);
   if (!locked) return;
 
@@ -85,7 +84,7 @@ export async function tickNotificationRetries(): Promise<void> {
       continue; // corrupt entry, discard
     }
 
-    // Not ready yet — put it back
+    // Not ready yet - put it back
     if (now < entry.retryAfter) {
       requeue.push(raw);
       continue;
@@ -97,15 +96,14 @@ export async function tickNotificationRetries(): Promise<void> {
     });
 
     if (!channel || !channel.enabled) {
-      // Channel gone or disabled — log and skip
+      // Channel gone or disabled - log and skip
       await logAttempt(entry, "failed", "Channel deleted or disabled");
       continue;
     }
 
     // Retry the send
     try {
-      const legacy = toLegacyEvent(entry.event);
-      await createChannel(channel).send(legacy);
+      await createChannel(channel).send(entry.event);
       await logAttempt(entry, "success", null);
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);

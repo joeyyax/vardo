@@ -16,6 +16,8 @@ import { meshPeers } from "@/lib/db/schema";
 import { nanoid } from "nanoid";
 import { toCidr } from "@/lib/mesh/ip-allocator";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 const joinSchema = z.object({ token: z.string().min(1, "Invite token is required") }).strict();
 
 const joinResponseSchema = z.object({
@@ -43,7 +45,7 @@ const joinResponseSchema = z.object({
  * During initial setup (no users exist), auth is bypassed so the join
  * can happen before account creation.
  */
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     const isSetup = await needsSetup();
     if (!isSetup) {
@@ -173,3 +175,5 @@ export async function POST(request: NextRequest) {
     return handleRouteError(error, "Error joining mesh");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "admin", key: "mesh-join" });

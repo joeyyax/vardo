@@ -22,3 +22,33 @@ export function handleRouteError(error: unknown, context?: string) {
     { status: 500 }
   );
 }
+
+// ---------------------------------------------------------------------------
+// Postgres error helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract the PostgreSQL error code from an unknown thrown value.
+ * Checks both the error itself and `error.cause` for the `code` property.
+ */
+export function getPgErrorCode(error: unknown): string | null {
+  if (!(error instanceof Error)) return null;
+  const directCode =
+    "code" in error ? (error as { code: string }).code : null;
+  if (directCode) return directCode;
+  if (
+    error.cause &&
+    typeof error.cause === "object" &&
+    "code" in error.cause
+  ) {
+    return (error.cause as { code: string }).code;
+  }
+  return null;
+}
+
+/**
+ * Check if an error is a Postgres unique violation (23505).
+ */
+export function isUniqueViolation(error: unknown): boolean {
+  return getPgErrorCode(error) === "23505";
+}

@@ -7,12 +7,14 @@ import { isFeatureEnabled } from "@/lib/config/features";
 import { eq } from "drizzle-orm";
 import { restoreBackup } from "@/lib/backup/engine";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 type RouteParams = {
   params: Promise<{ backupId: string }>;
 };
 
 // POST /api/v1/admin/backups/[backupId]/restore
-export async function POST(_request: NextRequest, { params }: RouteParams) {
+async function handlePost(_request: NextRequest, { params }: RouteParams) {
   try {
     if (!isFeatureEnabled("backups")) {
       return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
@@ -49,3 +51,5 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error restoring system backup");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "admin", key: "backups-restore" });

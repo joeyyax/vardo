@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { apps, volumes, projects } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
-import { isAdmin } from "@/lib/auth/permissions";
+import { isOrgAdmin } from "@/lib/auth/permissions";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import {
   buildComposePreview,
@@ -29,7 +29,7 @@ async function handler(_request: NextRequest, { params }: RouteParams) {
     const { orgId, appId } = await params;
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    if (!isAdmin(org.membership.role)) {
+    if (!isOrgAdmin(org.membership.role)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

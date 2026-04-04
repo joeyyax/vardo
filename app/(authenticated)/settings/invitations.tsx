@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/bottom-sheet";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { Card, CardContent } from "@/components/ui/card";
-import { isAdmin } from "@/lib/auth/permissions";
+import { isOrgAdmin } from "@/lib/auth/permissions";
 import { formatDistanceToNow } from "date-fns";
 
 type Invitation = {
@@ -71,7 +71,7 @@ export function InvitationsPanel({
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [revokeTarget, setRevokeTarget] = useState<{ id: string; email: string } | null>(null);
 
-  const canManage = isAdmin(currentRole);
+  const canManage = isOrgAdmin(currentRole);
 
   async function handleInvite() {
     const trimmedEmail = inviteEmail.trim();
