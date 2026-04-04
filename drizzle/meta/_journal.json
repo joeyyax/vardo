@@ -183,6 +183,13 @@
       "when": 1775153113701,
       "tag": "0025_superb_mad_thinker",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1775270035778,
+      "tag": "0026_nappy_vertigo",
+      "breakpoints": true
     }
   ]
 }
