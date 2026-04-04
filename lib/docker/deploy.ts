@@ -101,7 +101,7 @@ export async function runDeployment(
   const logs = { push: log };
 
   // Build the initial deploy context — fetches app, resolves environment, loads env vars
-  let ctx: DeployContext;
+  let ctx: DeployContext | undefined;
 
   try {
     await db
@@ -260,7 +260,6 @@ export async function runDeployment(
       logs,
       logLines,
       startTime,
-      currentStage,
     };
 
     // Run the deploy pipeline — each step reads and mutates ctx
@@ -346,8 +345,8 @@ export async function runDeployment(
 
     // If we got past the deploy stage, containers may be running — tear them down.
     const CONTAINER_STAGES: Set<DeployStage> = new Set(["deploy", "healthcheck", "routing", "cleanup", "done"]);
-    const slotDir = ctx!?.slotDir;
-    const newProjectName = ctx!?.newProjectName;
+    const slotDir = ctx?.slotDir;
+    const newProjectName = ctx?.newProjectName;
     if (CONTAINER_STAGES.has(currentStage) && slotDir && newProjectName) {
       try {
         const cleanupComposeArgs = await slotComposeFiles(slotDir);
@@ -507,9 +506,6 @@ export async function checkEndpoint(domain: string, logs: { push: (line: string)
   return false;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 // ---------------------------------------------------------------------------
 // Stop / Restart
