@@ -58,6 +58,7 @@ export function PluginManager() {
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState<string | null>(null);
   const [settingsPlugin, setSettingsPlugin] = useState<PluginData | null>(null);
+  const [compatibility, setCompatibility] = useState<Record<string, { compatible: boolean; issues: { type: string; severity: string; message: string; detail?: string }[] }>>({});
 
   const fetchPlugins = useCallback(async () => {
     try {
@@ -65,6 +66,25 @@ export function PluginManager() {
       if (!res.ok) throw new Error("Failed to load plugins");
       const data = await res.json();
       setPlugins(data.plugins);
+
+      // Fetch compatibility for disabled plugins
+      const disabled = (data.plugins as PluginData[]).filter((p) => !p.enabled);
+      const checks = await Promise.all(
+        disabled.map(async (p) => {
+          try {
+            const r = await fetch(`/api/v1/plugins/${p.id}/compatibility`);
+            if (!r.ok) return [p.id, null] as const;
+            return [p.id, await r.json()] as const;
+          } catch {
+            return [p.id, null] as const;
+          }
+        }),
+      );
+      const compat: typeof compatibility = {};
+      for (const [id, result] of checks) {
+        if (result) compat[id] = result;
+      }
+      setCompatibility(compat);
     } catch {
       toast.error("Failed to load plugins");
     } finally {
@@ -272,6 +292,19 @@ export function PluginManager() {
                           </span>
                         ))}
                       </div>
+                    </div>
+                  )}
+
+                  {!plugin.enabled && compatibility[plugin.id]?.issues?.length > 0 && (
+                    <div className="space-y-1.5 rounded-md bg-muted/50 px-3 py-2">
+                      {compatibility[plugin.id].issues.map((issue, idx) => (
+                        <div key={idx} className={`text-[11px] ${issue.severity === "error" ? "text-destructive" : "text-amber-600 dark:text-amber-400"}`}>
+                          <span className="font-medium">{issue.message}</span>
+                          {issue.detail && (
+                            <p className="mt-0.5 text-muted-foreground">{issue.detail}</p>
+                          )}
+                        </div>
+                      ))}
                     </div>
                   )}
 
