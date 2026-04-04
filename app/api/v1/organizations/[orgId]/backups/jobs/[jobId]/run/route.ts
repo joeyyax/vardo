@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { backupJobs } from "@/lib/db/schema";
-import { isFeatureEnabled } from "@/lib/config/features";
+import { requirePlugin } from "@/lib/api/require-plugin";
 import { eq, and } from "drizzle-orm";
 import { runBackup } from "@/lib/backup/engine";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
@@ -16,9 +16,8 @@ type RouteParams = {
 // POST /api/v1/organizations/[orgId]/backups/[jobId]/run
 async function handlePost(_request: NextRequest, { params }: RouteParams) {
   try {
-    if (!isFeatureEnabled("backups")) {
-      return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
-    }
+    const gate = await requirePlugin("backups");
+    if (gate) return gate;
 
     const { orgId, jobId } = await params;
     const org = await verifyOrgAccess(orgId);

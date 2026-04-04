@@ -13,6 +13,14 @@ const manifest: PluginManifest = {
     redis: true,
   },
 
+  emits: [
+    "before.backup.run",
+    "after.backup.success",
+    "after.backup.failed",
+    "before.backup.restore",
+    "after.backup.restore",
+  ],
+
   hooks: [
     {
       event: "after.deploy.success",

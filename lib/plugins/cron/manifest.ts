@@ -9,6 +9,12 @@ const manifest: PluginManifest = {
 
   provides: ["cron"],
 
+  emits: [
+    "before.cron.execute",
+    "after.cron.success",
+    "after.cron.failed",
+  ],
+
   ui: {
     slots: {
       "app.detail.tabs": {
