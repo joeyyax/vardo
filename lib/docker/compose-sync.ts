@@ -276,8 +276,17 @@ export async function syncComposeServices(opts: {
   }
 
   // Mark orphaned children (services removed from compose YAML) as stopped
-  const orphanedChildren = new Map([...childByService, ...childByName]);
-  for (const [serviceName, child] of orphanedChildren) {
+  // Deduplicate by child ID since the same record can appear in both maps
+  const orphanedById = new Map<string, { serviceName: string; child: typeof existingChildren[0] }>();
+  for (const [serviceName, child] of childByService) {
+    orphanedById.set(child.id, { serviceName, child });
+  }
+  for (const [serviceName, child] of childByName) {
+    if (!orphanedById.has(child.id)) {
+      orphanedById.set(child.id, { serviceName, child });
+    }
+  }
+  for (const [, { serviceName, child }] of orphanedById) {
     await db
       .update(apps)
       .set({ status: "stopped", updatedAt: new Date() })

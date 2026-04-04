@@ -99,10 +99,16 @@ export function validateCompose(compose: ComposeFile, opts?: ValidateOptions): {
           );
         }
         if (isBindMount(vol) && opts?.allowBindMounts) {
-          const mountSource = resolve(vol.split(":")[0]);
-          if (DENIED_MOUNT_PATHS.some((p) => mountSource === p || mountSource.startsWith(p + "/"))) {
+          const rawSource = vol.split(":")[0];
+          const mountSource = resolve(rawSource);
+          const rootResolved = resolve("/", rawSource);
+          if (
+            DENIED_MOUNT_PATHS.some((p) => mountSource === p || mountSource.startsWith(p + "/")) ||
+            DENIED_MOUNT_PATHS.some((p) => rootResolved === p || rootResolved.startsWith(p + "/"))
+          ) {
+            const displayPath = mountSource !== rootResolved ? rootResolved : mountSource;
             errors.push(
-              `Service "${name}" mounts denied path "${mountSource}" — this path is blocked for security`,
+              `Service "${name}" mounts denied path "${displayPath}" — this path is blocked for security`,
             );
           }
         }
@@ -138,7 +144,7 @@ export function validateCompose(compose: ComposeFile, opts?: ValidateOptions): {
     const seen = new Set<string>();
     let node = startName;
 
-    // eslint-disable-next-line no-constant-condition
+     
     while (true) {
       const nm = compose.services[node]?.network_mode;
       if (!nm?.startsWith("service:")) break;
@@ -207,10 +213,18 @@ export function sanitizeCompose(compose: ComposeFile, opts?: { allowBindMounts?:
             // Bind mounts allowed — still enforce the deny list unconditionally.
             // Throw rather than silently drop: the user explicitly configured this
             // mount, so a silent strip would cause confusing runtime behaviour.
-            const mountSource = resolve(v.split(":")[0]);
-            if (DENIED_MOUNT_PATHS.some((p) => mountSource === p || mountSource.startsWith(p + "/"))) {
+            const rawSource = v.split(":")[0];
+            const mountSource = resolve(rawSource);
+            // Also resolve from root to catch traversal attacks (e.g. ../../../../../../etc)
+            // that would resolve differently depending on CWD depth
+            const rootResolved = resolve("/", rawSource);
+            if (
+              DENIED_MOUNT_PATHS.some((p) => mountSource === p || mountSource.startsWith(p + "/")) ||
+              DENIED_MOUNT_PATHS.some((p) => rootResolved === p || rootResolved.startsWith(p + "/"))
+            ) {
+              const displayPath = mountSource !== rootResolved ? rootResolved : mountSource;
               throw new Error(
-                `Service "${name}" mounts blocked host path "${mountSource}" — this path is not allowed even with bind mounts enabled`,
+                `Service "${name}" mounts blocked host path "${displayPath}" — this path is not allowed even with bind mounts enabled`,
               );
             }
             safe.push(v);
