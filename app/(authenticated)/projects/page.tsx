@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { apps, integrations, projects, tags } from "@/lib/db/schema";
+import { apps, projects, tags } from "@/lib/db/schema";
 import { getCurrentOrg, getUserOrganizations } from "@/lib/auth/session";
-import { eq, desc, asc, isNull, and, isNotNull, type AnyColumn } from "drizzle-orm";
+import { eq, desc, asc, isNull, and, type AnyColumn } from "drizzle-orm";
 import { PageToolbar } from "@/components/page-toolbar";
 import { OrgSwitcher } from "@/components/layout/org-switcher";
 import { AppGrid } from "./app-grid";
@@ -18,7 +18,7 @@ export default async function ProjectsPage() {
   const orgId = orgData.organization.id;
   const organizations = await getUserOrganizations();
 
-  const [appList, tagList, projectList, integrationAppIds] = await Promise.all([
+  const [appList, tagList, projectList] = await Promise.all([
     db.query.apps.findMany({
       where: and(eq(apps.organizationId, orgId), isNull(apps.parentAppId)),
       orderBy: [asc(apps.sortOrder), desc(apps.createdAt)],
@@ -50,10 +50,6 @@ export default async function ProjectsPage() {
       where: eq(projects.organizationId, orgId),
       columns: { id: true, name: true, displayName: true, color: true, isSystemManaged: true },
     }),
-    db.query.integrations.findMany({
-      where: and(eq(integrations.status, "connected"), isNotNull(integrations.appId)),
-      columns: { appId: true },
-    }).then((rows) => new Set(rows.map((r) => r.appId!).filter(Boolean))),
   ]);
 
   // Projects that have no apps assigned
@@ -91,7 +87,6 @@ export default async function ProjectsPage() {
           allTags={tagList}
           orgId={orgId}
           emptyProjects={emptyProjects}
-          integrationAppIds={integrationAppIds}
         />
       )}
     </div>

@@ -141,5 +141,4 @@ export type AppDetailProps = {
   initialSubView?: string;
   featureFlags: FeatureFlags;
   parentApp?: { id: string; name: string; displayName: string } | null;
-  backedIntegrationType?: string | null;
 };
