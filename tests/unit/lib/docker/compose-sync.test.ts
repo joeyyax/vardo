@@ -7,6 +7,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockInsert = vi.fn();
 const mockUpdate = vi.fn();
 const mockFindMany = vi.fn();
+const mockExecute = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("@/lib/db", () => ({
   db: {
@@ -18,6 +19,7 @@ vi.mock("@/lib/db", () => ({
     transaction: vi.fn(),
     insert: (...args: unknown[]) => mockInsert(...args),
     update: (...args: unknown[]) => mockUpdate(...args),
+    execute: (...args: unknown[]) => mockExecute(...args),
   },
 }));
 
@@ -63,21 +65,13 @@ const BASE_OPTS = {
 // ---------------------------------------------------------------------------
 
 describe("syncComposeServices — projectId on insert (new children)", () => {
-  let insertChain: ReturnType<typeof makeInsertChain>;
-
   beforeEach(() => {
     vi.clearAllMocks();
 
     // No existing children — all services will be inserted
     mockFindMany.mockResolvedValue([]);
 
-    insertChain = makeInsertChain();
-    mockInsert.mockReturnValue({ values: insertChain.values });
-
-    vi.mocked(db.transaction).mockImplementation(
-      async (callback) =>
-        callback(db as unknown as Parameters<Parameters<typeof db.transaction>[0]>[0]),
-    );
+    // The code now uses db.execute(sql`...`) for inserts, not db.insert().values()
   });
 
   it("sets projectId on new child apps when parent has a project", async () => {
@@ -87,11 +81,18 @@ describe("syncComposeServices — projectId on insert (new children)", () => {
       compose: TWO_SERVICE_COMPOSE,
     });
 
-    // One insert call per service
-    expect(insertChain.values.mock.calls).toHaveLength(2);
+    // One execute call per service (raw SQL insert)
+    expect(mockExecute).toHaveBeenCalledTimes(2);
 
-    for (const [args] of insertChain.values.mock.calls) {
-      expect(args).toMatchObject({ projectId: "project-abc" });
+    // The sql template tag stores interpolated values directly in queryChunks
+    // (non-object entries are parameter values; objects with .value are SQL text fragments)
+    for (const call of mockExecute.mock.calls) {
+      const sqlObj = call[0];
+      const chunks: unknown[] = sqlObj?.queryChunks ?? [];
+      const paramValues = chunks.filter(
+        (c: unknown) => !(typeof c === "object" && c !== null && "value" in (c as Record<string, unknown>)),
+      );
+      expect(paramValues).toContain("project-abc");
     }
   });
 
@@ -102,8 +103,15 @@ describe("syncComposeServices — projectId on insert (new children)", () => {
       compose: TWO_SERVICE_COMPOSE,
     });
 
-    for (const [args] of insertChain.values.mock.calls) {
-      expect(args).toMatchObject({ projectId: null });
+    expect(mockExecute).toHaveBeenCalledTimes(2);
+
+    for (const call of mockExecute.mock.calls) {
+      const sqlObj = call[0];
+      const chunks: unknown[] = sqlObj?.queryChunks ?? [];
+      const paramValues = chunks.filter(
+        (c: unknown) => !(typeof c === "object" && c !== null && "value" in (c as Record<string, unknown>)),
+      );
+      expect(paramValues).toContain(null);
     }
   });
 });

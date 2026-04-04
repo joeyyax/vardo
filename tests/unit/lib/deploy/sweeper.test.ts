@@ -129,7 +129,7 @@ describe("sweepStuckQueuedDeployments", () => {
     // SSE event published
     expect(addEvent).toHaveBeenCalledWith(
       expect.any(String),
-      expect.objectContaining({ event: "deploy:complete", status: "cancelled" }),
+      expect.objectContaining({ type: "deploy.status", status: "cancelled" }),
     );
   });
 
