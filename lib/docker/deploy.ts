@@ -432,18 +432,8 @@ export async function sendDeployNotification(
         triggeredBy: triggeredByName,
       });
 
-      // Post-deploy security scan — delayed to allow the app to become ready
-      setTimeout(() => {
-        import("@/lib/security/scanner")
-          .then(({ runSecurityScan }) =>
-            runSecurityScan({
-              appId: app.id,
-              organizationId: app.organizationId!,
-              trigger: "deploy",
-            }),
-          )
-          .catch(() => {});
-      }, 10_000);
+      // Security scan, backup, monitoring hooks are handled by plugins
+      // via executeHooks("after.deploy.success") in post-deploy step.
     } else {
       emit(app.organizationId, {
         type: "deploy.failed",
