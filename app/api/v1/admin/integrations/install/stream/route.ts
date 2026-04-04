@@ -13,7 +13,9 @@ import { connectAppIntegration, disconnectIntegration, type IntegrationType } fr
 import { requestDeploy } from "@/lib/docker/deploy-cancel";
 import { getSession } from "@/lib/auth/session";
 import { recordActivity } from "@/lib/activity";
-import { subscribe, appChannel } from "@/lib/events";
+import { readStream } from "@/lib/stream/consumer";
+import { deployStream } from "@/lib/stream/keys";
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { listContainers } from "@/lib/docker/client";
 
 const HEALTH_CHECK_TIMEOUT = 60 * 1000; // 60 seconds
@@ -58,7 +60,7 @@ interface InstallEvent {
 
 // POST /api/v1/admin/integrations/install/stream
 // SSE stream for integration install with live deploy progress
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     await requireAppAdmin();
     const session = await getSession();
@@ -101,11 +103,12 @@ export async function POST(request: NextRequest) {
 
         let appId: string | null = null;
         let deploymentId: string | null = null;
-        let unsubscribes: (() => void)[] = [];
+
+        // Abort controller for stream readers
+        const streamAbort = new AbortController();
 
         const cleanup = () => {
-          unsubscribes.forEach(fn => fn());
-          unsubscribes = [];
+          streamAbort.abort();
         };
 
         request.signal.addEventListener("abort", () => {
@@ -215,43 +218,6 @@ export async function POST(request: NextRequest) {
           // Stage 3: Deploy start
           sendStage("deploy_start", "Starting deployment...", { progress: 35, appId });
 
-          // Subscribe to deploy events before kicking off deploy
-          let deployComplete = false;
-          let deploySuccess = false;
-          const deployChannel = appChannel(appId);
-
-          const unsub = await subscribe(deployChannel, (data) => {
-            const event = data.event as string;
-
-            if (event === "deploy:log") {
-              send("log", { deploymentId: data.deploymentId, message: data.message });
-            } else if (event === "deploy:stage") {
-              send("stage", {
-                stage: "deploy_progress",
-                message: `Deploy stage: ${data.stage}`,
-                progress: 40 + Math.min(data.status === "running" ? 30 : 45, 45),
-                deploymentId: data.deploymentId,
-              });
-            } else if (event === "deploy:complete") {
-              deployComplete = true;
-              deploySuccess = data.success as boolean;
-              deploymentId = data.deploymentId as string;
-              send("stage", {
-                stage: "deploy_progress",
-                message: data.success ? "Deployment complete" : "Deployment failed",
-                progress: data.success ? 75 : 50,
-                deploymentId: data.deploymentId,
-              });
-            } else if (event === "deploy:rolled_back") {
-              send("stage", {
-                stage: "rollback",
-                message: data.message as string,
-                progress: 50,
-              });
-            }
-          });
-          unsubscribes.push(unsub);
-
           // Kick off deploy
           const deployPromise = requestDeploy({
             appId,
@@ -285,11 +251,65 @@ export async function POST(request: NextRequest) {
             return;
           }
 
-          // Wait for deploy to complete (with timeout)
+          // Read deploy logs from the deploy stream via readStream
+          let deployComplete = false;
+          let deploySuccess = false;
+
           const deployTimeout = 10 * 60 * 1000; // 10 minutes
           const startTime = Date.now();
-          while (!deployComplete && Date.now() - startTime < deployTimeout) {
-            await new Promise(r => setTimeout(r, 500));
+
+          // Read from the deploy stream for log lines and stage transitions
+          const deployEntries = readStream(deployStream(deploymentId), {
+            signal: streamAbort.signal,
+          });
+
+          for await (const entry of deployEntries) {
+            const { fields } = entry;
+
+            if (fields.line?.startsWith("[stage]")) {
+              // Stage transition
+              send("stage", {
+                stage: "deploy_progress",
+                message: `Deploy stage: ${fields.stage}`,
+                progress: 40 + Math.min(fields.status === "running" ? 30 : 45, 45),
+                deploymentId,
+              });
+
+              // Terminal states
+              if (fields.status === "success" || fields.status === "failed" || fields.status === "cancelled") {
+                deployComplete = true;
+                deploySuccess = fields.status === "success";
+                send("stage", {
+                  stage: "deploy_progress",
+                  message: deploySuccess ? "Deployment complete" : "Deployment failed",
+                  progress: deploySuccess ? 75 : 50,
+                  deploymentId,
+                });
+                break;
+              }
+            } else {
+              // Log line
+              send("log", { deploymentId, message: fields.line });
+            }
+
+            // Check timeout
+            if (Date.now() - startTime > deployTimeout) {
+              break;
+            }
+          }
+
+          // Also check the org event stream for deploy completion events
+          // in case the deploy stream didn't carry a terminal stage
+          if (!deployComplete) {
+            // Check via DB as a fallback
+            const deploy = await db.query.deployments.findFirst({
+              where: eq(deployments.id, deploymentId),
+              columns: { status: true },
+            });
+            if (deploy && (deploy.status === "success" || deploy.status === "failed" || deploy.status === "cancelled")) {
+              deployComplete = true;
+              deploySuccess = deploy.status === "success";
+            }
           }
 
           if (!deployComplete) {
@@ -416,6 +436,8 @@ export async function POST(request: NextRequest) {
     return handleRouteError(error, "Error installing integration");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "admin", key: "integration-install" });
 
 async function performHealthCheck(appId: string, appName: string): Promise<{ healthy: boolean; error?: string }> {
   const startTime = Date.now();

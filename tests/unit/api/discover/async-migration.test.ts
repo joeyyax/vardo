@@ -23,6 +23,11 @@ vi.mock("@/lib/events", () => ({
   appChannel: vi.fn().mockReturnValue("app:test-app-id"),
 }));
 
+vi.mock("@/lib/stream/producer", () => ({
+  addEvent: vi.fn().mockResolvedValue("stream-id-1"),
+  addDeployLog: vi.fn().mockResolvedValue("stream-id-2"),
+}));
+
 vi.mock("@/lib/activity", () => ({
   recordActivity: vi.fn().mockResolvedValue(undefined),
 }));
@@ -35,7 +40,7 @@ import {
   inspectContainer,
 } from "@/lib/docker/client";
 import { requestDeploy } from "@/lib/docker/deploy-cancel";
-import { publishEvent } from "@/lib/events";
+import { addEvent } from "@/lib/stream/producer";
 
 // Flush all pending promises and microtasks. Needed because
 // runAsyncContainerMigration is fire-and-forget (void return).
@@ -98,10 +103,10 @@ describe("runAsyncContainerMigration — bailOnFirstStopFailure", () => {
     // Deployment should be marked failed.
     expect(db.update).toHaveBeenCalledTimes(2);
 
-    // publishEvent should fire with deploy:failed.
-    expect(publishEvent).toHaveBeenCalledWith(
+    // addEvent should fire with deploy.status error.
+    expect(addEvent).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ event: "deploy:failed", appId: BASE_PARAMS.appId }),
+      expect.objectContaining({ type: "deploy.status", appId: BASE_PARAMS.appId, status: "error" }),
     );
 
     // requestDeploy must NOT be called — abort happened before deploy.
@@ -135,10 +140,10 @@ describe("runAsyncContainerMigration — bailOnFirstStopFailure", () => {
     // Deploy must not have been attempted.
     expect(requestDeploy).not.toHaveBeenCalled();
 
-    // deploy:failed event published.
-    expect(publishEvent).toHaveBeenCalledWith(
+    // deploy.status error event published.
+    expect(addEvent).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ event: "deploy:failed", deploymentId: BASE_PARAMS.deploymentId }),
+      expect.objectContaining({ type: "deploy.status", deploymentId: BASE_PARAMS.deploymentId, status: "error" }),
     );
   });
 
@@ -162,9 +167,9 @@ describe("runAsyncContainerMigration — bailOnFirstStopFailure", () => {
     await flushPromises();
 
     expect(requestDeploy).toHaveBeenCalledOnce();
-    expect(publishEvent).not.toHaveBeenCalledWith(
+    expect(addEvent).not.toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ event: "deploy:failed" }),
+      expect.objectContaining({ type: "deploy.status", status: "error" }),
     );
   });
 });

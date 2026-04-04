@@ -13,7 +13,7 @@ import { nanoid } from "nanoid";
 import { slugify } from "@/lib/ui/slugify";
 import { stopContainer, startContainer, removeContainer, inspectContainer } from "@/lib/docker/client";
 import { requestDeploy } from "@/lib/docker/deploy-cancel";
-import { publishEvent, appChannel } from "@/lib/events";
+import { addEvent } from "@/lib/stream/producer";
 import { recordActivity } from "@/lib/activity";
 import type { ComposeFile } from "@/lib/docker/compose";
 
@@ -182,11 +182,14 @@ export function runAsyncContainerMigration(params: MigrationParams): void {
               .where(eq(apps.id, appId));
           });
 
-          publishEvent(appChannel(appId), {
-            event: "deploy:failed",
+          addEvent(orgId, {
+            type: "deploy.status",
+            title: "Import failed",
+            message: "Import migration aborted — could not stop original container",
             appId,
             deploymentId,
-            message: "Import migration aborted — could not stop original container",
+            status: "error",
+            success: false,
           }).catch(() => {});
 
           return;
@@ -231,11 +234,14 @@ export function runAsyncContainerMigration(params: MigrationParams): void {
             .set({ status: "active", updatedAt: new Date() })
             .where(eq(apps.id, appId));
 
-          publishEvent(appChannel(appId), {
-            event: "deploy:rolled_back",
+          addEvent(orgId, {
+            type: "deploy.status",
+            title: "Import rolled back",
+            message: "Import deploy failed — original containers restarted",
             appId,
             deploymentId,
-            message: "Import deploy failed — original containers restarted",
+            status: "error",
+            success: false,
           }).catch(() => {});
 
           recordActivity({

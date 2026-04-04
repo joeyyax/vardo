@@ -8,7 +8,7 @@ import { appEnvDir } from "@/lib/paths";
 import { rm, symlink, rename } from "fs/promises";
 import { listContainers, inspectContainer } from "./client";
 import { slotComposeFiles } from "./compose";
-import { publishEvent, appChannel } from "@/lib/events";
+import { addEvent, addDeployLog } from "@/lib/stream/producer";
 import { recordActivity } from "@/lib/activity";
 import { logger } from "@/lib/logger";
 
@@ -255,12 +255,21 @@ async function performRollback(opts: PerformRollbackOpts): Promise<void> {
     .set({ status: "active", updatedAt: new Date() })
     .where(eq(apps.id, appId));
 
-  // Step 6: Publish event for real-time UI
-  publishEvent(appChannel(appId), {
-    event: "deploy:rolled_back",
+  // Step 6: Write to deploy stream + org event stream for real-time UI
+  addDeployLog(deploymentId, {
+    line: "Container crashed within grace period, rolled back to previous version",
+    stage: "rollback",
+    status: "failed",
+  }).catch(() => {});
+
+  addEvent(organizationId, {
+    type: "deploy.status",
+    title: "Deploy rolled back",
+    message: "Container crashed within grace period, rolled back to previous version",
     appId,
     deploymentId,
-    message: "Container crashed within grace period, rolled back to previous version",
+    status: "error",
+    success: false,
   }).catch(() => {});
 
   // Step 7: Record activity

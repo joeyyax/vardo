@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import { redis } from "@/lib/redis";
-import { eventStream, deployStream, toastStream } from "./keys";
+import { eventStream, deployStream, toastStream, installStream } from "./keys";
 import type { ToastEvent } from "./types";
 import type { BusEvent } from "@/lib/bus/events";
 import { getStreamMaxLen } from "./config";
@@ -66,4 +66,22 @@ export async function addToast(userId: string, toast: ToastEvent): Promise<strin
   if (toast.actionLabel) fields.push("actionLabel", toast.actionLabel);
 
   return xadd(toastStream(userId), maxLen, ...fields);
+}
+
+/**
+ * Add an install progress event to an install stream.
+ * Used for one-off workflows like integration installs.
+ * Returns the stream entry ID.
+ */
+export async function addInstallEvent(
+  installId: string,
+  event: Record<string, string>,
+): Promise<string> {
+  const maxLen = await getStreamMaxLen();
+  const fields: string[] = [];
+  for (const [k, v] of Object.entries(event)) {
+    fields.push(k, v);
+  }
+  fields.push("ts", String(Date.now()));
+  return xadd(installStream(installId), maxLen, ...fields);
 }
