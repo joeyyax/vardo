@@ -13,6 +13,11 @@ import { withRateLimit } from "@/lib/api/with-rate-limit";
  * Bearer token bound to an organization.
  */
 async function handlePost(request: NextRequest) {
+  // Check if MCP plugin is enabled
+  const { requirePlugin } = await import("@/lib/api/require-plugin");
+  const gate = await requirePlugin("mcp");
+  if (gate) return gate;
+
   const context = await authenticateRequest(request);
   if (!context) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
