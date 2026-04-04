@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { backupTargets } from "@/lib/db/schema";
-import { isFeatureEnabled } from "@/lib/config/features";
+import { requirePlugin } from "@/lib/api/require-plugin";
 import { isLocalBackupsAllowed } from "@/lib/config/provider-restrictions";
 import { eq, or, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
@@ -72,9 +72,8 @@ const createTargetSchema = z.discriminatedUnion("type", [
 // GET /api/v1/organizations/[orgId]/backups/targets
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
-    if (!isFeatureEnabled("backups")) {
-      return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
-    }
+    const gate = await requirePlugin("backups");
+    if (gate) return gate;
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -105,9 +104,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 // POST /api/v1/organizations/[orgId]/backups/targets
 async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
-    if (!isFeatureEnabled("backups")) {
-      return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
-    }
+    const gate = await requirePlugin("backups");
+    if (gate) return gate;
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });

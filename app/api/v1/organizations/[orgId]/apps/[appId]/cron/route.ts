@@ -8,7 +8,7 @@ import { z } from "zod";
 import { verifyAppAccess } from "@/lib/api/verify-access";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { isOrgAdmin } from "@/lib/auth/permissions";
-import { isFeatureEnabled } from "@/lib/config/features";
+import { requirePlugin } from "@/lib/api/require-plugin";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -40,9 +40,8 @@ const deleteCronSchema = z.object({
 // GET /api/v1/organizations/[orgId]/apps/[appId]/cron
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
-    if (!isFeatureEnabled("cron")) {
-      return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
-    }
+    const gate = await requirePlugin("cron");
+    if (gate) return gate;
 
     const { orgId, appId } = await params;
     const app = await verifyAppAccess(orgId, appId);
@@ -65,9 +64,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 // POST /api/v1/organizations/[orgId]/apps/[appId]/cron
 async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
-    if (!isFeatureEnabled("cron")) {
-      return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
-    }
+    const gate = await requirePlugin("cron");
+    if (gate) return gate;
 
     const { orgId, appId } = await params;
     const orgAccess = await verifyOrgAccess(orgId);
@@ -113,9 +111,8 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 // PATCH /api/v1/organizations/[orgId]/apps/[appId]/cron
 async function handlePatch(request: NextRequest, { params }: RouteParams) {
   try {
-    if (!isFeatureEnabled("cron")) {
-      return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
-    }
+    const gate = await requirePlugin("cron");
+    if (gate) return gate;
 
     const { orgId, appId } = await params;
     const app = await verifyAppAccess(orgId, appId);
@@ -155,9 +152,8 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
 // DELETE /api/v1/organizations/[orgId]/apps/[appId]/cron
 async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
-    if (!isFeatureEnabled("cron")) {
-      return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
-    }
+    const gate = await requirePlugin("cron");
+    if (gate) return gate;
 
     const { orgId, appId } = await params;
     const app = await verifyAppAccess(orgId, appId);

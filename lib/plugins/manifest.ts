@@ -111,8 +111,16 @@ export type PluginManifest = {
     features?: string[];
   };
 
-  /** Backend: lifecycle hooks. */
+  /** Backend: lifecycle hooks this plugin listens to. */
   hooks?: ManifestHook[];
+
+  /**
+   * Hook points this plugin emits (other plugins can register for these).
+   * Purely declarative — tells the admin UI and plugin marketplace what
+   * extension points are available. The engine doesn't enforce this;
+   * any string works as a hook event.
+   */
+  emits?: string[];
 
   /** Backend: stream consumer groups. */
   consumers?: Array<{

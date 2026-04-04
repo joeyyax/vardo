@@ -7,7 +7,7 @@ import {
   backupTargets,
   backups,
 } from "@/lib/db/schema";
-import { isFeatureEnabled } from "@/lib/config/features";
+import { requirePlugin } from "@/lib/api/require-plugin";
 import { eq, and, or, desc, inArray, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
@@ -36,9 +36,8 @@ const createJobSchema = z.object({
 // GET /api/v1/organizations/[orgId]/backups
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    if (!isFeatureEnabled("backups")) {
-      return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
-    }
+    const gate = await requirePlugin("backups");
+    if (gate) return gate;
 
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId);
@@ -102,9 +101,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 // POST /api/v1/organizations/[orgId]/backups
 async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
-    if (!isFeatureEnabled("backups")) {
-      return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
-    }
+    const gate = await requirePlugin("backups");
+    if (gate) return gate;
 
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId);

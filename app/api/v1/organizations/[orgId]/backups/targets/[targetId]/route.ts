@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { backupTargets } from "@/lib/db/schema";
-import { isFeatureEnabled } from "@/lib/config/features";
+import { requirePlugin } from "@/lib/api/require-plugin";
 import { eq, and, or, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
@@ -22,9 +22,8 @@ const updateTargetSchema = z.object({
 // PATCH /api/v1/organizations/[orgId]/backups/targets/[targetId]
 async function handlePatch(request: NextRequest, { params }: RouteParams) {
   try {
-    if (!isFeatureEnabled("backups")) {
-      return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
-    }
+    const gate = await requirePlugin("backups");
+    if (gate) return gate;
 
     const { orgId, targetId } = await params;
     const org = await verifyOrgAccess(orgId);
@@ -66,9 +65,8 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
 // DELETE /api/v1/organizations/[orgId]/backups/targets/[targetId]
 async function handleDelete(_request: NextRequest, { params }: RouteParams) {
   try {
-    if (!isFeatureEnabled("backups")) {
-      return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
-    }
+    const gate = await requirePlugin("backups");
+    if (gate) return gate;
 
     const { orgId, targetId } = await params;
     const org = await verifyOrgAccess(orgId);
