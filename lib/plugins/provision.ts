@@ -14,7 +14,7 @@ import { generateSubdomain } from "@/lib/domains/auto-domain";
 import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
 import { requestDeploy } from "@/lib/docker/deploy-cancel";
 import { stopProject } from "@/lib/docker/deploy";
-import { setPluginSetting, getPluginSetting } from "./registry";
+import { setPluginSetting, getPluginSetting, deletePluginSetting } from "./registry";
 import { logger } from "@/lib/logger";
 import type { ServiceRequirement } from "./manifest";
 
@@ -197,11 +197,10 @@ export async function deprovisionService(
     log.info(`Deleted provisioned app ${appId} (${app.name}) for plugin ${pluginId}`);
   }
 
-  // Clear the plugin setting
-  await setPluginSetting(
+  // Remove the plugin setting entirely
+  await deletePluginSetting(
     pluginId,
     `provisionedAppId:${serviceName}`,
-    "",
     organizationId,
   );
 }
