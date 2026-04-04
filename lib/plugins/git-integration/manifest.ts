@@ -6,6 +6,7 @@ const manifest: PluginManifest = {
   description: "GitHub OAuth, deploy keys, webhook auto-deploy, and PR preview environments.",
   version: "1.0.0",
   category: "git",
+  icon: "https://cdn.simpleicons.org/github",
 
   provides: ["git-integration"],
 

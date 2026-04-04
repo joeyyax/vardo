@@ -6,6 +6,7 @@ const manifest: PluginManifest = {
   description: "Scheduled task execution for apps. Sync from host.toml, templates, or manual configuration.",
   version: "1.0.0",
   category: "scheduling",
+  icon: "https://cdn.simpleicons.org/clockify",
 
   provides: ["cron"],
 
