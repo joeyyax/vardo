@@ -71,7 +71,7 @@ export async function register() {
       log.error("Plugin registration failed:", err);
     }
 
-    // Core schedulers — these are not plugins, they're part of the core
+    // Core startup tasks — not plugins, fundamental to the platform
     const tasks: Promise<unknown>[] = [];
 
     if (backupTargetReady) {
@@ -79,13 +79,7 @@ export async function register() {
     }
 
     tasks.push(
-      import("./lib/cron/scheduler")
-        .then(({ startCronScheduler }) => {
-          startCronScheduler();
-          log.info("Cron scheduler started");
-        })
-        .catch((err) => log.error("Failed to start cron scheduler:", err)),
-
+      // Deploy sweeper — cleans up stuck queued deployments
       import("./lib/deploy/scheduler")
         .then(({ startDeploySweeper }) => {
           startDeploySweeper();
@@ -93,6 +87,7 @@ export async function register() {
         })
         .catch((err) => log.error("Failed to start deploy sweeper:", err)),
 
+      // Mesh heartbeat — core networking, not a plugin
       import("./lib/mesh/scheduler")
         .then(({ startMeshHeartbeatScheduler }) => {
           startMeshHeartbeatScheduler();
@@ -100,35 +95,11 @@ export async function register() {
         })
         .catch((err) => log.error("Failed to start mesh heartbeat scheduler:", err)),
 
+      // Self-registration — Vardo managing itself, core feature
       import("./lib/docker/self-register")
         .then(({ ensureVardoProject }) => ensureVardoProject())
         .then(() => log.info("Vardo self-registration complete"))
         .catch((err) => log.warn("Vardo self-registration skipped:", err)),
-
-      import("./lib/digest/scheduler")
-        .then(({ startDigestScheduler }) => {
-          startDigestScheduler();
-          log.info("Digest scheduler started");
-        })
-        .catch((err) => log.error("Failed to start digest scheduler:", err)),
-
-      Promise.resolve().then(() => {
-        const domainLog = logger.child("domain-monitor");
-        let ticking = false;
-        setInterval(async () => {
-          if (ticking) return;
-          ticking = true;
-          try {
-            const { checkAllDomains } = await import("./lib/domains/monitor");
-            await checkAllDomains();
-          } catch (err) {
-            domainLog.error("Error:", err);
-          } finally {
-            ticking = false;
-          }
-        }, 5 * 60 * 1000);
-        log.info("Domain monitor started (every 5 minutes)");
-      }),
     );
 
     const results = await Promise.allSettled(tasks);
