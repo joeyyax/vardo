@@ -119,15 +119,10 @@ function dispatchToChannels(orgId: string, event: BusEvent): void {
   });
 }
 
-// Stream consumer is the primary dispatch path. Consumes from Redis Streams
-// with at-least-once delivery and automatic retry via consumer groups.
-// The legacy onEmit hook is removed to prevent double dispatch.
-import { startNotificationConsumer } from "./stream-consumer";
-startNotificationConsumer().catch((err) => {
-  log.error("Failed to start notification stream consumer, falling back to legacy dispatch:", err);
-  // Fallback: if stream consumer fails to start, register the legacy hook
-  onEmit("dispatch", dispatchToChannels);
-});
+// Stream consumer startup is handled by the notifications plugin
+// (lib/plugins/notifications/register.ts). The legacy onEmit hook is
+// registered as a fallback in case the plugin system isn't initialized.
+onEmit("dispatch", dispatchToChannels);
 
 // Re-export emit so call sites can import { emit } from "@/lib/notifications/dispatch"
 // and get the dispatch hook registration as a side effect.
