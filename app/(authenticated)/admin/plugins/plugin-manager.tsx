@@ -236,14 +236,19 @@ export function PluginManager() {
                 const allEnabled = enabledCount === bundle.plugins.length;
 
                 return (
-                  <Card key={bundle.id} className="squircle border-2 border-dashed">
+                  <Card key={bundle.id} className="squircle border bg-muted/30">
                     <CardContent className="flex flex-col gap-3 p-5">
                       <div className="flex items-start gap-3">
                         <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
                           <BundleIcon className="size-5 text-primary" />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <h3 className="text-sm font-semibold">{bundle.name}</h3>
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-sm font-bold">{bundle.name}</h3>
+                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                              {bundle.plugins.length} plugins
+                            </Badge>
+                          </div>
                           <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">
                             {bundle.description}
                           </p>
@@ -252,7 +257,7 @@ export function PluginManager() {
 
                       <div className="flex items-center justify-between">
                         <span className="text-xs text-muted-foreground">
-                          {enabledCount}/{bundle.plugins.length} plugins enabled
+                          {enabledCount}/{bundle.plugins.length} enabled
                         </span>
                         <Button
                           size="sm"
@@ -319,6 +324,7 @@ export function PluginManager() {
           {plugins.map((plugin) => {
             const manifest = plugin.manifest;
             const Icon = getCategoryIcon(plugin.category);
+            const pluginIcon = manifest?.icon;
             const hasSettings =
               manifest?.ui?.settings && manifest.ui.settings.length > 0;
             const provides = manifest?.provides ?? [];
@@ -333,7 +339,16 @@ export function PluginManager() {
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-2.5 min-w-0">
                       <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
-                        <Icon className="size-4 text-muted-foreground" />
+                        {pluginIcon ? (
+                          <img
+                            src={pluginIcon}
+                            alt=""
+                            className="size-4 dark:invert"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <Icon className="size-4 text-muted-foreground" />
+                        )}
                       </div>
                       <div className="min-w-0">
                         <CardTitle className="text-sm truncate">

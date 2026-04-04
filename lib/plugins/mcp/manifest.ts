@@ -6,6 +6,7 @@ const manifest: PluginManifest = {
   description: "Model Context Protocol server for AI agent access. Exposes deploy, manage, and monitor tools via API tokens.",
   version: "1.0.0",
   category: "integrations",
+  icon: "https://cdn.simpleicons.org/anthropic",
 
   provides: ["mcp"],
 

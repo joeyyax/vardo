@@ -6,6 +6,7 @@ const manifest: PluginManifest = {
   description: "Scan deployed apps for exposed files, secrets, and security misconfigurations.",
   version: "1.0.0",
   category: "security",
+  icon: "https://cdn.simpleicons.org/owasp",
 
   provides: ["security-scanning"],
 
