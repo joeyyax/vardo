@@ -5,8 +5,10 @@ import { db } from "@/lib/db";
 import { meshPeers, projectInstances } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 /** DELETE /api/v1/admin/mesh/peers/[peerId] — remove a peer from the mesh */
-export async function DELETE(
+async function handleDelete(
   _request: Request,
   { params }: { params: Promise<{ peerId: string }> }
 ) {
@@ -35,3 +37,5 @@ export async function DELETE(
     return handleRouteError(error, "Error removing mesh peer");
   }
 }
+
+export const DELETE = withRateLimit(handleDelete, { tier: "admin", key: "mesh-peers" });

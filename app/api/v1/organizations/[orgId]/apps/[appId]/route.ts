@@ -7,7 +7,9 @@ import { z } from "zod";
 import { stopProject } from "@/lib/docker/deploy";
 import { recordActivity } from "@/lib/activity";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
-import { isAdmin } from "@/lib/auth/permissions";
+import { isOrgAdmin } from "@/lib/auth/permissions";
+
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -84,7 +86,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 }
 
 // PATCH /api/v1/organizations/[orgId]/apps/[appId]
-export async function PATCH(request: NextRequest, { params }: RouteParams) {
+async function handlePatch(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const org = await verifyOrgAccess(orgId);
@@ -101,7 +103,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     // GPU passthrough grants direct host hardware access — restrict to owner/admin
-    if (parsed.data.gpuEnabled === true && !isAdmin(org.membership.role)) {
+    if (parsed.data.gpuEnabled === true && !isOrgAdmin(org.membership.role)) {
       return NextResponse.json(
         { error: "Only owners and admins can enable GPU passthrough" },
         { status: 403 }
@@ -176,13 +178,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE /api/v1/organizations/[orgId]/apps/[appId]
-export async function DELETE(_request: NextRequest, { params }: RouteParams) {
+async function handleDelete(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    if (!isAdmin(org.membership.role)) {
+    if (!isOrgAdmin(org.membership.role)) {
       return NextResponse.json(
         { error: "Only owners and admins can delete apps" },
         { status: 403 }
@@ -263,3 +265,6 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error deleting app");
   }
 }
+
+export const PATCH = withRateLimit(handlePatch, { tier: "mutation", key: "organizations-apps" });
+export const DELETE = withRateLimit(handleDelete, { tier: "mutation", key: "organizations-apps" });

@@ -4,6 +4,7 @@ import { nanoid } from "nanoid";
 import { allocateIp, toCidr } from "./ip-allocator";
 import { generateMeshToken } from "./auth";
 import { rebuildAndSync, isWireguardRunning } from "./wireguard";
+import { CONSOLE_PORT } from "./constants";
 import { logger } from "@/lib/logger";
 
 interface RegisterPeerInput {
@@ -41,7 +42,7 @@ export async function registerPeer(
     endpoint: input.endpoint ?? null,
     allowedIps: toCidr(internalIp),
     internalIp,
-    apiUrl: `http://${internalIp}:3000`,
+    apiUrl: `http://${internalIp}:${CONSOLE_PORT}`,
     tokenHash,
     status: "offline" as const,
     lastSeenAt: null,

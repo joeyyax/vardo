@@ -7,6 +7,8 @@ import { externalRoutes, domains } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { regenerateExternalRoutesConfig } from "@/lib/traefik/generate-external-routes-config";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 const hostnameSchema = z
   .string()
   .min(1)
@@ -46,7 +48,7 @@ export async function GET(
 }
 
 /** PATCH /api/v1/admin/external-routes/[routeId] — update an external route */
-export async function PATCH(
+async function handlePatch(
   request: NextRequest,
   { params }: { params: Promise<{ routeId: string }> }
 ) {
@@ -125,7 +127,7 @@ export async function PATCH(
 }
 
 /** DELETE /api/v1/admin/external-routes/[routeId] — delete an external route */
-export async function DELETE(
+async function handleDelete(
   _request: Request,
   { params }: { params: Promise<{ routeId: string }> }
 ) {
@@ -150,3 +152,6 @@ export async function DELETE(
     return handleRouteError(error, "Error deleting external route");
   }
 }
+
+export const PATCH = withRateLimit(handlePatch, { tier: "admin", key: "admin-external-routes" });
+export const DELETE = withRateLimit(handleDelete, { tier: "admin", key: "admin-external-routes" });

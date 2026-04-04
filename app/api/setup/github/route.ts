@@ -6,6 +6,8 @@ import { needsSetup } from "@/lib/setup";
 import { getGitHubAppConfig, setSystemSetting } from "@/lib/system-settings";
 import { maskSecret, resolveSecret } from "@/lib/mask-secrets";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 const githubSchema = z.object({
   appId: z.string().min(1, "App ID is required"),
   appSlug: z.string().min(1, "App slug is required"),
@@ -34,7 +36,7 @@ export async function GET(request: NextRequest) {
   });
 }
 
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   const setup = await needsSetup();
   if (!setup) {
     await requireAdminAuth(request);
@@ -72,3 +74,5 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ ok: true });
 }
+
+export const POST = withRateLimit(handlePost, { tier: "admin", key: "setup-github" });

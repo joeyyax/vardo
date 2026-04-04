@@ -12,6 +12,8 @@ import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { ALL_EVENT_TYPES } from "@/lib/bus/events";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 /**
  * Discriminated union for PUT — the `type` field routes the request cleanly
  * without ambiguous fallthrough between digest and preference updates.
@@ -90,7 +92,7 @@ export async function GET(req: NextRequest) {
  * digest toggle (type: "digest"). The `type` discriminant ensures clean
  * routing with no ambiguous fallthrough.
  */
-export async function PUT(req: NextRequest) {
+async function handlePut(req: NextRequest) {
   try {
     const session = await requireSession();
     const userId = session.user.id;
@@ -183,3 +185,5 @@ export async function PUT(req: NextRequest) {
     return handleRouteError(error, "Error saving notification preference");
   }
 }
+
+export const PUT = withRateLimit(handlePut, { tier: "mutation", key: "user-notification-preferences" });

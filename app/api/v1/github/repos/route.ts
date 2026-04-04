@@ -7,6 +7,8 @@ import { listInstallationRepos, createRepo } from "@/lib/github/app";
 import { z } from "zod";
 import { logger } from "@/lib/logger";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 const log = logger.child("github:repos");
 
 // GET /api/v1/github/repos?installationId=X — List repos for a user's installation
@@ -60,7 +62,7 @@ const createRepoSchema = z.object({
 }).strict();
 
 // POST /api/v1/github/repos — Create a new repository
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     const session = await requireSession();
 
@@ -110,3 +112,5 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "mutation", key: "github-repos" });

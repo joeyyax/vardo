@@ -7,6 +7,8 @@ import { z } from "zod";
 import { verifyAppAccess } from "@/lib/api/verify-access";
 import { encrypt, decryptOrFallback } from "@/lib/crypto/encrypt";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
 };
@@ -78,7 +80,7 @@ const putSchema = z.object({
 
 // PUT /api/v1/organizations/[orgId]/apps/[appId]/env-vars
 // Save the entire env file content (encrypted)
-export async function PUT(request: NextRequest, { params }: RouteParams) {
+async function handlePut(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const app = await verifyAppAccess(orgId, appId);
@@ -116,3 +118,5 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error saving env vars");
   }
 }
+
+export const PUT = withRateLimit(handlePut, { tier: "mutation", key: "apps-env-vars" });

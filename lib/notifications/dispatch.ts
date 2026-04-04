@@ -2,10 +2,9 @@ import { db } from "@/lib/db";
 import { notificationChannels, notificationLogs } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import type { NotificationEvent } from "./port";
 import { createChannel } from "./factory";
 import { enqueueRetry } from "./retry";
-import { emit, onEmit, toBusEvent, toLegacyEvent } from "@/lib/bus";
+import { emit, onEmit } from "@/lib/bus";
 import type { BusEvent, BusEventType } from "@/lib/bus";
 import { logger } from "@/lib/logger";
 import { fetchOrgMembers, fetchEventPrefs, resolveRecipients } from "./resolve-recipients";
@@ -24,6 +23,57 @@ function channelAcceptsEvent(
   return subscribedEvents.includes(eventType);
 }
 
+/** Best-effort insert into notification_log. */
+async function logNotification(
+  orgId: string,
+  row: { id: string; name: string; type: string },
+  eventType: string,
+  eventTitle: string | undefined,
+  status: "success" | "failed",
+  error?: string,
+): Promise<void> {
+  try {
+    await db.insert(notificationLogs).values({
+      id: nanoid(),
+      organizationId: orgId,
+      channelId: row.id,
+      channelName: row.name,
+      channelType: row.type,
+      eventType,
+      eventTitle: eventTitle || eventType,
+      status,
+      error,
+      attempt: 1,
+    });
+  } catch {
+    // Don't let logging failures break dispatch
+  }
+}
+
+/** Handle a channel send failure - enqueue retry, or log directly as last resort. */
+async function handleChannelFailure(
+  orgId: string,
+  row: { id: string; name: string; type: string },
+  event: BusEvent,
+  err: unknown,
+): Promise<void> {
+  const errorMsg = err instanceof Error ? err.message : String(err);
+  log.warn(`Channel "${row.name}" failed, enqueuing retry: ${errorMsg}`);
+
+  try {
+    await enqueueRetry({
+      orgId,
+      channelId: row.id,
+      channelName: row.name,
+      channelType: row.type,
+      event,
+    }, 1);
+  } catch {
+    // If even enqueueing fails, log the failure directly
+    await logNotification(orgId, row, event.type, event.title, "failed", errorMsg);
+  }
+}
+
 /**
  * Dispatch a bus event to all matching notification channels for an org.
  */
@@ -38,7 +88,6 @@ function dispatchToChannels(orgId: string, event: BusEvent): void {
       });
       if (channels.length === 0) return;
 
-      const legacy = toLegacyEvent(event);
       const members = await fetchOrgMembers(orgId);
       const memberIds = members.map((m) => m.userId);
       const prefs = await fetchEventPrefs(orgId, event.type, memberIds);
@@ -57,58 +106,10 @@ function dispatchToChannels(orgId: string, event: BusEvent): void {
           if (!shouldSend) return;
 
           try {
-            await createChannel(row).send(legacy);
-
-            // Log success
-            try {
-              await db.insert(notificationLogs).values({
-                id: nanoid(),
-                organizationId: orgId,
-                channelId: row.id,
-                channelName: row.name,
-                channelType: row.type,
-                eventType: event.type,
-                eventTitle: legacy.title || event.type,
-                status: "success",
-                attempt: 1,
-              });
-            } catch {
-              // Don't let logging failures break dispatch
-            }
+            await createChannel(row).send(event);
+            await logNotification(orgId, row, event.type, event.title, "success");
           } catch (err) {
-            log.warn(
-              `Channel "${row.name}" failed, enqueuing retry:`,
-              err instanceof Error ? err.message : err,
-            );
-
-            // Enqueue for retry instead of silently dropping
-            try {
-              await enqueueRetry({
-                orgId,
-                channelId: row.id,
-                channelName: row.name,
-                channelType: row.type,
-                event,
-              }, 1);
-            } catch {
-              // If even enqueueing fails, log the failure directly
-              try {
-                await db.insert(notificationLogs).values({
-                  id: nanoid(),
-                  organizationId: orgId,
-                  channelId: row.id,
-                  channelName: row.name,
-                  channelType: row.type,
-                  eventType: event.type,
-                  eventTitle: legacy.title || event.type,
-                  status: "failed",
-                  error: err instanceof Error ? err.message : String(err),
-                  attempt: 1,
-                });
-              } catch {
-                // Last resort — already logged to console above
-              }
-            }
+            await handleChannelFailure(orgId, row, event, err);
           }
         }),
       );
@@ -120,16 +121,6 @@ function dispatchToChannels(orgId: string, event: BusEvent): void {
 
 // Register as an emit hook so every bus event triggers channel dispatch
 onEmit("dispatch", dispatchToChannels);
-
-/**
- * Legacy notify() entrypoint. Converts the event to a typed BusEvent and
- * emits it on the bus. The emit hook above handles channel dispatch.
- *
- * All existing call sites continue to work unchanged.
- */
-export function notify(orgId: string, event: NotificationEvent): void {
-  emit(orgId, toBusEvent(event));
-}
 
 // Re-export emit so call sites can import { emit } from "@/lib/notifications/dispatch"
 // and get the dispatch hook registration as a side effect.

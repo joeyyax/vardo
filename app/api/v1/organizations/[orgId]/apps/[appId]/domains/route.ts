@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { handleRouteError, isUniqueViolation } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { domains } from "@/lib/db/schema";
 import { logger } from "@/lib/logger";
@@ -9,6 +9,8 @@ import { z } from "zod";
 import { verifyAppAccess } from "@/lib/api/verify-access";
 import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
 import { apps } from "@/lib/db/schema";
+
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -30,7 +32,7 @@ const deleteDomainSchema = z.object({
 }).strict();
 
 // POST /api/v1/organizations/[orgId]/apps/[appId]/domains
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const app = await verifyAppAccess(orgId, appId);
@@ -95,11 +97,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ domain: created }, { status: 201 });
   } catch (error) {
-    if (
-      error instanceof Error &&
-      "code" in error &&
-      (error as { code: string }).code === "23505"
-    ) {
+    if (isUniqueViolation(error)) {
       return NextResponse.json(
         { error: "Domain already exists" },
         { status: 409 }
@@ -119,7 +117,7 @@ const updateDomainSchema = z.object({
 }).strict();
 
 // PATCH /api/v1/organizations/[orgId]/apps/[appId]/domains
-export async function PATCH(request: NextRequest, { params }: RouteParams) {
+async function handlePatch(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const app = await verifyAppAccess(orgId, appId);
@@ -181,7 +179,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE /api/v1/organizations/[orgId]/apps/[appId]/domains
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const app = await verifyAppAccess(orgId, appId);
@@ -229,3 +227,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error deleting domain");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "mutation", key: "apps-domains" });
+export const PATCH = withRateLimit(handlePatch, { tier: "mutation", key: "apps-domains" });
+export const DELETE = withRateLimit(handleDelete, { tier: "mutation", key: "apps-domains" });

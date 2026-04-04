@@ -7,6 +7,8 @@ import { eq, and, or, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 type RouteParams = {
   params: Promise<{ orgId: string; targetId: string }>;
 };
@@ -18,7 +20,7 @@ const updateTargetSchema = z.object({
 }).strict();
 
 // PATCH /api/v1/organizations/[orgId]/backups/targets/[targetId]
-export async function PATCH(request: NextRequest, { params }: RouteParams) {
+async function handlePatch(request: NextRequest, { params }: RouteParams) {
   try {
     if (!isFeatureEnabled("backups")) {
       return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
@@ -62,7 +64,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE /api/v1/organizations/[orgId]/backups/targets/[targetId]
-export async function DELETE(_request: NextRequest, { params }: RouteParams) {
+async function handleDelete(_request: NextRequest, { params }: RouteParams) {
   try {
     if (!isFeatureEnabled("backups")) {
       return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
@@ -89,3 +91,6 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error deleting backup target");
   }
 }
+
+export const PATCH = withRateLimit(handlePatch, { tier: "mutation", key: "backups-targets" });
+export const DELETE = withRateLimit(handleDelete, { tier: "mutation", key: "backups-targets" });

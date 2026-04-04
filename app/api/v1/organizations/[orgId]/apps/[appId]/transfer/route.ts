@@ -8,6 +8,8 @@ import { initiateTransfer, analyzeTransfer, rejectTransfer } from "@/lib/transfe
 import { recordActivity } from "@/lib/activity";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
 };
@@ -19,7 +21,7 @@ const initiateTransferSchema = z.object({
 
 // POST /api/v1/organizations/[orgId]/apps/[appId]/transfer
 // Initiate an app transfer to another organization
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const org = await verifyOrgAccess(orgId);
@@ -120,7 +122,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
 // DELETE /api/v1/organizations/[orgId]/apps/[appId]/transfer
 // Cancel a pending transfer (only the initiator can cancel)
-export async function DELETE(_request: NextRequest, { params }: RouteParams) {
+async function handleDelete(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const org = await verifyOrgAccess(orgId);
@@ -164,3 +166,6 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error cancelling transfer");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "mutation", key: "apps-transfer" });
+export const DELETE = withRateLimit(handleDelete, { tier: "mutation", key: "apps-transfer" });

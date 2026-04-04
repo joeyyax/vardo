@@ -72,12 +72,11 @@ async function buildFlags(
 }
 
 async function cleanupKeyFile(keyFile?: string): Promise<void> {
-  if (keyFile) {
-    try {
-      await unlink(keyFile);
-    } catch {
-      // best effort
-    }
+  if (!keyFile) return;
+  try {
+    await unlink(keyFile);
+  } catch {
+    // best effort
   }
 }
 
@@ -100,7 +99,7 @@ async function ensureRemoteDir(
         ...sshFlags,
         "--",
         `${config.username}@${config.host}`,
-        "mkdir", "-p", remoteDir,
+        "mkdir", "-p", shellEscape(remoteDir),
       ],
       { timeout: 30_000 }
     );
@@ -135,7 +134,7 @@ export class SshBackupStorage implements BackupStorage {
           ...scpFlags,
           "--",
           filePath,
-          `${this.config.username}@${this.config.host}:${remote}`,
+          `${this.config.username}@${this.config.host}:${shellEscape(remote)}`,
         ],
         { timeout: 600_000 } // 10 minute timeout
       );
@@ -157,7 +156,7 @@ export class SshBackupStorage implements BackupStorage {
         [
           ...scpFlags,
           "--",
-          `${this.config.username}@${this.config.host}:${remote}`,
+          `${this.config.username}@${this.config.host}:${shellEscape(remote)}`,
           destPath,
         ],
         { timeout: 600_000 }
@@ -178,7 +177,7 @@ export class SshBackupStorage implements BackupStorage {
           ...sshFlags,
           "--",
           `${this.config.username}@${this.config.host}`,
-          "rm", "-f", remote,
+          "rm", "-f", shellEscape(remote),
         ],
         { timeout: 30_000 }
       );

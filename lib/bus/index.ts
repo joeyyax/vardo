@@ -1,5 +1,5 @@
 /**
- * Event bus — thin wrapper over the existing Redis pub/sub in lib/events.
+ * Event bus - thin wrapper over the existing Redis pub/sub in lib/events.
  *
  * Publishes typed BusEvents to org-scoped Redis channels and provides
  * a subscribe/unsubscribe API for listeners. Events are tagged with
@@ -18,10 +18,9 @@ const log = logger.child("bus");
 
 export type { BusEvent, BusEventType } from "./events";
 export { EVENT_CATEGORIES, ALL_EVENT_TYPES } from "./events";
-export { toBusEvent, toLegacyEvent } from "./compat";
 
 // ---------------------------------------------------------------------------
-// Emit hooks — synchronous side effects on emit()
+// Emit hooks - synchronous side effects on emit()
 // ---------------------------------------------------------------------------
 
 type EmitHook = (orgId: string, event: BusEvent) => void;
@@ -32,7 +31,7 @@ const emitHooks = new Map<string, EmitHook>();
  * notification dispatch module to trigger channel delivery without a
  * Redis roundtrip.
  *
- * Keyed by name to prevent duplicate registrations during HMR — calling
+ * Keyed by name to prevent duplicate registrations during HMR - calling
  * onEmit("dispatch", fn) twice replaces the previous hook.
  */
 export function onEmit(name: string, hook: EmitHook): void {
@@ -81,7 +80,7 @@ type BusCallback = (event: BusEvent) => void;
 /**
  * Subscribe to bus events for an org via Redis. Returns an unsubscribe function.
  *
- * Only events with `source: "bus"` are forwarded — other messages on
+ * Only events with `source: "bus"` are forwarded - other messages on
  * the org channel (app state changes, etc.) are silently ignored.
  */
 export async function on(orgId: string, cb: BusCallback): Promise<() => void> {

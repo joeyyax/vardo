@@ -69,6 +69,10 @@ vi.mock("@/lib/mesh/auth", () => ({
   requireMeshPeer: mockRequireMeshPeer,
 }));
 
+vi.mock("@/lib/api/with-rate-limit", () => ({
+  withRateLimit: (handler: Function) => handler,
+}));
+
 vi.mock("@/lib/mesh", () => ({
   getHubAddress: mockGetHubAddress,
 }));
@@ -105,7 +109,7 @@ beforeEach(() => {
 
 describe("POST /api/v1/mesh/heartbeat", () => {
   it("returns ok: true with instance and peers", async () => {
-    const res = await POST(makeRequest());
+    const res = await POST(makeRequest(), {});
     const body = await res.json() as { ok: boolean; instance: unknown; peers: unknown[] };
 
     expect(res.status).toBe(200);
@@ -115,7 +119,7 @@ describe("POST /api/v1/mesh/heartbeat", () => {
   });
 
   it("includes instanceId, publicKey, and allowedIps in the columns selection", async () => {
-    await POST(makeRequest());
+    await POST(makeRequest(), {});
 
     const findManyCall = mockFindMany.mock.calls[0][0] as {
       columns?: Record<string, boolean>;
@@ -128,7 +132,7 @@ describe("POST /api/v1/mesh/heartbeat", () => {
   });
 
   it("does not include tokenHash or outboundToken in the columns selection", async () => {
-    await POST(makeRequest());
+    await POST(makeRequest(), {});
 
     const findManyCall = mockFindMany.mock.calls[0][0] as {
       columns?: Record<string, boolean>;
@@ -140,7 +144,7 @@ describe("POST /api/v1/mesh/heartbeat", () => {
   });
 
   it("excludes the calling peer from the manifest via ne filter", async () => {
-    await POST(makeRequest());
+    await POST(makeRequest(), {});
 
     const findManyCall = mockFindMany.mock.calls[0][0] as {
       where?: unknown;
@@ -150,7 +154,7 @@ describe("POST /api/v1/mesh/heartbeat", () => {
   });
 
   it("includes hub instance info in the response", async () => {
-    const res = await POST(makeRequest());
+    const res = await POST(makeRequest(), {});
     const body = await res.json() as {
       instance: { id: string; name: string; internalIp: string };
     };
@@ -161,7 +165,7 @@ describe("POST /api/v1/mesh/heartbeat", () => {
   });
 
   it("returns the peers provided by findMany", async () => {
-    const res = await POST(makeRequest());
+    const res = await POST(makeRequest(), {});
     const body = await res.json() as { peers: Array<{ id: string }> };
 
     expect(body.peers).toHaveLength(1);
@@ -171,7 +175,7 @@ describe("POST /api/v1/mesh/heartbeat", () => {
   it("returns 401 when requireMeshPeer throws Unauthorized", async () => {
     mockRequireMeshPeer.mockRejectedValue(new Error("Unauthorized"));
 
-    const res = await POST(makeRequest());
+    const res = await POST(makeRequest(), {});
     const body = await res.json() as { error: string };
 
     expect(res.status).toBe(401);
@@ -181,7 +185,7 @@ describe("POST /api/v1/mesh/heartbeat", () => {
   it("returns 500 on unexpected errors", async () => {
     mockFindMany.mockRejectedValue(new Error("DB gone"));
 
-    const res = await POST(makeRequest());
+    const res = await POST(makeRequest(), {});
 
     expect(res.status).toBe(500);
   });
@@ -190,7 +194,7 @@ describe("POST /api/v1/mesh/heartbeat", () => {
     // Even if findMany returned sensitive fields, they should not be in the columns selection.
     // Verify by checking that the columns selection explicitly excludes them (tested above),
     // and that the mock peer data without those fields doesn't expose them.
-    const res = await POST(makeRequest());
+    const res = await POST(makeRequest(), {});
     const body = await res.json() as { peers: Array<Record<string, unknown>> };
 
     for (const peer of body.peers) {

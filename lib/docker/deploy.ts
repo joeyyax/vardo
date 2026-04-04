@@ -82,6 +82,71 @@ import {
   cleanupKeyFile,
   buildGitSshCommand,
 } from "@/lib/crypto/deploy-key";
+import {
+  APP_UID,
+  DEFAULT_CONTAINER_PORT,
+  NETWORK_NAME as VARDO_NETWORK,
+  DEFAULT_HEALTH_CHECK_TIMEOUT,
+  GIT_CLONE_TIMEOUT,
+  BUILD_TIMEOUT,
+  COMPOSE_UP_TIMEOUT,
+  COMPOSE_BUILD_UP_TIMEOUT,
+  POST_DEPLOY_DELAY,
+  COMPOSE_DOWN_TIMEOUT,
+  COMPOSE_RESTART_TIMEOUT,
+  COMPOSE_QUERY_TIMEOUT,
+  VOLUME_CREATE_TIMEOUT,
+  DOCKER_CHOWN_TIMEOUT,
+  DOCKER_CLEANUP_TIMEOUT,
+  GIT_METADATA_TIMEOUT,
+  ENDPOINT_CHECK_TIMEOUT,
+  HTTP_PROBE_TIMEOUT,
+} from "./constants";
+
+/**
+ * Detect named volumes from a parsed compose file and persist any new ones to the DB.
+ * Shared by git-sourced and direct compose deploy paths.
+ */
+async function detectAndPersistComposeVolumes(
+  compose: ComposeFile,
+  appId: string,
+  organizationId: string,
+  existingVolumeNames: Set<string>,
+  log: (msg: string) => void,
+): Promise<void> {
+  if (!compose.volumes || Object.keys(compose.volumes).length === 0) return;
+
+  const seen = new Set(existingVolumeNames);
+  const newVols: { name: string; mountPath: string }[] = [];
+
+  for (const svc of Object.values(compose.services)) {
+    for (const vol of svc.volumes ?? []) {
+      const parts = vol.split(":");
+      if (parts.length >= 2) {
+        const volName = parts[0];
+        const mountPath = parts[1];
+        if (volName in compose.volumes! && !seen.has(volName)) {
+          seen.add(volName);
+          newVols.push({ name: volName, mountPath });
+        }
+      }
+    }
+  }
+
+  if (newVols.length > 0) {
+    for (const vol of newVols) {
+      await db.insert(volumes).values({
+        id: nanoid(),
+        appId,
+        organizationId,
+        name: vol.name,
+        mountPath: vol.mountPath,
+        persistent: true,
+      }).onConflictDoNothing();
+    }
+    log(`[deploy] Detected ${newVols.length} compose volume(s): ${newVols.map(v => `${v.name}:${v.mountPath}`).join(", ")}`);
+  }
+}
 
 const execFileAsync = promisify(execFile);
 
@@ -102,17 +167,17 @@ async function ensureWritableDir(dir: string): Promise<void> {
         throw new Error(`Permission denied and path outside apps dir: ${dir}`);
       }
       await execFileAsync("docker", [
-        "run", "--rm", "-v", `${dir}:/target`, "alpine", "chown", "-R", "1001:1001", "/target",
-      ], { timeout: 15000 });
+        "run", "--rm", "-v", `${dir}:/target`, "alpine", "chown", "-R", `${APP_UID}:${APP_UID}`, "/target",
+      ], { timeout: DOCKER_CHOWN_TIMEOUT });
     } else {
       throw err;
     }
   }
 }
 
-const NETWORK_NAME = "vardo-network";
-
-const DEFAULT_HEALTH_CHECK_TIMEOUT_MS = 60000;
+// Re-export for backward compatibility with existing imports
+const NETWORK_NAME = VARDO_NETWORK;
+const DEFAULT_HEALTH_CHECK_TIMEOUT_MS = DEFAULT_HEALTH_CHECK_TIMEOUT;
 
 /**
  * Parse a Docker duration string (e.g. "1m", "30s", "1m30s", "500ms") to milliseconds.
@@ -487,7 +552,7 @@ export async function runDeployment(
       }
 
       try {
-        const execOpts = { timeout: 60000, env: { ...process.env, ...gitEnv } };
+        const execOpts = { timeout: GIT_CLONE_TIMEOUT, env: { ...process.env, ...gitEnv } };
         try {
           // Try pull first (faster if already cloned)
           await execFileAsync("git", ["-C", repoDir, "remote", "set-url", "origin", cloneUrl], execOpts);
@@ -511,8 +576,8 @@ export async function runDeployment(
               // ("Resource busy") so clear contents and chown to the app user (1001).
               await execFileAsync("docker", [
                 "run", "--rm", "-v", `${repoDir}:/target`, "alpine",
-                "sh", "-c", "rm -rf /target/* /target/.[!.]* /target/..?* 2>/dev/null; chown 1001:1001 /target",
-              ], { timeout: 30000 });
+                "sh", "-c", `rm -rf /target/* /target/.[!.]* /target/..?* 2>/dev/null; chown ${APP_UID}:${APP_UID} /target`,
+              ], { timeout: DOCKER_CLEANUP_TIMEOUT });
             } else {
               throw rmErr;
             }
@@ -530,8 +595,8 @@ export async function runDeployment(
 
       // Capture git SHA + commit message
       try {
-        const { stdout: sha } = await execFileAsync("git", ["-C", repoDir, "rev-parse", "HEAD"], { timeout: 5000 });
-        const { stdout: msg } = await execFileAsync("git", ["-C", repoDir, "log", "-1", "--format=%s"], { timeout: 5000 });
+        const { stdout: sha } = await execFileAsync("git", ["-C", repoDir, "rev-parse", "HEAD"], { timeout: GIT_METADATA_TIMEOUT });
+        const { stdout: msg } = await execFileAsync("git", ["-C", repoDir, "log", "-1", "--format=%s"], { timeout: GIT_METADATA_TIMEOUT });
         const gitSha = sha.trim();
         const gitMessage = msg.trim();
         log(`[deploy] Commit: ${gitSha.slice(0, 7)} ${gitMessage}`);
@@ -615,39 +680,7 @@ export async function runDeployment(
       if (composeContent && app.deployType === "compose") {
         compose = parseAndSanitize(composeContent, log, { allowBindMounts: projectAllowBindMounts, orgTrusted });
 
-        // Detect declared volumes from compose YAML before deploy starts
-        if (compose.volumes && Object.keys(compose.volumes).length > 0) {
-          const existingNames = new Set(appVolumes.map(v => v.name));
-          const newVols: { name: string; mountPath: string }[] = [];
-
-          for (const svc of Object.values(compose.services)) {
-            for (const vol of svc.volumes ?? []) {
-              const parts = vol.split(":");
-              if (parts.length >= 2) {
-                const volName = parts[0];
-                const mountPath = parts[1];
-                if (volName in compose.volumes && !existingNames.has(volName)) {
-                  existingNames.add(volName);
-                  newVols.push({ name: volName, mountPath });
-                }
-              }
-            }
-          }
-
-          if (newVols.length > 0) {
-            for (const vol of newVols) {
-              await db.insert(volumes).values({
-                id: nanoid(),
-                appId: opts.appId,
-                organizationId: opts.organizationId,
-                name: vol.name,
-                mountPath: vol.mountPath,
-                persistent: true,
-              }).onConflictDoNothing();
-            }
-            log(`[deploy] Detected ${newVols.length} compose volume(s): ${newVols.map(v => `${v.name}:${v.mountPath}`).join(", ")}`);
-          }
-        }
+        await detectAndPersistComposeVolumes(compose, opts.appId, opts.organizationId, new Set(appVolumes.map(v => v.name)), log);
       } else {
         // Build from repo — Nixpacks, Dockerfile, or auto-detect
         const imageName = `host/${app.name}:${deploymentId.slice(0, 8)}`;
@@ -714,40 +747,7 @@ export async function runDeployment(
       // Direct compose content
       compose = parseAndSanitize(app.composeContent, log, { allowBindMounts: projectAllowBindMounts, orgTrusted });
       log(`[deploy] Parsed compose content`);
-
-      // Detect declared volumes from compose YAML before deploy starts
-      if (compose.volumes && Object.keys(compose.volumes).length > 0) {
-        const existingNames = new Set(appVolumes.map(v => v.name));
-        const newVols: { name: string; mountPath: string }[] = [];
-
-        for (const svc of Object.values(compose.services)) {
-          for (const vol of svc.volumes ?? []) {
-            const parts = vol.split(":");
-            if (parts.length >= 2) {
-              const volName = parts[0];
-              const mountPath = parts[1];
-              if (volName in compose.volumes && !existingNames.has(volName)) {
-                existingNames.add(volName);
-                newVols.push({ name: volName, mountPath });
-              }
-            }
-          }
-        }
-
-        if (newVols.length > 0) {
-          for (const vol of newVols) {
-            await db.insert(volumes).values({
-              id: nanoid(),
-              appId: opts.appId,
-              organizationId: opts.organizationId,
-              name: vol.name,
-              mountPath: vol.mountPath,
-              persistent: true,
-            }).onConflictDoNothing();
-          }
-          log(`[deploy] Detected ${newVols.length} compose volume(s): ${newVols.map(v => `${v.name}:${v.mountPath}`).join(", ")}`);
-        }
-      }
+      await detectAndPersistComposeVolumes(compose, opts.appId, opts.organizationId, new Set(appVolumes.map(v => v.name)), log);
     } else {
       throw new Error("No image, git repo, or compose content configured");
     }
@@ -803,7 +803,7 @@ export async function runDeployment(
       }
     }
 
-    const containerPort = detectedPort || 3000;
+    const containerPort = detectedPort || DEFAULT_CONTAINER_PORT;
     if (!app.containerPort) {
       log(`[deploy] Using port ${containerPort}${detectedPort ? " (auto-detected)" : " (default)"}`);
     }
@@ -965,7 +965,7 @@ export async function runDeployment(
 
         // Ensure the external volume exists
         try {
-          await execFileAsync("docker", ["volume", "create", stableName], { timeout: 10000 });
+          await execFileAsync("docker", ["volume", "create", stableName], { timeout: VOLUME_CREATE_TIMEOUT });
         } catch { /* already exists — fine */ }
 
         // Replace the volume declaration with an external reference
@@ -1174,7 +1174,7 @@ export async function runDeployment(
           await execFileAsync(
             "docker",
             ["compose", ...oldComposeFileArgs, "-p", oldProjectName, "stop", ...statefulServices],
-            { cwd: oldSlotDir, timeout: 30000 }
+            { cwd: oldSlotDir, timeout: COMPOSE_DOWN_TIMEOUT }
           );
         } catch (err) {
           log(`[deploy] Warning: could not stop old stateful services — ${err instanceof Error ? err.message : err}`);
@@ -1188,7 +1188,7 @@ export async function runDeployment(
     const hasBuild = Object.values(compose.services).some((svc) => svc.build);
     const pullPolicy = builtLocally || hasBuild ? "missing" : "always";
     // Allow 10 minutes for builds (images with build: directives can take a while)
-    const composeUpTimeout = hasBuild ? 600000 : 120000;
+    const composeUpTimeout = hasBuild ? COMPOSE_BUILD_UP_TIMEOUT : COMPOSE_UP_TIMEOUT;
     log(`[deploy] Starting ${newSlot} slot...`);
     try {
       const { stdout, stderr } = await execFileAsync(
@@ -1223,7 +1223,7 @@ export async function runDeployment(
           const interval = parseDuration(svc.healthcheck.interval);
           const startPeriod = parseDuration(svc.healthcheck.start_period);
           const retries = svc.healthcheck.retries ?? 3;
-          const needed = startPeriod + (interval * retries) + 10000; // +10s buffer
+          const needed = startPeriod + (interval * retries) + POST_DEPLOY_DELAY; // buffer
           if (needed > healthTimeoutMs) {
             healthTimeoutMs = needed;
             log(`[deploy] Extended health timeout to ${Math.round(needed / 1000)}s (service healthcheck interval: ${svc.healthcheck.interval || "default"})`);
@@ -1247,7 +1247,7 @@ export async function runDeployment(
         const { stdout } = await execFileAsync(
           "docker",
           ["compose", ...composeFileArgs, "-p", newProjectName, "logs", "--tail", "30"],
-          { cwd: slotDir, timeout: 10000 }
+          { cwd: slotDir, timeout: COMPOSE_QUERY_TIMEOUT }
         );
         if (stdout.trim()) {
           for (const line of stdout.trim().split("\n")) {
@@ -1260,7 +1260,7 @@ export async function runDeployment(
       await execFileAsync(
         "docker",
         ["compose", ...composeFileArgs, "-p", newProjectName, "down", "--remove-orphans"],
-        { cwd: slotDir, timeout: 30000 }
+        { cwd: slotDir, timeout: COMPOSE_DOWN_TIMEOUT }
       ).catch(() => {});
       throw new Error(`${newSlot} slot did not become healthy — container may have crashed (see logs above)`);
     }
@@ -1311,7 +1311,7 @@ export async function runDeployment(
         await execFileAsync(
           "docker",
           ["compose", ...oldComposeFileArgs, "-p", oldProjectName, "down", "--remove-orphans"],
-          { cwd: oldSlotDir, timeout: 30000 }
+          { cwd: oldSlotDir, timeout: COMPOSE_DOWN_TIMEOUT }
         );
         log(`[deploy] Old slot (${activeSlot}) removed`);
       } catch (err) {
@@ -1506,7 +1506,7 @@ export async function runDeployment(
               execFileAsync(
                 "docker",
                 ["run", "--rm", "-v", `${volName}:/data`, "alpine", "du", "-sb", "/data"],
-                { timeout: 30000 }
+                { timeout: DOCKER_CLEANUP_TIMEOUT }
               )
             )
           );
@@ -1694,7 +1694,7 @@ export async function runDeployment(
           }),
         )
         .catch(() => {});
-    }, 10000);
+    }, POST_DEPLOY_DELAY);
     return { deploymentId, success: true, log: logLines.join("\n"), durationMs };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -1772,7 +1772,7 @@ export async function runDeployment(
         await execFileAsync(
           "docker",
           ["compose", ...cleanupComposeArgs, "-p", newProjectName, "down", "--remove-orphans"],
-          { cwd: slotDir, timeout: 30000 }
+          { cwd: slotDir, timeout: COMPOSE_DOWN_TIMEOUT }
         );
         log(`[deploy] Cleaned up containers after failure`);
       } catch {
@@ -2017,8 +2017,8 @@ function spawnStream(
     // 5 minute timeout
     const timeout = setTimeout(() => {
       killProcessGroup();
-      reject(new Error(`${cmd} timed out after 300s`));
-    }, 300000);
+      reject(new Error(`${cmd} timed out after ${BUILD_TIMEOUT / 1000}s`));
+    }, BUILD_TIMEOUT);
 
     proc.on("close", () => clearTimeout(timeout));
   });
@@ -2040,7 +2040,7 @@ async function waitForHealthy(
       const { stdout } = await execFileAsync(
         "docker",
         ["compose", ...composeFileArgs, "-p", projectName, "ps", "--format", "json"],
-        { cwd, timeout: 10000 }
+        { cwd, timeout: COMPOSE_QUERY_TIMEOUT }
       );
 
       const lines = stdout.trim().split("\n").filter(Boolean);
@@ -2079,7 +2079,7 @@ async function waitForHealthy(
         try {
           const probeUrl = `http://${httpProbe.containerName}:${httpProbe.port}/`;
           const controller = new AbortController();
-          const timer = setTimeout(() => controller.abort(), 3000);
+          const timer = setTimeout(() => controller.abort(), HTTP_PROBE_TIMEOUT);
           const res = await fetch(probeUrl, {
             signal: controller.signal,
             redirect: "manual",
@@ -2105,7 +2105,7 @@ async function waitForHealthy(
 
 async function checkEndpoint(domain: string, logs: { push: (line: string) => void }): Promise<boolean> {
   const paths = ["/healthz", "/health", "/"];
-  const timeout = 5000;
+  const timeout = ENDPOINT_CHECK_TIMEOUT;
 
   for (const path of paths) {
     try {
@@ -2199,7 +2199,7 @@ async function stopSlotInDir(
     if (removeVolumes) {
       args.push("--volumes");
     }
-    const { stdout, stderr } = await execFileAsync("docker", args, { cwd: slotDir, timeout: 60000 });
+    const { stdout, stderr } = await execFileAsync("docker", args, { cwd: slotDir, timeout: COMPOSE_RESTART_TIMEOUT });
     if (stdout.trim()) logs.push(stdout.trim());
     if (stderr.trim()) logs.push(stderr.trim());
   } catch (err) {
@@ -2281,7 +2281,7 @@ export async function restartContainers(
     const { stdout, stderr } = await execFileAsync(
       "docker",
       ["compose", ...composeFileArgs, "-p", composeProject, "restart"],
-      { cwd: slotDir, timeout: 60000 }
+      { cwd: slotDir, timeout: COMPOSE_RESTART_TIMEOUT }
     );
     if (stdout.trim()) logs.push(stdout.trim());
     if (stderr.trim()) logs.push(stderr.trim());
@@ -2311,7 +2311,7 @@ export async function recreateProject(
     const { stdout, stderr } = await execFileAsync(
       "docker",
       ["compose", ...composeFileArgs, "-p", composeProject, "up", "-d", "--force-recreate"],
-      { cwd: slotDir, timeout: 60000 }
+      { cwd: slotDir, timeout: COMPOSE_RESTART_TIMEOUT }
     );
     for (const line of stdout.split(/\r?\n|\r/).filter(Boolean)) {
       logs.push(`[deploy][compose] ${line.trim()}`);
@@ -2333,11 +2333,3 @@ export async function recreateProject(
   }
 }
 
-/** @deprecated Use restartContainers or recreateProject instead */
-export async function restartProject(
-  appId: string,
-  appName: string,
-  environmentName?: string,
-): Promise<{ success: boolean; log: string }> {
-  return recreateProject(appId, appName, environmentName);
-}

@@ -8,6 +8,8 @@ import { nanoid } from "nanoid";
 import { createHash, randomBytes } from "crypto";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 const createTokenSchema = z.object({ name: z.string().min(1, "Name is required").max(100).trim() }).strict();
 const deleteTokenSchema = z.object({ id: z.string().min(1, "Token ID is required") }).strict();
 
@@ -58,7 +60,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
 // POST /api/v1/organizations/[orgId]/tokens
 // Create a new API token
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId);
@@ -94,7 +96,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
 // DELETE /api/v1/organizations/[orgId]/tokens
 // Delete an API token
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId);
@@ -131,3 +133,6 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error deleting token");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "mutation", key: "organizations-tokens" });
+export const DELETE = withRateLimit(handleDelete, { tier: "mutation", key: "organizations-tokens" });

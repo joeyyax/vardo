@@ -6,6 +6,8 @@ import { getEmailProviderConfig, setSystemSetting } from "@/lib/system-settings"
 import { maskSecret, resolveSecret } from "@/lib/mask-secrets";
 import { isSmtpAllowed } from "@/lib/config/provider-restrictions";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 const emailSchema = z.object({
   provider: z.enum(["smtp", "mailpace", "resend", "postmark"]),
   smtpHost: z.string().optional(),
@@ -39,7 +41,7 @@ export async function GET(request: NextRequest) {
   });
 }
 
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   const setup = await needsSetup();
   if (!setup) {
     await requireAdminAuth(request);
@@ -79,3 +81,5 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ ok: true });
 }
+
+export const POST = withRateLimit(handlePost, { tier: "admin", key: "setup-email" });

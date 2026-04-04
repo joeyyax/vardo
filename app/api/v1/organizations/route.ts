@@ -7,6 +7,8 @@ import { eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { logger } from "@/lib/logger";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 const log = logger.child("api:organizations");
 
 const createOrgSchema = z.object({
@@ -54,7 +56,7 @@ export async function GET() {
  * POST /api/v1/organizations
  * Create a new organization for the authenticated user.
  */
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     const session = await getSession();
 
@@ -123,3 +125,5 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "mutation", key: "organizations" });

@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { handleRouteError, isUniqueViolation } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { projects, apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
-import { isAdmin } from "@/lib/auth/permissions";
+import { isOrgAdmin } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logger";
 import { recordActivity } from "@/lib/activity";
+
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 type RouteParams = {
   params: Promise<{ orgId: string; projectId: string }>;
@@ -88,7 +90,7 @@ const updateSchema = z.object({
 
 // PATCH /api/v1/organizations/[orgId]/projects/[projectId]
 // Updates a project's displayName, description, or color
-export async function PATCH(request: NextRequest, { params }: RouteParams) {
+async function handlePatch(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, projectId } = await params;
     const org = await verifyOrgAccess(orgId);
@@ -105,7 +107,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     // allowBindMounts is a security-sensitive flag — restrict to admins and owners
-    if (parsed.data.allowBindMounts !== undefined && !isAdmin(org.membership.role)) {
+    if (parsed.data.allowBindMounts !== undefined && !isOrgAdmin(org.membership.role)) {
       return NextResponse.json({ error: "Only admins can change the bind mounts setting" }, { status: 403 });
     }
 
@@ -160,11 +162,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
       return NextResponse.json({ project: updated });
     } catch (updateError) {
-      const pgCode = updateError instanceof Error
-        ? ("code" in updateError ? (updateError as { code: string }).code : null) ??
-          (updateError.cause && typeof updateError.cause === "object" && "code" in updateError.cause ? (updateError.cause as { code: string }).code : null)
-        : null;
-      if (pgCode === "23505") {
+      if (isUniqueViolation(updateError)) {
         return NextResponse.json(
           { error: "A project with that name already exists" },
           { status: 409 }
@@ -179,7 +177,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
 // DELETE /api/v1/organizations/[orgId]/projects/[projectId]
 // Deletes the project but detaches (not deletes) its apps first
-export async function DELETE(_request: NextRequest, { params }: RouteParams) {
+async function handleDelete(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, projectId } = await params;
     const org = await verifyOrgAccess(orgId);
@@ -214,3 +212,6 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error deleting project");
   }
 }
+
+export const PATCH = withRateLimit(handlePatch, { tier: "mutation", key: "organizations-projects" });
+export const DELETE = withRateLimit(handleDelete, { tier: "mutation", key: "organizations-projects" });

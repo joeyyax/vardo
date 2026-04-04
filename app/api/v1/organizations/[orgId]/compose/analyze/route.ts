@@ -4,6 +4,8 @@ import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { analyzeRawCompose } from "@/lib/docker/compose-analyze";
 import { z } from "zod";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 type RouteParams = {
   params: Promise<{ orgId: string }>;
 };
@@ -18,7 +20,7 @@ const analyzeSchema = z.object({
 //
 // Analyze a compose file and return structured findings about what Vardo
 // will normalize during deploy. Used by the import-time review dialog.
-export async function POST(req: NextRequest, { params }: RouteParams) {
+async function handlePost(req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     await verifyOrgAccess(orgId);
@@ -39,3 +41,5 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     return handleRouteError(error);
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "mutation", key: "compose-analyze" });

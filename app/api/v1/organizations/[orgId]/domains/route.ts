@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { handleRouteError, isUniqueViolation } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { orgDomains } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -72,7 +74,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 }
 
 // POST — add a custom domain
-export async function POST(request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId);
@@ -111,11 +113,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ domain: created }, { status: 201 });
   } catch (error) {
-    if (
-      error instanceof Error &&
-      "code" in error &&
-      (error as { code: string }).code === "23505"
-    ) {
+    if (isUniqueViolation(error)) {
       return NextResponse.json(
         { error: "Domain already exists" },
         { status: 409 }
@@ -126,20 +124,21 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 }
 
 // PATCH — toggle enabled/disabled
-export async function PATCH(request: NextRequest, { params }: RouteParams) {
+async function handlePatch(request: NextRequest, { params }: RouteParams) {
+  const { orgId } = await params;
+  const body = await request.json();
+
+  const parsed = patchSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: parsed.error.issues[0].message },
+      { status: 400 }
+    );
+  }
+
   try {
-    const { orgId } = await params;
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
-    const body = await request.json();
-    const parsed = patchSchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: parsed.error.issues[0].message },
-        { status: 400 }
-      );
-    }
 
     // If toggling the default domain that hasn't been persisted yet, create it
     if (parsed.data.id === "__default__") {
@@ -175,39 +174,47 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ domain: updated });
   } catch (error) {
-    if (
-      error instanceof Error &&
-      "code" in error &&
-      (error as { code: string }).code === "23505"
-    ) {
-      // Default domain already persisted, just update it
-      const { orgId } = await params;
-      const body = await request.json();
-      const [updated] = await db
-        .update(orgDomains)
-        .set({ enabled: body.enabled })
-        .where(
-          and(
-            eq(orgDomains.organizationId, orgId),
-            eq(orgDomains.isDefault, true)
+    if (isUniqueViolation(error)) {
+      // Default domain already persisted — race condition, just update it
+      try {
+        const [updated] = await db
+          .update(orgDomains)
+          .set({ enabled: parsed.data.enabled })
+          .where(
+            and(
+              eq(orgDomains.organizationId, orgId),
+              eq(orgDomains.isDefault, true)
+            )
           )
-        )
-        .returning();
+          .returning();
 
-      if (updated) return NextResponse.json({ domain: updated });
+        if (updated) return NextResponse.json({ domain: updated });
+      } catch {
+        // Fall through to handleRouteError
+      }
     }
     return handleRouteError(error);
   }
 }
 
 // DELETE — remove a custom domain (cannot delete default)
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    const { id } = await request.json();
+    const body = await request.json();
+    const deleteSchema = z.object({ id: z.string().min(1) }).strict();
+    const parsed = deleteSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: parsed.error.issues[0].message },
+        { status: 400 }
+      );
+    }
+
+    const { id } = parsed.data;
 
     // Check if trying to delete the default domain
     const existing = await db.query.orgDomains.findFirst({
@@ -239,3 +246,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error);
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "mutation", key: "organizations-domains" });
+export const PATCH = withRateLimit(handlePatch, { tier: "mutation", key: "organizations-domains" });
+export const DELETE = withRateLimit(handleDelete, { tier: "mutation", key: "organizations-domains" });

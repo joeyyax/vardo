@@ -5,13 +5,15 @@ import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 type RouteParams = {
   params: Promise<{ orgId: string }>;
 };
 
 // PUT /api/v1/organizations/[orgId]/apps/sort
 // Body: { order: string[] } — array of app IDs in desired order
-export async function PUT(request: NextRequest, { params }: RouteParams) {
+async function handlePut(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId);
@@ -33,3 +35,5 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error);
   }
 }
+
+export const PUT = withRateLimit(handlePut, { tier: "mutation", key: "apps-sort" });

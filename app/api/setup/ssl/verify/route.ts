@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { requireAdminAuth } from "@/lib/auth/admin";
 import { getSslConfig, ISSUER_LABELS, type SslIssuer } from "@/lib/system-settings";
 
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 type IssuerResult = {
   issuer: SslIssuer;
   label: string;
@@ -79,7 +81,7 @@ async function checkIssuer(
   return { issuer, label, ok: false, message: `Unknown issuer: ${issuer}` };
 }
 
-export async function POST() {
+async function handlePost() {
   try {
     await requireAdminAuth();
   } catch {
@@ -157,3 +159,5 @@ export async function POST() {
     results,
   });
 }
+
+export const POST = withRateLimit(handlePost, { tier: "admin", key: "ssl-verify" });

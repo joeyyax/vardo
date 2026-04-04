@@ -5,6 +5,8 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { withRateLimit } from "@/lib/api/with-rate-limit";
+
 import {
   getAllIntegrations,
   connectAppIntegration,
@@ -50,7 +52,7 @@ export async function GET() {
 }
 
 // POST /api/v1/admin/integrations — connect an integration
-export async function POST(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   try {
     await requireAppAdmin();
 
@@ -101,7 +103,7 @@ export async function POST(request: NextRequest) {
 }
 
 // DELETE /api/v1/admin/integrations — disconnect an integration by type
-export async function DELETE(request: NextRequest) {
+async function handleDelete(request: NextRequest) {
   try {
     await requireAppAdmin();
 
@@ -129,3 +131,6 @@ export async function DELETE(request: NextRequest) {
     return handleRouteError(error, "Error disconnecting integration");
   }
 }
+
+export const POST = withRateLimit(handlePost, { tier: "admin", key: "admin-integrations" });
+export const DELETE = withRateLimit(handleDelete, { tier: "admin", key: "admin-integrations" });
