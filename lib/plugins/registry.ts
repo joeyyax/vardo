@@ -138,6 +138,18 @@ export async function isCapabilityAvailable(capability: string): Promise<boolean
   return enabled.some((p) => p.provides?.includes(capability));
 }
 
+/** Check if a specific plugin is enabled (sync, reads from in-memory cache). */
+export function isPluginEnabled(pluginId: string): boolean {
+  return loadedPlugins.has(pluginId);
+}
+
+/** Check if a specific plugin is enabled (async, reads from DB if cache is empty). */
+export async function isPluginEnabledAsync(pluginId: string): Promise<boolean> {
+  if (loadedPlugins.size > 0) return loadedPlugins.has(pluginId);
+  const enabled = await getEnabledPlugins();
+  return enabled.some((p) => p.id === pluginId);
+}
+
 // ---------------------------------------------------------------------------
 // Enable / Disable
 // ---------------------------------------------------------------------------
