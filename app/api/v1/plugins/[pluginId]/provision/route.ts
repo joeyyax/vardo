@@ -100,6 +100,19 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    const manifest = getPlugin(pluginId);
+    if (!manifest) {
+      return NextResponse.json({ error: "Plugin not found" }, { status: 404 });
+    }
+
+    const service = manifest.requires?.services?.find(s => s.name === serviceName);
+    if (!service) {
+      return NextResponse.json(
+        { error: `Plugin "${pluginId}" has no service requirement named "${serviceName}"` },
+        { status: 400 },
+      );
+    }
+
     await deprovisionService(pluginId, serviceName, organizationId);
 
     return NextResponse.json({ success: true, message: `Deprovisioned ${serviceName}` });
