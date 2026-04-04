@@ -82,6 +82,7 @@ import {
   cleanupKeyFile,
   buildGitSshCommand,
 } from "@/lib/crypto/deploy-key";
+import { createDeployLogger } from "./deploy-logger";
 import {
   APP_UID,
   DEFAULT_CONTAINER_PORT,
@@ -250,16 +251,16 @@ export async function runDeployment(
   const startTime = Date.now();
   const logLines: string[] = [];
 
+  // Stream logger — writes to Redis Stream (persistent, replayable)
+  const streamLogger = createDeployLogger(deploymentId);
+
   function log(line: string) {
-    // Sanitize secrets from log output
-    const sanitized = line
-      .replace(/x-access-token:[^\s@]+/g, "x-access-token:***")
-      .replace(/ghs_[A-Za-z0-9]+/g, "***")
-      .replace(/\.host-deploy-key-[A-Za-z0-9_-]+/g, ".host-deploy-key-***");
+    // Write to Redis Stream (new — single source of truth)
+    const sanitized = streamLogger.log(line);
     logLines.push(sanitized);
     opts.onLog?.(sanitized);
 
-    // Broadcast log line via Redis pub/sub for live viewers
+    // Legacy: broadcast via Redis pub/sub for existing SSE consumers
     publishEvent(appChannel(opts.appId), {
       event: "deploy:log",
       appId: opts.appId,
@@ -276,11 +277,14 @@ export async function runDeployment(
     currentStage = s;
     opts.onStage?.(s, status);
 
+    // Write to Redis Stream (new)
+    streamLogger.stage(s, status);
+
     // Track current stage in Redis so cancel logic can make two-tier decisions.
     // Key expires after 11 minutes (slightly longer than max deploy duration).
     redis.set(`deploy:stage:${opts.appId}`, s, "EX", 660).catch(() => {});
 
-    // Broadcast stage change via Redis pub/sub for live viewers
+    // Legacy: broadcast via Redis pub/sub for existing SSE consumers
     publishEvent(appChannel(opts.appId), {
       event: "deploy:stage",
       appId: opts.appId,
