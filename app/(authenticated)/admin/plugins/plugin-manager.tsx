@@ -7,9 +7,13 @@ import {
   Blocks,
   Check,
   CircleDot,
+  Code2,
   Info,
+  Loader2,
   Puzzle,
+  Server,
   Settings2,
+  Shield,
   ShieldAlert,
   Zap,
 } from "lucide-react";
@@ -28,6 +32,30 @@ import {
 } from "@/components/ui/sheet";
 import { PluginSettingsForm } from "@/components/plugins/settings-form";
 import type { PluginManifest, PluginSettingField } from "@/lib/plugins/manifest";
+
+const PLUGIN_BUNDLES = [
+  {
+    id: "dev",
+    name: "Development",
+    description: "Git integration, previews, and terminal access for local development",
+    icon: Code2,
+    plugins: ["git-integration", "terminal", "cron"],
+  },
+  {
+    id: "homelab",
+    name: "Homelab",
+    description: "Backups, monitoring, and basic alerts for home servers",
+    icon: Server,
+    plugins: ["backups", "monitoring", "notifications", "metrics-cadvisor", "cron"],
+  },
+  {
+    id: "production",
+    name: "Production",
+    description: "Full stack — backups, monitoring, SSL, security scanning, and notifications",
+    icon: Shield,
+    plugins: ["backups", "monitoring", "notifications", "metrics-cadvisor", "ssl", "security-scanner", "cron", "git-integration", "domain-monitoring"],
+  },
+] as const;
 
 type PluginData = {
   id: string;
@@ -57,6 +85,8 @@ export function PluginManager() {
   const [plugins, setPlugins] = useState<PluginData[]>([]);
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState<string | null>(null);
+  const [installingBundle, setInstallingBundle] = useState<string | null>(null);
+  const [bundleProgress, setBundleProgress] = useState<{ current: number; total: number } | null>(null);
   const [settingsPlugin, setSettingsPlugin] = useState<PluginData | null>(null);
   const [compatibility, setCompatibility] = useState<Record<string, { compatible: boolean; issues: { type: string; severity: string; message: string; detail?: string }[] }>>({});
 
@@ -122,6 +152,58 @@ export function PluginManager() {
     []
   );
 
+  const handleInstallBundle = useCallback(
+    async (bundleId: string, bundlePlugins: readonly string[]) => {
+      const toEnable = bundlePlugins.filter(
+        (pid) => !plugins.find((p) => p.id === pid && p.enabled)
+      );
+
+      if (toEnable.length === 0) {
+        toast.success("All plugins in this bundle are already enabled");
+        return;
+      }
+
+      setInstallingBundle(bundleId);
+      setBundleProgress({ current: 0, total: toEnable.length });
+
+      let succeeded = 0;
+      let failed = 0;
+
+      for (let i = 0; i < toEnable.length; i++) {
+        setBundleProgress({ current: i + 1, total: toEnable.length });
+        try {
+          const res = await fetch("/api/v1/plugins", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ pluginId: toEnable[i], enabled: true }),
+          });
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            console.error(`Failed to enable ${toEnable[i]}:`, data.error);
+            failed++;
+          } else {
+            succeeded++;
+          }
+        } catch {
+          failed++;
+        }
+      }
+
+      setInstallingBundle(null);
+      setBundleProgress(null);
+      await fetchPlugins();
+
+      if (failed === 0) {
+        toast.success(`Enabled ${succeeded} plugin${succeeded !== 1 ? "s" : ""}`);
+      } else {
+        toast.error(
+          `Enabled ${succeeded} plugin${succeeded !== 1 ? "s" : ""}, ${failed} failed`
+        );
+      }
+    },
+    [plugins, fetchPlugins]
+  );
+
   const settingsFields: PluginSettingField[] =
     settingsPlugin?.manifest?.ui?.settings ?? [];
 
@@ -139,6 +221,75 @@ export function PluginManager() {
       >
         <h1 className="text-2xl font-semibold tracking-tight">Plugins</h1>
       </PageToolbar>
+
+      {!loading && plugins.length > 0 && (
+        <>
+          <div className="space-y-3">
+            <h2 className="text-sm font-medium text-muted-foreground">Quick start</h2>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {PLUGIN_BUNDLES.map((bundle) => {
+                const BundleIcon = bundle.icon;
+                const isInstalling = installingBundle === bundle.id;
+                const enabledCount = bundle.plugins.filter(
+                  (pid) => plugins.find((p) => p.id === pid && p.enabled)
+                ).length;
+                const allEnabled = enabledCount === bundle.plugins.length;
+
+                return (
+                  <Card key={bundle.id} className="squircle border-2 border-dashed">
+                    <CardContent className="flex flex-col gap-3 p-5">
+                      <div className="flex items-start gap-3">
+                        <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+                          <BundleIcon className="size-5 text-primary" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <h3 className="text-sm font-semibold">{bundle.name}</h3>
+                          <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">
+                            {bundle.description}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-muted-foreground">
+                          {enabledCount}/{bundle.plugins.length} plugins enabled
+                        </span>
+                        <Button
+                          size="sm"
+                          className="squircle gap-2"
+                          variant={allEnabled ? "outline" : "default"}
+                          disabled={isInstalling || allEnabled || installingBundle !== null}
+                          onClick={() => handleInstallBundle(bundle.id, bundle.plugins)}
+                        >
+                          {isInstalling && bundleProgress ? (
+                            <>
+                              <Loader2 className="size-3.5 animate-spin" />
+                              Enabling {bundleProgress.current} of {bundleProgress.total}...
+                            </>
+                          ) : allEnabled ? (
+                            <>
+                              <Check className="size-3.5" />
+                              Installed
+                            </>
+                          ) : (
+                            "Install"
+                          )}
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 pt-2">
+            <div className="h-px flex-1 bg-border" />
+            <span className="text-xs text-muted-foreground">or choose individually</span>
+            <div className="h-px flex-1 bg-border" />
+          </div>
+        </>
+      )}
 
       {loading ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
