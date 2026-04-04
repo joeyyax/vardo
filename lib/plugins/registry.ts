@@ -4,7 +4,7 @@
 
 import { db } from "@/lib/db";
 import { plugins, pluginSettings } from "@/lib/db/schema";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, like } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import type { PluginManifest } from "./manifest";
 import { registerInternalHandler } from "@/lib/hooks/registry";
@@ -14,7 +14,9 @@ import { logger } from "@/lib/logger";
 
 const log = logger.child("plugins");
 
-/** In-memory cache of loaded plugins. */
+// NOTE: In-memory cache is never invalidated from external changes.
+// This is safe for single-instance deployments. If multi-instance is
+// needed, add cache invalidation via Redis pub/sub or TTL.
 const loadedPlugins = new Map<string, PluginManifest>();
 
 // ---------------------------------------------------------------------------
@@ -183,13 +185,9 @@ export async function disablePlugin(pluginId: string): Promise<void> {
   await db.update(plugins).set({ enabled: false, updatedAt: new Date() }).where(eq(plugins.id, pluginId));
 
   // Disable all hooks registered by this plugin
-  const hookPrefix = `${pluginId}:`;
-  const hooks = await db.query.hookRegistrations.findMany();
-  for (const hook of hooks) {
-    if (hook.name.startsWith(hookPrefix)) {
-      await db.update(hookRegistrations).set({ enabled: false }).where(eq(hookRegistrations.id, hook.id));
-    }
-  }
+  await db.update(hookRegistrations)
+    .set({ enabled: false })
+    .where(like(hookRegistrations.name, `${pluginId}:%`));
 
   loadedPlugins.delete(pluginId);
   log.info(`Disabled plugin ${pluginId}`);
@@ -255,4 +253,19 @@ export async function setPluginSetting(
       value,
     });
   }
+}
+
+/** Delete a plugin setting row entirely. */
+export async function deletePluginSetting(
+  pluginId: string,
+  key: string,
+  organizationId?: string,
+): Promise<void> {
+  await db.delete(pluginSettings).where(
+    and(
+      eq(pluginSettings.pluginId, pluginId),
+      eq(pluginSettings.key, key),
+      organizationId ? eq(pluginSettings.organizationId, organizationId) : isNull(pluginSettings.organizationId),
+    ),
+  );
 }
