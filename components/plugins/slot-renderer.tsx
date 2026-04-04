@@ -161,29 +161,3 @@ export function PluginSlots({ location, context = {} }: PluginSlotsProps) {
   );
 }
 
-/**
- * Server-side slot resolution — for use in server components.
- * Returns the slot entries without rendering them.
- */
-export async function getPluginSlots(location: SlotLocation): Promise<SlotEntry[]> {
-  try {
-    const { getEnabledPlugins } = await import("@/lib/plugins/registry");
-    const plugins = await getEnabledPlugins();
-
-    const entries: SlotEntry[] = [];
-    for (const plugin of plugins) {
-      const slotDecl = plugin.ui?.slots?.[location];
-      if (slotDecl) {
-        entries.push({
-          pluginId: plugin.id,
-          component: slotDecl.component,
-          props: slotDecl.props,
-        });
-      }
-    }
-
-    return entries;
-  } catch {
-    return [];
-  }
-}
