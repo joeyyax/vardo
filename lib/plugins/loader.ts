@@ -51,5 +51,29 @@ export async function registerBuiltInPlugins(): Promise<void> {
     log.error("Failed to register security plugin:", err);
   }
 
+  // Monitoring — requires metrics, hooks into after.deploy.success
+  try {
+    const { registerMonitoringPlugin } = await import("./monitoring/register");
+    await registerMonitoringPlugin();
+  } catch (err) {
+    log.error("Failed to register monitoring plugin:", err);
+  }
+
+  // SSL — hooks into before.cert.issue
+  try {
+    const { registerSslPlugin } = await import("./ssl/register");
+    await registerSslPlugin();
+  } catch (err) {
+    log.error("Failed to register SSL plugin:", err);
+  }
+
+  // Git integration — GitHub OAuth, deploy keys, PR previews
+  try {
+    const { registerGitIntegrationPlugin } = await import("./git-integration/register");
+    await registerGitIntegrationPlugin();
+  } catch (err) {
+    log.error("Failed to register git integration plugin:", err);
+  }
+
   log.info("Built-in plugin registration complete");
 }
