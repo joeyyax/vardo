@@ -10,4 +10,3 @@ export * from "./cron-relations";
 export * from "./mesh-relations";
 export * from "./monitoring-relations";
 export * from "./security-relations";
-export * from "./integrations-relations";
