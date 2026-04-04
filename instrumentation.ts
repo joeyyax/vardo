@@ -61,7 +61,17 @@ export async function register() {
       log.error("Failed to import backup modules:", err);
     }
 
-    // Fire all independent startup tasks in parallel
+    // Register all built-in plugins (notifications, metrics, backups,
+    // security, monitoring, SSL, git integration). Each plugin handles
+    // its own startup — starting collectors, consumers, monitors, etc.
+    try {
+      const { registerBuiltInPlugins } = await import("./lib/plugins/loader");
+      await registerBuiltInPlugins();
+    } catch (err) {
+      log.error("Plugin registration failed:", err);
+    }
+
+    // Core schedulers — these are not plugins, they're part of the core
     const tasks: Promise<unknown>[] = [];
 
     if (backupTargetReady) {
@@ -69,42 +79,12 @@ export async function register() {
     }
 
     tasks.push(
-      import("./lib/metrics/config")
-        .then(async ({ initMetricsProvider }) => { await initMetricsProvider(); })
-        .then(() => import("./lib/metrics/collector"))
-        .then(({ startCollector }) => {
-          startCollector();
-          log.info("Metrics collector started");
-        })
-        .catch((err) => log.error("Failed to start collector:", err)),
-
       import("./lib/cron/scheduler")
         .then(({ startCronScheduler }) => {
           startCronScheduler();
           log.info("Cron scheduler started");
         })
         .catch((err) => log.error("Failed to start cron scheduler:", err)),
-
-      import("./lib/notifications/scheduler")
-        .then(({ startNotificationRetryScheduler }) => {
-          startNotificationRetryScheduler();
-          log.info("Notification retry scheduler started");
-        })
-        .catch((err) => log.error("Failed to start notification retry scheduler:", err)),
-
-      import("./lib/system-alerts/monitor")
-        .then(({ startSystemAlertMonitor }) => {
-          startSystemAlertMonitor();
-          log.info("System health monitor started");
-        })
-        .catch((err) => log.error("Failed to start system health monitor:", err)),
-
-      import("./lib/digest/scheduler")
-        .then(({ startDigestScheduler }) => {
-          startDigestScheduler();
-          log.info("Digest scheduler started");
-        })
-        .catch((err) => log.error("Failed to start digest scheduler:", err)),
 
       import("./lib/deploy/scheduler")
         .then(({ startDeploySweeper }) => {
@@ -124,6 +104,13 @@ export async function register() {
         .then(({ ensureVardoProject }) => ensureVardoProject())
         .then(() => log.info("Vardo self-registration complete"))
         .catch((err) => log.warn("Vardo self-registration skipped:", err)),
+
+      import("./lib/digest/scheduler")
+        .then(({ startDigestScheduler }) => {
+          startDigestScheduler();
+          log.info("Digest scheduler started");
+        })
+        .catch((err) => log.error("Failed to start digest scheduler:", err)),
 
       Promise.resolve().then(() => {
         const domainLog = logger.child("domain-monitor");

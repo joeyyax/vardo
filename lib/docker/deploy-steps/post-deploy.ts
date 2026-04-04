@@ -191,21 +191,6 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
     // Volume detection is best-effort
   }
 
-  // Auto-create backup job for apps with persistent volumes
-  try {
-    const { ensureAutoBackupJob } = await import("@/lib/backup/auto-backup");
-    const backupJobId = await ensureAutoBackupJob({
-      appId: ctx.appId,
-      appName: app.name,
-      organizationId: ctx.organizationId,
-    });
-    if (backupJobId) {
-      log(`[deploy] Auto-configured daily backup job for persistent volumes`);
-    }
-  } catch {
-    // Auto-backup is best-effort
-  }
-
   // Check volume size limits
   try {
     const limitedVolumes = await db.query.volumes.findMany({
@@ -393,40 +378,31 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
   // Send success notification (non-blocking)
   sendDeployNotification(app, ctx.deploymentId, true, durationMs).catch(() => {});
 
-  // Start auto-rollback monitor if enabled
-  if (app.autoRollback && activeSlot && !isLocalEnv) {
-    const gracePeriod = app.rollbackGracePeriod ?? 60;
-    log(`[deploy] Auto-rollback enabled — monitoring for ${gracePeriod}s`);
-    try {
-      const { startRollbackMonitor } = await import("../rollback-monitor");
-      startRollbackMonitor({
-        appId: ctx.appId,
-        appName: app.name,
-        organizationId: ctx.organizationId,
-        deploymentId: ctx.deploymentId,
-        gracePeriodSeconds: gracePeriod,
-        currentSlot: newSlot as "blue" | "green",
-        previousSlot: activeSlot,
-        envName: ctx.envName,
-      });
-    } catch (err) {
-      log(`[deploy] Warning: rollback monitor — ${err instanceof Error ? err.message : err}`);
-    }
+  // Execute after.deploy.success hooks — plugins handle backup, security scan,
+  // rollback monitor, drift check, and any user-registered hooks.
+  try {
+    const { executeHooks } = await import("@/lib/hooks/execute");
+    await executeHooks("after.deploy.success", {
+      appId: ctx.appId,
+      appName: app.name,
+      organizationId: ctx.organizationId,
+      deploymentId: ctx.deploymentId,
+      deployType: app.deployType,
+      activeSlot,
+      newSlot,
+      isLocalEnv,
+      envName: ctx.envName,
+      autoRollback: app.autoRollback,
+      rollbackGracePeriod: app.rollbackGracePeriod,
+      app,
+    }, {
+      organizationId: ctx.organizationId,
+      appId: ctx.appId,
+      deployId: ctx.deploymentId,
+    });
+  } catch (err) {
+    log(`[deploy] Warning: post-deploy hooks — ${err instanceof Error ? err.message : err}`);
   }
-
-  // Post-deploy drift check (non-blocking)
-  setTimeout(() => {
-    import("@/lib/volumes/drift-check")
-      .then(({ runPostDeployDriftCheck }) =>
-        runPostDeployDriftCheck({
-          appId: ctx.appId,
-          organizationId: ctx.organizationId,
-          appName: app.name,
-          log,
-        }),
-      )
-      .catch(() => {});
-  }, POST_DEPLOY_DELAY);
 
   return ctx;
 }
