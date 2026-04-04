@@ -444,7 +444,7 @@ export function LogViewer({ streamUrl, historyUrl, maxLines = 1000 }: LogViewerP
       es.removeEventListener("log", handleLogEvent);
       es.close();
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [streamUrl, historyUrl, maxLines, visKey, manualReconnect]);
 
   return (

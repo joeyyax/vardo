@@ -109,7 +109,7 @@ export function DotPattern({
           }
         }
       ),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
     [dimensions.width, dimensions.height, width, height, cx, cy]
   )
 
