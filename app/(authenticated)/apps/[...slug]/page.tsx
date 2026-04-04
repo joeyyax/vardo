@@ -1,6 +1,6 @@
 import { redirect, notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { apps, integrations, projects, tags, orgEnvVars, environments } from "@/lib/db/schema";
+import { apps, projects, tags, orgEnvVars, environments } from "@/lib/db/schema";
 import { getCurrentOrg } from "@/lib/auth/session";
 import { eq, and, asc, desc, or, type AnyColumn } from "drizzle-orm";
 import { nanoid } from "nanoid";
@@ -230,13 +230,7 @@ export default async function AppDetailPage({ params }: PageProps) {
     }) ?? null;
   }
 
-  const [featureFlags, backedIntegration] = await Promise.all([
-    getFeatureFlags(),
-    db.query.integrations.findFirst({
-      where: and(eq(integrations.appId, app.id), eq(integrations.status, "connected")),
-      columns: { type: true },
-    }),
-  ]);
+  const featureFlags = await getFeatureFlags();
 
   // Compose parents default to the services tab; child services default to logs
   const isComposeParent = (app.childApps?.length ?? 0) > 0;
@@ -267,7 +261,6 @@ export default async function AppDetailPage({ params }: PageProps) {
       initialSubView={subSegment}
       featureFlags={featureFlags}
       parentApp={parentApp}
-      backedIntegrationType={backedIntegration?.type ?? null}
     />
   );
 }
