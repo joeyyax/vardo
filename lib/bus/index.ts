@@ -11,6 +11,7 @@
  */
 
 import { publishEvent, subscribe, orgChannel } from "@/lib/events";
+import { addEvent } from "@/lib/stream/producer";
 import type { BusEvent } from "./events";
 import { logger } from "@/lib/logger";
 
@@ -56,16 +57,21 @@ export function onEmit(name: string, hook: EmitHook): void {
  * as a side effect.
  */
 export function emit(orgId: string, event: BusEvent): void {
-  // Publish to Redis
+  // New: write to Redis Stream (persistent, replayable)
+  addEvent(orgId, event).catch((err) => {
+    log.error("stream emit failed:", err);
+  });
+
+  // Legacy: publish to Redis pub/sub (kept during migration for existing SSE consumers)
   publishEvent(orgChannel(orgId), {
     source: "bus",
     ...event,
     timestamp: Date.now(),
   }).catch((err) => {
-    log.error("emit failed:", err);
+    log.error("pubsub emit failed:", err);
   });
 
-  // Run local hooks
+  // Run local hooks (notification dispatch, etc.)
   for (const hook of emitHooks.values()) {
     try {
       hook(orgId, event);
