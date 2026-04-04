@@ -11,7 +11,8 @@
 // ---------------------------------------------------------------------------
 
 export const EVENT_CATEGORIES = {
-  deploy: ["deploy.success", "deploy.failed", "deploy.rollback"],
+  deploy: ["deploy.success", "deploy.failed", "deploy.rollback", "deploy.status"],
+  app: ["app.state-changed"],
   backup: ["backup.success", "backup.failed"],
   cron: ["cron.failed"],
   volume: ["volume.drift"],
@@ -222,6 +223,31 @@ export type DigestWeeklyEvent = {
 };
 
 // ---------------------------------------------------------------------------
+// Operational events (real-time UI updates, not notification-worthy)
+// ---------------------------------------------------------------------------
+
+/** Lightweight deploy status change for real-time UI (deployments list, logs page). */
+export type DeployStatusEvent = {
+  type: "deploy.status";
+  title: string;
+  message: string;
+  appId: string;
+  deploymentId: string;
+  status: "active" | "error" | "cancelled" | "superseded";
+  success: boolean;
+  durationMs?: number;
+  supersededBy?: string;
+};
+
+/** An app's runtime state changed (started, stopped, restarted, etc.). */
+export type AppStateChangedEvent = {
+  type: "app.state-changed";
+  title: string;
+  message: string;
+  appId: string;
+};
+
+// ---------------------------------------------------------------------------
 // Union types
 // ---------------------------------------------------------------------------
 
@@ -243,7 +269,9 @@ export type BusEvent =
   | SystemUpdateAvailableEvent
   | SecurityFileExposedEvent
   | SecurityScanFindingsEvent
-  | DigestWeeklyEvent;
+  | DigestWeeklyEvent
+  | DeployStatusEvent
+  | AppStateChangedEvent;
 
 export type BusEventType = BusEvent["type"];
 

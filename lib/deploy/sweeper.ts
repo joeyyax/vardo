@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { deployments } from "@/lib/db/schema/apps";
 import { apps } from "@/lib/db/schema/apps";
-import { publishEvent, appChannel } from "@/lib/events";
+import { addEvent } from "@/lib/stream/producer";
 import { acquireLock } from "@/lib/redis-lock";
 import { logger } from "@/lib/logger";
 import { eq, and, lt, or, inArray } from "drizzle-orm";
@@ -117,14 +117,19 @@ export async function sweepStuckDeployments(): Promise<void> {
         }
       }
 
-      // Notify any connected SSE clients
-      publishEvent(appChannel(deploy.appId), {
-        event: "deploy:complete",
-        status: "error",
-        deploymentId: deploy.id,
-        success: false,
-        durationMs,
-      }).catch(() => {});
+      // Notify real-time UI via org event stream
+      if (app) {
+        addEvent(app.organizationId, {
+          type: "deploy.status",
+          title: "Deploy timed out",
+          message: `Deployment timed out after ${TIMEOUT_MINUTES} minutes`,
+          appId: deploy.appId,
+          deploymentId: deploy.id,
+          status: "error",
+          success: false,
+          durationMs,
+        }).catch(() => {});
+      }
 
       // Emit notification
       try {
@@ -227,14 +232,22 @@ export async function sweepStuckQueuedDeployments(): Promise<void> {
       // Remove from the Redis queue in case the entry is still there
       await removeFromQueue(deploy.id).catch(() => {});
 
-      // Notify connected SSE clients so the UI updates in real-time
-      publishEvent(appChannel(deploy.appId), {
-        event: "deploy:complete",
-        status: "cancelled",
-        deploymentId: deploy.id,
-        success: false,
-        durationMs,
-      }).catch(() => {});
+      // Notify real-time UI via org event stream
+      {
+        const app = appMap.get(deploy.appId);
+        if (app) {
+          addEvent(app.organizationId, {
+            type: "deploy.status",
+            title: "Queued deploy cancelled",
+            message: `Deployment was stuck in queue for ${queueTimeoutMinutes} minutes and was cancelled`,
+            appId: deploy.appId,
+            deploymentId: deploy.id,
+            status: "cancelled",
+            success: false,
+            durationMs,
+          }).catch(() => {});
+        }
+      }
 
       // Emit notification
       try {

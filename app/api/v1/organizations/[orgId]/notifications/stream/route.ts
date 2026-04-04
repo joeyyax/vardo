@@ -1,8 +1,9 @@
 import { NextRequest } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
-import { on } from "@/lib/bus";
-import type { BusEvent } from "@/lib/bus/events";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { readStream } from "@/lib/stream/consumer";
+import { eventStream } from "@/lib/stream/keys";
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -10,80 +11,79 @@ type RouteParams = {
 
 // GET /api/v1/organizations/[orgId]/notifications/stream
 // SSE stream of org-level bus events (deploy, backup, cron, system alerts, etc.)
-export async function GET(request: NextRequest, { params }: RouteParams) {
+// Reads from Redis Streams with catchup + live tail.
+//
+// Note: The unified SSE gateway at /api/v1/sse is the preferred endpoint
+// for new integrations. This endpoint is kept for backward compatibility.
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId);
     if (!org) return new Response("Forbidden", { status: 403 });
 
+    const url = new URL(request.url);
+    const lastId = url.searchParams.get("lastId") ?? undefined;
+
     const encoder = new TextEncoder();
-
-    // Buffer events until the controller is ready. The Redis subscriber
-    // callback can fire before ReadableStream.start() assigns the controller.
-    let controller: ReadableStreamDefaultController | null = null;
-    const pending: BusEvent[] = [];
-
-    let unsubscribe: () => void;
-    try {
-      unsubscribe = await on(orgId, (event) => {
-        if (!controller) {
-          pending.push(event);
-          return;
-        }
-        try {
-          controller.enqueue(
-            encoder.encode(
-              `event: notification\ndata: ${JSON.stringify(event)}\n\n`,
-            ),
-          );
-        } catch {
-          // Client disconnected
-        }
-      });
-    } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : "Subscriber cap reached";
-      return new Response(JSON.stringify({ error: msg }), {
-        status: 503,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
+    const abortController = new AbortController();
 
     const stream = new ReadableStream({
-      start(ctrl) {
-        controller = ctrl;
-
-        // Flush any events that arrived before the controller was ready
-        for (const event of pending) {
-          try {
-            ctrl.enqueue(
-              encoder.encode(
-                `event: notification\ndata: ${JSON.stringify(event)}\n\n`,
-              ),
-            );
-          } catch {
-            break;
-          }
-        }
-        pending.length = 0;
-
+      start(controller) {
         const keepalive = setInterval(() => {
           try {
-            ctrl.enqueue(encoder.encode(": keepalive\n\n"));
+            controller.enqueue(encoder.encode(": keepalive\n\n"));
           } catch {
             clearInterval(keepalive);
           }
-        }, 30000);
+        }, 30_000);
 
-        request.signal.addEventListener("abort", () => {
-          clearInterval(keepalive);
-          unsubscribe();
+        const timeout = setTimeout(() => {
           try {
-            ctrl.close();
-          } catch {
-            /* already closed */
+            controller.enqueue(
+              encoder.encode(`event: timeout\ndata: ${JSON.stringify({ message: "Stream timed out" })}\n\n`),
+            );
+          } catch { /* client disconnected */ }
+          cleanup();
+        }, 10 * 60 * 1000);
+
+        function cleanup() {
+          clearInterval(keepalive);
+          clearTimeout(timeout);
+          abortController.abort();
+          try { controller.close(); } catch { /* already closed */ }
+        }
+
+        request.signal.addEventListener("abort", cleanup);
+
+        // Read from Redis Stream — catchup + live tail
+        (async () => {
+          try {
+            for await (const entry of readStream(eventStream(orgId), {
+              fromId: lastId,
+              signal: abortController.signal,
+            })) {
+              try {
+                const payload = entry.fields.payload
+                  ? JSON.parse(entry.fields.payload)
+                  : entry.fields;
+                controller.enqueue(
+                  encoder.encode(
+                    `event: notification\ndata: ${JSON.stringify({ ...payload, streamId: entry.id })}\n\n`,
+                  ),
+                );
+              } catch { /* skip malformed entries */ }
+            }
+          } catch (err) {
+            if (!abortController.signal.aborted) {
+              try {
+                controller.enqueue(
+                  encoder.encode(`event: error\ndata: ${JSON.stringify({ message: "Stream error" })}\n\n`),
+                );
+              } catch { /* already closed */ }
+            }
+            cleanup();
           }
-        });
+        })();
       },
     });
 
@@ -98,3 +98,5 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error streaming notifications");
   }
 }
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "notification-stream" });

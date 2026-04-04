@@ -1,16 +1,11 @@
 /**
- * Event bus - thin wrapper over the existing Redis pub/sub in lib/events.
+ * Event bus — writes typed BusEvents to Redis Streams and runs local
+ * emit hooks (notification dispatch fallback).
  *
- * Publishes typed BusEvents to org-scoped Redis channels and provides
- * a subscribe/unsubscribe API for listeners. Events are tagged with
- * `source: "bus"` so non-bus messages on the same channel are ignored.
- *
- * Emit hooks allow modules (like notification dispatch) to register
- * synchronous side effects that run on every emit() call without
- * requiring a Redis roundtrip.
+ * All consumers have been migrated to Redis Streams. The old pub/sub
+ * system (lib/events.ts) is no longer used by this module.
  */
 
-import { publishEvent, subscribe, orgChannel } from "@/lib/events";
 import { addEvent } from "@/lib/stream/producer";
 import type { BusEvent } from "./events";
 import { logger } from "@/lib/logger";
@@ -21,19 +16,18 @@ export type { BusEvent, BusEventType } from "./events";
 export { EVENT_CATEGORIES, ALL_EVENT_TYPES } from "./events";
 
 // ---------------------------------------------------------------------------
-// Emit hooks - synchronous side effects on emit()
+// Emit hooks — synchronous side effects on emit()
 // ---------------------------------------------------------------------------
 
 type EmitHook = (orgId: string, event: BusEvent) => void;
 const emitHooks = new Map<string, EmitHook>();
 
 /**
- * Register a named hook that runs on every emit() call. Used by the
- * notification dispatch module to trigger channel delivery without a
- * Redis roundtrip.
+ * Register a named hook that runs on every emit() call.
+ * Used as a fallback by notification dispatch when the stream consumer
+ * fails to start.
  *
- * Keyed by name to prevent duplicate registrations during HMR - calling
- * onEmit("dispatch", fn) twice replaces the previous hook.
+ * Keyed by name to prevent duplicate registrations during HMR.
  */
 export function onEmit(name: string, hook: EmitHook): void {
   emitHooks.set(name, hook);
@@ -44,34 +38,23 @@ export function onEmit(name: string, hook: EmitHook): void {
 // ---------------------------------------------------------------------------
 
 /**
- * Emit a typed event to an org's bus channel.
+ * Emit a typed event to an org's event stream.
  *
- * 1. Publishes to Redis for remote consumers (SSE endpoints, future workers)
- * 2. Runs registered emit hooks for local consumers (notification dispatch)
+ * 1. Writes to Redis Stream (persistent, replayable)
+ * 2. Runs registered emit hooks (fallback notification dispatch)
  *
  * Fire-and-forget: errors are logged but never thrown to the caller.
  *
  * IMPORTANT: To ensure notification channels (email, webhook, slack) fire,
  * import `emit` from `@/lib/notifications/dispatch` rather than directly
- * from this module. That import triggers the dispatch hook registration
+ * from this module. That import triggers the stream consumer startup
  * as a side effect.
  */
 export function emit(orgId: string, event: BusEvent): void {
-  // New: write to Redis Stream (persistent, replayable)
   addEvent(orgId, event).catch((err) => {
     log.error("stream emit failed:", err);
   });
 
-  // Legacy: publish to Redis pub/sub (kept during migration for existing SSE consumers)
-  publishEvent(orgChannel(orgId), {
-    source: "bus",
-    ...event,
-    timestamp: Date.now(),
-  }).catch((err) => {
-    log.error("pubsub emit failed:", err);
-  });
-
-  // Run local hooks (notification dispatch, etc.)
   for (const hook of emitHooks.values()) {
     try {
       hook(orgId, event);
@@ -79,19 +62,4 @@ export function emit(orgId: string, event: BusEvent): void {
       log.error("emit hook error:", err);
     }
   }
-}
-
-type BusCallback = (event: BusEvent) => void;
-
-/**
- * Subscribe to bus events for an org via Redis. Returns an unsubscribe function.
- *
- * Only events with `source: "bus"` are forwarded - other messages on
- * the org channel (app state changes, etc.) are silently ignored.
- */
-export async function on(orgId: string, cb: BusCallback): Promise<() => void> {
-  return subscribe(orgChannel(orgId), (data) => {
-    if (data.source !== "bus") return;
-    cb(data as unknown as BusEvent);
-  });
 }
