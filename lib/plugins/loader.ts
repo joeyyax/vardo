@@ -115,5 +115,13 @@ export async function registerBuiltInPlugins(): Promise<void> {
     log.error("Failed to register terminal plugin:", err);
   }
 
+  // Get Started — onboarding checklist for new instances
+  try {
+    const { registerGetStartedPlugin } = await import("./get-started/register");
+    await registerGetStartedPlugin();
+  } catch (err) {
+    log.error("Failed to register get-started plugin:", err);
+  }
+
   log.info("Built-in plugin registration complete");
 }
