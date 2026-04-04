@@ -7,6 +7,8 @@ import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { publishKillSignal } from "@/lib/docker/deploy-cancel";
 import { publishEvent, appChannel } from "@/lib/events";
 import { releaseConcurrencySlot, removeFromQueue } from "@/lib/docker/deploy-concurrency";
+// Container cleanup for force-cancelled deploys is handled by the sweeper
+// (lib/deploy/sweeper.ts), which can safely resolve the correct slot.
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string; deploymentId: string }>;
