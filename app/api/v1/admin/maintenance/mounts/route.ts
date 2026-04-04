@@ -3,7 +3,7 @@ import { join } from "path";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { writeEnvKey } from "@/lib/env/write-env-key";
 import { handleRouteError } from "@/lib/api/error-response";
-import { mountsSchema } from "@/lib/api/admin/maintenance-schemas";
+import { mountsSchema, parseMountPair } from "@/lib/api/admin/maintenance-schemas";
 import { logger } from "@/lib/logger";
 import { VARDO_HOME_DIR } from "@/lib/paths";
 
@@ -14,23 +14,6 @@ const log = logger.child("admin:maintenance:mounts");
 // Returns the current host mount configuration from environment variables.
 // Each mount is returned as { source, destination } if set, or null if not configured.
 // Handles both new source:destination:ro format and legacy single-path format.
-function parseMountPair(value: string | undefined): { source: string; destination: string } | null {
-  if (!value || value === "/dev/null") return null;
-
-  // Strip :ro suffix if present (new format)
-  const mountValue = value.endsWith(":ro") ? value.slice(0, -3) : value;
-
-  const colonIndex = mountValue.indexOf(":");
-  if (colonIndex === -1) {
-    // Legacy single-path format — assume source = destination
-    return { source: mountValue, destination: mountValue };
-  }
-
-  const source = mountValue.slice(0, colonIndex);
-  const destination = mountValue.slice(colonIndex + 1);
-  if (!source || !destination) return null;
-  return { source, destination };
-}
 
 export async function GET() {
   try {
