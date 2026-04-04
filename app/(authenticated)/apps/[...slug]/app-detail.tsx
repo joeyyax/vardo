@@ -22,6 +22,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { toast } from "@/lib/messenger";
+import { PluginSlots } from "@/components/plugins/slot-renderer";
 import { PageToolbar } from "@/components/page-toolbar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -545,6 +546,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                 )}
               </>
             )}
+            <PluginSlots location="app.detail.actions" context={{ orgId, appId: app.id }} />
           </div>
         }
       >
@@ -861,6 +863,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
               </Popover>
             )}
           </div>
+          <PluginSlots location="app.detail.info" context={{ orgId, appId: app.id }} />
         </div>
       </div>
 
@@ -1046,7 +1049,10 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           </TabsContent>
         )}
 
+        <PluginSlots location="app.detail.tabs" context={{ orgId, appId: app.id }} />
       </Tabs>
+
+      <PluginSlots location="app.detail.sidebar" context={{ orgId, appId: app.id }} />
 
       {/* New Environment Bottom Sheet */}
       <BottomSheet open={newEnvOpen} onOpenChange={setNewEnvOpen}>

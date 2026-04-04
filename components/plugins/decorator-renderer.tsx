@@ -17,6 +17,7 @@
 
 import { useEffect, useState } from "react";
 import type { SlotComponentType, DecoratorPosition } from "@/lib/plugins/manifest";
+import { getSlotComponent } from "./component-map";
 
 type DecoratorEntry = {
   pluginId: string;
@@ -85,6 +86,29 @@ export function PluginDecorator({
   );
 }
 
+/**
+ * Resolve template variables in props.
+ * Replaces `{orgId}`, `{appId}`, etc. in string values.
+ */
+function resolveTemplates(
+  props: Record<string, unknown>,
+  context: Record<string, string>,
+): Record<string, unknown> {
+  const resolved: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(props)) {
+    if (typeof value === "string") {
+      let str = value;
+      for (const [varName, varValue] of Object.entries(context)) {
+        str = str.replace(new RegExp(`\\{${varName}\\}`, "g"), varValue);
+      }
+      resolved[key] = str;
+    } else {
+      resolved[key] = value;
+    }
+  }
+  return resolved;
+}
+
 function DecoratorComponent({
   entry,
   context,
@@ -92,12 +116,9 @@ function DecoratorComponent({
   entry: DecoratorEntry;
   context: Record<string, string>;
 }) {
-  // Reuse the same component map from slot-renderer
-  // For now, render a simple span with the component type
-  // TODO: share component map between slot-renderer and decorator-renderer
-  return (
-    <span data-plugin={entry.pluginId} data-component={entry.component}>
-      {entry.props.label as string ?? entry.props.message as string ?? ""}
-    </span>
-  );
+  const Component = getSlotComponent(entry.component);
+  if (!Component) return null;
+
+  const resolvedProps = resolveTemplates(entry.props, context);
+  return <Component {...resolvedProps} />;
 }

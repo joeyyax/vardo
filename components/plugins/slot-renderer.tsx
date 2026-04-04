@@ -12,6 +12,7 @@
 
 import { useEffect, useState } from "react";
 import type { SlotLocation, SlotComponentType } from "@/lib/plugins/manifest";
+import { registerSlotComponent, getSlotComponent } from "./component-map";
 
 type SlotEntry = {
   pluginId: string;
@@ -121,18 +122,15 @@ function PluginIframe({ src, height }: { src?: string; height?: number }) {
   );
 }
 
-// Map component type strings to React components
-const COMPONENT_MAP: Record<SlotComponentType, React.ComponentType<Record<string, unknown>>> = {
-  "status-badge": StatusBadge as React.ComponentType<Record<string, unknown>>,
-  "metric-card": MetricCard as React.ComponentType<Record<string, unknown>>,
-  "data-table": MetricCard as React.ComponentType<Record<string, unknown>>, // placeholder
-  "form-section": MetricCard as React.ComponentType<Record<string, unknown>>, // placeholder
-  "action-button": ActionButton as React.ComponentType<Record<string, unknown>>,
-  "key-value-row": KeyValueRow as React.ComponentType<Record<string, unknown>>,
-  "inline-alert": InlineAlert as React.ComponentType<Record<string, unknown>>,
-  "link": PluginLink as React.ComponentType<Record<string, unknown>>,
-  "iframe": PluginIframe as React.ComponentType<Record<string, unknown>>,
-};
+// Register inline components with the shared component map so both
+// slot-renderer and decorator-renderer can resolve them.
+registerSlotComponent("status-badge", StatusBadge as React.ComponentType<Record<string, unknown>>);
+registerSlotComponent("metric-card", MetricCard as React.ComponentType<Record<string, unknown>>);
+registerSlotComponent("action-button", ActionButton as React.ComponentType<Record<string, unknown>>);
+registerSlotComponent("key-value-row", KeyValueRow as React.ComponentType<Record<string, unknown>>);
+registerSlotComponent("inline-alert", InlineAlert as React.ComponentType<Record<string, unknown>>);
+registerSlotComponent("link", PluginLink as React.ComponentType<Record<string, unknown>>);
+registerSlotComponent("iframe", PluginIframe as React.ComponentType<Record<string, unknown>>);
 
 // ---------------------------------------------------------------------------
 // Main component
@@ -154,7 +152,7 @@ export function PluginSlots({ location, context = {} }: PluginSlotsProps) {
   return (
     <>
       {slots.map((slot, i) => {
-        const Component = COMPONENT_MAP[slot.component];
+        const Component = getSlotComponent(slot.component);
         if (!Component) return null;
         const resolvedProps = resolveTemplates(slot.props, context);
         return <Component key={`${slot.pluginId}-${i}`} {...resolvedProps} />;

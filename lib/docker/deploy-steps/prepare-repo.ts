@@ -48,7 +48,7 @@ import {
   GIT_CLONE_TIMEOUT,
   GIT_METADATA_TIMEOUT,
   DOCKER_CLEANUP_TIMEOUT,
-  DOCKER_CHOWN_TIMEOUT,
+  ensureWritableDir,
 } from "../constants";
 import type { DeployContext } from "../deploy-context";
 import { deployments } from "@/lib/db/schema";
@@ -133,29 +133,6 @@ async function detectAndPersistComposeVolumes(
       }).onConflictDoNothing();
     }
     log(`[deploy] Detected ${newVols.length} compose volume(s): ${newVols.map(v => `${v.name}:${v.mountPath}`).join(", ")}`);
-  }
-}
-
-/**
- * Create a directory and ensure the app user (1001) can write to it.
- */
-async function ensureWritableDir(dir: string): Promise<void> {
-  await mkdir(dir, { recursive: true });
-  try {
-    const probe = join(dir, `.write-probe-${process.pid}`);
-    await writeFile(probe, "");
-    await rm(probe);
-  } catch (err: unknown) {
-    if (err && typeof err === "object" && "code" in err && (err as { code: string }).code === "EACCES") {
-      if (!dir.startsWith(PROJECTS_DIR + "/")) {
-        throw new Error(`Permission denied and path outside apps dir: ${dir}`);
-      }
-      await execFileAsync("docker", [
-        "run", "--rm", "-v", `${dir}:/target`, "alpine", "chown", "-R", `${APP_UID}:${APP_UID}`, "/target",
-      ], { timeout: DOCKER_CHOWN_TIMEOUT });
-    } else {
-      throw err;
-    }
   }
 }
 
