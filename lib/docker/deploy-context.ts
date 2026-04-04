@@ -162,7 +162,4 @@ export type DeployContext = {
   logs: { push: (line: string) => void };
   logLines: string[];
   startTime: number;
-
-  /** Current stage — used by error handler to decide cleanup scope. */
-  currentStage: DeployStage;
 };
