@@ -3,50 +3,53 @@
 //
 // Each plugin has a register.ts that handles its own initialization.
 // This module calls them in dependency order.
+//
+// NOTE: Imports must be static (not variable paths) because Turbopack
+// cannot resolve dynamic import() expressions at build time.
 // ---------------------------------------------------------------------------
 
 import { logger } from "@/lib/logger";
 
 const log = logger.child("plugins");
 
+/** A registration function paired with its label for error reporting. */
+type PluginEntry = [label: string, register: () => Promise<void>];
+
 /**
- * Built-in plugins listed in dependency order — plugins that provide
+ * Built-in plugins in dependency order — plugins that provide
  * capabilities required by others are registered first.
  */
-const BUILT_IN_PLUGINS = [
-  { path: "./notifications/register", fn: "registerNotificationsPlugin", label: "notifications" },
-  { path: "./metrics/register", fn: "registerMetricsPlugin", label: "metrics" },
-  { path: "./backups/register", fn: "registerBackupsPlugin", label: "backups" },
-  { path: "./security/register", fn: "registerSecurityPlugin", label: "security" },
-  { path: "./monitoring/register", fn: "registerMonitoringPlugin", label: "monitoring" },
-  { path: "./ssl/register", fn: "registerSslPlugin", label: "SSL" },
-  { path: "./git-integration/register", fn: "registerGitIntegrationPlugin", label: "git integration" },
-  { path: "./cron/register", fn: "registerCronPlugin", label: "cron" },
-  { path: "./domain-monitoring/register", fn: "registerDomainMonitoringPlugin", label: "domain monitoring" },
-  { path: "./digest/register", fn: "registerDigestPlugin", label: "digest" },
-  { path: "./mcp/register", fn: "registerMcpPlugin", label: "MCP" },
-  { path: "./terminal/register", fn: "registerTerminalPlugin", label: "terminal" },
-  { path: "./container-import/register", fn: "registerContainerImportPlugin", label: "container-import" },
-  { path: "./get-started/register", fn: "registerGetStartedPlugin", label: "get-started" },
-  { path: "./error-tracking/register", fn: "registerErrorTrackingPlugin", label: "error-tracking" },
-  { path: "./uptime/register", fn: "registerUptimePlugin", label: "uptime" },
-  { path: "./logging/register", fn: "registerLoggingPlugin", label: "logging" },
+const BUILT_IN_PLUGINS: PluginEntry[] = [
+  ["notifications", async () => { const m = await import("./notifications/register"); await m.registerNotificationsPlugin(); }],
+  ["metrics", async () => { const m = await import("./metrics/register"); await m.registerMetricsPlugin(); }],
+  ["backups", async () => { const m = await import("./backups/register"); await m.registerBackupsPlugin(); }],
+  ["security", async () => { const m = await import("./security/register"); await m.registerSecurityPlugin(); }],
+  ["monitoring", async () => { const m = await import("./monitoring/register"); await m.registerMonitoringPlugin(); }],
+  ["ssl", async () => { const m = await import("./ssl/register"); await m.registerSslPlugin(); }],
+  ["git-integration", async () => { const m = await import("./git-integration/register"); await m.registerGitIntegrationPlugin(); }],
+  ["cron", async () => { const m = await import("./cron/register"); await m.registerCronPlugin(); }],
+  ["domain-monitoring", async () => { const m = await import("./domain-monitoring/register"); await m.registerDomainMonitoringPlugin(); }],
+  ["digest", async () => { const m = await import("./digest/register"); await m.registerDigestPlugin(); }],
+  ["mcp", async () => { const m = await import("./mcp/register"); await m.registerMcpPlugin(); }],
+  ["terminal", async () => { const m = await import("./terminal/register"); await m.registerTerminalPlugin(); }],
+  ["container-import", async () => { const m = await import("./container-import/register"); await m.registerContainerImportPlugin(); }],
+  ["get-started", async () => { const m = await import("./get-started/register"); await m.registerGetStartedPlugin(); }],
+  ["error-tracking", async () => { const m = await import("./error-tracking/register"); await m.registerErrorTrackingPlugin(); }],
+  ["uptime", async () => { const m = await import("./uptime/register"); await m.registerUptimePlugin(); }],
+  ["logging", async () => { const m = await import("./logging/register"); await m.registerLoggingPlugin(); }],
 ];
 
 /**
  * Register all built-in plugins. Called once during app startup.
- * Plugins are registered in dependency order — plugins that provide
- * capabilities required by others are registered first.
  */
 export async function registerBuiltInPlugins(): Promise<void> {
   log.info("Registering built-in plugins...");
 
-  for (const plugin of BUILT_IN_PLUGINS) {
+  for (const [label, register] of BUILT_IN_PLUGINS) {
     try {
-      const mod = await import(plugin.path);
-      await mod[plugin.fn]();
+      await register();
     } catch (err) {
-      log.error(`Failed to register ${plugin.label} plugin:`, err);
+      log.error(`Failed to register ${label} plugin:`, err);
     }
   }
 
