@@ -10,7 +10,7 @@ import { DockerPrune, UserManagement } from "./admin-actions";
 import { AdminOverview } from "./admin-overview";
 import { AdminOrganizations } from "./admin-organizations";
 import { AdminMetrics } from "./admin-metrics";
-import { PluginSlots } from "@/components/plugins/slot-renderer";
+
 
 type AdminPanelProps = {
   activeTab: string;
@@ -46,7 +46,6 @@ export function AdminPanel({ activeTab, orgId }: AdminPanelProps) {
           <TabsTrigger value="users">Users</TabsTrigger>
           <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
           <TabsTrigger value="metrics">Metrics</TabsTrigger>
-          <TabsTrigger value="plugins">Plugins</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="pt-4">
@@ -69,9 +68,6 @@ export function AdminPanel({ activeTab, orgId }: AdminPanelProps) {
           <AdminMetrics orgId={orgId} />
         </TabsContent>
 
-        <TabsContent value="plugins" className="pt-4">
-          <PluginSlots location="admin.sections" context={{ orgId }} />
-        </TabsContent>
       </Tabs>
     </div>
   );
