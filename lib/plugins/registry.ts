@@ -9,6 +9,7 @@ import { nanoid } from "nanoid";
 import type { PluginManifest } from "./manifest";
 import { registerInternalHandler } from "@/lib/hooks/registry";
 import { hookRegistrations } from "@/lib/db/schema";
+import { checkPluginCompatibility } from "./compatibility";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("plugins");
@@ -154,8 +155,18 @@ export async function isPluginEnabledAsync(pluginId: string): Promise<boolean> {
 // Enable / Disable
 // ---------------------------------------------------------------------------
 
-/** Enable a plugin. Registers its hooks. */
+/** Enable a plugin. Runs compatibility checks first, then registers its hooks. */
 export async function enablePlugin(pluginId: string): Promise<void> {
+  const { compatible, issues } = await checkPluginCompatibility(pluginId);
+  if (!compatible) {
+    const errors = issues
+      .filter((i) => i.severity === "error")
+      .map((i) => i.message);
+    throw new Error(
+      `Cannot enable plugin "${pluginId}": ${errors.join("; ")}`,
+    );
+  }
+
   await db.update(plugins).set({ enabled: true, updatedAt: new Date() }).where(eq(plugins.id, pluginId));
 
   const row = await db.query.plugins.findFirst({ where: eq(plugins.id, pluginId) });

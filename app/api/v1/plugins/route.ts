@@ -62,7 +62,14 @@ export async function PATCH(request: NextRequest) {
     }
 
     if (enabled) {
-      await enablePlugin(pluginId);
+      try {
+        await enablePlugin(pluginId);
+      } catch (err) {
+        if (err instanceof Error && err.message.startsWith("Cannot enable plugin")) {
+          return NextResponse.json({ error: err.message }, { status: 422 });
+        }
+        throw err;
+      }
     } else {
       await disablePlugin(pluginId);
     }
