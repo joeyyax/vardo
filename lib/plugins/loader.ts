@@ -115,6 +115,14 @@ export async function registerBuiltInPlugins(): Promise<void> {
     log.error("Failed to register terminal plugin:", err);
   }
 
+  // Container Import — discover and adopt running Docker containers
+  try {
+    const { registerContainerImportPlugin } = await import("./container-import/register");
+    await registerContainerImportPlugin();
+  } catch (err) {
+    log.error("Failed to register container-import plugin:", err);
+  }
+
   // Get Started — onboarding checklist for new instances
   try {
     const { registerGetStartedPlugin } = await import("./get-started/register");

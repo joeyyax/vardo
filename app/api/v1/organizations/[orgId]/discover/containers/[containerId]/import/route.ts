@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { requirePlugin } from "@/lib/api/require-plugin";
 import { db } from "@/lib/db";
 import { apps, environments, domains, volumes } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -65,6 +66,9 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+    const gate = await requirePlugin("container-import");
+    if (gate) return gate;
 
     if (!/^[a-f0-9]{12,64}$/.test(containerId)) {
       return NextResponse.json({ error: "Invalid container ID" }, { status: 400 });
