@@ -73,6 +73,7 @@ vi.mock("drizzle-orm", () => ({
   eq: (col: string, val: unknown) => ({ op: "eq", col, val }),
   and: (...args: unknown[]) => ({ op: "and", args }),
   isNull: (col: string) => ({ op: "isNull", col }),
+  like: (col: string, pattern: string) => ({ op: "like", col, pattern }),
 }));
 
 // ---------------------------------------------------------------------------
@@ -294,22 +295,14 @@ describe("Plugin Registry", () => {
 
   describe("disablePlugin", () => {
     it("sets enabled=false and disables associated hooks", async () => {
-      // Populate hook rows that the disable function will iterate
-      hookRegistrationRows.push(
-        { id: "hook-1", name: "test-plugin:onDeploy", enabled: true },
-        { id: "hook-2", name: "other-plugin:handler", enabled: true },
-      );
-      dbMock.query.hookRegistrations.findMany.mockResolvedValueOnce([...hookRegistrationRows]);
-
       const { registerPlugin, disablePlugin, getPlugin } = await freshRegistry();
 
-      // First register so it's in the in-memory cache
       await registerPlugin(makeManifest());
       vi.clearAllMocks();
 
       await disablePlugin("test-plugin");
 
-      // Should update the plugin row
+      // Should update the plugin row to disabled
       expect(dbMock.update).toHaveBeenCalled();
       expect(dbMock._updateSet).toHaveBeenCalledWith(
         expect.objectContaining({ enabled: false }),
@@ -319,25 +312,28 @@ describe("Plugin Registry", () => {
       expect(getPlugin("test-plugin")).toBeUndefined();
     });
 
-    it("only disables hooks belonging to the target plugin", async () => {
-      hookRegistrationRows.push(
-        { id: "hook-1", name: "test-plugin:onDeploy", enabled: true },
-        { id: "hook-2", name: "other-plugin:handler", enabled: true },
-      );
-      dbMock.query.hookRegistrations.findMany.mockResolvedValueOnce([...hookRegistrationRows]);
-
-      const { disablePlugin } = await freshRegistry();
+    it("disables hooks via LIKE query scoped to plugin prefix", async () => {
+      const { registerPlugin, disablePlugin } = await freshRegistry();
+      await registerPlugin(makeManifest());
+      vi.clearAllMocks();
 
       await disablePlugin("test-plugin");
 
-      // update called: once for plugin enabled=false, once for hook-1 disable
-      // hook-2 belongs to other-plugin and should not be disabled
-      const updateSetCalls = dbMock._updateSet.mock.calls;
-      const hookDisableCalls = updateSetCalls.filter(
-        (call: unknown[]) => (call[0] as Record<string, unknown>).enabled === false,
+      // Two update calls: plugin enabled=false, hooks via like()
+      expect(dbMock.update).toHaveBeenCalledTimes(2);
+
+      // The hook disable uses a like() condition with the plugin prefix
+      const whereArgs = dbMock._updateWhere.mock.calls.map(
+        (call: unknown[]) => call[0],
       );
-      // One for the plugin itself, one for hook-1
-      expect(hookDisableCalls.length).toBe(2);
+      const likeArg = whereArgs.find(
+        (arg: unknown) =>
+          arg && typeof arg === "object" && (arg as { op?: string }).op === "like",
+      );
+      expect(likeArg).toMatchObject({
+        op: "like",
+        pattern: "test-plugin:%",
+      });
     });
   });
 

@@ -21,6 +21,8 @@ export type CompatibilityIssue = {
   severity: "error" | "warning";
   message: string;
   detail?: string;
+  /** Service name for service_unavailable issues (used by provision UI). */
+  serviceName?: string;
 };
 
 export type CompatibilityResult = {
@@ -166,12 +168,15 @@ async function checkSingleService(
       detail: svc.provisionable
         ? `This service can be auto-provisioned. Vardo will add it to your compose stack.`
         : `Ensure "${svc.name}" is running and accessible at the configured URL.`,
+      serviceName: svc.name,
     };
   }
 
   return null;
 }
 
+// Accepts any non-5xx response as "service available" — auth-gated
+// services return 401/403 but are still running and reachable.
 async function checkHttp(url: string): Promise<boolean> {
   try {
     const controller = new AbortController();
