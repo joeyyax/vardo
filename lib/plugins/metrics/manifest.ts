@@ -6,6 +6,7 @@ const manifest: PluginManifest = {
   description: "Collect container CPU, memory, network, and disk metrics via cAdvisor.",
   version: "1.0.0",
   category: "metrics",
+  icon: "https://cdn.simpleicons.org/google/4285F4",
 
   provides: ["metrics"],
   conflicts: ["metrics-prometheus"],
@@ -19,6 +20,7 @@ const manifest: PluginManifest = {
         default: "http://cadvisor:8080/api/v1.3/docker",
         setting: "cadvisorUrl",
         provisionable: true,
+        templateName: "cadvisor",
       },
     ],
   },

@@ -72,6 +72,8 @@ export type ServiceRequirement = {
   setting: string;
   /** Can Vardo auto-add this to the compose stack? */
   provisionable: boolean;
+  /** Template name from templates/ directory to use for auto-provisioning. */
+  templateName?: string;
 };
 
 /** Hook declaration in the manifest. */
@@ -97,6 +99,7 @@ export type PluginManifest = {
   description?: string;
   version: string;
   category?: string;
+  icon?: string;
 
   /** What capability this plugin provides. */
   provides?: string[];

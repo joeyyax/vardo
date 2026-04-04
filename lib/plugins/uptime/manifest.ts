@@ -6,6 +6,7 @@ const manifest: PluginManifest = {
   description: "Monitor endpoint availability via Uptime Kuma.",
   version: "1.0.0",
   category: "monitoring",
+  icon: "https://cdn.simpleicons.org/uptimekuma",
 
   provides: ["uptime-monitoring"],
 
@@ -17,6 +18,7 @@ const manifest: PluginManifest = {
         default: "http://uptime-kuma:3001",
         setting: "uptimeKumaUrl",
         provisionable: true,
+        templateName: "uptime-kuma",
       },
     ],
   },
