@@ -250,6 +250,17 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
     throw new Error(`Backup job not found: ${jobId}`);
   }
 
+  const { executeHooks } = await import("@/lib/hooks/execute");
+  const hookResult = await executeHooks("before.backup.run", {
+    jobId,
+    organizationId: job.organizationId,
+    apps: job.backupJobApps.map((bja) => ({ id: bja.app.id, name: bja.app.name })),
+  }, { organizationId: job.organizationId ?? undefined });
+
+  if (!hookResult.allowed) {
+    throw new Error(`Backup blocked by hook: ${hookResult.blockedBy?.hookName}`);
+  }
+
   const storage = createBackupStorage(job.target);
   const ts = timestamp();
   await ensureDir(BACKUPS_DIR);
@@ -652,6 +663,17 @@ export async function restoreBackup(
       });
 
   const strategy = vol?.backupStrategy || "tar";
+
+  const { executeHooks } = await import("@/lib/hooks/execute");
+  const restoreHookResult = await executeHooks("before.backup.restore", {
+    backupId,
+    appId: backup.appId,
+    volumeName: backup.volumeName,
+  }, { organizationId: backup.target.organizationId ?? undefined });
+
+  if (!restoreHookResult.allowed) {
+    throw new Error(`Restore blocked by hook: ${restoreHookResult.blockedBy?.hookName}`);
+  }
 
   const storage = createBackupStorage(backup.target);
   const logLines: string[] = [];

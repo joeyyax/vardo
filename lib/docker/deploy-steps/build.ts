@@ -10,7 +10,6 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import { mkdir, writeFile, readFile, rm, readlink, symlink, copyFile, lstat, stat, readdir } from "fs/promises";
 import { join } from "path";
-import { PROJECTS_DIR } from "@/lib/paths";
 import { decryptOrFallback } from "@/lib/crypto/encrypt";
 import { parseEnvToMap } from "@/lib/env/parse-env";
 import { resolveAllEnvVars, type ResolveContext } from "@/lib/env/resolve";
@@ -20,38 +19,14 @@ import {
   buildVardoOverlay,
 } from "../compose";
 import {
-  APP_UID,
   NETWORK_NAME as VARDO_NETWORK,
   VOLUME_CREATE_TIMEOUT,
-  DOCKER_CHOWN_TIMEOUT,
+  ensureWritableDir,
 } from "../constants";
 import type { DeployContext } from "../deploy-context";
 
 const execFileAsync = promisify(execFile);
 const NETWORK_NAME = VARDO_NETWORK;
-
-/**
- * Create a directory and ensure the app user (1001) can write to it.
- */
-async function ensureWritableDir(dir: string): Promise<void> {
-  await mkdir(dir, { recursive: true });
-  try {
-    const probe = join(dir, `.write-probe-${process.pid}`);
-    await writeFile(probe, "");
-    await rm(probe);
-  } catch (err: unknown) {
-    if (err && typeof err === "object" && "code" in err && (err as { code: string }).code === "EACCES") {
-      if (!dir.startsWith(PROJECTS_DIR + "/")) {
-        throw new Error(`Permission denied and path outside apps dir: ${dir}`);
-      }
-      await execFileAsync("docker", [
-        "run", "--rm", "-v", `${dir}:/target`, "alpine", "chown", "-R", `${APP_UID}:${APP_UID}`, "/target",
-      ], { timeout: DOCKER_CHOWN_TIMEOUT });
-    } else {
-      throw err;
-    }
-  }
-}
 
 export async function build(ctx: DeployContext): Promise<DeployContext> {
   const { app, log, envMap, compose } = ctx;

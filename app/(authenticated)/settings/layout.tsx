@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession, getCurrentOrg, getUserOrganizations } from "@/lib/auth/session";
 import { OrgSwitcher } from "@/components/layout/org-switcher";
 import { SettingsNav } from "@/components/settings-nav";
+import { PluginSlots } from "@/components/plugins/slot-renderer";
 
 const SETTINGS_TABS = [
   { label: "General", href: "/settings/general" },
@@ -43,6 +44,7 @@ export default async function OrgSettingsLayout({
       <SettingsNav items={SETTINGS_TABS} />
 
       <div className="pt-4">{children}</div>
+      <PluginSlots location="settings.sections" context={{ orgId: orgData.organization.id }} />
     </div>
   );
 }
