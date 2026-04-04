@@ -99,5 +99,21 @@ export async function registerBuiltInPlugins(): Promise<void> {
     log.error("Failed to register digest plugin:", err);
   }
 
+  // MCP server — AI agent access via Model Context Protocol
+  try {
+    const { registerMcpPlugin } = await import("./mcp/register");
+    await registerMcpPlugin();
+  } catch (err) {
+    log.error("Failed to register MCP plugin:", err);
+  }
+
+  // Terminal — browser-based shell access to containers
+  try {
+    const { registerTerminalPlugin } = await import("./terminal/register");
+    await registerTerminalPlugin();
+  } catch (err) {
+    log.error("Failed to register terminal plugin:", err);
+  }
+
   log.info("Built-in plugin registration complete");
 }
