@@ -41,108 +41,10 @@ import {
   ENDPOINT_CHECK_TIMEOUT,
 } from "../constants";
 import type { ConfigSnapshot } from "@/lib/types/deploy-snapshot";
+import { checkEndpoint, sendDeployNotification } from "../deploy";
 import type { DeployContext } from "../deploy-context";
 
 const execFileAsync = promisify(execFile);
-
-async function checkEndpoint(domain: string, logs: { push: (line: string) => void }): Promise<boolean> {
-  const paths = ["/healthz", "/health", "/"];
-  const timeout = ENDPOINT_CHECK_TIMEOUT;
-
-  for (const path of paths) {
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeout);
-      const res = await fetch(`https://${domain}${path}`, {
-        signal: controller.signal,
-        redirect: "follow",
-      });
-      clearTimeout(timer);
-      if (res.ok) {
-        logs.push(`[health] ${domain}${path} → ${res.status}`);
-        return true;
-      }
-    } catch { /* next path */ }
-  }
-
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeout);
-    const res = await fetch(`http://${domain}/`, {
-      signal: controller.signal,
-      redirect: "follow",
-    });
-    clearTimeout(timer);
-    if (res.ok) return true;
-  } catch { /* not reachable */ }
-
-  return false;
-}
-
-async function sendDeployNotification(
-  app: { id: string; name: string; displayName: string; organizationId?: string; domains: { domain: string }[] },
-  deploymentId: string,
-  success: boolean,
-  durationMs: number,
-  errorMessage?: string,
-) {
-  try {
-    if (!app.organizationId) return;
-    const { emit } = await import("@/lib/notifications/dispatch");
-    const { logger } = await import("@/lib/logger");
-    const deployment = await db.query.deployments.findFirst({ where: eq(deployments.id, deploymentId), columns: { gitSha: true, gitMessage: true, triggeredBy: true } });
-    let triggeredByName: string | undefined;
-    if (deployment?.triggeredBy) { const { user: userTable } = await import("@/lib/db/schema"); const u = await db.query.user.findFirst({ where: eq(userTable.id, deployment.triggeredBy), columns: { name: true, email: true } }); triggeredByName = u?.name || u?.email || undefined; }
-    const duration = durationMs < 1000 ? `${durationMs}ms` : `${Math.round(durationMs / 1000)}s`;
-    const domain = app.domains[0]?.domain;
-    const projectName = app.displayName || app.name;
-
-    if (success) {
-      emit(app.organizationId, {
-        type: "deploy.success",
-        title: `Deploy successful: ${projectName}`,
-        message: `${projectName} was deployed successfully in ${duration}.`,
-        projectName,
-        appId: app.id,
-        deploymentId,
-        duration,
-        domain,
-        gitSha: deployment?.gitSha ?? undefined,
-        gitMessage: deployment?.gitMessage ?? undefined,
-        triggeredBy: triggeredByName,
-      });
-
-      setTimeout(() => {
-        import("@/lib/security/scanner")
-          .then(({ runSecurityScan }) =>
-            runSecurityScan({
-              appId: app.id,
-              organizationId: app.organizationId!,
-              trigger: "deploy",
-            }),
-          )
-          .catch(() => {});
-      }, 10_000);
-    } else {
-      emit(app.organizationId, {
-        type: "deploy.failed",
-        title: `Deploy failed: ${projectName}`,
-        message: errorMessage || "Deployment failed with an unknown error.",
-        projectName,
-        appId: app.id,
-        deploymentId,
-        domain,
-        gitSha: deployment?.gitSha ?? undefined,
-        gitMessage: deployment?.gitMessage ?? undefined,
-        triggeredBy: triggeredByName,
-        errorMessage,
-      });
-    }
-  } catch (err) {
-    const { logger } = await import("@/lib/logger");
-    logger.child("notifications").error("Deploy notification error:", err);
-  }
-}
 
 export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
   const { app, log, logs, compose, activeSlot, newSlot, isLocalEnv, hostConfig } = ctx;

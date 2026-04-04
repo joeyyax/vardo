@@ -62,3 +62,39 @@ export const ENDPOINT_CHECK_TIMEOUT = 5_000;
 
 /** Time allowed for HTTP probe abort during container health polling. */
 export const HTTP_PROBE_TIMEOUT = 3_000;
+
+// ---------------------------------------------------------------------------
+// Shared deploy utilities
+// ---------------------------------------------------------------------------
+
+import { mkdir, writeFile, rm } from "fs/promises";
+import { join } from "path";
+import { execFile } from "child_process";
+import { promisify } from "util";
+
+const execFileAsyncInternal = promisify(execFile);
+
+/**
+ * Create a directory and ensure the app user can write to it.
+ * If the dir exists but is root-owned, fix ownership via docker.
+ */
+export async function ensureWritableDir(dir: string): Promise<void> {
+  await mkdir(dir, { recursive: true });
+  try {
+    const probe = join(dir, `.write-probe-${process.pid}`);
+    await writeFile(probe, "");
+    await rm(probe);
+  } catch (err: unknown) {
+    if (err && typeof err === "object" && "code" in err && (err as { code: string }).code === "EACCES") {
+      const PROJECTS_DIR = process.env.VARDO_PROJECTS_DIR || "./.host/projects";
+      if (!dir.startsWith(PROJECTS_DIR + "/")) {
+        throw new Error(`Permission denied and path outside apps dir: ${dir}`);
+      }
+      await execFileAsyncInternal("docker", [
+        "run", "--rm", "-v", `${dir}:/target`, "alpine", "chown", "-R", `${APP_UID}:${APP_UID}`, "/target",
+      ], { timeout: DOCKER_CHOWN_TIMEOUT });
+    } else {
+      throw err;
+    }
+  }
+}
