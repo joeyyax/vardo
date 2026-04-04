@@ -70,7 +70,7 @@ vi.mock("@/lib/mesh/auth", () => ({
 }));
 
 vi.mock("@/lib/api/with-rate-limit", () => ({
-  withRateLimit: (handler: Function) => handler,
+  withRateLimit: (handler: (...args: unknown[]) => unknown) => handler,
 }));
 
 vi.mock("@/lib/mesh", () => ({

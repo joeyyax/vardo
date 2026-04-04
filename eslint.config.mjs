@@ -24,6 +24,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Ignore worktrees and host project copies:
+    ".claude/worktrees/**",
+    ".host/**",
   ]),
 ]);
 
