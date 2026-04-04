@@ -1,3 +1,4 @@
+// DEPRECATED: This table will be dropped in a future migration. Use the plugin system instead.
 import { relations } from "drizzle-orm";
 import { integrations } from "./integrations";
 import { apps } from "./apps";

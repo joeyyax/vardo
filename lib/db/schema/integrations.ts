@@ -1,3 +1,4 @@
+// DEPRECATED: This table will be dropped in a future migration. Use the plugin system instead.
 import {
   index,
   jsonb,

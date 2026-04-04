@@ -49,23 +49,6 @@ async function resolveProvider() {
     // Plugin system not ready — fall through
   }
 
-  try {
-    // Legacy fallback: check integrations table
-    const { getIntegration, resolveIntegrationUrl } = await import("@/lib/integrations");
-    const integration = await getIntegration("metrics");
-
-    if (integration && integration.status === "connected") {
-      const url = await resolveIntegrationUrl("metrics");
-      if (url) {
-        log.info(`Metrics provider: integration (legacy) → ${url}`);
-        setMetricsProvider(new CadvisorProvider(url));
-        return;
-      }
-    }
-  } catch {
-    // DB not ready — fall through
-  }
-
   setMetricsProvider(new CadvisorProvider());
   log.info("Metrics provider: default cAdvisor");
 }

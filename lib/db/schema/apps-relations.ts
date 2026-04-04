@@ -14,7 +14,6 @@ import { volumes, volumeLimits } from "./volumes";
 import { cronJobs } from "./cron";
 import { appTransfers } from "./app-transfers";
 import { appSecurityScans } from "./security";
-import { integrations } from "./integrations";
 import { user } from "./auth";
 
 export const appsRelations = relations(apps, ({ one, many }) => ({
@@ -49,7 +48,6 @@ export const appsRelations = relations(apps, ({ one, many }) => ({
   cronJobs: many(cronJobs),
   transfers: many(appTransfers),
   securityScans: many(appSecurityScans),
-  integrations: many(integrations),
 }));
 
 export const deploymentsRelations = relations(deployments, ({ one }) => ({

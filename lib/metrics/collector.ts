@@ -161,15 +161,4 @@ function updateIntegrationHealth(status: "connected" | "degraded") {
     })
     .catch(() => {}); // best-effort
 
-  // Legacy: update integrations table if present
-  import("@/lib/integrations")
-    .then(({ getIntegration, updateIntegrationStatus }) =>
-      getIntegration("metrics").then((integration) => {
-        if (integration && integration.status !== "disconnected") {
-          return updateIntegrationStatus("metrics", status);
-        }
-      })
-    )
-    .then(() => log.info(`Metrics integration → ${status}`))
-    .catch(() => {}); // best-effort
 }
