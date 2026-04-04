@@ -1,0 +1,25 @@
+version: "1"
+name: loki
+displayName: Loki
+description: Log aggregation and querying with Grafana Loki. Connect as a Vardo logging integration.
+icon: https://cdn.simpleicons.org/grafana
+category: monitoring
+source: direct
+deployType: compose
+defaultPort: 3100
+
+composeContent: |
+  services:
+    loki:
+      image: grafana/loki:3-alpine
+      command: -config.file=/etc/loki/local-config.yaml
+      volumes:
+        - loki-data:/loki
+
+  volumes:
+    loki-data: {}
+
+volumes:
+  - name: loki-data
+    mountPath: /loki
+    description: Loki data and index storage
