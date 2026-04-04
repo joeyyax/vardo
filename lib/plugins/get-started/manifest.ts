@@ -7,6 +7,7 @@ const manifest: PluginManifest = {
     "Interactive setup checklist for new instances. Disable when you're done.",
   version: "1.0.0",
   category: "core",
+  icon: "https://cdn.simpleicons.org/rocket",
   provides: ["onboarding"],
 };
 

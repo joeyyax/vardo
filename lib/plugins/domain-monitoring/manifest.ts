@@ -6,6 +6,7 @@ const manifest: PluginManifest = {
   description: "Periodic DNS health checks and SSL certificate expiration monitoring for all configured domains.",
   version: "1.0.0",
   category: "monitoring",
+  icon: "https://cdn.simpleicons.org/cloudflare",
 
   provides: ["domain-monitoring"],
 

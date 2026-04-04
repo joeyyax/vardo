@@ -6,6 +6,7 @@ const manifest: PluginManifest = {
   description: "Centralized logging via Loki and Grafana dashboards.",
   version: "1.0.0",
   category: "monitoring",
+  icon: "https://cdn.simpleicons.org/grafana",
 
   provides: ["logging"],
 
