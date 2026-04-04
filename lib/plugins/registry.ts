@@ -9,7 +9,6 @@ import { nanoid } from "nanoid";
 import type { PluginManifest } from "./manifest";
 import { registerInternalHandler } from "@/lib/hooks/registry";
 import { hookRegistrations } from "@/lib/db/schema";
-import { checkPluginCompatibility } from "./compatibility";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("plugins");
@@ -159,6 +158,8 @@ export async function isPluginEnabledAsync(pluginId: string): Promise<boolean> {
 
 /** Enable a plugin. Runs compatibility checks first, then registers its hooks. */
 export async function enablePlugin(pluginId: string): Promise<void> {
+  // Dynamic import to avoid pulling Node-only modules (net, ioredis) into client bundles
+  const { checkPluginCompatibility } = await import("./compatibility");
   const { compatible, issues } = await checkPluginCompatibility(pluginId);
   if (!compatible) {
     const errors = issues
