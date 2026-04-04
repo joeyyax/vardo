@@ -75,5 +75,29 @@ export async function registerBuiltInPlugins(): Promise<void> {
     log.error("Failed to register git integration plugin:", err);
   }
 
+  // Cron — scheduled task execution
+  try {
+    const { registerCronPlugin } = await import("./cron/register");
+    await registerCronPlugin();
+  } catch (err) {
+    log.error("Failed to register cron plugin:", err);
+  }
+
+  // Domain monitoring — DNS health + cert expiration (requires SSL)
+  try {
+    const { registerDomainMonitoringPlugin } = await import("./domain-monitoring/register");
+    await registerDomainMonitoringPlugin();
+  } catch (err) {
+    log.error("Failed to register domain monitoring plugin:", err);
+  }
+
+  // Digest — weekly summary email (requires cron + notifications + metrics)
+  try {
+    const { registerDigestPlugin } = await import("./digest/register");
+    await registerDigestPlugin();
+  } catch (err) {
+    log.error("Failed to register digest plugin:", err);
+  }
+
   log.info("Built-in plugin registration complete");
 }
