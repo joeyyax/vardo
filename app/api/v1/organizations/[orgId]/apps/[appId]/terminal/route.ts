@@ -5,7 +5,7 @@ import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { listContainers } from "@/lib/docker/client";
 import { createExec, startExec, resizeExec } from "@/lib/docker/exec";
-import { isFeatureEnabled } from "@/lib/config/features";
+import { requirePlugin } from "@/lib/api/require-plugin";
 import net from "node:net";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 
@@ -48,12 +48,8 @@ type RouteParams = {
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
-    if (!isFeatureEnabled("terminal")) {
-      return new Response(JSON.stringify({ error: "Feature not enabled" }), {
-        status: 404,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
+    const termGate = await requirePlugin("terminal");
+    if (termGate) return termGate;
 
     const { orgId, appId } = await params;
     const org = await verifyOrgAccess(orgId);
@@ -202,9 +198,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
 async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
-    if (!isFeatureEnabled("terminal")) {
-      return NextResponse.json({ error: "Feature not enabled" }, { status: 404 });
-    }
+    const termGate = await requirePlugin("terminal");
+    if (termGate) return termGate;
 
     const { orgId, appId } = await params;
     const org = await verifyOrgAccess(orgId);
