@@ -6,6 +6,7 @@ const manifest: PluginManifest = {
   description:
     "Capture and aggregate application errors via GlitchTip or Sentry.",
   version: "1.0.0",
+  builtIn: true,
   category: "monitoring",
   icon: "https://cdn.simpleicons.org/sentry",
 

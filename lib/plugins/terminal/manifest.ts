@@ -5,6 +5,7 @@ const manifest: PluginManifest = {
   name: "Web Terminal",
   description: "Browser-based terminal access to running containers via WebSocket.",
   version: "1.0.0",
+  builtIn: true,
   category: "tools",
   icon: "https://cdn.simpleicons.org/gnometerminal",
 

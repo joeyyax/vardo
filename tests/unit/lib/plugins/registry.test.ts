@@ -140,7 +140,7 @@ describe("Plugin Registry", () => {
           name: "Test Plugin",
           version: "1.0.0",
           enabled: true,
-          builtIn: true,
+          builtIn: false,
         }),
       );
     });

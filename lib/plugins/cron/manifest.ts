@@ -5,6 +5,7 @@ const manifest: PluginManifest = {
   name: "Cron Jobs",
   description: "Scheduled task execution for apps. Sync from host.toml, templates, or manual configuration.",
   version: "1.0.0",
+  builtIn: true,
   category: "scheduling",
   icon: "https://cdn.simpleicons.org/clockify",
 

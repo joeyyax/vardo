@@ -5,6 +5,7 @@ const manifest: PluginManifest = {
   name: "Log Aggregation",
   description: "Centralized logging via Loki and Grafana dashboards.",
   version: "1.0.0",
+  builtIn: true,
   category: "monitoring",
   icon: "https://cdn.simpleicons.org/grafana",
 
