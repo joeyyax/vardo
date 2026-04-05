@@ -6,7 +6,10 @@ import { eq, desc, asc, isNull, and, type AnyColumn } from "drizzle-orm";
 import { PageToolbar } from "@/components/page-toolbar";
 import { OrgSwitcher } from "@/components/layout/org-switcher";
 import { AppGrid } from "./app-grid";
-import { ProjectsActions, DeployAppButton } from "./projects-actions";
+import Link from "next/link";
+import { Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { ProjectsActions } from "./projects-actions";
 
 export default async function ProjectsPage() {
   const orgData = await getCurrentOrg();
@@ -73,13 +76,18 @@ export default async function ProjectsPage() {
         <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
           <div className="text-center space-y-1">
             <p className="text-sm font-medium">
-              Deploy your first app
+              Create your first project
             </p>
             <p className="text-sm text-muted-foreground">
-              Apps are deployed from a Git repo, Docker image, or Compose file. Projects are optional groups that help you organize related apps.
+              Projects organize your apps. Create a project, then add apps to it.
             </p>
           </div>
-          <DeployAppButton />
+          <Button asChild>
+            <Link href="/projects/new">
+              <Plus className="mr-1.5 size-4" />
+              New project
+            </Link>
+          </Button>
         </div>
       ) : (
         <AppGrid

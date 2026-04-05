@@ -15,7 +15,7 @@ import { describe, it, expect } from "vitest";
 type AppRef = {
   id: string;
   isSystemManaged: boolean;
-  projectId?: string | null;
+  projectId?: string;
 };
 
 // Mirrors the guard in POST deploy/route.ts:

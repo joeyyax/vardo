@@ -13,7 +13,7 @@ const UPDATE_RATE_WINDOW_MS = 5 * 60 * 1000;
 const updateSchema = z.object({
   displayName: z.string().min(1).optional(),
   description: z.string().nullable().optional(),
-  projectId: z.string().nullable().optional(),
+  projectId: z.string().min(1).optional(),
   containerPort: z.number().int().positive().nullable().optional(),
   autoTraefikLabels: z.boolean().optional(),
   autoDeploy: z.boolean().optional(),

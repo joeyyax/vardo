@@ -33,7 +33,7 @@ const BUILT_IN_PLUGINS: PluginEntry[] = [
   ["mcp", async () => { const m = await import("./mcp/register"); await m.registerMcpPlugin(); }],
   ["terminal", async () => { const m = await import("./terminal/register"); await m.registerTerminalPlugin(); }],
   ["container-import", async () => { const m = await import("./container-import/register"); await m.registerContainerImportPlugin(); }],
-  ["get-started", async () => { const m = await import("./get-started/register"); await m.registerGetStartedPlugin(); }],
+
   ["error-tracking", async () => { const m = await import("./error-tracking/register"); await m.registerErrorTrackingPlugin(); }],
   ["uptime", async () => { const m = await import("./uptime/register"); await m.registerUptimePlugin(); }],
   ["logging", async () => { const m = await import("./logging/register"); await m.registerLoggingPlugin(); }],

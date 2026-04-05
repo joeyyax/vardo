@@ -57,7 +57,7 @@ const createAppSchema = z
     cpuLimit: z.number().positive().max(64).nullable().optional(),
     memoryLimit: z.number().int().min(64).max(65536).nullable().optional(),
     diskWriteAlertThreshold: z.number().int().min(0).nullable().optional(),
-    projectId: z.string().optional(),
+    projectId: z.string().min(1, "Project is required"),
   })
   .refine(
     (data) => {
@@ -159,17 +159,15 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     const appId = nanoid();
 
     // Validate projectId — must exist in same org
-    if (data.projectId) {
-      const project = await db.query.projects.findFirst({
-        where: and(eq(projects.id, data.projectId), eq(projects.organizationId, orgId)),
-        columns: { id: true },
-      });
-      if (!project) {
-        return NextResponse.json(
-          { error: "Project not found in this organization" },
-          { status: 400 }
-        );
-      }
+    const project = await db.query.projects.findFirst({
+      where: and(eq(projects.id, data.projectId), eq(projects.organizationId, orgId)),
+      columns: { id: true },
+    });
+    if (!project) {
+      return NextResponse.json(
+        { error: "Project not found in this organization" },
+        { status: 400 }
+      );
     }
 
     const [app] = await db
@@ -192,7 +190,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         containerPort: data.containerPort,
         autoTraefikLabels: data.autoTraefikLabels,
         autoDeploy: data.autoDeploy,
-        projectId: data.projectId || null,
+        projectId: data.projectId,
         persistentVolumes: data.persistentVolumes,
         exposedPorts: data.exposedPorts ? await (async () => {
           // Auto-allocate external ports for any that don't have one

@@ -47,7 +47,7 @@ export function GroupImportDialog({
 
   const [displayName, setDisplayName] = useState("");
   const [name, setName] = useState("");
-  const [projectId, setProjectId] = useState<string>("none");
+  const [projectId, setProjectId] = useState<string>("");
   const [newProjectName, setNewProjectName] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -58,7 +58,7 @@ export function GroupImportDialog({
     setDisplayName(initial);
     setName(slugify(initial));
     const validDefault = defaultProjectId && projects.some((p) => p.id === defaultProjectId);
-    setProjectId(validDefault ? defaultProjectId : "none");
+    setProjectId(validDefault ? defaultProjectId : "");
     setNewProjectName("");
   }, [open, group, defaultProjectId, projects]);
 
@@ -70,7 +70,7 @@ export function GroupImportDialog({
       const body = {
         displayName,
         name,
-        projectId: projectId === "none" ? null : projectId === "new" ? null : projectId,
+        projectId: projectId === "new" ? undefined : projectId || undefined,
         newProjectName: projectId === "new" ? newProjectName : undefined,
       };
 
@@ -115,7 +115,7 @@ export function GroupImportDialog({
   }
 
   const canSubmit =
-    !submitting && !!name && !!displayName && (projectId !== "new" || !!newProjectName);
+    !submitting && !!name && !!displayName && !!projectId && (projectId !== "new" || !!newProjectName);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -152,13 +152,12 @@ export function GroupImportDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="group-project">Project</Label>
+            <Label htmlFor="group-project">Project <span className="text-destructive">*</span></Label>
             <Select value={projectId} onValueChange={setProjectId}>
               <SelectTrigger id="group-project">
-                <SelectValue placeholder="No project" />
+                <SelectValue placeholder="Select a project" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">No project</SelectItem>
                 <SelectItem value="new">Create new project...</SelectItem>
                 {projects.map((p) => (
                   <SelectItem key={p.id} value={p.id}>

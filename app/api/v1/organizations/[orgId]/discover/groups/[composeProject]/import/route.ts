@@ -37,7 +37,7 @@ type RouteParams = {
 };
 
 const importGroupSchema = z.object({
-  projectId: z.string().nullable().optional(),
+  projectId: z.string().optional(),
   newProjectName: z.string().min(1).max(255).optional(),
   displayName: z.string().min(1, "Display name is required").max(255),
   name: z
@@ -49,7 +49,10 @@ const importGroupSchema = z.object({
   // build: directives instead of pulling pre-built images.
   gitUrl: z.string().url().optional(),
   gitBranch: z.string().max(255).optional(),
-});
+}).refine(
+  (data) => !!data.projectId || !!data.newProjectName,
+  { message: "Either projectId or newProjectName is required", path: ["projectId"] }
+);
 
 // POST /api/v1/organizations/[orgId]/discover/groups/[composeProject]/import
 async function handler(request: NextRequest, { params }: RouteParams) {

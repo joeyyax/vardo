@@ -101,7 +101,7 @@ function humanizeServiceName(name: string): string {
  *
  * @param parentAppId - The parent compose app's ID
  * @param organizationId - The org scope
- * @param projectId - The project this app belongs to (nullable)
+ * @param projectId - The project this app belongs to
  * @param compose - Parsed compose file
  * @param parentAppName - The parent app's name (used for generating child names/container names)
  * @param log - Optional logger
@@ -109,7 +109,7 @@ function humanizeServiceName(name: string): string {
 export async function syncComposeServices(opts: {
   parentAppId: string;
   organizationId: string;
-  projectId: string | null;
+  projectId: string;
   compose: ComposeFile;
   parentAppName: string;
   log?: (line: string) => void;

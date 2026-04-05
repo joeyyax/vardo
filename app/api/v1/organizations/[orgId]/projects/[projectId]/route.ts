@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError, isUniqueViolation } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { projects, apps } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { z } from "zod";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { isOrgAdmin } from "@/lib/auth/permissions";
@@ -176,7 +176,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE /api/v1/organizations/[orgId]/projects/[projectId]
-// Deletes the project but detaches (not deletes) its apps first
+// Blocks deletion if the project still contains apps.
 async function handleDelete(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, projectId } = await params;
@@ -196,11 +196,18 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Detach apps from this project (don't delete them)
-    await db
-      .update(apps)
-      .set({ projectId: null })
+    // Block deletion when apps still exist in this project
+    const appCount = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(apps)
       .where(eq(apps.projectId, existing.id));
+
+    if ((appCount[0]?.count ?? 0) > 0) {
+      return NextResponse.json(
+        { error: "Cannot delete a project that contains apps. Move or delete the apps first." },
+        { status: 409 }
+      );
+    }
 
     // Delete the project
     await db
