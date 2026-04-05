@@ -13,7 +13,7 @@ import {
 } from "../compose";
 import { detectExposedPorts } from "../client";
 import { normalizeCompose, getRoutedServices } from "../compose-normalize";
-import { removeAppRouteConfig } from "@/lib/traefik/generate-config";
+import { removeAppRouteConfig } from "@/lib/ssl/generate-config";
 import {
   NETWORK_NAME as VARDO_NETWORK,
   DEFAULT_CONTAINER_PORT,

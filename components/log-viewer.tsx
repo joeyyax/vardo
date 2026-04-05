@@ -11,12 +11,64 @@ type LogLine = {
   text: string;
   html: string;
   level?: LogLevel;
+  /** Parsed stage prefix (e.g. "deploy", "deploy > compose", "health"). */
+  stage?: string;
+  /** Line content with the stage prefix stripped. */
+  content?: string;
 };
 
 type LogLevel = "error" | "warn" | "info" | "debug" | "other";
 
+// ---------------------------------------------------------------------------
+// Stage prefix parsing — extracts [deploy], [deploy][compose], etc.
+// ---------------------------------------------------------------------------
+
+const STAGE_PREFIX_RE = /^(\[[a-z]+\](?:\[[a-z]+\])?)\s*/i;
+
+/** Human-friendly stage labels and colors. */
+const STAGE_META: Record<string, { label: string; color: string }> = {
+  "deploy":          { label: "Deploy",   color: "text-cyan-400" },
+  "deploy > compose":{ label: "Compose",  color: "text-cyan-300" },
+  "deploy > crash":  { label: "Container logs", color: "text-red-400" },
+  "build":           { label: "Build",    color: "text-amber-400" },
+  "build > nixpacks":{ label: "Nixpacks", color: "text-violet-400" },
+  "build > docker":  { label: "Docker Build", color: "text-amber-300" },
+  "health":          { label: "Health",   color: "text-green-400" },
+  "docker":          { label: "Docker",   color: "text-cyan-300" },
+  "error":           { label: "Error",    color: "text-red-400" },
+  "compat":          { label: "Compat",   color: "text-yellow-400" },
+  "nixpacks":        { label: "Nixpacks", color: "text-violet-400" },
+};
+
+function parseStagePrefix(text: string): { stage: string; content: string } | null {
+  const m = text.match(STAGE_PREFIX_RE);
+  if (!m) return null;
+  // Convert "[deploy][compose]" → "deploy > compose"
+  const raw = m[1];
+  const stage = raw
+    .replace(/\]\[/g, " > ")
+    .replace(/^\[/, "")
+    .replace(/\]$/, "");
+  return { stage, content: text.slice(m[0].length) };
+}
+
 // Log syntax highlighting patterns
+//
+// Uses bright terminal-native colors (not design system tokens) because
+// the log viewer always renders on a zinc-950 background regardless of theme.
 const PATTERNS: [RegExp, string][] = [
+  // Deploy stage markers — compound tags first to prevent partial matches
+  [/\[deploy\]\[compose\]/g, "text-cyan-400 font-medium"],
+  [/\[build\]\[nixpacks\]/g, "text-amber-400 font-medium"],
+  [/\[build\]\[docker\]/g, "text-amber-400 font-medium"],
+  // Single markers
+  [/\[deploy\]/g, "text-cyan-400 font-medium"],
+  [/\[docker\]/g, "text-cyan-300 font-medium"],
+  [/\[health\]/g, "text-green-400 font-medium"],
+  [/\[build\]/g, "text-amber-400 font-medium"],
+  [/\[nixpacks\]/g, "text-violet-400 font-medium"],
+  [/\[compat\]/g, "text-yellow-400 font-medium"],
+  [/\[error\]/g, "text-red-400 font-medium"],
   // Timestamps: ISO, common log formats
   [/\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[.\d]*Z?/g, "text-zinc-500"],
   // Error levels
@@ -27,29 +79,20 @@ const PATTERNS: [RegExp, string][] = [
   // HTTP methods
   [/\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b/g, "text-cyan-400 font-medium"],
   // HTTP status codes
-  [/\b([2]\d{2})\b/g, "text-status-success"],
-  [/\b([3]\d{2})\b/g, "text-status-info"],
-  [/\b([4]\d{2})\b/g, "text-status-warning"],
-  [/\b([5]\d{2})\b/g, "text-status-error"],
-  // URLs and paths
-  [/https?:\/\/[^\s"']+/g, "text-status-info underline"],
-  [/\/[a-zA-Z0-9\-._~/]+/g, "text-zinc-400"],
+  [/\b([2]\d{2})\b/g, "text-green-400"],
+  [/\b([3]\d{2})\b/g, "text-blue-400"],
+  [/\b([4]\d{2})\b/g, "text-yellow-400"],
+  [/\b([5]\d{2})\b/g, "text-red-400"],
+  // Arrow operators (volume mappings, etc.)
+  [/→/g, "text-zinc-500"],
+  // Key: Value pairs in deploy output (e.g. "Environment: production")
+  [/\b(Environment|App|Source|Type|Active slot):/g, "text-zinc-500"],
+  // URLs
+  [/https?:\/\/[^\s"']+/g, "text-blue-400 underline"],
   // Quoted strings
   [/"[^"]*"/g, "text-amber-300/80"],
-  // Numbers (standalone)
+  // Numbers with units
   [/\b\d+(\.\d+)?(ms|s|m|MB|KB|GB|B)?\b/g, "text-purple-300/80"],
-  // Deploy stage markers — parent[child] format
-  [/\[deploy\]\[compose\]/g, "text-status-info font-medium"],
-  [/\[build\]\[nixpacks\]/g, "text-amber-300/80 font-medium"],
-  [/\[build\]\[docker\]/g, "text-amber-300/80 font-medium"],
-  // Single markers
-  [/\[deploy\]/g, "text-status-info font-medium"],
-  [/\[docker\]/g, "text-status-info/70 font-medium"],
-  [/\[health\]/g, "text-status-success font-medium"],
-  [/\[build\]/g, "text-amber-300/80 font-medium"],
-  [/\[nixpacks\]/g, "text-violet-300/80 font-medium"],
-  [/\[compat\]/g, "text-status-warning font-medium"],
-  [/\[error\]/g, "text-status-error font-medium"],
 ];
 
 export { detectLevel as detectLogLevel };
@@ -63,10 +106,20 @@ function detectLevel(text: string): LogLevel {
 }
 
 export function highlightLogLine(text: string): string {
-  return highlightLine(text);
+  return applyHighlight(text);
 }
 
-function highlightLine(text: string): string {
+function highlightLine(text: string): { html: string; stage?: string; content?: string } {
+  const parsed = parseStagePrefix(text);
+  const html = applyHighlight(text);
+  return {
+    html,
+    stage: parsed?.stage,
+    content: parsed?.content,
+  };
+}
+
+function applyHighlight(text: string): string {
   // Escape HTML first
   let html = text
     .replace(/&/g, "&amp;")
@@ -120,7 +173,7 @@ const LEVEL_COLORS: Record<LogLevel, string> = {
 };
 
 type TerminalOutputProps = {
-  lines: { text: string; html: string; level?: LogLevel }[];
+  lines: { text: string; html: string; level?: LogLevel; stage?: string; content?: string }[];
   height?: string;
   showFilters?: boolean;
   className?: string;
@@ -329,11 +382,10 @@ type StaticLogProps = {
 
 export function DeploymentLog({ log, maxHeight = "max-h-96" }: StaticLogProps) {
   const lines = useMemo(() => {
-    return log.split("\n").filter(Boolean).map((text) => ({
-      text,
-      html: highlightLogLine(text),
-      level: detectLevel(text),
-    }));
+    return log.split("\n").filter(Boolean).map((text) => {
+      const hl = highlightLine(text);
+      return { text, ...hl, level: detectLevel(text) };
+    });
   }, [log]);
 
   return (
@@ -380,11 +432,10 @@ export function LogViewer({ streamUrl, historyUrl, maxLines = 1000 }: LogViewerP
           const initial = data.logs
             .split("\n")
             .filter(Boolean)
-            .map((text: string) => ({
-              text,
-              html: highlightLine(text),
-              level: detectLevel(text),
-            }));
+            .map((text: string) => {
+              const hl = highlightLine(text);
+              return { text, ...hl, level: detectLevel(text) };
+            });
           if (initial.length > 0) {
             setLines(initial.slice(-maxLines));
           }
@@ -413,10 +464,10 @@ export function LogViewer({ streamUrl, historyUrl, maxLines = 1000 }: LogViewerP
       if (pausedRef.current) return;
       try {
         const text = JSON.parse(event.data) as string;
-        const html = highlightLine(text);
+        const hl = highlightLine(text);
         const level = detectLevel(text);
         setLines((prev) => {
-          const next = [...prev, { text, html, level }];
+          const next = [...prev, { text, ...hl, level }];
           if (next.length > maxLines) return next.slice(-maxLines);
           return next;
         });

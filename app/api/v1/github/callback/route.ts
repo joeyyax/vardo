@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { githubAppInstallations } from "@/lib/db/schema";
 import { requireSession } from "@/lib/auth/session";
-import { getAppOctokit, verifyInstallationState } from "@/lib/github/app";
+import { getAppOctokit, verifyInstallationState } from "@/lib/git-integration/app";
 import { nanoid } from "nanoid";
 import { logger } from "@/lib/logger";
 

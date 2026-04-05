@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { githubAppInstallations } from "@/lib/db/schema";
 import { requireSession } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
-import { getInstallationOctokit } from "@/lib/github/app";
+import { getInstallationOctokit } from "@/lib/git-integration/app";
 
 // GET /api/v1/github/branches?installationId=X&repo=owner/repo
 export async function GET(request: NextRequest) {

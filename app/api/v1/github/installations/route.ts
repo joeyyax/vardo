@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { githubAppInstallations } from "@/lib/db/schema";
 import { requireSession } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
-import { getAppOctokit } from "@/lib/github/app";
+import { getAppOctokit } from "@/lib/git-integration/app";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 

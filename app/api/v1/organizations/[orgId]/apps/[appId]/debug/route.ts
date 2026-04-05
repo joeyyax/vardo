@@ -13,7 +13,7 @@ import {
   narrowBackendProtocol,
 } from "@/lib/docker/compose";
 import { listContainers, inspectContainer } from "@/lib/docker/client";
-import { buildTraefikConfigYaml } from "@/lib/traefik/generate-config";
+import { buildTraefikConfigYaml } from "@/lib/ssl/generate-config";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;

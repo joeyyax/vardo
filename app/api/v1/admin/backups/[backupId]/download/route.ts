@@ -5,7 +5,7 @@ import { backups } from "@/lib/db/schema";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import { eq } from "drizzle-orm";
-import { getBackupDownloadUrl, downloadBackupToTemp } from "@/lib/backup/engine";
+import { getBackupDownloadUrl, downloadBackupToTemp } from "@/lib/backups/engine";
 import { createReadStream } from "fs";
 import { rm } from "fs/promises";
 

@@ -19,7 +19,7 @@ import {
   generateEnvironmentSubdomain,
   generatePreviewSubdomain,
   getBaseDomain,
-} from "@/lib/domains/auto-domain";
+} from "@/lib/domain-monitoring/auto-domain";
 import { extractExpressions, validateExpression } from "@/lib/env/resolve";
 
 // ---------------------------------------------------------------------------

@@ -21,5 +21,4 @@ export * from "./external-routes";
 export * from "./security";
 export * from "./user-notifications";
 export * from "./hooks";
-export * from "./plugins";
 export * from "./relations";

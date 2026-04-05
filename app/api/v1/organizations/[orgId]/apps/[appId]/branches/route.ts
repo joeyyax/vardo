@@ -3,7 +3,7 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps, memberships, githubAppInstallations } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { getInstallationOctokit } from "@/lib/github/app";
+import { getInstallationOctokit } from "@/lib/git-integration/app";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 type RouteParams = {

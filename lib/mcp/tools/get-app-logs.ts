@@ -7,7 +7,7 @@ import {
   isLokiAvailable,
   queryRange,
   buildLogQLQuery,
-} from "@/lib/loki/client";
+} from "@/lib/logging/client";
 import { listContainers, getContainerLogs } from "@/lib/docker/client";
 import type { McpAuthContext } from "../auth";
 
