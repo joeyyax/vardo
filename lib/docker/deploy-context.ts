@@ -38,7 +38,7 @@ export type DeployApp = {
   autoDeploy: boolean | null;
   exposedPorts: { internal: number; external?: number; protocol?: string }[] | null;
   restartPolicy: string | null;
-  projectId: string | null;
+  projectId: string;
   templateName: string | null;
   status: string;
   needsRedeploy: boolean | null;

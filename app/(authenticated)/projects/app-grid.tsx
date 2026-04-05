@@ -7,15 +7,12 @@ import { Plus, Cpu } from "lucide-react";
 import { EndpointsPopover } from "@/components/endpoints-popover";
 import { detectAppType } from "@/lib/ui/app-type";
 import { statusDotColor } from "@/lib/ui/status-colors";
-import { StatusIndicator, AppIcon } from "@/components/app-status";
-import { ChildAppChipList } from "@/components/child-app-chip";
+import { StatusIndicator } from "@/components/app-status";
 import { SystemBadge } from "@/components/system-badge";
 
 import {
   type AppMetrics,
-  type MetricKey,
   type MetricsHistory,
-  EMPTY_HISTORY,
   Sparkline,
   MetricsLine,
   useAppMetrics,
@@ -32,7 +29,7 @@ type AppWithRelations = {
   deployType: string;
   imageName: string | null;
   gitUrl: string | null;
-  projectId: string | null;
+  projectId: string;
   gpuEnabled: boolean | null;
   status: string;
   needsRedeploy: boolean | null;
@@ -41,7 +38,7 @@ type AppWithRelations = {
   domains: { domain: string; isPrimary: boolean | null }[];
   deployments: { id: string; status: string; startedAt: Date; finishedAt: Date | null }[];
   appTags: { tag: Tag }[];
-  project: { id: string; name: string; displayName: string; color: string | null; isSystemManaged: boolean } | null;
+  project: { id: string; name: string; displayName: string; color: string | null; isSystemManaged: boolean };
   childApps?: { id: string; displayName: string; status: string }[];
 };
 
@@ -243,95 +240,6 @@ function ProjectCard({
   );
 }
 
-function AppCard({
-  app,
-  metrics,
-  history,
-}: {
-  app: AppWithRelations;
-  metrics?: AppMetrics;
-  history: MetricsHistory;
-}) {
-  const lastDeploy = app.deployments[0];
-  const projectColor = app.project?.color || "#6366f1";
-  const { color: typeColor } = detectAppType(app);
-  const cpuData = history.cpu;
-
-  return (
-    <Link
-      href={`/apps/${app.name}`}
-      className="squircle relative flex flex-col rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50 overflow-hidden cursor-pointer"
-    >
-      {cpuData.length > 0 && (
-        <Sparkline
-          data={cpuData}
-          className="absolute inset-0 w-full h-full pointer-events-none"
-          style={{ color: "oklch(0.65 0.19 255)" }}
-        />
-      )}
-
-      <div className="relative flex gap-4">
-        <AppIcon app={app} size="lg" />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <h3 className="text-base font-semibold truncate">
-                {app.displayName}
-              </h3>
-              {app.gpuEnabled && (
-                <Cpu className="size-3.5 shrink-0 text-muted-foreground/60" aria-label="GPU passthrough enabled" />
-              )}
-              <EndpointsPopover endpoints={app.domains.map((d) => ({ domain: d.domain }))} />
-            </div>
-            <StatusIndicator
-              status={app.status}
-              finishedAt={lastDeploy?.finishedAt}
-              needsRedeploy={!!app.needsRedeploy}
-            />
-          </div>
-          {app.description && (
-            <p className="text-sm text-muted-foreground mt-1 truncate">
-              {app.description}
-            </p>
-          )}
-          {!app.description && (
-            <p className="text-sm text-muted-foreground/40 mt-1 truncate">
-              {app.imageName ||
-                app.gitUrl
-                  ?.replace("https://github.com/", "")
-                  .replace(".git", "") ||
-                app.deployType}
-            </p>
-          )}
-          {metrics && <MetricsLine metrics={metrics} onHover={() => {}} />}
-          {app.appTags.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mt-2">
-              {app.appTags.map(({ tag }) => (
-                <span
-                  key={tag.id}
-                  className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
-                  style={{
-                    backgroundColor: `${tag.color}15`,
-                    color: tag.color,
-                  }}
-                >
-                  <span
-                    className="size-1.5 rounded-full"
-                    style={{ backgroundColor: tag.color }}
-                  />
-                  {tag.name}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <ChildAppChipList childApps={app.childApps ?? []} />
-    </Link>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // AppGrid
 // ---------------------------------------------------------------------------
@@ -366,20 +274,15 @@ export function AppGrid({
   }, [apps, activeTagIds]);
 
   // Group apps by project for rendering
-  const { projectCards, standaloneApps } = useMemo(() => {
-    const byProject = new Map<string, { project: NonNullable<AppWithRelations["project"]>; apps: AppWithRelations[] }>();
-    const standalone: AppWithRelations[] = [];
+  const projectCards = useMemo(() => {
+    const byProject = new Map<string, { project: AppWithRelations["project"]; apps: AppWithRelations[] }>();
 
     for (const app of filtered) {
-      if (app.project) {
-        const existing = byProject.get(app.project.id);
-        if (existing) {
-          existing.apps.push(app);
-        } else {
-          byProject.set(app.project.id, { project: app.project, apps: [app] });
-        }
+      const existing = byProject.get(app.project.id);
+      if (existing) {
+        existing.apps.push(app);
       } else {
-        standalone.push(app);
+        byProject.set(app.project.id, { project: app.project, apps: [app] });
       }
     }
 
@@ -390,7 +293,7 @@ export function AppGrid({
       }
     }
 
-    return { projectCards: Array.from(byProject.values()), standaloneApps: standalone };
+    return Array.from(byProject.values());
   }, [filtered, emptyProjects]);
 
   return (
@@ -449,14 +352,6 @@ export function AppGrid({
             metrics={metrics}
             history={history}
             historyTick={historyTick}
-          />
-        ))}
-        {standaloneApps.map((app) => (
-          <AppCard
-            key={app.id}
-            app={app}
-            metrics={metrics.get(app.id)}
-            history={history.get(app.id) || EMPTY_HISTORY}
           />
         ))}
       </div>

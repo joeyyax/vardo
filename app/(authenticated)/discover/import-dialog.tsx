@@ -55,7 +55,7 @@ export function ImportDialog({
 
   const [displayName, setDisplayName] = useState("");
   const [name, setName] = useState("");
-  const [projectId, setProjectId] = useState<string>("none");
+  const [projectId, setProjectId] = useState<string>("");
   const [newProjectName, setNewProjectName] = useState("");
   const [envVars, setEnvVars] = useState<EnvVar[]>([]);
   // Per-mount toggles: keyed by destination path
@@ -71,7 +71,7 @@ export function ImportDialog({
     setDisplayName(container.name);
     setName(initialName);
     const validDefault = defaultProjectId && projects.some((p) => p.id === defaultProjectId);
-    setProjectId(validDefault ? defaultProjectId : "none");
+    setProjectId(validDefault ? defaultProjectId : "");
     setNewProjectName("");
     setEnvVars([]);
     setMountToggles({});
@@ -154,7 +154,7 @@ export function ImportDialog({
       const body = {
         displayName,
         name,
-        projectId: projectId === "none" ? null : projectId === "new" ? null : projectId,
+        projectId: projectId === "new" ? undefined : projectId || undefined,
         newProjectName: projectId === "new" ? newProjectName : undefined,
         envVars,
         selectedMountDestinations,
@@ -268,13 +268,12 @@ export function ImportDialog({
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="project">Project</Label>
+              <Label htmlFor="project">Project <span className="text-destructive">*</span></Label>
               <Select value={projectId} onValueChange={setProjectId}>
                 <SelectTrigger id="project">
-                  <SelectValue placeholder="No project" />
+                  <SelectValue placeholder="Select a project" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">No project</SelectItem>
                   <SelectItem value="new">Create new project...</SelectItem>
                   {projects.map((p) => (
                     <SelectItem key={p.id} value={p.id}>
@@ -457,7 +456,7 @@ export function ImportDialog({
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={submitting || loadingDetail || detailError || !name || !displayName || !portFieldValid}
+            disabled={submitting || loadingDetail || detailError || !name || !displayName || !portFieldValid || (!projectId || (projectId === "new" && !newProjectName))}
           >
             {submitting ? "Importing..." : "Import"}
           </Button>

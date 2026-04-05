@@ -27,7 +27,7 @@ type RouteParams = {
 };
 
 const importSchema = z.object({
-  projectId: z.string().nullable().optional(),
+  projectId: z.string().optional(),
   newProjectName: z.string().min(1).max(255).optional(),
   displayName: z.string().min(1, "Display name is required").max(255),
   name: z
@@ -57,7 +57,10 @@ const importSchema = z.object({
   importVolumes: z.boolean().default(true),
   // User-supplied port when auto-detection fails (no Traefik labels, no exposed ports).
   containerPort: z.number().int().min(1).max(65535).optional(),
-});
+}).refine(
+  (data) => !!data.projectId || !!data.newProjectName,
+  { message: "Either projectId or newProjectName is required", path: ["projectId"] }
+);
 
 // POST /api/v1/organizations/[orgId]/discover/containers/[containerId]/import
 async function handlePost(request: NextRequest, { params }: RouteParams) {

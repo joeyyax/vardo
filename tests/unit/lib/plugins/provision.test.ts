@@ -11,9 +11,13 @@ const { dbMock } = vi.hoisted(() => {
 
   // Chainable insert: .insert(table).values(data).returning(cols)
   const insertReturningFn = vi.fn().mockResolvedValue([{ id: "test-id-123" }]);
+  const onConflictDoUpdateFn = vi.fn(() => ({
+    returning: insertReturningFn,
+  }));
   const insertValuesFn = vi.fn(() => ({
     returning: insertReturningFn,
     onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+    onConflictDoUpdate: onConflictDoUpdateFn,
     then: (resolve: (v: unknown) => void) => resolve(undefined),
   }));
   const insertFn = vi.fn(() => ({ values: insertValuesFn }));
@@ -45,6 +49,7 @@ vi.mock("@/lib/db/schema", () => ({
   volumes: { id: "volumes.id" },
   domains: { id: "domains.id" },
   organizations: { id: "organizations.id" },
+  projects: { id: "projects.id", organizationId: "projects.organizationId", name: "projects.name" },
   pluginSettings: {
     id: "pluginSettings.id",
     pluginId: "pluginSettings.pluginId",
@@ -176,7 +181,7 @@ describe("provisionService", () => {
     expect(result).toEqual({ appId: "test-id-123" });
 
     // Should insert: app, environment, volume, domain (4 inserts)
-    expect(dbMock.insert).toHaveBeenCalledTimes(4);
+    expect(dbMock.insert).toHaveBeenCalledTimes(5);
 
     // Should store the provisioned app reference
     expect(mockSetPluginSetting).toHaveBeenCalledWith(
@@ -287,8 +292,8 @@ describe("provisionService", () => {
 
     await provisionService(PLUGIN_ID, mockService, ORG_ID);
 
-    // Should insert: app, environment, volume (3 inserts — no domain)
-    expect(dbMock.insert).toHaveBeenCalledTimes(3);
+    // Should insert: project, app, environment, volume (4 inserts — no domain)
+    expect(dbMock.insert).toHaveBeenCalledTimes(4);
   });
 });
 

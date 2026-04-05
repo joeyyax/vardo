@@ -31,18 +31,18 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  *   returned.
  * - If `projectId` is provided, it is verified to belong to `orgId` and
  *   returned unchanged.
- * - Otherwise `null` is returned (no project).
  *
+ * Throws `Error("PROJECT_REQUIRED")` when neither is provided.
  * Throws `Error("PROJECT_NOT_FOUND")` when a non-null `projectId` does not
- * exist in the org.  The caller is responsible for translating this into an
- * HTTP 400 response.
+ * exist in the org.  The caller is responsible for translating these into
+ * HTTP 400 responses.
  */
 export async function resolveProjectForImport(
   tx: Tx,
   orgId: string,
   projectId: string | null | undefined,
   newProjectName: string | undefined,
-): Promise<string | null> {
+): Promise<string> {
   if (newProjectName) {
     const newProjectId = nanoid();
     await tx.insert(projects).values({
@@ -65,7 +65,7 @@ export async function resolveProjectForImport(
     return projectId;
   }
 
-  return null;
+  throw new Error("PROJECT_REQUIRED");
 }
 
 // ---------------------------------------------------------------------------

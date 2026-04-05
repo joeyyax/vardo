@@ -54,11 +54,14 @@ const adoptSchema = z.object({
     .min(1, "Name is required")
     .regex(/^[a-z0-9-]+$/, "Name must be lowercase alphanumeric with hyphens"),
   displayName: z.string().min(1, "Display name is required").max(255),
-  projectId: z.string().nullable().optional(),
+  projectId: z.string().optional(),
   newProjectName: z.string().min(1).max(255).optional(),
   domain: z.string().optional(),
   containerPort: z.number().int().positive().optional(),
-});
+}).refine(
+  (data) => !!data.projectId || !!data.newProjectName,
+  { message: "Either projectId or newProjectName is required", path: ["projectId"] }
+);
 
 // POST /api/v1/organizations/[orgId]/adopt
 async function handler(request: NextRequest, { params }: RouteParams) {

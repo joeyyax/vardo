@@ -3,6 +3,7 @@ import {
   apps,
   envVars,
   appTransfers,
+  projects,
 } from "@/lib/db/schema";
 import { eq, and, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
@@ -145,12 +146,27 @@ export async function acceptTransfer(
     }
   }
 
+  // Ensure a "Default" project exists in the destination org
+  const [destProject] = await db
+    .insert(projects)
+    .values({
+      id: nanoid(),
+      organizationId: transfer.destinationOrgId,
+      name: "default",
+      displayName: "Default",
+    })
+    .onConflictDoUpdate({
+      target: [projects.organizationId, projects.name],
+      set: { updatedAt: new Date() },
+    })
+    .returning({ id: projects.id });
+
   // Move the app to the destination org
   await db
     .update(apps)
     .set({
       organizationId: transfer.destinationOrgId,
-      projectId: null, // Remove from project (projects are org-scoped)
+      projectId: destProject!.id,
       updatedAt: new Date(),
     })
     .where(eq(apps.id, transfer.appId));

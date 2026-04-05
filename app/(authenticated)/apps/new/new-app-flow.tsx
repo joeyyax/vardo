@@ -392,7 +392,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
         displayName: displayName.trim(), name: name.trim(),
         description: description.trim() || undefined,
         source, deployType, autoTraefikLabels: true, autoDeploy, generateDomain,
-        projectId: parentId || undefined,
+        projectId: parentId!,
         persistentVolumes: persistData && templateVolumes.length > 0
           ? templateVolumes.map((v) => ({ name: v.name, mountPath: v.mountPath }))
           : undefined,
@@ -1036,7 +1036,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
               )}
 
               <div className="grid gap-2">
-                <Label>Project</Label>
+                <Label>Project <span className="text-destructive">*</span></Label>
                 <Select
                   value={parentId ?? ""}
                   onValueChange={setParentId}
@@ -1073,7 +1073,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
                   handleSubmit();
                 }
               }}
-              disabled={creating || !displayName.trim() || !name.trim() || hasRequiredEnvVars}
+              disabled={creating || !displayName.trim() || !name.trim() || !parentId || hasRequiredEnvVars}
             >
               {creating ? (
                 <><Loader2 className="mr-2 size-4 animate-spin" />Creating...</>

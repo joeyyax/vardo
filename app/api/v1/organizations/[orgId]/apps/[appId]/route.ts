@@ -45,7 +45,7 @@ const updateAppSchema = z.object({
   healthCheckTimeout: z.number().int().min(10).max(600).nullable().optional(),
   autoRollback: z.boolean().optional(),
   rollbackGracePeriod: z.number().int().min(10).max(600).optional(),
-  projectId: z.string().nullable().optional(),
+  projectId: z.string().min(1).optional(),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   cloneStrategy: z.enum(["clone", "clone_data", "empty", "skip"]).optional(),
   dependsOn: z.array(z.string()).nullable().optional(),
@@ -137,7 +137,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
           return NextResponse.json({ error: "Project not found" }, { status: 400 });
         }
       }
-      oldProjectId = existingApp.projectId ?? null;
+      oldProjectId = existingApp.projectId;
     }
 
     const [updated] = await db

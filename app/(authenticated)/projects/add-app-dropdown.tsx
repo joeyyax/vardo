@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 interface AddAppDropdownProps {
-  projectId?: string;
+  projectId: string;
   align?: "end" | "center" | "start";
   label?: string;
   size?: "default" | "sm";
@@ -23,8 +23,8 @@ export function AddAppDropdown({
   label = "Add App",
   size = "sm",
 }: AddAppDropdownProps) {
-  const newAppHref = projectId ? `/apps/new?project=${projectId}` : "/apps/new";
-  const discoverHref = projectId ? `/discover?project=${projectId}` : "/discover";
+  const newAppHref = `/apps/new?project=${projectId}`;
+  const discoverHref = `/discover?project=${projectId}`;
 
   return (
     <DropdownMenu>
