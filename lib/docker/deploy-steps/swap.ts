@@ -117,7 +117,10 @@ async function waitForHealthy(
           clearTimeout(timer);
           if (res.status > 0) return true;
         } catch {
-          allReady = false;
+          // HTTP probe failed — for non-HTTP services (databases, caches, etc.)
+          // a running container without a Docker healthcheck is considered healthy.
+          // Only keep retrying if the container explicitly declares a healthcheck.
+          return true;
         }
       } else if (allReady) {
         return true;

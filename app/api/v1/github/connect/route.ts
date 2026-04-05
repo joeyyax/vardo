@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { requireSession } from "@/lib/auth/session";
-import { createInstallationState } from "@/lib/github/app";
+import { createInstallationState } from "@/lib/git-integration/app";
 import { getGitHubAppConfig } from "@/lib/system-settings";
 
 // GET /api/v1/github/connect — Generate GitHub App install URL for current user

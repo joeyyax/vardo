@@ -1,16 +1,16 @@
 // ---------------------------------------------------------------------------
-// Plugin capability gate — middleware for API routes
+// Feature gate — middleware for API routes
 //
-// Returns a 404 if the required plugin capability is not enabled.
-// Use this in route handlers that belong to a plugin feature.
+// Returns a 404 if the required feature is not enabled via feature flags.
+// Use this in route handlers that belong to a gated feature.
 // ---------------------------------------------------------------------------
 
 import { NextResponse } from "next/server";
-import { isCapabilityAvailable } from "@/lib/plugins/registry";
+import { isFeatureEnabledAsync, type FeatureFlag } from "@/lib/config/features";
 
 /**
- * Check if a plugin capability is available. Returns null if enabled,
- * or a 404 Response if the plugin is disabled.
+ * Check if a feature is enabled. Returns null if enabled,
+ * or a 404 Response if the feature is disabled.
  *
  * Usage in route handlers:
  * ```ts
@@ -19,11 +19,11 @@ import { isCapabilityAvailable } from "@/lib/plugins/registry";
  * // ... rest of handler
  * ```
  */
-export async function requirePlugin(capability: string): Promise<NextResponse | null> {
-  const available = await isCapabilityAvailable(capability);
+export async function requirePlugin(capability: FeatureFlag): Promise<NextResponse | null> {
+  const available = await isFeatureEnabledAsync(capability);
   if (!available) {
     return NextResponse.json(
-      { error: `Feature "${capability}" is not enabled. Enable the plugin in admin settings.` },
+      { error: `Feature "${capability}" is not enabled.` },
       { status: 404 },
     );
   }

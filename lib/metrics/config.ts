@@ -34,12 +34,13 @@ export async function reinitMetricsProvider() {
 /** Shared resolution logic for init and reinit. */
 async function resolveProvider() {
   try {
-    // Check plugin settings first (new path)
-    const { isPluginEnabledAsync, getPluginSetting } = await import("@/lib/plugins/registry");
-    const metricsEnabled = await isPluginEnabledAsync("metrics-cadvisor");
+    // Check if metrics feature is enabled
+    const { isFeatureEnabledAsync } = await import("@/lib/config/features");
+    const metricsEnabled = await isFeatureEnabledAsync("metrics");
 
     if (metricsEnabled) {
-      const customUrl = await getPluginSetting("metrics-cadvisor", "cadvisorUrl");
+      const { getSystemSettingRaw } = await import("@/lib/system-settings");
+      const customUrl = await getSystemSettingRaw("metrics.cadvisorUrl");
       const url = customUrl || "http://cadvisor:8080/api/v1.3/docker";
       log.info(`Metrics provider: plugin settings → ${url}`);
       setMetricsProvider(new CadvisorProvider(url));

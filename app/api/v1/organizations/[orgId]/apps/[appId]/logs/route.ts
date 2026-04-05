@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { listContainers, getContainerLogs } from "@/lib/docker/client";
-import { isLokiAvailable, queryRange, buildLogQLQuery } from "@/lib/loki/client";
+import { isLokiAvailable, queryRange, buildLogQLQuery } from "@/lib/logging/client";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;

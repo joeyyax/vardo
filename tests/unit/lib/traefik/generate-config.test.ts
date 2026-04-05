@@ -21,7 +21,7 @@ vi.mock("fs/promises", () => ({
   unlink: vi.fn(),
 }));
 
-import { regenerateAppRouteConfig, buildTraefikConfigYaml } from "@/lib/traefik/generate-config";
+import { regenerateAppRouteConfig, buildTraefikConfigYaml } from "@/lib/ssl/generate-config";
 import { db } from "@/lib/db";
 import * as fsp from "fs/promises";
 import YAML from "yaml";

@@ -5,7 +5,7 @@ import { backups } from "@/lib/db/schema";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import { eq } from "drizzle-orm";
-import { restoreBackup } from "@/lib/backup/engine";
+import { restoreBackup } from "@/lib/backups/engine";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 

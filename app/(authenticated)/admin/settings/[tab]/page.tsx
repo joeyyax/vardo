@@ -3,43 +3,49 @@ import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { getCurrentOrg } from "@/lib/auth/session";
 import { eq } from "drizzle-orm";
-import { isFeatureEnabledAsync } from "@/lib/config/features";
+import { isFeatureEnabledAsync, type FeatureFlag } from "@/lib/config/features";
 import { GeneralSettings } from "../general-settings";
-import { EmailSettings } from "../email-settings";
+import { EmailSettings } from "@/components/notifications/settings";
 import { AuthSettings } from "../auth-settings";
 import { FeatureFlagsSettings } from "../feature-flags-settings";
-import { BackupSettings } from "../backup-settings";
-import { GitHubSettings } from "../github-settings";
-import { DomainSettings } from "../domain-settings";
+import { BackupSettings } from "@/components/backups/settings";
+import { GitHubSettings } from "@/components/git-integration/settings";
+import { DomainSettings } from "@/components/ssl/domain-settings";
 import { InstancesSettings } from "../instances-settings";
 import { ConfigSettings } from "../config-settings";
-import { TraefikSettings } from "../traefik-settings";
-import { ExternalRoutesSettings } from "../external-routes-settings";
+import { TraefikSettings } from "@/components/ssl/traefik-settings";
+import { ExternalRoutesSettings } from "@/components/ssl/external-routes-settings";
 import { MaintenanceSettings } from "../maintenance-settings";
 import { BackupPage } from "@/components/backups/backup-page";
 
-const VALID_TABS = ["general", "email", "authentication", "feature-flags", "backup", "github", "domain", "traefik", "external-routes", "maintenance", "instances", "config"] as const;
-type ValidTab = (typeof VALID_TABS)[number];
+// ---------------------------------------------------------------------------
+// Tab registry — maps URL slugs to components and optional feature gates.
+// When a gate is set, the tab returns 404 if that feature flag is disabled.
+// ---------------------------------------------------------------------------
 
-const TAB_COMPONENTS: Record<ValidTab, React.ComponentType> = {
-  "general": GeneralSettings,
-  "email": EmailSettings,
-  "authentication": AuthSettings,
-  "feature-flags": FeatureFlagsSettings,
-  "backup": BackupSettings,
-  "github": GitHubSettings,
-  "domain": DomainSettings,
-  "traefik": TraefikSettings,
-  "external-routes": ExternalRoutesSettings,
-  "maintenance": MaintenanceSettings,
-  "instances": InstancesSettings,
-  "config": ConfigSettings,
+type TabEntry = {
+  component: React.ComponentType;
+  gate?: FeatureFlag;
 };
 
-/** Tabs that require a feature flag to be enabled. */
-const FLAG_GATED_TABS: Partial<Record<ValidTab, Parameters<typeof isFeatureEnabledAsync>[0]>> = {
-  instances: "mesh",
+const TABS: Record<string, TabEntry> = {
+  general:            { component: GeneralSettings },
+  email:              { component: EmailSettings, gate: "notifications" },
+  authentication:     { component: AuthSettings },
+  "feature-flags":    { component: FeatureFlagsSettings },
+  backup:             { component: BackupSettings, gate: "backups" },
+  github:             { component: GitHubSettings, gate: "git-integration" },
+  domain:             { component: DomainSettings, gate: "ssl" },
+  traefik:            { component: TraefikSettings, gate: "ssl" },
+  "external-routes":  { component: ExternalRoutesSettings, gate: "ssl" },
+  instances:          { component: InstancesSettings, gate: "mesh" },
+  maintenance:        { component: MaintenanceSettings },
+  config:             { component: ConfigSettings },
 };
+
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
 
 export default async function AdminSettingsTabPage({
   params,
@@ -48,23 +54,19 @@ export default async function AdminSettingsTabPage({
 }) {
   const { tab } = await params;
 
-  if (!VALID_TABS.includes(tab as ValidTab)) {
+  const entry = TABS[tab];
+  if (!entry) notFound();
+
+  // Check feature flag gate
+  if (entry.gate && !(await isFeatureEnabledAsync(entry.gate))) {
     notFound();
   }
 
-  const requiredFlag = FLAG_GATED_TABS[tab as ValidTab];
-  if (requiredFlag && !(await isFeatureEnabledAsync(requiredFlag))) {
-    notFound();
-  }
-
-  // Backup tab — full BackupPage with admin scope (system targets are editable)
+  // Backup tab — special case: full BackupPage with admin scope
   if (tab === "backup") {
     const orgData = await getCurrentOrg();
     const orgId = orgData?.organization.id;
-    if (!orgId) {
-      const Component = TAB_COMPONENTS[tab as ValidTab];
-      return <Component />;
-    }
+    if (!orgId) return <BackupSettings />;
 
     const appList = await db.query.apps.findMany({
       where: eq(apps.organizationId, orgId),
@@ -74,6 +76,6 @@ export default async function AdminSettingsTabPage({
     return <BackupPage scope="admin" orgId={orgId} apps={appList} />;
   }
 
-  const Component = TAB_COMPONENTS[tab as ValidTab];
+  const Component = entry.component;
   return <Component />;
 }

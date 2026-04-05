@@ -5,7 +5,6 @@ import { getCurrentOrg } from "@/lib/auth/session";
 import { eq, desc } from "drizzle-orm";
 import { PageToolbar } from "@/components/page-toolbar";
 import { ActivityFeed } from "./activity-feed";
-import { PluginSlots } from "@/components/plugins/slot-renderer";
 
 export default async function ActivityPage() {
   const orgData = await getCurrentOrg();
@@ -29,7 +28,6 @@ export default async function ActivityPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Activity</h1>
       </PageToolbar>
       <ActivityFeed activities={recentActivities} orgId={orgId} />
-      <PluginSlots location="dashboard.cards" context={{ orgId }} />
     </div>
   );
 }

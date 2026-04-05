@@ -51,6 +51,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# local dev data (VARDO_HOME_DIR default in dev)
+/data/
+
 # backups
 /backups/
 

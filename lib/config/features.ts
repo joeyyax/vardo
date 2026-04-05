@@ -4,10 +4,10 @@
  * Controls which features are available system-wide. Useful for:
  * - Simplified UX (disable environments, previews)
  * - Pre-release/testing (gate new features)
+ * - Toggling optional subsystems (backups, terminal, cron, etc.)
  *
  * Resolution: config file (vardo.yml) > DB system_settings > default (true).
  * Core features (projects, apps, deployments) cannot be disabled.
- * Metrics and logs are always available — no opt-out.
  */
 
 export type FeatureFlag =
@@ -16,12 +16,30 @@ export type FeatureFlag =
   | "passwordAuth"
   | "mesh"
   | "bindMounts"
-  | "selfManagement";
+  | "selfManagement"
+  | "backups"
+  | "terminal"
+  | "cron"
+  | "notifications"
+  | "ssl"
+  | "metrics"
+  | "logging"
+  | "git-integration"
+  | "security"
+  | "mcp"
+  | "domain-monitoring"
+  | "uptime"
+  | "error-tracking"
+  | "container-import"
+  | "digest"
+  | "monitoring";
 
 type FlagConfig = {
   label: string;
   description: string;
   defaultValue?: boolean;
+  /** If true, this flag appears in the admin Feature Flags settings page. */
+  showInUI?: boolean;
 };
 
 const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
@@ -32,28 +50,103 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
   environments: {
     label: "Environments",
     description: "Multiple deployment environments per app (staging, preview). Disabling limits apps to a single production environment.",
+    showInUI: true,
   },
   passwordAuth: {
     label: "Password Auth",
     description:
       "Email/password sign-in and onboarding. When disabled, users must authenticate via passkey, magic link or GitHub.",
+    showInUI: true,
   },
   mesh: {
     label: "Instances",
     description:
       "Connect multiple Vardo instances over encrypted WireGuard tunnels. Enables promote, pull and clone between instances.",
+    showInUI: true,
   },
   bindMounts: {
     label: "Bind Mounts",
     description:
       "Allow host path mounts in compose definitions. Required for homelab services with local config or NFS mounts. Disabled by default for security on shared instances.",
     defaultValue: false,
+    showInUI: true,
   },
   selfManagement: {
     label: "Self-Management",
     description:
       "Register Vardo as a managed project visible in the dashboard. Enables PR preview deployments against the Vardo repo.",
     defaultValue: false,
+    showInUI: true,
+  },
+  backups: {
+    label: "Backups",
+    description: "Scheduled backups with S3, B2, SSH, and local storage adapters.",
+    showInUI: true,
+  },
+  terminal: {
+    label: "Terminal",
+    description: "Web-based terminal access to running containers.",
+    showInUI: true,
+  },
+  cron: {
+    label: "Cron Jobs",
+    description: "Scheduled task execution for apps.",
+    showInUI: true,
+  },
+  notifications: {
+    label: "Notifications",
+    description: "Alert dispatch via email, webhook, and Slack.",
+    showInUI: true,
+  },
+  ssl: {
+    label: "SSL / TLS",
+    description: "Automatic TLS certificates via Let's Encrypt. Controls domain, Traefik, and external route settings.",
+    showInUI: true,
+  },
+  metrics: {
+    label: "Metrics",
+    description: "Container resource metrics via cAdvisor.",
+    showInUI: true,
+  },
+  logging: {
+    label: "Logging",
+    description: "Centralized log aggregation via Loki.",
+  },
+  "git-integration": {
+    label: "Git Integration",
+    description: "GitHub OAuth, deploy keys, webhook auto-deploy, and PR preview environments.",
+  },
+  security: {
+    label: "Security Scanning",
+    description: "Automated security scanning for exposed ports, headers, and TLS.",
+  },
+  mcp: {
+    label: "MCP Server",
+    description: "Model Context Protocol server for AI tool access.",
+  },
+  "domain-monitoring": {
+    label: "Domain Monitoring",
+    description: "Periodic DNS health checks and SSL certificate expiration monitoring.",
+  },
+  uptime: {
+    label: "Uptime Monitoring",
+    description: "HTTP/TCP uptime checks with alert notifications.",
+  },
+  "error-tracking": {
+    label: "Error Tracking",
+    description: "Capture and aggregate application errors via GlitchTip or Sentry.",
+  },
+  "container-import": {
+    label: "Container Import",
+    description: "Discover and import running Docker containers into Vardo.",
+  },
+  digest: {
+    label: "Digest",
+    description: "Weekly email digest summarizing deployment activity.",
+  },
+  monitoring: {
+    label: "Monitoring",
+    description: "System health monitoring and alerting.",
   },
 };
 
@@ -80,7 +173,7 @@ export async function loadFeatureFlags(): Promise<void> {
  */
 export function isFeatureEnabled(flag: FeatureFlag): boolean {
   if (flagCache && flag in flagCache) return flagCache[flag];
-  return FLAG_CONFIG[flag].defaultValue ?? true;
+  return FLAG_CONFIG[flag]?.defaultValue ?? true;
 }
 
 /**
@@ -96,7 +189,7 @@ export async function isFeatureEnabledAsync(flag: FeatureFlag): Promise<boolean>
   if (flags) flagCache = { ...flagCache, ...flags };
 
   if (flags && flag in flags) return flags[flag];
-  return FLAG_CONFIG[flag].defaultValue ?? true;
+  return FLAG_CONFIG[flag]?.defaultValue ?? true;
 }
 
 /**
@@ -107,28 +200,19 @@ export function getFlagConfig(flag: FeatureFlag): FlagConfig {
 }
 
 /**
- * Plugin-derived flags that gate UI tabs.
- * Terminal, cron, and backups are now controlled by their plugin enabled state
- * rather than separate feature flags.
- */
-export type UIGatedFlag = "terminal" | "cron" | "backups";
-
-/**
- * Subset of feature flags relevant to UI tab gating.
+ * Subset of feature flags relevant to UI tab gating in app detail views.
  * Passed from server components to client components as a serializable object.
  */
-export type FeatureFlags = Record<UIGatedFlag, boolean>;
+export type FeatureFlags = Record<"terminal" | "cron" | "backups", boolean>;
 
 /**
- * Get the plugin-derived flags needed for UI tab gating.
- * Checks whether the corresponding plugin is enabled.
+ * Get feature flags needed for UI tab gating.
  */
 export async function getFeatureFlags(): Promise<FeatureFlags> {
-  const { isPluginEnabledAsync } = await import("@/lib/plugins/registry");
   const [terminal, cron, backups] = await Promise.all([
-    isPluginEnabledAsync("terminal"),
-    isPluginEnabledAsync("cron"),
-    isPluginEnabledAsync("backups"),
+    isFeatureEnabledAsync("terminal"),
+    isFeatureEnabledAsync("cron"),
+    isFeatureEnabledAsync("backups"),
   ]);
   return { terminal, cron, backups };
 }
@@ -142,15 +226,18 @@ export type FeatureFlagInfo = {
 
 /**
  * Get all feature flags with their states and metadata.
- * Async — reads from config file or DB.
+ * Only returns flags marked with showInUI for the admin settings page.
  */
 export async function getAllFeatureFlags(): Promise<FeatureFlagInfo[]> {
+  const uiFlags = (Object.entries(FLAG_CONFIG) as [FeatureFlag, FlagConfig][])
+    .filter(([, config]) => config.showInUI);
+
   return Promise.all(
-    (Object.keys(FLAG_CONFIG) as FeatureFlag[]).map(async (flag) => ({
+    uiFlags.map(async ([flag, config]) => ({
       flag,
       enabled: await isFeatureEnabledAsync(flag),
-      label: FLAG_CONFIG[flag].label,
-      description: FLAG_CONFIG[flag].description,
+      label: config.label,
+      description: config.description,
     })),
   );
 }

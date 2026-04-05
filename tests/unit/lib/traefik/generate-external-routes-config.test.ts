@@ -26,7 +26,7 @@ vi.mock("fs/promises", () => ({
   unlink: vi.fn(),
 }));
 
-import { regenerateExternalRoutesConfig } from "@/lib/traefik/generate-external-routes-config";
+import { regenerateExternalRoutesConfig } from "@/lib/ssl/generate-external-routes-config";
 import { db } from "@/lib/db";
 import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
 import * as fsp from "fs/promises";

@@ -119,9 +119,8 @@ function dispatchToChannels(orgId: string, event: BusEvent): void {
   });
 }
 
-// Stream consumer startup is handled by the notifications plugin
-// (lib/plugins/notifications/register.ts). The legacy onEmit hook is
-// registered as a fallback in case the plugin system isn't initialized.
+// Stream consumer startup is handled by lib/notifications/register.ts.
+// This onEmit hook is registered as a fallback for direct dispatch.
 onEmit("dispatch", dispatchToChannels);
 
 // Re-export emit so call sites can import { emit } from "@/lib/notifications/dispatch"
