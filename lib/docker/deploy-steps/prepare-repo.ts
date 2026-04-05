@@ -35,7 +35,7 @@ import {
 import { isFeatureEnabled } from "@/lib/config/features";
 import { assertSafeBranch } from "../validate";
 import { DeployBlockedError } from "../errors";
-import { getInstallationToken } from "@/lib/github/app";
+import { getInstallationToken } from "@/lib/git-integration/app";
 import {
   getDecryptedPrivateKey,
   writeTemporaryKeyFile,

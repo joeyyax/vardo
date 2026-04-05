@@ -5,10 +5,10 @@ import { apps, projects, domains, organizations, environments, volumes } from "@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
-import { generateSubdomain } from "@/lib/domains/auto-domain";
+import { generateSubdomain } from "@/lib/domain-monitoring/auto-domain";
 import { allocatePorts } from "@/lib/docker/ports";
 import { recordActivity } from "@/lib/activity";
-import { isReservedSlug } from "@/lib/domains/reserved";
+import { isReservedSlug } from "@/lib/domain-monitoring/reserved";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
 

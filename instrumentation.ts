@@ -40,8 +40,8 @@ export async function register() {
     // Ensure backup target exists first (sequential dependency for scheduler)
     let backupTargetReady: Promise<void> | undefined;
     try {
-      const { ensureHostBackupTarget, ensureSystemBackupJob } = await import("./lib/backup/auto-backup");
-      const { startBackupScheduler } = await import("./lib/backup/scheduler");
+      const { ensureHostBackupTarget, ensureSystemBackupJob } = await import("./lib/backups/auto-backup");
+      const { startBackupScheduler } = await import("./lib/backups/scheduler");
       backupTargetReady = ensureHostBackupTarget()
         .then(async (target) => {
           if (target) {
@@ -61,14 +61,26 @@ export async function register() {
       log.error("Failed to import backup modules:", err);
     }
 
-    // Register all built-in plugins (notifications, metrics, backups,
-    // security, monitoring, SSL, git integration). Each plugin handles
-    // its own startup — starting collectors, consumers, monitors, etc.
-    try {
-      const { registerBuiltInPlugins } = await import("./lib/plugins/loader");
-      await registerBuiltInPlugins();
-    } catch (err) {
-      log.error("Plugin registration failed:", err);
+    // Register feature subsystems — hooks, consumers, schedulers, monitors.
+    // Each register function handles its own startup initialization.
+    const features: [string, () => Promise<void>][] = [
+      ["notifications", async () => { const m = await import("./lib/notifications/register"); await m.registerNotificationsPlugin(); }],
+      ["metrics", async () => { const m = await import("./lib/metrics/register"); await m.registerMetricsPlugin(); }],
+      ["backups", async () => { const m = await import("./lib/backups/register"); await m.registerBackupsPlugin(); }],
+      ["security", async () => { const m = await import("./lib/security/register"); await m.registerSecurityPlugin(); }],
+      ["monitoring", async () => { const m = await import("./lib/monitoring/register"); await m.registerMonitoringPlugin(); }],
+      ["ssl", async () => { const m = await import("./lib/ssl/register"); await m.registerSslPlugin(); }],
+      ["cron", async () => { const m = await import("./lib/cron/register"); await m.registerCronPlugin(); }],
+      ["domain-monitoring", async () => { const m = await import("./lib/domain-monitoring/register"); await m.registerDomainMonitoringPlugin(); }],
+      ["digest", async () => { const m = await import("./lib/digest/register"); await m.registerDigestPlugin(); }],
+    ];
+
+    for (const [label, register] of features) {
+      try {
+        await register();
+      } catch (err) {
+        log.error(`Failed to register ${label}:`, err);
+      }
     }
 
     // Core startup tasks — not plugins, fundamental to the platform

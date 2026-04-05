@@ -252,7 +252,7 @@ async function postPreviewComment(
   prNumber: number,
   previewDomains: { appName: string; domain: string }[]
 ): Promise<void> {
-  const { getInstallationToken } = await import("@/lib/github/app");
+  const { getInstallationToken } = await import("@/lib/git-integration/app");
 
   // Find a GitHub installation token for this repo
   // Look through all users' installations to find one with access

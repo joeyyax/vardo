@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { githubAppInstallations } from "@/lib/db/schema";
 import { requireSession } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
-import { listInstallationRepos, createRepo } from "@/lib/github/app";
+import { listInstallationRepos, createRepo } from "@/lib/git-integration/app";
 import { z } from "zod";
 import { logger } from "@/lib/logger";
 

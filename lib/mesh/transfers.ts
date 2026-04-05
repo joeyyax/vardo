@@ -15,8 +15,8 @@ import { narrowBackendProtocol } from "@/lib/docker/compose";
  * only config transfers (compose, git ref, env vars) are possible.
  */
 export async function canTransferVolumes(): Promise<boolean> {
-  const { isPluginEnabledAsync } = await import("@/lib/plugins/registry");
-  return isPluginEnabledAsync("backups");
+  const { isFeatureEnabledAsync } = await import("@/lib/config/features");
+  return isFeatureEnabledAsync("backups");
 }
 
 // ---------------------------------------------------------------------------

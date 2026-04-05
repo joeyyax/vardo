@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentOrg } from "@/lib/auth/session";
-import { isCapabilityAvailable } from "@/lib/plugins/registry";
+import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { db } from "@/lib/db";
 import { projects } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -22,7 +22,7 @@ export default async function DiscoverPage({
     redirect("/login");
   }
 
-  const containerImportEnabled = await isCapabilityAvailable("container-import");
+  const containerImportEnabled = await isFeatureEnabledAsync("container-import");
   if (!containerImportEnabled) {
     redirect("/projects");
   }

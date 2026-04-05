@@ -28,7 +28,6 @@ import {
   useAppMetrics,
 } from "@/components/app-metrics-card";
 import { toast } from "@/lib/messenger";
-import { PluginSlots } from "@/components/plugins/slot-renderer";
 import { PageToolbar } from "@/components/page-toolbar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -1244,7 +1243,6 @@ export function ProjectDetail({
           </TabsContent>
         )}
 
-        <PluginSlots location="project.detail.tabs" context={{ orgId, projectId: project.id }} />
       </Tabs>
 
       {/* New environment sheet */}

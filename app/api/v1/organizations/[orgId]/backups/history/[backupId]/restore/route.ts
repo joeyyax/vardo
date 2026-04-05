@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { backups } from "@/lib/db/schema";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import { eq } from "drizzle-orm";
-import { restoreBackup } from "@/lib/backup/engine";
+import { restoreBackup } from "@/lib/backups/engine";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";

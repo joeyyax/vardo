@@ -6,7 +6,7 @@ import { requireAppAdmin } from "@/lib/auth/admin";
 import { db } from "@/lib/db";
 import { externalRoutes, domains } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { regenerateExternalRoutesConfig } from "@/lib/traefik/generate-external-routes-config";
+import { regenerateExternalRoutesConfig } from "@/lib/ssl/generate-external-routes-config";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 

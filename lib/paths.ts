@@ -22,7 +22,7 @@ import { mkdir, access, writeFile, unlink } from "fs/promises";
 export const VARDO_HOME_DIR = resolve(
   process.env.VARDO_HOME_DIR ||
     process.env.VARDO_DIR ||
-    "/opt/vardo",
+    (process.env.NODE_ENV === "production" ? "/opt/vardo" : "./data"),
 );
 
 /** Where deployed app files live: compose, .env, blue/green slots. */
@@ -37,7 +37,8 @@ export const IMAGES_DIR = resolve(
 
 /** Where Traefik dynamic config files are written (shared volume between frontend and traefik). */
 export const TRAEFIK_DYNAMIC_DIR = resolve(
-  process.env.TRAEFIK_DYNAMIC_DIR || "/etc/traefik/dynamic",
+  process.env.TRAEFIK_DYNAMIC_DIR ||
+    (process.env.NODE_ENV === "production" ? "/etc/traefik/dynamic" : join(VARDO_HOME_DIR, "traefik")),
 );
 
 // ---------------------------------------------------------------------------

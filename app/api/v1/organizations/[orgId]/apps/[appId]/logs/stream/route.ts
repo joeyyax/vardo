@@ -7,7 +7,7 @@ import { spawn } from "child_process";
 import { resolve } from "path";
 import { readlink } from "fs/promises";
 import { createSSEResponse } from "@/lib/api/sse";
-import { isLokiAvailable, queryRange, tailLogs, buildLogQLQuery } from "@/lib/loki/client";
+import { isLokiAvailable, queryRange, tailLogs, buildLogQLQuery } from "@/lib/logging/client";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { appEnvDir, appBaseDir } from "@/lib/paths";
 
