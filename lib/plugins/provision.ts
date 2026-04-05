@@ -6,7 +6,7 @@
 // ---------------------------------------------------------------------------
 
 import { db } from "@/lib/db";
-import { apps, environments, volumes, domains, organizations } from "@/lib/db/schema";
+import { apps, environments, volumes, domains, organizations, projects } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { loadTemplates } from "@/lib/templates/load";
@@ -69,6 +69,27 @@ export async function provisionService(
     throw new Error("Organization not found");
   }
 
+  // Ensure a system-managed "Vardo" project exists for this org
+  const [systemProject] = await db
+    .insert(projects)
+    .values({
+      id: nanoid(),
+      organizationId,
+      name: "vardo",
+      displayName: "Vardo",
+      isSystemManaged: true,
+      allowBindMounts: true,
+    })
+    .onConflictDoUpdate({
+      target: [projects.organizationId, projects.name],
+      set: { updatedAt: new Date() },
+    })
+    .returning({ id: projects.id });
+
+  if (!systemProject) {
+    throw new Error("Failed to resolve system project for plugin provisioning");
+  }
+
   // Create app
   const appId = nanoid();
   const appName = template.name;
@@ -76,6 +97,7 @@ export async function provisionService(
   await db.insert(apps).values({
     id: appId,
     organizationId,
+    projectId: systemProject.id,
     name: appName,
     displayName: template.displayName,
     description: template.description,

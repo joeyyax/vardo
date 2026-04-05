@@ -64,9 +64,9 @@ export const apps = pgTable(
     connectionInfo: jsonb("connection_info").$type<
       { label: string; value: string; copyRef?: string }[]
     >(),
-    projectId: text("project_id").references(() => projects.id, {
-      onDelete: "set null",
-    }),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "restrict" }),
     cloneStrategy: cloneStrategyEnum("clone_strategy").default("clone"),
     dependsOn: jsonb("depends_on").$type<string[]>(),
     sortOrder: integer("sort_order").default(0),

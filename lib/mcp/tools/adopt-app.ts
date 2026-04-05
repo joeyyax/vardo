@@ -77,6 +77,14 @@ export function registerAdoptApp(
       domain,
       containerPort,
     }) => {
+      // Require a project
+      if (!projectId && !newProjectName) {
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: "Either projectId or newProjectName is required" }) }],
+          isError: true,
+        };
+      }
+
       // Read docker-compose.yml from the directory
       const composePath = resolve(dirPath, "docker-compose.yml");
       let composeContent: string;

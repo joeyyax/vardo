@@ -96,24 +96,6 @@ describe("syncComposeServices — projectId on insert (new children)", () => {
     }
   });
 
-  it("sets null projectId on new child apps when parent has no project", async () => {
-    await syncComposeServices({
-      ...BASE_OPTS,
-      projectId: null,
-      compose: TWO_SERVICE_COMPOSE,
-    });
-
-    expect(mockExecute).toHaveBeenCalledTimes(2);
-
-    for (const call of mockExecute.mock.calls) {
-      const sqlObj = call[0];
-      const chunks: unknown[] = sqlObj?.queryChunks ?? [];
-      const paramValues = chunks.filter(
-        (c: unknown) => !(typeof c === "object" && c !== null && "value" in (c as Record<string, unknown>)),
-      );
-      expect(paramValues).toContain(null);
-    }
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -156,22 +138,6 @@ describe("syncComposeServices — projectId on update (existing children)", () =
 
     for (const [vals] of activeCalls) {
       expect(vals).toMatchObject({ projectId: "project-xyz" });
-    }
-  });
-
-  it("propagates null projectId when parent project is removed", async () => {
-    await syncComposeServices({
-      ...BASE_OPTS,
-      projectId: null,
-      compose: TWO_SERVICE_COMPOSE,
-    });
-
-    const activeCalls = (updateChain.set.mock.calls as Array<[Record<string, unknown>]>).filter(
-      ([vals]) => vals.status === "active",
-    );
-
-    for (const [vals] of activeCalls) {
-      expect(vals).toMatchObject({ projectId: null });
     }
   });
 

@@ -36,11 +36,14 @@ const adoptSchema = z.object({
     .min(1, "Name is required")
     .regex(/^[a-z0-9-]+$/, "Name must be lowercase alphanumeric with hyphens"),
   displayName: z.string().min(1, "Display name is required").max(255),
-  projectId: z.string().nullable().optional(),
+  projectId: z.string().optional(),
   newProjectName: z.string().min(1).max(255).optional(),
   domain: z.string().optional(),
   containerPort: z.number().int().positive().optional(),
-});
+}).refine(
+  (data) => !!data.projectId || !!data.newProjectName,
+  { message: "Either projectId or newProjectName is required", path: ["projectId"] }
+);
 
 // ---------------------------------------------------------------------------
 // Happy path — valid requests
@@ -51,11 +54,18 @@ describe("POST /adopt — happy path", () => {
     composeContent: "services:\n  web:\n    image: nginx\n",
     name: "my-app",
     displayName: "My App",
+    projectId: "proj-abc123",
   };
 
   it("accepts minimal valid request", () => {
     const result = adoptSchema.safeParse(validBase);
     expect(result.success).toBe(true);
+  });
+
+  it("rejects request without projectId or newProjectName", () => {
+    const { projectId: _, ...noProject } = validBase;
+    const result = adoptSchema.safeParse(noProject);
+    expect(result.success).toBe(false);
   });
 
   it("accepts request with all optional fields", () => {
@@ -199,6 +209,7 @@ describe("POST /adopt — validation errors (400)", () => {
         composeContent: "services:\n  web:\n    image: nginx\n",
         name: "my-app-name",
         displayName: "My App",
+        projectId: "proj-abc123",
       });
       expect(result.success).toBe(true);
     });
@@ -208,6 +219,7 @@ describe("POST /adopt — validation errors (400)", () => {
         composeContent: "services:\n  web:\n    image: nginx\n",
         name: "my-app-v2",
         displayName: "My App",
+        projectId: "proj-abc123",
       });
       expect(result.success).toBe(true);
     });
