@@ -101,6 +101,9 @@ export type PluginManifest = {
   category?: string;
   icon?: string;
 
+  /** Whether this plugin ships with Vardo. Community plugins omit or set false. */
+  builtIn?: boolean;
+
   /** What capability this plugin provides. */
   provides?: string[];
   /** Plugins that can't be active simultaneously. */

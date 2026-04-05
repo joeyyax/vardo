@@ -5,6 +5,7 @@ const manifest: PluginManifest = {
   name: "SSL / TLS",
   description: "Automatic TLS certificates via Let's Encrypt with DNS-01 or HTTP-01 challenge.",
   version: "1.0.0",
+  builtIn: true,
   category: "ssl",
   icon: "https://cdn.simpleicons.org/letsencrypt",
 

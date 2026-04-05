@@ -5,6 +5,7 @@ const manifest: PluginManifest = {
   name: "Weekly Digest",
   description: "Weekly summary email with deploy stats, backup status, cron failures, and system health.",
   version: "1.0.0",
+  builtIn: true,
   category: "notifications",
   icon: "https://cdn.simpleicons.org/minutemailer",
 

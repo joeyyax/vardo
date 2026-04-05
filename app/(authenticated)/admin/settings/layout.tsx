@@ -51,9 +51,15 @@ export default async function AdminSettingsLayout({
         </h1>
       </PageToolbar>
 
-      <SettingsNav items={navItems} />
+      <div className="flex gap-8">
+        <aside className="hidden lg:block w-48 shrink-0">
+          <div className="sticky top-24">
+            <SettingsNav items={navItems} />
+          </div>
+        </aside>
 
-      <div>{children}</div>
+        <div className="min-w-0 flex-1">{children}</div>
+      </div>
     </div>
   );
 }

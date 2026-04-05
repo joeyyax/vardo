@@ -17,10 +17,7 @@ export function SettingsNav({ items }: SettingsNavProps) {
   const pathname = usePathname();
 
   return (
-    <nav
-      className="flex gap-1 border-b border-border"
-      aria-label="Settings navigation"
-    >
+    <nav className="space-y-1" aria-label="Settings navigation">
       {items.map((item) => {
         const isActive = pathname === item.href;
         return (
@@ -28,10 +25,10 @@ export function SettingsNav({ items }: SettingsNavProps) {
             key={item.href}
             href={item.href}
             className={cn(
-              "px-3 py-2 text-sm font-medium transition-colors -mb-px border-b-2",
+              "flex w-full items-center rounded-md px-2.5 py-1.5 text-sm transition-colors",
               isActive
-                ? "border-primary text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/50",
+                ? "bg-primary/10 text-primary font-medium"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted",
             )}
             aria-current={isActive ? "page" : undefined}
           >
