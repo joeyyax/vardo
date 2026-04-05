@@ -5,6 +5,7 @@ const manifest: PluginManifest = {
   name: "Notifications",
   description: "Send alerts via email, webhook, and Slack when events occur.",
   version: "1.0.0",
+  builtIn: true,
   category: "notifications",
   icon: "https://cdn.simpleicons.org/maildotru",
 

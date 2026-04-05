@@ -25,7 +25,7 @@ export function TopNav({ currentOrgId, organizations }: TopNavProps) {
 
   return (
     <header className="bg-sidebar shrink-0">
-      <div className="mx-auto max-w-screen-xl flex items-center h-16 px-5 lg:px-8 gap-4">
+      <div className="container flex items-center h-16 gap-4">
         {/* Left: hamburger (mobile) + brand */}
         <div className="flex-1 flex items-center gap-2">
           <MobileSidebar

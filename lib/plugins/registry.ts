@@ -60,7 +60,7 @@ export async function registerPlugin(manifest: PluginManifest): Promise<void> {
       category: manifest.category,
       manifest: manifest as unknown as Record<string, unknown>,
       enabled: true,
-      builtIn: true,
+      builtIn: manifest.builtIn ?? false,
     });
     log.info(`Registered plugin ${manifest.id} v${manifest.version}`);
   }

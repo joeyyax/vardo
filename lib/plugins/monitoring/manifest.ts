@@ -5,6 +5,7 @@ const manifest: PluginManifest = {
   name: "Monitoring",
   description: "Health checks, restart loop detection, drift detection, and system service monitoring.",
   version: "1.0.0",
+  builtIn: true,
   category: "monitoring",
   icon: "https://cdn.simpleicons.org/grafana",
 

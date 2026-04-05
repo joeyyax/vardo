@@ -5,6 +5,7 @@ const manifest: PluginManifest = {
   name: "Backups",
   description: "Scheduled backups with S3, B2, SSH, and local storage adapters. GFS retention.",
   version: "1.0.0",
+  builtIn: true,
   category: "backups",
   icon: "https://cdn.simpleicons.org/backblaze",
 

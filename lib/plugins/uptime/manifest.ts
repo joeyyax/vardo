@@ -5,6 +5,7 @@ const manifest: PluginManifest = {
   name: "Uptime Monitoring",
   description: "Monitor endpoint availability via Uptime Kuma.",
   version: "1.0.0",
+  builtIn: true,
   category: "monitoring",
   icon: "https://cdn.simpleicons.org/uptimekuma",
 

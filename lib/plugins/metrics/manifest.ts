@@ -5,6 +5,7 @@ const manifest: PluginManifest = {
   name: "Metrics (cAdvisor)",
   description: "Collect container CPU, memory, network, and disk metrics via cAdvisor.",
   version: "1.0.0",
+  builtIn: true,
   category: "metrics",
   icon: "https://cdn.simpleicons.org/google/4285F4",
 
