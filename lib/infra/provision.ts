@@ -8,15 +8,16 @@
 // Called at startup (instrumentation.ts) and on feature flag toggle.
 // ---------------------------------------------------------------------------
 
-import { asc, and, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
 import { db } from "@/lib/db";
-import { apps, environments, organizations, projects } from "@/lib/db/schema";
+import { apps, environments, projects } from "@/lib/db/schema";
 import { isFeatureEnabledAsync, type FeatureFlag } from "@/lib/config/features";
 import { loadTemplates, type Template } from "@/lib/templates/load";
 import { requestDeploy } from "@/lib/docker/deploy-cancel";
 import { stopContainer } from "@/lib/docker/client";
+import { ensureVardoOrg } from "@/lib/infra/vardo-org";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("infra");
@@ -35,9 +36,9 @@ const INFRA_FEATURES: { flag: FeatureFlag; templates: string[] }[] = [
  * Safe to call on every startup — all writes are idempotent.
  */
 export async function ensureInfraServices(): Promise<void> {
-  const org = await getFirstOrg();
+  const org = await ensureVardoOrg();
   if (!org) {
-    log.info("No organization found, skipping infra provisioning");
+    log.info("No admin user yet, skipping infra provisioning");
     return;
   }
 
@@ -75,7 +76,7 @@ export async function provisionForFlag(flag: FeatureFlag, enabled: boolean): Pro
   const mapping = INFRA_FEATURES.find((f) => f.flag === flag);
   if (!mapping) return;
 
-  const org = await getFirstOrg();
+  const org = await ensureVardoOrg();
   if (!org) return;
 
   const project = await ensureInfraProject(org.id);
@@ -100,15 +101,6 @@ export async function provisionForFlag(flag: FeatureFlag, enabled: boolean): Pro
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
-
-async function getFirstOrg() {
-  const [org] = await db
-    .select({ id: organizations.id })
-    .from(organizations)
-    .orderBy(asc(organizations.createdAt))
-    .limit(1);
-  return org ?? null;
-}
 
 async function ensureInfraProject(orgId: string) {
   const [project] = await db
