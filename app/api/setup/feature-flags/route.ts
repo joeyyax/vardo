@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { revalidatePath } from "next/cache";
 import { requireAdminAuth } from "@/lib/auth/admin";
-import { getFeatureFlagsConfig, setSystemSetting } from "@/lib/system-settings";
-import { getAllFeatureFlags } from "@/lib/config/features";
+import { getFeatureFlagsConfig, setSystemSetting, invalidateSettingsCache } from "@/lib/system-settings";
+import { getAllFeatureFlags, invalidateFlagCache } from "@/lib/config/features";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -36,6 +37,11 @@ async function handlePost(request: NextRequest) {
   const merged = { ...existing, ...parsed.data };
 
   await setSystemSetting("feature_flags", JSON.stringify(merged));
+
+  // Bust all caches so the new flags take effect immediately
+  invalidateSettingsCache("feature_flags");
+  invalidateFlagCache();
+  revalidatePath("/", "layout");
 
   return NextResponse.json({ ok: true });
 }
