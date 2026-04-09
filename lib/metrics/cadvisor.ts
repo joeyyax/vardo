@@ -1,7 +1,7 @@
 import type { MetricsProvider } from "./provider";
 import type { ContainerMetrics } from "./types";
 
-const CADVISOR_URL = process.env.CADVISOR_URL || "http://localhost:7300";
+const CADVISOR_URL = process.env.CADVISOR_URL || "http://vardo-cadvisor:8080";
 
 type V2Accelerator = {
   id: string;

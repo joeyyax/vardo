@@ -1,9 +1,15 @@
 import { registerInternalHandler } from "@/lib/hooks/registry";
+import { isFeatureEnabled } from "@/lib/config/features";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("monitoring");
 
 export async function registerMonitoringPlugin(): Promise<void> {
+  if (!isFeatureEnabled("monitoring")) {
+    log.info("Monitoring disabled, skipping registration");
+    return;
+  }
+
   registerInternalHandler("monitoring:start-rollback-monitor", async (context) => {
     try {
       const { startRollbackMonitor } = await import("@/lib/docker/rollback-monitor");

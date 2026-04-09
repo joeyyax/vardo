@@ -1,0 +1,34 @@
+version: "1"
+name: promtail
+displayName: Promtail
+description: Log shipper that discovers Docker containers and pushes logs to Loki.
+icon: https://cdn.simpleicons.org/grafana
+category: monitoring
+source: direct
+deployType: compose
+
+composeContent: |
+  services:
+    promtail:
+      image: grafana/promtail:3.4
+      container_name: vardo-promtail
+      restart: unless-stopped
+      command:
+        - -config.expand-env=true
+        - -config.file=/etc/promtail/config.yml
+      environment:
+        - LOKI_URL=${LOKI_URL:-http://vardo-loki:3100}
+      volumes:
+        - /var/run/docker.sock:/var/run/docker.sock:ro
+        - /var/lib/docker/containers:/var/lib/docker/containers:ro
+        - promtail-config:/etc/promtail
+      mem_limit: 128m
+
+  volumes:
+    promtail-config: {}
+
+envVars:
+  - key: LOKI_URL
+    description: URL of the Loki instance to push logs to
+    required: false
+    defaultValue: http://vardo-loki:3100

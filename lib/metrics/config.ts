@@ -47,9 +47,6 @@ async function resolveProvider() {
       return;
     }
   } catch {
-    // Plugin system not ready — fall through
+    // Feature flag system not ready — skip
   }
-
-  setMetricsProvider(new CadvisorProvider());
-  log.info("Metrics provider: default cAdvisor");
 }

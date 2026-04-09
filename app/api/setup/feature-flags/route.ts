@@ -3,7 +3,8 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { requireAdminAuth } from "@/lib/auth/admin";
 import { getFeatureFlagsConfig, setSystemSetting, invalidateSettingsCache } from "@/lib/system-settings";
-import { getAllFeatureFlags, invalidateFlagCache } from "@/lib/config/features";
+import { getAllFeatureFlags, invalidateFlagCache, type FeatureFlag } from "@/lib/config/features";
+import { provisionForFlag } from "@/lib/infra/provision";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -42,6 +43,15 @@ async function handlePost(request: NextRequest) {
   invalidateSettingsCache("feature_flags");
   invalidateFlagCache();
   revalidatePath("/", "layout");
+
+  // Provision or stop infrastructure services based on flag changes
+  for (const [flag, enabled] of Object.entries(parsed.data)) {
+    if (existing[flag] !== enabled) {
+      provisionForFlag(flag as FeatureFlag, enabled).catch(() => {
+        // Provisioning is best-effort — don't block the response
+      });
+    }
+  }
 
   return NextResponse.json({ ok: true });
 }

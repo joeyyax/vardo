@@ -28,8 +28,6 @@ export type FeatureFlag =
   | "security"
   | "mcp"
   | "domain-monitoring"
-  | "uptime"
-  | "error-tracking"
   | "container-import"
   | "digest"
   | "monitoring";
@@ -111,6 +109,7 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
   logging: {
     label: "Logging",
     description: "Centralized log aggregation via Loki.",
+    showInUI: true,
   },
   "git-integration": {
     label: "Git Integration",
@@ -127,14 +126,6 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
   "domain-monitoring": {
     label: "Domain Monitoring",
     description: "Periodic DNS health checks and SSL certificate expiration monitoring.",
-  },
-  uptime: {
-    label: "Uptime Monitoring",
-    description: "HTTP/TCP uptime checks with alert notifications.",
-  },
-  "error-tracking": {
-    label: "Error Tracking",
-    description: "Capture and aggregate application errors via GlitchTip or Sentry.",
   },
   "container-import": {
     label: "Container Import",

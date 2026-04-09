@@ -27,14 +27,12 @@ const execFileAsync = promisify(execFile);
 const log = logger.child("self-register");
 
 // Infrastructure services managed as child app records.
+// cadvisor, loki, and promtail are provisioned separately via lib/infra/provision.ts.
 const INFRA_SERVICES = new Set([
   "postgres",
   "redis",
   "traefik",
   "wireguard",
-  "loki",
-  "promtail",
-  "cadvisor",
 ]);
 
 /**

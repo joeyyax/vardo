@@ -61,8 +61,18 @@ export async function register() {
       log.error("Failed to import backup modules:", err);
     }
 
+    // Provision infrastructure services (cAdvisor, Loki, Promtail) as managed
+    // apps based on feature flags. Runs before feature registration so the
+    // backing containers are available when collectors start.
+    try {
+      const { ensureInfraServices } = await import("./lib/infra/provision");
+      await ensureInfraServices();
+    } catch (err) {
+      log.error("Infrastructure provisioning failed:", err);
+    }
+
     // Register feature subsystems — hooks, consumers, schedulers, monitors.
-    // Each register function handles its own startup initialization.
+    // Each register function checks its feature flag before initializing.
     const features: [string, () => Promise<void>][] = [
       ["notifications", async () => { const m = await import("./lib/notifications/register"); await m.registerNotificationsPlugin(); }],
       ["metrics", async () => { const m = await import("./lib/metrics/register"); await m.registerMetricsPlugin(); }],

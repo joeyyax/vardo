@@ -8,25 +8,8 @@ name: vardo
 #   Prod:   docker compose up -d
 #           install.sh sets COMPOSE_PROFILES=production — all services start.
 #
-#   GPU:    COMPOSE_PROFILES=gpu docker compose up -d  (or production,gpu)
-#           Activates the cadvisor-gpu service, which passes NVIDIA device nodes
-#           into cAdvisor for GPU metrics collection via NVML. Requires NVIDIA
-#           drivers and nvidia-container-toolkit on the host.
-
-x-cadvisor: &cadvisor
-  image: gcr.io/cadvisor/cadvisor:latest
-  restart: unless-stopped
-  privileged: true
-  ports:
-    - "${CADVISOR_PORT:-7300}:8080"
-  volumes:
-    - /:/rootfs:ro
-    - /var/run:/var/run:ro
-    - /sys:/sys:ro
-    - /var/lib/docker/:/var/lib/docker:ro
-  networks:
-    - internal
-    - vardo-network
+# Optional infrastructure (cAdvisor, Loki, Promtail) is deployed as managed apps
+# by Vardo itself when the corresponding feature flags are enabled.
 
 services:
   frontend:
@@ -56,8 +39,8 @@ services:
       NEXT_PUBLIC_BETTER_AUTH_URL: https://${VARDO_DOMAIN:-localhost}
       NEXT_PUBLIC_APP_URL: https://${VARDO_DOMAIN:-localhost}
       VARDO_HOME_DIR: ${VARDO_HOME_DIR:-${VARDO_DIR:-/opt/vardo}}
-      CADVISOR_URL: http://vardo-cadvisor:8080
-      LOKI_URL: http://vardo-loki:3100
+      CADVISOR_URL: ${CADVISOR_URL:-}
+      LOKI_URL: ${LOKI_URL:-}
       WIREGUARD_GATEWAY: 10.88.0.2
       DOCKER_GID: ${DOCKER_GID:-999}
     healthcheck:
@@ -246,36 +229,6 @@ services:
     networks:
       - vardo-network
 
-  cadvisor:
-    <<: *cadvisor
-    container_name: vardo-cadvisor
-    profiles: ["!gpu"]
-
-  # GPU variant — passes NVIDIA device nodes into cAdvisor for NVML-based GPU metrics.
-  # Activate with: COMPOSE_PROFILES=gpu docker compose up -d
-  # Multi-GPU hosts: add /dev/nvidia1, /dev/nvidia2, etc. as needed.
-  cadvisor-gpu:
-    <<: *cadvisor
-    container_name: vardo-cadvisor
-    profiles: [gpu]
-    devices:
-      - /dev/nvidiactl:/dev/nvidiactl
-      - /dev/nvidia-uvm:/dev/nvidia-uvm
-      - /dev/nvidia0:/dev/nvidia0
-
-  loki:
-    container_name: vardo-loki
-    image: grafana/loki:3.4
-    restart: unless-stopped
-    command: -config.file=/etc/loki/loki.yml
-    ports:
-      - "${LOKI_PORT:-7400}:3100"
-    volumes:
-      - ./config/loki.yml:/etc/loki/loki.yml:ro
-      - loki_data:/loki
-    networks:
-      - internal
-    mem_limit: 512m
 
   wireguard:
     container_name: vardo-wireguard
@@ -309,26 +262,10 @@ services:
       vardo-network:
     mem_limit: 64m
 
-  promtail:
-    container_name: vardo-promtail
-    image: grafana/promtail:3.4
-    restart: unless-stopped
-    command: -config.file=/etc/promtail/promtail.yml
-    volumes:
-      - ./config/promtail.yml:/etc/promtail/promtail.yml:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
-    depends_on:
-      - loki
-    networks:
-      - internal
-    mem_limit: 128m
-
 volumes:
   postgres_data:
   redis_data:
   letsencrypt:
-  loki_data:
   wireguard_config:
   traefik_dynamic:
 

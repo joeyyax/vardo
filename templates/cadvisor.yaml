@@ -12,9 +12,12 @@ composeContent: |
   services:
     cadvisor:
       image: gcr.io/cadvisor/cadvisor:latest
+      container_name: vardo-cadvisor
+      restart: unless-stopped
       privileged: true
       volumes:
         - /:/rootfs:ro
         - /var/run:/var/run:ro
         - /sys:/sys:ro
         - /var/lib/docker/:/var/lib/docker:ro
+      mem_limit: 512m

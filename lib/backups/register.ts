@@ -1,9 +1,15 @@
 import { registerInternalHandler } from "@/lib/hooks/registry";
+import { isFeatureEnabled } from "@/lib/config/features";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("backups");
 
 export async function registerBackupsPlugin(): Promise<void> {
+  if (!isFeatureEnabled("backups")) {
+    log.info("Backups disabled, skipping registration");
+    return;
+  }
+
   // Register the internal hook handler for auto-backup creation
   registerInternalHandler("backups:ensure-auto-backup", async (context) => {
     try {
