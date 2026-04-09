@@ -137,26 +137,37 @@ async function ensureAppDeployed(orgId: string, projectId: string, template: Tem
     return;
   }
 
-  // Create the app from the template
+  // Create the app from the template. Wrapped in try/catch for the unique
+  // constraint — concurrent calls (startup + flag toggle) could both pass the
+  // findFirst check above.
   const appId = nanoid();
 
-  await db.insert(apps).values({
-    id: appId,
-    organizationId: orgId,
-    projectId,
-    name: template.name,
-    displayName: template.displayName,
-    description: template.description,
-    source: template.source as "git" | "direct",
-    deployType: template.deployType as "compose",
-    composeContent: template.composeContent,
-    containerPort: template.defaultPort,
-    isSystemManaged: true,
-    cpuLimit: template.defaultCpuLimit,
-    memoryLimit: template.defaultMemoryLimit,
-    diskWriteAlertThreshold: template.defaultDiskWriteAlertThreshold,
-    autoTraefikLabels: false,
-  });
+  try {
+    await db.insert(apps).values({
+      id: appId,
+      organizationId: orgId,
+      projectId,
+      name: template.name,
+      displayName: template.displayName,
+      description: template.description,
+      source: template.source as "git" | "direct",
+      deployType: template.deployType as "compose",
+      composeContent: template.composeContent,
+      containerPort: template.defaultPort,
+      isSystemManaged: true,
+      cpuLimit: template.defaultCpuLimit,
+      memoryLimit: template.defaultMemoryLimit,
+      diskWriteAlertThreshold: template.defaultDiskWriteAlertThreshold,
+      autoTraefikLabels: false,
+    });
+  } catch (err) {
+    // Unique constraint violation — another call already created it
+    if (err instanceof Error && err.message.includes("unique")) {
+      log.info(`Infra app "${template.name}" already created by concurrent call`);
+      return;
+    }
+    throw err;
+  }
 
   // Create production environment
   await db.insert(environments).values({
