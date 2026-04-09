@@ -34,12 +34,14 @@ export async function ensureVardoOrg(): Promise<{ id: string } | null> {
       name: "Vardo",
       slug: VARDO_ORG_SLUG,
       isSystemManaged: true,
+      trusted: true,
     })
     .onConflictDoUpdate({
       target: organizations.slug,
       set: {
         name: "Vardo",
         isSystemManaged: true,
+        trusted: true,
         updatedAt: new Date(),
       },
     })
