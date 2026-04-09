@@ -158,11 +158,14 @@ export async function loadFeatureFlags(): Promise<void> {
 }
 
 /**
- * Clear the sync flag cache so the next isFeatureEnabled() / isFeatureEnabledAsync()
- * call re-reads from the DB. Call after writing feature flags.
+ * Clear the sync flag cache and reload from the DB.
+ * Call after writing feature flags.
  */
-export function invalidateFlagCache(): void {
+export async function invalidateFlagCache(): Promise<void> {
   flagCache = null;
+  await loadFeatureFlags().catch(() => {
+    // Best-effort reload — sync callers will use defaults until next async call
+  });
 }
 
 /**

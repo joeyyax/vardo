@@ -4,7 +4,7 @@ import { createHash } from "crypto";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { memberships, apiTokens, user } from "@/lib/db/schema";
-import { isFeatureEnabled } from "@/lib/config/features";
+import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { eq, and } from "drizzle-orm";
 
 export const CURRENT_ORG_COOKIE = "host_current_org";
@@ -123,7 +123,9 @@ export const getCurrentOrg = cache(async () => {
       },
     });
 
-    if (membership) {
+    // Skip system-managed orgs when selfManagement is off
+    const showSystemOrgs = await isFeatureEnabledAsync("selfManagement");
+    if (membership && (showSystemOrgs || !membership.organization.isSystemManaged)) {
       return {
         organization: membership.organization,
         membership: {
@@ -134,13 +136,18 @@ export const getCurrentOrg = cache(async () => {
     }
   }
 
-  // Fall back to first membership
-  const membership = await db.query.memberships.findFirst({
+  // Fall back to first non-system membership (or any if selfManagement is on)
+  const showSystemOrgs = await isFeatureEnabledAsync("selfManagement");
+  const allMemberships = await db.query.memberships.findMany({
     where: eq(memberships.userId, session.user.id),
     with: {
       organization: true,
     },
   });
+
+  const membership = allMemberships.find(
+    (m) => showSystemOrgs || !m.organization.isSystemManaged,
+  ) ?? allMemberships[0];
 
   if (!membership) {
     return null;
@@ -205,7 +212,7 @@ export const getUserOrganizations = cache(async () => {
     },
   });
 
-  const showSystemOrgs = isFeatureEnabled("selfManagement");
+  const showSystemOrgs = await isFeatureEnabledAsync("selfManagement");
 
   return userMemberships
     .filter((m) => showSystemOrgs || !m.organization.isSystemManaged)

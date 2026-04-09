@@ -41,7 +41,7 @@ async function handlePost(request: NextRequest) {
 
   // Bust all caches so the new flags take effect immediately
   invalidateSettingsCache("feature_flags");
-  invalidateFlagCache();
+  await invalidateFlagCache();
   revalidatePath("/", "layout");
 
   // Provision or stop infrastructure services based on flag changes
