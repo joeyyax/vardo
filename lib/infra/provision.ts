@@ -16,7 +16,6 @@ import { apps, environments, projects } from "@/lib/db/schema";
 import { isFeatureEnabledAsync, type FeatureFlag } from "@/lib/config/features";
 import { loadTemplates, type Template } from "@/lib/templates/load";
 import { requestDeploy } from "@/lib/docker/deploy-cancel";
-import { stopContainer } from "@/lib/docker/client";
 import { ensureVardoOrg } from "@/lib/infra/vardo-org";
 import { logger } from "@/lib/logger";
 
@@ -47,6 +46,7 @@ export async function ensureInfraServices(): Promise<void> {
 
   for (const { flag, templates: templateNames } of INFRA_FEATURES) {
     const enabled = await isFeatureEnabledAsync(flag);
+    if (!enabled) continue;
 
     for (const name of templateNames) {
       const template = templates.find((t) => t.name === name);
@@ -56,11 +56,7 @@ export async function ensureInfraServices(): Promise<void> {
       }
 
       try {
-        if (enabled) {
-          await ensureAppDeployed(org.id, project.id, template);
-        } else {
-          await ensureAppStopped(org.id, name);
-        }
+        await ensureAppDeployed(org.id, project.id, template);
       } catch (err) {
         log.error(`Failed to provision ${name}:`, err);
       }
@@ -73,6 +69,8 @@ export async function ensureInfraServices(): Promise<void> {
  * Called from the feature flags API route after a toggle.
  */
 export async function provisionForFlag(flag: FeatureFlag, enabled: boolean): Promise<void> {
+  if (!enabled) return; // Containers keep running when feature is disabled
+
   const mapping = INFRA_FEATURES.find((f) => f.flag === flag);
   if (!mapping) return;
 
@@ -87,13 +85,9 @@ export async function provisionForFlag(flag: FeatureFlag, enabled: boolean): Pro
     if (!template) continue;
 
     try {
-      if (enabled) {
-        await ensureAppDeployed(org.id, project.id, template);
-      } else {
-        await ensureAppStopped(org.id, name);
-      }
+      await ensureAppDeployed(org.id, project.id, template);
     } catch (err) {
-      log.error(`Failed to ${enabled ? "provision" : "stop"} ${name}:`, err);
+      log.error(`Failed to provision ${name}:`, err);
     }
   }
 }
@@ -139,7 +133,7 @@ async function ensureAppDeployed(orgId: string, projectId: string, template: Tem
   });
 
   if (existing) {
-    log.info(`Infra app "${template.name}" already exists, skipping`);
+    log.info(`Infra app "${template.name}" already exists`);
     return;
   }
 
@@ -183,25 +177,3 @@ async function ensureAppDeployed(orgId: string, projectId: string, template: Tem
   });
 }
 
-async function ensureAppStopped(orgId: string, name: string) {
-  const app = await db.query.apps.findFirst({
-    where: and(
-      eq(apps.organizationId, orgId),
-      eq(apps.name, name),
-      eq(apps.isSystemManaged, true),
-    ),
-    columns: { id: true },
-  });
-
-  if (!app) return;
-
-  // Stop the container by its pinned name
-  const containerName = `vardo-${name}`;
-  try {
-    await stopContainer(containerName);
-    log.info(`Stopped infra container "${containerName}"`);
-  } catch {
-    // Container may not be running
-    log.info(`Infra container "${containerName}" not running`);
-  }
-}
