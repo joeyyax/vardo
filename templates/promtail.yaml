@@ -14,21 +14,55 @@ composeContent: |
       container_name: vardo-promtail
       restart: unless-stopped
       command:
-        - -config.expand-env=true
         - -config.file=/etc/promtail/config.yml
-      environment:
-        - LOKI_URL=${LOKI_URL:-http://vardo-loki:3100}
+      configs:
+        - source: promtail-config
+          target: /etc/promtail/config.yml
       volumes:
         - /var/run/docker.sock:/var/run/docker.sock:ro
         - /var/lib/docker/containers:/var/lib/docker/containers:ro
-        - promtail-config:/etc/promtail
       mem_limit: 128m
 
-  volumes:
-    promtail-config: {}
-
-envVars:
-  - key: LOKI_URL
-    description: URL of the Loki instance to push logs to
-    required: false
-    defaultValue: http://vardo-loki:3100
+  configs:
+    promtail-config:
+      content: |
+        server:
+          http_listen_port: 9080
+        positions:
+          filename: /tmp/positions.yaml
+        clients:
+          - url: http://vardo-loki:3100/loki/api/v1/push
+        scrape_configs:
+          - job_name: docker
+            docker_sd_configs:
+              - host: unix:///var/run/docker.sock
+                refresh_interval: 5s
+            relabel_configs:
+              - source_labels: ["__meta_docker_container_label_host_managed"]
+                target_label: __tmp_managed
+              - source_labels: ["__meta_docker_container_label_vardo_managed"]
+                regex: "(.+)"
+                target_label: __tmp_managed
+              - source_labels: ["__tmp_managed"]
+                regex: "true"
+                action: keep
+              - source_labels: ["__meta_docker_container_label_host_project"]
+                target_label: project
+              - source_labels: ["__meta_docker_container_label_vardo_project"]
+                regex: "(.+)"
+                target_label: project
+              - source_labels: ["__meta_docker_container_label_host_project_id"]
+                target_label: project_id
+              - source_labels: ["__meta_docker_container_label_vardo_project_id"]
+                regex: "(.+)"
+                target_label: project_id
+              - source_labels: ["__meta_docker_container_label_host_environment"]
+                target_label: environment
+              - source_labels: ["__meta_docker_container_label_vardo_environment"]
+                regex: "(.+)"
+                target_label: environment
+              - source_labels: ["__meta_docker_container_label_com_docker_compose_service"]
+                target_label: service
+              - source_labels: ["__meta_docker_container_name"]
+                regex: "/(.*)"
+                target_label: container
