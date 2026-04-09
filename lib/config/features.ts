@@ -167,6 +167,14 @@ export async function loadFeatureFlags(): Promise<void> {
 }
 
 /**
+ * Clear the sync flag cache so the next isFeatureEnabled() / isFeatureEnabledAsync()
+ * call re-reads from the DB. Call after writing feature flags.
+ */
+export function invalidateFlagCache(): void {
+  flagCache = null;
+}
+
+/**
  * Check if a feature is enabled (synchronous).
  * Reads from the in-memory cache populated by loadFeatureFlags().
  * If cache hasn't loaded yet (early startup), defaults to true.

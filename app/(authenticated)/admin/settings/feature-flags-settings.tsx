@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -14,6 +15,7 @@ type FlagState = {
 };
 
 export function FeatureFlagsSettings() {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [flags, setFlags] = useState<FlagState[]>([]);
@@ -55,6 +57,7 @@ export function FeatureFlagsSettings() {
       });
       if (!res.ok) throw new Error("Failed to save");
       toast.success("Feature flags saved");
+      router.refresh();
     } catch {
       toast.error("Failed to save feature flags");
     } finally {
