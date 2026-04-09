@@ -12,13 +12,13 @@ import { readFile, access } from "fs/promises";
 import { join } from "path";
 import { promisify } from "util";
 import { execFile } from "child_process";
-import { asc } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
 import { db } from "@/lib/db";
-import { apps, organizations, projects } from "@/lib/db/schema";
+import { apps, projects } from "@/lib/db/schema";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { parseCompose } from "@/lib/docker/compose";
+import { ensureVardoOrg } from "@/lib/infra/vardo-org";
 import { logger } from "@/lib/logger";
 import { VARDO_HOME_DIR, VARDO_CURRENT_DIR } from "@/lib/paths";
 
@@ -75,15 +75,9 @@ export async function ensureVardoProject(): Promise<void> {
   const composeContent = await readFile(composePath, "utf-8");
   const compose = parseCompose(composeContent);
 
-  // Use the first organization created as the owner.
-  const [org] = await db
-    .select({ id: organizations.id })
-    .from(organizations)
-    .orderBy(asc(organizations.createdAt))
-    .limit(1);
-
+  const org = await ensureVardoOrg();
   if (!org) {
-    log.warn("no organization found, skipping self-registration");
+    log.warn("no admin user yet, skipping self-registration");
     return;
   }
 

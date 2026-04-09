@@ -21,6 +21,7 @@ export const organizations = pgTable("organization", {
   baseDomain: text("base_domain"),
   sslEnabled: boolean("ssl_enabled").default(true),
   trusted: boolean("trusted").default(false).notNull(),
+  isSystemManaged: boolean("is_system_managed").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

@@ -73,6 +73,9 @@ const { dbMock, isFeatureEnabledMock, readFileMock, execFileAsyncMock, execFileM
 vi.mock("@/lib/db", () => ({ db: dbMock }));
 vi.mock("@/lib/config/features", () => ({ isFeatureEnabledAsync: isFeatureEnabledMock }));
 vi.mock("@/lib/docker/compose", () => ({ parseCompose: parseComposeMock }));
+vi.mock("@/lib/infra/vardo-org", () => ({
+  ensureVardoOrg: vi.fn().mockResolvedValue({ id: "org-1" }),
+}));
 vi.mock("@/lib/logger", () => ({
   logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) },
 }));
@@ -152,16 +155,14 @@ describe("ensureVardoProject", () => {
     expect(dbMock.insert).not.toHaveBeenCalled();
   });
 
-  it("returns without upserting when no organization exists", async () => {
+  it("returns without upserting when ensureVardoOrg returns null", async () => {
     isFeatureEnabledMock.mockResolvedValue(true);
     process.env["VARDO_HOME_DIR"] = "/opt/vardo";
     readFileMock.mockResolvedValue("services:\n  vardo:\n    image: vardo\n");
 
-    // No org found
-    const emptyLimitFn = vi.fn(async () => []);
-    const emptyOrderByFn = vi.fn(() => ({ limit: emptyLimitFn }));
-    const emptyFromFn = vi.fn(() => ({ orderBy: emptyOrderByFn }));
-    dbMock.select.mockImplementation(() => ({ from: emptyFromFn }));
+    // No admin user yet — ensureVardoOrg returns null
+    const { ensureVardoOrg } = await import("@/lib/infra/vardo-org");
+    vi.mocked(ensureVardoOrg).mockResolvedValueOnce(null);
 
     await ensureVardoProject();
 
