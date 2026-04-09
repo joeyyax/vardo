@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { organizations, memberships, user } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth/session";
+import { isFeatureEnabled } from "@/lib/config/features";
 import { eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { logger } from "@/lib/logger";
@@ -35,12 +36,16 @@ export async function GET() {
       },
     });
 
-    const orgs = userMemberships.map((m) => ({
-      id: m.organization.id,
-      name: m.organization.name,
-      slug: m.organization.slug,
-      role: m.role,
-    }));
+    const showSystemOrgs = isFeatureEnabled("selfManagement");
+
+    const orgs = userMemberships
+      .filter((m) => showSystemOrgs || !m.organization.isSystemManaged)
+      .map((m) => ({
+        id: m.organization.id,
+        name: m.organization.name,
+        slug: m.organization.slug,
+        role: m.role,
+      }));
 
     return NextResponse.json({ organizations: orgs });
   } catch (error) {

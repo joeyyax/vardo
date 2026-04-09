@@ -4,6 +4,7 @@ import { createHash } from "crypto";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { memberships, apiTokens, user } from "@/lib/db/schema";
+import { isFeatureEnabled } from "@/lib/config/features";
 import { eq, and } from "drizzle-orm";
 
 export const CURRENT_ORG_COOKIE = "host_current_org";
@@ -204,10 +205,14 @@ export const getUserOrganizations = cache(async () => {
     },
   });
 
-  return userMemberships.map((m) => ({
-    id: m.organization.id,
-    name: m.organization.name,
-    slug: m.organization.slug,
-    role: m.role,
-  }));
+  const showSystemOrgs = isFeatureEnabled("selfManagement");
+
+  return userMemberships
+    .filter((m) => showSystemOrgs || !m.organization.isSystemManaged)
+    .map((m) => ({
+      id: m.organization.id,
+      name: m.organization.name,
+      slug: m.organization.slug,
+      role: m.role,
+    }));
 });
