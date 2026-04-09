@@ -34,13 +34,6 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    if (app.isSystemManaged) {
-      return NextResponse.json(
-        { error: "System-managed apps cannot be deployed via the API" },
-        { status: 403 }
-      );
-    }
-
     // Parse optional environmentId, groupEnvironmentId, and deployAll flag from body
     let environmentId: string | undefined;
     let groupEnvironmentId: string | undefined;
