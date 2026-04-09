@@ -1,8 +1,14 @@
+import { isFeatureEnabled } from "@/lib/config/features";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("domain-monitoring");
 
 export async function registerDomainMonitoringPlugin(): Promise<void> {
+  if (!isFeatureEnabled("domain-monitoring")) {
+    log.info("Domain monitoring disabled, skipping registration");
+    return;
+  }
+
   let ticking = false;
   setInterval(async () => {
     if (ticking) return;
