@@ -1,4 +1,5 @@
 import { startNotificationConsumer, stopNotificationConsumer } from "@/lib/notifications/stream-consumer";
+import { isFeatureEnabled } from "@/lib/config/features";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("notifications");
@@ -7,6 +8,11 @@ const log = logger.child("notifications");
  * Start the notification stream consumer.
  */
 export async function registerNotificationsPlugin(): Promise<void> {
+  if (!isFeatureEnabled("notifications")) {
+    log.info("Notifications disabled, skipping registration");
+    return;
+  }
+
   startNotificationConsumer().catch((err) => {
     log.error("Failed to start notification consumer:", err);
   });

@@ -11,10 +11,13 @@ defaultPort: 3100
 composeContent: |
   services:
     loki:
-      image: grafana/loki:3-alpine
+      image: grafana/loki:3.4
+      container_name: vardo-loki
+      restart: unless-stopped
       command: -config.file=/etc/loki/local-config.yaml
       volumes:
         - loki-data:/loki
+      mem_limit: 512m
 
   volumes:
     loki-data: {}

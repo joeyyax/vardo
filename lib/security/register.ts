@@ -1,9 +1,15 @@
 import { registerInternalHandler } from "@/lib/hooks/registry";
+import { isFeatureEnabled } from "@/lib/config/features";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("security");
 
 export async function registerSecurityPlugin(): Promise<void> {
+  if (!isFeatureEnabled("security")) {
+    log.info("Security scanning disabled, skipping registration");
+    return;
+  }
+
   registerInternalHandler("security-scanner:run-scan", async (context) => {
     try {
       const { runSecurityScan } = await import("@/lib/security/scanner");
