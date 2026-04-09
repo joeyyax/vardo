@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronsUpDown, Plus, Building2, Check, Loader2, Settings, Users } from "lucide-react";
 import { toast } from "@/lib/messenger";
@@ -41,29 +41,29 @@ export function OrgSwitcher({ currentOrgId, organizations: initialOrganizations,
   const [newOrgName, setNewOrgName] = useState("");
   const [creating, setCreating] = useState(false);
 
-  // Fetch organizations on mount only if not provided
+  const fetchOrgs = useCallback(async () => {
+    try {
+      const res = await fetch("/api/v1/organizations");
+      if (res.ok) {
+        const data = await res.json();
+        setOrganizations(data.organizations || []);
+      }
+    } catch (err) {
+      console.error("Failed to fetch organizations:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Seed from server-provided data or fetch on mount
   useEffect(() => {
     if (initialOrganizations) {
       setOrganizations(initialOrganizations);
       setLoading(false);
       return;
     }
-
-    async function fetchOrgs() {
-      try {
-        const res = await fetch("/api/v1/organizations");
-        if (res.ok) {
-          const data = await res.json();
-          setOrganizations(data.organizations || []);
-        }
-      } catch (err) {
-        console.error("Failed to fetch organizations:", err);
-      } finally {
-        setLoading(false);
-      }
-    }
     fetchOrgs();
-  }, [initialOrganizations]);
+  }, [initialOrganizations, fetchOrgs]);
 
   const currentOrg = organizations.find((o) => o.id === currentOrgId) || organizations[0];
 
@@ -131,7 +131,7 @@ export function OrgSwitcher({ currentOrgId, organizations: initialOrganizations,
 
   return (
     <>
-      <DropdownMenu>
+      <DropdownMenu onOpenChange={(open) => { if (open) fetchOrgs(); }}>
         <DropdownMenuTrigger asChild>
           <Button
             variant="outline"
