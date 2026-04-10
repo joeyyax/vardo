@@ -10,7 +10,7 @@ defaultPort: 8000
 
 composeContent: |
   services:
-    web:
+    glitchtip:
       image: glitchtip/glitchtip:latest
       container_name: vardo-glitchtip
       depends_on:

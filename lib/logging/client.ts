@@ -2,7 +2,7 @@
 // Loki HTTP client — queries persistent container logs
 // ---------------------------------------------------------------------------
 
-const LOKI_URL = process.env.LOKI_URL || "http://vardo-loki:3100";
+const LOKI_URL = process.env.LOKI_URL || "http://loki:3100";
 
 // ---------------------------------------------------------------------------
 // Availability check

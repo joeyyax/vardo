@@ -12,7 +12,7 @@ import { logger } from "@/lib/logger";
 const log = logger.child("error-tracking");
 
 /** Default internal URL for server-side API calls (Docker DNS). */
-const DEFAULT_GLITCHTIP_URL = "http://vardo-glitchtip:8000";
+const DEFAULT_GLITCHTIP_URL = "http://glitchtip:8000";
 
 /** Resolved config — lazily loaded from system settings, cached for 30s. */
 let configCache: { url: string; apiToken: string; publicUrl: string; expiresAt: number } | null = null;
