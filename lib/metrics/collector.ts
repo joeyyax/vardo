@@ -5,6 +5,7 @@ import { storeMetrics, storeDiskUsage, storeDiskWrite, storeGpuMetrics, storePro
 import { checkDiskWriteAlerts } from "./disk-write-alerts";
 import { getSystemDiskUsage, getPerProjectDiskUsage } from "@/lib/docker/client";
 import { collectBusinessMetrics } from "./collect-business-metrics";
+import { initGpuCollector, getGpuCollector } from "@/lib/gpu/collector";
 
 const log = logger.child("collector");
 
@@ -36,6 +37,12 @@ export async function startCollector() {
   started = true;
   tickCount = 0;
   log.info("Starting metrics collection (fast warmup: 5s × 20, then 30s)");
+
+  // Initialize GPU collector (non-blocking — returns null on non-GPU hosts)
+  initGpuCollector().catch((err) => {
+    log.warn("GPU collector init failed:", (err as Error).message);
+  });
+
   scheduleTick();
 }
 
@@ -80,6 +87,39 @@ async function collect() {
     const failed = results.filter((r) => r.status === "rejected").length;
     if (failed > 0) {
       log.error(`${results.length - failed} stored, ${failed} failed:`, (results.find((r) => r.status === "rejected") as PromiseRejectedResult)?.reason);
+    }
+
+    // GPU collector: supplement containers that cAdvisor didn't report GPU data for
+    const gpuCollector = getGpuCollector();
+    if (gpuCollector) {
+      try {
+        const containersWithGpu = new Set(
+          metrics.filter((m) => m.gpuMemoryTotal > 0).map((m) => m.containerId),
+        );
+        const gpuMetrics = await gpuCollector.collect();
+        const ts = Date.now();
+
+        const gpuOps = gpuMetrics
+          .filter((gm) => !containersWithGpu.has(gm.containerId))
+          .map((gm) =>
+            storeGpuMetrics(gm.projectName, gm.containerId, gm.containerName, ts, {
+              gpuUtilization: gm.gpuUtilization,
+              gpuMemoryUsed: gm.gpuMemoryUsed,
+              gpuMemoryTotal: gm.gpuMemoryTotal,
+              gpuTemperature: gm.gpuTemperature,
+            }, gm.organizationId),
+          );
+
+        if (gpuOps.length > 0) {
+          const gpuResults = await Promise.allSettled(gpuOps);
+          const gpuFailed = gpuResults.filter((r) => r.status === "rejected").length;
+          if (gpuFailed > 0) {
+            log.error(`GPU store: ${gpuOps.length - gpuFailed} ok, ${gpuFailed} failed`);
+          }
+        }
+      } catch (err) {
+        log.warn("GPU collection error:", (err as Error).message);
+      }
     }
 
     // Recovered — mark integration connected if it was degraded
