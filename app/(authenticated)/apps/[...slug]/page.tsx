@@ -7,7 +7,7 @@ import { nanoid } from "nanoid";
 import { AppDetail } from "./app-detail";
 import { getFeatureFlags } from "@/lib/config/features";
 
-const VALID_TABS = ["apps", "deployments", "connect", "variables", "networking", "logs", "volumes", "cron", "terminal", "metrics", "backups", "security", "debug", "services", "compose"] as const;
+const VALID_TABS = ["apps", "deployments", "connect", "variables", "networking", "logs", "volumes", "cron", "terminal", "metrics", "backups", "security", "errors", "debug", "services", "compose"] as const;
 type ValidTab = (typeof VALID_TABS)[number];
 
 type PageProps = {
@@ -241,6 +241,7 @@ export default async function AppDetailPage({ params }: PageProps) {
   const gatedTabs: Record<string, keyof typeof featureFlags> = {
     cron: "cron",
     terminal: "terminal",
+    errors: "errorTracking",
   };
   const effectiveTab = tab && gatedTabs[tab] && !featureFlags[gatedTabs[tab]]
     ? defaultTab

@@ -60,6 +60,10 @@ export type VardoConfig = {
     challengeType?: "http" | "dns";
     dnsProvider?: "cloudflare";
   };
+  errorTracking?: {
+    /** Browser-accessible URL for GlitchTip (used in permalinks). */
+    publicUrl?: string;
+  };
   features?: Record<string, boolean>;
 
   // ---------------------------------------------------------------------------
@@ -123,6 +127,9 @@ export type VardoSecrets = {
   dns?: {
     apiToken?: string;
   };
+  errorTracking?: {
+    apiToken?: string;
+  };
 };
 
 /** Config + secrets merged for internal use. */
@@ -133,6 +140,7 @@ export type VardoFullConfig = {
   backup?: VardoConfig["backup"] & VardoSecrets["backup"];
   github?: VardoConfig["github"] & VardoSecrets["github"];
   ssl?: VardoConfig["ssl"] & { zerossl?: VardoSecrets["zerossl"]; dnsApiToken?: string };
+  errorTracking?: VardoConfig["errorTracking"] & VardoSecrets["errorTracking"];
   features?: VardoConfig["features"];
   secrets?: {
     encryptionKey?: string;
@@ -221,6 +229,7 @@ export async function readVardoConfig(): Promise<VardoFullConfig | null> {
     backup: { ...config.backup, ...secrets?.backup },
     github: { ...config.github, ...secrets?.github },
     ssl: { ...config.ssl, zerossl: secrets?.zerossl, dnsApiToken: secrets?.dns?.apiToken },
+    errorTracking: { ...config.errorTracking, ...secrets?.errorTracking },
     features: config.features,
     secrets: {
       encryptionKey: secrets?.encryptionKey,

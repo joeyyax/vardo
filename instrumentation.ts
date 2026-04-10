@@ -84,6 +84,7 @@ export async function register() {
       ["domain-monitoring", async () => { const m = await import("./lib/domain-monitoring/register"); await m.registerDomainMonitoringPlugin(); }],
       ["digest", async () => { const m = await import("./lib/digest/register"); await m.registerDigestPlugin(); }],
       ["logging", async () => { const m = await import("./lib/logging/register"); await m.registerLoggingFeature(); }],
+      ["error-tracking", async () => { const m = await import("./lib/error-tracking/register"); await m.registerErrorTrackingPlugin(); }],
     ];
 
     for (const [label, register] of features) {
