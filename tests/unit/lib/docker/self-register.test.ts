@@ -37,7 +37,15 @@ const { dbMock, isFeatureEnabledMock, readFileMock, execFileAsyncMock, execFileM
   // db.transaction() passes a transaction object (tx) to the callback.
   // The tx has the same insert/select methods — reuse the same mocks so
   // tests can assert on them without caring whether the code uses tx or db.
-  const txMock = { select: selectFn, insert: insertFn };
+  const txMock = {
+    select: selectFn,
+    insert: insertFn,
+    query: {
+      deployments: {
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
+    },
+  };
   const transactionFn = vi.fn().mockImplementation(
     async (cb: (tx: typeof txMock) => Promise<void>) => cb(txMock)
   );
