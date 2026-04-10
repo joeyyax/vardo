@@ -36,11 +36,6 @@ export class GpuMetricsCollector {
       this.provider.getProcesses(),
     ]);
 
-    log.info(`collect: ${deviceMetrics.length} devices, ${processes.length} processes`);
-    for (const proc of processes) {
-      log.info(`  process: pid=${proc.pid}, device=${proc.deviceIndex}, mem=${Math.round(proc.memoryUsed / 1024 / 1024)}MiB`);
-    }
-
     if (deviceMetrics.length === 0) return [];
 
     // Build device-level lookup by index
@@ -59,18 +54,11 @@ export class GpuMetricsCollector {
     const resolveResults = await Promise.all(
       processes.map(async (proc): Promise<ResolvedProcess | null> => {
         const containerId = await this.resolver.pidToContainerId(proc.pid);
-        if (!containerId) {
-          log.info(`  pid ${proc.pid}: no container found`);
-          return null;
-        }
+        if (!containerId) return null;
 
         const app = await this.resolver.containerIdToApp(containerId);
-        if (!app) {
-          log.info(`  pid ${proc.pid}: container ${containerId} not a vardo app`);
-          return null;
-        }
+        if (!app) return null;
 
-        log.info(`  pid ${proc.pid}: → ${app.projectName}/${app.containerName}`);
         return {
           containerId,
           projectName: app.projectName,
