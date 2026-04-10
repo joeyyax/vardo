@@ -11,7 +11,6 @@
 import { and, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
-import { access } from "fs/promises";
 import { db } from "@/lib/db";
 import { apps, environments, projects } from "@/lib/db/schema";
 import { isFeatureEnabledAsync, type FeatureFlag } from "@/lib/config/features";
@@ -209,11 +208,14 @@ async function ensureAppDeployed(orgId: string, projectId: string, template: Tem
   });
 }
 
-/** Check if an NVIDIA GPU is available on the host. */
+/** Check if an NVIDIA GPU runtime is available on the Docker host. */
 async function detectNvidiaGpu(): Promise<boolean> {
   try {
-    await access("/dev/nvidia0");
-    return true;
+    const { execFile } = await import("child_process");
+    const { promisify } = await import("util");
+    const execFileAsync = promisify(execFile);
+    const { stdout } = await execFileAsync("docker", ["info", "--format", "{{json .Runtimes}}"], { timeout: 5000 });
+    return stdout.includes("nvidia");
   } catch {
     return false;
   }
