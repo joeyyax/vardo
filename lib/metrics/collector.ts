@@ -96,7 +96,12 @@ async function collect() {
         const containersWithGpu = new Set(
           metrics.filter((m) => m.gpuMemoryTotal > 0).map((m) => m.containerId),
         );
-        const gpuMetrics = await gpuCollector.collect();
+        const gpuMetrics = await Promise.race([
+          gpuCollector.collect(),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("GPU collection timed out")), 15_000),
+          ),
+        ]);
         const ts = Date.now();
 
         const gpuOps = gpuMetrics
