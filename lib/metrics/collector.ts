@@ -99,6 +99,13 @@ async function collect() {
         const gpuMetrics = await gpuCollector.collect();
         const ts = Date.now();
 
+        if (tickCount < 5) {
+          log.info(`GPU tick: ${gpuMetrics.length} containers with GPU data, ${containersWithGpu.size} already from cAdvisor`);
+          for (const gm of gpuMetrics) {
+            log.info(`  → ${gm.projectName}/${gm.containerName}: util=${gm.gpuUtilization}%, mem=${Math.round(gm.gpuMemoryUsed / 1024 / 1024)}MiB, filtered=${containersWithGpu.has(gm.containerId)}`);
+          }
+        }
+
         const gpuOps = gpuMetrics
           .filter((gm) => !containersWithGpu.has(gm.containerId))
           .map((gm) =>
