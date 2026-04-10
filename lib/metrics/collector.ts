@@ -5,7 +5,7 @@ import { storeMetrics, storeDiskUsage, storeDiskWrite, storeGpuMetrics, storePro
 import { checkDiskWriteAlerts } from "./disk-write-alerts";
 import { getSystemDiskUsage, getPerProjectDiskUsage } from "@/lib/docker/client";
 import { collectBusinessMetrics } from "./collect-business-metrics";
-import { initGpuCollector, getGpuCollector } from "@/lib/gpu/collector";
+import { initGpuCollector, getGpuCollector, setGpuSnapshot } from "@/lib/gpu/collector";
 
 const log = logger.child("collector");
 
@@ -102,6 +102,7 @@ async function collect() {
             setTimeout(() => reject(new Error("GPU collection timed out")), 15_000),
           ),
         ]);
+        setGpuSnapshot(gpuMetrics);
         const ts = Date.now();
 
         const gpuOps = gpuMetrics

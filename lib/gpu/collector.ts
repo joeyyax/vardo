@@ -151,7 +151,10 @@ export class GpuMetricsCollector {
 // Singleton management — uses globalThis to survive Next.js module reloads
 // ---------------------------------------------------------------------------
 
-const globalForGpu = globalThis as unknown as { __vardo_gpu_collector?: GpuMetricsCollector | null };
+const globalForGpu = globalThis as unknown as {
+  __vardo_gpu_collector?: GpuMetricsCollector | null;
+  __vardo_gpu_snapshot?: ContainerGpuMetrics[];
+};
 
 /** Initialize the GPU collector with auto-detected provider. */
 export async function initGpuCollector(): Promise<GpuMetricsCollector | null> {
@@ -178,4 +181,18 @@ export async function initGpuCollector(): Promise<GpuMetricsCollector | null> {
 /** Get the current GPU collector instance (null if not initialized or no GPUs). */
 export function getGpuCollector(): GpuMetricsCollector | null {
   return globalForGpu.__vardo_gpu_collector ?? null;
+}
+
+/** Store the latest GPU metrics snapshot (called by the collector tick). */
+export function setGpuSnapshot(metrics: ContainerGpuMetrics[]): void {
+  globalForGpu.__vardo_gpu_snapshot = metrics;
+}
+
+/**
+ * Get the latest GPU metrics snapshot.
+ * This is the cached result from the most recent collector tick —
+ * use this in the SSE broadcast instead of calling collect() again.
+ */
+export function getGpuSnapshot(): ContainerGpuMetrics[] {
+  return globalForGpu.__vardo_gpu_snapshot ?? [];
 }

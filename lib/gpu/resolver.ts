@@ -1,30 +1,36 @@
-import { listContainers, dockerRequest, type ContainerInfo } from "@/lib/docker/client";
+import { readFile } from "node:fs/promises";
+import { listContainers, type ContainerInfo } from "@/lib/docker/client";
 import { logger } from "@/lib/logger";
 import type { ContainerResolver } from "./types";
 
 const log = logger.child("gpu-resolver");
 
-const PID_MAP_TTL_MS = 5000;
 const CONTAINER_LIST_TTL_MS = 10_000;
 
 /**
- * Docker container resolver — maps PIDs to containers via the Docker API
- * `top` endpoint, then containers to Vardo apps via Docker labels.
+ * Host proc path — the Vardo container mounts host /proc at /host-proc
+ * for PID-to-container resolution without Docker API calls.
+ */
+const HOST_PROC = "/host-proc";
+
+/**
+ * Docker container resolver — maps PIDs to containers by reading
+ * /host-proc/{pid}/cgroup (host /proc mounted read-only), then maps
+ * container IDs to Vardo apps via Docker labels.
  *
- * Uses Docker API rather than /proc/pid/cgroup because the Vardo container
- * can't see host PIDs in its /proc. The Docker socket gives us access to
- * `GET /containers/{id}/top` which returns host PIDs for each container.
+ * Zero Docker API calls for PID resolution — just filesystem reads.
  */
 export class DockerContainerResolver implements ContainerResolver {
-  // PID → container ID lookup — rebuilt per TTL from Docker top endpoints
-  private pidMap: { map: Map<number, string>; cachedAt: number } | null = null;
-
-  // Full container list cache
   private containerListCache: { containers: ContainerInfo[]; cachedAt: number } | null = null;
 
   async pidToContainerId(pid: number): Promise<string | null> {
-    const map = await this.getPidMap();
-    return map.get(pid) ?? null;
+    try {
+      const content = await readFile(`${HOST_PROC}/${pid}/cgroup`, "utf-8");
+      return parseCgroupContent(content);
+    } catch {
+      // PID gone or /host-proc not mounted — expected
+      return null;
+    }
   }
 
   async containerIdToApp(containerId: string): Promise<{
@@ -33,7 +39,9 @@ export class DockerContainerResolver implements ContainerResolver {
     organizationId: string | null;
   } | null> {
     const containers = await this.getContainerList();
-    const match = containers.find((c) => c.id.startsWith(containerId) || containerId.startsWith(c.id));
+    const match = containers.find((c) =>
+      c.id.startsWith(containerId) || containerId.startsWith(c.id.slice(0, 12)),
+    );
     if (!match) return null;
 
     const projectName = match.labels["vardo.project"] || match.labels["host.project"];
@@ -45,62 +53,6 @@ export class DockerContainerResolver implements ContainerResolver {
       organizationId: match.labels["vardo.organization"] || match.labels["host.organization"] || null,
     };
   }
-
-  // ---------------------------------------------------------------------------
-  // PID map via Docker API top
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Build a PID→containerID map by calling `GET /containers/{id}/top` on
-   * all running containers. One batch of API calls per TTL window.
-   */
-  private async getPidMap(): Promise<Map<number, string>> {
-    if (this.pidMap && Date.now() - this.pidMap.cachedAt < PID_MAP_TTL_MS) {
-      return this.pidMap.map;
-    }
-
-    const containers = await this.getContainerList();
-    const map = new Map<number, string>();
-
-    // Process in batches of 10 to avoid overwhelming the Docker daemon
-    const BATCH_SIZE = 10;
-    for (let i = 0; i < containers.length; i += BATCH_SIZE) {
-      const batch = containers.slice(i, i + BATCH_SIZE);
-      await Promise.allSettled(
-        batch.map(async (c) => {
-          try {
-            const top = await Promise.race([
-              dockerRequest<{
-                Titles: string[];
-                Processes: string[][];
-              }>("GET", `/containers/${c.id}/top?ps_args=${encodeURIComponent("eo pid")}`),
-              new Promise<never>((_, reject) =>
-                setTimeout(() => reject(new Error("top timeout")), 3000),
-              ),
-            ]);
-
-            if (!top?.Processes) return;
-
-            for (const proc of top.Processes) {
-              const pid = parseInt(proc[0], 10);
-              if (!isNaN(pid)) {
-                map.set(pid, c.id);
-              }
-            }
-          } catch {
-            // Container may have stopped, or top timed out — skip it
-          }
-        }),
-      );
-    }
-
-    this.pidMap = { map, cachedAt: Date.now() };
-    return map;
-  }
-
-  // ---------------------------------------------------------------------------
-  // Container list cache
-  // ---------------------------------------------------------------------------
 
   private async getContainerList(): Promise<ContainerInfo[]> {
     if (this.containerListCache && Date.now() - this.containerListCache.cachedAt < CONTAINER_LIST_TTL_MS) {
@@ -116,4 +68,30 @@ export class DockerContainerResolver implements ContainerResolver {
       return this.containerListCache?.containers ?? [];
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// cgroup parsing
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse /proc/{pid}/cgroup content to extract Docker container ID.
+ *
+ * cgroup v2: `0::/system.slice/docker-{64hex}.scope`
+ * cgroup v1: `N:name:/docker/{64hex}`
+ *
+ * Returns 12-char short ID to match Docker API conventions.
+ */
+function parseCgroupContent(content: string): string | null {
+  for (const line of content.split("\n")) {
+    const v2 = line.match(/docker-([0-9a-f]{64})\.scope/);
+    if (v2) return v2[1].slice(0, 12);
+
+    const v1 = line.match(/\/docker\/([0-9a-f]{64})/);
+    if (v1) return v1[1].slice(0, 12);
+
+    const cri = line.match(/cri-containerd-([0-9a-f]{64})\.scope/);
+    if (cri) return cri[1].slice(0, 12);
+  }
+  return null;
 }
