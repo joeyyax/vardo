@@ -34,8 +34,9 @@ export function getMetricsProvider(): MetricsProvider | null {
  * Returns empty array if no provider is configured.
  */
 export async function fetchAllMetrics(): Promise<ContainerMetrics[]> {
-  if (!provider) return [];
-  return provider.fetchAll();
+  const p = getMetricsProvider();
+  if (!p) return [];
+  return p.fetchAll();
 }
 
 /**
@@ -46,6 +47,7 @@ export async function fetchProjectMetrics(
   projectName: string,
   environmentName?: string,
 ): Promise<ContainerMetrics[]> {
-  if (!provider) return [];
-  return provider.fetchByProject(projectName, environmentName);
+  const p = getMetricsProvider();
+  if (!p) return [];
+  return p.fetchByProject(projectName, environmentName);
 }
