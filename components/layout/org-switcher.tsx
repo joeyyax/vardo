@@ -122,18 +122,8 @@ export function OrgSwitcher({ currentOrgId, organizations: initialOrganizations,
     }
   };
 
-  if (loading) {
-    return (
-      <Button
-        variant="ghost"
-        className={`w-full px-2 py-1.5 h-auto ${collapsed ? "justify-center" : "justify-start gap-2"}`}
-        disabled
-      >
-        <Loader2 className="size-6 animate-spin" />
-        {!collapsed && <span className="text-sm text-muted-foreground">Loading...</span>}
-      </Button>
-    );
-  }
+  // Never show a loading skeleton — render immediately with whatever data we have.
+  // The dropdown refetches on open, so stale data self-corrects.
 
   return (
     <>
