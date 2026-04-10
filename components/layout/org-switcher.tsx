@@ -36,8 +36,6 @@ export function OrgSwitcher({ currentOrgId, organizations: initialOrganizations,
   const router = useRouter();
   const [organizations, setOrganizations] = useState<Organization[]>(initialOrganizations || []);
   const [loading, setLoading] = useState(!initialOrganizations);
-  const [switching, setSwitching] = useState(false);
-  const [showSwitchSpinner, setShowSwitchSpinner] = useState(false);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newOrgName, setNewOrgName] = useState("");
   const [creating, setCreating] = useState(false);
@@ -71,19 +69,12 @@ export function OrgSwitcher({ currentOrgId, organizations: initialOrganizations,
   const handleSwitchOrg = async (orgId: string) => {
     if (orgId === currentOrg?.id) return;
 
-    setSwitching(true);
-    // Only show spinner after 3s — fast switches shouldn't flash a loader
-    const spinnerTimer = setTimeout(() => setShowSwitchSpinner(true), 3000);
-
     const result = await switchOrganization(orgId);
     if (result.ok) {
       router.push("/projects");
       router.refresh();
     } else {
-      clearTimeout(spinnerTimer);
       toast.error(result.error);
-      setSwitching(false);
-      setShowSwitchSpinner(false);
     }
   };
 
@@ -133,18 +124,11 @@ export function OrgSwitcher({ currentOrgId, organizations: initialOrganizations,
             variant="outline"
             size="sm"
             className="h-auto px-3 py-1.5 gap-1.5 font-medium"
-            disabled={showSwitchSpinner}
           >
-            {showSwitchSpinner ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <>
-                <span className="truncate text-sm">
-                  {currentOrg?.name || "Select organization"}
-                </span>
-                <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" />
-              </>
-            )}
+            <span className="truncate text-sm">
+              {currentOrg?.name || "Select organization"}
+            </span>
+            <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent
