@@ -136,6 +136,36 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
     try { await rm(stale, { force: true }); } catch { /* gone already */ }
   }
 
+  // Fetch exposed ports from child app records (set via Networking UI)
+  const serviceExposedPorts: Record<string, { internal: number; external?: number; protocol?: string }[]> = {};
+  if (Object.keys(compose.services).length > 1) {
+    const childApps = await db.query.apps.findMany({
+      where: and(
+        eq(apps.parentAppId, app.id),
+        eq(apps.organizationId, ctx.organizationId),
+      ),
+      columns: { composeService: true, exposedPorts: true },
+    });
+    for (const child of childApps) {
+      if (child.composeService && child.exposedPorts) {
+        const ports = child.exposedPorts as { internal: number; external?: number; protocol?: string }[];
+        if (ports.length > 0) {
+          serviceExposedPorts[child.composeService] = ports;
+        }
+      }
+    }
+  }
+  // Also check the parent app's own exposedPorts (for single-service or the primary service)
+  if (app.exposedPorts) {
+    const parentPorts = app.exposedPorts as { internal: number; external?: number; protocol?: string }[];
+    if (parentPorts.length > 0) {
+      const primaryService = Object.keys(compose.services)[0];
+      if (primaryService && !serviceExposedPorts[primaryService]) {
+        serviceExposedPorts[primaryService] = parentPorts;
+      }
+    }
+  }
+
   const overlayCompose = buildVardoOverlay({
     fullCompose: compose,
     networkName: NETWORK_NAME,
@@ -144,6 +174,7 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
     gpuEnabled: app.gpuEnabled ?? false,
     externalVolumes: compose.volumes ?? {},
     bareVolumeNames: Object.keys(ctx.bareCompose.volumes ?? {}),
+    serviceExposedPorts,
   });
 
   await writeFile(bareComposePath, composeToYaml(ctx.bareCompose), "utf-8");
