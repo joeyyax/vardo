@@ -12,10 +12,11 @@ import { readFile, access } from "fs/promises";
 import { join } from "path";
 import { promisify } from "util";
 import { execFile } from "child_process";
+import { and, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
 import { db } from "@/lib/db";
-import { apps, projects } from "@/lib/db/schema";
+import { apps, deployments, projects } from "@/lib/db/schema";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { parseCompose } from "@/lib/docker/compose";
 import { ensureVardoOrg } from "@/lib/infra/vardo-org";
@@ -197,6 +198,31 @@ export async function ensureVardoProject(): Promise<void> {
             updatedAt: new Date(),
           },
         });
+    }
+
+    // If the parent app has no successful deployments but its container is
+    // running (started by docker compose, not by the deploy engine), create
+    // a synthetic deployment record so the UI shows the correct status.
+    const existingDeploy = await tx.query.deployments.findFirst({
+      where: and(
+        eq(deployments.appId, parentApp.id),
+        eq(deployments.status, "success"),
+      ),
+      columns: { id: true },
+    });
+
+    if (!existingDeploy) {
+      const now = new Date();
+      await tx.insert(deployments).values({
+        id: nanoid(),
+        appId: parentApp.id,
+        status: "success",
+        trigger: "api",
+        startedAt: now,
+        finishedAt: now,
+        durationMs: 0,
+        log: "[self-register] Container running via docker compose — registered as managed app",
+      });
     }
   });
 }
