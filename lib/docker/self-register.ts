@@ -124,14 +124,14 @@ export async function ensureVardoProject(): Promise<void> {
         id: nanoid(),
         organizationId: org.id,
         name: "vardo",
-        displayName: "Vardo Core",
+        displayName: "Core",
         isSystemManaged: true,
         allowBindMounts: true,
       })
       .onConflictDoUpdate({
         target: [projects.organizationId, projects.name],
         set: {
-          displayName: "Vardo Core",
+          displayName: "Core",
           isSystemManaged: true,
           allowBindMounts: true,
           updatedAt: new Date(),

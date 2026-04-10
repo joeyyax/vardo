@@ -25,9 +25,9 @@ const log = logger.child("infra");
  * Feature-to-template mapping. Each entry defines which feature flag
  * controls which templates should be provisioned.
  */
-const INFRA_FEATURES: { flag: FeatureFlag; templates: string[] }[] = [
-  { flag: "metrics", templates: ["cadvisor"] },
-  { flag: "logging", templates: ["loki", "promtail"] },
+const INFRA_FEATURES: { flag: FeatureFlag; templates: string[]; project: { name: string; displayName: string } }[] = [
+  { flag: "metrics", templates: ["cadvisor"], project: { name: "metrics", displayName: "Metrics" } },
+  { flag: "logging", templates: ["loki", "promtail"], project: { name: "logs", displayName: "Logs" } },
 ];
 
 /**
@@ -41,12 +41,13 @@ export async function ensureInfraServices(): Promise<void> {
     return;
   }
 
-  const project = await ensureInfraProject(org.id);
   const templates = await loadTemplates();
 
-  for (const { flag, templates: templateNames } of INFRA_FEATURES) {
+  for (const { flag, templates: templateNames, project: projDef } of INFRA_FEATURES) {
     const enabled = await isFeatureEnabledAsync(flag);
     if (!enabled) continue;
+
+    const project = await ensureProject(org.id, projDef.name, projDef.displayName);
 
     for (const name of templateNames) {
       const template = templates.find((t) => t.name === name);
@@ -77,7 +78,7 @@ export async function provisionForFlag(flag: FeatureFlag, enabled: boolean): Pro
   const org = await ensureVardoOrg();
   if (!org) return;
 
-  const project = await ensureInfraProject(org.id);
+  const project = await ensureProject(org.id, mapping.project.name, mapping.project.displayName);
   const templates = await loadTemplates();
 
   for (const name of mapping.templates) {
@@ -96,21 +97,21 @@ export async function provisionForFlag(flag: FeatureFlag, enabled: boolean): Pro
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-async function ensureInfraProject(orgId: string) {
+async function ensureProject(orgId: string, name: string, displayName: string) {
   const [project] = await db
     .insert(projects)
     .values({
       id: nanoid(),
       organizationId: orgId,
-      name: "vardo-infra",
-      displayName: "Vardo Infrastructure",
+      name,
+      displayName,
       isSystemManaged: true,
       allowBindMounts: true,
     })
     .onConflictDoUpdate({
       target: [projects.organizationId, projects.name],
       set: {
-        displayName: "Vardo Infrastructure",
+        displayName,
         isSystemManaged: true,
         allowBindMounts: true,
         updatedAt: new Date(),
