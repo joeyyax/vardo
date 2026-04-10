@@ -68,7 +68,7 @@ export class DockerContainerResolver implements ContainerResolver {
           const top = await dockerRequest<{
             Titles: string[];
             Processes: string[][];
-          }>("GET", `/containers/${c.id}/top?ps_args=eo pid`);
+          }>("GET", `/containers/${c.id}/top?ps_args=${encodeURIComponent("eo pid")}`);
 
           if (!top?.Processes) return;
 
