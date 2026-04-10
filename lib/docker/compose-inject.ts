@@ -301,6 +301,8 @@ export function buildVardoOverlay(opts: {
   gpuEnabled?: boolean;
   externalVolumes?: Record<string, unknown>;
   bareVolumeNames?: string[];
+  /** Per-service exposed ports from child app DB records (service name → ports). */
+  serviceExposedPorts?: Record<string, { internal: number; external?: number; protocol?: string }[]>;
 }): ComposeFile {
   const {
     fullCompose,
@@ -310,6 +312,7 @@ export function buildVardoOverlay(opts: {
     gpuEnabled,
     externalVolumes = {},
     bareVolumeNames = [],
+    serviceExposedPorts = {},
   } = opts;
 
   const overlayServices: Record<string, ComposeService> = {};
@@ -345,6 +348,14 @@ export function buildVardoOverlay(opts: {
           limits: { ...(overlayService.deploy?.resources?.limits ?? {}), ...limits },
         },
       };
+    }
+
+    // Exposed ports from child app UI settings
+    const svcPorts = serviceExposedPorts[name];
+    if (svcPorts && svcPorts.length > 0) {
+      overlayService.ports = svcPorts
+        .filter((p) => p.external)
+        .map((p) => `${p.external}:${p.internal}${p.protocol ? `/${p.protocol}` : ""}`);
     }
 
     // GPU devices (Vardo UI setting)
