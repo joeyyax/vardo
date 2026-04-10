@@ -55,6 +55,7 @@ import { detectAppType } from "@/lib/ui/app-type";
 import { statusDotColor, envTypeDotColor } from "@/lib/ui/status-colors";
 import { AppMetrics } from "./app-metrics";
 import { AppBackupHistory } from "@/components/backups/app-backup-history";
+import { AppErrors } from "./app-errors";
 
 const AppTerminal = dynamic(
   () => import("./app-terminal").then((m) => m.AppTerminal),
@@ -933,6 +934,11 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           <TabsTrigger value="security">
             Security
           </TabsTrigger>
+          {featureFlags?.errorTracking !== false && (
+            <TabsTrigger value="errors">
+              Errors
+            </TabsTrigger>
+          )}
           {isOrgAdmin(userRole) && (
             <TabsTrigger value="debug">
               Debug
@@ -1038,6 +1044,12 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         <TabsContent value="security">
           <AppSecurity appId={app.id} orgId={orgId} />
         </TabsContent>
+
+        {featureFlags?.errorTracking !== false && (
+          <TabsContent value="errors" className="pt-4 space-y-4">
+            <AppErrors orgId={orgId} appId={app.id} />
+          </TabsContent>
+        )}
 
         {isOrgAdmin(userRole) && (
           <TabsContent value="debug">

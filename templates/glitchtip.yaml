@@ -12,6 +12,7 @@ composeContent: |
   services:
     web:
       image: glitchtip/glitchtip:latest
+      container_name: vardo-glitchtip
       depends_on:
         - postgres
         - redis
@@ -22,6 +23,7 @@ composeContent: |
 
     worker:
       image: glitchtip/glitchtip:latest
+      container_name: vardo-glitchtip-worker
       command: ./bin/run-celery-with-beat.sh
       depends_on:
         - postgres
@@ -33,6 +35,7 @@ composeContent: |
 
     postgres:
       image: postgres:17
+      container_name: vardo-glitchtip-postgres
       env_file:
         - .env
       volumes:
@@ -40,6 +43,7 @@ composeContent: |
 
     redis:
       image: redis:7-alpine
+      container_name: vardo-glitchtip-redis
       volumes:
         - redis-data:/data
 

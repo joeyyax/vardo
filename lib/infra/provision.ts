@@ -25,9 +25,16 @@ const log = logger.child("infra");
  * Feature-to-template mapping. Each entry defines which feature flag
  * controls which templates should be provisioned.
  */
-const INFRA_FEATURES: { flag: FeatureFlag; templates: string[]; project: { name: string; displayName: string } }[] = [
+const INFRA_FEATURES: {
+  flag: FeatureFlag;
+  templates: string[];
+  project: { name: string; displayName: string };
+  /** Override per-template app settings (e.g. enable Traefik labels for user-facing services). */
+  appOverrides?: Partial<{ autoTraefikLabels: boolean }>;
+}[] = [
   { flag: "metrics", templates: ["cadvisor"], project: { name: "metrics", displayName: "Metrics" } },
   { flag: "logging", templates: ["loki", "promtail"], project: { name: "logs", displayName: "Logs" } },
+  { flag: "error-tracking", templates: ["glitchtip"], project: { name: "error-tracking", displayName: "Error Tracking" }, appOverrides: { autoTraefikLabels: true } },
 ];
 
 /**
@@ -43,7 +50,7 @@ export async function ensureInfraServices(): Promise<void> {
 
   const templates = await loadTemplates();
 
-  for (const { flag, templates: templateNames, project: projDef } of INFRA_FEATURES) {
+  for (const { flag, templates: templateNames, project: projDef, appOverrides } of INFRA_FEATURES) {
     const enabled = await isFeatureEnabledAsync(flag);
     if (!enabled) continue;
 
@@ -57,7 +64,7 @@ export async function ensureInfraServices(): Promise<void> {
       }
 
       try {
-        await ensureAppDeployed(org.id, project.id, template);
+        await ensureAppDeployed(org.id, project.id, template, appOverrides);
       } catch (err) {
         log.error(`Failed to provision ${name}:`, err);
       }
@@ -86,7 +93,7 @@ export async function provisionForFlag(flag: FeatureFlag, enabled: boolean): Pro
     if (!template) continue;
 
     try {
-      await ensureAppDeployed(org.id, project.id, template);
+      await ensureAppDeployed(org.id, project.id, template, mapping.appOverrides);
     } catch (err) {
       log.error(`Failed to provision ${name}:`, err);
     }
@@ -122,7 +129,7 @@ async function ensureProject(orgId: string, name: string, displayName: string) {
   return project;
 }
 
-async function ensureAppDeployed(orgId: string, projectId: string, template: Template) {
+async function ensureAppDeployed(orgId: string, projectId: string, template: Template, overrides?: Partial<{ autoTraefikLabels: boolean }>) {
   // Check if app already exists
   const existing = await db.query.apps.findFirst({
     where: and(
@@ -159,7 +166,7 @@ async function ensureAppDeployed(orgId: string, projectId: string, template: Tem
       cpuLimit: template.defaultCpuLimit,
       memoryLimit: template.defaultMemoryLimit,
       diskWriteAlertThreshold: template.defaultDiskWriteAlertThreshold,
-      autoTraefikLabels: false,
+      autoTraefikLabels: overrides?.autoTraefikLabels ?? false,
     });
   } catch (err) {
     // Unique constraint violation — another call already created it

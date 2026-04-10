@@ -371,6 +371,37 @@ export async function getAuthConfig(): Promise<AuthConfig> {
 }
 
 // ---------------------------------------------------------------------------
+// Error tracking (GlitchTip)
+// ---------------------------------------------------------------------------
+
+export type ErrorTrackingConfig = {
+  /** API token for GlitchTip. */
+  apiToken: string;
+  /** Internal URL for server→GlitchTip API calls. Defaults to Docker DNS (vardo-glitchtip:8000). */
+  url?: string;
+  /** Browser-accessible URL for issue permalinks. */
+  publicUrl?: string;
+};
+
+export async function getErrorTrackingConfig(): Promise<ErrorTrackingConfig | null> {
+  const fileConfig = await getVardoConfig();
+  if (fileConfig?.errorTracking?.apiToken) {
+    return {
+      apiToken: fileConfig.errorTracking.apiToken,
+      url: fileConfig.errorTracking.publicUrl, // config file doesn't distinguish internal/public
+      publicUrl: fileConfig.errorTracking.publicUrl,
+    };
+  }
+
+  const dbConfig = await getSystemSettingRaw("error_tracking")
+    .then((raw) => raw ? parseJson<ErrorTrackingConfig>(raw, "error_tracking") : null);
+
+  if (dbConfig) return dbConfig;
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Traefik config
 // ---------------------------------------------------------------------------
 

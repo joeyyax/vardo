@@ -30,7 +30,8 @@ export type FeatureFlag =
   | "domain-monitoring"
   | "container-import"
   | "digest"
-  | "monitoring";
+  | "monitoring"
+  | "error-tracking";
 
 type FlagConfig = {
   label: string;
@@ -139,6 +140,11 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
     label: "Monitoring",
     description: "System health monitoring and alerting.",
   },
+  "error-tracking": {
+    label: "Error Tracking",
+    description: "Automatic error tracking via GlitchTip (Sentry-compatible).",
+    showInUI: true,
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -205,18 +211,19 @@ export function getFlagConfig(flag: FeatureFlag): FlagConfig {
  * Subset of feature flags relevant to UI tab gating in app detail views.
  * Passed from server components to client components as a serializable object.
  */
-export type FeatureFlags = Record<"terminal" | "cron" | "backups", boolean>;
+export type FeatureFlags = Record<"terminal" | "cron" | "backups" | "errorTracking", boolean>;
 
 /**
  * Get feature flags needed for UI tab gating.
  */
 export async function getFeatureFlags(): Promise<FeatureFlags> {
-  const [terminal, cron, backups] = await Promise.all([
+  const [terminal, cron, backups, errorTracking] = await Promise.all([
     isFeatureEnabledAsync("terminal"),
     isFeatureEnabledAsync("cron"),
     isFeatureEnabledAsync("backups"),
+    isFeatureEnabledAsync("error-tracking"),
   ]);
-  return { terminal, cron, backups };
+  return { terminal, cron, backups, errorTracking };
 }
 
 export type FeatureFlagInfo = {
