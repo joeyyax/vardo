@@ -64,10 +64,11 @@ services:
       - ${VARDO_HOME_DIR:-${VARDO_DIR:-/opt/vardo}}:${VARDO_HOME_DIR:-${VARDO_DIR:-/opt/vardo}}
       # Additional host mounts — pre-defined slots for mounting host paths into Vardo.
       # Set VARDO_DATA or VARDO_PROJECTS in .env to enable. Unused slots default to /dev/null (no-op).
-      - ${VARDO_DATA:-/dev/null}:${VARDO_DATA:-/dev/null}:ro
-      - ${VARDO_PROJECTS:-/dev/null}:${VARDO_PROJECTS:-/dev/null}:ro
-      - ${VARDO_MOUNT_1:-/dev/null}:${VARDO_MOUNT_1:-/dev/null}:ro
-      - ${VARDO_MOUNT_2:-/dev/null}:${VARDO_MOUNT_2:-/dev/null}:ro
+      # Each mount is a source:destination:ro pair (e.g., /mnt/data:/var/lib/vardo/data:ro).
+      - ${VARDO_DATA:-/dev/null:/dev/null:ro}
+      - ${VARDO_PROJECTS:-/dev/null:/dev/null:ro}
+      - ${VARDO_MOUNT_1:-/dev/null:/dev/null:ro}
+      - ${VARDO_MOUNT_2:-/dev/null:/dev/null:ro}
       # Traefik dynamic config — shared volume for file-provider route configs.
       # Frontend writes YAML files here; Traefik watches and reloads automatically.
       - traefik_dynamic:/etc/traefik/dynamic:rw
