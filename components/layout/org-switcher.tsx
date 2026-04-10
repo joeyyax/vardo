@@ -143,7 +143,7 @@ export function OrgSwitcher({ currentOrgId, organizations: initialOrganizations,
             variant="outline"
             size="sm"
             className="h-auto px-3 py-1.5 gap-1.5 font-medium"
-            disabled={switching}
+            disabled={showSwitchSpinner}
           >
             {showSwitchSpinner ? (
               <Loader2 className="size-3.5 animate-spin" />
