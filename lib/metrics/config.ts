@@ -41,7 +41,7 @@ async function resolveProvider() {
     if (metricsEnabled) {
       const { getSystemSettingRaw } = await import("@/lib/system-settings");
       const customUrl = await getSystemSettingRaw("metrics.cadvisorUrl");
-      const url = customUrl || "http://cadvisor:8080/api/v1.3/docker";
+      const url = customUrl || "http://vardo-cadvisor:8080";
       log.info(`Metrics provider: plugin settings → ${url}`);
       setMetricsProvider(new CadvisorProvider(url));
       return;
