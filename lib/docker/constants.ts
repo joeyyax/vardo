@@ -71,6 +71,7 @@ import { mkdir, writeFile, rm } from "fs/promises";
 import { join } from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { PROJECTS_DIR } from "@/lib/paths";
 
 const execFileAsyncInternal = promisify(execFile);
 
@@ -86,7 +87,6 @@ export async function ensureWritableDir(dir: string): Promise<void> {
     await rm(probe);
   } catch (err: unknown) {
     if (err && typeof err === "object" && "code" in err && (err as { code: string }).code === "EACCES") {
-      const PROJECTS_DIR = process.env.VARDO_PROJECTS_DIR || "./.host/projects";
       if (!dir.startsWith(PROJECTS_DIR + "/")) {
         throw new Error(`Permission denied and path outside apps dir: ${dir}`);
       }
