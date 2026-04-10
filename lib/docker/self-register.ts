@@ -156,6 +156,7 @@ export async function ensureVardoProject(): Promise<void> {
         isSystemManaged: true,
         deployType: "compose",
         composeContent,
+        status: "active",
       })
       .onConflictDoUpdate({
         target: [apps.organizationId, apps.name],
@@ -165,6 +166,7 @@ export async function ensureVardoProject(): Promise<void> {
           gitBranch: gitBranch ?? "main",
           isSystemManaged: true,
           composeContent,
+          status: "active",
           updatedAt: new Date(),
         },
       })
