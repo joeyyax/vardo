@@ -19,6 +19,7 @@ export function PortsManager({
   const [ports, setPorts] = useState(initialPorts);
   const [adding, setAdding] = useState(false);
   const [newInternal, setNewInternal] = useState("");
+  const [newExternal, setNewExternal] = useState("");
   const [newDescription, setNewDescription] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -50,10 +51,16 @@ export function PortsManager({
       toast.error("Enter a valid port number (1-65535)");
       return;
     }
-    const updated = [...ports, { internal, description: newDescription || undefined }];
+    const external = newExternal ? parseInt(newExternal) : undefined;
+    if (external !== undefined && (external < 1 || external > 65535)) {
+      toast.error("Enter a valid host port (1-65535)");
+      return;
+    }
+    const updated = [...ports, { internal, external, description: newDescription || undefined }];
     savePorts(updated);
     setAdding(false);
     setNewInternal("");
+    setNewExternal("");
     setNewDescription("");
   }
 
@@ -89,10 +96,15 @@ export function PortsManager({
             />
           </div>
           <div className="grid gap-1.5">
-            <span className="text-xs text-muted-foreground">Host Port</span>
-            <div className="flex h-9 items-center rounded-md border bg-muted/50 px-3 text-sm font-mono text-muted-foreground" role="status" aria-label="Host port: auto-assigned">
-              Auto
-            </div>
+            <label htmlFor="port-host" className="text-xs text-muted-foreground">Host Port</label>
+            <input
+              id="port-host"
+              type="number"
+              placeholder="Auto"
+              value={newExternal}
+              onChange={(e) => setNewExternal(e.target.value)}
+              className="h-9 w-24 rounded-md border bg-background px-3 text-sm font-mono"
+            />
           </div>
           <div className="grid gap-1.5 flex-1">
             <label htmlFor="port-label" className="text-xs text-muted-foreground">Label <span className="text-muted-foreground/60">(optional)</span></label>
