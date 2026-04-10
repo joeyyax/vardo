@@ -62,36 +62,36 @@ export class DockerContainerResolver implements ContainerResolver {
     const containers = await this.getContainerList();
     const map = new Map<number, string>();
 
-    const results = await Promise.allSettled(
-      containers.map(async (c) => {
-        try {
-          const top = await Promise.race([
-            dockerRequest<{
-              Titles: string[];
-              Processes: string[][];
-            }>("GET", `/containers/${c.id}/top?ps_args=${encodeURIComponent("eo pid")}`),
-            new Promise<never>((_, reject) =>
-              setTimeout(() => reject(new Error("top timeout")), 3000),
-            ),
-          ]);
+    // Process in batches of 10 to avoid overwhelming the Docker daemon
+    const BATCH_SIZE = 10;
+    for (let i = 0; i < containers.length; i += BATCH_SIZE) {
+      const batch = containers.slice(i, i + BATCH_SIZE);
+      await Promise.allSettled(
+        batch.map(async (c) => {
+          try {
+            const top = await Promise.race([
+              dockerRequest<{
+                Titles: string[];
+                Processes: string[][];
+              }>("GET", `/containers/${c.id}/top?ps_args=${encodeURIComponent("eo pid")}`),
+              new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error("top timeout")), 3000),
+              ),
+            ]);
 
-          if (!top?.Processes) return;
+            if (!top?.Processes) return;
 
-          for (const proc of top.Processes) {
-            const pid = parseInt(proc[0], 10);
-            if (!isNaN(pid)) {
-              map.set(pid, c.id);
+            for (const proc of top.Processes) {
+              const pid = parseInt(proc[0], 10);
+              if (!isNaN(pid)) {
+                map.set(pid, c.id);
+              }
             }
+          } catch {
+            // Container may have stopped, or top timed out — skip it
           }
-        } catch {
-          // Container may have stopped, or top timed out — skip it
-        }
-      }),
-    );
-
-    const failed = results.filter((r) => r.status === "rejected").length;
-    if (failed > 0) {
-      log.warn(`PID map: ${failed}/${containers.length} containers failed`);
+        }),
+      );
     }
 
     this.pidMap = { map, cachedAt: Date.now() };
