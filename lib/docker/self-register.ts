@@ -187,6 +187,7 @@ export async function ensureVardoProject(): Promise<void> {
           deployType: "compose",
           parentAppId: parentApp.id,
           composeService: service,
+          status: "active",
         })
         .onConflictDoUpdate({
           target: [apps.organizationId, apps.name],
@@ -195,6 +196,7 @@ export async function ensureVardoProject(): Promise<void> {
             parentAppId: parentApp.id,
             composeService: service,
             isSystemManaged: true,
+            status: "active",
             updatedAt: new Date(),
           },
         });
@@ -223,6 +225,11 @@ export async function ensureVardoProject(): Promise<void> {
         durationMs: 0,
         log: "[self-register] Container running via docker compose — registered as managed app",
       });
+      // Mark the app as active so the UI shows the correct status
+      await tx
+        .update(apps)
+        .set({ status: "active", updatedAt: now })
+        .where(eq(apps.id, parentApp.id));
     }
   });
 }
