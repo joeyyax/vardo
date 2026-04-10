@@ -1,6 +1,7 @@
 import { fetchAllMetrics } from "./provider";
 import type { ContainerMetrics } from "./types";
 import { isMetricsEnabled } from "./config";
+import { getGpuCollector } from "@/lib/gpu/collector";
 
 // ---------------------------------------------------------------------------
 // Shared cAdvisor broadcast — one poll serves all SSE subscribers
@@ -72,6 +73,35 @@ async function poll() {
 
   try {
     const metrics = await fetchAllMetrics();
+
+    // Supplement with GPU collector data for containers cAdvisor missed
+    const gpuCollector = getGpuCollector();
+    if (gpuCollector) {
+      try {
+        const gpuMetrics = await Promise.race([
+          gpuCollector.collect(),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("GPU broadcast timeout")), 10_000),
+          ),
+        ]);
+        const containersWithGpu = new Set(
+          metrics.filter((m) => m.gpuMemoryTotal > 0).map((m) => m.containerId),
+        );
+        for (const gm of gpuMetrics) {
+          if (containersWithGpu.has(gm.containerId)) continue;
+          const match = metrics.find((m) => m.containerId === gm.containerId);
+          if (match) {
+            match.gpuUtilization = gm.gpuUtilization;
+            match.gpuMemoryUsed = gm.gpuMemoryUsed;
+            match.gpuMemoryTotal = gm.gpuMemoryTotal;
+            match.gpuTemperature = gm.gpuTemperature;
+          }
+        }
+      } catch {
+        // GPU collection failed — send cAdvisor data as-is
+      }
+    }
+
     latestMetrics = metrics;
 
     // Dispatch to all listeners
