@@ -78,7 +78,48 @@ export function AppDeployPanel({
 
   const [expandedServerDeploy, setExpandedServerDeploy] = useState(false);
   const [cancellingIds, setCancellingIds] = useState<Set<string>>(new Set());
+  const [abortingDeploy, setAbortingDeploy] = useState(false);
   const router = useRouter();
+
+  const handleAbortDeploy = useCallback(async (deploymentId?: string) => {
+    setAbortingDeploy(true);
+    try {
+      // If no deployment ID provided, find the running/queued one
+      let targetId = deploymentId;
+      if (!targetId) {
+        const appRes = await fetch(`/api/v1/organizations/${orgId}/apps/${appId}`);
+        if (appRes.ok) {
+          const { app: appData } = await appRes.json();
+          const active = appData.deployments?.find(
+            (d: { status: string }) => d.status === "running" || d.status === "queued"
+          );
+          targetId = active?.id;
+        }
+      }
+      if (!targetId) {
+        toast.error("No active deployment to cancel");
+        return;
+      }
+
+      const res = await fetch(
+        `/api/v1/organizations/${orgId}/apps/${appId}/deployments/${targetId}`,
+        { method: "DELETE" },
+      );
+      if (!res.ok) {
+        const data = await res.json();
+        toast.error(data.error || "Failed to cancel deployment");
+        return;
+      }
+      // Also abort the client-side SSE stream if we initiated the deploy
+      deployAbort?.abort();
+      toast.success("Deployment cancelled");
+      router.refresh();
+    } catch {
+      toast.error("Failed to cancel deployment");
+    } finally {
+      setAbortingDeploy(false);
+    }
+  }, [orgId, appId, deployAbort, router]);
 
   const queuedDeployments = filteredDeployments
     .filter((d) => d.status === "queued" && d.id !== serverRunningDeploy?.id)
@@ -133,8 +174,8 @@ export function AppDeployPanel({
                 startTime={deployStartTime}
                 expanded={expandedDeployLog}
                 onToggleExpand={() => setExpandedDeployLog(!expandedDeployLog)}
-                onAbort={() => deployAbort?.abort()}
-                canAbort
+                onAbort={() => handleAbortDeploy()}
+                canAbort={!abortingDeploy}
               />
             )}
             {!deploying && serverRunningDeploy && serverRunningDeploy.status === "running" && (
@@ -144,6 +185,8 @@ export function AppDeployPanel({
                 startTime={new Date(serverRunningDeploy.startedAt).getTime()}
                 expanded={expandedServerDeploy}
                 onToggleExpand={() => setExpandedServerDeploy((prev) => !prev)}
+                onAbort={() => handleAbortDeploy(serverRunningDeploy.id)}
+                canAbort={!abortingDeploy}
                 trigger={serverRunningDeploy.trigger}
               />
             )}
