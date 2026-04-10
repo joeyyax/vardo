@@ -129,7 +129,7 @@ async function updateStageInRedis(
   }
 }
 
-async function clearActiveInRedis(appId: string, deploymentId: string): Promise<void> {
+export async function clearActiveInRedis(appId: string, deploymentId: string): Promise<void> {
   try {
     const raw = await redis.get(ACTIVE_KEY(appId));
     if (!raw) return;
