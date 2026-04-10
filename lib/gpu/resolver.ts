@@ -65,10 +65,15 @@ export class DockerContainerResolver implements ContainerResolver {
     const results = await Promise.allSettled(
       containers.map(async (c) => {
         try {
-          const top = await dockerRequest<{
-            Titles: string[];
-            Processes: string[][];
-          }>("GET", `/containers/${c.id}/top?ps_args=${encodeURIComponent("eo pid")}`);
+          const top = await Promise.race([
+            dockerRequest<{
+              Titles: string[];
+              Processes: string[][];
+            }>("GET", `/containers/${c.id}/top?ps_args=${encodeURIComponent("eo pid")}`),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error("top timeout")), 3000),
+            ),
+          ]);
 
           if (!top?.Processes) return;
 
@@ -79,7 +84,7 @@ export class DockerContainerResolver implements ContainerResolver {
             }
           }
         } catch {
-          // Container may have stopped between list and top — skip it
+          // Container may have stopped, or top timed out — skip it
         }
       }),
     );
