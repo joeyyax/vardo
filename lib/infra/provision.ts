@@ -11,6 +11,7 @@
 import { and, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
+import { access } from "fs/promises";
 import { db } from "@/lib/db";
 import { apps, environments, projects } from "@/lib/db/schema";
 import { isFeatureEnabledAsync, type FeatureFlag } from "@/lib/config/features";
@@ -141,6 +142,12 @@ async function ensureAppDeployed(orgId: string, projectId: string, template: Tem
   });
 
   if (existing) {
+    // For cadvisor: ensure gpuEnabled matches host GPU availability
+    if (template.name === "cadvisor") {
+      const hasGpu = await detectNvidiaGpu();
+      await db.update(apps).set({ gpuEnabled: hasGpu }).where(eq(apps.id, existing.id));
+      if (hasGpu) log.info(`cAdvisor: GPU detected, enabled GPU metrics`);
+    }
     log.info(`Infra app "${template.name}" already exists`);
     return;
   }
@@ -149,6 +156,9 @@ async function ensureAppDeployed(orgId: string, projectId: string, template: Tem
   // constraint — concurrent calls (startup + flag toggle) could both pass the
   // findFirst check above.
   const appId = nanoid();
+
+  // For cadvisor: detect GPU to enable NVML-based metrics
+  const gpuEnabled = template.name === "cadvisor" ? await detectNvidiaGpu() : false;
 
   try {
     await db.insert(apps).values({
@@ -167,6 +177,7 @@ async function ensureAppDeployed(orgId: string, projectId: string, template: Tem
       memoryLimit: template.defaultMemoryLimit,
       diskWriteAlertThreshold: template.defaultDiskWriteAlertThreshold,
       autoTraefikLabels: overrides?.autoTraefikLabels ?? false,
+      gpuEnabled,
     });
   } catch (err) {
     // Unique constraint violation — another call already created it
@@ -198,3 +209,12 @@ async function ensureAppDeployed(orgId: string, projectId: string, template: Tem
   });
 }
 
+/** Check if an NVIDIA GPU is available on the host. */
+async function detectNvidiaGpu(): Promise<boolean> {
+  try {
+    await access("/dev/nvidia0");
+    return true;
+  } catch {
+    return false;
+  }
+}
