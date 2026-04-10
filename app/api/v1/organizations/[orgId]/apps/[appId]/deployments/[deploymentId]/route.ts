@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { deployments, apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
-import { publishKillSignal } from "@/lib/docker/deploy-cancel";
+import { publishKillSignal, clearActiveInRedis } from "@/lib/docker/deploy-cancel";
 import { addEvent } from "@/lib/stream/producer";
 import { releaseConcurrencySlot, removeFromQueue } from "@/lib/docker/deploy-concurrency";
 // Container cleanup for force-cancelled deploys is handled by the sweeper
@@ -51,8 +51,9 @@ async function forceCancel(deploymentId: string, appId: string, orgId: string): 
     .set({ status: "stopped", updatedAt: now })
     .where(and(eq(apps.id, appId), eq(apps.status, "deploying")));
 
-  // Release the concurrency slot and remove from queue so the next deploy
-  // can start immediately instead of waiting for the sweeper to reconcile.
+  // Release the concurrency slot, clear the active deploy marker, and remove
+  // from queue so the next deploy can start immediately.
+  await clearActiveInRedis(appId, deploymentId).catch(() => {});
   await releaseConcurrencySlot().catch(() => {});
   await removeFromQueue(deploymentId).catch(() => {});
 
