@@ -103,14 +103,14 @@ async function ensureInfraProject(orgId: string) {
       id: nanoid(),
       organizationId: orgId,
       name: "vardo-infra",
-      displayName: "Infrastructure",
+      displayName: "Vardo Infrastructure",
       isSystemManaged: true,
       allowBindMounts: true,
     })
     .onConflictDoUpdate({
       target: [projects.organizationId, projects.name],
       set: {
-        displayName: "Infrastructure",
+        displayName: "Vardo Infrastructure",
         isSystemManaged: true,
         allowBindMounts: true,
         updatedAt: new Date(),
