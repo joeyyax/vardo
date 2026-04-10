@@ -99,7 +99,9 @@ export async function fetchAllContainerMetrics(baseUrl = CADVISOR_URL): Promise<
 
     // Memory
     const memoryUsage = curr.memory.working_set || curr.memory.usage;
-    const memoryLimit = spec.memory?.limit || 0;
+    // cAdvisor reports max uint64 when no memory limit is set — treat as 0 (unlimited)
+    const rawLimit = spec.memory?.limit || 0;
+    const memoryLimit = rawLimit > 1e15 ? 0 : rawLimit;
     const memoryPercent = memoryLimit > 0 ? (memoryUsage / memoryLimit) * 100 : 0;
 
     // Network
