@@ -14,16 +14,19 @@ export interface MetricsProvider {
 
 // ---------------------------------------------------------------------------
 // Provider registry — currently only cAdvisor, but pluggable
+//
+// Uses globalThis so the provider survives across Next.js module instances
+// (instrumentation.ts sets it, API routes read it).
 // ---------------------------------------------------------------------------
 
-let provider: MetricsProvider | null = null;
+const globalForMetrics = globalThis as unknown as { __vardo_metrics_provider?: MetricsProvider | null };
 
 export function setMetricsProvider(p: MetricsProvider | null) {
-  provider = p;
+  globalForMetrics.__vardo_metrics_provider = p;
 }
 
 export function getMetricsProvider(): MetricsProvider | null {
-  return provider;
+  return globalForMetrics.__vardo_metrics_provider ?? null;
 }
 
 /**
