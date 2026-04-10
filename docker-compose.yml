@@ -69,6 +69,9 @@ services:
       - ${VARDO_PROJECTS:-/dev/null:/dev/null:ro}
       - ${VARDO_MOUNT_1:-/dev/null:/dev/null:ro}
       - ${VARDO_MOUNT_2:-/dev/null:/dev/null:ro}
+      # Host /proc — read-only mount for GPU metrics PID-to-container resolution.
+      # The GPU collector reads /host-proc/{pid}/cgroup to map GPU processes to containers.
+      - /proc:/host-proc:ro
       # Traefik dynamic config — shared volume for file-provider route configs.
       # Frontend writes YAML files here; Traefik watches and reloads automatically.
       - traefik_dynamic:/etc/traefik/dynamic:rw
