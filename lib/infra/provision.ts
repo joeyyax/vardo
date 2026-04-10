@@ -180,11 +180,13 @@ async function ensureAppDeployed(orgId: string, projectId: string, template: Tem
 
   log.info(`Created infra app "${template.name}", triggering deploy`);
 
-  // Deploy the app
-  await requestDeploy({
+  // Deploy the app — fire-and-forget so startup isn't blocked
+  requestDeploy({
     appId,
     organizationId: orgId,
     trigger: "api",
+  }).catch((err) => {
+    log.error(`Deploy failed for infra app "${template.name}":`, err);
   });
 }
 
