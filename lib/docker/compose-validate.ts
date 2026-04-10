@@ -17,7 +17,14 @@ export const ALLOWED_RUNTIMES = ["runc", "nvidia", "sysbox"];
 // ---------------------------------------------------------------------------
 
 const SERVICE_NAME_RE = /^[a-z][a-z0-9-]*$/;
-const PORT_RE = /^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:)?(\d+:)?\d+(\/\w+)?$/;
+// Port value: literal digits or ${VAR:-default} env interpolation
+const PORT_VAL = String.raw`(?:\d+|\$\{[^}]+\})`;
+const PORT_RE = new RegExp(
+  String.raw`^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:)?` +
+  String.raw`(${PORT_VAL}:)?` +
+  String.raw`${PORT_VAL}` +
+  String.raw`(\/\w+)?$`,
+);
 
 const DENIED_MOUNT_PATHS = [
   "/etc",
