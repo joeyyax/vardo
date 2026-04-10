@@ -1329,13 +1329,13 @@ build_and_start() {
   if is_dev; then
     # Dev mode: start infrastructure only (no frontend profile)
     info "Starting infrastructure services (Postgres, Redis, Traefik)..."
-    run_cmd docker compose -f "$compose_file" up -d
+    run_cmd docker compose -f "$compose_file" up -d --remove-orphans
   else
     local src_dir
     src_dir=$(resolve_source_dir)
     export GIT_SHA=$(git -C "$src_dir" rev-parse --short HEAD 2>/dev/null || true)
     run_with_spinner "Building containers (this may take a few minutes)" docker compose -f "$compose_file" build
-    run_with_spinner "Starting services" docker compose -f "$compose_file" up -d
+    run_with_spinner "Starting services" docker compose -f "$compose_file" up -d --remove-orphans
   fi
 }
 
@@ -1829,7 +1829,7 @@ _do_rebuild() {
   run_with_spinner "Building containers" docker compose -f "$compose_file" build
 
   info "Restarting services..."
-  run_cmd docker compose -f "$compose_file" up -d
+  run_cmd docker compose -f "$compose_file" up -d --remove-orphans
 
   wait_healthy 120 3 || true
 
