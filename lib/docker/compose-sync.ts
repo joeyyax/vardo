@@ -13,6 +13,7 @@ import { apps } from "@/lib/db/schema";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import type { ComposeFile, ComposeService } from "./compose";
+import { parsePortString } from "./compose-inject";
 
 type SyncResult = {
   created: string[];
@@ -76,6 +77,31 @@ function parseServiceVolumes(
         result.push({ name: volName, mountPath });
       }
     }
+  }
+  return result;
+}
+
+/**
+ * Extract port mappings from a compose service's ports directive.
+ * Returns in the same format as apps.exposedPorts.
+ */
+function parseServicePorts(
+  svc: ComposeService,
+): { internal: number; external?: number; protocol?: string }[] {
+  if (!svc.ports) return [];
+
+  const result: { internal: number; external?: number; protocol?: string }[] = [];
+  for (const raw of svc.ports) {
+    const parsed = parsePortString(raw);
+    if (!parsed) continue;
+    // Extract protocol if present (e.g. "8080:3000/udp")
+    const protocolMatch = String(raw).match(/\/(tcp|udp)$/i);
+    const protocol = protocolMatch ? protocolMatch[1].toLowerCase() : undefined;
+    result.push({
+      internal: parsed.internal,
+      external: parsed.external,
+      ...(protocol && protocol !== "tcp" ? { protocol } : {}),
+    });
   }
   return result;
 }
@@ -211,6 +237,7 @@ export async function syncComposeServices(opts: {
     const displayName = humanizeServiceName(serviceName);
     const { cpuLimit, memoryLimit } = parseResourceLimits(svc);
     const volumes = parseServiceVolumes(svc);
+    const servicePorts = parseServicePorts(svc);
 
     // Map compose depends_on to child app names (prefixed with parent).
     // depends_on may be a string[] or an object keyed by service name.
@@ -236,6 +263,9 @@ export async function syncComposeServices(opts: {
           cpuLimit,
           memoryLimit,
           persistentVolumes: volumes.length > 0 ? volumes : null,
+          // Only overwrite exposedPorts if compose defines ports for this service.
+          // This preserves ports set via the UI when compose has no port directives.
+          ...(servicePorts.length > 0 ? { exposedPorts: servicePorts } : {}),
           dependsOn,
           projectId,
           parentAppId, // Re-parent if it was orphaned
@@ -254,19 +284,20 @@ export async function syncComposeServices(opts: {
       const now = new Date().toISOString();
       const volsJson = volumes.length > 0 ? JSON.stringify(volumes) : null;
       const depsJson = dependsOn ? JSON.stringify(dependsOn) : null;
+      const portsJson = servicePorts.length > 0 ? JSON.stringify(servicePorts) : null;
 
       await db.execute(sql`
         INSERT INTO "app" (
           "id", "organization_id", "name", "display_name", "description",
           "source", "deploy_type", "image_name", "status",
           "parent_app_id", "compose_service", "container_name", "project_id",
-          "cpu_limit", "memory_limit", "persistent_volumes", "depends_on", "sort_order",
+          "cpu_limit", "memory_limit", "persistent_volumes", "exposed_ports", "depends_on", "sort_order",
           "created_at", "updated_at"
         ) VALUES (
           ${id}, ${organizationId}, ${childName}, ${displayName}, ${`Compose service: ${serviceName}`},
           ${"direct"}, ${"compose"}, ${svc.image || null}, ${"active"},
           ${parentAppId}, ${serviceName}, ${containerName}, ${projectId},
-          ${cpuLimit}, ${memoryLimit}, ${volsJson}, ${depsJson}, ${0},
+          ${cpuLimit}, ${memoryLimit}, ${volsJson}, ${portsJson}, ${depsJson}, ${0},
           ${now}, ${now}
         )
       `);
