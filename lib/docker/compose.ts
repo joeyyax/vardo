@@ -54,6 +54,7 @@ export {
   excludeServices,
   buildVardoOverlay,
   injectNetwork,
+  getTraefikRoutedServices,
   injectResourceLimits,
   injectGpuDevices,
   detectPorts,

@@ -3,6 +3,7 @@ import {
   sanitizeCompose,
   parseCompose,
   injectNetwork,
+  getTraefikRoutedServices,
   injectTraefikLabels,
   validateCompose,
   composeToYaml,
@@ -366,6 +367,208 @@ describe("injectNetwork — network_mode services", () => {
     // Both the original named network and vardo-network should be present.
     expect(result.services.myapp.networks).toContain("my-overlay");
     expect(result.services.myapp.networks).toContain("vardo-network");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// injectNetwork — attachTo filter (vardo-network alias collision fix)
+// ---------------------------------------------------------------------------
+
+describe("injectNetwork — attachTo filter", () => {
+  it("only attaches vardo-network to services in the attachTo set", () => {
+    // Regression: the agents outage was caused by postgres joining
+    // vardo-network with alias `postgres`, colliding with glitchtip's
+    // postgres on the same shared network. Only the Traefik-routed
+    // service should join vardo-network.
+    const compose: ComposeFile = {
+      services: {
+        dashboard: { name: "dashboard", image: "dashboard", networks: ["internal"] },
+        postgres: { name: "postgres", image: "postgres:16", networks: ["internal"] },
+        redis: { name: "redis", image: "redis:7", networks: ["internal"] },
+        worker: { name: "worker", image: "worker", networks: ["internal"] },
+      },
+    };
+
+    const result = injectNetwork(compose, "vardo-network", {
+      attachTo: new Set(["dashboard"]),
+    });
+
+    expect(result.services.dashboard.networks).toEqual(["internal", "vardo-network"]);
+    expect(result.services.postgres.networks).toEqual(["internal"]);
+    expect(result.services.redis.networks).toEqual(["internal"]);
+    expect(result.services.worker.networks).toEqual(["internal"]);
+    expect(result.networks?.["vardo-network"]).toEqual({ external: true });
+  });
+
+  it("attaches vardo-network to every service when attachTo is omitted (backwards compat)", () => {
+    const compose: ComposeFile = {
+      services: {
+        app: { name: "app", image: "nginx" },
+        worker: { name: "worker", image: "worker" },
+      },
+    };
+
+    const result = injectNetwork(compose, "vardo-network");
+
+    expect(result.services.app.networks).toContain("vardo-network");
+    expect(result.services.worker.networks).toContain("vardo-network");
+  });
+
+  it("does not declare vardo-network top-level when attachTo filters out every service", () => {
+    const compose: ComposeFile = {
+      services: {
+        postgres: { name: "postgres", image: "postgres:16" },
+        redis: { name: "redis", image: "redis:7" },
+      },
+    };
+
+    const result = injectNetwork(compose, "vardo-network", { attachTo: new Set() });
+
+    expect(result.services.postgres.networks).toBeUndefined();
+    expect(result.services.redis.networks).toBeUndefined();
+    expect(result.networks?.["vardo-network"]).toBeUndefined();
+  });
+});
+
+describe("getTraefikRoutedServices", () => {
+  it("identifies services with traefik.enable=true", () => {
+    const compose: ComposeFile = {
+      services: {
+        dashboard: {
+          name: "dashboard",
+          image: "dashboard",
+          labels: {
+            "traefik.enable": "true",
+            "traefik.http.routers.app.rule": "Host(`app.example.com`)",
+          },
+        },
+        postgres: { name: "postgres", image: "postgres:16" },
+      },
+    };
+
+    const routed = getTraefikRoutedServices(compose);
+
+    expect(routed.has("dashboard")).toBe(true);
+    expect(routed.has("postgres")).toBe(false);
+  });
+
+  it("returns an empty set when no service carries traefik.enable=true", () => {
+    const compose: ComposeFile = {
+      services: {
+        worker: { name: "worker", image: "worker" },
+      },
+    };
+
+    expect(getTraefikRoutedServices(compose).size).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyDeployTransforms — vardo-network attached only to routed services
+// ---------------------------------------------------------------------------
+
+describe("applyDeployTransforms — vardo-network scoping", () => {
+  it("attaches vardo-network only to the Traefik-routed service", () => {
+    // Regression for the agents outage: postgres, redis, worker, and bot
+    // must NOT be attached to vardo-network, otherwise their per-project
+    // aliases collide with sibling apps that share the same network.
+    const compose: ComposeFile = {
+      services: {
+        dashboard: { name: "dashboard", image: "dashboard", networks: ["internal"] },
+        postgres: { name: "postgres", image: "postgres:16", networks: ["internal"] },
+        redis: { name: "redis", image: "redis:7", networks: ["internal"] },
+        worker: { name: "worker", image: "worker", networks: ["internal"] },
+        bot: { name: "bot", image: "bot", networks: ["internal"] },
+      },
+      networks: { internal: null },
+    };
+
+    const result = applyDeployTransforms(compose, {
+      appName: "agents",
+      containerPort: 3000,
+      domains: [
+        {
+          id: "abcdef123456",
+          domain: "agents.example.com",
+          port: null,
+          certResolver: "le",
+          sslEnabled: true,
+          redirectTo: null,
+          redirectCode: null,
+        },
+      ],
+      networkName: "vardo-network",
+      backendProtocol: null,
+    });
+
+    // Dashboard is the Traefik-routed service → must join vardo-network.
+    expect(result.services.dashboard.networks).toContain("vardo-network");
+    // Stateful / worker / sidecar services stay on the project network.
+    expect(result.services.postgres.networks).not.toContain("vardo-network");
+    expect(result.services.redis.networks).not.toContain("vardo-network");
+    expect(result.services.worker.networks).not.toContain("vardo-network");
+    expect(result.services.bot.networks).not.toContain("vardo-network");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseCompose — service.networks map form (Q3 latent bug)
+// ---------------------------------------------------------------------------
+
+describe("parseCompose — service.networks map form", () => {
+  it("accepts list form (`- internal`)", () => {
+    const yaml = `services:
+  postgres:
+    image: postgres:16
+    networks:
+      - internal
+networks:
+  internal: null
+`;
+    const parsed = parseCompose(yaml);
+    expect(parsed.services.postgres.networks).toEqual(["internal"]);
+  });
+
+  it("accepts map form with aliases (`internal: { aliases: [...] }`)", () => {
+    // Regression: the map form is valid Compose syntax but used to be
+    // silently dropped, leaving the service without any declared network
+    // references. This in turn caused the deploy pipeline to fall back to
+    // attaching only vardo-network, which masked service-level intent and
+    // contributed to alias collisions across sibling apps.
+    const yaml = `services:
+  postgres:
+    image: postgres:16
+    networks:
+      internal:
+        aliases:
+          - pg
+          - db
+networks:
+  internal: null
+`;
+    const parsed = parseCompose(yaml);
+    expect(parsed.services.postgres.networks).toEqual(["internal"]);
+  });
+
+  it("preserves external: true on top-level networks through round-trip", () => {
+    const yaml = `services:
+  dashboard:
+    image: nginx
+    networks:
+      - proxy
+      - internal
+networks:
+  proxy:
+    external: true
+  internal: null
+`;
+    const parsed = parseCompose(yaml);
+    expect(parsed.networks?.proxy).toEqual({ external: true });
+    expect(parsed.networks?.internal).toBeNull();
+
+    const yaml2 = composeToYaml(parsed);
+    const reparsed = parseCompose(yaml2);
+    expect(reparsed.networks?.proxy).toEqual({ external: true });
   });
 });
 

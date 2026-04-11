@@ -10,6 +10,7 @@ import {
   narrowBackendProtocol,
   injectGpuDevices,
   stripVardoInjections,
+  getTraefikRoutedServices,
 } from "../compose";
 import { detectExposedPorts } from "../client";
 import { normalizeCompose, getRoutedServices } from "../compose-normalize";
@@ -120,7 +121,26 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
   } else {
     log(`[deploy] Skipping Traefik labels — all services use custom network modes: ${servicesWithCustomNetwork.join(", ")}`);
   }
-  compose = injectNetwork(compose, NETWORK_NAME);
+  // Only attach vardo-network to services that carry Traefik router labels
+  // (i.e. those that need to be reachable from vardo-traefik). Databases,
+  // workers, sidecars, and caches stay on the compose project's private
+  // network so their per-project aliases ("postgres", "redis") can't
+  // collide with identically-named services in sibling apps that also
+  // share vardo-network. When no service is Traefik-routed (rare — e.g.
+  // a worker-only stack with no ingress) we fall back to the historical
+  // behaviour and attach everything so cross-app discovery still works.
+  const traefikRouted = getTraefikRoutedServices(compose);
+  if (traefikRouted.size > 0) {
+    compose = injectNetwork(compose, NETWORK_NAME, { attachTo: traefikRouted });
+    const skipped = Object.keys(compose.services).filter(
+      (k) => !traefikRouted.has(k) && (!compose.services[k].network_mode || compose.services[k].network_mode === "bridge"),
+    );
+    if (skipped.length > 0) {
+      log(`[deploy] vardo-network: attached to ${[...traefikRouted].join(", ")} — not attached to ${skipped.join(", ")} (private to project network)`);
+    }
+  } else {
+    compose = injectNetwork(compose, NETWORK_NAME);
+  }
 
   // Step 3: Add app labels
   for (const [svcName, svc] of Object.entries(compose.services)) {

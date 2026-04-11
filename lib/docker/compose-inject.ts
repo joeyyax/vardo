@@ -403,16 +403,34 @@ export function buildVardoOverlay(opts: {
 // ---------------------------------------------------------------------------
 
 /**
- * Add an external network to the compose file and attach every service to it.
+ * Add an external network to the compose file and attach services to it.
+ *
+ * By default, every bridge-mode service is attached — backwards-compatible
+ * behaviour for the few callers (import, adopt) that pre-date routing-aware
+ * injection. The deploy pipeline passes an explicit `attachTo` set listing
+ * only the services that actually need to be reachable from vardo-traefik
+ * (i.e. services carrying Traefik router labels).
+ *
+ * Non-routed services (databases, caches, workers, sidecars) stay on the
+ * compose project's private network so that their per-project service
+ * aliases (e.g. `postgres`, `redis`) cannot collide with identically-named
+ * services in sibling vardo apps sharing `vardo-network`.
+ *
  * Returns a new ComposeFile -- does not mutate the original.
  */
 export function injectNetwork(
   compose: ComposeFile,
   networkName: string = "vardo-network",
+  opts?: { attachTo?: Set<string> },
 ): ComposeFile {
+  const attachTo = opts?.attachTo;
   const updatedServices: Record<string, ComposeService> = {};
   for (const [key, svc] of Object.entries(compose.services)) {
     if (svc.network_mode) {
+      updatedServices[key] = svc;
+      continue;
+    }
+    if (attachTo && !attachTo.has(key)) {
       updatedServices[key] = svc;
       continue;
     }
@@ -438,6 +456,25 @@ export function injectNetwork(
       ? { ...existingNetworks, [networkName]: { external: true } }
       : existingNetworks,
   };
+}
+
+/**
+ * Return the set of services carrying a `traefik.enable=true` label. These
+ * are the services the shared `vardo-network` must reach so vardo-traefik
+ * can route traffic to them.
+ */
+export function getTraefikRoutedServices(compose: ComposeFile): Set<string> {
+  const routed = new Set<string>();
+  for (const [name, svc] of Object.entries(compose.services)) {
+    const labels = svc.labels;
+    if (!labels) continue;
+    // Accept both the canonical "true" and the rare boolean form.
+    const enable = labels["traefik.enable"];
+    if (enable === "true" || (enable as unknown) === true) {
+      routed.add(name);
+    }
+  }
+  return routed;
 }
 
 // ---------------------------------------------------------------------------
@@ -671,7 +708,14 @@ export function applyDeployTransforms(
     }
   }
 
-  result = injectNetwork(result, opts.networkName);
+  // Only attach vardo-network to services that will actually be routed by
+  // vardo-traefik. Non-routed services (databases, workers, etc.) stay on
+  // the compose project's private network — this prevents DNS alias
+  // collisions between identically-named services in sibling apps.
+  const routed = getTraefikRoutedServices(result);
+  result = injectNetwork(result, opts.networkName, {
+    attachTo: routed.size > 0 ? routed : undefined,
+  });
 
   return result;
 }
