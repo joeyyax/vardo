@@ -57,6 +57,7 @@ export {
   getTraefikRoutedServices,
   injectResourceLimits,
   injectGpuDevices,
+  detectStatefulInfrastructureServices,
   detectPorts,
   parsePortString,
   stripHostPorts,

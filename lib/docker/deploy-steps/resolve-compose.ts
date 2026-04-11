@@ -9,6 +9,7 @@ import {
   resolveBackendProtocol,
   narrowBackendProtocol,
   injectGpuDevices,
+  detectStatefulInfrastructureServices,
   stripVardoInjections,
   getTraefikRoutedServices,
 } from "../compose";
@@ -41,7 +42,16 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
   }
 
   if (app.gpuEnabled) {
-    compose = injectGpuDevices(compose);
+    // Skip GPU reservations for services that mount a top-level named
+    // volume — those are stateful infrastructure (postgres, redis, etc.)
+    // and don't benefit from NVIDIA device access. A service that needs
+    // GPU alongside a named volume can always declare its own reservation
+    // in the source compose; injectGpuDevices preserves those.
+    const statefulSkip = detectStatefulInfrastructureServices(compose);
+    compose = injectGpuDevices(compose, { skip: statefulSkip });
+    if (statefulSkip.size > 0) {
+      log(`[deploy] GPU reservations: skipping stateful services (${[...statefulSkip].join(", ")})`);
+    }
   }
 
   // Step 2: Detect container port

@@ -501,16 +501,25 @@ export function injectResourceLimits(
 // ---------------------------------------------------------------------------
 
 /**
- * Inject NVIDIA GPU access into every service in a compose file via
- * deploy.resources.reservations.devices.  Uses `count: all` so every
- * available GPU is accessible.  Returns a new ComposeFile — does not
+ * Inject NVIDIA GPU access into services in a compose file via
+ * deploy.resources.reservations.devices. Uses `count: all` so every
+ * available GPU is accessible. Returns a new ComposeFile — does not
  * mutate the original.
  *
- * This is a whole-app toggle — all services in the compose file receive
- * the NVIDIA runtime reservation.  For multi-service apps, every container
- * gets the overhead regardless of whether it actually needs GPU access.
+ * By default, services that mount a top-level named volume (i.e. are
+ * "stateful" in the same sense as the blue/green swap uses) are skipped,
+ * because databases, caches, and similar infrastructure almost never
+ * need GPU access and the reservation adds runtime overhead plus
+ * schedules the service on nodes with GPU capacity for no reason. A
+ * service that actually needs GPU + a named volume can either opt in by
+ * declaring its own GPU reservation in the source compose (the function
+ * preserves those), or the caller can pass an explicit `skip` set.
  */
-export function injectGpuDevices(compose: ComposeFile): ComposeFile {
+export function injectGpuDevices(
+  compose: ComposeFile,
+  opts?: { skip?: Set<string> },
+): ComposeFile {
+  const skip = opts?.skip ?? detectStatefulInfrastructureServices(compose);
   const updatedServices: Record<string, ComposeService> = {};
   for (const [key, svc] of Object.entries(compose.services)) {
     const existingDevices = svc.deploy?.resources?.reservations?.devices ?? [];
@@ -518,6 +527,10 @@ export function injectGpuDevices(compose: ComposeFile): ComposeFile {
       d.capabilities?.includes("gpu")
     );
     if (alreadyHasGpu) {
+      updatedServices[key] = svc;
+      continue;
+    }
+    if (skip.has(key)) {
       updatedServices[key] = svc;
       continue;
     }
@@ -539,6 +552,32 @@ export function injectGpuDevices(compose: ComposeFile): ComposeFile {
     };
   }
   return { ...compose, services: updatedServices };
+}
+
+/**
+ * Return the set of services that mount a top-level named volume.
+ * This matches the same "stateful" heuristic the blue/green swap uses
+ * (`swap.ts`), so GPU injection, cutover pauses, and future stateful-
+ * aware transforms stay consistent.
+ *
+ * Bind mounts and anonymous volumes don't count — only services that
+ * reference a volume key declared at the top level of the compose file.
+ */
+export function detectStatefulInfrastructureServices(
+  compose: ComposeFile,
+): Set<string> {
+  const stateful = new Set<string>();
+  const namedVolumes = new Set(Object.keys(compose.volumes ?? {}));
+  if (namedVolumes.size === 0) return stateful;
+  for (const [name, svc] of Object.entries(compose.services)) {
+    const mounts = svc.volumes ?? [];
+    const usesNamedVolume = mounts.some((m) => {
+      const src = m.split(":")[0];
+      return namedVolumes.has(src);
+    });
+    if (usesNamedVolume) stateful.add(name);
+  }
+  return stateful;
 }
 
 // ---------------------------------------------------------------------------

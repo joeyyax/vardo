@@ -8,6 +8,7 @@ import {
   validateCompose,
   composeToYaml,
   injectGpuDevices,
+  detectStatefulInfrastructureServices,
   injectResourceLimits,
   generateComposeFromContainer,
   isAnonymousVolume,
@@ -514,6 +515,136 @@ describe("applyDeployTransforms — vardo-network scoping", () => {
 // ---------------------------------------------------------------------------
 // parseCompose — service.networks map form (Q3 latent bug)
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// injectGpuDevices — skip stateful infrastructure
+// ---------------------------------------------------------------------------
+
+describe("injectGpuDevices — stateful service skip", () => {
+  it("skips services mounting top-level named volumes by default", () => {
+    // Regression: GPU reservations were previously applied to every service,
+    // including postgres/redis sidecars that never use the GPU. This wasted
+    // scheduling and locked apps onto GPU-capable hosts unnecessarily.
+    const compose: ComposeFile = {
+      services: {
+        dashboard: { name: "dashboard", image: "dashboard" },
+        worker: { name: "worker", image: "worker", volumes: ["/tmp/scratch:/tmp/scratch"] },
+        postgres: {
+          name: "postgres",
+          image: "postgres:17",
+          volumes: ["postgres-data:/var/lib/postgresql/data"],
+        },
+        redis: {
+          name: "redis",
+          image: "redis:7",
+          volumes: ["redis-data:/data"],
+        },
+      },
+      volumes: { "postgres-data": null, "redis-data": null },
+    };
+
+    const result = injectGpuDevices(compose);
+
+    // Non-stateful services get GPU reservations.
+    expect(result.services.dashboard.deploy?.resources?.reservations?.devices?.[0]?.capabilities).toContain("gpu");
+    expect(result.services.worker.deploy?.resources?.reservations?.devices?.[0]?.capabilities).toContain("gpu");
+    // Stateful services are skipped.
+    expect(result.services.postgres.deploy).toBeUndefined();
+    expect(result.services.redis.deploy).toBeUndefined();
+  });
+
+  it("attaches GPU to every service when the compose has no named volumes", () => {
+    // Backwards-compat: the historical behaviour was whole-app GPU injection.
+    // Apps that predate the stateful skip must still get the toggle applied
+    // so their existing deploys don't silently change.
+    const compose: ComposeFile = {
+      services: {
+        app: { name: "app", image: "nginx" },
+        worker: { name: "worker", image: "worker" },
+      },
+    };
+
+    const result = injectGpuDevices(compose);
+
+    expect(result.services.app.deploy?.resources?.reservations?.devices?.[0]?.capabilities).toContain("gpu");
+    expect(result.services.worker.deploy?.resources?.reservations?.devices?.[0]?.capabilities).toContain("gpu");
+  });
+
+  it("preserves GPU declarations already present in the user's compose", () => {
+    // If a user explicitly put a GPU reservation on postgres (weird but
+    // valid — e.g. pgvector with GPU acceleration), we must not strip it.
+    const compose: ComposeFile = {
+      services: {
+        postgres: {
+          name: "postgres",
+          image: "pgvector/pgvector:pg16",
+          volumes: ["data:/var/lib/postgresql/data"],
+          deploy: {
+            resources: {
+              reservations: {
+                devices: [{ driver: "nvidia", count: 1, capabilities: ["gpu"] }],
+              },
+            },
+          },
+        },
+      },
+      volumes: { data: null },
+    };
+
+    const result = injectGpuDevices(compose);
+
+    // Still has its original reservation, not stripped by the skip logic.
+    expect(result.services.postgres.deploy?.resources?.reservations?.devices).toHaveLength(1);
+    expect(result.services.postgres.deploy?.resources?.reservations?.devices?.[0]?.count).toBe(1);
+  });
+
+  it("respects an explicit skip set from the caller", () => {
+    const compose: ComposeFile = {
+      services: {
+        a: { name: "a", image: "a" },
+        b: { name: "b", image: "b" },
+      },
+    };
+
+    const result = injectGpuDevices(compose, { skip: new Set(["b"]) });
+
+    expect(result.services.a.deploy?.resources?.reservations?.devices?.[0]?.capabilities).toContain("gpu");
+    expect(result.services.b.deploy).toBeUndefined();
+  });
+});
+
+describe("detectStatefulInfrastructureServices", () => {
+  it("flags services that mount named volumes", () => {
+    const compose: ComposeFile = {
+      services: {
+        postgres: {
+          name: "postgres",
+          image: "postgres",
+          volumes: ["postgres-data:/var/lib/postgresql/data"],
+        },
+        dashboard: {
+          name: "dashboard",
+          image: "dashboard",
+          volumes: ["/mnt/host/creds:/data/creds"],
+        },
+      },
+      volumes: { "postgres-data": null },
+    };
+
+    const result = detectStatefulInfrastructureServices(compose);
+
+    expect(result.has("postgres")).toBe(true);
+    expect(result.has("dashboard")).toBe(false);
+  });
+
+  it("returns an empty set for composes with no top-level volumes", () => {
+    const compose: ComposeFile = {
+      services: { app: { name: "app", image: "nginx" } },
+    };
+
+    expect(detectStatefulInfrastructureServices(compose).size).toBe(0);
+  });
+});
 
 describe("parseCompose — service.networks map form", () => {
   it("accepts list form (`- internal`)", () => {
