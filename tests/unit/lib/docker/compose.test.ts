@@ -3,10 +3,12 @@ import {
   sanitizeCompose,
   parseCompose,
   injectNetwork,
+  getTraefikRoutedServices,
   injectTraefikLabels,
   validateCompose,
   composeToYaml,
   injectGpuDevices,
+  getServicesWithExternalizedVolumes,
   injectResourceLimits,
   generateComposeFromContainer,
   isAnonymousVolume,
@@ -366,6 +368,379 @@ describe("injectNetwork — network_mode services", () => {
     // Both the original named network and vardo-network should be present.
     expect(result.services.myapp.networks).toContain("my-overlay");
     expect(result.services.myapp.networks).toContain("vardo-network");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// injectNetwork — attachTo filter (vardo-network alias collision fix)
+// ---------------------------------------------------------------------------
+
+describe("injectNetwork — attachTo filter", () => {
+  it("only attaches vardo-network to services in the attachTo set", () => {
+    // Regression: the agents outage was caused by postgres joining
+    // vardo-network with alias `postgres`, colliding with glitchtip's
+    // postgres on the same shared network. Only the Traefik-routed
+    // service should join vardo-network.
+    const compose: ComposeFile = {
+      services: {
+        dashboard: { name: "dashboard", image: "dashboard", networks: ["internal"] },
+        postgres: { name: "postgres", image: "postgres:16", networks: ["internal"] },
+        redis: { name: "redis", image: "redis:7", networks: ["internal"] },
+        worker: { name: "worker", image: "worker", networks: ["internal"] },
+      },
+    };
+
+    const result = injectNetwork(compose, "vardo-network", {
+      attachTo: new Set(["dashboard"]),
+    });
+
+    expect(result.services.dashboard.networks).toEqual(["internal", "vardo-network"]);
+    expect(result.services.postgres.networks).toEqual(["internal"]);
+    expect(result.services.redis.networks).toEqual(["internal"]);
+    expect(result.services.worker.networks).toEqual(["internal"]);
+    expect(result.networks?.["vardo-network"]).toEqual({ external: true });
+  });
+
+  it("attaches vardo-network to every service when attachTo is omitted (backwards compat)", () => {
+    const compose: ComposeFile = {
+      services: {
+        app: { name: "app", image: "nginx" },
+        worker: { name: "worker", image: "worker" },
+      },
+    };
+
+    const result = injectNetwork(compose, "vardo-network");
+
+    expect(result.services.app.networks).toContain("vardo-network");
+    expect(result.services.worker.networks).toContain("vardo-network");
+  });
+
+  it("does not declare vardo-network top-level when attachTo filters out every service", () => {
+    const compose: ComposeFile = {
+      services: {
+        postgres: { name: "postgres", image: "postgres:16" },
+        redis: { name: "redis", image: "redis:7" },
+      },
+    };
+
+    const result = injectNetwork(compose, "vardo-network", { attachTo: new Set() });
+
+    expect(result.services.postgres.networks).toBeUndefined();
+    expect(result.services.redis.networks).toBeUndefined();
+    expect(result.networks?.["vardo-network"]).toBeUndefined();
+  });
+});
+
+describe("getTraefikRoutedServices", () => {
+  it("identifies services with traefik.enable=true", () => {
+    const compose: ComposeFile = {
+      services: {
+        dashboard: {
+          name: "dashboard",
+          image: "dashboard",
+          labels: {
+            "traefik.enable": "true",
+            "traefik.http.routers.app.rule": "Host(`app.example.com`)",
+          },
+        },
+        postgres: { name: "postgres", image: "postgres:16" },
+      },
+    };
+
+    const routed = getTraefikRoutedServices(compose);
+
+    expect(routed.has("dashboard")).toBe(true);
+    expect(routed.has("postgres")).toBe(false);
+  });
+
+  it("returns an empty set when no service carries traefik.enable=true", () => {
+    const compose: ComposeFile = {
+      services: {
+        worker: { name: "worker", image: "worker" },
+      },
+    };
+
+    expect(getTraefikRoutedServices(compose).size).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyDeployTransforms — vardo-network attached only to routed services
+// ---------------------------------------------------------------------------
+
+describe("applyDeployTransforms — vardo-network scoping", () => {
+  it("attaches nothing to vardo-network for worker-only stacks with no ingress", () => {
+    // Regression: the previous fallback was "attach everywhere when no
+    // service has a Traefik router", which re-created the alias collision
+    // that caused the agents outage. A stack with no domains (worker-only)
+    // must not join vardo-network at all.
+    const compose: ComposeFile = {
+      services: {
+        worker: { name: "worker", image: "worker", networks: ["internal"] },
+        queue: { name: "queue", image: "redis:7", networks: ["internal"] },
+      },
+      networks: { internal: null },
+    };
+
+    const result = applyDeployTransforms(compose, {
+      appName: "ingest",
+      containerPort: null,
+      domains: [],
+      networkName: "vardo-network",
+      backendProtocol: null,
+    });
+
+    expect(result.services.worker.networks ?? []).not.toContain("vardo-network");
+    expect(result.services.queue.networks ?? []).not.toContain("vardo-network");
+    expect(result.networks?.["vardo-network"]).toBeUndefined();
+  });
+
+  it("attaches vardo-network only to the Traefik-routed service", () => {
+    // Regression for the agents outage: postgres, redis, worker, and bot
+    // must NOT be attached to vardo-network, otherwise their per-project
+    // aliases collide with sibling apps that share the same network.
+    const compose: ComposeFile = {
+      services: {
+        dashboard: { name: "dashboard", image: "dashboard", networks: ["internal"] },
+        postgres: { name: "postgres", image: "postgres:16", networks: ["internal"] },
+        redis: { name: "redis", image: "redis:7", networks: ["internal"] },
+        worker: { name: "worker", image: "worker", networks: ["internal"] },
+        bot: { name: "bot", image: "bot", networks: ["internal"] },
+      },
+      networks: { internal: null },
+    };
+
+    const result = applyDeployTransforms(compose, {
+      appName: "agents",
+      containerPort: 3000,
+      domains: [
+        {
+          id: "abcdef123456",
+          domain: "agents.example.com",
+          port: null,
+          certResolver: "le",
+          sslEnabled: true,
+          redirectTo: null,
+          redirectCode: null,
+        },
+      ],
+      networkName: "vardo-network",
+      backendProtocol: null,
+    });
+
+    // Dashboard is the Traefik-routed service → must join vardo-network.
+    expect(result.services.dashboard.networks).toContain("vardo-network");
+    // Stateful / worker / sidecar services stay on the project network.
+    expect(result.services.postgres.networks).not.toContain("vardo-network");
+    expect(result.services.redis.networks).not.toContain("vardo-network");
+    expect(result.services.worker.networks).not.toContain("vardo-network");
+    expect(result.services.bot.networks).not.toContain("vardo-network");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseCompose — service.networks map form (Q3 latent bug)
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// injectGpuDevices — skip stateful infrastructure
+// ---------------------------------------------------------------------------
+
+describe("injectGpuDevices — stateful service skip", () => {
+  it("skips services mounting top-level named volumes by default", () => {
+    // Regression: GPU reservations were previously applied to every service,
+    // including postgres/redis sidecars that never use the GPU. This wasted
+    // scheduling and locked apps onto GPU-capable hosts unnecessarily.
+    const compose: ComposeFile = {
+      services: {
+        dashboard: { name: "dashboard", image: "dashboard" },
+        worker: { name: "worker", image: "worker", volumes: ["/tmp/scratch:/tmp/scratch"] },
+        postgres: {
+          name: "postgres",
+          image: "postgres:17",
+          volumes: ["postgres-data:/var/lib/postgresql/data"],
+        },
+        redis: {
+          name: "redis",
+          image: "redis:7",
+          volumes: ["redis-data:/data"],
+        },
+      },
+      volumes: { "postgres-data": null, "redis-data": null },
+    };
+
+    const result = injectGpuDevices(compose);
+
+    // Non-stateful services get GPU reservations.
+    expect(result.services.dashboard.deploy?.resources?.reservations?.devices?.[0]?.capabilities).toContain("gpu");
+    expect(result.services.worker.deploy?.resources?.reservations?.devices?.[0]?.capabilities).toContain("gpu");
+    // Stateful services are skipped.
+    expect(result.services.postgres.deploy).toBeUndefined();
+    expect(result.services.redis.deploy).toBeUndefined();
+  });
+
+  it("attaches GPU to every service when the compose has no named volumes", () => {
+    // Backwards-compat: the historical behaviour was whole-app GPU injection.
+    // Apps that predate the stateful skip must still get the toggle applied
+    // so their existing deploys don't silently change.
+    const compose: ComposeFile = {
+      services: {
+        app: { name: "app", image: "nginx" },
+        worker: { name: "worker", image: "worker" },
+      },
+    };
+
+    const result = injectGpuDevices(compose);
+
+    expect(result.services.app.deploy?.resources?.reservations?.devices?.[0]?.capabilities).toContain("gpu");
+    expect(result.services.worker.deploy?.resources?.reservations?.devices?.[0]?.capabilities).toContain("gpu");
+  });
+
+  it("preserves GPU declarations already present in the user's compose", () => {
+    // If a user explicitly put a GPU reservation on postgres (weird but
+    // valid — e.g. pgvector with GPU acceleration), we must not strip it.
+    const compose: ComposeFile = {
+      services: {
+        postgres: {
+          name: "postgres",
+          image: "pgvector/pgvector:pg16",
+          volumes: ["data:/var/lib/postgresql/data"],
+          deploy: {
+            resources: {
+              reservations: {
+                devices: [{ driver: "nvidia", count: 1, capabilities: ["gpu"] }],
+              },
+            },
+          },
+        },
+      },
+      volumes: { data: null },
+    };
+
+    const result = injectGpuDevices(compose);
+
+    // Still has its original reservation, not stripped by the skip logic.
+    expect(result.services.postgres.deploy?.resources?.reservations?.devices).toHaveLength(1);
+    expect(result.services.postgres.deploy?.resources?.reservations?.devices?.[0]?.count).toBe(1);
+  });
+
+  it("respects an explicit skip set from the caller", () => {
+    const compose: ComposeFile = {
+      services: {
+        a: { name: "a", image: "a" },
+        b: { name: "b", image: "b" },
+      },
+    };
+
+    const result = injectGpuDevices(compose, { skip: new Set(["b"]) });
+
+    expect(result.services.a.deploy?.resources?.reservations?.devices?.[0]?.capabilities).toContain("gpu");
+    expect(result.services.b.deploy).toBeUndefined();
+  });
+});
+
+describe("getServicesWithExternalizedVolumes", () => {
+  it("flags services that mount named volumes", () => {
+    const compose: ComposeFile = {
+      services: {
+        postgres: {
+          name: "postgres",
+          image: "postgres",
+          volumes: ["postgres-data:/var/lib/postgresql/data"],
+        },
+        dashboard: {
+          name: "dashboard",
+          image: "dashboard",
+          volumes: ["/mnt/host/creds:/data/creds"],
+        },
+      },
+      volumes: { "postgres-data": null },
+    };
+
+    const result = getServicesWithExternalizedVolumes(compose);
+
+    expect(result.has("postgres")).toBe(true);
+    expect(result.has("dashboard")).toBe(false);
+  });
+
+  it("returns an empty set for composes with no top-level volumes", () => {
+    const compose: ComposeFile = {
+      services: { app: { name: "app", image: "nginx" } },
+    };
+
+    expect(getServicesWithExternalizedVolumes(compose).size).toBe(0);
+  });
+
+  it("excludes anonymous (64-char hex) top-level volume names", () => {
+    // Matches the same filtering swap.ts performs — anonymous volumes
+    // are never externalized, so services that mount them aren't pauses
+    // during blue/green cutover.
+    const hexName = "a".repeat(64);
+    const compose: ComposeFile = {
+      services: {
+        app: { name: "app", image: "app", volumes: [`${hexName}:/data`] },
+      },
+      volumes: { [hexName]: null },
+    };
+
+    expect(getServicesWithExternalizedVolumes(compose).size).toBe(0);
+  });
+});
+
+describe("parseCompose — service.networks map form", () => {
+  it("accepts list form (`- internal`)", () => {
+    const yaml = `services:
+  postgres:
+    image: postgres:16
+    networks:
+      - internal
+networks:
+  internal: null
+`;
+    const parsed = parseCompose(yaml);
+    expect(parsed.services.postgres.networks).toEqual(["internal"]);
+  });
+
+  it("accepts map form with aliases (`internal: { aliases: [...] }`)", () => {
+    // Regression: the map form is valid Compose syntax but used to be
+    // silently dropped, leaving the service without any declared network
+    // references. This in turn caused the deploy pipeline to fall back to
+    // attaching only vardo-network, which masked service-level intent and
+    // contributed to alias collisions across sibling apps.
+    const yaml = `services:
+  postgres:
+    image: postgres:16
+    networks:
+      internal:
+        aliases:
+          - pg
+          - db
+networks:
+  internal: null
+`;
+    const parsed = parseCompose(yaml);
+    expect(parsed.services.postgres.networks).toEqual(["internal"]);
+  });
+
+  it("preserves external: true on top-level networks through round-trip", () => {
+    const yaml = `services:
+  dashboard:
+    image: nginx
+    networks:
+      - proxy
+      - internal
+networks:
+  proxy:
+    external: true
+  internal: null
+`;
+    const parsed = parseCompose(yaml);
+    expect(parsed.networks?.proxy).toEqual({ external: true });
+    expect(parsed.networks?.internal).toBeNull();
+
+    const yaml2 = composeToYaml(parsed);
+    const reparsed = parseCompose(yaml2);
+    expect(reparsed.networks?.proxy).toEqual({ external: true });
   });
 });
 
@@ -1568,10 +1943,32 @@ const baseTransformOpts = {
 };
 
 describe("applyDeployTransforms — network injection", () => {
-  it("injects the vardo network into all services", () => {
-    const result = applyDeployTransforms(makeSimpleCompose(), baseTransformOpts);
+  it("injects vardo-network into Traefik-routed services when a domain is configured", () => {
+    const result = applyDeployTransforms(makeSimpleCompose(), {
+      ...baseTransformOpts,
+      domains: [
+        {
+          id: "dom12345678",
+          domain: "app.example.com",
+          port: null,
+          sslEnabled: true,
+          certResolver: "le",
+          redirectTo: null,
+          redirectCode: null,
+        },
+      ],
+    });
     expect(result.services.app.networks).toContain("vardo-network");
     expect(result.networks?.["vardo-network"]).toBeDefined();
+  });
+
+  it("does NOT inject vardo-network when the app has no domains", () => {
+    // Worker-only / no-ingress stacks must not join the shared network.
+    // The previous whole-app fallback was exactly what caused the agents
+    // outage — postgres/redis with colliding DNS aliases across projects.
+    const result = applyDeployTransforms(makeSimpleCompose(), baseTransformOpts);
+    expect(result.services.app.networks ?? []).not.toContain("vardo-network");
+    expect(result.networks?.["vardo-network"]).toBeUndefined();
   });
 });
 

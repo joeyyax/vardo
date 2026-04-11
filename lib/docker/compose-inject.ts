@@ -16,7 +16,7 @@ import type {
 } from "./compose-types";
 import { TRAEFIK_LABEL_PREFIX, resolveBackendProtocol } from "./compose-generate";
 import { parseCompose } from "./compose-parse";
-import { sanitizeCompose } from "./compose-validate";
+import { sanitizeCompose, isAnonymousVolume } from "./compose-validate";
 import { generateComposeForImage } from "./compose-generate";
 
 const VARDO_LABEL_PREFIX = "vardo.";
@@ -403,16 +403,34 @@ export function buildVardoOverlay(opts: {
 // ---------------------------------------------------------------------------
 
 /**
- * Add an external network to the compose file and attach every service to it.
+ * Add an external network to the compose file and attach services to it.
+ *
+ * By default, every bridge-mode service is attached — backwards-compatible
+ * behaviour for the few callers (import, adopt) that pre-date routing-aware
+ * injection. The deploy pipeline passes an explicit `attachTo` set listing
+ * only the services that actually need to be reachable from vardo-traefik
+ * (i.e. services carrying Traefik router labels).
+ *
+ * Non-routed services (databases, caches, workers, sidecars) stay on the
+ * compose project's private network so that their per-project service
+ * aliases (e.g. `postgres`, `redis`) cannot collide with identically-named
+ * services in sibling vardo apps sharing `vardo-network`.
+ *
  * Returns a new ComposeFile -- does not mutate the original.
  */
 export function injectNetwork(
   compose: ComposeFile,
   networkName: string = "vardo-network",
+  opts?: { attachTo?: Set<string> },
 ): ComposeFile {
+  const attachTo = opts?.attachTo;
   const updatedServices: Record<string, ComposeService> = {};
   for (const [key, svc] of Object.entries(compose.services)) {
     if (svc.network_mode) {
+      updatedServices[key] = svc;
+      continue;
+    }
+    if (attachTo && !attachTo.has(key)) {
       updatedServices[key] = svc;
       continue;
     }
@@ -440,6 +458,25 @@ export function injectNetwork(
   };
 }
 
+/**
+ * Return the set of services carrying a `traefik.enable=true` label. These
+ * are the services the shared `vardo-network` must reach so vardo-traefik
+ * can route traffic to them.
+ */
+export function getTraefikRoutedServices(compose: ComposeFile): Set<string> {
+  const routed = new Set<string>();
+  for (const [name, svc] of Object.entries(compose.services)) {
+    const labels = svc.labels;
+    if (!labels) continue;
+    // Accept both the canonical "true" and the rare boolean form.
+    const enable = labels["traefik.enable"];
+    if (enable === "true" || (enable as unknown) === true) {
+      routed.add(name);
+    }
+  }
+  return routed;
+}
+
 // ---------------------------------------------------------------------------
 // Resource limit injection
 // ---------------------------------------------------------------------------
@@ -464,16 +501,25 @@ export function injectResourceLimits(
 // ---------------------------------------------------------------------------
 
 /**
- * Inject NVIDIA GPU access into every service in a compose file via
- * deploy.resources.reservations.devices.  Uses `count: all` so every
- * available GPU is accessible.  Returns a new ComposeFile — does not
+ * Inject NVIDIA GPU access into services in a compose file via
+ * deploy.resources.reservations.devices. Uses `count: all` so every
+ * available GPU is accessible. Returns a new ComposeFile — does not
  * mutate the original.
  *
- * This is a whole-app toggle — all services in the compose file receive
- * the NVIDIA runtime reservation.  For multi-service apps, every container
- * gets the overhead regardless of whether it actually needs GPU access.
+ * By default, services that mount a top-level named volume (i.e. are
+ * "stateful" in the same sense as the blue/green swap uses) are skipped,
+ * because databases, caches, and similar infrastructure almost never
+ * need GPU access and the reservation adds runtime overhead plus
+ * schedules the service on nodes with GPU capacity for no reason. A
+ * service that actually needs GPU + a named volume can either opt in by
+ * declaring its own GPU reservation in the source compose (the function
+ * preserves those), or the caller can pass an explicit `skip` set.
  */
-export function injectGpuDevices(compose: ComposeFile): ComposeFile {
+export function injectGpuDevices(
+  compose: ComposeFile,
+  opts?: { skip?: Set<string> },
+): ComposeFile {
+  const skip = opts?.skip ?? getServicesWithExternalizedVolumes(compose);
   const updatedServices: Record<string, ComposeService> = {};
   for (const [key, svc] of Object.entries(compose.services)) {
     const existingDevices = svc.deploy?.resources?.reservations?.devices ?? [];
@@ -481,6 +527,10 @@ export function injectGpuDevices(compose: ComposeFile): ComposeFile {
       d.capabilities?.includes("gpu")
     );
     if (alreadyHasGpu) {
+      updatedServices[key] = svc;
+      continue;
+    }
+    if (skip.has(key)) {
       updatedServices[key] = svc;
       continue;
     }
@@ -502,6 +552,43 @@ export function injectGpuDevices(compose: ComposeFile): ComposeFile {
     };
   }
   return { ...compose, services: updatedServices };
+}
+
+/**
+ * Return the set of services that mount a top-level named volume that
+ * will be externalized at deploy time. This is the same set the blue/
+ * green swap must stop before cutover (because an externalized volume
+ * can't be held open by two containers at once), and also the default
+ * skip set for GPU injection (because databases don't need GPUs).
+ *
+ * Anonymous volumes (64-char hex names that Docker generates) and bind
+ * mounts are excluded — externalization only applies to named volumes
+ * that the user declared at the top level of the compose file.
+ *
+ * Callers needing this set for DIFFERENT reasons (safety vs. heuristic)
+ * should call this helper directly — the name reflects the mechanical
+ * property being computed, not the reason any particular caller wants
+ * it. If the two use cases ever diverge (e.g. GPU skip grows an image-
+ * name heuristic), introduce a separate helper at that point rather
+ * than generalizing this one.
+ */
+export function getServicesWithExternalizedVolumes(
+  compose: ComposeFile,
+): Set<string> {
+  const matched = new Set<string>();
+  const namedVolumes = new Set(
+    Object.keys(compose.volumes ?? {}).filter((v) => !isAnonymousVolume(v)),
+  );
+  if (namedVolumes.size === 0) return matched;
+  for (const [name, svc] of Object.entries(compose.services)) {
+    const mounts = svc.volumes ?? [];
+    const usesNamedVolume = mounts.some((m) => {
+      const src = m.split(":")[0];
+      return namedVolumes.has(src);
+    });
+    if (usesNamedVolume) matched.add(name);
+  }
+  return matched;
 }
 
 // ---------------------------------------------------------------------------
@@ -671,7 +758,15 @@ export function applyDeployTransforms(
     }
   }
 
-  result = injectNetwork(result, opts.networkName);
+  // Only attach vardo-network to services that will actually be routed by
+  // vardo-traefik. Non-routed services (databases, workers, etc.) stay on
+  // the compose project's private network — this prevents DNS alias
+  // collisions between identically-named services in sibling apps. If no
+  // service is Traefik-routed (worker-only stacks, no ingress), we pass
+  // an empty set so NOTHING joins vardo-network — the historical fallback
+  // of "attach everywhere" is exactly what caused the agents outage.
+  const routed = getTraefikRoutedServices(result);
+  result = injectNetwork(result, opts.networkName, { attachTo: routed });
 
   return result;
 }

@@ -11,8 +11,8 @@ import { promisify } from "util";
 import { join } from "path";
 import { ensureNetwork } from "../client";
 import {
-  isAnonymousVolume,
   slotComposeFiles,
+  getServicesWithExternalizedVolumes,
 } from "../compose";
 import {
   NETWORK_NAME as VARDO_NETWORK,
@@ -145,48 +145,135 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     log(`[deploy] Warning: network — ${err instanceof Error ? err.message : err}`);
   }
 
-  // Step 6b: Stop old-slot stateful services that mount externalized volumes
-  if (activeSlot && !isLocalEnv && compose.volumes && Object.keys(compose.volumes).length > 0) {
-    const externalVolumeNames = new Set(
-      Object.keys(compose.volumes).filter((v) => !isAnonymousVolume(v))
-    );
+  // Detect which services we may need to stop in the old slot before the
+  // new slot can start. An externalized volume can't be held open by two
+  // containers simultaneously, so any service mounting one has to pause
+  // during cutover. We compute this early so we can log the rollback plan
+  // and short-circuit for first deploys / worker-only stacks.
+  const statefulServices = [...getServicesWithExternalizedVolumes(compose)];
+  const mustStopOldStateful =
+    activeSlot !== null && !isLocalEnv && statefulServices.length > 0;
 
-    const statefulServices: string[] = [];
-    for (const [svcName, svc] of Object.entries(compose.services)) {
-      const mounts = svc.volumes ?? [];
-      const usesExternalVol = mounts.some((m) => {
-        const src = m.split(":")[0];
-        return externalVolumeNames.has(src);
-      });
-      if (usesExternalVol) statefulServices.push(svcName);
-    }
-
-    if (statefulServices.length > 0) {
-      const oldSlotDir = join(appDir, activeSlot);
-      const oldProjectName = `${app.name}-${ctx.envName}-${activeSlot}`;
-      const oldComposeFileArgs = await slotComposeFiles(oldSlotDir);
-      log(`[deploy] Stopping stateful services in old slot: ${statefulServices.join(", ")}`);
-      try {
-        await execFileAsync(
-          "docker",
-          ["compose", ...oldComposeFileArgs, "-p", oldProjectName, "stop", ...statefulServices],
-          { cwd: oldSlotDir, timeout: COMPOSE_DOWN_TIMEOUT }
-        );
-      } catch (err) {
-        log(`[deploy] Warning: could not stop old stateful services — ${err instanceof Error ? err.message : err}`);
+  // Step 6a: Pre-build and pre-pull new-slot images WITHOUT stopping anything.
+  // This is the slowest and most failure-prone phase (dockerfiles can fail,
+  // registries can 404, network blips can bite). Doing it before we touch
+  // the old slot means the old slot keeps serving if we never get here.
+  const hasBuild = Object.values(compose.services).some((svc) => svc.build);
+  try {
+    if (hasBuild) {
+      log(`[deploy] Pre-building ${newSlot} slot images (old slot still serving)...`);
+      const { stdout, stderr } = await execFileAsync(
+        "docker",
+        ["compose", ...composeFileArgs, "-p", newProjectName, "build"],
+        { cwd: slotDir, timeout: COMPOSE_BUILD_UP_TIMEOUT }
+      );
+      for (const line of stdout.split(/\r?\n|\r/).filter(Boolean)) {
+        logs.push(`[deploy][build] ${line.trim()}`);
       }
+      for (const line of stderr.split(/\r?\n|\r/).filter(Boolean)) {
+        logs.push(`[deploy][build] ${line.trim()}`);
+      }
+    } else if (!ctx.builtLocally) {
+      // Image-based deploy — pull before stopping old slot so registry errors
+      // don't take the old slot down.
+      log(`[deploy] Pre-pulling ${newSlot} slot images (old slot still serving)...`);
+      const { stdout, stderr } = await execFileAsync(
+        "docker",
+        ["compose", ...composeFileArgs, "-p", newProjectName, "pull"],
+        { cwd: slotDir, timeout: COMPOSE_UP_TIMEOUT }
+      );
+      for (const line of stdout.split(/\r?\n|\r/).filter(Boolean)) {
+        logs.push(`[deploy][pull] ${line.trim()}`);
+      }
+      for (const line of stderr.split(/\r?\n|\r/).filter(Boolean)) {
+        logs.push(`[deploy][pull] ${line.trim()}`);
+      }
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `Pre-build/pre-pull for ${newSlot} failed (old slot unaffected): ${message}`
+    );
+  }
+
+  // Step 6b: NOW stop old-slot stateful services. Images are already local,
+  // so the window where stateful services are down is as short as possible.
+  const oldSlotDir = activeSlot ? join(appDir, activeSlot) : null;
+  const oldProjectName = activeSlot
+    ? `${app.name}-${ctx.envName}-${activeSlot}`
+    : null;
+  let oldComposeFileArgsCache: string[] | null = null;
+  const getOldComposeFileArgs = async (): Promise<string[]> => {
+    if (!oldSlotDir) return [];
+    if (oldComposeFileArgsCache) return oldComposeFileArgsCache;
+    oldComposeFileArgsCache = await slotComposeFiles(oldSlotDir);
+    return oldComposeFileArgsCache;
+  };
+
+  // Services we actually stopped — used by the rollback path below to restart
+  // them if the new slot fails to come up.
+  const stoppedOldServices: string[] = [];
+
+  if (mustStopOldStateful && oldSlotDir && oldProjectName) {
+    const oldComposeFileArgs = await getOldComposeFileArgs();
+    log(`[deploy] Stopping stateful services in old slot: ${statefulServices.join(", ")}`);
+    try {
+      await execFileAsync(
+        "docker",
+        ["compose", ...oldComposeFileArgs, "-p", oldProjectName, "stop", ...statefulServices],
+        { cwd: oldSlotDir, timeout: COMPOSE_DOWN_TIMEOUT }
+      );
+      stoppedOldServices.push(...statefulServices);
+    } catch (err) {
+      log(`[deploy] Warning: could not stop old stateful services — ${err instanceof Error ? err.message : err}`);
     }
   }
 
-  // Step 7: Pull and start new slot
-  const hasBuild = Object.values(compose.services).some((svc) => svc.build);
-  const pullPolicy = ctx.builtLocally || hasBuild ? "missing" : "always";
+  // Local helper — restart any old-slot services we stopped, so the old slot
+  // keeps serving if the new slot cutover fails. Best-effort; logs but never
+  // throws, because we're already in the failure path.
+  //
+  // We use `up -d --no-recreate --pull never <services>` instead of the more
+  // obvious `start`. Reason: `start` only works if the containers still
+  // exist, so if anything cleaned them up between the stop and the
+  // restore (docker runtime restart, manual ops, system prune), `start`
+  // fails silently and the old slot stays dead. `up --no-recreate` will
+  // recreate missing containers from the already-present compose files
+  // while leaving anything currently running untouched — strict superset
+  // of `start` semantics for this use case.
+  const restoreOldSlot = async (reason: string) => {
+    if (stoppedOldServices.length === 0 || !oldSlotDir || !oldProjectName) return;
+    log(`[deploy] Restoring old-slot stateful services after ${reason}: ${stoppedOldServices.join(", ")}`);
+    try {
+      const oldComposeFileArgs = await getOldComposeFileArgs();
+      await execFileAsync(
+        "docker",
+        [
+          "compose",
+          ...oldComposeFileArgs,
+          "-p", oldProjectName,
+          "up", "-d",
+          "--no-recreate",
+          "--pull", "never",
+          ...stoppedOldServices,
+        ],
+        { cwd: oldSlotDir, timeout: COMPOSE_UP_TIMEOUT }
+      );
+      // Idempotent: calling restoreOldSlot twice is safe because compose up
+      // --no-recreate is a no-op for already-running services.
+    } catch (err) {
+      log(`[deploy] Warning: failed to restore old-slot stateful services — ${err instanceof Error ? err.message : err}`);
+    }
+  };
+
+  // Step 7: Start the new slot. Images are already local from Step 6a, so we
+  // skip --build and set --pull never to make this deterministic and fast.
   const composeUpTimeout = hasBuild ? COMPOSE_BUILD_UP_TIMEOUT : COMPOSE_UP_TIMEOUT;
   log(`[deploy] Starting ${newSlot} slot...`);
   try {
     const { stdout, stderr } = await execFileAsync(
       "docker",
-      ["compose", ...composeFileArgs, "-p", newProjectName, "up", "-d", ...(hasBuild ? ["--build"] : []), "--pull", pullPolicy],
+      ["compose", ...composeFileArgs, "-p", newProjectName, "up", "-d", "--pull", "never"],
       { cwd: slotDir, timeout: composeUpTimeout }
     );
     for (const line of stdout.split(/\r?\n|\r/).filter(Boolean)) {
@@ -197,6 +284,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    await restoreOldSlot("compose up failure");
     throw new Error(`docker compose up (${newSlot}) failed: ${message}`);
   }
 
@@ -251,6 +339,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       ["compose", ...composeFileArgs, "-p", newProjectName, "down", "--remove-orphans"],
       { cwd: slotDir, timeout: COMPOSE_DOWN_TIMEOUT }
     ).catch(() => {});
+    await restoreOldSlot("health check failure");
     throw new Error(`${newSlot} slot did not become healthy — container may have crashed (see logs above)`);
   }
   ctx.stage("healthcheck", "success");
