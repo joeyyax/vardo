@@ -16,7 +16,7 @@ import type {
 } from "./compose-types";
 import { TRAEFIK_LABEL_PREFIX, resolveBackendProtocol } from "./compose-generate";
 import { parseCompose } from "./compose-parse";
-import { sanitizeCompose } from "./compose-validate";
+import { sanitizeCompose, isAnonymousVolume } from "./compose-validate";
 import { generateComposeForImage } from "./compose-generate";
 
 const VARDO_LABEL_PREFIX = "vardo.";
@@ -519,7 +519,7 @@ export function injectGpuDevices(
   compose: ComposeFile,
   opts?: { skip?: Set<string> },
 ): ComposeFile {
-  const skip = opts?.skip ?? detectStatefulInfrastructureServices(compose);
+  const skip = opts?.skip ?? getServicesWithExternalizedVolumes(compose);
   const updatedServices: Record<string, ComposeService> = {};
   for (const [key, svc] of Object.entries(compose.services)) {
     const existingDevices = svc.deploy?.resources?.reservations?.devices ?? [];
@@ -555,29 +555,40 @@ export function injectGpuDevices(
 }
 
 /**
- * Return the set of services that mount a top-level named volume.
- * This matches the same "stateful" heuristic the blue/green swap uses
- * (`swap.ts`), so GPU injection, cutover pauses, and future stateful-
- * aware transforms stay consistent.
+ * Return the set of services that mount a top-level named volume that
+ * will be externalized at deploy time. This is the same set the blue/
+ * green swap must stop before cutover (because an externalized volume
+ * can't be held open by two containers at once), and also the default
+ * skip set for GPU injection (because databases don't need GPUs).
  *
- * Bind mounts and anonymous volumes don't count — only services that
- * reference a volume key declared at the top level of the compose file.
+ * Anonymous volumes (64-char hex names that Docker generates) and bind
+ * mounts are excluded — externalization only applies to named volumes
+ * that the user declared at the top level of the compose file.
+ *
+ * Callers needing this set for DIFFERENT reasons (safety vs. heuristic)
+ * should call this helper directly — the name reflects the mechanical
+ * property being computed, not the reason any particular caller wants
+ * it. If the two use cases ever diverge (e.g. GPU skip grows an image-
+ * name heuristic), introduce a separate helper at that point rather
+ * than generalizing this one.
  */
-export function detectStatefulInfrastructureServices(
+export function getServicesWithExternalizedVolumes(
   compose: ComposeFile,
 ): Set<string> {
-  const stateful = new Set<string>();
-  const namedVolumes = new Set(Object.keys(compose.volumes ?? {}));
-  if (namedVolumes.size === 0) return stateful;
+  const matched = new Set<string>();
+  const namedVolumes = new Set(
+    Object.keys(compose.volumes ?? {}).filter((v) => !isAnonymousVolume(v)),
+  );
+  if (namedVolumes.size === 0) return matched;
   for (const [name, svc] of Object.entries(compose.services)) {
     const mounts = svc.volumes ?? [];
     const usesNamedVolume = mounts.some((m) => {
       const src = m.split(":")[0];
       return namedVolumes.has(src);
     });
-    if (usesNamedVolume) stateful.add(name);
+    if (usesNamedVolume) matched.add(name);
   }
-  return stateful;
+  return matched;
 }
 
 // ---------------------------------------------------------------------------
@@ -750,11 +761,12 @@ export function applyDeployTransforms(
   // Only attach vardo-network to services that will actually be routed by
   // vardo-traefik. Non-routed services (databases, workers, etc.) stay on
   // the compose project's private network — this prevents DNS alias
-  // collisions between identically-named services in sibling apps.
+  // collisions between identically-named services in sibling apps. If no
+  // service is Traefik-routed (worker-only stacks, no ingress), we pass
+  // an empty set so NOTHING joins vardo-network — the historical fallback
+  // of "attach everywhere" is exactly what caused the agents outage.
   const routed = getTraefikRoutedServices(result);
-  result = injectNetwork(result, opts.networkName, {
-    attachTo: routed.size > 0 ? routed : undefined,
-  });
+  result = injectNetwork(result, opts.networkName, { attachTo: routed });
 
   return result;
 }

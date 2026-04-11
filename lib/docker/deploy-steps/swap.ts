@@ -11,8 +11,8 @@ import { promisify } from "util";
 import { join } from "path";
 import { ensureNetwork } from "../client";
 import {
-  isAnonymousVolume,
   slotComposeFiles,
+  getServicesWithExternalizedVolumes,
 } from "../compose";
 import {
   NETWORK_NAME as VARDO_NETWORK,
@@ -145,27 +145,12 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     log(`[deploy] Warning: network — ${err instanceof Error ? err.message : err}`);
   }
 
-  // Detect which services (if any) we'll need to stop in the old slot before
-  // the new slot can start, because they mount externalized volumes that
-  // cannot be held open by two containers at once. We compute this early
-  // so we can log the rollback plan and skip the pre-build pull for cases
-  // where the old slot is already gone.
-  const externalVolumeNames = new Set(
-    compose.volumes
-      ? Object.keys(compose.volumes).filter((v) => !isAnonymousVolume(v))
-      : []
-  );
-  const statefulServices: string[] = [];
-  if (externalVolumeNames.size > 0) {
-    for (const [svcName, svc] of Object.entries(compose.services)) {
-      const mounts = svc.volumes ?? [];
-      const usesExternalVol = mounts.some((m) => {
-        const src = m.split(":")[0];
-        return externalVolumeNames.has(src);
-      });
-      if (usesExternalVol) statefulServices.push(svcName);
-    }
-  }
+  // Detect which services we may need to stop in the old slot before the
+  // new slot can start. An externalized volume can't be held open by two
+  // containers simultaneously, so any service mounting one has to pause
+  // during cutover. We compute this early so we can log the rollback plan
+  // and short-circuit for first deploys / worker-only stacks.
+  const statefulServices = [...getServicesWithExternalizedVolumes(compose)];
   const mustStopOldStateful =
     activeSlot !== null && !isLocalEnv && statefulServices.length > 0;
 
@@ -247,6 +232,15 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   // Local helper — restart any old-slot services we stopped, so the old slot
   // keeps serving if the new slot cutover fails. Best-effort; logs but never
   // throws, because we're already in the failure path.
+  //
+  // We use `up -d --no-recreate --pull never <services>` instead of the more
+  // obvious `start`. Reason: `start` only works if the containers still
+  // exist, so if anything cleaned them up between the stop and the
+  // restore (docker runtime restart, manual ops, system prune), `start`
+  // fails silently and the old slot stays dead. `up --no-recreate` will
+  // recreate missing containers from the already-present compose files
+  // while leaving anything currently running untouched — strict superset
+  // of `start` semantics for this use case.
   const restoreOldSlot = async (reason: string) => {
     if (stoppedOldServices.length === 0 || !oldSlotDir || !oldProjectName) return;
     log(`[deploy] Restoring old-slot stateful services after ${reason}: ${stoppedOldServices.join(", ")}`);
@@ -254,9 +248,19 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       const oldComposeFileArgs = await getOldComposeFileArgs();
       await execFileAsync(
         "docker",
-        ["compose", ...oldComposeFileArgs, "-p", oldProjectName, "start", ...stoppedOldServices],
-        { cwd: oldSlotDir, timeout: COMPOSE_DOWN_TIMEOUT }
+        [
+          "compose",
+          ...oldComposeFileArgs,
+          "-p", oldProjectName,
+          "up", "-d",
+          "--no-recreate",
+          "--pull", "never",
+          ...stoppedOldServices,
+        ],
+        { cwd: oldSlotDir, timeout: COMPOSE_UP_TIMEOUT }
       );
+      // Idempotent: calling restoreOldSlot twice is safe because compose up
+      // --no-recreate is a no-op for already-running services.
     } catch (err) {
       log(`[deploy] Warning: failed to restore old-slot stateful services — ${err instanceof Error ? err.message : err}`);
     }

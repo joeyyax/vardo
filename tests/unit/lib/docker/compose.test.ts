@@ -8,7 +8,7 @@ import {
   validateCompose,
   composeToYaml,
   injectGpuDevices,
-  detectStatefulInfrastructureServices,
+  getServicesWithExternalizedVolumes,
   injectResourceLimits,
   generateComposeFromContainer,
   isAnonymousVolume,
@@ -469,6 +469,32 @@ describe("getTraefikRoutedServices", () => {
 // ---------------------------------------------------------------------------
 
 describe("applyDeployTransforms — vardo-network scoping", () => {
+  it("attaches nothing to vardo-network for worker-only stacks with no ingress", () => {
+    // Regression: the previous fallback was "attach everywhere when no
+    // service has a Traefik router", which re-created the alias collision
+    // that caused the agents outage. A stack with no domains (worker-only)
+    // must not join vardo-network at all.
+    const compose: ComposeFile = {
+      services: {
+        worker: { name: "worker", image: "worker", networks: ["internal"] },
+        queue: { name: "queue", image: "redis:7", networks: ["internal"] },
+      },
+      networks: { internal: null },
+    };
+
+    const result = applyDeployTransforms(compose, {
+      appName: "ingest",
+      containerPort: null,
+      domains: [],
+      networkName: "vardo-network",
+      backendProtocol: null,
+    });
+
+    expect(result.services.worker.networks ?? []).not.toContain("vardo-network");
+    expect(result.services.queue.networks ?? []).not.toContain("vardo-network");
+    expect(result.networks?.["vardo-network"]).toBeUndefined();
+  });
+
   it("attaches vardo-network only to the Traefik-routed service", () => {
     // Regression for the agents outage: postgres, redis, worker, and bot
     // must NOT be attached to vardo-network, otherwise their per-project
@@ -613,7 +639,7 @@ describe("injectGpuDevices — stateful service skip", () => {
   });
 });
 
-describe("detectStatefulInfrastructureServices", () => {
+describe("getServicesWithExternalizedVolumes", () => {
   it("flags services that mount named volumes", () => {
     const compose: ComposeFile = {
       services: {
@@ -631,7 +657,7 @@ describe("detectStatefulInfrastructureServices", () => {
       volumes: { "postgres-data": null },
     };
 
-    const result = detectStatefulInfrastructureServices(compose);
+    const result = getServicesWithExternalizedVolumes(compose);
 
     expect(result.has("postgres")).toBe(true);
     expect(result.has("dashboard")).toBe(false);
@@ -642,7 +668,22 @@ describe("detectStatefulInfrastructureServices", () => {
       services: { app: { name: "app", image: "nginx" } },
     };
 
-    expect(detectStatefulInfrastructureServices(compose).size).toBe(0);
+    expect(getServicesWithExternalizedVolumes(compose).size).toBe(0);
+  });
+
+  it("excludes anonymous (64-char hex) top-level volume names", () => {
+    // Matches the same filtering swap.ts performs — anonymous volumes
+    // are never externalized, so services that mount them aren't pauses
+    // during blue/green cutover.
+    const hexName = "a".repeat(64);
+    const compose: ComposeFile = {
+      services: {
+        app: { name: "app", image: "app", volumes: [`${hexName}:/data`] },
+      },
+      volumes: { [hexName]: null },
+    };
+
+    expect(getServicesWithExternalizedVolumes(compose).size).toBe(0);
   });
 });
 
@@ -1902,10 +1943,32 @@ const baseTransformOpts = {
 };
 
 describe("applyDeployTransforms — network injection", () => {
-  it("injects the vardo network into all services", () => {
-    const result = applyDeployTransforms(makeSimpleCompose(), baseTransformOpts);
+  it("injects vardo-network into Traefik-routed services when a domain is configured", () => {
+    const result = applyDeployTransforms(makeSimpleCompose(), {
+      ...baseTransformOpts,
+      domains: [
+        {
+          id: "dom12345678",
+          domain: "app.example.com",
+          port: null,
+          sslEnabled: true,
+          certResolver: "le",
+          redirectTo: null,
+          redirectCode: null,
+        },
+      ],
+    });
     expect(result.services.app.networks).toContain("vardo-network");
     expect(result.networks?.["vardo-network"]).toBeDefined();
+  });
+
+  it("does NOT inject vardo-network when the app has no domains", () => {
+    // Worker-only / no-ingress stacks must not join the shared network.
+    // The previous whole-app fallback was exactly what caused the agents
+    // outage — postgres/redis with colliding DNS aliases across projects.
+    const result = applyDeployTransforms(makeSimpleCompose(), baseTransformOpts);
+    expect(result.services.app.networks ?? []).not.toContain("vardo-network");
+    expect(result.networks?.["vardo-network"]).toBeUndefined();
   });
 });
 
