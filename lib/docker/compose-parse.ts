@@ -95,7 +95,19 @@ export function parseCompose(yamlString: string): ComposeFile {
         svc.labels = raw.labels as Record<string, string>;
       }
     }
-    if (Array.isArray(raw.networks)) svc.networks = raw.networks.map(String);
+    // networks: accept both list form ("- internal") and map form
+    // ("internal: { aliases: [pg] }"). The map form is valid Compose syntax
+    // — silently dropping it used to strand services on the implicit
+    // default network, which in turn caused the deploy pipeline to attach
+    // them only to vardo-network. We don't preserve per-network config
+    // (aliases, ipv4_address, etc.) because the rest of the pipeline treats
+    // networks as flat membership, but we always materialize the network
+    // references as strings so downstream transforms can reason about them.
+    if (Array.isArray(raw.networks)) {
+      svc.networks = raw.networks.map(String);
+    } else if (raw.networks && typeof raw.networks === "object") {
+      svc.networks = Object.keys(raw.networks as Record<string, unknown>);
+    }
     // depends_on: array of strings or object with per-service conditions
     if (raw.depends_on) {
       if (Array.isArray(raw.depends_on)) {

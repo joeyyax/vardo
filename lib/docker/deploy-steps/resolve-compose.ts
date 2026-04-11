@@ -9,7 +9,9 @@ import {
   resolveBackendProtocol,
   narrowBackendProtocol,
   injectGpuDevices,
+  getServicesWithExternalizedVolumes,
   stripVardoInjections,
+  getTraefikRoutedServices,
 } from "../compose";
 import { detectExposedPorts } from "../client";
 import { normalizeCompose, getRoutedServices } from "../compose-normalize";
@@ -40,7 +42,16 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
   }
 
   if (app.gpuEnabled) {
-    compose = injectGpuDevices(compose);
+    // Skip GPU reservations for services that mount a top-level named
+    // volume — those are stateful infrastructure (postgres, redis, etc.)
+    // and don't benefit from NVIDIA device access. A service that needs
+    // GPU alongside a named volume can always declare its own reservation
+    // in the source compose; injectGpuDevices preserves those.
+    const statefulSkip = getServicesWithExternalizedVolumes(compose);
+    compose = injectGpuDevices(compose, { skip: statefulSkip });
+    if (statefulSkip.size > 0) {
+      log(`[deploy] GPU reservations: skipping stateful services (${[...statefulSkip].join(", ")})`);
+    }
   }
 
   // Step 2: Detect container port
@@ -120,7 +131,32 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
   } else {
     log(`[deploy] Skipping Traefik labels — all services use custom network modes: ${servicesWithCustomNetwork.join(", ")}`);
   }
-  compose = injectNetwork(compose, NETWORK_NAME);
+  // Only attach vardo-network to services that carry Traefik router labels
+  // (i.e. those that need to be reachable from vardo-traefik). Databases,
+  // workers, sidecars, and caches stay on the compose project's private
+  // network so their per-project aliases ("postgres", "redis") can't
+  // collide with identically-named services in sibling apps that also
+  // share vardo-network.
+  //
+  // When no service is Traefik-routed — e.g. a worker-only stack with no
+  // ingress — we attach NOTHING to vardo-network. The previous behaviour
+  // ("attach everywhere") was the exact condition that caused the
+  // production outage: every sibling app's postgres/redis ended up on
+  // vardo-network with the same DNS alias. Cross-project DNS discovery
+  // through vardo-network is not a supported pattern; apps that genuinely
+  // need it should route through vardo-traefik via a Host() label.
+  const traefikRouted = getTraefikRoutedServices(compose);
+  if (traefikRouted.size > 0) {
+    compose = injectNetwork(compose, NETWORK_NAME, { attachTo: traefikRouted });
+    const skipped = Object.keys(compose.services).filter(
+      (k) => !traefikRouted.has(k) && (!compose.services[k].network_mode || compose.services[k].network_mode === "bridge"),
+    );
+    if (skipped.length > 0) {
+      log(`[deploy] vardo-network: attached to ${[...traefikRouted].join(", ")} — not attached to ${skipped.join(", ")} (private to project network)`);
+    }
+  } else {
+    log(`[deploy] vardo-network: no Traefik-routed service — skipping injection (app stays on its project-private network)`);
+  }
 
   // Step 3: Add app labels
   for (const [svcName, svc] of Object.entries(compose.services)) {
