@@ -135,6 +135,42 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
     try { await rm(stale, { force: true }); } catch { /* gone already */ }
   }
 
+  // Rewrite every service's build context to the absolute repoDir build
+  // root. The slot dir is full of symlinks pointing OUT to repoDir, and
+  // BuildKit refuses to traverse symlinks that escape the build context —
+  // so a `context: .` resolved relative to slotDir would yield an empty
+  // build with all source dirs missing. Pointing the context at repoDir
+  // directly sidesteps the symlink trap entirely.
+  if (repoDir) {
+    const buildRoot = app.rootDirectory
+      ? join(repoDir, app.rootDirectory)
+      : ctx.hostConfig?.project?.rootDirectory
+      ? join(repoDir, ctx.hostConfig.project.rootDirectory)
+      : repoDir;
+
+    const rewriteBuildContext = (composeFile: typeof compose) => {
+      for (const service of Object.values(composeFile.services)) {
+        if (!service.build) continue;
+        if (typeof service.build === "string") {
+          // Shorthand `build: ./path` → resolve relative to buildRoot
+          const ctxPath = service.build === "." || service.build === ""
+            ? buildRoot
+            : join(buildRoot, service.build);
+          service.build = { context: ctxPath };
+        } else {
+          const ctxPath = service.build.context === "." || service.build.context === ""
+            ? buildRoot
+            : service.build.context.startsWith("/")
+            ? service.build.context
+            : join(buildRoot, service.build.context);
+          service.build.context = ctxPath;
+        }
+      }
+    };
+    rewriteBuildContext(compose);
+    rewriteBuildContext(ctx.bareCompose);
+  }
+
   // Fetch exposed ports from child app records (set via Networking UI)
   const serviceExposedPorts: Record<string, { internal: number; external?: number; protocol?: string }[]> = {};
   if (Object.keys(compose.services).length > 1) {
