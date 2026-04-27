@@ -8,7 +8,7 @@ import { orgEnvVars, apps, environments } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { mkdir, writeFile, readFile, rm, readlink, symlink, copyFile, lstat, stat, readdir } from "fs/promises";
+import { mkdir, writeFile, readFile, rm, readlink, symlink, copyFile, stat, readdir } from "fs/promises";
 import { join } from "path";
 import { decryptOrFallback } from "@/lib/crypto/encrypt";
 import { parseEnvToMap } from "@/lib/env/parse-env";
@@ -65,28 +65,27 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
   log(`[deploy] Active slot: ${activeSlot || "none"}, deploying to: ${newSlot}`);
 
   // Step 5: Write compose file
-  // Link repo contents into the slot dir for build contexts and relative mounts
+  // Link repo contents into the slot dir for build contexts and relative mounts.
+  // Directories are symlinked to repoDir (auto-fresh on every git reset).
+  // Regular files are copied — and on every deploy we replace the slot's copy
+  // from repoDir, otherwise stale files (e.g. a Dockerfile from the first
+  // deploy) would shadow the freshly-pulled commit.
   if (repoDir) {
     const entries = await readdir(repoDir);
     for (const entry of entries) {
       if (entry === "docker-compose.yml" || entry === "docker-compose.yaml" || entry === "compose.yml" || entry === "compose.yaml" || entry === ".env") continue;
       const source = join(repoDir, entry);
       const target = join(slotDir, entry);
+      const sourceSt = await stat(source);
+
       try {
-        const st = await lstat(target);
-        if (st.isSymbolicLink()) {
-          await rm(target);
-        }
-      } catch { /* doesn't exist — fine */ }
-      try {
-        await lstat(target);
-      } catch {
-        const st = await stat(source);
-        if (st.isDirectory()) {
-          await symlink(source, target);
-        } else {
-          await copyFile(source, target);
-        }
+        await rm(target, { recursive: true, force: true });
+      } catch { /* nothing to remove */ }
+
+      if (sourceSt.isDirectory()) {
+        await symlink(source, target);
+      } else {
+        await copyFile(source, target);
       }
     }
 
