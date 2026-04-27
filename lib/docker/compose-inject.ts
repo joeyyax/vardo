@@ -743,6 +743,16 @@ export function applyDeployTransforms(
     for (const domain of opts.domains) {
       const port = domain.port || opts.containerPort || 3000;
       const resolvedProtocol = resolveBackendProtocol(opts.backendProtocol, port);
+      // If the domain is scoped to a specific compose service (added on a
+      // child app), inject labels onto that service's container instead of
+      // the auto-detected primary. This is what makes child-app domains
+      // actually route — Vardo's UI puts the Networking tab on child
+      // services, but the deploy used to ignore everything except the
+      // parent's primary service.
+      const targetService =
+        (domain.composeService && result.services[domain.composeService])
+          ? domain.composeService
+          : primaryServiceName;
       result = injectTraefikLabels(result, {
         projectName: `${opts.appName}-${domain.id.slice(0, 6)}`,
         appName: opts.appName,
@@ -752,7 +762,7 @@ export function applyDeployTransforms(
         ssl: domain.sslEnabled ?? true,
         redirectTo: domain.redirectTo ?? undefined,
         redirectCode: domain.redirectCode ?? 301,
-        serviceName: primaryServiceName,
+        serviceName: targetService,
         backendProtocol: resolvedProtocol,
       });
     }
