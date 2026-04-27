@@ -158,9 +158,20 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   // This is the slowest and most failure-prone phase (dockerfiles can fail,
   // registries can 404, network blips can bite). Doing it before we touch
   // the old slot means the old slot keeps serving if we never get here.
-  const hasBuild = Object.values(compose.services).some((svc) => svc.build);
+  //
+  // Build and pull are complementary, not exclusive: a compose file can mix
+  // services that build locally (the user's own app) with services that pull
+  // from a registry (sidecars like go2rtc, traefik, postgres). Run both
+  // phases — pull only the services that don't have a build directive so we
+  // don't ask the registry for an image that compose intends to build.
+  const buildServices = Object.entries(compose.services)
+    .filter(([, svc]) => svc.build)
+    .map(([name]) => name);
+  const pullServices = Object.entries(compose.services)
+    .filter(([, svc]) => svc.image && !svc.build)
+    .map(([name]) => name);
   try {
-    if (hasBuild) {
+    if (buildServices.length > 0) {
       log(`[deploy] Pre-building ${newSlot} slot images (old slot still serving)...`);
       const { stdout, stderr } = await execFileAsync(
         "docker",
@@ -173,13 +184,12 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       for (const line of stderr.split(/\r?\n|\r/).filter(Boolean)) {
         logs.push(`[deploy][build] ${line.trim()}`);
       }
-    } else if (!ctx.builtLocally) {
-      // Image-based deploy — pull before stopping old slot so registry errors
-      // don't take the old slot down.
+    }
+    if (pullServices.length > 0) {
       log(`[deploy] Pre-pulling ${newSlot} slot images (old slot still serving)...`);
       const { stdout, stderr } = await execFileAsync(
         "docker",
-        ["compose", ...composeFileArgs, "-p", newProjectName, "pull"],
+        ["compose", ...composeFileArgs, "-p", newProjectName, "pull", ...pullServices],
         { cwd: slotDir, timeout: COMPOSE_UP_TIMEOUT }
       );
       for (const line of stdout.split(/\r?\n|\r/).filter(Boolean)) {
@@ -268,7 +278,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
 
   // Step 7: Start the new slot. Images are already local from Step 6a, so we
   // skip --build and set --pull never to make this deterministic and fast.
-  const composeUpTimeout = hasBuild ? COMPOSE_BUILD_UP_TIMEOUT : COMPOSE_UP_TIMEOUT;
+  const composeUpTimeout = buildServices.length > 0 ? COMPOSE_BUILD_UP_TIMEOUT : COMPOSE_UP_TIMEOUT;
   log(`[deploy] Starting ${newSlot} slot...`);
   try {
     const { stdout, stderr } = await execFileAsync(
