@@ -27,11 +27,29 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         eq(apps.id, appId),
         eq(apps.organizationId, orgId)
       ),
-      columns: { id: true, name: true },
+      columns: { id: true, name: true, parentAppId: true, composeService: true },
     });
 
     if (!app) {
       return new Response("Not found", { status: 404 });
+    }
+
+    // Compose decomposition: a child app (parentAppId set) doesn't have
+    // its own deploy directory — its containers live under the parent's
+    // /opt/vardo/apps/<parent>/<env>/<slot>/. Resolve the parent's name
+    // and scope `docker compose logs` to just this child's service so
+    // we still tail only the right container.
+    let logRootName = app.name;
+    let scopeService: string | null = null;
+    if (app.parentAppId) {
+      const parent = await db.query.apps.findFirst({
+        where: eq(apps.id, app.parentAppId),
+        columns: { name: true },
+      });
+      if (parent) {
+        logRootName = parent.name;
+        scopeService = app.composeService;
+      }
     }
 
     const searchParams = request.nextUrl.searchParams;
@@ -84,12 +102,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     return createSSEResponse(request, async (sendEvent) => {
       sendEvent("source", "docker");
 
-      let appDir = appEnvDir(app.name, environmentName);
+      let appDir = appEnvDir(logRootName, environmentName);
       let activeSlot = "blue";
       try {
         activeSlot = (await readlink(resolve(appDir, "current"))).trim();
       } catch {
-        appDir = appBaseDir(app.name);
+        appDir = appBaseDir(logRootName);
         try {
           activeSlot = (await readlink(resolve(appDir, "current"))).trim();
         } catch { /* default to blue */ }
@@ -99,8 +117,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       const composePath = resolve(slotDir, "docker-compose.yml");
       const envAware = appDir.endsWith(environmentName);
       const composeProject = envAware
-        ? `${app.name}-${environmentName}-${activeSlot}`
-        : `${app.name}-${activeSlot}`;
+        ? `${logRootName}-${environmentName}-${activeSlot}`
+        : `${logRootName}-${activeSlot}`;
 
       const proc = spawn("docker", [
         "compose",
@@ -110,6 +128,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         "-f",
         "--tail", tail,
         "--no-log-prefix",
+        ...(scopeService ? [scopeService] : []),
       ], { cwd: slotDir });
 
       proc.stdout.on("data", (chunk: Buffer) => {

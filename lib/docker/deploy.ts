@@ -1,9 +1,9 @@
 import { db } from "@/lib/db";
 import { redis } from "@/lib/redis";
-import { deployments, apps, organizations, environments, projects } from "@/lib/db/schema";
+import { deployments, apps, organizations, environments, projects, domains } from "@/lib/db/schema";
 import { decryptOrFallback } from "@/lib/crypto/encrypt";
 import { parseEnvToMap } from "@/lib/env/parse-env";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { logger } from "@/lib/logger";
 import { nanoid } from "nanoid";
 import { addEvent } from "@/lib/stream/producer";
@@ -130,6 +130,37 @@ export async function runDeployment(
     });
 
     if (!app) throw new Error("App not found");
+
+    // For multi-service compose apps, the Networking UI lives on each
+    // child service (the parent app page has no Networking tab), so most
+    // user-managed domains end up attached to a child app. Aggregate
+    // those into the deploy and tag each with its compose service so the
+    // injection step can target the right service's container.
+    const childDomains = await db.query.domains.findMany({
+      where: inArray(
+        domains.appId,
+        db
+          .select({ id: apps.id })
+          .from(apps)
+          .where(
+            and(
+              eq(apps.parentAppId, app.id),
+              eq(apps.organizationId, opts.organizationId),
+            ),
+          ),
+      ),
+      with: {
+        app: { columns: { composeService: true } },
+      },
+    });
+    for (const d of childDomains) {
+      app.domains.push({
+        ...d,
+        // composeService is read by the compose-inject step to decide
+        // which service in the rendered compose gets the Traefik labels.
+        composeService: d.app?.composeService ?? null,
+      } as typeof app.domains[number]);
+    }
 
     // Fetch org — used for trusted flag and env var resolution
     const org = await db.query.organizations.findFirst({

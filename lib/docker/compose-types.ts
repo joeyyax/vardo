@@ -121,6 +121,14 @@ export type DeployTransformDomain = {
   certResolver: string | null;
   redirectTo: string | null;
   redirectCode: number | null;
+  /**
+   * Compose service this domain should route to. Set when the domain is
+   * attached to a child app of a multi-service compose app — the deploy
+   * pipeline injects Traefik labels for this specific service so multiple
+   * services in the same compose can carry distinct ingress rules.
+   * Null = "primary service" (legacy behavior, used for parent-app domains).
+   */
+  composeService?: string | null;
 };
 
 export type ComposePreviewApp = {
