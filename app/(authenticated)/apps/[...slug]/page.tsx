@@ -85,6 +85,7 @@ export default async function AppDetailPage({ params }: PageProps) {
         configSnapshot: true,
         rollbackFromId: true,
         supersededBy: true,
+        slot: true,
         startedAt: true,
         finishedAt: true,
       },
