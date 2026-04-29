@@ -175,7 +175,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       log(`[deploy] Pre-building ${newSlot} slot images (old slot still serving)...`);
       const { stdout, stderr } = await execFileAsync(
         "docker",
-        ["compose", ...composeFileArgs, "-p", newProjectName, "build"],
+        ["compose", ...composeFileArgs, "-p", newProjectName, "build", "--progress=plain"],
         { cwd: slotDir, timeout: COMPOSE_BUILD_UP_TIMEOUT }
       );
       for (const line of stdout.split(/\r?\n|\r/).filter(Boolean)) {
@@ -226,16 +226,48 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
 
   if (mustStopOldStateful && oldSlotDir && oldProjectName) {
     const oldComposeFileArgs = await getOldComposeFileArgs();
-    log(`[deploy] Stopping stateful services in old slot: ${statefulServices.join(", ")}`);
+
+    let oldServiceNames: string[] | null = null;
     try {
-      await execFileAsync(
+      const { stdout } = await execFileAsync(
         "docker",
-        ["compose", ...oldComposeFileArgs, "-p", oldProjectName, "stop", ...statefulServices],
-        { cwd: oldSlotDir, timeout: COMPOSE_DOWN_TIMEOUT }
+        ["compose", ...oldComposeFileArgs, "-p", oldProjectName, "config", "--services"],
+        { cwd: oldSlotDir, timeout: COMPOSE_QUERY_TIMEOUT }
       );
-      stoppedOldServices.push(...statefulServices);
-    } catch (err) {
-      log(`[deploy] Warning: could not stop old stateful services — ${err instanceof Error ? err.message : err}`);
+      oldServiceNames = stdout.trim().split("\n").filter(Boolean);
+    } catch {
+      log(`[deploy] Warning: could not query old slot services — attempting all stateful services`);
+    }
+
+    const stoppable = oldServiceNames
+      ? statefulServices.filter((s) => new Set(oldServiceNames).has(s))
+      : statefulServices;
+    const newOnly = oldServiceNames
+      ? statefulServices.filter((s) => !new Set(oldServiceNames).has(s))
+      : [];
+
+    if (newOnly.length > 0) {
+      log(`[deploy] New stateful services (no old-slot equivalent): ${newOnly.join(", ")}`);
+    }
+
+    if (stoppable.length > 0) {
+      log(`[deploy] Stopping stateful services in old slot: ${stoppable.join(", ")}`);
+      const results = await Promise.allSettled(
+        stoppable.map((svc) =>
+          execFileAsync(
+            "docker",
+            ["compose", ...oldComposeFileArgs, "-p", oldProjectName, "stop", svc],
+            { cwd: oldSlotDir, timeout: COMPOSE_DOWN_TIMEOUT }
+          ).then(() => svc)
+        )
+      );
+      for (const result of results) {
+        if (result.status === "fulfilled") {
+          stoppedOldServices.push(result.value);
+        } else {
+          log(`[deploy] Warning: could not stop old service — ${result.reason instanceof Error ? result.reason.message : result.reason}`);
+        }
+      }
     }
   }
 
@@ -294,6 +326,12 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    log(`[deploy] Tearing down half-started ${newSlot} slot`);
+    await execFileAsync(
+      "docker",
+      ["compose", ...composeFileArgs, "-p", newProjectName, "down", "--remove-orphans"],
+      { cwd: slotDir, timeout: COMPOSE_DOWN_TIMEOUT }
+    ).catch(() => {});
     await restoreOldSlot("compose up failure");
     throw new Error(`docker compose up (${newSlot}) failed: ${message}`);
   }

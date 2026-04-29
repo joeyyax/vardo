@@ -1,20 +1,32 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   Loader2,
   Rocket,
   ChevronDown,
   RotateCcw,
-  History,
   X,
   Clock,
+  Zap,
+  Settings,
+  RefreshCw,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   BottomSheet,
   BottomSheetContent,
@@ -30,7 +42,7 @@ import { Uptime } from "./timer";
 import { InProgressDeployCard } from "./in-progress-deploy-card";
 
 import type { useDeploy } from "./hooks/use-deploy";
-import type { Deployment } from "./types";
+import type { Deployment, SlotStatus } from "./types";
 
 export interface AppDeployPanelProps {
   orgId: string;
@@ -42,6 +54,50 @@ export interface AppDeployPanelProps {
   source: string;
   autoDeploy: boolean | null;
   deploy: ReturnType<typeof useDeploy>;
+}
+
+function triggerLabel(trigger: string): string {
+  return {
+    manual: "Manual deploy",
+    webhook: "Auto deploy",
+    api: "API deploy",
+    rollback: "Rollback",
+  }[trigger] ?? `${trigger.charAt(0).toUpperCase()}${trigger.slice(1)} deploy`;
+}
+
+function deployLabel(d: Deployment): string {
+  return d.gitMessage || d.gitSha?.slice(0, 7) || triggerLabel(d.trigger);
+}
+
+function CommitSha({ sha, gitUrl }: { sha: string; gitUrl: string | null }) {
+  const commitUrl = gitUrl?.replace(/\.git$/, "");
+  const sha7 = sha.slice(0, 7);
+  return commitUrl ? (
+    <a
+      href={`${commitUrl}/commit/${sha}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={(e) => e.stopPropagation()}
+      className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded shrink-0 hover:bg-accent transition-colors"
+      aria-label={`View commit ${sha7}`}
+    >
+      {sha7}
+    </a>
+  ) : (
+    <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded shrink-0" aria-label={`Commit ${sha7}`}>
+      {sha7}
+    </code>
+  );
+}
+
+function SlotPill({ slot }: { slot: string | null }) {
+  if (!slot) return null;
+  const color = slot === "green" ? "bg-emerald-500/15 text-emerald-600" : "bg-blue-500/15 text-blue-600";
+  return (
+    <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${color}`}>
+      {slot}
+    </span>
+  );
 }
 
 export function AppDeployPanel({
@@ -79,12 +135,58 @@ export function AppDeployPanel({
   const [expandedServerDeploy, setExpandedServerDeploy] = useState(false);
   const [cancellingIds, setCancellingIds] = useState<Set<string>>(new Set());
   const [abortingDeploy, setAbortingDeploy] = useState(false);
+  const [showInfra, setShowInfra] = useState(false);
+  const [slotStatus, setSlotStatus] = useState<SlotStatus | null>(null);
+  const [instantRollingBack, setInstantRollingBack] = useState(false);
+  const [confirmRollbackOpen, setConfirmRollbackOpen] = useState(false);
+  const liveCardRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+
+  const prevDeploying = useRef(deploying);
+  useEffect(() => {
+    const wasDeploying = prevDeploying.current;
+    prevDeploying.current = deploying;
+    if (deploying) return;
+
+    let cancelled = false;
+    async function fetchSlotStatus() {
+      try {
+        const res = await fetch(`/api/v1/organizations/${orgId}/apps/${appId}/slot-status`);
+        if (res.ok && !cancelled) {
+          setSlotStatus(await res.json());
+        }
+      } catch { /* best-effort */ }
+    }
+    if (!wasDeploying || !deploying) fetchSlotStatus();
+    return () => { cancelled = true; };
+  }, [orgId, appId, deploying]);
+
+  const handleInstantRollback = useCallback(async () => {
+    setConfirmRollbackOpen(false);
+    setInstantRollingBack(true);
+    try {
+      const res = await fetch(
+        `/api/v1/organizations/${orgId}/apps/${appId}/instant-rollback`,
+        { method: "POST" },
+      );
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(`Rolled back in ${formatDuration(data.durationMs)}`);
+        router.refresh();
+        requestAnimationFrame(() => liveCardRef.current?.focus());
+      } else {
+        toast.error(data.error || "Instant rollback failed");
+      }
+    } catch {
+      toast.error("Instant rollback failed");
+    } finally {
+      setInstantRollingBack(false);
+    }
+  }, [orgId, appId, router]);
 
   const handleAbortDeploy = useCallback(async (deploymentId?: string) => {
     setAbortingDeploy(true);
     try {
-      // If no deployment ID provided, find the running/queued one
       let targetId = deploymentId;
       if (!targetId) {
         const appRes = await fetch(`/api/v1/organizations/${orgId}/apps/${appId}`);
@@ -100,7 +202,6 @@ export function AppDeployPanel({
         toast.error("No active deployment to cancel");
         return;
       }
-
       const res = await fetch(
         `/api/v1/organizations/${orgId}/apps/${appId}/deployments/${targetId}`,
         { method: "DELETE" },
@@ -110,7 +211,6 @@ export function AppDeployPanel({
         toast.error(data.error || "Failed to cancel deployment");
         return;
       }
-      // Also abort the client-side SSE stream if we initiated the deploy
       deployAbort?.abort();
       toast.success("Deployment cancelled");
       router.refresh();
@@ -120,10 +220,6 @@ export function AppDeployPanel({
       setAbortingDeploy(false);
     }
   }, [orgId, appId, deployAbort, router]);
-
-  const queuedDeployments = filteredDeployments
-    .filter((d) => d.status === "queued" && d.id !== serverRunningDeploy?.id)
-    .sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
 
   const handleCancelQueued = useCallback(async (deploymentId: string) => {
     setCancellingIds((prev) => new Set(prev).add(deploymentId));
@@ -150,6 +246,203 @@ export function AppDeployPanel({
     }
   }, [orgId, appId, router]);
 
+  const queuedDeployments = filteredDeployments
+    .filter((d) => d.status === "queued" && d.id !== serverRunningDeploy?.id)
+    .sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
+
+  const completedDeployments = filteredDeployments
+    .filter((d) => d.status !== "queued" && d.status !== "running");
+
+  const liveDeploy = completedDeployments.find(
+    (d) => d.status === "success" && (appStatus === "active" || appStatus === "stopped" || appStatus === "error")
+  );
+
+  const showRollbackAction = slotStatus?.standbyAvailable && appStatus === "active";
+
+  const instantRollbackDeploy = showRollbackAction
+    ? completedDeployments.find(
+        (d) => d.id !== liveDeploy?.id && d.status === "success" && (
+          d.id === slotStatus?.standbyDeploymentId ||
+          (!slotStatus?.standbyDeploymentId && d !== liveDeploy)
+        )
+      )
+    : null;
+
+  const historyDeployments = completedDeployments.filter(
+    (d) => d.id !== liveDeploy?.id && d.id !== instantRollbackDeploy?.id
+  );
+
+  function toggleLog(deploymentId: string) {
+    setViewingLogId(viewingLogId === deploymentId ? null : deploymentId);
+  }
+
+  function renderDeploymentCard(
+    deployment: Deployment,
+    variant: "live" | "rollback" | "history",
+  ) {
+    const isLive = variant === "live" && appStatus === "active";
+    const isStopped = variant === "live" && appStatus === "stopped";
+    const isErrored = variant === "live" && appStatus === "error";
+
+    const bgColor = variant === "live"
+      ? isLive ? "bg-status-success-muted" : isStopped ? "bg-status-neutral-muted" : isErrored ? "bg-status-error-muted" : "bg-card"
+      : variant === "rollback"
+      ? "bg-amber-500/5 border-amber-500/20"
+      : ({
+          success: "bg-card",
+          failed: "bg-status-error-muted",
+          cancelled: "bg-status-neutral-muted",
+          rolled_back: "bg-status-warning-muted",
+          superseded: "bg-status-neutral-muted",
+        } as Record<string, string>)[deployment.status] || "bg-card";
+
+    const errorSnippet = (deployment.status === "failed" || isErrored) && deployment.log ? (() => {
+      const lines = deployment.log!.split("\n");
+      const errorLine = [...lines].reverse().find(
+        (l) => l.includes("ERROR") || l.includes("FATAL") || l.includes("failed") || l.includes("crashed")
+      );
+      if (!errorLine) return null;
+      return errorLine
+        .replace(/^\[.*?\]\s*/, "")
+        .replace(/x-access-token:[^\s@]+/g, "x-access-token:***")
+        .replace(/ghs_[A-Za-z0-9]+/g, "***")
+        .trim();
+    })() : null;
+
+    const isExpanded = viewingLogId === deployment.id;
+    const logPanelId = `deploy-log-${deployment.id}`;
+    const label = deployLabel(deployment);
+
+    return (
+      <div
+        key={deployment.id}
+        ref={variant === "live" ? liveCardRef : undefined}
+        tabIndex={variant === "live" ? -1 : undefined}
+        className={`squircle rounded-lg border ${bgColor} overflow-hidden`}
+      >
+        <div className="flex items-center justify-between gap-4 p-4 cursor-pointer hover:bg-accent/50 transition-colors"
+          onClick={() => toggleLog(deployment.id)}
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            {variant === "live" ? (
+              isLive ? (
+                <Badge className="border-transparent bg-status-success text-white shrink-0">
+                  <span className="mr-1.5 size-1.5 rounded-full bg-white animate-pulse" />
+                  Live
+                </Badge>
+              ) : isStopped ? (
+                <Badge className="border-transparent bg-status-neutral-muted text-status-neutral shrink-0">
+                  Stopped
+                </Badge>
+              ) : isErrored ? (
+                <Badge className="border-transparent bg-status-error-muted text-status-error shrink-0">
+                  Crashed
+                </Badge>
+              ) : (
+                <DeploymentStatusBadge status={deployment.status} />
+              )
+            ) : variant === "rollback" ? (
+              <Badge className="border-transparent bg-amber-500/15 text-amber-700 dark:text-amber-500 shrink-0 gap-1">
+                <Zap className="size-3" />
+                Instant rollback
+              </Badge>
+            ) : deployment.status === "success" ? (
+              <Badge className="border-transparent bg-status-neutral-muted text-status-neutral shrink-0">
+                Superseded
+              </Badge>
+            ) : (
+              <DeploymentStatusBadge status={deployment.status} />
+            )}
+            {showInfra && <SlotPill slot={deployment.slot} />}
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-medium">
+                  {deployment.gitMessage || triggerLabel(deployment.trigger)}
+                </p>
+                {deployment.gitSha && <CommitSha sha={deployment.gitSha} gitUrl={gitUrl} />}
+              </div>
+              <p className="text-xs text-foreground/60 mt-0.5">
+                {(() => {
+                  const tl = triggerLabel(deployment.trigger);
+                  const by = deployment.triggeredByUser?.name;
+                  return by ? `${tl} by ${by}` : tl;
+                })()}
+              </p>
+              {errorSnippet && (
+                <p className="text-xs text-status-error mt-1 truncate max-w-md" title={errorSnippet}>
+                  {errorSnippet}
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-4 text-xs text-foreground/50 shrink-0">
+            {variant === "live" && isLive && deployment.finishedAt && (
+              <span className="text-status-success">
+                <Uptime since={deployment.finishedAt} />
+              </span>
+            )}
+            {deployment.durationMs != null && (
+              <span>built in {formatDuration(deployment.durationMs)}</span>
+            )}
+            <span>{new Date(deployment.startedAt).toLocaleDateString()}</span>
+            {variant === "rollback" && !deploying && (
+              <div onClick={(e) => e.stopPropagation()}>
+                <Button
+                  variant="default"
+                  size="sm"
+                  className="h-7 px-3 text-xs gap-1.5 bg-amber-700 hover:bg-amber-800 text-white"
+                  disabled={instantRollingBack}
+                  aria-label={`Roll back to ${label}`}
+                  onClick={() => setConfirmRollbackOpen(true)}
+                >
+                  {instantRollingBack ? (
+                    <Loader2 className="size-3 animate-spin" />
+                  ) : (
+                    <Zap className="size-3" />
+                  )}
+                  Roll back
+                </Button>
+              </div>
+            )}
+            {variant === "history" && deployment.status === "success" && !deploying && (
+              <div onClick={(e) => e.stopPropagation()}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs gap-1"
+                  aria-label={`Rebuild ${label}`}
+                  onClick={() => handleRollbackPreview(deployment.id)}
+                >
+                  <RefreshCw className="size-3" />
+                  Rebuild
+                </Button>
+              </div>
+            )}
+            <button
+              onClick={(e) => { e.stopPropagation(); toggleLog(deployment.id); }}
+              aria-expanded={isExpanded}
+              aria-controls={logPanelId}
+              aria-label={`Toggle deploy log for ${label}`}
+              className="p-0.5 rounded hover:bg-accent transition-colors"
+            >
+              <ChevronDown className={`size-4 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+            </button>
+          </div>
+        </div>
+        {isExpanded && deployment.log && (
+          <div id={logPanelId}>
+            <DeploymentLog log={deployment.log} />
+          </div>
+        )}
+        {isExpanded && !deployment.log && (
+          <div id={logPanelId} className="border-t p-4">
+            <p className="text-xs text-muted-foreground">No log output for this deployment.</p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <>
       <div className="pt-4 space-y-4">
@@ -166,249 +459,164 @@ export function AppDeployPanel({
             </div>
           </div>
         ) : (
-          <div className="space-y-2">
-            {deploying && (
-              <InProgressDeployCard
-                stages={deployStages}
-                log={deployLog}
-                startTime={deployStartTime}
-                expanded={expandedDeployLog}
-                onToggleExpand={() => setExpandedDeployLog(!expandedDeployLog)}
-                onAbort={() => handleAbortDeploy()}
-                canAbort={!abortingDeploy}
-              />
-            )}
-            {!deploying && serverRunningDeploy && serverRunningDeploy.status === "running" && (
-              <InProgressDeployCard
-                stages={{}}
-                log={serverRunningDeploy.log ? serverRunningDeploy.log.split("\n") : []}
-                startTime={new Date(serverRunningDeploy.startedAt).getTime()}
-                expanded={expandedServerDeploy}
-                onToggleExpand={() => setExpandedServerDeploy((prev) => !prev)}
-                onAbort={() => handleAbortDeploy(serverRunningDeploy.id)}
-                canAbort={!abortingDeploy}
-                trigger={serverRunningDeploy.trigger}
-              />
-            )}
-
-            {queuedDeployments.length > 0 && (
-              <div className="space-y-2">
-                <p className="text-xs font-medium text-muted-foreground px-1">Queued</p>
-                {queuedDeployments.map((deployment, idx) => {
-                  const position = idx + 1;
-                  const total = queuedDeployments.length;
-                  const isCancelling = cancellingIds.has(deployment.id);
-                  const triggerLabel = {
-                    manual: "Manual deploy",
-                    webhook: "Auto deploy",
-                    api: "API deploy",
-                    rollback: "Rollback",
-                  }[deployment.trigger];
-                  const by = deployment.triggeredByUser?.name;
-                  return (
-                    <div
-                      key={deployment.id}
-                      className="squircle rounded-lg border bg-status-neutral-muted overflow-hidden"
-                    >
-                      <div className="flex items-center justify-between gap-4 p-4">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <Badge className="border-transparent bg-status-neutral-muted text-status-neutral shrink-0 gap-1.5">
-                            <Clock className="size-3" />
-                            Queued
-                          </Badge>
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium">
-                              {deployment.gitMessage || triggerLabel}
-                            </p>
-                            <p className="text-xs text-foreground/60 mt-0.5">
-                              {by ? `${triggerLabel} by ${by}` : triggerLabel}
-                              {" \u00B7 "}
-                              Position {position} of {total}
-                            </p>
-                          </div>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 px-2 text-xs gap-1 shrink-0"
-                          disabled={isCancelling}
-                          onClick={() => handleCancelQueued(deployment.id)}
-                        >
-                          {isCancelling ? (
-                            <Loader2 className="size-3 animate-spin" />
-                          ) : (
-                            <X className="size-3" />
-                          )}
-                          Cancel
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {filteredDeployments
-              .filter((d) => d.status !== "queued" && d.status !== "running")
-              .map((deployment, idx) => {
-              const isActive = deployment.status === "success" && appStatus === "active" && idx === 0;
-              const isStopped = deployment.status === "success" && appStatus === "stopped" && idx === 0;
-              const isErrored = deployment.status === "success" && appStatus === "error" && idx === 0;
-              const bgColor = isActive
-                ? "bg-status-success-muted"
-                : isStopped
-                ? "bg-status-neutral-muted"
-                : isErrored
-                ? "bg-status-error-muted"
-                : {
-                    success: "bg-card",
-                    failed: "bg-status-error-muted",
-                    running: "bg-status-info-muted",
-                    queued: "bg-status-neutral-muted",
-                    cancelled: "bg-status-neutral-muted",
-                    rolled_back: "bg-status-warning-muted",
-                    superseded: "bg-status-neutral-muted",
-                  }[deployment.status] || "bg-card";
-
-              return (
-              <div key={deployment.id} className={`squircle rounded-lg border ${bgColor} overflow-hidden`}>
-                <button
-                  type="button"
-                  onClick={() => setViewingLogId(viewingLogId === deployment.id ? null : deployment.id)}
-                  className="flex items-center justify-between gap-4 p-4 w-full text-left hover:bg-accent/50 transition-colors"
+          <>
+            {/* Infrastructure toggle */}
+            {completedDeployments.length > 0 && (
+              <div className="flex justify-end">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={`h-7 px-2 text-xs gap-1.5 ${showInfra ? "text-foreground" : "text-muted-foreground"}`}
+                  onClick={() => setShowInfra(!showInfra)}
+                  aria-pressed={showInfra}
                 >
-                  <div className="flex items-center gap-3 min-w-0">
-                    {isActive ? (
-                      <Badge className="border-transparent bg-status-success text-white shrink-0">
-                        <span className="mr-1.5 size-1.5 rounded-full bg-white animate-pulse" />
-                        Live
-                      </Badge>
-                    ) : isStopped ? (
-                      <Badge className="border-transparent bg-status-neutral-muted text-status-neutral shrink-0">
-                        Stopped
-                      </Badge>
-                    ) : isErrored ? (
-                      <Badge className="border-transparent bg-status-error-muted text-status-error shrink-0">
-                        Crashed
-                      </Badge>
-                    ) : deployment.status === "success" && idx > 0 && appStatus === "active" ? (
-                      <Badge className="border-transparent bg-status-neutral-muted text-status-neutral shrink-0">
-                        Superseded
-                      </Badge>
-                    ) : (
-                      <DeploymentStatusBadge status={deployment.status} />
-                    )}
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium">
-                          {deployment.gitMessage || ({
-                            manual: "Manual deploy",
-                            webhook: "Auto deploy",
-                            api: "API deploy",
-                            rollback: "Rollback",
-                          }[deployment.trigger] ?? `${deployment.trigger.charAt(0).toUpperCase()}${deployment.trigger.slice(1)} deploy`)}
-                        </p>
-                        {deployment.gitSha && (() => {
-                          const commitUrl = gitUrl?.replace(/\.git$/, "");
-                          const sha7 = deployment.gitSha.slice(0, 7);
-                          return commitUrl ? (
-                            <a
-                              href={`${commitUrl}/commit/${deployment.gitSha}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded shrink-0 hover:bg-accent transition-colors"
-                            >
-                              {sha7}
-                            </a>
-                          ) : (
-                            <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded shrink-0">
-                              {sha7}
-                            </code>
-                          );
-                        })()}
-                      </div>
-                      <p className="text-xs text-foreground/60 mt-0.5">
-                        {(() => {
-                          const triggerLabel = {
-                            manual: "Manual deploy",
-                            webhook: "Auto deploy",
-                            api: "API deploy",
-                            rollback: "Rollback",
-                          }[deployment.trigger];
-                          const by = deployment.triggeredByUser?.name;
-                          return by ? `${triggerLabel} by ${by}` : triggerLabel;
-                        })()}
-                      </p>
-                      {(deployment.status === "failed" || isErrored) && deployment.log && (() => {
-                        const lines = deployment.log.split("\n");
-                        const errorLine = [...lines].reverse().find(
-                          (l) => l.includes("ERROR") || l.includes("FATAL") || l.includes("failed") || l.includes("crashed")
-                        );
-                        if (!errorLine) return null;
-                        const cleaned = errorLine
-                          .replace(/^\[.*?\]\s*/, "")
-                          .replace(/x-access-token:[^\s@]+/g, "x-access-token:***")
-                          .replace(/ghs_[A-Za-z0-9]+/g, "***")
-                          .trim();
-                        return (
-                          <p className="text-xs text-status-error mt-1 truncate max-w-md" title={cleaned}>
-                            {cleaned}
-                          </p>
-                        );
-                      })()}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4 text-xs text-foreground/50 shrink-0">
-                    {isActive && deployment.finishedAt && (
-                      <span className="text-status-success">
-                        <Uptime since={deployment.finishedAt} />
-                      </span>
-                    )}
-                    {deployment.durationMs != null && (
-                      <span>built in {formatDuration(deployment.durationMs)}</span>
-                    )}
-                    <span>
-                      {new Date(deployment.startedAt).toLocaleDateString()}
-                    </span>
-                    {deployment.status === "success" && !isActive && !deploying && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 px-2 text-xs gap-1"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleRollbackPreview(deployment.id);
-                        }}
-                      >
-                        <History className="size-3" />
-                        Restore
-                      </Button>
-                    )}
-                    <ChevronDown className={`size-4 transition-transform ${viewingLogId === deployment.id ? "rotate-180" : ""}`} />
-                  </div>
-                </button>
-                {viewingLogId === deployment.id && deployment.log && (
-                  <DeploymentLog log={deployment.log} />
-                )}
-                {viewingLogId === deployment.id && !deployment.log && (
-                  <div className="border-t p-4">
-                    <p className="text-xs text-muted-foreground">No log output for this deployment.</p>
-                  </div>
-                )}
+                  <Settings className="size-3" />
+                  Deployment slots
+                </Button>
               </div>
-              );
-            })}
-          </div>
+            )}
+
+            <div className="space-y-2">
+              {/* In-progress deploys */}
+              {deploying && (
+                <InProgressDeployCard
+                  stages={deployStages}
+                  log={deployLog}
+                  startTime={deployStartTime}
+                  expanded={expandedDeployLog}
+                  onToggleExpand={() => setExpandedDeployLog(!expandedDeployLog)}
+                  onAbort={() => handleAbortDeploy()}
+                  canAbort={!abortingDeploy}
+                />
+              )}
+              {!deploying && serverRunningDeploy && serverRunningDeploy.status === "running" && (
+                <InProgressDeployCard
+                  stages={{}}
+                  log={serverRunningDeploy.log ? serverRunningDeploy.log.split("\n") : []}
+                  startTime={new Date(serverRunningDeploy.startedAt).getTime()}
+                  expanded={expandedServerDeploy}
+                  onToggleExpand={() => setExpandedServerDeploy((prev) => !prev)}
+                  onAbort={() => handleAbortDeploy(serverRunningDeploy.id)}
+                  canAbort={!abortingDeploy}
+                  trigger={serverRunningDeploy.trigger}
+                />
+              )}
+
+              {/* Queued */}
+              {queuedDeployments.length > 0 && (
+                <div className="space-y-2">
+                  <h3 className="text-xs font-medium text-muted-foreground px-1">Queued</h3>
+                  {queuedDeployments.map((deployment, idx) => {
+                    const position = idx + 1;
+                    const total = queuedDeployments.length;
+                    const isCancelling = cancellingIds.has(deployment.id);
+                    const label = triggerLabel(deployment.trigger);
+                    const by = deployment.triggeredByUser?.name;
+                    return (
+                      <div
+                        key={deployment.id}
+                        className="squircle rounded-lg border bg-status-neutral-muted overflow-hidden"
+                      >
+                        <div className="flex items-center justify-between gap-4 p-4">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <Badge className="border-transparent bg-status-neutral-muted text-status-neutral shrink-0 gap-1.5">
+                              <Clock className="size-3" />
+                              Queued
+                            </Badge>
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium">
+                                {deployment.gitMessage || label}
+                              </p>
+                              <p className="text-xs text-foreground/60 mt-0.5">
+                                {by ? `${label} by ${by}` : label}
+                                {" · "}
+                                Position {position} of {total}
+                              </p>
+                            </div>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs gap-1 shrink-0"
+                            disabled={isCancelling}
+                            aria-label={`Cancel ${deployment.gitMessage || label}`}
+                            onClick={() => handleCancelQueued(deployment.id)}
+                          >
+                            {isCancelling ? (
+                              <Loader2 className="size-3 animate-spin" />
+                            ) : (
+                              <X className="size-3" />
+                            )}
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Live */}
+              {liveDeploy ? (
+                renderDeploymentCard(liveDeploy, "live")
+              ) : completedDeployments.length > 0 && !deploying && (
+                <div className="squircle rounded-lg border border-dashed bg-muted/30 p-4">
+                  <p className="text-sm text-muted-foreground text-center">No active deployment</p>
+                </div>
+              )}
+
+              {/* Instant rollback */}
+              {instantRollbackDeploy && (
+                <div className="space-y-2">
+                  <h3 className="text-xs font-medium text-muted-foreground px-1 flex items-center gap-1.5">
+                    <Zap className="size-3" />
+                    Standby
+                  </h3>
+                  {renderDeploymentCard(instantRollbackDeploy, "rollback")}
+                </div>
+              )}
+
+              {/* History */}
+              {historyDeployments.length > 0 && (
+                <div className="space-y-2">
+                  <h3 className="text-xs font-medium text-muted-foreground px-1">History</h3>
+                  {historyDeployments.map((d) => renderDeploymentCard(d, "history"))}
+                </div>
+              )}
+            </div>
+          </>
         )}
       </div>
 
+      {/* Instant rollback confirmation */}
+      <AlertDialog open={confirmRollbackOpen} onOpenChange={setConfirmRollbackOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Roll back to previous version?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will swap live traffic to the previous deployment. The current deployment will become the standby.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleInstantRollback}
+              className="bg-amber-700 hover:bg-amber-800 text-white"
+            >
+              <Zap className="size-4 mr-2" />
+              Roll back now
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Rebuild preview bottom sheet (full rebuild path) */}
       <BottomSheet open={!!rollbackTarget} onOpenChange={(open) => { if (!open) { setRollbackTarget(null); setRollbackPreview(null); } }}>
         <BottomSheetContent>
           <BottomSheetHeader>
-            <BottomSheetTitle>Restore deployment</BottomSheetTitle>
+            <BottomSheetTitle>Rebuild from this deployment</BottomSheetTitle>
             <BottomSheetDescription>
-              Roll back to a previous deployment. This will trigger a new deploy using the snapshot from that point in time.
+              This will trigger a full rebuild using the config and code from this deployment. It may take several minutes.
             </BottomSheetDescription>
           </BottomSheetHeader>
           <div className="px-6 py-4 space-y-4">
@@ -516,7 +724,7 @@ export function AppDeployPanel({
               className="squircle"
             >
               <RotateCcw className="size-4 mr-2" />
-              Restore this deployment
+              Rebuild from this deployment
             </Button>
           </BottomSheetFooter>
         </BottomSheetContent>
