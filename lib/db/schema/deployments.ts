@@ -42,6 +42,7 @@ export const deployments = pgTable("deployment", {
   envSnapshot: text("env_snapshot"), // Encrypted env blob at deploy time (AES-256-GCM)
   configSnapshot: jsonb("config_snapshot").$type<ConfigSnapshot>(),
   rollbackFromId: text("rollback_from_id"),
+  slot: text("slot"),
   // ID of the deployment that superseded this one (set when status = "superseded")
   supersededBy: text("superseded_by").references((): AnyPgColumn => deployments.id, {
     onDelete: "set null",
@@ -52,5 +53,6 @@ export const deployments = pgTable("deployment", {
   (t) => [
     index("deployment_app_id_idx").on(t.appId),
     index("deployment_app_started_at_idx").on(t.appId, t.startedAt),
+    index("deployment_app_status_slot_idx").on(t.appId, t.status, t.slot),
   ]
 );

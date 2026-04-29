@@ -52,7 +52,9 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
 
   ctx.stage("cleanup", "running");
 
-  // Step 10: Tear down old slot (skipped for local environments)
+  // Step 10: Stop old slot containers (skipped for local environments).
+  // We stop rather than down so the standby slot's containers remain on disk,
+  // enabling instant rollback (compose start + routing flip) without a rebuild.
   if (activeSlot && !isLocalEnv) {
     const oldSlotDir = join(appDir, activeSlot);
     const oldProjectName = `${app.name}-${ctx.envName}-${activeSlot}`;
@@ -60,12 +62,12 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
     try {
       await execFileAsync(
         "docker",
-        ["compose", ...oldComposeFileArgs, "-p", oldProjectName, "down", "--remove-orphans"],
+        ["compose", ...oldComposeFileArgs, "-p", oldProjectName, "stop"],
         { cwd: oldSlotDir, timeout: COMPOSE_DOWN_TIMEOUT }
       );
-      log(`[deploy] Old slot (${activeSlot}) removed`);
+      log(`[deploy] Old slot (${activeSlot}) stopped — available for instant rollback`);
     } catch (err) {
-      log(`[deploy] Warning: old slot cleanup — ${err instanceof Error ? err.message : err}`);
+      log(`[deploy] Warning: old slot stop — ${err instanceof Error ? err.message : err}`);
     }
   }
 
@@ -353,6 +355,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
       finishedAt: new Date(),
       envSnapshot,
       configSnapshot,
+      slot: ctx.newSlot,
     })
     .where(eq(deployments.id, ctx.deploymentId));
 

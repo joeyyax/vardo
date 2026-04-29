@@ -12,6 +12,7 @@ export type Deployment = {
   environmentId: string | null;
   configSnapshot: Record<string, unknown> | null;
   rollbackFromId: string | null;
+  slot: string | null;
   startedAt: Date;
   finishedAt: Date | null;
   triggeredByUser: {
@@ -55,6 +56,21 @@ export type Tag = {
   id: string;
   name: string;
   color: string;
+};
+
+export type SlotStatus = {
+  activeSlot: string;
+  standbySlot: string | null;
+  standbyAvailable: boolean;
+  standbyServiceCount?: number;
+  standbyDeploymentId: string | null;
+  standbyDeployment: {
+    id: string;
+    gitSha: string | null;
+    gitMessage: string | null;
+    startedAt: string;
+    finishedAt: string | null;
+  } | null;
 };
 
 export type RollbackPreview = {

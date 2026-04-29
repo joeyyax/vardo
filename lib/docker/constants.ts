@@ -63,6 +63,12 @@ export const ENDPOINT_CHECK_TIMEOUT = 5_000;
 /** Time allowed for HTTP probe abort during container health polling. */
 export const HTTP_PROBE_TIMEOUT = 3_000;
 
+/** Time allowed for containers to reach running state during instant rollback. */
+export const INSTANT_ROLLBACK_HEALTH_TIMEOUT = 10_000;
+
+/** Polling interval during instant rollback health checks. */
+export const INSTANT_ROLLBACK_POLL_INTERVAL = 1_000;
+
 // ---------------------------------------------------------------------------
 // Shared deploy utilities
 // ---------------------------------------------------------------------------
