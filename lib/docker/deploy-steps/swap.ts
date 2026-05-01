@@ -12,7 +12,6 @@ import { join } from "path";
 import { ensureNetwork } from "../client";
 import {
   slotComposeFiles,
-  getServicesWithExternalizedVolumes,
 } from "../compose";
 import {
   NETWORK_NAME as VARDO_NETWORK,
@@ -145,14 +144,12 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     log(`[deploy] Warning: network — ${err instanceof Error ? err.message : err}`);
   }
 
-  // Detect which services we may need to stop in the old slot before the
-  // new slot can start. An externalized volume can't be held open by two
-  // containers simultaneously, so any service mounting one has to pause
-  // during cutover. We compute this early so we can log the rollback plan
-  // and short-circuit for first deploys / worker-only stacks.
-  const statefulServices = [...getServicesWithExternalizedVolumes(compose)];
-  const mustStopOldStateful =
-    activeSlot !== null && !isLocalEnv && statefulServices.length > 0;
+  // Stop ALL services in the old slot before starting the new one. This
+  // prevents port conflicts from any service with host port bindings (not
+  // just services with externalized volumes). Without this, services like
+  // Redis that expose host ports but don't mount named volumes would keep
+  // running, causing "port already allocated" errors in the new slot.
+  const mustStopOldSlot = activeSlot !== null && !isLocalEnv;
 
   // Step 6a: Pre-build and pre-pull new-slot images WITHOUT stopping anything.
   // This is the slowest and most failure-prone phase (dockerfiles can fail,
@@ -206,8 +203,8 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     );
   }
 
-  // Step 6b: NOW stop old-slot stateful services. Images are already local,
-  // so the window where stateful services are down is as short as possible.
+  // Step 6b: NOW stop old-slot services. Images are already local,
+  // so the window where the old slot is down is as short as possible.
   const oldSlotDir = activeSlot ? join(appDir, activeSlot) : null;
   const oldProjectName = activeSlot
     ? `${app.name}-${ctx.envName}-${activeSlot}`
@@ -224,34 +221,23 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   // them if the new slot fails to come up.
   const stoppedOldServices: string[] = [];
 
-  if (mustStopOldStateful && oldSlotDir && oldProjectName) {
+  if (mustStopOldSlot && oldSlotDir && oldProjectName) {
     const oldComposeFileArgs = await getOldComposeFileArgs();
 
-    let oldServiceNames: string[] | null = null;
+    let stoppable: string[] = [];
     try {
       const { stdout } = await execFileAsync(
         "docker",
         ["compose", ...oldComposeFileArgs, "-p", oldProjectName, "config", "--services"],
         { cwd: oldSlotDir, timeout: COMPOSE_QUERY_TIMEOUT }
       );
-      oldServiceNames = stdout.trim().split("\n").filter(Boolean);
+      stoppable = stdout.trim().split("\n").filter(Boolean);
     } catch {
-      log(`[deploy] Warning: could not query old slot services — attempting all stateful services`);
-    }
-
-    const stoppable = oldServiceNames
-      ? statefulServices.filter((s) => new Set(oldServiceNames).has(s))
-      : statefulServices;
-    const newOnly = oldServiceNames
-      ? statefulServices.filter((s) => !new Set(oldServiceNames).has(s))
-      : [];
-
-    if (newOnly.length > 0) {
-      log(`[deploy] New stateful services (no old-slot equivalent): ${newOnly.join(", ")}`);
+      log(`[deploy] Warning: could not query old slot services — will attempt compose stop without service names`);
     }
 
     if (stoppable.length > 0) {
-      log(`[deploy] Stopping stateful services in old slot: ${stoppable.join(", ")}`);
+      log(`[deploy] Stopping old slot services: ${stoppable.join(", ")}`);
       const results = await Promise.allSettled(
         stoppable.map((svc) =>
           execFileAsync(
@@ -267,6 +253,20 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
         } else {
           log(`[deploy] Warning: could not stop old service — ${result.reason instanceof Error ? result.reason.message : result.reason}`);
         }
+      }
+    } else {
+      // Fallback: stop all services in the project without naming them individually
+      log(`[deploy] Stopping all old slot services`);
+      try {
+        await execFileAsync(
+          "docker",
+          ["compose", ...oldComposeFileArgs, "-p", oldProjectName, "stop"],
+          { cwd: oldSlotDir, timeout: COMPOSE_DOWN_TIMEOUT }
+        );
+        // Mark as "all" so rollback knows to restart without service names
+        stoppedOldServices.push("__all__");
+      } catch (err) {
+        log(`[deploy] Warning: could not stop old slot — ${err instanceof Error ? err.message : err}`);
       }
     }
   }
@@ -285,7 +285,8 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   // of `start` semantics for this use case.
   const restoreOldSlot = async (reason: string) => {
     if (stoppedOldServices.length === 0 || !oldSlotDir || !oldProjectName) return;
-    log(`[deploy] Restoring old-slot stateful services after ${reason}: ${stoppedOldServices.join(", ")}`);
+    const serviceNames = stoppedOldServices.filter((s) => s !== "__all__");
+    log(`[deploy] Restoring old-slot services after ${reason}: ${serviceNames.length > 0 ? serviceNames.join(", ") : "all"}`);
     try {
       const oldComposeFileArgs = await getOldComposeFileArgs();
       await execFileAsync(
@@ -297,14 +298,14 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
           "up", "-d",
           "--no-recreate",
           "--pull", "never",
-          ...stoppedOldServices,
+          ...serviceNames,
         ],
         { cwd: oldSlotDir, timeout: COMPOSE_UP_TIMEOUT }
       );
       // Idempotent: calling restoreOldSlot twice is safe because compose up
       // --no-recreate is a no-op for already-running services.
     } catch (err) {
-      log(`[deploy] Warning: failed to restore old-slot stateful services — ${err instanceof Error ? err.message : err}`);
+      log(`[deploy] Warning: failed to restore old-slot services — ${err instanceof Error ? err.message : err}`);
     }
   };
 
