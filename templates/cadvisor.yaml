@@ -15,9 +15,13 @@ composeContent: |
       container_name: vardo-cadvisor
       restart: unless-stopped
       privileged: true
+      command:
+        - --housekeeping_interval=30s
+        - --disable_metrics=disk,diskIO,udp,percpu
+        - --docker_only=true
       volumes:
         - /:/rootfs:ro
         - /var/run:/var/run:ro
         - /sys:/sys:ro
         - /var/lib/docker/:/var/lib/docker:ro
-      mem_limit: 512m
+      mem_limit: 256m
