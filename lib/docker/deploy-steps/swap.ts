@@ -172,7 +172,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       log(`[deploy] Pre-building ${newSlot} slot images (old slot still serving)...`);
       const { stdout, stderr } = await execFileAsync(
         "docker",
-        ["compose", ...composeFileArgs, "-p", newProjectName, "build", "--progress=plain"],
+        ["compose", "--progress=plain", ...composeFileArgs, "-p", newProjectName, "build"],
         { cwd: slotDir, timeout: COMPOSE_BUILD_UP_TIMEOUT }
       );
       for (const line of stdout.split(/\r?\n|\r/).filter(Boolean)) {
