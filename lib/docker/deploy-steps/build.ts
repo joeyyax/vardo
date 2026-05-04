@@ -201,6 +201,10 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
     }
   }
 
+  if (!app.memoryLimit) {
+    ctx.log(`[deploy] Warning: no memory limit set — container can consume unlimited host memory`);
+  }
+
   const overlayCompose = buildVardoOverlay({
     fullCompose: compose,
     networkName: NETWORK_NAME,
