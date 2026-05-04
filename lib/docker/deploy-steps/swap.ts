@@ -151,6 +151,18 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   // running, causing "port already allocated" errors in the new slot.
   const mustStopOldSlot = activeSlot !== null && !isLocalEnv;
 
+  // Pre-clean the new slot to remove orphaned containers from any previous
+  // failed deploy that didn't fully clean up (process crash, timeout, etc.).
+  try {
+    await execFileAsync(
+      "docker",
+      ["compose", ...composeFileArgs, "-p", newProjectName, "down", "--remove-orphans"],
+      { cwd: slotDir, timeout: COMPOSE_DOWN_TIMEOUT }
+    );
+  } catch {
+    // No containers to clean up — expected on first deploy
+  }
+
   // Step 6a: Pre-build and pre-pull new-slot images WITHOUT stopping anything.
   // This is the slowest and most failure-prone phase (dockerfiles can fail,
   // registries can 404, network blips can bite). Doing it before we touch
@@ -223,51 +235,16 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
 
   if (mustStopOldSlot && oldSlotDir && oldProjectName) {
     const oldComposeFileArgs = await getOldComposeFileArgs();
-
-    let stoppable: string[] = [];
+    log(`[deploy] Tearing down old slot (${activeSlot})...`);
     try {
-      const { stdout } = await execFileAsync(
+      await execFileAsync(
         "docker",
-        ["compose", ...oldComposeFileArgs, "-p", oldProjectName, "config", "--services"],
-        { cwd: oldSlotDir, timeout: COMPOSE_QUERY_TIMEOUT }
+        ["compose", ...oldComposeFileArgs, "-p", oldProjectName, "down", "--remove-orphans"],
+        { cwd: oldSlotDir, timeout: COMPOSE_DOWN_TIMEOUT }
       );
-      stoppable = stdout.trim().split("\n").filter(Boolean);
-    } catch {
-      log(`[deploy] Warning: could not query old slot services — will attempt compose stop without service names`);
-    }
-
-    if (stoppable.length > 0) {
-      log(`[deploy] Stopping old slot services: ${stoppable.join(", ")}`);
-      const results = await Promise.allSettled(
-        stoppable.map((svc) =>
-          execFileAsync(
-            "docker",
-            ["compose", ...oldComposeFileArgs, "-p", oldProjectName, "stop", svc],
-            { cwd: oldSlotDir, timeout: COMPOSE_DOWN_TIMEOUT }
-          ).then(() => svc)
-        )
-      );
-      for (const result of results) {
-        if (result.status === "fulfilled") {
-          stoppedOldServices.push(result.value);
-        } else {
-          log(`[deploy] Warning: could not stop old service — ${result.reason instanceof Error ? result.reason.message : result.reason}`);
-        }
-      }
-    } else {
-      // Fallback: stop all services in the project without naming them individually
-      log(`[deploy] Stopping all old slot services`);
-      try {
-        await execFileAsync(
-          "docker",
-          ["compose", ...oldComposeFileArgs, "-p", oldProjectName, "stop"],
-          { cwd: oldSlotDir, timeout: COMPOSE_DOWN_TIMEOUT }
-        );
-        // Mark as "all" so rollback knows to restart without service names
-        stoppedOldServices.push("__all__");
-      } catch (err) {
-        log(`[deploy] Warning: could not stop old slot — ${err instanceof Error ? err.message : err}`);
-      }
+      stoppedOldServices.push("__all__");
+    } catch (err) {
+      log(`[deploy] Warning: could not tear down old slot — ${err instanceof Error ? err.message : err}`);
     }
   }
 
