@@ -681,6 +681,7 @@ export async function stopProject(
 export async function restartContainers(
   appName: string,
   environmentName?: string,
+  service?: string,
 ): Promise<{ success: boolean; log: string }> {
   const logs: string[] = [];
   try {
@@ -690,11 +691,30 @@ export async function restartContainers(
       : appName;
 
     const { slotDir, composeProject } = await resolveActiveSlot(dir, prefix);
+
+    // Guard the slot directory up front. execFile with a non-existent `cwd`
+    // fails with the misleading "spawn docker ENOENT" (which looks like a
+    // missing docker binary). An absent slot dir means the app was never
+    // deployed to disk — there is nothing to restart in place; the caller
+    // should deploy instead.
+    const { access: fsAccess } = await import("fs/promises");
+    try {
+      await fsAccess(slotDir);
+    } catch {
+      return {
+        success: false,
+        log: `No deployed compose project found for ${appName} (missing ${slotDir}). Deploy the app to bring it up.`,
+      };
+    }
+
     const composeFileArgs = await slotComposeFiles(slotDir);
+
+    const restartArgs = ["compose", ...composeFileArgs, "-p", composeProject, "restart"];
+    if (service) restartArgs.push(service);
 
     const { stdout, stderr } = await execFileAsync(
       "docker",
-      ["compose", ...composeFileArgs, "-p", composeProject, "restart"],
+      restartArgs,
       { cwd: slotDir, timeout: COMPOSE_RESTART_TIMEOUT }
     );
     if (stdout.trim()) logs.push(stdout.trim());

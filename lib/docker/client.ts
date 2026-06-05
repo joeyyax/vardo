@@ -865,6 +865,45 @@ export async function pruneBuildCache(filters?: Record<string, string[]>): Promi
 }
 
 // ---------------------------------------------------------------------------
+// Volumes
+// ---------------------------------------------------------------------------
+
+export type VolumeInfo = {
+  name: string;
+  labels: Record<string, string>;
+  mountpoint: string;
+};
+
+/**
+ * List Docker volumes, optionally filtered (e.g. by compose project label).
+ * Pass filters like `{ label: ["com.docker.compose.project=myapp"] }`.
+ */
+export async function listVolumes(
+  filters?: Record<string, string[]>,
+): Promise<VolumeInfo[]> {
+  const query = filters
+    ? `?filters=${encodeURIComponent(JSON.stringify(filters))}`
+    : "";
+  const result = await dockerRequest<{
+    Volumes: { Name: string; Labels: Record<string, string> | null; Mountpoint: string }[] | null;
+  }>("GET", `/volumes${query}`);
+  return (result.Volumes ?? []).map((v) => ({
+    name: v.Name,
+    labels: v.Labels ?? {},
+    mountpoint: v.Mountpoint,
+  }));
+}
+
+/**
+ * Remove a named Docker volume. Without `force`, the daemon returns 409 if the
+ * volume is still in use by a container — callers should treat that as "kept".
+ */
+export async function removeVolume(name: string, opts?: { force?: boolean }): Promise<void> {
+  const qs = opts?.force ? "?force=true" : "";
+  await dockerRequest("DELETE", `/volumes/${encodeURIComponent(name)}${qs}`);
+}
+
+// ---------------------------------------------------------------------------
 // System Info
 // ---------------------------------------------------------------------------
 
