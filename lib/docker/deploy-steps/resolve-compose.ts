@@ -14,7 +14,7 @@ import {
   getTraefikRoutedServices,
 } from "../compose";
 import { detectExposedPorts } from "../client";
-import { normalizeCompose, getRoutedServices } from "../compose-normalize";
+import { normalizeCompose } from "../compose-normalize";
 import { removeAppRouteConfig } from "@/lib/ssl/generate-config";
 import {
   NETWORK_NAME as VARDO_NETWORK,
@@ -34,8 +34,14 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
   ctx.bareCompose = bareCompose;
 
   // Normalize: treat the user's compose as intent, produce safe runtime config.
-  const routedServices = getRoutedServices(compose, app.domains.length);
-  const normalized = normalizeCompose(compose, { routedServices });
+  // Host ports are intentionally KEPT. Vardo writes the user's bare compose to
+  // disk (`ctx.bareCompose`) and layers Traefik routing on top via an override —
+  // and a Compose override can't un-publish a port, so stripping here never
+  // reached the running container; it only produced a misleading "host port
+  // removed" line in the deploy log. Slot cutover already tears down the old
+  // slot before starting the new one, so a kept host port never collides
+  // between blue/green.
+  const normalized = normalizeCompose(compose, { keepHostPorts: true });
   compose = normalized.compose;
   for (const change of normalized.changes) {
     log(`[deploy] Normalize: ${change.service}.${change.field} ${change.action}${change.before ? ` (was: ${change.before})` : ""} — ${change.reason}`);

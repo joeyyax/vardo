@@ -8,7 +8,7 @@ import { orgEnvVars, apps, environments } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { mkdir, writeFile, readFile, rm, readlink, symlink, copyFile, stat, readdir } from "fs/promises";
+import { mkdir, writeFile, readFile, rm, symlink, copyFile, stat, readdir } from "fs/promises";
 import { join } from "path";
 import { decryptOrFallback } from "@/lib/crypto/encrypt";
 import { parseEnvToMap } from "@/lib/env/parse-env";
@@ -24,6 +24,7 @@ import {
   ensureWritableDir,
 } from "../constants";
 import type { DeployContext } from "../deploy-context";
+import { detectActiveSlot } from "../slots";
 
 const execFileAsync = promisify(execFile);
 const NETWORK_NAME = VARDO_NETWORK;
@@ -44,9 +45,11 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
     ctx.newProjectName = `${app.name}-${ctx.envName}`;
     ctx.slotDir = join(appDir, "local");
   } else {
-    try {
-      activeSlot = (await readlink(join(appDir, "current"))).trim() as "blue" | "green";
-    } catch { /* no active slot yet */ }
+    // Resolve the active slot from the symlink, then Docker ground-truth, then
+    // the legacy file. Detecting a still-running old slot is what lets the swap
+    // step tear it down before starting the new slot — without this, a stale
+    // slot holding a host port causes "port already allocated".
+    activeSlot = await detectActiveSlot(appDir, `${app.name}-${ctx.envName}`);
 
     newSlot = activeSlot === "blue" ? "green" : "blue";
     ctx.newProjectName = `${app.name}-${ctx.envName}-${newSlot}`;
