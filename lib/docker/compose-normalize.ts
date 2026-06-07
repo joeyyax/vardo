@@ -29,7 +29,7 @@ export type NormalizeResult = {
 
 export type NormalizeOptions = {
   /** Service names that have domains configured (routed via Traefik). */
-  routedServices: Set<string>;
+  routedServices?: Set<string>;
   /** The app's desired restart policy (default: "unless-stopped"). */
   restartPolicy?: string;
   /** Skip host port stripping (e.g., user explicitly opted out). */
@@ -73,7 +73,7 @@ export function normalizeCompose(
 
   // 1. Strip host ports from Traefik-routed services
   if (!opts.keepHostPorts) {
-    result = normalizeHostPorts(result, opts.routedServices, changes);
+    result = normalizeHostPorts(result, opts.routedServices ?? new Set(), changes);
   }
 
   // 2. Normalize restart policies

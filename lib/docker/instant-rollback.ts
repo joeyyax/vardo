@@ -1,13 +1,14 @@
 import { db } from "@/lib/db";
 import { apps, deployments } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
-import { readlink, rm, symlink, rename } from "fs/promises";
+import { rm, symlink, rename } from "fs/promises";
 import { join } from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { nanoid } from "nanoid";
 import { appEnvDir } from "@/lib/paths";
 import { slotComposeFiles } from "./compose";
+import { detectActiveSlot } from "./slots";
 import { addEvent } from "@/lib/stream/producer";
 import { recordActivity } from "@/lib/activity";
 import {
@@ -57,16 +58,12 @@ export async function checkStandbyAvailable(
   }
 
   const appDir = appEnvDir(appName, env.name);
-  let activeSlot: string;
-  try {
-    activeSlot = (await readlink(join(appDir, "current"))).trim();
-  } catch {
-    activeSlot = "blue";
-  }
+  const projectPrefix = `${appName}-${env.name}`;
+  const activeSlot = (await detectActiveSlot(appDir, projectPrefix)) ?? "blue";
 
   const standbySlot = activeSlot === "blue" ? "green" : "blue";
   const standbyDir = join(appDir, standbySlot);
-  const standbyProjectName = `${appName}-${env.name}-${standbySlot}`;
+  const standbyProjectName = `${projectPrefix}-${standbySlot}`;
 
   let standbyAvailable = false;
   let standbyServiceCount = 0;
@@ -94,18 +91,18 @@ export async function performInstantRollback(
   const startTime = Date.now();
   const appDir = appEnvDir(appName, env.name);
 
-  let activeSlot: string;
-  try {
-    activeSlot = (await readlink(join(appDir, "current"))).trim();
-  } catch {
+  const projectPrefix = `${appName}-${env.name}`;
+  const detectedSlot = await detectActiveSlot(appDir, projectPrefix);
+  if (!detectedSlot) {
     return { success: false, deploymentId: "", fromSlot: "", toSlot: "", durationMs: 0, error: "No active deployment" };
   }
+  const activeSlot = detectedSlot;
 
   const standbySlot = activeSlot === "blue" ? "green" : "blue";
   const standbyDir = join(appDir, standbySlot);
-  const standbyProjectName = `${appName}-${env.name}-${standbySlot}`;
+  const standbyProjectName = `${projectPrefix}-${standbySlot}`;
   const activeDir = join(appDir, activeSlot);
-  const activeProjectName = `${appName}-${env.name}-${activeSlot}`;
+  const activeProjectName = `${projectPrefix}-${activeSlot}`;
 
   const standbyComposeFileArgs = await slotComposeFiles(standbyDir);
   const activeComposeFileArgs = await slotComposeFiles(activeDir);

@@ -15,6 +15,7 @@ import { appBaseDir, appEnvDir } from "@/lib/paths";
 import {
   slotComposeFiles,
 } from "./compose";
+import { detectActiveSlot } from "./slots";
 import { recordActivity } from "@/lib/activity";
 import { DeployBlockedError } from "./errors";
 import { createDeployLogger } from "./deploy-logger";
@@ -586,12 +587,10 @@ async function resolveActiveSlot(
     // No local/ directory — standard blue-green
   }
 
-  let activeSlot: string;
-  try {
-    activeSlot = (await readlink(join(dir, "current"))).trim();
-  } catch {
-    activeSlot = "blue";
-  }
+  // Same resolution as the deploy path: symlink → running slot → legacy file.
+  // Falls back to "blue" only when nothing is detectable (stopping a project
+  // that doesn't exist is a harmless no-op).
+  const activeSlot = (await detectActiveSlot(dir, projectPrefix)) ?? "blue";
 
   return {
     slotDir: join(dir, activeSlot),
