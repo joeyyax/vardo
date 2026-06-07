@@ -73,7 +73,11 @@ export async function detectActiveSlot(
     /* no symlink yet — fall through */
   }
 
-  // 2. Docker ground-truth — a running slot is the real host-port holder
+  // 2. Docker ground-truth — a running slot is the real host-port holder.
+  // Iteration order is intentional: blue is checked first. If both slots happen
+  // to be running simultaneously (e.g. a previous deploy left the old slot up),
+  // blue wins. This is an arbitrary but stable tie-break — the important thing
+  // is that we find *something* to tear down rather than colliding on the port.
   for (const slot of ["blue", "green"] as const) {
     try {
       if (await probes.isSlotRunning(`${projectPrefix}-${slot}`)) return slot;

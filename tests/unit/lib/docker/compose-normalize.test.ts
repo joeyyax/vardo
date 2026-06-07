@@ -154,6 +154,24 @@ describe("normalizeCompose", () => {
     });
   });
 
+  describe("omitted routedServices", () => {
+    it("treats all services as non-routed when routedServices is omitted", () => {
+      // resolve-compose.ts calls normalizeCompose(compose, { keepHostPorts: true })
+      // without routedServices — exercises the `?? new Set()` fallback.
+      const compose = makeCompose({
+        app: { image: "nginx:latest", ports: ["8080:3000"] },
+      });
+
+      const { compose: result, changes } = normalizeCompose(compose, { keepHostPorts: true });
+
+      // With keepHostPorts the port should be retained (no routed services to strip from anyway)
+      expect(result.services.app.ports).toEqual(["8080:3000"]);
+      // restart policy should still be normalised
+      expect(result.services.app.restart).toBe("unless-stopped");
+      expect(changes.filter((c) => c.field === "ports")).toHaveLength(0);
+    });
+  });
+
   describe("immutability", () => {
     it("does not modify the original compose object", () => {
       const compose = makeCompose({

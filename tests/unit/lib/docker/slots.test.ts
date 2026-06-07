@@ -44,6 +44,16 @@ describe("detectActiveSlot", () => {
     expect(p.isSlotRunning).toHaveBeenCalledWith(`${PREFIX}-green`);
   });
 
+  it("falls back to the running slot when there is no symlink — blue slot", async () => {
+    const p = probes({
+      isSlotRunning: vi.fn((project: string) => Promise.resolve(project === `${PREFIX}-blue`)),
+    });
+    expect(await detectActiveSlot(APP_DIR, PREFIX, p)).toBe("blue");
+    expect(p.isSlotRunning).toHaveBeenCalledWith(`${PREFIX}-blue`);
+    // green should not be needed since blue matched first
+    expect(p.isSlotRunning).not.toHaveBeenCalledWith(`${PREFIX}-green`);
+  });
+
   it("running slot wins over a drifted legacy file", async () => {
     // The real port holder is what must be torn down, even if .active-slot lies.
     const p = probes({
