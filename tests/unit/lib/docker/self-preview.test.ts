@@ -201,9 +201,9 @@ describe("buildPreviewCompose", () => {
     expect(content).toContain(".preview.env");
   });
 
-  it("enables TLS with the le cert resolver", () => {
+  it("enables TLS with the le-dns cert resolver", () => {
     const content = buildPreviewCompose({ domain: "vardo-pr-1.example.com", routerName: "vardo-pr-1" });
-    expect(content).toContain("tls.certresolver=le");
+    expect(content).toContain("tls.certresolver=le-dns");
   });
 });
 

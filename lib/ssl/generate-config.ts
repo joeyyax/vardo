@@ -104,7 +104,7 @@ export function buildTraefikConfigYaml(
     const isLocal =
       domain.domain.endsWith(".localhost") || domain.domain === "localhost";
     const ssl = domain.sslEnabled ?? true;
-    const certResolver = domain.certResolver || "le";
+    const certResolver = domain.certResolver || "le-dns";
     const isRedirect = !!domain.redirectTo;
     const permanent = (domain.redirectCode ?? 301) === 301;
 
