@@ -21,7 +21,7 @@ export const domains = pgTable("domain", {
   serviceName: text("service_name"),
   port: integer("port"),
   middlewares: text("middlewares"),
-  certResolver: text("cert_resolver").default("le"),
+  certResolver: text("cert_resolver").default("le-dns"),
   isPrimary: boolean("is_primary").default(false),
   sslEnabled: boolean("ssl_enabled").default(true),
   redirectTo: text("redirect_to"),

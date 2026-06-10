@@ -376,7 +376,7 @@ export function buildPreviewCompose(opts: {
     `      - "traefik.enable=true"`,
     `      - "traefik.http.routers.${routerName}.rule=Host(\`${domain}\`)"`,
     `      - "traefik.http.routers.${routerName}.tls=true"`,
-    `      - "traefik.http.routers.${routerName}.tls.certresolver=le"`,
+    `      - "traefik.http.routers.${routerName}.tls.certresolver=le-dns"`,
     `      - "traefik.http.services.${routerName}.loadbalancer.server.port=3000"`,
     "    restart: unless-stopped",
     "networks:",
