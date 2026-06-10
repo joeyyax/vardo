@@ -118,7 +118,7 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
         appName: app.name,
         domain: domain.domain,
         containerPort: port,
-        certResolver: domain.certResolver || "le",
+        certResolver: domain.certResolver || "le-dns",
         ssl: domain.sslEnabled ?? true,
         redirectTo: domain.redirectTo ?? undefined,
         redirectCode: domain.redirectCode ?? 301,

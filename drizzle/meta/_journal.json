@@ -211,6 +211,13 @@
       "when": 1777440403711,
       "tag": "0029_lumpy_harrier",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1781124065791,
+      "tag": "0030_cert_resolver_le_dns_default",
+      "breakpoints": true
     }
   ]
 }
