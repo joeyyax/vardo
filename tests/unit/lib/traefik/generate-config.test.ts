@@ -184,7 +184,7 @@ describe("buildTraefikConfigYaml — SSL with external domain", () => {
       makeDomain({ domain: "example.com", sslEnabled: true, certResolver: null }),
     ]);
     const config = YAML.parse(yaml!);
-    expect(config.http.routers["myapp-dom-1234"].tls).toEqual({ certResolver: "le" });
+    expect(config.http.routers["myapp-dom-1234"].tls).toEqual({ certResolver: "le-dns" });
   });
 });
 

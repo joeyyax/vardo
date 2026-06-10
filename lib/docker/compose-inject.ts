@@ -44,7 +44,7 @@ export function injectTraefikLabels(
     backendProtocol?: "http" | "https";
   },
 ): ComposeFile {
-  const { projectName, domain, containerPort, certResolver = "le", ssl = true } = opts;
+  const { projectName, domain, containerPort, certResolver = "le-dns", ssl = true } = opts;
   const serviceName =
     opts.serviceName ?? Object.keys(compose.services)[0];
 
@@ -758,7 +758,7 @@ export function applyDeployTransforms(
         appName: opts.appName,
         domain: domain.domain,
         containerPort: port,
-        certResolver: domain.certResolver || "le",
+        certResolver: domain.certResolver || "le-dns",
         ssl: domain.sslEnabled ?? true,
         redirectTo: domain.redirectTo ?? undefined,
         redirectCode: domain.redirectCode ?? 301,
