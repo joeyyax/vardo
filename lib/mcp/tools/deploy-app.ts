@@ -7,10 +7,10 @@ import { createDeployment } from "@/lib/docker/deploy";
 import { slidingWindowRateLimit } from "@/lib/api/rate-limit";
 import type { McpAuthContext } from "../auth";
 
-// 5 deploys per 10 minutes per user/org pair.
+// 5 deploys per 5 seconds per user/org pair.
 // Each deploy spins up containers — cap resource exhaustion.
 const DEPLOY_RATE_LIMIT = 5;
-const DEPLOY_RATE_WINDOW_MS = 10 * 60 * 1000;
+const DEPLOY_RATE_WINDOW_MS = 5 * 1000;
 
 export function registerDeployApp(
   server: McpServer,
