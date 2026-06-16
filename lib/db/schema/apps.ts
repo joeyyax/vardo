@@ -13,6 +13,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import {
+  appPriorityEnum,
   appStatusEnum,
   cloneStrategyEnum,
   deployTypeEnum,
@@ -76,6 +77,7 @@ export const apps = pgTable(
     needsRedeploy: boolean("needs_redeploy").default(false),
     cpuLimit: real("cpu_limit"), // CPU cores (e.g. 0.5, 1, 2)
     memoryLimit: integer("memory_limit"), // Memory in MB (e.g. 256, 512, 1024)
+    priority: appPriorityEnum("priority").notNull().default("standard"), // QoS tier → oom_score_adj, mem_reservation, cpu_shares in the Vardo overlay
     gpuEnabled: boolean("gpu_enabled").notNull().default(false), // GPU passthrough via deploy.resources.reservations.devices
     diskWriteAlertThreshold: bigint("disk_write_alert_threshold", { mode: "number" }), // bytes/hour, null = default 1GB
     healthCheckTimeout: integer("health_check_timeout"), // Seconds to wait for healthy containers (null = system default 60s)

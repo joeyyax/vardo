@@ -118,6 +118,7 @@ export type App = {
   exposedPorts: { internal: number; external?: number; description?: string }[] | null;
   cpuLimit: number | null;
   memoryLimit: number | null;
+  priority: "critical" | "standard" | "disposable";
   gpuEnabled: boolean | null;
   backendProtocol: "http" | "https" | null;
   diskWriteAlertThreshold: number | null;

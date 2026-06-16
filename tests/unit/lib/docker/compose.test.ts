@@ -2850,12 +2850,14 @@ describe("buildVardoOverlay — edge cases", () => {
     expect(overlay.services.app.deploy?.resources?.limits).toBeUndefined();
   });
 
-  it("produces a service entry with only a name when service has no injected config", () => {
+  it("produces a service entry with only name + standard QoS knobs when no other config is injected", () => {
     const compose: ComposeFile = {
       services: { app: { name: "app", image: "nginx:latest" } },
     };
     const overlay = buildVardoOverlay({ fullCompose: compose, networkName });
-    expect(overlay.services.app).toEqual({ name: "app" });
+    // Default tier is "standard" → oom_score_adj 0, cpu_shares 1024. No
+    // structural fields (image, ports, etc.) leak into the overlay.
+    expect(overlay.services.app).toEqual({ name: "app", oom_score_adj: 0, cpu_shares: 1024 });
   });
 
   it("does not include overlay image or ports — only injected config", () => {
@@ -2874,6 +2876,65 @@ describe("buildVardoOverlay — edge cases", () => {
     const overlay = buildVardoOverlay({ fullCompose: compose, networkName });
     expect(overlay.services.app.image).toBeUndefined();
     expect(overlay.services.app.ports).toBeUndefined();
+  });
+
+  it("maps critical priority to protected oom score, cpu share, and mem reservation", () => {
+    const compose: ComposeFile = {
+      services: { app: { name: "app", image: "nginx:latest" } },
+    };
+    const overlay = buildVardoOverlay({
+      fullCompose: compose,
+      networkName,
+      priority: "critical",
+      memoryLimit: 5120,
+    });
+    expect(overlay.services.app.oom_score_adj).toBe(-1000);
+    expect(overlay.services.app.cpu_shares).toBe(2048);
+    expect(overlay.services.app.mem_reservation).toBe("5120M");
+  });
+
+  it("omits mem_reservation for critical priority when no memory limit is set", () => {
+    const compose: ComposeFile = {
+      services: { app: { name: "app", image: "nginx:latest" } },
+    };
+    const overlay = buildVardoOverlay({
+      fullCompose: compose,
+      networkName,
+      priority: "critical",
+    });
+    expect(overlay.services.app.oom_score_adj).toBe(-1000);
+    expect(overlay.services.app.cpu_shares).toBe(2048);
+    expect(overlay.services.app.mem_reservation).toBeUndefined();
+  });
+
+  it("maps disposable priority to high oom score and low cpu share, no reservation", () => {
+    const compose: ComposeFile = {
+      services: { app: { name: "app", image: "nginx:latest" } },
+    };
+    const overlay = buildVardoOverlay({
+      fullCompose: compose,
+      networkName,
+      priority: "disposable",
+      memoryLimit: 512,
+    });
+    expect(overlay.services.app.oom_score_adj).toBe(750);
+    expect(overlay.services.app.cpu_shares).toBe(256);
+    expect(overlay.services.app.mem_reservation).toBeUndefined();
+  });
+
+  it("maps standard priority (and the default) to neutral oom score and base cpu share", () => {
+    const compose: ComposeFile = {
+      services: { app: { name: "app", image: "nginx:latest" } },
+    };
+    const overlay = buildVardoOverlay({
+      fullCompose: compose,
+      networkName,
+      priority: "standard",
+      memoryLimit: 512,
+    });
+    expect(overlay.services.app.oom_score_adj).toBe(0);
+    expect(overlay.services.app.cpu_shares).toBe(1024);
+    expect(overlay.services.app.mem_reservation).toBeUndefined();
   });
 });
 

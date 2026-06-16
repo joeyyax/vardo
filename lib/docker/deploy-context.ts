@@ -44,6 +44,7 @@ export type DeployApp = {
   needsRedeploy: boolean | null;
   cpuLimit: number | null;
   memoryLimit: number | null;
+  priority: "critical" | "standard" | "disposable";
   gpuEnabled: boolean | null;
   healthCheckTimeout: number | null;
   autoRollback: boolean | null;

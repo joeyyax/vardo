@@ -145,6 +145,9 @@ export function parseCompose(yamlString: string): ComposeFile {
     ) {
       svc.deploy = raw.deploy as ComposeService["deploy"];
     }
+    if (typeof raw.oom_score_adj === "number") svc.oom_score_adj = raw.oom_score_adj;
+    if (typeof raw.mem_reservation === "string" && raw.mem_reservation) svc.mem_reservation = raw.mem_reservation;
+    if (typeof raw.cpu_shares === "number") svc.cpu_shares = raw.cpu_shares;
     if (Array.isArray(raw.cap_add)) svc.cap_add = raw.cap_add.map(String);
     if (Array.isArray(raw.cap_drop)) svc.cap_drop = raw.cap_drop.map(String);
     if (Array.isArray(raw.devices)) svc.devices = raw.devices.map(String);

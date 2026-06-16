@@ -3,7 +3,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Plus, Cpu } from "lucide-react";
+import { Plus, Cpu, ShieldCheck, Trash2 } from "lucide-react";
 import { EndpointsPopover } from "@/components/endpoints-popover";
 import { detectAppType } from "@/lib/ui/app-type";
 import { statusDotColor } from "@/lib/ui/status-colors";
@@ -31,6 +31,7 @@ type AppWithRelations = {
   gitUrl: string | null;
   projectId: string;
   gpuEnabled: boolean | null;
+  priority: "critical" | "standard" | "disposable";
   status: string;
   needsRedeploy: boolean | null;
   createdAt: Date;
@@ -227,6 +228,12 @@ function ProjectCard({
             >
               <span aria-hidden="true" className={`size-1.5 rounded-full ${statusDotColor(a.status)}`} />
               {a.displayName}
+              {a.priority === "critical" && (
+                <ShieldCheck className="size-3 text-status-warning" aria-label="Critical priority" />
+              )}
+              {a.priority === "disposable" && (
+                <Trash2 className="size-3 text-muted-foreground/50" aria-label="Disposable priority" />
+              )}
               {a.gpuEnabled && (
                 <Cpu className="size-3 text-muted-foreground/50" aria-label="GPU passthrough enabled" />
               )}
