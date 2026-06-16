@@ -205,6 +205,11 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
   }
 
   if (!app.memoryLimit) {
+    if (app.priority === "critical") {
+      throw new Error(
+        `[deploy] critical-priority app requires a memory limit — set one before deploying`,
+      );
+    }
     ctx.log(`[deploy] Warning: no memory limit set — container can consume unlimited host memory`);
   }
 
@@ -213,6 +218,7 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
     networkName: NETWORK_NAME,
     cpuLimit: app.cpuLimit,
     memoryLimit: app.memoryLimit,
+    priority: app.priority,
     gpuEnabled: app.gpuEnabled ?? false,
     externalVolumes: compose.volumes ?? {},
     bareVolumeNames: Object.keys(ctx.bareCompose.volumes ?? {}),
