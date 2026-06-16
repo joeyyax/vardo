@@ -65,6 +65,7 @@ export type ComposeService = {
     resources?: {
       limits?: ResourceLimits;
       reservations?: {
+        memory?: string;
         devices?: Array<{
           driver?: string;
           count?: number | string;
