@@ -353,16 +353,19 @@ export function buildVardoOverlay(opts: {
       };
     }
 
-    // QoS tier → runtime knobs. These are TOP-LEVEL compose service fields
-    // (oom_score_adj/mem_reservation/cpu_shares), honored by `docker compose
-    // up` v2 non-swarm — not under deploy.resources. Only set fields that
-    // apply for the tier; mem_reservation is only meaningful for critical
-    // apps, which the deploy step requires to carry a memory limit.
+    // QoS tier → runtime knobs. oom_score_adj and cpu_shares are top-level
+    // compose service fields (honored by `docker compose up` v2 non-swarm; they
+    // have no deploy.resources equivalent). The memory reservation, however,
+    // must go under deploy.resources.reservations.memory rather than a top-level
+    // mem_reservation — Compose rejects a top-level mem_reservation alongside a
+    // deploy.resources.reservations block (which GPU apps already carry for
+    // devices). It is merged with any GPU devices below.
     const tier = priority ?? "standard";
+    let memReservation: string | undefined;
     if (tier === "critical") {
       overlayService.oom_score_adj = -1000;
       overlayService.cpu_shares = 2048;
-      if (memoryLimit) overlayService.mem_reservation = `${memoryLimit}M`;
+      if (memoryLimit) memReservation = `${memoryLimit}M`;
     } else if (tier === "disposable") {
       overlayService.oom_score_adj = 750;
       overlayService.cpu_shares = 256;
@@ -379,19 +382,29 @@ export function buildVardoOverlay(opts: {
         .map((p) => `${p.external}:${p.internal}${p.protocol ? `/${p.protocol}` : ""}`);
     }
 
-    // GPU devices (Vardo UI setting)
+    // Reservations block: GPU devices (Vardo UI setting) + the critical-tier
+    // memory reservation. Both live under deploy.resources.reservations and are
+    // merged into one object so neither clobbers the other (and so we never emit
+    // a conflicting top-level mem_reservation).
+    const reservations: NonNullable<
+      NonNullable<ComposeService["deploy"]>["resources"]
+    >["reservations"] = {
+      ...(overlayService.deploy?.resources?.reservations ?? {}),
+    };
     if (gpuEnabled) {
       const existingDevices = svc.deploy?.resources?.reservations?.devices ?? [];
       const gpuDevices = existingDevices.filter((d) => d.capabilities?.includes("gpu"));
-      if (gpuDevices.length > 0) {
-        overlayService.deploy = {
-          ...(overlayService.deploy ?? {}),
-          resources: {
-            ...(overlayService.deploy?.resources ?? {}),
-            reservations: { devices: gpuDevices },
-          },
-        };
-      }
+      if (gpuDevices.length > 0) reservations.devices = gpuDevices;
+    }
+    if (memReservation) reservations.memory = memReservation;
+    if (reservations.devices?.length || reservations.memory) {
+      overlayService.deploy = {
+        ...(overlayService.deploy ?? {}),
+        resources: {
+          ...(overlayService.deploy?.resources ?? {}),
+          reservations,
+        },
+      };
     }
 
     overlayServices[name] = overlayService;

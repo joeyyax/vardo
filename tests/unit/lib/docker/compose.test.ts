@@ -2890,10 +2890,43 @@ describe("buildVardoOverlay — edge cases", () => {
     });
     expect(overlay.services.app.oom_score_adj).toBe(-1000);
     expect(overlay.services.app.cpu_shares).toBe(2048);
-    expect(overlay.services.app.mem_reservation).toBe("5120M");
+    // The memory reservation lives under deploy.resources.reservations.memory,
+    // NOT a top-level mem_reservation (which Compose rejects alongside a
+    // deploy.resources.reservations block).
+    expect(overlay.services.app.deploy?.resources?.reservations?.memory).toBe("5120M");
+    expect(overlay.services.app.mem_reservation).toBeUndefined();
   });
 
-  it("omits mem_reservation for critical priority when no memory limit is set", () => {
+  it("merges the critical mem reservation with GPU device reservations", () => {
+    const compose: ComposeFile = {
+      services: {
+        app: {
+          name: "app",
+          image: "nginx:latest",
+          deploy: {
+            resources: {
+              reservations: {
+                devices: [{ driver: "nvidia", count: "all", capabilities: ["gpu"] }],
+              },
+            },
+          },
+        },
+      },
+    };
+    const overlay = buildVardoOverlay({
+      fullCompose: compose,
+      networkName,
+      priority: "critical",
+      memoryLimit: 5120,
+      gpuEnabled: true,
+    });
+    const reservations = overlay.services.app.deploy?.resources?.reservations;
+    expect(reservations?.memory).toBe("5120M");
+    expect(reservations?.devices?.[0]?.capabilities).toContain("gpu");
+    expect(overlay.services.app.mem_reservation).toBeUndefined();
+  });
+
+  it("omits the memory reservation for critical priority when no memory limit is set", () => {
     const compose: ComposeFile = {
       services: { app: { name: "app", image: "nginx:latest" } },
     };
@@ -2904,6 +2937,7 @@ describe("buildVardoOverlay — edge cases", () => {
     });
     expect(overlay.services.app.oom_score_adj).toBe(-1000);
     expect(overlay.services.app.cpu_shares).toBe(2048);
+    expect(overlay.services.app.deploy?.resources?.reservations?.memory).toBeUndefined();
     expect(overlay.services.app.mem_reservation).toBeUndefined();
   });
 
