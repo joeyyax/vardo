@@ -299,6 +299,8 @@ export function buildVardoOverlay(opts: {
   cpuLimit?: number | null;
   memoryLimit?: number | null;
   gpuEnabled?: boolean;
+  /** QoS tier — compiled into oom_score_adj/mem_reservation/cpu_shares. */
+  priority?: "critical" | "standard" | "disposable" | null;
   externalVolumes?: Record<string, unknown>;
   bareVolumeNames?: string[];
   /** Per-service exposed ports from child app DB records (service name → ports). */
@@ -310,6 +312,7 @@ export function buildVardoOverlay(opts: {
     cpuLimit,
     memoryLimit,
     gpuEnabled,
+    priority = "standard",
     externalVolumes = {},
     bareVolumeNames = [],
     serviceExposedPorts = {},
@@ -348,6 +351,24 @@ export function buildVardoOverlay(opts: {
           limits: { ...(overlayService.deploy?.resources?.limits ?? {}), ...limits },
         },
       };
+    }
+
+    // QoS tier → runtime knobs. These are TOP-LEVEL compose service fields
+    // (oom_score_adj/mem_reservation/cpu_shares), honored by `docker compose
+    // up` v2 non-swarm — not under deploy.resources. Only set fields that
+    // apply for the tier; mem_reservation is only meaningful for critical
+    // apps, which the deploy step requires to carry a memory limit.
+    const tier = priority ?? "standard";
+    if (tier === "critical") {
+      overlayService.oom_score_adj = -1000;
+      overlayService.cpu_shares = 2048;
+      if (memoryLimit) overlayService.mem_reservation = `${memoryLimit}M`;
+    } else if (tier === "disposable") {
+      overlayService.oom_score_adj = 750;
+      overlayService.cpu_shares = 256;
+    } else {
+      overlayService.oom_score_adj = 0;
+      overlayService.cpu_shares = 1024;
     }
 
     // Exposed ports from child app UI settings

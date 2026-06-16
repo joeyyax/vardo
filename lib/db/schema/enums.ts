@@ -53,6 +53,12 @@ export const cloneStrategyEnum = pgEnum("clone_strategy", [
   "skip",
 ]);
 
+export const appPriorityEnum = pgEnum("app_priority", [
+  "critical",
+  "standard",
+  "disposable",
+]);
+
 export const groupEnvironmentTypeEnum = pgEnum("group_environment_type", [
   "staging",
   "preview",

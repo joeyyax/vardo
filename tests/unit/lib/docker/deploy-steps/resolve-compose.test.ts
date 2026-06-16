@@ -56,6 +56,7 @@ function makeApp(overrides: Partial<DeployApp> = {}): DeployApp {
     needsRedeploy: false,
     cpuLimit: null,
     memoryLimit: null,
+    priority: "standard",
     gpuEnabled: false,
     healthCheckTimeout: null,
     autoRollback: null,

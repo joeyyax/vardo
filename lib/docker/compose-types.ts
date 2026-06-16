@@ -73,6 +73,11 @@ export type ComposeService = {
       };
     };
   };
+  // QoS tier fields injected by the Vardo overlay (priority → runtime knobs).
+  // Top-level compose service keys honored by `docker compose up` v2 (non-swarm).
+  oom_score_adj?: number;
+  mem_reservation?: string;
+  cpu_shares?: number;
   // Extended fields for faithful container import/round-trip
   cap_add?: string[];
   cap_drop?: string[];
