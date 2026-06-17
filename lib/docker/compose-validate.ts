@@ -56,6 +56,22 @@ function isBindMount(vol: string): boolean {
   );
 }
 
+// /var/run is conventionally a symlink to /run, so a compose file may reference
+// the Docker socket via either path.
+const DOCKER_SOCKET_PATHS = ["/var/run/docker.sock", "/run/docker.sock"];
+
+/**
+ * Returns true if a resolved bind-mount source is the host Docker socket.
+ * Checked against both the cwd-resolved and root-resolved forms so a traversal
+ * (e.g. ../../../var/run/docker.sock) can't slip past the gate. (#744)
+ */
+function isDockerSocketMount(mountSource: string, rootResolved: string): boolean {
+  return (
+    DOCKER_SOCKET_PATHS.includes(mountSource) ||
+    DOCKER_SOCKET_PATHS.includes(rootResolved)
+  );
+}
+
 /**
  * Basic validation of a ComposeFile structure.
  */
@@ -100,24 +116,37 @@ export function validateCompose(compose: ComposeFile, opts?: ValidateOptions): {
 
     if (svc.volumes && !opts?.skipMountChecks) {
       for (const vol of svc.volumes) {
-        if (isBindMount(vol) && !opts?.allowBindMounts) {
+        if (!isBindMount(vol)) continue;
+        const rawSource = vol.split(":")[0];
+        const mountSource = resolve(rawSource);
+        const rootResolved = resolve("/", rawSource);
+
+        // Docker socket is gated by its own flag, independent of bind mounts.
+        if (isDockerSocketMount(mountSource, rootResolved)) {
+          if (!opts?.allowDockerSocket) {
+            errors.push(
+              `Service "${name}" mounts the Docker socket "${vol}" — enable the Docker Socket feature flag to allow this`,
+            );
+          }
+          continue;
+        }
+
+        if (!opts?.allowBindMounts) {
           errors.push(
             `Service "${name}" uses host bind mount "${vol}" — enable the Bind Mounts feature flag to allow this`,
           );
+          continue;
         }
-        if (isBindMount(vol) && opts?.allowBindMounts) {
-          const rawSource = vol.split(":")[0];
-          const mountSource = resolve(rawSource);
-          const rootResolved = resolve("/", rawSource);
-          if (
-            DENIED_MOUNT_PATHS.some((p) => mountSource === p || mountSource.startsWith(p + "/")) ||
-            DENIED_MOUNT_PATHS.some((p) => rootResolved === p || rootResolved.startsWith(p + "/"))
-          ) {
-            const displayPath = mountSource !== rootResolved ? rootResolved : mountSource;
-            errors.push(
-              `Service "${name}" mounts denied path "${displayPath}" — this path is blocked for security`,
-            );
-          }
+
+        // Bind mounts allowed — the rest of the deny-list stays enforced.
+        if (
+          DENIED_MOUNT_PATHS.some((p) => mountSource === p || mountSource.startsWith(p + "/")) ||
+          DENIED_MOUNT_PATHS.some((p) => rootResolved === p || rootResolved.startsWith(p + "/"))
+        ) {
+          const displayPath = mountSource !== rootResolved ? rootResolved : mountSource;
+          errors.push(
+            `Service "${name}" mounts denied path "${displayPath}" — this path is blocked for security`,
+          );
         }
       }
     }
@@ -203,9 +232,14 @@ export function validateCompose(compose: ComposeFile, opts?: ValidateOptions): {
  * Strip host bind mounts from compose, keeping only named volumes.
  * When allowBindMounts is true, bind mounts are allowed but paths in
  * DENIED_MOUNT_PATHS are always blocked regardless of the flag.
+ * The Docker socket has its own gate (allowDockerSocket): kept when enabled,
+ * stripped otherwise — independent of allowBindMounts. (#744)
  * When stripping, returns the list of removed mounts for logging.
  */
-export function sanitizeCompose(compose: ComposeFile, opts?: { allowBindMounts?: boolean }): {
+export function sanitizeCompose(
+  compose: ComposeFile,
+  opts?: { allowBindMounts?: boolean; allowDockerSocket?: boolean },
+): {
   compose: ComposeFile;
   strippedMounts: string[];
 } {
@@ -215,31 +249,47 @@ export function sanitizeCompose(compose: ComposeFile, opts?: { allowBindMounts?:
     if (svc.volumes) {
       const safe: string[] = [];
       for (const v of svc.volumes) {
-        if (isBindMount(v)) {
-          if (opts?.allowBindMounts) {
-            // Bind mounts allowed — still enforce the deny list unconditionally.
-            // Throw rather than silently drop: the user explicitly configured this
-            // mount, so a silent strip would cause confusing runtime behaviour.
-            const rawSource = v.split(":")[0];
-            const mountSource = resolve(rawSource);
-            // Also resolve from root to catch traversal attacks (e.g. ../../../../../../etc)
-            // that would resolve differently depending on CWD depth
-            const rootResolved = resolve("/", rawSource);
-            if (
-              DENIED_MOUNT_PATHS.some((p) => mountSource === p || mountSource.startsWith(p + "/")) ||
-              DENIED_MOUNT_PATHS.some((p) => rootResolved === p || rootResolved.startsWith(p + "/"))
-            ) {
-              const displayPath = mountSource !== rootResolved ? rootResolved : mountSource;
-              throw new Error(
-                `Service "${name}" mounts blocked host path "${displayPath}" — this path is not allowed even with bind mounts enabled`,
-              );
-            }
-            safe.push(v);
-          } else {
-            strippedMounts.push(`${name}: ${v}`);
-          }
-        } else {
+        if (!isBindMount(v)) {
           safe.push(v);
+          continue;
+        }
+
+        const rawSource = v.split(":")[0];
+        const mountSource = resolve(rawSource);
+        // Also resolve from root to catch traversal attacks (e.g. ../../../../../../etc)
+        // that would resolve differently depending on CWD depth
+        const rootResolved = resolve("/", rawSource);
+
+        // Docker socket: kept only when its own flag is on; otherwise the deploy
+        // is blocked with a clear message — independent of allowBindMounts. We
+        // throw rather than silently strip because a service that mounts the
+        // socket needs it, and a sharp tool should fail loudly, not degrade.
+        if (isDockerSocketMount(mountSource, rootResolved)) {
+          if (!opts?.allowDockerSocket) {
+            throw new Error(
+              `Service "${name}" mounts the Docker socket "${v}" — enable the Docker Socket feature flag to allow this`,
+            );
+          }
+          safe.push(v);
+          continue;
+        }
+
+        if (opts?.allowBindMounts) {
+          // Bind mounts allowed — still enforce the deny list unconditionally.
+          // Throw rather than silently drop: the user explicitly configured this
+          // mount, so a silent strip would cause confusing runtime behaviour.
+          if (
+            DENIED_MOUNT_PATHS.some((p) => mountSource === p || mountSource.startsWith(p + "/")) ||
+            DENIED_MOUNT_PATHS.some((p) => rootResolved === p || rootResolved.startsWith(p + "/"))
+          ) {
+            const displayPath = mountSource !== rootResolved ? rootResolved : mountSource;
+            throw new Error(
+              `Service "${name}" mounts blocked host path "${displayPath}" — this path is not allowed even with bind mounts enabled`,
+            );
+          }
+          safe.push(v);
+        } else {
+          strippedMounts.push(`${name}: ${v}`);
         }
       }
       sanitized.services[name] = { ...svc, volumes: safe };

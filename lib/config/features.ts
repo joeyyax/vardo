@@ -16,6 +16,7 @@ export type FeatureFlag =
   | "passwordAuth"
   | "mesh"
   | "bindMounts"
+  | "dockerSocket"
   | "selfManagement"
   | "backups"
   | "terminal"
@@ -67,6 +68,13 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
     label: "Bind Mounts",
     description:
       "Allow host path mounts in compose definitions. Required for homelab services with local config or NFS mounts. Disabled by default for security on shared instances.",
+    defaultValue: false,
+    showInUI: true,
+  },
+  dockerSocket: {
+    label: "Docker Socket",
+    description:
+      "Allow mounting /var/run/docker.sock in compose definitions. Needed for Traefik docker-provider sidecars, Dozzle, Watchtower and similar. A sharp tool — grants full control of the host Docker daemon. Disabled by default; the rest of the mount deny-list stays enforced.",
     defaultValue: false,
     showInUI: true,
   },
