@@ -147,6 +147,7 @@ type Project = {
   description: string | null;
   color: string | null;
   allowBindMounts: boolean;
+  allowDockerSocket: boolean;
   isSystemManaged: boolean;
   apps: ProjectApp[];
   groupEnvironments: GroupEnvironment[];
@@ -671,6 +672,7 @@ export function ProjectDetail({
   const [editDisplayName, setEditDisplayName] = useState(project.displayName);
   const [editDescription, setEditDescription] = useState(project.description || "");
   const [editAllowBindMounts, setEditAllowBindMounts] = useState(project.allowBindMounts);
+  const [editAllowDockerSocket, setEditAllowDockerSocket] = useState(project.allowDockerSocket);
   const [editSaving, setEditSaving] = useState(false);
   const [stopAllOpen, setStopAllOpen] = useState(false);
 
@@ -928,6 +930,7 @@ export function ProjectDetail({
       };
       if (isAdmin) {
         body.allowBindMounts = editAllowBindMounts;
+        body.allowDockerSocket = editAllowDockerSocket;
       }
       const res = await fetch(
         `/api/v1/organizations/${orgId}/projects/${project.id}`,
@@ -1285,6 +1288,7 @@ export function ProjectDetail({
           setEditDisplayName(project.displayName);
           setEditDescription(project.description || "");
           setEditAllowBindMounts(project.allowBindMounts);
+          setEditAllowDockerSocket(project.allowDockerSocket);
         }
       }}>
         <BottomSheetContent>
@@ -1326,6 +1330,21 @@ export function ProjectDetail({
                   id="edit-bind-mounts"
                   checked={editAllowBindMounts}
                   onCheckedChange={setEditAllowBindMounts}
+                />
+              </div>
+            )}
+            {isAdmin && (
+              <div className="flex items-center justify-between gap-4 pt-2">
+                <div className="space-y-1">
+                  <Label htmlFor="edit-docker-socket">Allow Docker socket</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Permit mounting <span className="font-mono">/var/run/docker.sock</span> in compose definitions (Traefik docker-provider, Dozzle, Watchtower). Grants full control of the host Docker daemon — enable only for trusted workloads.
+                  </p>
+                </div>
+                <Switch
+                  id="edit-docker-socket"
+                  checked={editAllowDockerSocket}
+                  onCheckedChange={setEditAllowDockerSocket}
                 />
               </div>
             )}
