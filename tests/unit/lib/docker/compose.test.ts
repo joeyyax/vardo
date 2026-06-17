@@ -637,6 +637,23 @@ describe("injectGpuDevices — stateful service skip", () => {
     expect(result.services.a.deploy?.resources?.reservations?.devices?.[0]?.capabilities).toContain("gpu");
     expect(result.services.b.deploy).toBeUndefined();
   });
+
+  it("with `include`, injects ONLY listed services and ignores the stateful skip (#745)", () => {
+    // A child GPU toggle: attach to the named service even though it mounts a
+    // named volume (which the default heuristic would skip).
+    const compose: ComposeFile = {
+      services: {
+        worker: { name: "worker", image: "worker", volumes: ["data:/data"] },
+        web: { name: "web", image: "web" },
+      },
+      volumes: { data: {} },
+    };
+
+    const result = injectGpuDevices(compose, { include: new Set(["worker"]) });
+
+    expect(result.services.worker.deploy?.resources?.reservations?.devices?.[0]?.capabilities).toContain("gpu");
+    expect(result.services.web.deploy).toBeUndefined();
+  });
 });
 
 describe("getServicesWithExternalizedVolumes", () => {
@@ -2574,6 +2591,52 @@ describe("buildVardoOverlay", () => {
       bareVolumeNames: ["data"],
     });
     expect(overlay.volumes).toHaveProperty("data");
+  });
+
+  it("applies per-service resources from serviceConfig, overriding parent globals (#745)", () => {
+    const compose: ComposeFile = {
+      services: {
+        web: { name: "web", image: "web" },
+        worker: { name: "worker", image: "worker" },
+      },
+    };
+    const overlay = buildVardoOverlay({
+      fullCompose: compose,
+      networkName,
+      cpuLimit: 1,
+      memoryLimit: 256, // parent globals — used only where no child entry exists
+      serviceConfig: {
+        web: { cpuLimit: 2, memoryLimit: 512, gpuEnabled: false },
+        // worker has no entry → falls back to parent globals
+      },
+    });
+    expect(overlay.services.web.deploy?.resources?.limits).toEqual({ cpus: "2", memory: "512M" });
+    expect(overlay.services.worker.deploy?.resources?.limits).toEqual({ cpus: "1", memory: "256M" });
+  });
+
+  it("re-emits GPU devices for a service whose child enabled GPU even when parent global is off (#745)", () => {
+    const compose: ComposeFile = {
+      services: {
+        web: { name: "web", image: "web" },
+        worker: {
+          name: "worker",
+          image: "worker",
+          // device already injected upstream (resolve-compose) for this service
+          deploy: { resources: { reservations: { devices: [{ driver: "nvidia", count: "all", capabilities: ["gpu"] }] } } },
+        },
+      },
+    };
+    const overlay = buildVardoOverlay({
+      fullCompose: compose,
+      networkName,
+      gpuEnabled: false, // parent flag off
+      serviceConfig: {
+        web: { cpuLimit: null, memoryLimit: null, gpuEnabled: false },
+        worker: { cpuLimit: null, memoryLimit: null, gpuEnabled: true },
+      },
+    });
+    expect(overlay.services.worker.deploy?.resources?.reservations?.devices?.[0]?.capabilities).toContain("gpu");
+    expect(overlay.services.web.deploy?.resources?.reservations?.devices).toBeUndefined();
   });
 
   it("does not include volumes that are not in bareVolumeNames", () => {

@@ -7,7 +7,7 @@
 // recovery — steps just throw on failure.
 // ---------------------------------------------------------------------------
 
-import type { ComposeFile } from "./compose-types";
+import type { ComposeFile, ServiceConfigOverride } from "./compose-types";
 import type { HostConfig } from "@/lib/config/host-config";
 import type { DeployStage } from "./deploy-logger";
 
@@ -113,6 +113,13 @@ export type DeployContext = {
 
   /** The bare compose before Vardo injections (for docker-compose.yml). */
   bareCompose: ComposeFile;
+
+  /**
+   * Per-service config from decomposed child app rows (compose service name →
+   * override). Built in resolve-compose, consumed by the overlay in build so a
+   * child's resources/GPU take effect. Empty for non-decomposed apps. (#745)
+   */
+  serviceConfig: Record<string, ServiceConfigOverride>;
 
   /** Whether the image was built locally (Nixpacks/Railpack/Dockerfile). */
   builtLocally: boolean;
