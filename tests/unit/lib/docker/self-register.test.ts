@@ -34,12 +34,21 @@ const { dbMock, isFeatureEnabledMock, readFileMock, execFileAsyncMock, execFileM
     return makeInsertChain(rows);
   });
 
+  // Chainable update: .update().set().where() — thenable at the end so
+  // `await tx.update(apps).set(...).where(...)` resolves.
+  const updateFn = vi.fn(() => ({
+    set: vi.fn(() => ({
+      where: vi.fn().mockResolvedValue(undefined),
+    })),
+  }));
+
   // db.transaction() passes a transaction object (tx) to the callback.
-  // The tx has the same insert/select methods — reuse the same mocks so
+  // The tx has the same insert/select/update methods — reuse the same mocks so
   // tests can assert on them without caring whether the code uses tx or db.
   const txMock = {
     select: selectFn,
     insert: insertFn,
+    update: updateFn,
     query: {
       deployments: {
         findFirst: vi.fn().mockResolvedValue(null),
@@ -53,6 +62,7 @@ const { dbMock, isFeatureEnabledMock, readFileMock, execFileAsyncMock, execFileM
   const dbMock = {
     select: selectFn,
     insert: insertFn,
+    update: updateFn,
     transaction: transactionFn,
     _limitFn: limitFn,
     _insertResponses: insertResponses,
