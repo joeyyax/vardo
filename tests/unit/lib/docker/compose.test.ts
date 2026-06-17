@@ -127,10 +127,10 @@ describe("sanitizeCompose", () => {
       );
     });
 
-    it("throws when mounting /var/run/docker.sock", () => {
+    it("throws when mounting /var/run/docker.sock without the docker socket flag", () => {
       const compose = makeCompose(["/var/run/docker.sock:/var/run/docker.sock"]);
       expect(() => sanitizeCompose(compose, { allowBindMounts: true })).toThrow(
-        /blocked host path/,
+        /Docker socket.*Docker Socket feature flag/,
       );
     });
 
@@ -157,6 +157,42 @@ describe("sanitizeCompose", () => {
       expect(() => sanitizeCompose(compose, { allowBindMounts: true })).toThrow(
         /blocked host path/,
       );
+    });
+  });
+
+  describe("docker socket gating (#744)", () => {
+    const SOCK = "/var/run/docker.sock:/var/run/docker.sock";
+
+    it("passes the socket through when allowDockerSocket is true (even without allowBindMounts)", () => {
+      const { compose: result, strippedMounts } = sanitizeCompose(makeCompose([SOCK]), { allowDockerSocket: true });
+      expect(result.services.app.volumes).toEqual([SOCK]);
+      expect(strippedMounts).toHaveLength(0);
+    });
+
+    it("passes the /run/docker.sock alias through when allowDockerSocket is true", () => {
+      const alias = "/run/docker.sock:/var/run/docker.sock:ro";
+      const { compose: result } = sanitizeCompose(makeCompose([alias]), { allowDockerSocket: true });
+      expect(result.services.app.volumes).toEqual([alias]);
+    });
+
+    it("still blocks the rest of the deny-list when allowDockerSocket is on", () => {
+      expect(() => sanitizeCompose(makeCompose(["/etc:/host/etc"]), { allowBindMounts: true, allowDockerSocket: true })).toThrow(
+        /blocked host path.*\/etc/,
+      );
+    });
+
+    it("throws for the socket when the flag is off, regardless of allowBindMounts", () => {
+      expect(() => sanitizeCompose(makeCompose([SOCK]), { allowBindMounts: false })).toThrow(/Docker Socket feature flag/);
+      expect(() => sanitizeCompose(makeCompose([SOCK]), { allowBindMounts: true })).toThrow(/Docker Socket feature flag/);
+    });
+
+    it("validateCompose errors on the socket without the flag and accepts it with the flag", () => {
+      const off = validateCompose(makeCompose([SOCK]), { allowBindMounts: true });
+      expect(off.valid).toBe(false);
+      expect(off.errors.join(" ")).toMatch(/Docker Socket feature flag/);
+
+      const on = validateCompose(makeCompose([SOCK]), { allowDockerSocket: true });
+      expect(on.valid).toBe(true);
     });
   });
 
@@ -983,7 +1019,8 @@ describe("validateCompose — skipMountChecks", () => {
     };
     const { valid, errors } = validateCompose(compose, { skipMountChecks: false });
     expect(valid).toBe(false);
-    expect(errors.some((e) => e.includes("bind mount"))).toBe(true);
+    // The Docker socket now has its own gate (#744) — blocked with a specific message.
+    expect(errors.some((e) => e.includes("Docker socket"))).toBe(true);
   });
 });
 

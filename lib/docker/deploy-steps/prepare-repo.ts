@@ -61,6 +61,7 @@ const execFileAsync = promisify(execFile);
 
 type ParseAndSanitizeOpts = {
   allowBindMounts?: boolean;
+  allowDockerSocket?: boolean;
   orgTrusted?: boolean;
 };
 
@@ -75,16 +76,18 @@ function parseAndSanitize(yaml: string, log: (msg: string) => void, opts?: Parse
     return compose;
   }
   const bindMountsEnabled = opts?.allowBindMounts || isFeatureEnabled("bindMounts");
+  const dockerSocketEnabled = opts?.allowDockerSocket || isFeatureEnabled("dockerSocket");
+  const mountOpts = { allowBindMounts: bindMountsEnabled, allowDockerSocket: dockerSocketEnabled };
   let sanitized: ReturnType<typeof sanitizeCompose>;
   try {
-    sanitized = sanitizeCompose(compose, { allowBindMounts: bindMountsEnabled });
+    sanitized = sanitizeCompose(compose, mountOpts);
   } catch (err) {
     throw new DeployBlockedError(err instanceof Error ? err.message : String(err));
   }
   if (sanitized.strippedMounts.length > 0) {
     log(`[deploy] Stripped ${sanitized.strippedMounts.length} bind mount(s): ${sanitized.strippedMounts.join(", ")}`);
   }
-  const { valid, errors } = validateCompose(sanitized.compose, { allowBindMounts: bindMountsEnabled });
+  const { valid, errors } = validateCompose(sanitized.compose, mountOpts);
   if (!valid) {
     throw new DeployBlockedError(`Compose validation failed:\n${errors.join("\n")}`);
   }
@@ -272,6 +275,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
   const { app, log, logs, envMap, signal } = ctx;
   const orgTrusted = ctx.orgTrusted;
   const projectAllowBindMounts = ctx.projectAllowBindMounts;
+  const projectAllowDockerSocket = ctx.projectAllowDockerSocket;
 
   // App-level dir holds the repo; env-level dir holds slots
   const appBase = appBaseDir(app.name);
@@ -321,7 +325,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
     ctx.stage("clone", "skipped");
     ctx.stage("build", "running");
     if (app.composeContent) {
-      compose = parseAndSanitize(app.composeContent, log, { allowBindMounts: projectAllowBindMounts, orgTrusted });
+      compose = parseAndSanitize(app.composeContent, log, { allowBindMounts: projectAllowBindMounts, allowDockerSocket: projectAllowDockerSocket, orgTrusted });
       log(`[deploy] Using stored compose for imported container: ${app.imageName}`);
     } else {
       const volsForCompose = volumesList.length > 0 ? volumesList : undefined;
@@ -521,7 +525,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
     ctx.stage("build", "running");
 
     if (composeContent && app.deployType === "compose") {
-      compose = parseAndSanitize(composeContent, log, { allowBindMounts: projectAllowBindMounts, orgTrusted });
+      compose = parseAndSanitize(composeContent, log, { allowBindMounts: projectAllowBindMounts, allowDockerSocket: projectAllowDockerSocket, orgTrusted });
       await detectAndPersistComposeVolumes(compose, ctx.appId, ctx.organizationId, new Set(appVolumes.map(v => v.name)), log);
     } else {
       // Build from repo — Nixpacks, Dockerfile, or auto-detect
@@ -584,7 +588,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
     }
   } else if (app.composeContent) {
     // Direct compose content
-    compose = parseAndSanitize(app.composeContent, log, { allowBindMounts: projectAllowBindMounts, orgTrusted });
+    compose = parseAndSanitize(app.composeContent, log, { allowBindMounts: projectAllowBindMounts, allowDockerSocket: projectAllowDockerSocket, orgTrusted });
     log(`[deploy] Parsed compose content`);
     await detectAndPersistComposeVolumes(compose, ctx.appId, ctx.organizationId, new Set(appVolumes.map(v => v.name)), log);
   } else {
