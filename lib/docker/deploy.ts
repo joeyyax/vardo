@@ -304,6 +304,7 @@ export async function runDeployment(
 
       compose: { services: {} },
       bareCompose: { services: {} },
+      serviceConfig: {},
       builtLocally: false,
       hostConfig: null,
       repoDir: null,
