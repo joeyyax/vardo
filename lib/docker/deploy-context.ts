@@ -91,6 +91,7 @@ export type DeployContext = {
   org: { id: string; name: string; baseDomain: string | null; trusted: boolean } | null;
   orgTrusted: boolean;
   projectAllowBindMounts: boolean;
+  projectAllowDockerSocket: boolean;
 
   /** Environment resolution. */
   envName: string;
