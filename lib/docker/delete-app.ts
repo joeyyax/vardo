@@ -59,6 +59,12 @@ export async function deleteApp(opts: {
   userId?: string;
   pruneVolumes?: boolean;
   keepVolumes?: string[];
+  /**
+   * Allow deleting a system-managed app. Off by default so user-facing delete
+   * paths can't remove platform/integration apps; the integration-install
+   * rollback (#741) sets it to undo a failed first deploy.
+   */
+  allowSystemManaged?: boolean;
 }): Promise<DeleteAppResult> {
   const { appId, organizationId } = opts;
   const pruneVolumes = opts.pruneVolumes ?? false;
@@ -78,7 +84,7 @@ export async function deleteApp(opts: {
   });
 
   if (!app) throw new Error("App not found or access denied");
-  if (app.isSystemManaged) {
+  if (app.isSystemManaged && !opts.allowSystemManaged) {
     throw new Error("System-managed apps cannot be deleted");
   }
 
