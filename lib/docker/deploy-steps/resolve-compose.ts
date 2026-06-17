@@ -20,7 +20,11 @@ import {
   NETWORK_NAME as VARDO_NETWORK,
   DEFAULT_CONTAINER_PORT,
 } from "../constants";
+import { db } from "@/lib/db";
+import { apps } from "@/lib/db/schema";
+import { and, eq } from "drizzle-orm";
 import type { DeployContext } from "../deploy-context";
+import type { ServiceConfigOverride } from "../compose-types";
 
 const NETWORK_NAME = VARDO_NETWORK;
 
@@ -47,6 +51,35 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
     log(`[deploy] Normalize: ${change.service}.${change.field} ${change.action}${change.before ? ` (was: ${change.before})` : ""} — ${change.reason}`);
   }
 
+  // Per-service config from decomposed child app rows. A decomposed compose
+  // app has a child app per service (parentAppId + composeService); the child
+  // carries its own resources/GPU that the deploy must honor — otherwise
+  // toggling e.g. GPU on a child is a silent no-op (#745). Empty for
+  // non-decomposed apps, which keep using the parent's global values.
+  const children = await db.query.apps.findMany({
+    where: and(
+      eq(apps.parentAppId, app.id),
+      eq(apps.organizationId, ctx.organizationId),
+    ),
+    columns: { composeService: true, cpuLimit: true, memoryLimit: true, gpuEnabled: true },
+  });
+  const childByService = new Map(
+    children.filter((c) => c.composeService).map((c) => [c.composeService!, c]),
+  );
+  const serviceConfig: Record<string, ServiceConfigOverride> = {};
+  for (const name of Object.keys(compose.services)) {
+    const child = childByService.get(name);
+    if (!child) continue;
+    serviceConfig[name] = {
+      // Child value wins; fall back to the parent global when the child has none.
+      cpuLimit: child.cpuLimit ?? app.cpuLimit,
+      memoryLimit: child.memoryLimit ?? app.memoryLimit,
+      // GPU is opt-in either level: parent-wide flag OR the child's own toggle.
+      gpuEnabled: !!app.gpuEnabled || child.gpuEnabled,
+    };
+  }
+  ctx.serviceConfig = serviceConfig;
+
   if (app.gpuEnabled) {
     // Skip GPU reservations for services that mount a top-level named
     // volume — those are stateful infrastructure (postgres, redis, etc.)
@@ -58,6 +91,16 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
     if (statefulSkip.size > 0) {
       log(`[deploy] GPU reservations: skipping stateful services (${[...statefulSkip].join(", ")})`);
     }
+  }
+
+  // Per-child GPU toggles: attach the device to exactly those services, even
+  // stateful ones — the user opted in on that specific service (#745).
+  const childGpuServices = new Set(
+    children.filter((c) => c.gpuEnabled && c.composeService).map((c) => c.composeService!),
+  );
+  if (childGpuServices.size > 0) {
+    compose = injectGpuDevices(compose, { include: childGpuServices });
+    log(`[deploy] GPU reservations: child services (${[...childGpuServices].join(", ")})`);
   }
 
   // Step 2: Detect container port

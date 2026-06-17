@@ -13,6 +13,7 @@ import type {
   DeployTransformDomain,
   PortMapping,
   ResourceLimits,
+  ServiceConfigOverride,
 } from "./compose-types";
 import { TRAEFIK_LABEL_PREFIX, resolveBackendProtocol } from "./compose-generate";
 import { parseCompose } from "./compose-parse";
@@ -305,6 +306,12 @@ export function buildVardoOverlay(opts: {
   bareVolumeNames?: string[];
   /** Per-service exposed ports from child app DB records (service name → ports). */
   serviceExposedPorts?: Record<string, { internal: number; external?: number; protocol?: string }[]>;
+  /**
+   * Per-service config from decomposed child app rows (service name → override).
+   * When a service has an entry, its resources/GPU come from the child instead
+   * of the parent-global cpuLimit/memoryLimit/gpuEnabled. (#745)
+   */
+  serviceConfig?: Record<string, ServiceConfigOverride>;
 }): ComposeFile {
   const {
     fullCompose,
@@ -316,6 +323,7 @@ export function buildVardoOverlay(opts: {
     externalVolumes = {},
     bareVolumeNames = [],
     serviceExposedPorts = {},
+    serviceConfig = {},
   } = opts;
 
   const overlayServices: Record<string, ComposeService> = {};
@@ -332,6 +340,13 @@ export function buildVardoOverlay(opts: {
 
     const overlayService: ComposeService = { name };
 
+    // Per-service config from a decomposed child app overrides the parent
+    // globals; services without a child entry use the parent's values (#745).
+    const cfg = serviceConfig[name];
+    const effCpuLimit = cfg ? cfg.cpuLimit : cpuLimit;
+    const effMemoryLimit = cfg ? cfg.memoryLimit : memoryLimit;
+    const effGpuEnabled = cfg ? cfg.gpuEnabled : gpuEnabled;
+
     if (vardoLabels && Object.keys(vardoLabels).length > 0) {
       overlayService.labels = vardoLabels;
     }
@@ -340,10 +355,10 @@ export function buildVardoOverlay(opts: {
     }
 
     // App-level resource limits set via Vardo UI (not from the user's compose)
-    if (cpuLimit || memoryLimit) {
+    if (effCpuLimit || effMemoryLimit) {
       const limits: ResourceLimits = {};
-      if (cpuLimit) limits.cpus = String(cpuLimit);
-      if (memoryLimit) limits.memory = `${memoryLimit}M`;
+      if (effCpuLimit) limits.cpus = String(effCpuLimit);
+      if (effMemoryLimit) limits.memory = `${effMemoryLimit}M`;
       overlayService.deploy = {
         ...(overlayService.deploy ?? {}),
         resources: {
@@ -365,7 +380,7 @@ export function buildVardoOverlay(opts: {
     if (tier === "critical") {
       overlayService.oom_score_adj = -1000;
       overlayService.cpu_shares = 2048;
-      if (memoryLimit) memReservation = `${memoryLimit}M`;
+      if (effMemoryLimit) memReservation = `${effMemoryLimit}M`;
     } else if (tier === "disposable") {
       overlayService.oom_score_adj = 750;
       overlayService.cpu_shares = 256;
@@ -391,7 +406,7 @@ export function buildVardoOverlay(opts: {
     >["reservations"] = {
       ...(overlayService.deploy?.resources?.reservations ?? {}),
     };
-    if (gpuEnabled) {
+    if (effGpuEnabled) {
       const existingDevices = svc.deploy?.resources?.reservations?.devices ?? [];
       const gpuDevices = existingDevices.filter((d) => d.capabilities?.includes("gpu"));
       if (gpuDevices.length > 0) reservations.devices = gpuDevices;
@@ -551,8 +566,13 @@ export function injectResourceLimits(
  */
 export function injectGpuDevices(
   compose: ComposeFile,
-  opts?: { skip?: Set<string> },
+  opts?: { skip?: Set<string>; include?: Set<string> },
 ): ComposeFile {
+  // `include` is an explicit allow-list (e.g. per-service GPU toggled on a
+  // decomposed child): when present, ONLY those services get devices and the
+  // stateful-skip heuristic is bypassed — the user asked for it on that
+  // service specifically. Otherwise fall back to skip-based injection.
+  const include = opts?.include;
   const skip = opts?.skip ?? getServicesWithExternalizedVolumes(compose);
   const updatedServices: Record<string, ComposeService> = {};
   for (const [key, svc] of Object.entries(compose.services)) {
@@ -564,7 +584,8 @@ export function injectGpuDevices(
       updatedServices[key] = svc;
       continue;
     }
-    if (skip.has(key)) {
+    const excluded = include ? !include.has(key) : skip.has(key);
+    if (excluded) {
       updatedServices[key] = svc;
       continue;
     }

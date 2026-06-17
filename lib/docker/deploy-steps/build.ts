@@ -223,6 +223,7 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
     externalVolumes: compose.volumes ?? {},
     bareVolumeNames: Object.keys(ctx.bareCompose.volumes ?? {}),
     serviceExposedPorts,
+    serviceConfig: ctx.serviceConfig,
   });
 
   await writeFile(bareComposePath, composeToYaml(ctx.bareCompose), "utf-8");
