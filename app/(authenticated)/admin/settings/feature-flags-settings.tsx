@@ -20,13 +20,17 @@ export function FeatureFlagsSettings() {
   const [saving, setSaving] = useState(false);
   const [flags, setFlags] = useState<FlagState[]>([]);
 
+  async function refetchFlags() {
+    const res = await fetch("/api/setup/feature-flags");
+    if (!res.ok) throw new Error("Failed to fetch");
+    const data = await res.json();
+    setFlags(data.flags ?? []);
+  }
+
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch("/api/setup/feature-flags");
-        if (!res.ok) throw new Error("Failed to fetch");
-        const data = await res.json();
-        setFlags(data.flags ?? []);
+        await refetchFlags();
       } catch {
         // defaults
       } finally {
@@ -55,8 +59,17 @@ export function FeatureFlagsSettings() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error("Failed to save");
-      toast.success("Feature flags saved");
+      const data = await res.json().catch(() => null);
+      if (res.ok) {
+        toast.success("Feature flags saved");
+      } else if (data?.failed?.length) {
+        // An integration's first deploy failed and was rolled back server-side.
+        toast.error(data.error ?? "An integration failed to start and was reverted");
+      } else {
+        throw new Error("Failed to save");
+      }
+      // Re-sync toggles with server truth — reverted flags show as off again.
+      await refetchFlags();
       router.refresh();
     } catch {
       toast.error("Failed to save feature flags");

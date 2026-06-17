@@ -16,6 +16,7 @@ import { apps, environments, projects } from "@/lib/db/schema";
 import { isFeatureEnabledAsync, type FeatureFlag } from "@/lib/config/features";
 import { loadTemplates, type Template } from "@/lib/templates/load";
 import { requestDeploy } from "@/lib/docker/deploy-cancel";
+import { deleteApp } from "@/lib/docker/delete-app";
 import { ensureVardoOrg } from "@/lib/infra/vardo-org";
 import { logger } from "@/lib/logger";
 
@@ -88,15 +89,35 @@ export async function provisionForFlag(flag: FeatureFlag, enabled: boolean): Pro
   const project = await ensureProject(org.id, mapping.project.name, mapping.project.displayName);
   const templates = await loadTemplates();
 
-  for (const name of mapping.templates) {
-    const template = templates.find((t) => t.name === name);
-    if (!template) continue;
-
-    try {
-      await ensureAppDeployed(org.id, project.id, template, mapping.appOverrides);
-    } catch (err) {
-      log.error(`Failed to provision ${name}:`, err);
+  // Interactive toggle: wait for each first deploy and make the install
+  // all-or-nothing. ensureAppDeployed rolls back its own app if its deploy
+  // fails and throws; we then roll back any sibling apps already created in
+  // this call so a partially-installed integration never lingers (#741).
+  const createdAppIds: string[] = [];
+  try {
+    for (const name of mapping.templates) {
+      const template = templates.find((t) => t.name === name);
+      if (!template) continue;
+      const appId = await ensureAppDeployed(org.id, project.id, template, mapping.appOverrides, {
+        waitForDeploy: true,
+      });
+      if (appId) createdAppIds.push(appId);
     }
+  } catch (err) {
+    for (const appId of createdAppIds) await rollbackInfraApp(appId, org.id);
+    throw err;
+  }
+}
+
+/**
+ * Undo a provisioned infra app — used to roll back a failed first deploy.
+ * Best-effort: a rollback failure is logged, never thrown.
+ */
+async function rollbackInfraApp(appId: string, orgId: string): Promise<void> {
+  try {
+    await deleteApp({ appId, organizationId: orgId, allowSystemManaged: true });
+  } catch (err) {
+    log.error(`Failed to roll back infra app ${appId}:`, err);
   }
 }
 
@@ -129,7 +150,21 @@ async function ensureProject(orgId: string, name: string, displayName: string) {
   return project;
 }
 
-async function ensureAppDeployed(orgId: string, projectId: string, template: Template, overrides?: Partial<{ autoTraefikLabels: boolean }>) {
+/**
+ * Create and deploy an infra app from a template if it doesn't already exist.
+ *
+ * Returns the new app's id when it created one, or null when the app already
+ * existed (idempotent no-op). With `waitForDeploy`, awaits the first deploy and
+ * — on failure — rolls back the app it just created and throws, so the caller
+ * can present a clean failure instead of a connected-but-broken integration.
+ */
+async function ensureAppDeployed(
+  orgId: string,
+  projectId: string,
+  template: Template,
+  overrides?: Partial<{ autoTraefikLabels: boolean }>,
+  opts?: { waitForDeploy?: boolean },
+): Promise<string | null> {
   // Check if app already exists
   const existing = await db.query.apps.findFirst({
     where: and(
@@ -148,7 +183,7 @@ async function ensureAppDeployed(orgId: string, projectId: string, template: Tem
       if (hasGpu) log.info(`cAdvisor: GPU detected, enabled GPU metrics`);
     }
     log.info(`Infra app "${template.name}" already exists`);
-    return;
+    return null;
   }
 
   // Create the app from the template. Wrapped in try/catch for the unique
@@ -182,7 +217,7 @@ async function ensureAppDeployed(orgId: string, projectId: string, template: Tem
     // Unique constraint violation — another call already created it
     if (err instanceof Error && err.message.includes("unique")) {
       log.info(`Infra app "${template.name}" already created by concurrent call`);
-      return;
+      return null;
     }
     throw err;
   }
@@ -198,7 +233,25 @@ async function ensureAppDeployed(orgId: string, projectId: string, template: Tem
 
   log.info(`Created infra app "${template.name}", triggering deploy`);
 
-  // Deploy the app — fire-and-forget so startup isn't blocked
+  if (opts?.waitForDeploy) {
+    // Interactive install (#741): wait for the first deploy and roll back the
+    // app on failure so it isn't left as a connected-but-broken integration.
+    let result: Awaited<ReturnType<typeof requestDeploy>> | null = null;
+    try {
+      result = await requestDeploy({ appId, organizationId: orgId, trigger: "api" });
+    } catch (err) {
+      log.error(`Deploy threw for infra app "${template.name}":`, err);
+    }
+    if (!result?.success) {
+      log.error(`First deploy failed for infra app "${template.name}" — rolling back`);
+      await rollbackInfraApp(appId, orgId);
+      throw new Error(`Integration "${template.name}" failed to deploy`);
+    }
+    return appId;
+  }
+
+  // Startup reconcile: fire-and-forget so boot isn't blocked by a slow or
+  // failing deploy.
   requestDeploy({
     appId,
     organizationId: orgId,
@@ -206,6 +259,7 @@ async function ensureAppDeployed(orgId: string, projectId: string, template: Tem
   }).catch((err) => {
     log.error(`Deploy failed for infra app "${template.name}":`, err);
   });
+  return appId;
 }
 
 /** Check if an NVIDIA GPU runtime is available on the Docker host. */
