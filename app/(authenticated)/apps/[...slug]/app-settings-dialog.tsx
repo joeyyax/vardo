@@ -47,6 +47,11 @@ export function AppSettingsDialog({
   const router = useRouter();
   const [saving, setSaving] = useState(false);
 
+  // Decomposed compose service: build/deploy/networking are controlled by the
+  // parent compose app, so those settings are hidden here. Per-service config
+  // (resources, GPU, priority, health) stays editable. (#745)
+  const isChildService = !!app.parentAppId;
+
   // Edit form state
   const [displayName, setDisplayName] = useState(app.displayName);
   const [description, setDescription] = useState(app.description || "");
@@ -203,6 +208,11 @@ export function AppSettingsDialog({
               </div>
             </div>
 
+            {/* Parent-controlled settings — hidden on a decomposed service app,
+                which inherits build, deploy type, port and protocol from its
+                compose parent (#745). */}
+            {!isChildService && (
+              <>
             {/* Image */}
             {app.deployType === "image" && (
               <div className="grid gap-2">
@@ -336,6 +346,8 @@ export function AppSettingsDialog({
               </p>
               <p className="text-xs text-muted-foreground">Requires a redeploy to take effect.</p>
             </div>
+              </>
+            )}
 
             {/* Restart policy */}
             <div className="grid gap-2 sm:w-1/2">
@@ -415,22 +427,26 @@ export function AppSettingsDialog({
 
             {/* Toggles */}
             <div className="grid gap-3">
-              <div className="flex items-center gap-3">
-                <Switch
-                  id="edit-auto-deploy"
-                  checked={autoDeploy}
-                  onCheckedChange={setAutoDeploy}
-                />
-                <Label htmlFor="edit-auto-deploy">Auto Deploy</Label>
-              </div>
-              <div className="flex items-center gap-3">
-                <Switch
-                  id="edit-auto-rollback"
-                  checked={autoRollback}
-                  onCheckedChange={setAutoRollback}
-                />
-                <Label htmlFor="edit-auto-rollback">Auto Rollback</Label>
-              </div>
+              {!isChildService && (
+                <div className="flex items-center gap-3">
+                  <Switch
+                    id="edit-auto-deploy"
+                    checked={autoDeploy}
+                    onCheckedChange={setAutoDeploy}
+                  />
+                  <Label htmlFor="edit-auto-deploy">Auto Deploy</Label>
+                </div>
+              )}
+              {!isChildService && (
+                <div className="flex items-center gap-3">
+                  <Switch
+                    id="edit-auto-rollback"
+                    checked={autoRollback}
+                    onCheckedChange={setAutoRollback}
+                  />
+                  <Label htmlFor="edit-auto-rollback">Auto Rollback</Label>
+                </div>
+              )}
               <div className="flex items-center gap-3">
                 <Switch
                   id="edit-gpu-enabled"
@@ -447,7 +463,7 @@ export function AppSettingsDialog({
                   </p>
                 </div>
               </div>
-              {autoRollback && (
+              {!isChildService && autoRollback && (
                 <div className="grid gap-2 pl-10">
                   <Label htmlFor="edit-rollback-grace">Grace Period (seconds)</Label>
                   <Input
