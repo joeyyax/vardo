@@ -816,6 +816,15 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                 GPU
               </span>
             )}
+            {isChildService && (
+              <span
+                className="flex items-center gap-1 text-muted-foreground/70"
+                title={`Decomposed service${app.composeService ? ` "${app.composeService}"` : ""} of a compose app — resources, GPU, volumes and logs are configured here; deploy and networking live on the parent`}
+              >
+                <Container className="size-3" aria-hidden="true" />
+                Service
+              </span>
+            )}
             <span className="text-muted-foreground/40">
               {new Date(app.createdAt).toLocaleDateString()}
             </span>
