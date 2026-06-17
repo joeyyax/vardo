@@ -13,6 +13,7 @@ import { ensureNetwork } from "../client";
 import {
   slotComposeFiles,
 } from "../compose";
+import { prepareBindMountOwnership } from "./bind-mount-ownership";
 import {
   NETWORK_NAME as VARDO_NETWORK,
   DEFAULT_HEALTH_CHECK_TIMEOUT,
@@ -285,6 +286,12 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       log(`[deploy] Warning: failed to restore old-slot services — ${err instanceof Error ? err.message : err}`);
     }
   };
+
+  // Step 6c: Pre-create and chown bind-mount targets to each service's non-root
+  // uid. Without this, the daemon creates missing host paths root-owned and
+  // non-root containers can't write under them (#738). Runs after images exist
+  // (Step 6a) so the uid can be read from them, and before compose up.
+  await prepareBindMountOwnership(ctx);
 
   // Step 7: Start the new slot. Images are already local from Step 6a, so we
   // skip --build and set --pull never to make this deterministic and fast.
