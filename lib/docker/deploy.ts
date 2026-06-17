@@ -170,16 +170,19 @@ export async function runDeployment(
     });
     const orgTrusted = org?.trusted ?? false;
 
-    // Resolve per-project bind mount permission
+    // Resolve per-project bind mount + docker socket permissions
     let projectAllowBindMounts = false;
+    let projectAllowDockerSocket = false;
     if (orgTrusted) {
       projectAllowBindMounts = true;
+      projectAllowDockerSocket = true;
     } else if (app.projectId) {
       const project = await db.query.projects.findFirst({
         where: eq(projects.id, app.projectId),
-        columns: { allowBindMounts: true },
+        columns: { allowBindMounts: true, allowDockerSocket: true },
       });
       projectAllowBindMounts = project?.allowBindMounts ?? false;
+      projectAllowDockerSocket = project?.allowDockerSocket ?? false;
     }
 
     // Resolve environment — default to production if not specified
@@ -210,9 +213,10 @@ export async function runDeployment(
     }
     log(`[deploy] Environment: ${envName} (${envType})`);
 
-    // Local environments always allow bind mounts
+    // Local environments always allow bind mounts + the docker socket
     if (envType === "local") {
       projectAllowBindMounts = true;
+      projectAllowDockerSocket = true;
     }
 
     // Execute before.deploy.start hooks — approval gates, pre-flight checks
@@ -287,6 +291,7 @@ export async function runDeployment(
       org: org ?? null,
       orgTrusted,
       projectAllowBindMounts,
+      projectAllowDockerSocket,
 
       envName,
       envType,

@@ -225,6 +225,13 @@
       "when": 1781635488790,
       "tag": "0031_volatile_argent",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1781665117993,
+      "tag": "0032_overconfident_mordo",
+      "breakpoints": true
     }
   ]
 }
