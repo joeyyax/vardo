@@ -153,6 +153,11 @@ export type ComposePreviewApp = {
 
 export type ValidateOptions = {
   allowBindMounts?: boolean;
+  /**
+   * Permit mounting the Docker socket (/var/run/docker.sock), independent of
+   * allowBindMounts. The rest of the mount deny-list stays enforced. (#744)
+   */
+  allowDockerSocket?: boolean;
   /** Skip all mount-related validation checks. Used when the org is trusted. */
   skipMountChecks?: boolean;
 };

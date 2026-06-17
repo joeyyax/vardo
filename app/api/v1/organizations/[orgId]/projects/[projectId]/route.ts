@@ -86,6 +86,7 @@ const updateSchema = z.object({
     .regex(/^#[0-9a-fA-F]{6}$/)
     .optional(),
   allowBindMounts: z.boolean().optional(),
+  allowDockerSocket: z.boolean().optional(),
 }).strict();
 
 // PATCH /api/v1/organizations/[orgId]/projects/[projectId]
@@ -106,9 +107,12 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // allowBindMounts is a security-sensitive flag — restrict to admins and owners
-    if (parsed.data.allowBindMounts !== undefined && !isOrgAdmin(org.membership.role)) {
-      return NextResponse.json({ error: "Only admins can change the bind mounts setting" }, { status: 403 });
+    // allowBindMounts / allowDockerSocket are security-sensitive — admins/owners only
+    if (
+      (parsed.data.allowBindMounts !== undefined || parsed.data.allowDockerSocket !== undefined) &&
+      !isOrgAdmin(org.membership.role)
+    ) {
+      return NextResponse.json({ error: "Only admins can change security-sensitive settings" }, { status: 403 });
     }
 
     const existing = await findProjectBasic(orgId, projectId);
@@ -157,6 +161,19 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
           action: "project.allow_bind_mounts.updated",
           userId: org.session.user.id,
           metadata: { projectId: existing.id, allowBindMounts: parsed.data.allowBindMounts },
+        }).catch(() => {});
+      }
+
+      if (parsed.data.allowDockerSocket !== undefined) {
+        logger.info(
+          { projectId: existing.id, userId: org.session.user.id, allowDockerSocket: parsed.data.allowDockerSocket },
+          "allowDockerSocket flag changed",
+        );
+        recordActivity({
+          organizationId: orgId,
+          action: "project.allow_docker_socket.updated",
+          userId: org.session.user.id,
+          metadata: { projectId: existing.id, allowDockerSocket: parsed.data.allowDockerSocket },
         }).catch(() => {});
       }
 
