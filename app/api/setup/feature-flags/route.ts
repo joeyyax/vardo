@@ -44,13 +44,31 @@ async function handlePost(request: NextRequest) {
   await invalidateFlagCache();
   revalidatePath("/", "layout");
 
-  // Provision or stop infrastructure services based on flag changes
+  // Provision infrastructure for changed flags. Enabling awaits the first
+  // deploy and rolls back on failure (provisionForFlag throws), so a failed
+  // integration never lingers as a connected-but-broken app (#741). On failure
+  // we revert that flag so the UI doesn't show a disconnected integration as on.
+  const failed: string[] = [];
   for (const [flag, enabled] of Object.entries(parsed.data)) {
-    if (existing[flag] !== enabled) {
-      provisionForFlag(flag as FeatureFlag, enabled).catch(() => {
-        // Provisioning is best-effort — don't block the response
-      });
+    if (existing[flag] === enabled) continue;
+    try {
+      await provisionForFlag(flag as FeatureFlag, enabled);
+    } catch {
+      failed.push(flag);
+      merged[flag] = existing[flag] ?? false;
     }
+  }
+
+  if (failed.length > 0) {
+    // Re-persist with the failed flags reverted to their prior state.
+    await setSystemSetting("feature_flags", JSON.stringify(merged));
+    invalidateSettingsCache("feature_flags");
+    await invalidateFlagCache();
+    revalidatePath("/", "layout");
+    return NextResponse.json(
+      { ok: false, failed, error: `Couldn't start ${failed.join(", ")} — deploy failed, reverted.` },
+      { status: 502 },
+    );
   }
 
   return NextResponse.json({ ok: true });
