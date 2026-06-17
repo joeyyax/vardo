@@ -161,3 +161,15 @@ export type ValidateOptions = {
   /** Skip all mount-related validation checks. Used when the org is trusted. */
   skipMountChecks?: boolean;
 };
+
+/**
+ * Per-service deploy config sourced from decomposed child app rows. Lets the
+ * overlay apply resources/GPU per compose service instead of one global value
+ * from the parent app, so a decomposed child's settings actually take effect
+ * (#745). Keyed by compose service name.
+ */
+export type ServiceConfigOverride = {
+  cpuLimit: number | null;
+  memoryLimit: number | null;
+  gpuEnabled: boolean;
+};

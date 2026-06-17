@@ -22,6 +22,15 @@ vi.mock("@/lib/docker/client", () => ({
   detectExposedPorts: vi.fn().mockResolvedValue([]),
 }));
 
+// resolveCompose queries decomposed child app rows to build per-service config
+// (#745). Default to none; individual tests override via childAppsMock.
+const { childAppsMock } = vi.hoisted(() => ({
+  childAppsMock: vi.fn().mockResolvedValue([] as unknown[]),
+}));
+vi.mock("@/lib/db", () => ({
+  db: { query: { apps: { findMany: childAppsMock } } },
+}));
+
 import { resolveCompose } from "@/lib/docker/deploy-steps/resolve-compose";
 
 // ---------------------------------------------------------------------------
@@ -248,5 +257,51 @@ describe("resolveCompose — vardo-network scoping (agents outage regression)", 
     const pgDevices = ctx.compose.services.postgres.deploy?.resources?.reservations?.devices;
     expect(dashDevices?.[0]?.capabilities).toContain("gpu");
     expect(pgDevices).toBeUndefined();
+  });
+});
+
+describe("resolveCompose — per-child config (#745)", () => {
+  it("builds serviceConfig from child rows and attaches GPU to a child-toggled service", async () => {
+    // Parent GPU is OFF; the worker child has gpuEnabled — its device must be
+    // injected even though it mounts a named volume (stateful skip bypassed).
+    childAppsMock.mockResolvedValueOnce([
+      { composeService: "worker", cpuLimit: 4, memoryLimit: 2048, gpuEnabled: true },
+      { composeService: "web", cpuLimit: null, memoryLimit: null, gpuEnabled: false },
+    ]);
+
+    const compose: ComposeFile = {
+      services: {
+        web: { name: "web", image: "web", networks: ["internal"] },
+        worker: {
+          name: "worker",
+          image: "worker",
+          networks: ["internal"],
+          volumes: ["model-data:/models"],
+        },
+      },
+      networks: { internal: null },
+      volumes: { "model-data": null },
+    };
+
+    const ctx = makeCtx(compose, makeApp({ gpuEnabled: false }));
+    await resolveCompose(ctx);
+
+    // Per-service config carries child overrides for the overlay step.
+    expect(ctx.serviceConfig.worker).toEqual({ cpuLimit: 4, memoryLimit: 2048, gpuEnabled: true });
+    expect(ctx.serviceConfig.web).toEqual({ cpuLimit: null, memoryLimit: null, gpuEnabled: false });
+
+    // The child GPU toggle injected a device onto worker, not web.
+    const workerDevices = ctx.compose.services.worker.deploy?.resources?.reservations?.devices;
+    expect(workerDevices?.[0]?.capabilities).toContain("gpu");
+    expect(ctx.compose.services.web.deploy?.resources?.reservations?.devices).toBeUndefined();
+  });
+
+  it("leaves serviceConfig empty for a non-decomposed app", async () => {
+    const compose: ComposeFile = {
+      services: { app: { name: "app", image: "app" } },
+    };
+    const ctx = makeCtx(compose, makeApp());
+    await resolveCompose(ctx);
+    expect(ctx.serviceConfig).toEqual({});
   });
 });
