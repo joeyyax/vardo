@@ -305,3 +305,48 @@ describe("resolveCompose — per-child config (#745)", () => {
     expect(ctx.serviceConfig).toEqual({});
   });
 });
+
+describe("resolveCompose — per-child domain targeting (decomposed children)", () => {
+  const twoService: ComposeFile = {
+    services: {
+      web: { name: "web", image: "web" },
+      worker: { name: "worker", image: "worker" },
+    },
+  };
+
+  it("routes a domain tagged with a child composeService to that service, not the primary", async () => {
+    const app = makeApp({
+      domains: [
+        {
+          id: "dom-child-1",
+          domain: "worker.example.com",
+          isPrimary: true,
+          port: null,
+          sslEnabled: true,
+          certResolver: "le",
+          redirectTo: null,
+          redirectCode: null,
+          composeService: "worker",
+        },
+      ],
+    });
+    const ctx = makeCtx({ ...twoService, services: { ...twoService.services } }, app);
+    await resolveCompose(ctx);
+
+    // The domain targets the worker service → worker joins vardo-network and
+    // gets the Traefik router; the auto-detected primary (web) does not.
+    expect(ctx.compose.services.worker.networks).toContain("vardo-network");
+    expect(
+      Object.keys(ctx.compose.services.worker.labels ?? {}).some((k) => k.startsWith("traefik.")),
+    ).toBe(true);
+    expect(ctx.compose.services.web.networks ?? []).not.toContain("vardo-network");
+  });
+
+  it("falls back to the primary service when a domain has no composeService", async () => {
+    // makeApp's default domain has no composeService → targets the primary (web).
+    const ctx = makeCtx({ ...twoService, services: { ...twoService.services } }, makeApp());
+    await resolveCompose(ctx);
+    expect(ctx.compose.services.web.networks).toContain("vardo-network");
+    expect(ctx.compose.services.worker.networks ?? []).not.toContain("vardo-network");
+  });
+});

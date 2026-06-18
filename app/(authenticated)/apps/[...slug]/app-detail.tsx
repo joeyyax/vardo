@@ -996,7 +996,13 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           />
         </TabsContent>
 
-        <TabsContent value="networking">
+        <TabsContent value="networking" className="space-y-4">
+          {isChildService && (
+            <p className="text-sm text-muted-foreground">
+              Domains added here route to the{" "}
+              <span className="font-medium">{app.composeService ?? app.name}</span> service.
+            </p>
+          )}
           <AppNetworking
             domains={app.domains}
             exposedPorts={app.exposedPorts}
