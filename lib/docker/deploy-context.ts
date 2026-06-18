@@ -66,6 +66,13 @@ export type DeployApp = {
     certResolver: string | null;
     redirectTo: string | null;
     redirectCode: number | null;
+    /**
+     * Compose service this domain targets. Set when the domain belongs to a
+     * decomposed child app (deploy.ts aggregates child domains and tags them);
+     * absent/null for a parent app's own domains, which target the primary
+     * service. Read by the Traefik-label injection step.
+     */
+    composeService?: string | null;
   }[];
 };
 
