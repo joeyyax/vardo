@@ -15,6 +15,8 @@ import { resolve, join } from "path";
 import type { BackupStorage } from "./storage-port";
 import { createBackupStorage } from "./storage-factory";
 import { assertSafeName } from "@/lib/docker/validate";
+import { listContainers, inspectContainer } from "@/lib/docker/client";
+import { resolveDefaultEnv } from "@/lib/docker/resolve-env";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("backup");
@@ -53,6 +55,7 @@ export type BackupResult = {
 type VolumeToBackup = {
   id: string;
   name: string;
+  mountPath: string | null;
   appId: string | null;
   appName: string | null;
   orgSlug: string | null;
@@ -198,31 +201,71 @@ async function backupVolumeDump(
 }
 
 /**
- * Resolve the Docker volume name for a tar backup (blue/green slot pattern).
- * Returns null if neither slot exists.
+ * Resolve the real Docker volume name backing an app's volume.
+ *
+ * Persistent volumes are **env-scoped** (`${app}-${env}_${vol}`) and declared
+ * `external: true` so they're shared across blue/green slots and survive swaps —
+ * they are NOT slot-scoped. Resolution order (#756):
+ *   1. **Inspect the app's running container(s)** and return the volume actually
+ *      mounted at `mountPath`. Authoritative and naming-agnostic — backs up the
+ *      volume Docker is really using, not a guessed name.
+ *   2. **Derive the env-scoped name** `${app}-${env}_${vol}` (default env
+ *      "production") and confirm it exists — covers a stopped app / fresh
+ *      restore where there's no container to inspect.
+ *   3. **Legacy slot names** `${app}-blue_${vol}` / `${app}-green_${vol}`.
+ * Returns null if none resolve.
  */
-async function resolveDockerVolume(
+export async function resolveDockerVolume(
+  appId: string | null,
   appName: string,
   volumeName: string,
+  mountPath: string | null,
   logFn: (msg: string) => void,
 ): Promise<string | null> {
   assertSafeName(appName);
   assertSafeName(volumeName);
-  const blueVolume = `${appName}-blue_${volumeName}`;
-  const greenVolume = `${appName}-green_${volumeName}`;
 
-  try {
-    await execFileAsync("docker", ["volume", "inspect", blueVolume], { timeout: 10_000 });
-    return blueVolume;
-  } catch {
+  // 1. Authoritative: the volume Docker actually has mounted at mountPath.
+  if (mountPath) {
     try {
-      await execFileAsync("docker", ["volume", "inspect", greenVolume], { timeout: 10_000 });
-      return greenVolume;
-    } catch {
-      logFn(`No Docker volume found for ${volumeName} (tried ${blueVolume}, ${greenVolume})`);
-      return null;
+      const containers = await listContainers(appName);
+      for (const c of containers) {
+        const info = await inspectContainer(c.id);
+        const mount = info.mounts.find(
+          (m) => m.type === "volume" && m.destination === mountPath && m.name,
+        );
+        if (mount) {
+          logFn(`Resolved ${volumeName} → ${mount.name} (running container mount at ${mountPath})`);
+          return mount.name;
+        }
+      }
+    } catch (err) {
+      logFn(
+        `Container inspect for ${appName} failed, falling back to name derivation: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
+
+  // 2 + 3. Name-derived candidates, env-scoped first, slot names last.
+  const candidates: string[] = [];
+  if (appId) {
+    const env = await resolveDefaultEnv(appId);
+    candidates.push(`${appName}-${env.name}_${volumeName}`);
+  }
+  candidates.push(`${appName}-blue_${volumeName}`, `${appName}-green_${volumeName}`);
+
+  for (const candidate of candidates) {
+    try {
+      await execFileAsync("docker", ["volume", "inspect", candidate], { timeout: 10_000 });
+      logFn(`Resolved ${volumeName} → ${candidate}`);
+      return candidate;
+    } catch {
+      // not this one
+    }
+  }
+
+  logFn(`No Docker volume found for ${volumeName} (tried ${candidates.join(", ")})`);
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -294,6 +337,7 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
       volumesToBackup.push({
         id: vol.id,
         name: vol.name,
+        mountPath: vol.mountPath,
         appId: app.id,
         appName: app.name,
         orgSlug,
@@ -309,6 +353,7 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
     volumesToBackup.push({
       id: vol.id,
       name: vol.name,
+      mountPath: vol.mountPath,
       appId: vol.appId,
       appName: null,
       orgSlug: null,
@@ -369,7 +414,7 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
         if (!vol.appName) {
           throw new Error(`Tar backup requires an app name (volume: ${vol.name})`);
         }
-        const dockerVolumeName = await resolveDockerVolume(vol.appName, vol.name, log);
+        const dockerVolumeName = await resolveDockerVolume(vol.appId, vol.appName, vol.name, vol.mountPath, log);
         if (!dockerVolumeName) {
           throw new Error(`Volume not found: ${vol.name}`);
         }
@@ -729,27 +774,28 @@ export async function restoreBackup(
       );
     } else {
       // tar restore — need app context for volume name resolution
-      if (!backup.app) {
+      if (!backup.app || !backup.appId) {
         throw new Error("Tar restore requires an app context");
       }
       assertSafeName(backup.app.name);
       assertSafeName(backup.volumeName);
-      const blueVolume = `${backup.app.name}-blue_${backup.volumeName}`;
-      const greenVolume = `${backup.app.name}-green_${backup.volumeName}`;
 
-      let dockerVolumeName: string;
-      try {
-        await execFileAsync("docker", ["volume", "inspect", blueVolume], { timeout: 10_000 });
-        dockerVolumeName = blueVolume;
-      } catch {
-        try {
-          await execFileAsync("docker", ["volume", "inspect", greenVolume], { timeout: 10_000 });
-          dockerVolumeName = greenVolume;
-        } catch {
-          log(`Creating volume ${blueVolume}`);
-          await execFileAsync("docker", ["volume", "create", blueVolume], { timeout: 10_000 });
-          dockerVolumeName = blueVolume;
-        }
+      let dockerVolumeName = await resolveDockerVolume(
+        backup.appId,
+        backup.app.name,
+        backup.volumeName,
+        vol?.mountPath ?? null,
+        log,
+      );
+      if (!dockerVolumeName) {
+        // Nothing exists yet (restoring into a fresh app) — create the canonical
+        // env-scoped volume so the running app actually reads the restored data.
+        // (NOT a blue/green slot name, which the app would never mount — #756.)
+        const env = await resolveDefaultEnv(backup.appId);
+        dockerVolumeName = `${backup.app.name}-${env.name}_${backup.volumeName}`;
+        assertSafeName(dockerVolumeName);
+        log(`Creating volume ${dockerVolumeName}`);
+        await execFileAsync("docker", ["volume", "create", dockerVolumeName], { timeout: 10_000 });
       }
 
       log(`Restoring to volume ${dockerVolumeName}`);
