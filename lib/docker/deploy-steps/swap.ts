@@ -25,6 +25,7 @@ import {
   HTTP_PROBE_TIMEOUT,
 } from "../constants";
 import type { DeployContext } from "../deploy-context";
+import { classifyComposeServices } from "./classify-services";
 
 const execFileAsync = promisify(execFile);
 const NETWORK_NAME = VARDO_NETWORK;
@@ -171,15 +172,13 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   //
   // Build and pull are complementary, not exclusive: a compose file can mix
   // services that build locally (the user's own app) with services that pull
-  // from a registry (sidecars like go2rtc, traefik, postgres). Run both
-  // phases — pull only the services that don't have a build directive so we
-  // don't ask the registry for an image that compose intends to build.
-  const buildServices = Object.entries(compose.services)
-    .filter(([, svc]) => svc.build)
-    .map(([name]) => name);
-  const pullServices = Object.entries(compose.services)
-    .filter(([, svc]) => svc.image && !svc.build)
-    .map(([name]) => name);
+  // from a registry (sidecars like go2rtc, traefik, postgres). Run both phases.
+  // Images this deploy built locally (ctx.builtImageRefs) are excluded from the
+  // pull set — they live only in the local daemon, so pulling them 404s.
+  const { buildServices, pullServices } = classifyComposeServices(
+    compose.services,
+    ctx.builtImageRefs,
+  );
   try {
     if (buildServices.length > 0) {
       log(`[deploy] Pre-building ${newSlot} slot images (old slot still serving)...`);

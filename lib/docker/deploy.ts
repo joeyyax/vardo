@@ -306,6 +306,7 @@ export async function runDeployment(
       bareCompose: { services: {} },
       serviceConfig: {},
       builtLocally: false,
+      builtImageRefs: [],
       hostConfig: null,
       repoDir: null,
 
