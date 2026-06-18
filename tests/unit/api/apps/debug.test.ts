@@ -60,8 +60,29 @@ describe("buildComposePreview — image app with no compose content", () => {
     expect(svc.image).toBe("nginx:latest");
   });
 
-  it("injects the vardo network", () => {
+  it("does not inject the vardo network without a domain (network is scoped to Traefik-routed services)", () => {
     const result = buildComposePreview(baseApp, [], NETWORK);
+    expect(result).not.toBeNull();
+    const svc = Object.values(result!.services)[0];
+    expect(svc.networks ?? []).not.toContain(NETWORK);
+  });
+
+  it("injects the vardo network when the app has a domain (Traefik-routed)", () => {
+    const routedApp = {
+      ...baseApp,
+      domains: [
+        {
+          id: "d1",
+          domain: "myapp.example.com",
+          port: null,
+          sslEnabled: true,
+          certResolver: null,
+          redirectTo: null,
+          redirectCode: null,
+        },
+      ],
+    };
+    const result = buildComposePreview(routedApp, [], NETWORK);
     expect(result).not.toBeNull();
     const svc = Object.values(result!.services)[0];
     expect(svc.networks).toContain(NETWORK);
