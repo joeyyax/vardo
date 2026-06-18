@@ -2643,7 +2643,7 @@ describe("buildVardoOverlay", () => {
       cpuLimit: 1,
       memoryLimit: 256, // parent globals — used only where no child entry exists
       serviceConfig: {
-        web: { cpuLimit: 2, memoryLimit: 512, gpuEnabled: false },
+        web: { cpuLimit: 2, memoryLimit: 512, gpuEnabled: false, priority: null },
         // worker has no entry → falls back to parent globals
       },
     });
@@ -2697,12 +2697,36 @@ describe("buildVardoOverlay", () => {
       networkName,
       gpuEnabled: false, // parent flag off
       serviceConfig: {
-        web: { cpuLimit: null, memoryLimit: null, gpuEnabled: false },
-        worker: { cpuLimit: null, memoryLimit: null, gpuEnabled: true },
+        web: { cpuLimit: null, memoryLimit: null, gpuEnabled: false, priority: null },
+        worker: { cpuLimit: null, memoryLimit: null, gpuEnabled: true, priority: null },
       },
     });
     expect(overlay.services.worker.deploy?.resources?.reservations?.devices?.[0]?.capabilities).toContain("gpu");
     expect(overlay.services.web.deploy?.resources?.reservations?.devices).toBeUndefined();
+  });
+
+  it("applies per-service priority from serviceConfig (critical child, standard sibling)", () => {
+    const compose: ComposeFile = {
+      services: {
+        api: { name: "api", image: "api" },
+        cache: { name: "cache", image: "cache" },
+      },
+    };
+    const overlay = buildVardoOverlay({
+      fullCompose: compose,
+      networkName,
+      priority: "standard", // parent global
+      serviceConfig: {
+        api: { cpuLimit: null, memoryLimit: 256, gpuEnabled: false, priority: "critical" },
+        // cache inherits → null resolves to the standard tier
+        cache: { cpuLimit: null, memoryLimit: null, gpuEnabled: false, priority: null },
+      },
+    });
+    expect(overlay.services.api.oom_score_adj).toBe(-1000);
+    expect(overlay.services.api.cpu_shares).toBe(2048);
+    expect(overlay.services.api.deploy?.resources?.reservations?.memory).toBe("256M");
+    expect(overlay.services.cache.oom_score_adj).toBe(0);
+    expect(overlay.services.cache.cpu_shares).toBe(1024);
   });
 
   it("does not include volumes that are not in bareVolumeNames", () => {

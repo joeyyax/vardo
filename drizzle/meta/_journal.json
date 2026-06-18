@@ -232,6 +232,13 @@
       "when": 1781665117993,
       "tag": "0032_overconfident_mordo",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1781803860646,
+      "tag": "0033_blue_talkback",
+      "breakpoints": true
     }
   ]
 }

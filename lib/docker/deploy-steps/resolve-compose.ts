@@ -61,7 +61,7 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
       eq(apps.parentAppId, app.id),
       eq(apps.organizationId, ctx.organizationId),
     ),
-    columns: { composeService: true, cpuLimit: true, memoryLimit: true, gpuEnabled: true },
+    columns: { composeService: true, cpuLimit: true, memoryLimit: true, gpuEnabled: true, priority: true },
   });
   const childByService = new Map(
     children.filter((c) => c.composeService).map((c) => [c.composeService!, c]),
@@ -76,6 +76,10 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
       memoryLimit: child.memoryLimit ?? app.memoryLimit,
       // GPU is opt-in either level: parent-wide flag OR the child's own toggle.
       gpuEnabled: !!app.gpuEnabled || child.gpuEnabled,
+      // Priority inherits the parent when the child's is null (the default for
+      // new children), so a critical parent's services stay critical unless a
+      // child explicitly overrides its tier.
+      priority: child.priority ?? app.priority,
     };
   }
   ctx.serviceConfig = serviceConfig;
