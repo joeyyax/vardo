@@ -14,6 +14,7 @@ import {
   FileText,
   Globe2,
   RefreshCw,
+  ChevronDown,
 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { PageToolbar } from "@/components/page-toolbar";
@@ -115,6 +116,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 const SOURCE_OPTIONS = [
   { id: "github", icon: Github, label: "GitHub", description: "From your connected account" },
+  { id: "public-git", icon: GitBranch, label: "Public Git URL", description: "Any public repo" },
   { id: "compose", icon: FileText, label: "Docker Compose", description: "Paste or from a repo" },
   { id: "image", icon: Container, label: "Image", description: "Any Docker image" },
 ] as const;
@@ -171,6 +173,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
   const [memoryLimit, setMemoryLimit] = useState("");
   const [diskWriteAlertThreshold, setDiskWriteAlertThreshold] = useState("");
   const [showComposeReview, setShowComposeReview] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   // Domain
   const [generateDomain, setGenerateDomain] = useState(true);
@@ -357,6 +360,10 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
       case "github":
         setSource("git"); setDeployType("compose"); setGitMode("github");
         break;
+      case "public-git":
+        setSource("git"); setDeployType("compose"); setGitMode("manual");
+        setGitUrl(""); setGitBranch("main"); setAdvancedOpen(false);
+        break;
       case "compose":
         setSource("direct"); setDeployType("compose"); setContentMode("paste");
         break;
@@ -443,6 +450,15 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
         body.composeFilePath = composeFilePath;
       }
       if (deployType === "dockerfile" && dockerfilePath && dockerfilePath !== "Dockerfile") {
+        body.dockerfilePath = dockerfilePath;
+      }
+      // Public Git URL uses compose auto-detect; still let the user pin a
+      // custom Dockerfile path for the Dockerfile fallback in the cascade.
+      if (
+        selectedSource === "public-git" &&
+        dockerfilePath &&
+        dockerfilePath !== "Dockerfile"
+      ) {
         body.dockerfilePath = dockerfilePath;
       }
       if (source === "direct" && deployType === "compose") {
@@ -809,6 +825,90 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
               </div>
             )}
 
+            {/* Public Git URL */}
+            {selectedSource === "public-git" && (
+              <div className="grid gap-4">
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <div className="grid gap-2 sm:col-span-2">
+                    <Label htmlFor="git-url">
+                      Git URL <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                      id="git-url"
+                      placeholder="https://github.com/user/repo.git"
+                      value={gitUrl}
+                      onChange={(e) => setGitUrl(e.target.value)}
+                      className={gitUrl && !gitUrl.startsWith("https://") ? "border-destructive" : ""}
+                      autoFocus
+                    />
+                    {gitUrl && !gitUrl.startsWith("https://") && (
+                      <p className="text-xs text-destructive">Must be an https:// URL</p>
+                    )}
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="git-branch">Branch</Label>
+                    <Input
+                      id="git-branch"
+                      placeholder="main"
+                      value={gitBranch}
+                      onChange={(e) => setGitBranch(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <p className="text-xs text-muted-foreground">
+                  Public repositories only — no connection needed. Private repos need a
+                  connected provider or deploy key.
+                </p>
+
+                <div className="grid gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setAdvancedOpen((v) => !v)}
+                    className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground w-fit"
+                  >
+                    <ChevronDown
+                      className={`size-4 transition-transform ${advancedOpen ? "rotate-180" : ""}`}
+                    />
+                    Advanced
+                  </button>
+                  {advancedOpen && (
+                    <div className="grid gap-4 sm:grid-cols-3">
+                      <div className="grid gap-2">
+                        <Label htmlFor="adv-compose-file-path">Compose File</Label>
+                        <Input
+                          id="adv-compose-file-path"
+                          placeholder="docker-compose.yml"
+                          value={composeFilePath}
+                          onChange={(e) => setComposeFilePath(e.target.value)}
+                          className="font-mono text-sm"
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="adv-dockerfile-path">Dockerfile</Label>
+                        <Input
+                          id="adv-dockerfile-path"
+                          placeholder="Dockerfile"
+                          value={dockerfilePath}
+                          onChange={(e) => setDockerfilePath(e.target.value)}
+                          className="font-mono text-sm"
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="adv-root-dir">Root Directory</Label>
+                        <Input
+                          id="adv-root-dir"
+                          placeholder="./ (default)"
+                          value={rootDirectory}
+                          onChange={(e) => setRootDirectory(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Compose */}
             {selectedSource === "compose" && (
               <div className="grid gap-3">
@@ -1073,7 +1173,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
                   handleSubmit();
                 }
               }}
-              disabled={creating || !displayName.trim() || !name.trim() || !parentId || hasRequiredEnvVars}
+              disabled={creating || !displayName.trim() || !name.trim() || !parentId || hasRequiredEnvVars || (selectedSource === "public-git" && !gitUrl.startsWith("https://"))}
             >
               {creating ? (
                 <><Loader2 className="mr-2 size-4 animate-spin" />Creating...</>
