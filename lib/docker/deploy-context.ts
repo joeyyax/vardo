@@ -132,6 +132,14 @@ export type DeployContext = {
   /** Whether the image was built locally (Nixpacks/Railpack/Dockerfile). */
   builtLocally: boolean;
 
+  /**
+   * Image refs that were built locally this deploy (e.g. `host/<app>:<sha>`).
+   * These exist only in the local Docker daemon, never in a registry, so the
+   * swap pre-pull must skip them — otherwise `docker compose pull` 404s and
+   * aborts the deploy. Empty unless a Nixpacks/Railpack/Dockerfile build ran.
+   */
+  builtImageRefs: string[];
+
   /** host.toml config from repo root. */
   hostConfig: HostConfig | null;
 
