@@ -195,7 +195,7 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
     // Fetch app before deleting
     const app = await db.query.apps.findFirst({
       where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
-      columns: { id: true, name: true, projectId: true, isSystemManaged: true },
+      columns: { id: true, name: true, projectId: true, isSystemManaged: true, parentAppId: true },
     });
 
     if (!app) {
@@ -206,6 +206,15 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json(
         { error: "System-managed apps cannot be deleted via the API" },
         { status: 403 }
+      );
+    }
+
+    // A decomposed compose child is managed by its parent stack — refuse
+    // independent deletes (the compose declares it; a deploy would recreate it).
+    if (app.parentAppId) {
+      return NextResponse.json(
+        { error: "This service is part of a compose stack and can't be deleted on its own. Remove it from the stack's compose file and redeploy." },
+        { status: 409 }
       );
     }
 

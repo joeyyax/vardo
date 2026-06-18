@@ -534,13 +534,20 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                           Delete {selectedEnv.name} environment
                         </DropdownMenuItem>
                       )}
-                      <DropdownMenuItem
-                        className="text-destructive focus:text-destructive"
-                        onClick={() => setDeleteOpen(true)}
-                      >
-                        <Trash2 className="mr-2 size-4" />
-                        Delete app
-                      </DropdownMenuItem>
+                      {isChildService ? (
+                        <DropdownMenuItem disabled className="text-muted-foreground">
+                          <Trash2 className="mr-2 size-4" />
+                          Managed by the parent stack
+                        </DropdownMenuItem>
+                      ) : (
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={() => setDeleteOpen(true)}
+                        >
+                          <Trash2 className="mr-2 size-4" />
+                          Delete app
+                        </DropdownMenuItem>
+                      )}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 )}

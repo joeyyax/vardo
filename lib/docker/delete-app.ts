@@ -65,6 +65,13 @@ export async function deleteApp(opts: {
    * rollback (#741) sets it to undo a failed first deploy.
    */
   allowSystemManaged?: boolean;
+  /**
+   * Allow deleting a decomposed compose child (a service of a parent stack).
+   * Off by default so user-facing paths refuse — the service is declared in
+   * the parent's compose and a deploy would just recreate it. No internal
+   * caller needs this today; it's a deliberate escape hatch.
+   */
+  allowChildDelete?: boolean;
 }): Promise<DeleteAppResult> {
   const { appId, organizationId } = opts;
   const pruneVolumes = opts.pruneVolumes ?? false;
@@ -100,6 +107,14 @@ export async function deleteApp(opts: {
       columns: { name: true },
     });
     if (parent) baseProject = parent.name;
+  }
+
+  // A decomposed child is managed by its parent stack — refuse independent
+  // deletes (the compose still declares the service; a deploy recreates it).
+  if (app.parentAppId && !opts.allowChildDelete) {
+    throw new Error(
+      `"${app.name}" is a service of the "${baseProject}" compose stack and can't be deleted on its own — remove it from the stack's compose file and redeploy.`,
+    );
   }
 
   // Direct compose children of this app (only relevant when deleting a parent).
