@@ -7,10 +7,13 @@ import { createDeployment } from "@/lib/docker/deploy";
 import { slidingWindowRateLimit } from "@/lib/api/rate-limit";
 import type { McpAuthContext } from "../auth";
 
-// 5 deploys per 5 seconds per user/org pair.
-// Each deploy spins up containers — cap resource exhaustion.
-const DEPLOY_RATE_LIMIT = 5;
-const DEPLOY_RATE_WINDOW_MS = 5 * 1000;
+// Coarse abuse ceiling: 60 deploys per minute per user/org pair.
+// Bursts are never rejected as a cooldown — requestDeploy serializes rapid
+// deploys via per-app cancel-and-replace (latest commit wins) and the
+// system-level FIFO concurrency queue (#682). This limit only stops a runaway
+// loop from creating unbounded deployment records.
+const DEPLOY_RATE_LIMIT = 60;
+const DEPLOY_RATE_WINDOW_MS = 60 * 1000;
 
 export function registerDeployApp(
   server: McpServer,
@@ -39,7 +42,7 @@ export function registerDeployApp(
             {
               type: "text" as const,
               text: JSON.stringify({
-                error: `Rate limit exceeded. Try again in ${rl.retryAfterSeconds}s.`,
+                error: `Deploy rate ceiling reached (abuse protection, 60/min). Try again in ${rl.retryAfterSeconds}s.`,
               }),
             },
           ],

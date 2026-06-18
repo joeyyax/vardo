@@ -102,4 +102,9 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
   }
 }
 
-export const POST = withRateLimit(handler, { tier: "critical", key: "deploy" });
+// Deploys use the higher-ceiling "mutation" tier rather than "critical".
+// A burst of rapid deploys must never be rejected: requestDeploy already
+// serializes them via per-app cancel-and-replace (latest commit wins) and the
+// system-level FIFO concurrency queue (#682). The limit here is only a coarse
+// abuse ceiling, not a per-deploy cooldown.
+export const POST = withRateLimit(handler, { tier: "mutation", key: "deploy" });
