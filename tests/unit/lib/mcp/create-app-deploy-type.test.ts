@@ -11,8 +11,11 @@ import { z } from "zod";
 // Extracted from:
 //   lib/mcp/tools/create-app.ts  (deployType zod param)
 
+// Note: "image" is intentionally NOT valid here — the tool only creates
+// git-sourced apps, and an image deploy needs an imageName the tool does not
+// accept. Keep this enum in sync with lib/mcp/tools/create-app.ts.
 const deployTypeSchema = z
-  .enum(["compose", "dockerfile", "image", "static", "nixpacks", "railpack"])
+  .enum(["compose", "dockerfile", "static", "nixpacks", "railpack"])
   .default("compose");
 
 describe("create-app deployType param", () => {
@@ -27,5 +30,9 @@ describe("create-app deployType param", () => {
 
   it("rejects an unknown deployType", () => {
     expect(deployTypeSchema.safeParse("bogus").success).toBe(false);
+  });
+
+  it("rejects 'image' — not coherent for a git-sourced app", () => {
+    expect(deployTypeSchema.safeParse("image").success).toBe(false);
   });
 });

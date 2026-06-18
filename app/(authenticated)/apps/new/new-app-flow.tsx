@@ -363,6 +363,9 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
       case "public-git":
         setSource("git"); setDeployType("compose"); setGitMode("manual");
         setGitUrl(""); setGitBranch("main"); setAdvancedOpen(false);
+        // Clear shared path state so a stale value from a prior source isn't
+        // silently submitted when the Advanced panel is never opened.
+        setComposeFilePath("docker-compose.yml"); setDockerfilePath("Dockerfile"); setRootDirectory("");
         break;
       case "compose":
         setSource("direct"); setDeployType("compose"); setContentMode("paste");
@@ -441,24 +444,18 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
           return;
         }
       } else if (source === "git") {
-        body.gitUrl = gitUrl;
-        body.gitBranch = gitBranch;
+        body.gitUrl = gitUrl.trim();
+        body.gitBranch = gitBranch.trim();
       }
 
       if (deployType === "image") body.imageName = imageName;
-      if (deployType === "compose" && composeFilePath && composeFilePath !== "docker-compose.yml") {
+      // Send a custom compose / Dockerfile path whenever the user set one. The
+      // server defaults both, so this is safe for any source — and the
+      // public-git compose cascade can fall back to the pinned Dockerfile path.
+      if (composeFilePath && composeFilePath !== "docker-compose.yml") {
         body.composeFilePath = composeFilePath;
       }
-      if (deployType === "dockerfile" && dockerfilePath && dockerfilePath !== "Dockerfile") {
-        body.dockerfilePath = dockerfilePath;
-      }
-      // Public Git URL uses compose auto-detect; still let the user pin a
-      // custom Dockerfile path for the Dockerfile fallback in the cascade.
-      if (
-        selectedSource === "public-git" &&
-        dockerfilePath &&
-        dockerfilePath !== "Dockerfile"
-      ) {
+      if (dockerfilePath && dockerfilePath !== "Dockerfile") {
         body.dockerfilePath = dockerfilePath;
       }
       if (source === "direct" && deployType === "compose") {

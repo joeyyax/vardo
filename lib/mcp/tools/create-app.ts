@@ -52,7 +52,10 @@ export function registerCreateApp(
         .default("main")
         .describe("Branch to deploy (default 'main')"),
       deployType: z
-        .enum(["compose", "dockerfile", "image", "static", "nixpacks", "railpack"])
+        // The tool always creates a git-sourced app, so only build-from-repo
+        // strategies are coherent. "image" is excluded — it needs an imageName
+        // (which this tool does not accept) and would ignore the git source.
+        .enum(["compose", "dockerfile", "static", "nixpacks", "railpack"])
         .default("compose")
         .describe(
           "Build/deploy strategy (default 'compose' = auto-detect compose → Dockerfile → Nixpacks)"
