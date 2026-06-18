@@ -312,6 +312,13 @@ export function buildVardoOverlay(opts: {
    * of the parent-global cpuLimit/memoryLimit/gpuEnabled. (#745)
    */
   serviceConfig?: Record<string, ServiceConfigOverride>;
+  /**
+   * Per-service env vars set on a decomposed child app (service name → resolved
+   * key/value map). Injected into that service's `environment:`, overriding any
+   * same-named key declared in the user's compose. Values are already resolved
+   * (templates/secrets). Empty for non-decomposed apps. (decomposed-children)
+   */
+  serviceEnv?: Record<string, Record<string, string>>;
 }): ComposeFile {
   const {
     fullCompose,
@@ -324,6 +331,7 @@ export function buildVardoOverlay(opts: {
     bareVolumeNames = [],
     serviceExposedPorts = {},
     serviceConfig = {},
+    serviceEnv = {},
   } = opts;
 
   const overlayServices: Record<string, ComposeService> = {};
@@ -420,6 +428,14 @@ export function buildVardoOverlay(opts: {
           reservations,
         },
       };
+    }
+
+    // Per-service env vars from a decomposed child app. Merged as an override
+    // file `environment:` map, so these keys win over the same key in the user's
+    // compose while leaving the rest of that service's environment intact.
+    const svcEnv = serviceEnv[name];
+    if (svcEnv && Object.keys(svcEnv).length > 0) {
+      overlayService.environment = { ...svcEnv };
     }
 
     overlayServices[name] = overlayService;

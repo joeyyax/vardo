@@ -2651,6 +2651,35 @@ describe("buildVardoOverlay", () => {
     expect(overlay.services.worker.deploy?.resources?.limits).toEqual({ cpus: "1", memory: "256M" });
   });
 
+  it("injects per-service env vars from serviceEnv into only that service (decomposed children)", () => {
+    const compose: ComposeFile = {
+      services: {
+        web: { name: "web", image: "web", environment: { EXISTING: "1" } },
+        worker: { name: "worker", image: "worker" },
+      },
+    };
+    const overlay = buildVardoOverlay({
+      fullCompose: compose,
+      networkName,
+      serviceEnv: {
+        web: { API_KEY: "secret", EXISTING: "override" },
+        // worker has no entry → no environment injected
+      },
+    });
+    // The override file carries web's child env; docker merges it over the bare
+    // compose at `up` time (override wins per key).
+    expect(overlay.services.web.environment).toEqual({ API_KEY: "secret", EXISTING: "override" });
+    expect(overlay.services.worker.environment).toBeUndefined();
+  });
+
+  it("adds no environment to the overlay when serviceEnv is empty/absent", () => {
+    const compose: ComposeFile = {
+      services: { app: { name: "app", image: "app", environment: { FOO: "bar" } } },
+    };
+    const overlay = buildVardoOverlay({ fullCompose: compose, networkName });
+    expect(overlay.services.app.environment).toBeUndefined();
+  });
+
   it("re-emits GPU devices for a service whose child enabled GPU even when parent global is off (#745)", () => {
     const compose: ComposeFile = {
       services: {
