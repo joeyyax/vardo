@@ -31,7 +31,7 @@ type AppWithRelations = {
   gitUrl: string | null;
   projectId: string;
   gpuEnabled: boolean | null;
-  priority: "critical" | "standard" | "disposable";
+  priority: "critical" | "standard" | "disposable" | null;
   status: string;
   needsRedeploy: boolean | null;
   createdAt: Date;

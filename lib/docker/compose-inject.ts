@@ -354,6 +354,7 @@ export function buildVardoOverlay(opts: {
     const effCpuLimit = cfg ? cfg.cpuLimit : cpuLimit;
     const effMemoryLimit = cfg ? cfg.memoryLimit : memoryLimit;
     const effGpuEnabled = cfg ? cfg.gpuEnabled : gpuEnabled;
+    const effPriority = cfg ? cfg.priority : priority;
 
     if (vardoLabels && Object.keys(vardoLabels).length > 0) {
       overlayService.labels = vardoLabels;
@@ -383,7 +384,7 @@ export function buildVardoOverlay(opts: {
     // mem_reservation — Compose rejects a top-level mem_reservation alongside a
     // deploy.resources.reservations block (which GPU apps already carry for
     // devices). It is merged with any GPU devices below.
-    const tier = priority ?? "standard";
+    const tier = effPriority ?? "standard";
     let memReservation: string | undefined;
     if (tier === "critical") {
       overlayService.oom_score_adj = -1000;

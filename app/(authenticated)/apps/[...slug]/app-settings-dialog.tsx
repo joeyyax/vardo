@@ -74,7 +74,11 @@ export function AppSettingsDialog({
   const [cpuLimit, setCpuLimit] = useState(app.cpuLimit?.toString() || "");
   const [memoryLimit, setMemoryLimit] = useState(app.memoryLimit?.toString() || "");
   const [gpuEnabled, setGpuEnabled] = useState(app.gpuEnabled ?? false);
-  const [priority, setPriority] = useState<"critical" | "standard" | "disposable">(app.priority ?? "standard");
+  // A decomposed child can inherit the parent's tier (priority === null → the
+  // "inherit" sentinel here). Non-child apps always have a concrete tier.
+  const [priority, setPriority] = useState<"critical" | "standard" | "disposable" | "inherit">(
+    isChildService ? (app.priority ?? "inherit") : (app.priority ?? "standard"),
+  );
   const [backendProtocol, setBackendProtocol] = useState<"auto" | "http" | "https">(app.backendProtocol || "auto");
   const [diskWriteAlertThreshold, setDiskWriteAlertThreshold] = useState(app.diskWriteAlertThreshold ? (app.diskWriteAlertThreshold / 1_073_741_824).toString() : "");
   const [healthCheckTimeout, setHealthCheckTimeout] = useState(app.healthCheckTimeout?.toString() || "60");
@@ -114,7 +118,7 @@ export function AppSettingsDialog({
       body.restartPolicy = restartPolicy;
       body.cpuLimit = cpuLimit ? parseFloat(cpuLimit) : null;
       body.memoryLimit = memoryLimit ? parseInt(memoryLimit, 10) : null;
-      body.priority = priority;
+      body.priority = priority === "inherit" ? null : priority;
       body.gpuEnabled = gpuEnabled;
       body.backendProtocol = backendProtocol === "auto" ? null : backendProtocol;
       body.diskWriteAlertThreshold = diskWriteAlertThreshold ? Math.round(parseFloat(diskWriteAlertThreshold) * 1_073_741_824) : null;
@@ -388,22 +392,25 @@ export function AppSettingsDialog({
             {/* Priority (QoS tier) */}
             <div className="grid gap-2 sm:w-1/2">
               <Label htmlFor="edit-priority">Priority</Label>
-              <Select value={priority} onValueChange={(v) => setPriority(v as "critical" | "standard" | "disposable")}>
+              <Select value={priority} onValueChange={(v) => setPriority(v as "critical" | "standard" | "disposable" | "inherit")}>
                 <SelectTrigger id="edit-priority">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  {isChildService && <SelectItem value="inherit">Inherit (parent)</SelectItem>}
                   <SelectItem value="critical">Critical</SelectItem>
                   <SelectItem value="standard">Standard</SelectItem>
                   <SelectItem value="disposable">Disposable</SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                {priority === "critical"
-                  ? "Protected from the OOM killer and given the largest CPU share. Requires a memory limit."
-                  : priority === "disposable"
-                    ? "Killed first under memory pressure and given the smallest CPU share."
-                    : "Default eviction priority and CPU share."}
+                {priority === "inherit"
+                  ? "Uses the parent stack's priority for this service."
+                  : priority === "critical"
+                    ? "Protected from the OOM killer and given the largest CPU share. Requires a memory limit."
+                    : priority === "disposable"
+                      ? "Killed first under memory pressure and given the smallest CPU share."
+                      : "Default eviction priority and CPU share."}
               </p>
             </div>
 

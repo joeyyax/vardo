@@ -286,9 +286,11 @@ describe("resolveCompose — per-child config (#745)", () => {
     const ctx = makeCtx(compose, makeApp({ gpuEnabled: false }));
     await resolveCompose(ctx);
 
-    // Per-service config carries child overrides for the overlay step.
-    expect(ctx.serviceConfig.worker).toEqual({ cpuLimit: 4, memoryLimit: 2048, gpuEnabled: true });
-    expect(ctx.serviceConfig.web).toEqual({ cpuLimit: null, memoryLimit: null, gpuEnabled: false });
+    // Per-service config carries child overrides for the overlay step. These
+    // children have no priority of their own → they inherit the parent's
+    // (makeApp defaults to "standard").
+    expect(ctx.serviceConfig.worker).toEqual({ cpuLimit: 4, memoryLimit: 2048, gpuEnabled: true, priority: "standard" });
+    expect(ctx.serviceConfig.web).toEqual({ cpuLimit: null, memoryLimit: null, gpuEnabled: false, priority: "standard" });
 
     // The child GPU toggle injected a device onto worker, not web.
     const workerDevices = ctx.compose.services.worker.deploy?.resources?.reservations?.devices;
@@ -303,6 +305,24 @@ describe("resolveCompose — per-child config (#745)", () => {
     const ctx = makeCtx(compose, makeApp());
     await resolveCompose(ctx);
     expect(ctx.serviceConfig).toEqual({});
+  });
+
+  it("inherits the parent's priority when a child's is null, honors an explicit override", async () => {
+    childAppsMock.mockResolvedValueOnce([
+      { composeService: "api", cpuLimit: null, memoryLimit: null, gpuEnabled: false, priority: null },
+      { composeService: "cache", cpuLimit: null, memoryLimit: null, gpuEnabled: false, priority: "disposable" },
+    ]);
+    const compose: ComposeFile = {
+      services: {
+        api: { name: "api", image: "api" },
+        cache: { name: "cache", image: "cache" },
+      },
+    };
+    const ctx = makeCtx(compose, makeApp({ priority: "critical" }));
+    await resolveCompose(ctx);
+    // api inherits the parent's critical tier; cache's explicit choice wins.
+    expect(ctx.serviceConfig.api.priority).toBe("critical");
+    expect(ctx.serviceConfig.cache.priority).toBe("disposable");
   });
 });
 

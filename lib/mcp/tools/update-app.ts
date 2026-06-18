@@ -29,7 +29,7 @@ const updateSchema = z.object({
   restartPolicy: z.string().nullable().optional(),
   cpuLimit: z.number().positive().max(64).nullable().optional(),
   memoryLimit: z.number().int().min(64).max(65536).nullable().optional(),
-  priority: z.enum(["critical", "standard", "disposable"]).optional(),
+  priority: z.enum(["critical", "standard", "disposable"]).nullable().optional(), // null = inherit parent (decomposed child)
   backendProtocol: z.enum(["http", "https"]).nullable().optional(),
   healthCheckTimeout: z.number().int().min(10).max(600).nullable().optional(),
   autoRollback: z.boolean().optional(),

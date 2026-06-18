@@ -291,13 +291,13 @@ export async function syncComposeServices(opts: {
           "id", "organization_id", "name", "display_name", "description",
           "source", "deploy_type", "image_name", "status",
           "parent_app_id", "compose_service", "container_name", "project_id",
-          "cpu_limit", "memory_limit", "persistent_volumes", "exposed_ports", "depends_on", "sort_order",
+          "cpu_limit", "memory_limit", "priority", "persistent_volumes", "exposed_ports", "depends_on", "sort_order",
           "created_at", "updated_at"
         ) VALUES (
           ${id}, ${organizationId}, ${childName}, ${displayName}, ${`Compose service: ${serviceName}`},
           ${"direct"}, ${"compose"}, ${svc.image || null}, ${"active"},
           ${parentAppId}, ${serviceName}, ${containerName}, ${projectId},
-          ${cpuLimit}, ${memoryLimit}, ${volsJson}, ${portsJson}, ${depsJson}, ${0},
+          ${cpuLimit}, ${memoryLimit}, ${null}, ${volsJson}, ${portsJson}, ${depsJson}, ${0},
           ${now}, ${now}
         )
       `);
