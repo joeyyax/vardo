@@ -577,6 +577,10 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
       }
 
       ctx.builtLocally = true;
+      // Record the locally-built image so the swap pre-pull skips it — it lives
+      // only in the local daemon (no registry), and the generated compose
+      // references it via `image:` with no `build:` directive.
+      ctx.builtImageRefs.push(imageName);
       compose = generateComposeForImage({
         projectName: app.name,
         imageName,
