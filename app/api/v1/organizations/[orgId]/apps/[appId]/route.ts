@@ -39,7 +39,7 @@ const updateAppSchema = z.object({
   })).nullable().optional(),
   cpuLimit: z.number().positive().max(64).nullable().optional(),
   memoryLimit: z.number().int().min(64).max(65536).nullable().optional(),
-  priority: z.enum(["critical", "standard", "disposable"]).optional(),
+  priority: z.enum(["critical", "standard", "disposable"]).nullable().optional(), // null = inherit parent (decomposed child)
   gpuEnabled: z.boolean().optional(),
   backendProtocol: z.enum(["http", "https"]).nullable().optional(),
   diskWriteAlertThreshold: z.number().int().min(0).nullable().optional(), // bytes/hour, null = default 1GB

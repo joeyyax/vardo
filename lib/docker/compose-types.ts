@@ -172,4 +172,7 @@ export type ServiceConfigOverride = {
   cpuLimit: number | null;
   memoryLimit: number | null;
   gpuEnabled: boolean;
+  /** Resolved QoS tier for this service: the child's own priority, or the
+   * parent's when the child inherits (null). null falls back to "standard". */
+  priority: "critical" | "standard" | "disposable" | null;
 };
