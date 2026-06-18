@@ -174,21 +174,33 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
     rewriteBuildContext(ctx.bareCompose);
   }
 
-  // Fetch exposed ports from child app records (set via Networking UI)
+  // Fetch exposed ports + per-service env vars from child app records.
   const serviceExposedPorts: Record<string, { internal: number; external?: number; protocol?: string }[]> = {};
+  // Raw (decrypted, parsed, not yet template-resolved) env per service from
+  // decomposed child apps. Resolved during env resolution and folded into the
+  // overlay below. Empty for non-decomposed apps → no behavior change.
+  const serviceEnvRaw: Record<string, Record<string, string>> = {};
   if (Object.keys(compose.services).length > 1) {
     const childApps = await db.query.apps.findMany({
       where: and(
         eq(apps.parentAppId, app.id),
         eq(apps.organizationId, ctx.organizationId),
       ),
-      columns: { composeService: true, exposedPorts: true },
+      columns: { composeService: true, exposedPorts: true, envContent: true },
     });
     for (const child of childApps) {
-      if (child.composeService && child.exposedPorts) {
+      if (!child.composeService) continue;
+      if (child.exposedPorts) {
         const ports = child.exposedPorts as { internal: number; external?: number; protocol?: string }[];
         if (ports.length > 0) {
           serviceExposedPorts[child.composeService] = ports;
+        }
+      }
+      if (child.envContent) {
+        const { content } = decryptOrFallback(child.envContent, ctx.organizationId);
+        if (content) {
+          const map = parseEnvToMap(content);
+          if (Object.keys(map).length > 0) serviceEnvRaw[child.composeService] = map;
         }
       }
     }
@@ -213,27 +225,15 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
     ctx.log(`[deploy] Warning: no memory limit set — container can consume unlimited host memory`);
   }
 
-  const overlayCompose = buildVardoOverlay({
-    fullCompose: compose,
-    networkName: NETWORK_NAME,
-    cpuLimit: app.cpuLimit,
-    memoryLimit: app.memoryLimit,
-    priority: app.priority,
-    gpuEnabled: app.gpuEnabled ?? false,
-    externalVolumes: compose.volumes ?? {},
-    bareVolumeNames: Object.keys(ctx.bareCompose.volumes ?? {}),
-    serviceExposedPorts,
-    serviceConfig: ctx.serviceConfig,
-  });
+  // Per-service env (decomposed children) can reference templates/secrets, so it
+  // is resolved during env resolution below, then folded into the overlay. The
+  // overlay itself is built after that so resolved values are available.
+  const resolvedServiceEnv: Record<string, Record<string, string>> = {};
 
-  await writeFile(bareComposePath, composeToYaml(ctx.bareCompose), "utf-8");
-  await writeFile(overridePath, composeToYaml(overlayCompose), "utf-8");
-
-  const composeFileArgs = ["-f", bareComposePath, "-f", overridePath];
-  ctx.composeFileArgs = composeFileArgs;
-
-  // Write .env — resolve template expressions using the full resolution engine
-  if (Object.keys(envMap).length > 0) {
+  // Write .env — resolve template expressions using the full resolution engine.
+  // Runs when the parent has env vars OR any child service does (the resolution
+  // context is shared between both).
+  if (Object.keys(envMap).length > 0 || Object.keys(serviceEnvRaw).length > 0) {
     const orgVarRows = await db.query.orgEnvVars.findMany({
       where: eq(orgEnvVars.organizationId, ctx.organizationId),
     });
@@ -338,15 +338,42 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
       },
     };
 
-    const resolved = await resolveAllEnvVars(envMap, resolveCtx);
-    const envContent = Object.entries(resolved).map(([k, v]) => {
-      if (/[\n\r"' $#\\]/.test(v)) {
-        return `${k}="${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n").replace(/\r/g, "\\r")}"`;
-      }
-      return `${k}=${v}`;
-    }).join("\n");
-    await writeFile(join(slotDir, ".env"), envContent, "utf-8");
+    if (Object.keys(envMap).length > 0) {
+      const resolved = await resolveAllEnvVars(envMap, resolveCtx);
+      const envContent = Object.entries(resolved).map(([k, v]) => {
+        if (/[\n\r"' $#\\]/.test(v)) {
+          return `${k}="${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n").replace(/\r/g, "\\r")}"`;
+        }
+        return `${k}=${v}`;
+      }).join("\n");
+      await writeFile(join(slotDir, ".env"), envContent, "utf-8");
+    }
+
+    // Resolve each decomposed child service's env through the same engine so its
+    // values can reference templates/secrets/org vars, then inject per-service.
+    for (const [service, raw] of Object.entries(serviceEnvRaw)) {
+      resolvedServiceEnv[service] = await resolveAllEnvVars(raw, resolveCtx);
+    }
   }
+
+  const overlayCompose = buildVardoOverlay({
+    fullCompose: compose,
+    networkName: NETWORK_NAME,
+    cpuLimit: app.cpuLimit,
+    memoryLimit: app.memoryLimit,
+    priority: app.priority,
+    gpuEnabled: app.gpuEnabled ?? false,
+    externalVolumes: compose.volumes ?? {},
+    bareVolumeNames: Object.keys(ctx.bareCompose.volumes ?? {}),
+    serviceExposedPorts,
+    serviceConfig: ctx.serviceConfig,
+    serviceEnv: resolvedServiceEnv,
+  });
+
+  await writeFile(bareComposePath, composeToYaml(ctx.bareCompose), "utf-8");
+  await writeFile(overridePath, composeToYaml(overlayCompose), "utf-8");
+
+  ctx.composeFileArgs = ["-f", bareComposePath, "-f", overridePath];
 
   return ctx;
 }

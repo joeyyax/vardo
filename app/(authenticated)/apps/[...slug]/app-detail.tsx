@@ -903,16 +903,14 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
               Connect
             </TabsTrigger>
           )}
-          {!isChildService && (
-            <TabsTrigger value="variables">
-              Variables
-              {app.envVars.length > 0 && (
-                <Badge variant="secondary" className="ml-1.5 text-xs">
-                  {app.envVars.length}
-                </Badge>
-              )}
-            </TabsTrigger>
-          )}
+          <TabsTrigger value="variables">
+            Variables
+            {app.envVars.length > 0 && (
+              <Badge variant="secondary" className="ml-1.5 text-xs">
+                {app.envVars.length}
+              </Badge>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="networking">
             Networking
           </TabsTrigger>
@@ -983,6 +981,12 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         )}
 
         <TabsContent value="variables" className="pt-4 space-y-4">
+          {isChildService && (
+            <p className="text-sm text-muted-foreground">
+              These variables apply only to the{" "}
+              <span className="font-medium">{app.composeService ?? app.name}</span> service.
+            </p>
+          )}
           <EnvEditor
             appId={app.id}
             appName={app.name}
