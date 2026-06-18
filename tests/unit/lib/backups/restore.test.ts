@@ -26,6 +26,9 @@ const {
   volumesFindFirst,
   execFileMock,
   executeHooksMock,
+  listContainersMock,
+  inspectContainerMock,
+  resolveDefaultEnvMock,
 } = vi.hoisted(() => ({
   backupsFindFirst: vi.fn(),
   volumesFindFirst: vi.fn(),
@@ -35,13 +38,28 @@ const {
     if (typeof cb === "function") (cb as (e: unknown, r: unknown) => void)(null, { stdout: "", stderr: "" });
   }),
   executeHooksMock: vi.fn().mockResolvedValue({ allowed: true, results: [] }),
+  listContainersMock: vi.fn(),
+  inspectContainerMock: vi.fn(),
+  resolveDefaultEnvMock: vi.fn(),
 }));
+
+// Default execFile impl: every docker/bash call succeeds. Re-applied in
+// beforeEach so a per-test override (e.g. failing `volume inspect`) can't leak.
+const execSuccess = (...args: unknown[]) => {
+  const cb = args[args.length - 1];
+  if (typeof cb === "function") (cb as (e: unknown, r: unknown) => void)(null, { stdout: "", stderr: "" });
+};
 
 vi.mock("@/lib/db", () => ({
   db: { query: { backups: { findFirst: backupsFindFirst }, volumes: { findFirst: volumesFindFirst } } },
 }));
 vi.mock("child_process", () => ({ execFile: execFileMock }));
 vi.mock("@/lib/hooks/execute", () => ({ executeHooks: executeHooksMock }));
+vi.mock("@/lib/docker/client", () => ({
+  listContainers: listContainersMock,
+  inspectContainer: inspectContainerMock,
+}));
+vi.mock("@/lib/docker/resolve-env", () => ({ resolveDefaultEnv: resolveDefaultEnvMock }));
 vi.mock("@/lib/logger", () => ({
   logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) },
 }));
@@ -90,10 +108,15 @@ afterAll(() => {
 });
 
 beforeEach(() => {
-  execFileMock.mockClear();
+  execFileMock.mockReset();
+  execFileMock.mockImplementation(execSuccess);
   backupsFindFirst.mockReset();
   volumesFindFirst.mockReset();
   executeHooksMock.mockResolvedValue({ allowed: true, results: [] });
+  // Default: no running container (resolver falls through to name derivation).
+  listContainersMock.mockReset().mockResolvedValue([]);
+  inspectContainerMock.mockReset().mockResolvedValue({ mounts: [] });
+  resolveDefaultEnvMock.mockReset().mockResolvedValue({ name: "production", type: "production", id: "env-1" });
 });
 
 describe("restoreBackup — volume (tar) round-trip", () => {
@@ -151,5 +174,81 @@ describe("restoreBackup — corrupted/mismatched archive is rejected", () => {
 
     await expect(restoreBackup("bk-1")).rejects.toThrow(/blocked by hook/i);
     expect(restoreCommandRan()).toBe(false);
+  });
+});
+
+// #756: persistent volumes are env-scoped (`${app}-${env}_${vol}`), shared
+// across blue/green slots. The resolver must target the volume the app actually
+// uses — never a blue/green slot name the app would never mount.
+describe("#756 — volume resolution targets the real env-scoped volume", () => {
+  /** All docker volume args across every execFile call, flattened. */
+  function allDockerArgs(): string[] {
+    return execFileMock.mock.calls
+      .filter(([file]) => file === "docker")
+      .map(([, args]) => (args as string[]).join(" "));
+  }
+
+  it("restores into the volume Docker actually has mounted (env-scoped), not a slot name", async () => {
+    backupsFindFirst.mockResolvedValue(backupRow({ appId: "app-1", volumeName: "data" }));
+    volumesFindFirst.mockResolvedValue({ backupStrategy: "tar", backupMeta: null, mountPath: "/app/data" });
+    listContainersMock.mockResolvedValue([{ id: "c1" }]);
+    inspectContainerMock.mockResolvedValue({
+      mounts: [{ type: "volume", name: "myapp-production_data", destination: "/app/data", source: "" }],
+    });
+
+    const result = await restoreBackup("bk-1");
+
+    expect(result.success).toBe(true);
+    const runCall = execFileMock.mock.calls.find(
+      ([file, args]) => file === "docker" && (args as string[]).includes("run"),
+    );
+    expect((runCall![1] as string[]).join(" ")).toContain("myapp-production_data:/data");
+    // The data-integrity guarantee: never touch a blue/green slot volume.
+    expect(allDockerArgs().some((a) => /-blue_|-green_/.test(a))).toBe(false);
+  });
+
+  it("ignores a container mount at a different path", async () => {
+    backupsFindFirst.mockResolvedValue(backupRow({ appId: "app-1", volumeName: "data" }));
+    volumesFindFirst.mockResolvedValue({ backupStrategy: "tar", backupMeta: null, mountPath: "/app/data" });
+    listContainersMock.mockResolvedValue([{ id: "c1" }]);
+    inspectContainerMock.mockResolvedValue({
+      mounts: [{ type: "volume", name: "myapp-production_cache", destination: "/app/cache", source: "" }],
+    });
+
+    const result = await restoreBackup("bk-1");
+
+    expect(result.success).toBe(true);
+    // No mount matched /app/data → derives env-scoped name, which inspect confirms.
+    const runCall = execFileMock.mock.calls.find(
+      ([file, args]) => file === "docker" && (args as string[]).includes("run"),
+    );
+    expect((runCall![1] as string[]).join(" ")).toContain("myapp-production_data:/data");
+    expect((runCall![1] as string[]).join(" ")).not.toContain("myapp-production_cache");
+  });
+
+  it("creates the env-scoped volume (never a blue slot) when nothing exists yet", async () => {
+    backupsFindFirst.mockResolvedValue(backupRow({ appId: "app-1", volumeName: "data" }));
+    volumesFindFirst.mockResolvedValue({ backupStrategy: "tar", backupMeta: null, mountPath: "/app/data" });
+    listContainersMock.mockResolvedValue([]); // no running container
+    // Every `docker volume inspect` fails → resolver finds nothing → create path.
+    execFileMock.mockImplementation((...args: unknown[]) => {
+      const cb = args[args.length - 1] as (e: unknown, r: unknown) => void;
+      const dockerArgs = args[1] as string[];
+      if (Array.isArray(dockerArgs) && dockerArgs.includes("inspect")) {
+        cb(new Error("no such volume"), null);
+        return;
+      }
+      cb(null, { stdout: "", stderr: "" });
+    });
+
+    const result = await restoreBackup("bk-1");
+
+    expect(result.success).toBe(true);
+    const dockerArgs = allDockerArgs();
+    expect(dockerArgs.some((a) => a.includes("volume create myapp-production_data"))).toBe(true);
+    // It may *probe* slot names (read-only inspect), but must never create or
+    // restore into one — that's the data-integrity guarantee.
+    const mutating = dockerArgs.filter((a) => a.includes("volume create") || a.includes("run"));
+    expect(mutating.some((a) => /-blue_|-green_/.test(a))).toBe(false);
   });
 });
