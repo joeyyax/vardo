@@ -156,6 +156,14 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
         narrowedProtocol,
         port,
       );
+      // A domain added on a decomposed child app is tagged with that child's
+      // compose service (deploy.ts); route its labels to that service's
+      // container instead of the auto-detected primary. Falls back to the
+      // primary when unset or the service isn't present.
+      const targetService =
+        domain.composeService && compose.services[domain.composeService]
+          ? domain.composeService
+          : primaryServiceName;
       compose = injectTraefikLabels(compose, {
         projectName: `${app.name}-${domain.id.slice(0, 8)}`,
         appName: app.name,
@@ -165,13 +173,14 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
         ssl: domain.sslEnabled ?? true,
         redirectTo: domain.redirectTo ?? undefined,
         redirectCode: domain.redirectCode ?? 301,
-        serviceName: primaryServiceName,
+        serviceName: targetService,
         backendProtocol: resolvedProtocol,
       });
+      const svcSuffix = targetService && targetService !== primaryServiceName ? ` → ${targetService}` : "";
       if (domain.redirectTo) {
-        log(`[deploy] Traefik: ${domain.domain} → redirect ${domain.redirectCode ?? 301} ${domain.redirectTo}`);
+        log(`[deploy] Traefik: ${domain.domain} → redirect ${domain.redirectCode ?? 301} ${domain.redirectTo}${svcSuffix}`);
       } else {
-        log(`[deploy] Traefik: ${domain.domain} → :${port}${(domain.sslEnabled ?? true) ? " (TLS)" : ""}`);
+        log(`[deploy] Traefik: ${domain.domain} → :${port}${(domain.sslEnabled ?? true) ? " (TLS)" : ""}${svcSuffix}`);
       }
     }
 
