@@ -20,7 +20,16 @@ export function shouldRunNow(schedule: string, now: Date): boolean {
   if (!schedule.trim()) return false;
   try {
     const job = new Cron(schedule.trim());
-    return job.match(now);
+    // Match at minute granularity. The schedulers tick on a 60s interval at an
+    // arbitrary sub-minute offset (whatever second the process booted on),
+    // while croner's match() is second-precise — a 5-field cron matches only at
+    // :00. Without truncating, a job fires only if a tick happens to land on
+    // second 0 of its minute, which it essentially never does, so jobs silently
+    // never run. Zero the seconds so any tick within the scheduled minute
+    // matches; the schedulers' per-minute locks prevent double-firing.
+    const atMinute = new Date(now);
+    atMinute.setSeconds(0, 0);
+    return job.match(atMinute);
   } catch {
     return false;
   }
