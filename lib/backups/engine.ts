@@ -21,7 +21,19 @@ const log = logger.child("backup");
 
 const execFileAsync = promisify(execFile);
 
-const BACKUPS_DIR = resolve(process.env.VARDO_BACKUPS_DIR || "./.host/backups");
+// Local staging dir for backup archives before upload. Must be writable by the
+// app user AND host-visible: the engine bind-mounts it into a one-shot `alpine`
+// container via `docker run -v`, so a path that only exists inside this
+// container (e.g. cwd /app) can't be mounted. In production the app runs as a
+// non-root user and /app is not writable, so default under VARDO_HOME_DIR — the
+// app-owned data dir that is bind-mounted at the same path on the host. Falls
+// back to ./.host/backups for local dev (where VARDO_HOME_DIR is unset).
+const BACKUPS_DIR = resolve(
+  process.env.VARDO_BACKUPS_DIR ||
+    (process.env.VARDO_HOME_DIR
+      ? join(process.env.VARDO_HOME_DIR, "backups-staging")
+      : "./.host/backups"),
+);
 
 // ---------------------------------------------------------------------------
 // Types
