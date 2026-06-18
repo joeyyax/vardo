@@ -20,6 +20,7 @@ import {
   EllipsisVertical,
   Cpu,
   Wrench,
+  GitBranch,
 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { PageToolbar } from "@/components/page-toolbar";
@@ -467,8 +468,8 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                   ) : (
                     <>
                       <DropdownMenuItem disabled={deploy.deploying} onClick={handleDeploy}>
-                        <Rocket className="mr-2 size-4" />
-                        Redeploy
+                        <GitBranch className="mr-2 size-4" />
+                        Pull latest & redeploy
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={handleRestart}>
                         <RotateCcw className="mr-2 size-4" />

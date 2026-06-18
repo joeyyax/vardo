@@ -19,7 +19,7 @@ export function registerCreateApp(
 ) {
   server.tool(
     "vardo_create_app",
-    "Create a new standalone compose app inside a project, deployed from a git repository. Creates the app record plus its default production environment and returns the new app id. Does NOT deploy — set env/volumes/domains as needed, then call vardo_deploy_app. Compose services are decomposed into child apps automatically on first deploy.",
+    "Create a new standalone app inside a project, deployed from a git repository. Works with any PUBLIC HTTPS git repo — no provider connection needed. Defaults to 'compose' deployType, which auto-detects a compose file, then a Dockerfile, then Nixpacks; pass a different deployType to pin the build. Creates the app record plus its default production environment and returns the new app id. Does NOT deploy — set env/volumes/domains as needed, then call vardo_deploy_app. Compose services are decomposed into child apps automatically on first deploy.",
     {
       projectId: z.string().min(1).describe("The project ID to create the app in"),
       name: z
@@ -51,6 +51,15 @@ export function registerCreateApp(
         .regex(/^[a-zA-Z0-9._\-/]+$/, "Invalid branch name")
         .default("main")
         .describe("Branch to deploy (default 'main')"),
+      deployType: z
+        // The tool always creates a git-sourced app, so only build-from-repo
+        // strategies are coherent. "image" is excluded — it needs an imageName
+        // (which this tool does not accept) and would ignore the git source.
+        .enum(["compose", "dockerfile", "static", "nixpacks", "railpack"])
+        .default("compose")
+        .describe(
+          "Build/deploy strategy (default 'compose' = auto-detect compose → Dockerfile → Nixpacks)"
+        ),
       composeFilePath: z
         .string()
         .regex(/^[a-zA-Z0-9._-][a-zA-Z0-9._\-/]*$/, "Invalid file path")
@@ -72,6 +81,7 @@ export function registerCreateApp(
       description,
       gitUrl,
       gitBranch,
+      deployType,
       composeFilePath,
       rootDirectory,
       env,
@@ -161,7 +171,7 @@ export function registerCreateApp(
             displayName: displayName ?? name,
             description: description ?? null,
             source: "git",
-            deployType: "compose",
+            deployType,
             gitUrl,
             gitBranch,
             composeFilePath,
