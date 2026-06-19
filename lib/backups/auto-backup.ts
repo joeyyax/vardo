@@ -157,29 +157,31 @@ export async function ensureSystemBackupJob(targetId: string) {
     });
   }
 
-  // Create the backup job
+  // Create the backup job and link its volume atomically (see the orphan-job
+  // note in ensureAutoBackupJob — same partial-insert hazard, #757).
   const jobId = nanoid();
-  const [job] = await db
-    .insert(backupJobs)
-    .values({
-      id: jobId,
-      organizationId: null, // system-level, not org-scoped
-      targetId,
-      name: "Vardo database",
-      schedule: staggeredSchedule("vardo-system-db"),
-      enabled: true,
-      keepLast: 2,
-      keepDaily: 7,
-      keepWeekly: 4,
-      keepMonthly: 3,
-      notifyOnFailure: true,
-    })
-    .returning();
-
-  // Link the volume to the job
-  await db.insert(backupJobVolumes).values({
-    backupJobId: jobId,
-    volumeId,
+  const job = await db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(backupJobs)
+      .values({
+        id: jobId,
+        organizationId: null, // system-level, not org-scoped
+        targetId,
+        name: "Vardo database",
+        schedule: staggeredSchedule("vardo-system-db"),
+        enabled: true,
+        keepLast: 2,
+        keepDaily: 7,
+        keepWeekly: 4,
+        keepMonthly: 3,
+        notifyOnFailure: true,
+      })
+      .returning();
+    await tx.insert(backupJobVolumes).values({
+      backupJobId: jobId,
+      volumeId,
+    });
+    return created;
   });
 
   log.info("Created system backup job for Vardo database");
@@ -278,26 +280,29 @@ export async function ensureAutoBackupJob(opts: {
     return null;
   }
 
-  // Create a daily backup job with staggered schedule
+  // Create a daily backup job with staggered schedule, linking the app
+  // atomically. A partial insert (job row without its app link) would create an
+  // orphan job the dedup-by-app-link guard above can't see, so the next deploy
+  // would create yet another — the source of the duplicate "Auto:" jobs (#757).
   const jobId = nanoid();
-  await db.insert(backupJobs).values({
-    id: jobId,
-    organizationId,
-    targetId: target.id,
-    name: `Auto: ${appName}`,
-    schedule: staggeredSchedule(appId),
-    enabled: true,
-    keepLast: 1,
-    keepDaily: 7,
-    keepWeekly: 1,
-    keepMonthly: 1,
-    notifyOnFailure: true,
-  });
-
-  // Link the app to the job
-  await db.insert(backupJobApps).values({
-    backupJobId: jobId,
-    appId,
+  await db.transaction(async (tx) => {
+    await tx.insert(backupJobs).values({
+      id: jobId,
+      organizationId,
+      targetId: target.id,
+      name: `Auto: ${appName}`,
+      schedule: staggeredSchedule(appId),
+      enabled: true,
+      keepLast: 1,
+      keepDaily: 7,
+      keepWeekly: 1,
+      keepMonthly: 1,
+      notifyOnFailure: true,
+    });
+    await tx.insert(backupJobApps).values({
+      backupJobId: jobId,
+      appId,
+    });
   });
 
   return jobId;
