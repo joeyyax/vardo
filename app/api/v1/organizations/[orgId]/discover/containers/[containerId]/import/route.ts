@@ -9,6 +9,7 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getContainerDetail, hasAtFileTraefikLabels, isLocalImage } from "@/lib/docker/discover";
 import { resolveContainerPort } from "@/lib/docker/resolve-port";
+import { volumeNameFromMount } from "@/lib/docker/client";
 import { generateComposeFromContainer, injectTraefikLabels, composeToYaml } from "@/lib/docker/compose";
 import { encrypt } from "@/lib/crypto/encrypt";
 import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
@@ -251,7 +252,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
               id: nanoid(),
               appId,
               organizationId: orgId,
-              name: mount.source || mount.destination.replace(/\//g, "-").replace(/^-/, ""),
+              name: volumeNameFromMount(mount),
               mountPath: mount.destination,
               type: mount.type === "bind" ? "bind" : "named",
               source: mount.source || null,
