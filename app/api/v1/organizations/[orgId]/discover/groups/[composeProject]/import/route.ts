@@ -10,6 +10,7 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { discoverContainers, getContainerDetail, hasAtFileTraefikLabels, isLocalImage } from "@/lib/docker/discover";
 import { slugify } from "@/lib/ui/slugify";
+import { volumeNameFromMount } from "@/lib/docker/client";
 import {
   generateComposeFromContainer,
   injectTraefikLabels,
@@ -422,7 +423,7 @@ async function handler(request: NextRequest, { params }: RouteParams) {
             id: nanoid(),
             appId,
             organizationId: orgId,
-            name: mount.source || mount.destination.replace(/\//g, "-").replace(/^-/, ""),
+            name: volumeNameFromMount(mount),
             mountPath: mount.destination,
             type: mount.type === "bind" ? "bind" : "named",
             source: mount.source || null,
