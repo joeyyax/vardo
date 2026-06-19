@@ -942,6 +942,28 @@ export function resolveVolumeName(mount: { name: string; source: string }): stri
   return mount.name;
 }
 
+/**
+ * Derive a safe, stable `volume.name` from a Docker mount for persistence in
+ * the volumes table. For a named, non-anonymous volume this is the friendly
+ * Docker volume name with the compose project prefix stripped (e.g.
+ * `agents_redis-data` → `redis-data`). For a bind mount or an anonymous volume
+ * it's a slug derived from the container path. Crucially it NEVER returns the
+ * mount's host `source` path — that contains slashes and fails assertSafeName,
+ * which silently breaks tar backups (#757).
+ */
+export function volumeNameFromMount(mount: {
+  name: string;
+  source: string;
+  destination: string;
+  type: string;
+}): string {
+  const isAnonymous = !mount.name || /^[0-9a-f]{64}$/.test(mount.name);
+  if (mount.type !== "bind" && mount.name && !isAnonymous) {
+    return stripDockerProjectPrefix(mount.name);
+  }
+  return mount.destination.replace(/\//g, "-").replace(/^-/, "");
+}
+
 export async function getSystemInfo(): Promise<SystemInfo> {
   const raw = await dockerRequest<{
     NCPU: number;
