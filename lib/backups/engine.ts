@@ -614,6 +614,33 @@ function selectKeepers(
 }
 
 /**
+ * Apply the retention policy PER VOLUME. A job with N volumes produces N
+ * backups per run (one archive each, same timestamp); retention timelines must
+ * not be shared, or e.g. keepLast=1 would keep a single archive across all
+ * volumes and prune the rest — silently dropping every volume but one each run.
+ * Group by volumeName and union the keepers from each volume's own timeline.
+ * Entries must be sorted newest-first (selectKeepers relies on it).
+ */
+export function selectKeepersByVolume(
+  entries: { id: string; finishedAt: Date; volumeName: string | null }[],
+  policy: RetentionPolicy,
+): Set<string> {
+  const byVolume = new Map<string, { id: string; finishedAt: Date }[]>();
+  for (const e of entries) {
+    const key = e.volumeName ?? "";
+    let group = byVolume.get(key);
+    if (!group) byVolume.set(key, (group = []));
+    group.push(e);
+  }
+
+  const keepers = new Set<string>();
+  for (const group of byVolume.values()) {
+    for (const id of selectKeepers(group, policy)) keepers.add(id);
+  }
+  return keepers;
+}
+
+/**
  * Prune backups for a job according to its retention policy.
  * Deletes from storage and marks DB rows as "pruned".
  */
@@ -648,7 +675,7 @@ export async function pruneBackups(jobId: string): Promise<number> {
 
   if (eligible.length === 0) return 0;
 
-  const keepers = selectKeepers(eligible, policy);
+  const keepers = selectKeepersByVolume(eligible, policy);
   const toPrune = eligible.filter((b) => !keepers.has(b.id));
 
   if (toPrune.length === 0) return 0;
