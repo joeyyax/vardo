@@ -123,6 +123,7 @@ export class EmailNotificationChannel implements NotificationChannel {
           dashboardUrl,
         });
 
+      case "app.auto-restarted":
       case "system.service-down":
       case "system.disk-alert":
       case "system.restart-loop":

@@ -13,7 +13,8 @@ type SystemAlertType =
   | "system.disk-alert"
   | "system.restart-loop"
   | "system.cert-expiring"
-  | "system.update-available";
+  | "system.update-available"
+  | "app.auto-restarted";
 
 type SystemAlertProps = {
   alertType: SystemAlertType;

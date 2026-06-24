@@ -33,6 +33,7 @@ const EVENT_LABELS: Record<BusEventType, string> = {
   "deploy.rollback": "Auto-rollback",
   "deploy.status": "Deploy status changed",
   "app.state-changed": "App state changed",
+  "app.auto-restarted": "Container auto-restarted",
   "backup.success": "Backup succeeded",
   "backup.failed": "Backup failed",
   "cron.failed": "Cron job failed",

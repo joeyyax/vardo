@@ -12,7 +12,7 @@
 
 export const EVENT_CATEGORIES = {
   deploy: ["deploy.success", "deploy.failed", "deploy.rollback", "deploy.status"],
-  app: ["app.state-changed"],
+  app: ["app.state-changed", "app.auto-restarted"],
   backup: ["backup.success", "backup.failed"],
   cron: ["cron.failed"],
   volume: ["volume.drift"],
@@ -247,6 +247,24 @@ export type AppStateChangedEvent = {
   appId: string;
 };
 
+/**
+ * The health monitor auto-restarted a container that its healthcheck reported
+ * as unhealthy (self-healing). `gaveUp` is true when the per-window restart cap
+ * was hit and the monitor stopped retrying — that case needs human attention.
+ */
+export type AppAutoRestartedEvent = {
+  type: "app.auto-restarted";
+  title: string;
+  message: string;
+  appId: string;
+  appName: string;
+  containerName: string;
+  containerId: string;
+  reason: string;
+  success: boolean;
+  gaveUp: boolean;
+};
+
 // ---------------------------------------------------------------------------
 // Union types
 // ---------------------------------------------------------------------------
@@ -271,7 +289,8 @@ export type BusEvent =
   | SecurityScanFindingsEvent
   | DigestWeeklyEvent
   | DeployStatusEvent
-  | AppStateChangedEvent;
+  | AppStateChangedEvent
+  | AppAutoRestartedEvent;
 
 export type BusEventType = BusEvent["type"];
 

@@ -22,6 +22,14 @@ import { generateComposeForImage } from "./compose-generate";
 
 const VARDO_LABEL_PREFIX = "vardo.";
 
+// oom_score_adj for a critical-tier app that ALSO has a hard memory limit.
+// Must be > -1000: a value of exactly -1000 makes the process unkillable, which
+// deadlocks the container when it hits its own cgroup memory limit (see the
+// critical-tier branch in buildVardoOverlay). -900 keeps it strongly protected
+// from the host OOM killer (well below standard=0 / disposable=750) while still
+// allowing the kernel to reclaim at the cgroup boundary.
+const CRITICAL_OOM_WITH_LIMIT = -900;
+
 // ---------------------------------------------------------------------------
 // Traefik label injection
 // ---------------------------------------------------------------------------
@@ -387,7 +395,18 @@ export function buildVardoOverlay(opts: {
     const tier = effPriority ?? "standard";
     let memReservation: string | undefined;
     if (tier === "critical") {
-      overlayService.oom_score_adj = -1000;
+      // oom_score_adj -1000 (OOM_SCORE_ADJ_MIN) makes every process in the
+      // container entirely exempt from the OOM killer. Paired with a hard
+      // memory limit that is a deadlock: when the cgroup hits its limit the
+      // kernel's memcg OOM killer finds no killable process ("Out of memory
+      // and no killable processes"), so nothing is reclaimed, the container
+      // hangs instead of exiting, and `restart: unless-stopped` never fires —
+      // it stays wedged until manually recreated. Use a strongly-protected but
+      // still-killable value when a memory limit is present so the kernel can
+      // reclaim (and the container can exit→restart) at the cgroup boundary.
+      // CRITICAL_OOM_WITH_LIMIT keeps it far below standard(0)/disposable(750),
+      // so it remains the last victim under host pressure, without being unkillable.
+      overlayService.oom_score_adj = effMemoryLimit ? CRITICAL_OOM_WITH_LIMIT : -1000;
       overlayService.cpu_shares = 2048;
       if (effMemoryLimit) memReservation = `${effMemoryLimit}M`;
     } else if (tier === "disposable") {
