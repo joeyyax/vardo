@@ -239,6 +239,13 @@
       "when": 1781803860646,
       "tag": "0033_blue_talkback",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1782320545778,
+      "tag": "0034_heavy_nehzno",
+      "breakpoints": true
     }
   ]
 }

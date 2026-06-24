@@ -2722,7 +2722,10 @@ describe("buildVardoOverlay", () => {
         cache: { cpuLimit: null, memoryLimit: null, gpuEnabled: false, priority: null },
       },
     });
-    expect(overlay.services.api.oom_score_adj).toBe(-1000);
+    // api is critical AND has a memory limit → oom score must stay killable
+    // (not -1000), else the cgroup deadlocks when it hits the limit.
+    expect(overlay.services.api.oom_score_adj).toBeGreaterThan(-1000);
+    expect(overlay.services.api.oom_score_adj).toBeLessThan(0);
     expect(overlay.services.api.cpu_shares).toBe(2048);
     expect(overlay.services.api.deploy?.resources?.reservations?.memory).toBe("256M");
     expect(overlay.services.cache.oom_score_adj).toBe(0);
@@ -3041,7 +3044,11 @@ describe("buildVardoOverlay — edge cases", () => {
       priority: "critical",
       memoryLimit: 5120,
     });
-    expect(overlay.services.app.oom_score_adj).toBe(-1000);
+    // With a hard memory limit the oom score must stay killable (NOT -1000):
+    // -1000 + a cgroup limit deadlocks ("out of memory and no killable
+    // processes") and the container hangs instead of exiting/restarting.
+    expect(overlay.services.app.oom_score_adj).toBeGreaterThan(-1000);
+    expect(overlay.services.app.oom_score_adj).toBeLessThan(0);
     expect(overlay.services.app.cpu_shares).toBe(2048);
     // The memory reservation lives under deploy.resources.reservations.memory,
     // NOT a top-level mem_reservation (which Compose rejects alongside a
@@ -3369,5 +3376,39 @@ describe("excludeServices", () => {
     };
     const result = excludeServices(compose, ["nonexistent"]);
     expect(Object.keys(result.services)).toEqual(["web", "db"]);
+  });
+});
+
+describe("buildVardoOverlay — priority/QoS oom_score_adj", () => {
+  const overlay = (priority: "critical" | "standard" | "disposable", memoryLimit?: number) =>
+    buildVardoOverlay({
+      fullCompose: baseCompose(),
+      networkName: "vardo-network",
+      priority,
+      memoryLimit,
+    }).services.app;
+
+  it("critical WITHOUT a memory limit keeps full protection (-1000)", () => {
+    expect(overlay("critical").oom_score_adj).toBe(-1000);
+  });
+
+  it("critical WITH a memory limit is clamped to a killable value (not -1000)", () => {
+    // Regression: -1000 + a hard memory limit deadlocks the cgroup ("out of
+    // memory and no killable processes") and the container hangs without ever
+    // exiting/restarting. Must stay killable so the kernel can reclaim.
+    const adj = overlay("critical", 5120).oom_score_adj!;
+    expect(adj).toBeGreaterThan(-1000);
+    expect(adj).toBeLessThan(0); // still strongly protected vs standard(0)/disposable(750)
+  });
+
+  it("critical WITH a memory limit still reserves memory and boosts cpu_shares", () => {
+    const svc = overlay("critical", 5120);
+    expect(svc.cpu_shares).toBe(2048);
+    expect(svc.deploy?.resources?.reservations?.memory).toBe("5120M");
+  });
+
+  it("standard and disposable tiers are unaffected by the clamp", () => {
+    expect(overlay("standard", 512).oom_score_adj).toBe(0);
+    expect(overlay("disposable", 512).oom_score_adj).toBe(750);
   });
 });

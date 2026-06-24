@@ -1,0 +1,1 @@
+ALTER TABLE "app" ADD COLUMN "auto_restart_unhealthy" boolean;
