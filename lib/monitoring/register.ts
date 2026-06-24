@@ -57,5 +57,14 @@ export async function registerMonitoringPlugin(): Promise<void> {
     log.error("Failed to start system health monitor:", err);
   }
 
+  // Start container health monitor (auto-restart unhealthy app containers)
+  try {
+    const { startHealthMonitor } = await import("@/lib/docker/health-monitor");
+    startHealthMonitor();
+    log.info("Container health monitor started");
+  } catch (err) {
+    log.error("Failed to start container health monitor:", err);
+  }
+
   log.info("Monitoring hooks and system health monitor registered");
 }

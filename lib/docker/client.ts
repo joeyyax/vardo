@@ -68,7 +68,15 @@ export type ContainerRuntimeOptions = {
 export type ContainerInspect = {
   id: string;
   name: string;
-  state: { running: boolean; status: string; startedAt: string };
+  state: {
+    running: boolean;
+    status: string;
+    startedAt: string;
+    // Health probe state from the container's healthcheck, or null when no
+    // healthcheck is configured. status is one of "starting" | "healthy" |
+    // "unhealthy". failingStreak is the count of consecutive failing probes.
+    health: { status: string; failingStreak: number } | null;
+  };
   image: string;
   ports: { internal: number; external?: number; protocol: string }[];
   exposedPorts: number[];
@@ -352,7 +360,12 @@ export async function inspectContainer(id: string): Promise<ContainerInspect> {
   const data = await dockerRequest<{
     Id: string;
     Name: string;
-    State: { Running: boolean; Status: string; StartedAt: string };
+    State: {
+      Running: boolean;
+      Status: string;
+      StartedAt: string;
+      Health?: { Status?: string; FailingStreak?: number } | null;
+    };
     Config: {
       Image: string;
       Env: string[];
@@ -410,6 +423,12 @@ export async function inspectContainer(id: string): Promise<ContainerInspect> {
       running: data.State.Running,
       status: data.State.Status,
       startedAt: data.State.StartedAt,
+      health: data.State.Health?.Status
+        ? {
+            status: data.State.Health.Status,
+            failingStreak: data.State.Health.FailingStreak ?? 0,
+          }
+        : null,
     },
     image: cfg.Image,
     ports: parseInspectPorts(hc.PortBindings),
@@ -452,6 +471,16 @@ export async function inspectContainer(id: string): Promise<ContainerInspect> {
     entrypoint: cfg.Entrypoint ?? [],
     command: cfg.Cmd ?? [],
   };
+}
+
+/**
+ * Restart a single container in place via the Docker Engine API.
+ * `timeoutSec` is how long Docker waits for a graceful stop before killing
+ * (passed as the `t` query param). Restarting in place preserves the
+ * blue-green slot — used by the health monitor to recover a wedged container.
+ */
+export async function restartContainer(id: string, timeoutSec = 10): Promise<void> {
+  await dockerRequest("POST", `/containers/${id}/restart?t=${timeoutSec}`);
 }
 
 // ---------------------------------------------------------------------------
