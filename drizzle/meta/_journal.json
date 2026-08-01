@@ -302,6 +302,13 @@
       "when": 1785613820092,
       "tag": "0042_worried_norman_osborn",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1785614485852,
+      "tag": "0043_cloudy_madripoor",
+      "breakpoints": true
     }
   ]
 }
