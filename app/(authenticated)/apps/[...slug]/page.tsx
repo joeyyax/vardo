@@ -243,6 +243,8 @@ export default async function AppDetailPage({ params }: PageProps) {
     cron: "cron",
     terminal: "terminal",
     errors: "errorTracking",
+    metrics: "metrics",
+    backups: "backups",
   };
   const effectiveTab = tab && gatedTabs[tab] && !featureFlags[gatedTabs[tab]]
     ? defaultTab
