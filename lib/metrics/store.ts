@@ -31,5 +31,6 @@ export {
   getLatestBusinessMetric,
   storeOrgBusinessMetric,
   queryOrgBusinessMetric,
+  getLatestOrgBusinessMetric,
 } from "./store-business";
 export type { BusinessMetricName } from "./store-business";
