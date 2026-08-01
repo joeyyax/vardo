@@ -89,6 +89,12 @@ export type DeployContext = {
   groupEnvironmentId?: string;
   signal?: AbortSignal;
 
+  /**
+   * Set when this deploy is a rollback. The app record has already been
+   * overlaid with the target's snapshot; steps read this for the target commit.
+   */
+  rollback?: { targetDeploymentId: string; gitSha: string | null };
+
   // -----------------------------------------------------------------------
   // Resolved during execution — set by early steps, read by later ones
   // -----------------------------------------------------------------------

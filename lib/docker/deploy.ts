@@ -27,6 +27,12 @@ import {
   ENDPOINT_CHECK_TIMEOUT,
 } from "./constants";
 import { prepareRepo, resolveCompose, build, swap, postDeploy } from "./deploy-steps";
+import {
+  loadRollbackTarget,
+  applyRollbackTarget,
+  applyRollbackEnv,
+  type RollbackTarget,
+} from "./rollback-target";
 
 const execFileAsync = promisify(execFile);
 
@@ -44,6 +50,11 @@ export type DeployOpts = {
   signal?: AbortSignal;
   /** Pre-created deployment record ID — if provided, skips createDeployment. */
   deploymentId?: string;
+  /**
+   * Roll back to a previous deployment: its git SHA, config snapshot and
+   * (optionally) env snapshot drive this deploy instead of the app's current row.
+   */
+  rollback?: { targetDeploymentId: string; includeEnvVars?: boolean };
 };
 
 export type DeployResult = {
@@ -250,6 +261,19 @@ export async function runDeployment(
     log(`[deploy] App: ${app.displayName} (${app.name})`);
     log(`[deploy] Source: ${app.source}, Type: ${app.deployType}`);
 
+    // Rollback: overlay the target deployment's snapshot onto the app record
+    // before anything reads it. Throws when the target can't be deployed.
+    let rollbackTarget: RollbackTarget | null = null;
+    if (opts.rollback) {
+      rollbackTarget = await loadRollbackTarget(
+        opts.appId,
+        opts.rollback.targetDeploymentId,
+        opts.rollback.includeEnvVars ?? false,
+      );
+      applyRollbackTarget(app as DeployContext["app"], rollbackTarget, log);
+      applyRollbackEnv(app as DeployContext["app"], rollbackTarget, log);
+    }
+
     // Load env vars from encrypted blob
     const envMap: Record<string, string> = {};
     if (app.envContent) {
@@ -286,6 +310,9 @@ export async function runDeployment(
       environmentId: opts.environmentId,
       groupEnvironmentId: opts.groupEnvironmentId,
       signal: opts.signal,
+      rollback: rollbackTarget
+        ? { targetDeploymentId: rollbackTarget.targetDeploymentId, gitSha: rollbackTarget.gitSha }
+        : undefined,
 
       app: app as DeployContext["app"],
       org: org ?? null,
