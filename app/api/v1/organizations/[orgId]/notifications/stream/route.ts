@@ -9,6 +9,14 @@ type RouteParams = {
   params: Promise<{ orgId: string }>;
 };
 
+/** How far back a reconnect may replay. Beyond this, start live. */
+const CATCHUP_MAX_AGE_MS = 5 * 60_000;
+
+/** Milliseconds from a Redis stream ID ("<ms>-<seq>"). 0 if unparseable. */
+function streamIdMs(id: string): number {
+  return Number.parseInt(id.split("-")[0] ?? "", 10) || 0;
+}
+
 // GET /api/v1/organizations/[orgId]/notifications/stream
 // SSE stream of org-level bus events (deploy, backup, cron, system alerts, etc.)
 // Reads from Redis Streams with catchup + live tail.
@@ -22,7 +30,15 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
     if (!org) return new Response("Forbidden", { status: 403 });
 
     const url = new URL(request.url);
-    const lastId = url.searchParams.get("lastId") ?? undefined;
+    // Catch-up covers a dropped connection, not days away. Replaying an old
+    // cursor toasted every event the user missed, so anything past the window
+    // starts live instead; the notification panel is where history belongs.
+    const connectedAt = Date.now();
+    const requestedLastId = url.searchParams.get("lastId");
+    const withinCatchup =
+      requestedLastId !== null &&
+      connectedAt - streamIdMs(requestedLastId) <= CATCHUP_MAX_AGE_MS;
+    const lastId = withinCatchup ? requestedLastId! : "$";
 
     const encoder = new TextEncoder();
     const abortController = new AbortController();
@@ -68,7 +84,13 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
                   : entry.fields;
                 controller.enqueue(
                   encoder.encode(
-                    `event: notification\ndata: ${JSON.stringify({ ...payload, streamId: entry.id })}\n\n`,
+                    `event: notification\ndata: ${JSON.stringify({
+                      ...payload,
+                      streamId: entry.id,
+                      // Delivered by catch-up, not live — the client keeps it
+                      // out of the toast queue.
+                      historical: streamIdMs(entry.id) < connectedAt,
+                    })}\n\n`,
                   ),
                 );
               } catch { /* skip malformed entries */ }
