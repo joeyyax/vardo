@@ -126,7 +126,7 @@ export async function collectDigestData(
         and(
           eq(activities.organizationId, orgId),
           gte(activities.createdAt, since),
-          inArray(activities.action, ["disk-write-alert", "volume-drift"]),
+          inArray(activities.action, ["volume.drift_detected"]),
         ),
       )
       .groupBy(activities.action),
@@ -173,11 +173,12 @@ export async function collectDigestData(
   // ---------------------------------------------------------------------------
   // Alert counts (already aggregated from DB)
   // ---------------------------------------------------------------------------
-  let diskWriteAlerts = 0;
+  // Disk-write alerts are bus-only — nothing writes them to the activity log,
+  // so this stays 0 until they are recorded.
+  const diskWriteAlerts = 0;
   let volumeDrifts = 0;
   for (const row of alertCountRows) {
-    if (row.action === "disk-write-alert") diskWriteAlerts = row.n;
-    if (row.action === "volume-drift") volumeDrifts = row.n;
+    if (row.action === "volume.drift_detected") volumeDrifts = row.n;
   }
 
   // ---------------------------------------------------------------------------
