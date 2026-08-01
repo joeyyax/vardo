@@ -1,7 +1,18 @@
 import { db } from "@/lib/db";
 import { user } from "@/lib/db/schema";
-import { requireSession } from "@/lib/auth/session";
+import { getSession, requireSession } from "@/lib/auth/session";
 import { eq } from "drizzle-orm";
+
+/** Non-throwing admin check, for deciding whether to show admin-only affordances. */
+export async function isAppAdmin(): Promise<boolean> {
+  const session = await getSession();
+  if (!session?.user?.id) return false;
+  const dbUser = await db.query.user.findFirst({
+    where: eq(user.id, session.user.id),
+    columns: { isAppAdmin: true },
+  });
+  return Boolean(dbUser?.isAppAdmin);
+}
 
 /**
  * Require the current user to be an app admin.

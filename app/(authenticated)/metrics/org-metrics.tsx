@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
-import { Activity, Box, Cpu, HardDrive, MemoryStick, Network, Loader2, RefreshCw } from "lucide-react";
+import { Activity, AlertTriangle, Box, Cpu, HardDrive, MemoryStick, Network, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatBytes, formatBytesShort, formatMemLimit, formatTime } from "@/lib/metrics/format";
 import { CHART_COLORS, chartTickStyle, type TimeRange } from "@/lib/metrics/constants";
@@ -76,6 +76,11 @@ function DiskTooltip(props: { active?: boolean; payload?: Array<{ dataKey?: stri
       categoryLabels={{ diskTotal: "Total" }}
     />
   );
+}
+
+/** Stands in for a figure the metrics source never reported. Never render 0 for it. */
+function NoValue() {
+  return <span className="text-muted-foreground">&mdash;</span>;
 }
 
 type Slice = { label: string; value: number; color: string; detail?: string };
@@ -150,6 +155,19 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
   const metaApps = meta?.apps as AppMeta[] | undefined;
   const streamProjectCount = meta?.projectCount as number | undefined;
   const orgDiskTotal = meta?.orgDiskTotal as number | undefined;
+
+  // Container counts only ever come from the stream; history points don't carry them.
+  const containerCountKnown = Boolean(metaApps && metaApps.length > 0);
+  const hasSamples = points.length > 0 || containerCountKnown;
+
+  // Grace period so a first paint or a blip isn't an outage. Deferred both
+  // ways: setState directly in an effect cascades renders.
+  const [streamDown, setStreamDown] = useState(false);
+  useEffect(() => {
+    const live = connected || loading;
+    const timer = setTimeout(() => setStreamDown(!live), live ? 0 : 10000);
+    return () => clearTimeout(timer);
+  }, [connected, loading]);
 
   // Derive display apps from SSE meta when available, fall back to props
   const displayApps = useMemo(() => {
@@ -282,16 +300,33 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
           ))}
         </div>
         <div className="flex items-center gap-2">
-          {reconnecting ? (
+          {streamDown ? (
+            <span className="size-2 rounded-full bg-status-error" />
+          ) : reconnecting ? (
             <RefreshCw className="size-3 text-status-warning animate-spin" />
           ) : (
-            <span className={`size-2 rounded-full ${loading ? "bg-status-neutral animate-pulse" : connected ? "bg-status-success" : "bg-status-neutral"}`} />
+            <span className={`size-2 rounded-full ${loading ? "bg-status-neutral animate-pulse" : connected ? "bg-status-success" : "bg-status-neutral animate-pulse"}`} />
           )}
           <span className="text-xs text-muted-foreground">
-            {reconnecting ? "Reconnecting..." : connected ? "Live" : loading ? "Loading..." : "Disconnected"}
+            {streamDown ? "Unavailable" : reconnecting ? "Reconnecting..." : connected ? "Live" : loading ? "Loading..." : "Connecting..."}
           </span>
         </div>
       </div>
+
+      {streamDown && (
+        <div
+          role="alert"
+          className="squircle flex items-start gap-3 rounded-lg border border-status-error/30 bg-status-error-muted px-4 py-3"
+        >
+          <AlertTriangle className="size-4 shrink-0 mt-0.5 text-status-error" />
+          <div className="space-y-0.5">
+            <p className="type-body font-medium">Metrics stream unavailable</p>
+            <p className="type-body-sm text-muted-foreground">
+              cAdvisor isn&apos;t reachable. Figures below are the last values received.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Summary cards with sparklines */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
@@ -304,7 +339,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
             <p className="text-xs text-muted-foreground">CPU</p>
           </div>
           <p className="relative type-numeral text-2xl mt-1">
-            {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : `${totals.cpu.toFixed(1)}%`}
+            {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : hasSamples ? `${totals.cpu.toFixed(1)}%` : <NoValue />}
           </p>
         </div>
         <div className="squircle relative rounded-lg border bg-card px-4 py-3 overflow-hidden">
@@ -316,7 +351,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
             <p className="text-xs text-muted-foreground">Memory</p>
           </div>
           <p className="relative type-numeral text-2xl mt-1">
-            {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : formatBytes(totals.memory)}
+            {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : hasSamples ? formatBytes(totals.memory) : <NoValue />}
           </p>
         </div>
         <div className="squircle relative rounded-lg border bg-card px-4 py-3 overflow-hidden">
@@ -328,9 +363,9 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
             <p className="text-xs text-muted-foreground">Disk</p>
           </div>
           <p className="relative type-numeral text-2xl mt-1">
-            {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : formatBytes(orgDiskTotal ?? 0)}
+            {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : hasSamples ? formatBytes(orgDiskTotal ?? 0) : <NoValue />}
           </p>
-          {!loading && displayApps.length > 0 && (
+          {!loading && hasSamples && displayApps.length > 0 && (
             <p className="relative text-[10px] text-muted-foreground mt-0.5">
               across {displayApps.length} app{displayApps.length !== 1 ? "s" : ""}
             </p>
@@ -346,9 +381,9 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
             <p className="text-xs text-muted-foreground">Bandwidth</p>
           </div>
           <p className="relative type-numeral text-2xl mt-1">
-            {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : formatBytes(totals.networkRx + totals.networkTx)}
+            {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : hasSamples ? formatBytes(totals.networkRx + totals.networkTx) : <NoValue />}
           </p>
-          {!loading && (
+          {!loading && hasSamples && (
             <p className="relative text-[10px] text-muted-foreground mt-0.5">
               ↓ {formatBytes(totals.networkRx)} · ↑ {formatBytes(totals.networkTx)}
             </p>
@@ -360,34 +395,38 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
             <p className="text-xs text-muted-foreground">Containers</p>
           </div>
           <p className="type-numeral text-2xl mt-1">
-            {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : totals.containers}
+            {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : containerCountKnown ? totals.containers : <NoValue />}
           </p>
-          <div className="flex flex-wrap items-center gap-2 mt-1">
-            {statusCounts.active > 0 && (
-              <span className="inline-flex items-center gap-1 text-[10px] text-status-success">
-                <span className="size-1.5 rounded-full bg-status-success" />
-                {statusCounts.active} running
-              </span>
-            )}
-            {statusCounts.error > 0 && (
-              <span className="inline-flex items-center gap-1 text-[10px] text-status-error">
-                <span className="size-1.5 rounded-full bg-status-error" />
-                {statusCounts.error} crashed
-              </span>
-            )}
-            {statusCounts.stopped > 0 && (
-              <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
-                <span className="size-1.5 rounded-full bg-status-neutral" />
-                {statusCounts.stopped} stopped
-              </span>
-            )}
-            {statusCounts.deploying > 0 && (
-              <span className="inline-flex items-center gap-1 text-[10px] text-status-info">
-                <span className="size-1.5 rounded-full bg-status-info animate-pulse" />
-                {statusCounts.deploying} deploying
-              </span>
-            )}
-          </div>
+          {/* Labelled: these come from app records, not the metrics stream. */}
+          {displayApps.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 mt-1">
+              <span className="type-label text-muted-foreground">Apps</span>
+              {statusCounts.active > 0 && (
+                <span className="inline-flex items-center gap-1 text-[10px] text-status-success">
+                  <span className="size-1.5 rounded-full bg-status-success" />
+                  {statusCounts.active} running
+                </span>
+              )}
+              {statusCounts.error > 0 && (
+                <span className="inline-flex items-center gap-1 text-[10px] text-status-error">
+                  <span className="size-1.5 rounded-full bg-status-error" />
+                  {statusCounts.error} crashed
+                </span>
+              )}
+              {statusCounts.stopped > 0 && (
+                <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+                  <span className="size-1.5 rounded-full bg-status-neutral" />
+                  {statusCounts.stopped} stopped
+                </span>
+              )}
+              {statusCounts.deploying > 0 && (
+                <span className="inline-flex items-center gap-1 text-[10px] text-status-info">
+                  <span className="size-1.5 rounded-full bg-status-info animate-pulse" />
+                  {statusCounts.deploying} deploying
+                </span>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
