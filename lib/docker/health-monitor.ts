@@ -301,7 +301,7 @@ export async function tickHealthMonitor(): Promise<void> {
     });
   }
 
-  await persistConditions(appRows, signals, now);
+  await persistConditions(appRows, signals, now, usageByContainer.size);
   cleanupState(seen);
 }
 
@@ -350,12 +350,13 @@ async function persistConditions(
   appRows: { id: string; conditions: AppCondition[] | null }[],
   signals: Map<string, ConditionInput>,
   now: number,
+  sampleCount: number,
 ): Promise<void> {
   if (!conditionsReported) {
     conditionsReported = true;
     const withMetrics = [...signals.values()].filter((s) => s.memory && s.memory.limit > 0).length;
     log.info(
-      `Evaluating conditions for ${appRows.length} app(s), ${withMetrics} with a memory limit to measure against`,
+      `Evaluating conditions for ${appRows.length} app(s); ${sampleCount} container metric sample(s), ${withMetrics} with a memory limit to measure against`,
     );
   }
 
