@@ -139,11 +139,12 @@ export async function* readStream(
   const blockMs = opts?.blockMs ?? 2000; // Short block for responsive abort
   const signal = opts?.signal;
 
-  // Phase 1: Catchup — paginated XRANGE to avoid unbounded memory
+  // Phase 1: Catchup — paginated XRANGE to avoid unbounded memory.
+  // "$" skips it entirely and live-tails from now.
   let cursor = fromId === "0" ? "-" : `(${fromId}`;
   let lastId: string | undefined;
 
-  while (!signal?.aborted) {
+  while (fromId !== "$" && !signal?.aborted) {
     const batch = await redis.xrange(
       key, cursor, "+", "COUNT", CATCHUP_BATCH_SIZE,
     ) as [string, string[]][] | null;
