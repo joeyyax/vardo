@@ -660,7 +660,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                 {
                   label: "Observe",
                   items: [
-                    { value: "logs", label: "Logs" },
+                    ...(featureFlags?.logging !== false ? [{ value: "logs", label: "Logs" }] : []),
                     ...(featureFlags?.metrics !== false ? [{ value: "metrics", label: "Metrics" }] : []),
                     ...(featureFlags?.errorTracking !== false ? [{ value: "errors", label: "Errors" }] : []),
                     { value: "security", label: "Security" },
@@ -749,12 +749,14 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           />
         </TabsContent>
 
-        <TabsContent value="logs">
-          <LogViewer
-            key={`logs-${selectedEnvId}`}
-            streamUrl={`/api/v1/organizations/${orgId}/apps/${app.id}/logs/stream${selectedEnv ? `?environment=${selectedEnv.name}` : ""}`}
-          />
-        </TabsContent>
+        {featureFlags?.logging !== false && (
+          <TabsContent value="logs">
+            <LogViewer
+              key={`logs-${selectedEnvId}`}
+              streamUrl={`/api/v1/organizations/${orgId}/apps/${app.id}/logs/stream${selectedEnv ? `?environment=${selectedEnv.name}` : ""}`}
+            />
+          </TabsContent>
+        )}
 
         <TabsContent value="volumes" className="space-y-4">
           <p className="text-sm text-muted-foreground">
