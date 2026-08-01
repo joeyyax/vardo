@@ -207,7 +207,9 @@ export function MetricsBand({
   const last = (a?: number[]) => (a && a.length > 0 ? a[a.length - 1] : undefined);
   const cpu = metrics ? metrics.cpuPercent : last(history?.cpu);
   const mem = metrics ? metrics.memoryUsage : last(history?.memory);
-  const disk = metrics ? metrics.diskUsage : (last(history?.disk) ?? 0);
+  // cAdvisor runs with --disable_metrics=disk, so the live snapshot always
+  // reports 0. Disk comes from Docker via the collector's per-project series.
+  const disk = last(history?.disk) ?? metrics?.diskUsage ?? 0;
   const net = metrics ? metrics.networkRx + metrics.networkTx : last(history?.network);
   return (
     <div className="grid grid-cols-4 divide-x divide-border/40 border-t">
