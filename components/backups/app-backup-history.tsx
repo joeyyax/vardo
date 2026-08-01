@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, Archive } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { BackupHistory } from "./backup-history";
-import type { RecentBackup } from "./types";
+import { UncapturedWarning, uncapturedSources } from "./uncaptured-warning";
+import type { BackupJob, RecentBackup } from "./types";
 
 /**
  * Backup history scoped to a single app. Used in project and app detail tabs.
@@ -18,6 +19,7 @@ export function AppBackupHistory({
 }) {
   const [loading, setLoading] = useState(true);
   const [history, setHistory] = useState<RecentBackup[]>([]);
+  const [uncaptured, setUncaptured] = useState<string[]>([]);
 
   const fetchData = useCallback(async () => {
     try {
@@ -25,6 +27,10 @@ export function AppBackupHistory({
       if (res.ok) {
         const data = await res.json();
         setHistory(data.recentHistory || []);
+        const jobApps = ((data.jobs || []) as BackupJob[]).flatMap((job) =>
+          job.backupJobApps.map((bja) => bja.app).filter((app) => app.id === appId),
+        );
+        setUncaptured(uncapturedSources(jobApps));
       }
     } catch {
       // silent
@@ -45,5 +51,10 @@ export function AppBackupHistory({
     );
   }
 
-  return <BackupHistory history={history} orgId={orgId} onRefresh={fetchData} />;
+  return (
+    <div className="space-y-3">
+      <UncapturedWarning sources={uncaptured} />
+      <BackupHistory history={history} orgId={orgId} onRefresh={fetchData} />
+    </div>
+  );
 }

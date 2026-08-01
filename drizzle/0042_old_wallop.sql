@@ -1,0 +1,1 @@
+ALTER TYPE "public"."backup_status" ADD VALUE 'skipped' BEFORE 'pruned';

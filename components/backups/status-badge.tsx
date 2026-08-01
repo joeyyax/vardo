@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, XCircle, Loader2, Clock } from "lucide-react";
+import { CheckCircle2, XCircle, Loader2, Clock, AlertTriangle } from "lucide-react";
 
 export function StatusBadge({ status }: { status: string }) {
   switch (status) {
@@ -22,6 +22,13 @@ export function StatusBadge({ status }: { status: string }) {
         <Badge variant="destructive">
           <XCircle className="mr-1 size-3" aria-hidden="true" />
           Failed
+        </Badge>
+      );
+    case "skipped":
+      return (
+        <Badge className="border-transparent bg-status-warning-muted text-status-warning">
+          <AlertTriangle className="mr-1 size-3" aria-hidden="true" />
+          Skipped
         </Badge>
       );
     case "pending":
