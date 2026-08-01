@@ -216,10 +216,13 @@ function ProjectCard({
   );
 
   return (
-    <Link
-      href={`/projects/${project.name}`}
-      className="squircle relative flex flex-col rounded-lg bg-card shadow-card dark:border transition-shadow hover:shadow-card-hover overflow-hidden cursor-pointer"
-    >
+    <div className="squircle relative flex flex-col rounded-lg bg-card shadow-card dark:border transition-shadow hover:shadow-card-hover overflow-hidden">
+      {/* Whole-card click target; interactive children stack above it */}
+      <Link
+        href={`/projects/${project.name}`}
+        className="absolute inset-0 z-0"
+        aria-label={project.displayName}
+      />
       {/* Raised panel: identity + aggregate state */}
       <div className="p-5">
         <div className="flex gap-4">
@@ -239,7 +242,9 @@ function ProjectCard({
             <div className="flex items-center gap-2 min-w-0">
               <h3 className="text-base font-semibold truncate">{project.displayName}</h3>
               {isSystem && <SystemBadge compact className="shrink-0" />}
-              <EndpointsPopover endpoints={projectApps.flatMap((a) => a.domains.map((d) => ({ label: a.displayName, domain: d.domain })))} />
+              <span className="relative z-10">
+                <EndpointsPopover endpoints={projectApps.flatMap((a) => a.domains.map((d) => ({ label: a.displayName, domain: d.domain })))} />
+              </span>
             </div>
             {projectApps.length === 0 ? (
               <span className="text-xs text-muted-foreground">Empty</span>
@@ -288,8 +293,7 @@ function ProjectCard({
         {projectApps.length === 0 ? (
           <Link
             href={`/apps/new?project=${project.id}`}
-            onClick={(e) => e.stopPropagation()}
-            className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-card transition-colors cursor-pointer"
+            className="relative z-10 inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-card transition-colors cursor-pointer"
           >
             <Plus className="size-3" />
             Add App
@@ -308,8 +312,7 @@ function ProjectCard({
                 <Link
                   key={a.id}
                   href={`/apps/${a.name}`}
-                  onClick={(e) => e.stopPropagation()}
-                  className="flex min-w-0 items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors cursor-pointer hover:bg-card"
+                  className="relative z-10 flex min-w-0 items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors cursor-pointer hover:bg-card"
                 >
                   <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${statusDotColor(a.status)}`} />
                   <span className="truncate">{a.displayName}</span>
@@ -347,7 +350,7 @@ function ProjectCard({
           memoryLimit={memoryLimitTotal}
         />
       )}
-    </Link>
+    </div>
   );
 }
 
