@@ -50,6 +50,7 @@ import { isOrgAdmin } from "@/lib/auth/permissions";
 // Extracted modules
 import { Uptime } from "./timer";
 import { AppHeader } from "./app-header";
+import { AppUpdatesPanel } from "./app-updates";
 import { AppSectionNav, type SectionGroup } from "./app-section-nav";
 import { NewEnvironmentSheet } from "./new-environment-sheet";
 import { AppDeployPanel } from "./app-deploy-panel";
@@ -615,6 +616,13 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         allTags={allTags}
         siblings={siblings}
         onNavigate={setActiveTab}
+      />
+
+      <AppUpdatesPanel
+        orgId={orgId}
+        appId={app.id}
+        onDeploy={handleDeploy}
+        deploying={deploy.deploying}
       />
 
       {/* Sections — vertical nav rail on lg+, scroll strip below */}
