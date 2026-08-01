@@ -6,6 +6,8 @@ import {
   getTraefikRoutedServices,
   injectTraefikLabels,
   validateCompose,
+  isSpecialNetworkMode,
+  findNamedNetworkModes,
   composeToYaml,
   injectGpuDevices,
   getServicesWithExternalizedVolumes,
@@ -3410,5 +3412,77 @@ describe("buildVardoOverlay — priority/QoS oom_score_adj", () => {
   it("standard and disposable tiers are unaffected by the clamp", () => {
     expect(overlay("standard", 512).oom_score_adj).toBe(0);
     expect(overlay("disposable", 512).oom_score_adj).toBe(750);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// network_mode with a network name
+// ---------------------------------------------------------------------------
+
+describe("isSpecialNetworkMode", () => {
+  it("recognizes the namespace modes Docker understands", () => {
+    for (const nm of ["host", "none", "bridge", "service:vpn", "container:abc"]) {
+      expect(isSpecialNetworkMode(nm)).toBe(true);
+    }
+  });
+
+  it("flags a network name used as network_mode", () => {
+    expect(isSpecialNetworkMode("vardo-network")).toBe(false);
+  });
+});
+
+describe("findNamedNetworkModes", () => {
+  it("finds named network modes in stored YAML", () => {
+    const yaml = `
+services:
+  jellyfin:
+    image: jellyfin/jellyfin
+    network_mode: vardo-network
+  vpn:
+    image: vpn
+    network_mode: host
+`;
+    expect(findNamedNetworkModes(yaml)).toEqual([
+      { service: "jellyfin", networkMode: "vardo-network" },
+    ]);
+  });
+
+  it("returns nothing for unparseable YAML", () => {
+    expect(findNamedNetworkModes("services: [")).toEqual([]);
+  });
+});
+
+describe("parseCompose — network_mode correction", () => {
+  it("moves a network name out of network_mode and into networks", () => {
+    const compose = parseCompose(`
+services:
+  jellyfin:
+    image: jellyfin/jellyfin
+    network_mode: vardo-network
+`);
+    expect(compose.services.jellyfin.network_mode).toBeUndefined();
+    expect(compose.services.jellyfin.networks).toEqual(["vardo-network"]);
+  });
+
+  it("merges with an existing networks list without duplicating", () => {
+    const compose = parseCompose(`
+services:
+  app:
+    image: app
+    networks: [vardo-network, internal]
+    network_mode: vardo-network
+`);
+    expect(compose.services.app.networks).toEqual(["vardo-network", "internal"]);
+  });
+
+  it("leaves namespace modes alone", () => {
+    const compose = parseCompose(`
+services:
+  app:
+    image: app
+    network_mode: host
+`);
+    expect(compose.services.app.network_mode).toBe("host");
+    expect(compose.services.app.networks).toBeUndefined();
   });
 });

@@ -75,5 +75,10 @@ export async function registerMonitoringPlugin(): Promise<void> {
     log.error("Failed to start app status reconciler:", err);
   }
 
+  // Audit stored compose configs for silently-ignored settings
+  import("@/lib/docker/compose-audit")
+    .then(({ reportStoredComposeConfigs }) => reportStoredComposeConfigs())
+    .catch((err) => log.warn("Compose audit failed to start:", err));
+
   log.info("Monitoring hooks and system health monitor registered");
 }
