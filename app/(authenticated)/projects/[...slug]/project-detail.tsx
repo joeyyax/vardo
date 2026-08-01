@@ -123,6 +123,7 @@ type ProjectApp = {
   displayName: string;
   description: string | null;
   status: string;
+  containerStartedAt: Date | null;
   needsRedeploy: boolean | null;
   imageName: string | null;
   gitUrl: string | null;
@@ -240,7 +241,7 @@ function AppCard({
               </h3>
               <EndpointsPopover endpoints={app.domains.map((d) => ({ domain: d.domain }))} />
             </div>
-            <StatusIndicator status={effectiveStatus} finishedAt={lastDeploy?.finishedAt} needsRedeploy={!!app.needsRedeploy} />
+            <StatusIndicator status={effectiveStatus} startedAt={app.containerStartedAt} needsRedeploy={!!app.needsRedeploy} />
           </div>
           {app.description ? (
             <p className="text-xs text-muted-foreground truncate mt-0.5">

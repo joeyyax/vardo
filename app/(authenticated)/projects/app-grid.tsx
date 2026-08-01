@@ -33,6 +33,7 @@ type AppWithRelations = {
   gpuEnabled: boolean | null;
   priority: "critical" | "standard" | "disposable" | null;
   status: string;
+  containerStartedAt: Date | null;
   needsRedeploy: boolean | null;
   createdAt: Date;
   updatedAt: Date;
@@ -88,11 +89,21 @@ function ProjectCard({
 }) {
   const color = "#a1a1aa"; // neutral zinc-400 — project color is unused
 
-  // Aggregate status from all apps
+  // Aggregate status from all apps. Anything not actually running wins over
+  // "running" — a project is only green when every app has a live container.
   const allActive = projectApps.every((a) => a.status === "active");
   const anyError = projectApps.some((a) => a.status === "error");
+  const anyMissing = projectApps.some((a) => a.status === "missing");
   const anyDeploying = projectApps.some((a) => a.status === "deploying");
-  const status = allActive ? "running" : anyError ? "error" : anyDeploying ? "deploying" : "stopped";
+  const status = allActive
+    ? "running"
+    : anyError
+      ? "error"
+      : anyMissing
+        ? "missing"
+        : anyDeploying
+          ? "deploying"
+          : "stopped";
 
   // Aggregated CPU across all apps
   const aggregatedCpu = useMemo(() => {
@@ -169,16 +180,15 @@ function ProjectCard({
             {projectApps.length > 0 ? (
               <StatusIndicator
                 status={status}
-                finishedAt={allActive ? (() => {
-                  let latest: Date | null = null;
+                startedAt={allActive ? (() => {
+                  // Oldest container start — the project has been up this long.
+                  let oldest: Date | null = null;
                   for (const a of projectApps) {
-                    const f = a.deployments[0]?.finishedAt;
-                    if (f) {
-                      const d = new Date(f);
-                      if (!latest || d > latest) latest = d;
-                    }
+                    if (!a.containerStartedAt) return null;
+                    const d = new Date(a.containerStartedAt);
+                    if (!oldest || d < oldest) oldest = d;
                   }
-                  return latest;
+                  return oldest;
                 })() : undefined}
                 needsRedeploy={projectApps.some((a) => !!a.needsRedeploy)}
               />
@@ -238,7 +248,7 @@ function ProjectCard({
                 <Cpu className="size-3 text-muted-foreground/50" aria-label="GPU passthrough enabled" />
               )}
               <span className="sr-only">
-                {a.status === "active" ? ", Running" : a.status === "error" ? ", Crashed" : a.status === "deploying" ? ", Deploying" : ", Stopped"}
+                {a.status === "active" ? ", Running" : a.status === "error" ? ", Crashed" : a.status === "deploying" ? ", Deploying" : a.status === "missing" ? ", No container" : ", Stopped"}
               </span>
             </Link>
         ))}
