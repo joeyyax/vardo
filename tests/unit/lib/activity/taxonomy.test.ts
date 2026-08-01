@@ -1,11 +1,16 @@
 import { describe, it, expect } from "vitest";
 
 import {
+  ALL_FAMILIES,
   classify,
   errorTextFrom,
   familyFor,
   outcomeFor,
 } from "@/lib/activity/taxonomy";
+import {
+  activityFamilyEnum,
+  activityOutcomeEnum,
+} from "@/lib/db/schema/enums";
 import type { ActivityRow } from "@/lib/activity/types";
 
 function row(overrides: Partial<ActivityRow> = {}): ActivityRow {
@@ -19,6 +24,24 @@ function row(overrides: Partial<ActivityRow> = {}): ActivityRow {
     ...overrides,
   };
 }
+
+// recordActivity writes these straight into the columns, so a family the
+// database has never heard of fails the insert.
+describe("database enums", () => {
+  it("covers every family", () => {
+    expect([...activityFamilyEnum.enumValues].sort()).toEqual(
+      [...ALL_FAMILIES].sort()
+    );
+  });
+
+  it("covers every outcome", () => {
+    expect([...activityOutcomeEnum.enumValues].sort()).toEqual([
+      "failure",
+      "neutral",
+      "success",
+    ]);
+  });
+});
 
 describe("familyFor", () => {
   it("maps deployment actions to deploy", () => {
@@ -102,6 +125,20 @@ describe("errorTextFrom", () => {
 });
 
 describe("classify", () => {
+  it("prefers the stored family and outcome over the action string", () => {
+    const item = classify(
+      row({ action: "app.created", family: "security", outcome: "failure" })
+    );
+    expect(item.family).toBe("security");
+    expect(item.outcome).toBe("failure");
+  });
+
+  it("derives family and outcome for rows written before the columns", () => {
+    const item = classify(row({ action: "deployment.failed" }));
+    expect(item.family).toBe("deploy");
+    expect(item.outcome).toBe("failure");
+  });
+
   it("attaches an error only to failures", () => {
     const failed = classify(
       row({ action: "deployment.failed", metadata: { error: "boom" } })

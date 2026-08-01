@@ -8,15 +8,13 @@ import { PageToolbar } from "@/components/page-toolbar";
 import { toast } from "@/lib/messenger";
 import { classifyAll } from "@/lib/activity/taxonomy";
 import {
-  applyFilters,
-  countsByOutcome,
   describeWindow,
-  familiesPresent,
   filtersToQuery,
   hasActiveFilters,
 } from "@/lib/activity/filter";
 import { groupActivities } from "@/lib/activity/group";
 import type {
+  ActivityFacets,
   ActivityFilters,
   ActivityGroup,
   ActivityRow as ActivityRowData,
@@ -28,8 +26,10 @@ type ActivityFeedProps = {
   rows: ActivityRowData[];
   orgId: string;
   filters: ActivityFilters;
-  /** True when the server returned fewer rows than it asked for. */
-  loadedAll: boolean;
+  /** Counted across the window, not the loaded page, so chips stay switchable. */
+  facets: ActivityFacets;
+  /** Events matching the filters, of which `rows` is the first page. */
+  total: number;
 };
 
 const PAGE_SIZE = 50;
@@ -103,35 +103,27 @@ export function ActivityFeed({
   rows: initialRows,
   orgId,
   filters,
-  loadedAll,
+  facets,
+  total,
 }: ActivityFeedProps) {
   const [rows, setRows] = useState(initialRows);
   const [loading, setLoading] = useState(false);
-  const [exhausted, setExhausted] = useState(loadedAll);
+  const [exhausted, setExhausted] = useState(initialRows.length >= total);
 
   // Day boundaries depend on the reader's timezone, so grouping happens here
   // rather than on the server.
   const now = useMemo(() => new Date(), []);
 
   const classified = useMemo(() => classifyAll(rows), [rows]);
-  const visible = useMemo(
-    () => applyFilters(classified, filters),
-    [classified, filters]
-  );
-  const groups = useMemo(() => groupActivities(visible), [visible]);
+  const groups = useMemo(() => groupActivities(classified), [classified]);
   const days = useMemo(() => byDay(groups, now), [groups, now]);
-
-  const available = useMemo(() => familiesPresent(classified), [classified]);
-  const counts = useMemo(() => countsByOutcome(classified), [classified]);
 
   const loadMore = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({
-        offset: String(rows.length),
-        limit: String(PAGE_SIZE),
-      });
-      if (filters.since) params.set("since", filters.since.toISOString());
+      const params = new URLSearchParams(filtersToQuery(filters));
+      params.set("offset", String(rows.length));
+      params.set("limit", String(PAGE_SIZE));
 
       const res = await fetch(
         `/api/v1/organizations/${orgId}/activities?${params}`
@@ -148,7 +140,7 @@ export function ActivityFeed({
     } finally {
       setLoading(false);
     }
-  }, [orgId, rows.length, filters.since]);
+  }, [orgId, rows.length, filters]);
 
   const filtered = hasActiveFilters({ ...filters, since: null });
 
@@ -160,16 +152,12 @@ export function ActivityFeed({
 
       <ActivityFilterBar
         filters={filters}
-        available={available}
-        counts={counts}
+        available={facets.families}
+        counts={facets.outcomes}
       />
 
       {filters.since && (
-        <WindowHeader
-          since={filters.since}
-          filters={filters}
-          matched={visible.length}
-        />
+        <WindowHeader since={filters.since} filters={filters} matched={total} />
       )}
 
       {groups.length === 0 ? (
