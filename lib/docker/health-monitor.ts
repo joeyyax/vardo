@@ -26,6 +26,13 @@ export const MAX_RESTARTS_PER_WINDOW = 5;
  *  healthcheck's start_period anyway. */
 const MIN_CONTAINER_AGE_MS = 120_000;
 
+/** Restarts observed within RESTART_WINDOW_MS before a container counts as
+ *  crash-looping. Override with VARDO_CRASH_LOOP_RESTARTS. */
+export function getCrashLoopThreshold(): number {
+  const parsed = parseInt(process.env.VARDO_CRASH_LOOP_RESTARTS ?? "5", 10);
+  return Math.max(2, isNaN(parsed) ? 5 : parsed);
+}
+
 // ---------------------------------------------------------------------------
 // Pure decision logic (unit tested)
 // ---------------------------------------------------------------------------
@@ -52,6 +59,25 @@ export function decideRestart(opts: {
   return "restart";
 }
 
+/**
+ * Whether a container is crash-looping: Docker's RestartCount has climbed past
+ * the threshold since we started watching, and we never once saw the container
+ * healthy.
+ *
+ * This is the failure class the unhealthy check cannot see. A container that
+ * dies inside its healthcheck's start_period never leaves "starting", so its
+ * FailingStreak stays 0 and it reads as fine forever while Docker restarts it
+ * on a loop.
+ */
+export function isCrashLooping(opts: {
+  restartsSinceBaseline: number;
+  everHealthy: boolean;
+  threshold: number;
+}): boolean {
+  if (opts.everHealthy) return false;
+  return opts.restartsSinceBaseline >= opts.threshold;
+}
+
 /** Whether an app should be auto-restarted when unhealthy. null on the app means
  *  "use the default", which is on for critical-priority apps and off otherwise. */
 export function effectiveAutoRestart(app: {
@@ -70,6 +96,12 @@ const unhealthyStreak = new Map<string, number>();
 const restartHistory = new Map<string, number[]>();
 /** containerIds we've already escalated as "gave up" — alert once per window. */
 const gaveUp = new Set<string>();
+/** containerId → Docker RestartCount when we first saw it, and when. */
+const restartBaseline = new Map<string, { count: number; at: number }>();
+/** containerIds observed healthy at least once — not crash-looping. */
+const everHealthy = new Set<string>();
+/** containerId → last crash-loop alert, so we escalate once per window. */
+const crashLoopAlerted = new Map<string, number>();
 
 function prune(ts: number[], now: number): number[] {
   return ts.filter((t) => now - t < RESTART_WINDOW_MS);
@@ -121,16 +153,20 @@ export async function tickHealthMonitor(): Promise<void> {
 
     const app = appsById.get(c.labels["vardo.project.id"]);
     if (!app) continue;
-    if (!effectiveAutoRestart(app)) {
-      unhealthyStreak.delete(c.id);
-      continue;
-    }
 
     let info;
     try {
       info = await inspectContainer(c.id);
     } catch {
       continue; // container may have just gone away
+    }
+
+    if (info.state.health?.status === "healthy") everHealthy.add(c.id);
+    checkCrashLoop(c, info.restartCount, app, now);
+
+    if (!effectiveAutoRestart(app)) {
+      unhealthyStreak.delete(c.id);
+      continue;
     }
 
     // No healthcheck → we can't judge health; nothing to do.
@@ -216,11 +252,72 @@ export async function tickHealthMonitor(): Promise<void> {
   cleanupState(seen);
 }
 
+/**
+ * Escalate a container whose RestartCount keeps climbing without ever reaching
+ * healthy. Alerts at most once per RESTART_WINDOW_MS, then rebaselines so a
+ * container that is still looping alerts again next window.
+ */
+function checkCrashLoop(
+  c: { id: string; name: string },
+  restartCount: number,
+  app: { id: string; name: string; displayName: string | null; organizationId: string },
+  now: number,
+): void {
+  const baseline = restartBaseline.get(c.id);
+  if (!baseline || restartCount < baseline.count) {
+    // First sighting, or the container was recreated and the counter reset.
+    restartBaseline.set(c.id, { count: restartCount, at: now });
+    return;
+  }
+
+  if (now - baseline.at > RESTART_WINDOW_MS) {
+    restartBaseline.set(c.id, { count: restartCount, at: now });
+    return;
+  }
+
+  const threshold = getCrashLoopThreshold();
+  const delta = restartCount - baseline.count;
+  if (!isCrashLooping({ restartsSinceBaseline: delta, everHealthy: everHealthy.has(c.id), threshold })) {
+    return;
+  }
+
+  const lastAlert = crashLoopAlerted.get(c.id);
+  if (lastAlert !== undefined && now - lastAlert < RESTART_WINDOW_MS) return;
+  crashLoopAlerted.set(c.id, now);
+  restartBaseline.set(c.id, { count: restartCount, at: now });
+
+  const appName = app.displayName || app.name;
+  const perHour = Math.round((delta / (now - baseline.at)) * 3_600_000);
+  log.error(
+    `CRASH LOOP: ${c.name} (app ${appName}) restarted ${delta} time(s) in ${Math.round((now - baseline.at) / 60000)}m ` +
+      `(~${perHour}/hr, ${restartCount} total) and has never reported healthy — it is dying before its healthcheck can fail`,
+  );
+
+  emit(app.organizationId, {
+    type: "app.auto-restarted",
+    title: `Crash loop: ${appName}`,
+    message:
+      `${c.name} has restarted ${delta} time(s) in the last ${Math.round((now - baseline.at) / 60000)} minutes ` +
+      `(~${perHour}/hr) and has never reached a healthy state. Docker keeps restarting it, so it never reports ` +
+      `unhealthy and self-heal cannot see it. Check the container logs — this needs manual intervention.`,
+    appId: app.id,
+    appName,
+    containerName: c.name,
+    containerId: c.id,
+    reason: "crash-loop",
+    success: false,
+    gaveUp: true,
+  });
+}
+
 /** Drop in-memory state for containers that no longer exist. */
 function cleanupState(seen: Set<string>): void {
   for (const id of unhealthyStreak.keys()) if (!seen.has(id)) unhealthyStreak.delete(id);
   for (const id of restartHistory.keys()) if (!seen.has(id)) restartHistory.delete(id);
   for (const id of gaveUp) if (!seen.has(id)) gaveUp.delete(id);
+  for (const id of restartBaseline.keys()) if (!seen.has(id)) restartBaseline.delete(id);
+  for (const id of everHealthy) if (!seen.has(id)) everHealthy.delete(id);
+  for (const id of crashLoopAlerted.keys()) if (!seen.has(id)) crashLoopAlerted.delete(id);
 }
 
 // ---------------------------------------------------------------------------

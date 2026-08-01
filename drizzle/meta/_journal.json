@@ -246,6 +246,20 @@
       "when": 1782320545778,
       "tag": "0034_heavy_nehzno",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1785549234247,
+      "tag": "0035_strange_greymalkin",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1785550054548,
+      "tag": "0036_demonic_chameleon",
+      "breakpoints": true
     }
   ]
 }

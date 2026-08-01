@@ -17,6 +17,7 @@ import {
   isAnonymousVolume,
   composeToYaml,
   buildVardoOverlay,
+  defaultMemoryLimitMb,
 } from "../compose";
 import {
   NETWORK_NAME as VARDO_NETWORK,
@@ -222,7 +223,10 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
         `[deploy] critical-priority app requires a memory limit — set one before deploying`,
       );
     }
-    ctx.log(`[deploy] Warning: no memory limit set — container can consume unlimited host memory`);
+    const tier = app.priority ?? "standard";
+    ctx.log(
+      `[deploy] No memory limit set — applying the ${tier} tier default of ${defaultMemoryLimitMb(tier)}MB`,
+    );
   }
 
   // Per-service env (decomposed children) can reference templates/secrets, so it

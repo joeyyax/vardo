@@ -6,6 +6,9 @@ import {
   getTraefikRoutedServices,
   injectTraefikLabels,
   validateCompose,
+  isSpecialNetworkMode,
+  findNamedNetworkModes,
+  defaultMemoryLimitMb,
   composeToYaml,
   injectGpuDevices,
   getServicesWithExternalizedVolumes,
@@ -2608,12 +2611,14 @@ describe("buildVardoOverlay", () => {
     });
   });
 
-  it("does not add resource limits when none provided", () => {
+  it("falls back to the tier default memory limit when none is provided", () => {
     const compose: ComposeFile = {
       services: { app: { name: "app", image: "nginx:latest" } },
     };
     const overlay = buildVardoOverlay({ fullCompose: compose, networkName });
-    expect(overlay.services.app.deploy?.resources?.limits).toBeUndefined();
+    expect(overlay.services.app.deploy?.resources?.limits).toEqual({
+      memory: `${defaultMemoryLimitMb("standard")}M`,
+    });
   });
 
   it("includes externalized volumes that appear in bareVolumeNames", () => {
@@ -2980,13 +2985,15 @@ describe("buildVardoOverlay — edge cases", () => {
     expect(overlay.networks).toBeUndefined();
   });
 
-  it("injects only cpuLimit when memoryLimit is not set", () => {
+  it("pairs an explicit cpuLimit with the tier default memory limit", () => {
     const compose: ComposeFile = {
       services: { app: { name: "app", image: "nginx:latest" } },
     };
     const overlay = buildVardoOverlay({ fullCompose: compose, networkName, cpuLimit: 1 });
-    expect(overlay.services.app.deploy?.resources?.limits).toEqual({ cpus: "1" });
-    expect(overlay.services.app.deploy?.resources?.limits?.memory).toBeUndefined();
+    expect(overlay.services.app.deploy?.resources?.limits).toEqual({
+      cpus: "1",
+      memory: `${defaultMemoryLimitMb("standard")}M`,
+    });
   });
 
   it("injects only memoryLimit when cpuLimit is not set", () => {
@@ -2998,12 +3005,14 @@ describe("buildVardoOverlay — edge cases", () => {
     expect(overlay.services.app.deploy?.resources?.limits?.cpus).toBeUndefined();
   });
 
-  it("does not add resource limits when cpuLimit is 0", () => {
+  it("adds no cpu limit when cpuLimit is 0, but still caps memory", () => {
     const compose: ComposeFile = {
       services: { app: { name: "app", image: "nginx:latest" } },
     };
     const overlay = buildVardoOverlay({ fullCompose: compose, networkName, cpuLimit: 0 });
-    expect(overlay.services.app.deploy?.resources?.limits).toBeUndefined();
+    expect(overlay.services.app.deploy?.resources?.limits).toEqual({
+      memory: `${defaultMemoryLimitMb("standard")}M`,
+    });
   });
 
   it("produces a service entry with only name + standard QoS knobs when no other config is injected", () => {
@@ -3011,9 +3020,16 @@ describe("buildVardoOverlay — edge cases", () => {
       services: { app: { name: "app", image: "nginx:latest" } },
     };
     const overlay = buildVardoOverlay({ fullCompose: compose, networkName });
-    // Default tier is "standard" → oom_score_adj 0, cpu_shares 1024. No
-    // structural fields (image, ports, etc.) leak into the overlay.
-    expect(overlay.services.app).toEqual({ name: "app", oom_score_adj: 0, cpu_shares: 1024 });
+    // Default tier is "standard" → oom_score_adj 0, cpu_shares 1024, plus the
+    // tier's default memory cap. No structural fields leak into the overlay.
+    expect(overlay.services.app).toEqual({
+      name: "app",
+      oom_score_adj: 0,
+      cpu_shares: 1024,
+      deploy: {
+        resources: { limits: { memory: `${defaultMemoryLimitMb("standard")}M` } },
+      },
+    });
   });
 
   it("does not include overlay image or ports — only injected config", () => {
@@ -3095,7 +3111,11 @@ describe("buildVardoOverlay — edge cases", () => {
       networkName,
       priority: "critical",
     });
-    expect(overlay.services.app.oom_score_adj).toBe(-1000);
+    // A tier default is a cap, not a reservation, so it must not be claimed.
+    expect(overlay.services.app.deploy?.resources?.limits?.memory).toBe(
+      `${defaultMemoryLimitMb("critical")}M`,
+    );
+    expect(overlay.services.app.oom_score_adj).toBe(-900);
     expect(overlay.services.app.cpu_shares).toBe(2048);
     expect(overlay.services.app.deploy?.resources?.reservations?.memory).toBeUndefined();
     expect(overlay.services.app.mem_reservation).toBeUndefined();
@@ -3388,8 +3408,8 @@ describe("buildVardoOverlay — priority/QoS oom_score_adj", () => {
       memoryLimit,
     }).services.app;
 
-  it("critical WITHOUT a memory limit keeps full protection (-1000)", () => {
-    expect(overlay("critical").oom_score_adj).toBe(-1000);
+  it("critical stays killable even without an explicit limit — the tier default is still a limit", () => {
+    expect(overlay("critical").oom_score_adj).toBe(-900);
   });
 
   it("critical WITH a memory limit is clamped to a killable value (not -1000)", () => {
@@ -3410,5 +3430,117 @@ describe("buildVardoOverlay — priority/QoS oom_score_adj", () => {
   it("standard and disposable tiers are unaffected by the clamp", () => {
     expect(overlay("standard", 512).oom_score_adj).toBe(0);
     expect(overlay("disposable", 512).oom_score_adj).toBe(750);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// network_mode with a network name
+// ---------------------------------------------------------------------------
+
+describe("isSpecialNetworkMode", () => {
+  it("recognizes the namespace modes Docker understands", () => {
+    for (const nm of ["host", "none", "bridge", "service:vpn", "container:abc"]) {
+      expect(isSpecialNetworkMode(nm)).toBe(true);
+    }
+  });
+
+  it("flags a network name used as network_mode", () => {
+    expect(isSpecialNetworkMode("vardo-network")).toBe(false);
+  });
+});
+
+describe("findNamedNetworkModes", () => {
+  it("finds named network modes in stored YAML", () => {
+    const yaml = `
+services:
+  jellyfin:
+    image: jellyfin/jellyfin
+    network_mode: vardo-network
+  vpn:
+    image: vpn
+    network_mode: host
+`;
+    expect(findNamedNetworkModes(yaml)).toEqual([
+      { service: "jellyfin", networkMode: "vardo-network" },
+    ]);
+  });
+
+  it("returns nothing for unparseable YAML", () => {
+    expect(findNamedNetworkModes("services: [")).toEqual([]);
+  });
+});
+
+describe("parseCompose — network_mode correction", () => {
+  it("moves a network name out of network_mode and into networks", () => {
+    const compose = parseCompose(`
+services:
+  jellyfin:
+    image: jellyfin/jellyfin
+    network_mode: vardo-network
+`);
+    expect(compose.services.jellyfin.network_mode).toBeUndefined();
+    expect(compose.services.jellyfin.networks).toEqual(["vardo-network"]);
+  });
+
+  it("merges with an existing networks list without duplicating", () => {
+    const compose = parseCompose(`
+services:
+  app:
+    image: app
+    networks: [vardo-network, internal]
+    network_mode: vardo-network
+`);
+    expect(compose.services.app.networks).toEqual(["vardo-network", "internal"]);
+  });
+
+  it("leaves namespace modes alone", () => {
+    const compose = parseCompose(`
+services:
+  app:
+    image: app
+    network_mode: host
+`);
+    expect(compose.services.app.network_mode).toBe("host");
+    expect(compose.services.app.networks).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tier memory defaults
+// ---------------------------------------------------------------------------
+
+describe("defaultMemoryLimitMb", () => {
+  const keys = [
+    "VARDO_DEFAULT_MEMORY_CRITICAL",
+    "VARDO_DEFAULT_MEMORY_STANDARD",
+    "VARDO_DEFAULT_MEMORY_DISPOSABLE",
+  ];
+  const originals = keys.map((k) => process.env[k]);
+  afterEach(() => {
+    keys.forEach((k, i) => {
+      if (originals[i] === undefined) delete process.env[k];
+      else process.env[k] = originals[i];
+    });
+  });
+
+  it("gives critical the most headroom and disposable the least", () => {
+    expect(defaultMemoryLimitMb("critical")).toBeGreaterThan(defaultMemoryLimitMb("standard"));
+    expect(defaultMemoryLimitMb("standard")).toBeGreaterThan(defaultMemoryLimitMb("disposable"));
+  });
+
+  it("never returns zero — null must not mean unlimited", () => {
+    for (const tier of ["critical", "standard", "disposable"] as const) {
+      expect(defaultMemoryLimitMb(tier)).toBeGreaterThan(0);
+    }
+  });
+
+  it("honors a per-tier env override", () => {
+    process.env.VARDO_DEFAULT_MEMORY_STANDARD = "3072";
+    expect(defaultMemoryLimitMb("standard")).toBe(3072);
+  });
+
+  it("ignores an override below the 64MB floor", () => {
+    process.env.VARDO_DEFAULT_MEMORY_DISPOSABLE = "8";
+    expect(defaultMemoryLimitMb("disposable")).toBe(512);
   });
 });

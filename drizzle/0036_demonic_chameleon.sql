@@ -1,0 +1,1 @@
+ALTER TABLE "app" ADD COLUMN "container_memory_limit" bigint;

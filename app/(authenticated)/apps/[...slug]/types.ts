@@ -128,7 +128,7 @@ export type App = {
   projectId: string | null;
   cloneStrategy: string | null;
   dependsOn: string[] | null;
-  status: "active" | "stopped" | "error" | "deploying";
+  status: "active" | "stopped" | "error" | "deploying" | "missing";
   needsRedeploy: boolean | null;
   importedContainerId: string | null;
   isSystemManaged: boolean;
