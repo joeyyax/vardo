@@ -59,6 +59,11 @@ function majorOf(tag: string): number | null {
   return match ? parseInt(match[1], 10) : null;
 }
 
+/** Whether the row's chosen target crosses a major on a version-locked image. */
+function needsMigrationFor(entry: ServiceUpdate, target: string | null): boolean {
+  return Boolean(entry.majorLocked && target && isMajorJump(entry.currentTag, target));
+}
+
 function isMajorJump(from: string, to: string): boolean {
   const a = majorOf(from);
   const b = majorOf(to);
@@ -172,7 +177,26 @@ export function AppUpdatesPanel({
   );
   const unverified = (data?.services ?? []).filter((entry) => entry.status === "unknown");
 
-  if (loading || !data || (actionable.length === 0 && unverified.length === 0)) return null;
+  if (loading || !data) return null;
+
+  // Its own tab, so it answers rather than disappears when there is no work.
+  if (actionable.length === 0 && unverified.length === 0) {
+    return (
+      <section
+        aria-label="Image updates"
+        className="squircle rounded-lg border bg-card px-4 py-6 text-center"
+      >
+        <p className="type-body text-muted-foreground">Every image is up to date.</p>
+        <button
+          type="button"
+          onClick={refresh}
+          className="type-body-sm mt-1 text-muted-foreground/70 underline underline-offset-2 transition-opacity hover:opacity-80"
+        >
+          Check again
+        </button>
+      </section>
+    );
+  }
 
   /** What the row will apply: the user's pick, else the safe default. */
   function targetTag(entry: ServiceUpdate): string | null {
@@ -242,55 +266,68 @@ export function AppUpdatesPanel({
         const key = entry.service ?? "";
         const label = severityLabel(entry);
         return (
-          <div key={key} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
-            {entry.service && (
-              <span className="font-mono text-xs text-muted-foreground">{entry.service}</span>
-            )}
-            <span className="flex items-center gap-2 text-sm">
-              <span className="font-mono text-muted-foreground">{entry.currentTag}</span>
-              <ArrowRight className="size-3 text-muted-foreground/40" aria-hidden="true" />
-              {entry.available.length > 1 ? (
-                <Select
-                  value={targetTag(entry) ?? undefined}
-                  onValueChange={(tag) =>
-                    setChosen((prev) => ({ ...prev, [key]: tag }))
-                  }
+          <div
+            key={key}
+            className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 px-4 py-3 sm:grid-cols-[minmax(6rem,10rem)_auto_1rem_13rem_minmax(0,1fr)_auto]"
+          >
+            <span className="truncate font-mono text-xs text-muted-foreground">
+              {entry.service}
+              {/* The column that carries this is hidden on narrow screens. */}
+              <span className="sm:hidden"> · {entry.currentTag}</span>
+            </span>
+            <span className="hidden whitespace-nowrap font-mono text-sm text-muted-foreground sm:inline">
+              {entry.currentTag}
+            </span>
+            <ArrowRight
+              className="hidden size-3 text-muted-foreground/40 sm:inline"
+              aria-hidden="true"
+            />
+            {entry.available.length > 1 ? (
+              <Select
+                value={targetTag(entry) ?? undefined}
+                onValueChange={(tag) => setChosen((prev) => ({ ...prev, [key]: tag }))}
+              >
+                <SelectTrigger
+                  className="col-span-2 h-7 w-full font-mono sm:col-span-1"
+                  aria-label={`Version for ${entry.service ?? entry.image}`}
                 >
-                  <SelectTrigger
-                    className="h-7 font-mono"
-                    aria-label={`Version for ${entry.service ?? entry.image}`}
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {entry.available.map((tag) => {
-                      const crossesMajor = entry.majorLocked && isMajorJump(entry.currentTag, tag);
-                      return (
-                        <SelectItem key={tag} value={tag} className="font-mono">
-                          {tag}
-                          {crossesMajor && (
-                            <span className="ml-2 type-label text-status-warning">
-                              needs migration
-                            </span>
-                          )}
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
+                  {/* Children, not the selected item's own markup — otherwise the
+                      dropdown's migration marker is echoed inside the trigger. */}
+                  <SelectValue>{targetTag(entry)}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {entry.available.map((tag) => {
+                    const crossesMajor = entry.majorLocked && isMajorJump(entry.currentTag, tag);
+                    return (
+                      <SelectItem key={tag} value={tag} className="font-mono">
+                        {tag}
+                        {crossesMajor && (
+                          <span className="ml-2 type-label text-status-warning">
+                            needs migration
+                          </span>
+                        )}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            ) : (
+              <span className={`whitespace-nowrap font-mono text-sm ${severityClass(entry.severity)}`}>
+                {targetTag(entry) ?? "rebuilt"}
+              </span>
+            )}
+            {/* Never hidden by breakpoint — this is the warning that stops a
+                datastore being pinned across a major it cannot start on. */}
+            <span className="type-label truncate text-muted-foreground/50">
+              {needsMigrationFor(entry, targetTag(entry)) ? (
+                <span className="text-status-warning">Needs migration</span>
               ) : (
-                <span className={`font-mono ${severityClass(entry.severity)}`}>
-                  {targetTag(entry) ?? "rebuilt"}
-                </span>
+                <span className="hidden sm:inline">{label}</span>
               )}
             </span>
-            {label && (
-              <span className="type-label text-muted-foreground/50">{label}</span>
-            )}
             <Button
               size="sm"
               variant={confirming === key ? "default" : "outline"}
-              className="ml-auto"
               disabled={applying === key || deploying}
               onClick={() => apply(entry)}
             >

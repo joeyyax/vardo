@@ -621,12 +621,6 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         onNavigate={setActiveTab}
       />
 
-      <AppUpdatesPanel
-        orgId={orgId}
-        appId={app.id}
-        onDeploy={handleDeploy}
-        deploying={deploy.deploying}
-      />
 
       {/* Sections — vertical nav rail on lg+, scroll strip below */}
       <Tabs
@@ -644,6 +638,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                     ...(!isChildService
                       ? [{ value: "deployments", label: "Deployments", count: filteredDeployments.length }]
                       : []),
+                    { value: "updates", label: "Updates" },
                     ...(app.connectionInfo && app.connectionInfo.length > 0
                       ? [{ value: "connect", label: "Connect" }]
                       : []),
@@ -686,6 +681,15 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         </aside>
 
         <div className="min-w-0 flex-1">
+
+        <TabsContent value="updates">
+          <AppUpdatesPanel
+            orgId={orgId}
+            appId={app.id}
+            onDeploy={handleDeploy}
+            deploying={deploy.deploying}
+          />
+        </TabsContent>
 
         <TabsContent value="deployments">
           <AppDeployPanel

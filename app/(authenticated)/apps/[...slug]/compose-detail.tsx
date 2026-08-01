@@ -701,12 +701,6 @@ export function ComposeDetail({
         }}
       />
 
-      <AppUpdatesPanel
-        orgId={orgId}
-        appId={app.id}
-        onDeploy={handleDeployClick}
-        deploying={deploy.deploying}
-      />
 
       {/* Sections — vertical nav rail on lg+, scroll strip below */}
       <Tabs
@@ -723,6 +717,7 @@ export function ComposeDetail({
                   items: [
                     { value: "services", label: "Services", count: services.length },
                     { value: "deployments", label: "Deployments", count: totalDeployments },
+                    { value: "updates", label: "Updates" },
                   ],
                 },
                 {
@@ -751,6 +746,15 @@ export function ComposeDetail({
         </aside>
 
         <div className="min-w-0 flex-1">
+
+        <TabsContent value="updates">
+          <AppUpdatesPanel
+            orgId={orgId}
+            appId={app.id}
+            onDeploy={handleDeployClick}
+            deploying={deploy.deploying}
+          />
+        </TabsContent>
 
         <TabsContent value="services">
           {services.length === 0 ? (
