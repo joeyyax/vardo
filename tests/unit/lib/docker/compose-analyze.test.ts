@@ -184,8 +184,11 @@ describe("analyzeCompose", () => {
         services: { app: { name: "app", image: "nginx:latest" } },
       };
       const result = analyzeCompose(compose);
-      // Only a restart policy finding (missing)
-      expect(result.findings.every((f) => f.category === "restart-policy")).toBe(true);
+      // Missing restart policy, plus the moving `latest` tag.
+      expect(result.counts["host-port"]).toBeUndefined();
+      expect(result.counts["inline-env"]).toBeUndefined();
+      expect(result.counts["restart-policy"]).toBe(1);
+      expect(result.counts["floating-tag"]).toBe(1);
     });
 
     it("skips non-HTTP images from private registries", () => {
