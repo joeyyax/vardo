@@ -217,6 +217,7 @@ export function registerAdoptApp(
         organizationId: context.organizationId,
         action: "app.adopted",
         appId: result.app.id,
+        userId: context.userId,
         metadata: {
           name: effectiveName,
           displayName: effectiveDisplayName,

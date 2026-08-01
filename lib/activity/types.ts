@@ -28,6 +28,9 @@ export type ActivitySubject = {
 export type ActivityRow = {
   id: string;
   action: string;
+  /** Stored at write time. Null on rows predating the columns. */
+  family?: ActivityFamily | null;
+  outcome?: ActivityOutcome | null;
   metadata: unknown;
   createdAt: Date | string;
   user: ActivityActor | null;
@@ -82,4 +85,11 @@ export type ActivityFilters = {
   families: ActivityFamily[];
   outcomes: ActivityOutcome[];
   since: Date | null;
+};
+
+/** Counts for the filter bar, taken across the window rather than one page. */
+export type ActivityFacets = {
+  /** Families with rows in the window, so no chip leads to an empty view. */
+  families: ActivityFamily[];
+  outcomes: Record<ActivityOutcome, number>;
 };
