@@ -104,13 +104,26 @@ describe("normalizeCompose", () => {
 
       const { compose: result } = normalizeCompose(compose, {
         routedServices: new Set(),
+        restartPolicy: "on-failure",
+      });
+
+      expect(result.services.app.restart).toBe("on-failure");
+    });
+
+    it('downgrades "always" to "unless-stopped" even as the target policy', () => {
+      const compose = makeCompose({
+        app: { image: "nginx:latest" },
+      });
+
+      const { compose: result } = normalizeCompose(compose, {
+        routedServices: new Set(),
         restartPolicy: "always",
       });
 
-      expect(result.services.app.restart).toBe("always");
+      expect(result.services.app.restart).toBe("unless-stopped");
     });
 
-    it('leaves "on-failure" and "always" alone', () => {
+    it('leaves "on-failure" alone and downgrades a declared "always"', () => {
       const compose = makeCompose({
         app: { image: "nginx:latest", restart: "on-failure" },
         db: { image: "postgres:16", restart: "always" },
@@ -121,8 +134,9 @@ describe("normalizeCompose", () => {
       });
 
       expect(result.services.app.restart).toBe("on-failure");
-      expect(result.services.db.restart).toBe("always");
-      expect(changes.filter((c) => c.field === "restart")).toHaveLength(0);
+      // "always" resurrects a stopped standby when the daemon restarts.
+      expect(result.services.db.restart).toBe("unless-stopped");
+      expect(changes.filter((c) => c.field === "restart")).toHaveLength(1);
     });
   });
 

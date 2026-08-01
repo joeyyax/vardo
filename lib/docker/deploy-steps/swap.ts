@@ -235,16 +235,19 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
 
   if (mustStopOldSlot && oldSlotDir && oldProjectName) {
     const oldComposeFileArgs = await getOldComposeFileArgs();
-    log(`[deploy] Tearing down old slot (${activeSlot})...`);
+    log(`[deploy] Stopping old slot (${activeSlot})...`);
     try {
+      // `stop`, not `down` — the old slot stays as a warm standby, keeping its
+      // containers and their logs for rollback. It is removed by the pre-clean
+      // above on the next deploy that reuses this slot dir.
       await execFileAsync(
         "docker",
-        ["compose", ...oldComposeFileArgs, "-p", oldProjectName, "down", "--remove-orphans"],
+        ["compose", ...oldComposeFileArgs, "-p", oldProjectName, "stop"],
         { cwd: oldSlotDir, timeout: COMPOSE_DOWN_TIMEOUT }
       );
       stoppedOldServices.push("__all__");
     } catch (err) {
-      log(`[deploy] Warning: could not tear down old slot — ${err instanceof Error ? err.message : err}`);
+      log(`[deploy] Warning: could not stop old slot — ${err instanceof Error ? err.message : err}`);
     }
   }
 
