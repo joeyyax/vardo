@@ -30,6 +30,26 @@ const VARDO_LABEL_PREFIX = "vardo.";
 // allowing the kernel to reclaim at the cgroup boundary.
 const CRITICAL_OOM_WITH_LIMIT = -900;
 
+// Memory cap (MB) applied when an app has no explicit limit. Without a cgroup
+// limit a container can take the whole host, and a JVM sizes its heap from the
+// hypervisor's RAM rather than the LXC's — stirling-pdf read 64GB on a 24GB
+// guest and asked for a 32GB heap. Override per tier with
+// VARDO_DEFAULT_MEMORY_{CRITICAL,STANDARD,DISPOSABLE}.
+const TIER_MEMORY_DEFAULTS_MB = {
+  critical: 2048,
+  standard: 1024,
+  disposable: 512,
+} as const;
+
+export type QosTier = "critical" | "standard" | "disposable";
+
+export function defaultMemoryLimitMb(tier: QosTier): number {
+  const override = process.env[`VARDO_DEFAULT_MEMORY_${tier.toUpperCase()}`];
+  const parsed = override ? parseInt(override, 10) : NaN;
+  if (!isNaN(parsed) && parsed >= 64) return parsed;
+  return TIER_MEMORY_DEFAULTS_MB[tier];
+}
+
 // ---------------------------------------------------------------------------
 // Traefik label injection
 // ---------------------------------------------------------------------------
@@ -360,9 +380,12 @@ export function buildVardoOverlay(opts: {
     // globals; services without a child entry use the parent's values (#745).
     const cfg = serviceConfig[name];
     const effCpuLimit = cfg ? cfg.cpuLimit : cpuLimit;
-    const effMemoryLimit = cfg ? cfg.memoryLimit : memoryLimit;
+    const explicitMemoryLimit = cfg ? cfg.memoryLimit : memoryLimit;
     const effGpuEnabled = cfg ? cfg.gpuEnabled : gpuEnabled;
     const effPriority = cfg ? cfg.priority : priority;
+    const tier = effPriority ?? "standard";
+    // No explicit limit falls back to the tier default rather than unlimited.
+    const effMemoryLimit = explicitMemoryLimit ?? defaultMemoryLimitMb(tier);
 
     if (vardoLabels && Object.keys(vardoLabels).length > 0) {
       overlayService.labels = vardoLabels;
@@ -392,23 +415,15 @@ export function buildVardoOverlay(opts: {
     // mem_reservation — Compose rejects a top-level mem_reservation alongside a
     // deploy.resources.reservations block (which GPU apps already carry for
     // devices). It is merged with any GPU devices below.
-    const tier = effPriority ?? "standard";
     let memReservation: string | undefined;
     if (tier === "critical") {
-      // oom_score_adj -1000 (OOM_SCORE_ADJ_MIN) makes every process in the
-      // container entirely exempt from the OOM killer. Paired with a hard
-      // memory limit that is a deadlock: when the cgroup hits its limit the
-      // kernel's memcg OOM killer finds no killable process ("Out of memory
-      // and no killable processes"), so nothing is reclaimed, the container
-      // hangs instead of exiting, and `restart: unless-stopped` never fires —
-      // it stays wedged until manually recreated. Use a strongly-protected but
-      // still-killable value when a memory limit is present so the kernel can
-      // reclaim (and the container can exit→restart) at the cgroup boundary.
-      // CRITICAL_OOM_WITH_LIMIT keeps it far below standard(0)/disposable(750),
-      // so it remains the last victim under host pressure, without being unkillable.
-      overlayService.oom_score_adj = effMemoryLimit ? CRITICAL_OOM_WITH_LIMIT : -1000;
+      // Every service now carries a memory limit, so -1000 is never safe here:
+      // an unkillable process deadlocks its own cgroup at the limit.
+      overlayService.oom_score_adj = CRITICAL_OOM_WITH_LIMIT;
       overlayService.cpu_shares = 2048;
-      if (effMemoryLimit) memReservation = `${effMemoryLimit}M`;
+      // Reserve only what the operator explicitly asked for — a tier default is
+      // a cap, not a claim on the host's memory.
+      if (explicitMemoryLimit) memReservation = `${explicitMemoryLimit}M`;
     } else if (tier === "disposable") {
       overlayService.oom_score_adj = 750;
       overlayService.cpu_shares = 256;

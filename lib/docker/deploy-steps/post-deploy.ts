@@ -30,6 +30,8 @@ import {
   pruneBuildCache,
 } from "../client";
 import { syncComposeServices } from "../compose-sync";
+import { isDeployQueueDrained } from "../deploy-concurrency";
+import { acquireLock, releaseLock } from "@/lib/redis-lock";
 import { addEvent } from "@/lib/stream/producer";
 import { recordActivity } from "@/lib/activity";
 import { volumeThreshold } from "@/lib/volumes/threshold";
@@ -43,6 +45,10 @@ import {
 import type { ConfigSnapshot } from "@/lib/types/deploy-snapshot";
 import { checkEndpoint, sendDeployNotification } from "../deploy";
 import type { DeployContext } from "../deploy-context";
+
+/** Serializes the host-global prune across deploys. */
+const PRUNE_LOCK_KEY = "deploy:prune:lock";
+const PRUNE_LOCK_TTL_MS = 5 * 60_000;
 
 const execFileAsync = promisify(execFile);
 
@@ -123,18 +129,32 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
       }
     }
 
-    const { spaceReclaimed, count } = await pruneImages({ dangling: ["true"] });
-    if (count > 0) {
-      log(`[deploy] Pruned ${count} dangling image(s), reclaimed ${formatBytes(spaceReclaimed)}`);
-    }
+    // The dangling prune and build-cache prune are host-global. Running them
+    // while another deploy is pulling deletes layers that pull is still writing
+    // ("failed commit on ref ... no such file or directory"). Defer until this
+    // is the last deploy in flight; the deploy that finishes last does it.
+    if (!(await isDeployQueueDrained())) {
+      log("[deploy] Deferring image prune — other deploys are still in flight");
+    } else if (!(await acquireLock(PRUNE_LOCK_KEY, PRUNE_LOCK_TTL_MS))) {
+      log("[deploy] Deferring image prune — another prune is already running");
+    } else {
+      try {
+        const { spaceReclaimed, count } = await pruneImages({ dangling: ["true"] });
+        if (count > 0) {
+          log(`[deploy] Pruned ${count} dangling image(s), reclaimed ${formatBytes(spaceReclaimed)}`);
+        }
 
-    try {
-      const { spaceReclaimed: cacheReclaimed } = await pruneBuildCache({ until: ["24h"] });
-      if (cacheReclaimed > 0) {
-        log(`[deploy] Pruned build cache, reclaimed ${formatBytes(cacheReclaimed)}`);
+        try {
+          const { spaceReclaimed: cacheReclaimed } = await pruneBuildCache({ until: ["24h"] });
+          if (cacheReclaimed > 0) {
+            log(`[deploy] Pruned build cache, reclaimed ${formatBytes(cacheReclaimed)}`);
+          }
+        } catch {
+          // Build cache pruning is optional
+        }
+      } finally {
+        await releaseLock(PRUNE_LOCK_KEY).catch(() => {});
       }
-    } catch {
-      // Build cache pruning is optional
     }
   } catch {
     // Image pruning is best-effort
