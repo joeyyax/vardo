@@ -6,7 +6,10 @@ import { db } from "@/lib/db";
 import { systemSettings } from "@/lib/db/schema";
 import { exec } from "child_process";
 import { promisify } from "util";
+import pLimit from "p-limit";
 import { logger } from "@/lib/logger";
+import { probeCertificate } from "./cert-probe";
+import { evaluateCertExpiry, certVerdictAlerts, certAlertMessage } from "./cert-expiry";
 
 const log = logger.child("system-alerts");
 
@@ -185,80 +188,72 @@ async function checkHostRestart(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Certificate expiry — check Traefik TLS routers
+// Certificate expiry — dial each domain over TLS and read the served cert
 // ---------------------------------------------------------------------------
 
-type TraefikRouter = {
-  name: string;
-  tls?: {
-    certResolver?: string;
-    domains?: Array<{ main?: string; sans?: string[] }>;
-  };
-  rule?: string;
-};
+// Expiry moves by one day per day, so a 60s tick would re-dial every domain
+// 1440 times for the same answer.
+const CERT_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const CERT_PROBE_CONCURRENCY = 5;
+
+let lastCertCheck = 0;
+
+function isProbeableDomain(domain: string): boolean {
+  const host = domain.split(":")[0].toLowerCase();
+  if (host === "" || !host.includes(".")) return false;
+  if (host === "localhost" || host.endsWith(".localhost")) return false;
+  if (host.endsWith(".local") || host.endsWith(".internal")) return false;
+  return true;
+}
 
 async function checkCertAlerts(): Promise<void> {
+  if (Date.now() - lastCertCheck < CERT_CHECK_INTERVAL_MS) return;
+  lastCertCheck = Date.now();
+
   try {
-    const res = await fetch("http://localhost:8080/api/http/routers", {
-      signal: AbortSignal.timeout(3000),
+    const rows = await db.query.domains.findMany({
+      columns: { domain: true, certResolver: true, sslEnabled: true },
+      with: { app: { columns: { status: true } } },
     });
-    if (!res.ok) return;
 
-    const routers: TraefikRouter[] = await res.json();
+    const targets = rows.filter(
+      (d) => d.sslEnabled !== false && d.app.status === "active" && isProbeableDomain(d.domain),
+    );
+    if (targets.length === 0) return;
 
-    // Collect unique cert resolvers to avoid redundant ACME endpoint calls
-    const resolvers = new Set<string>();
-    for (const router of routers) {
-      if (router.tls?.certResolver) resolvers.add(router.tls.certResolver);
-    }
+    const limit = pLimit(CERT_PROBE_CONCURRENCY);
 
-    for (const resolver of resolvers) {
-      // Best-effort: try ACME store via undocumented endpoint
-      try {
-        const acmeRes = await fetch(
-          `http://localhost:8080/api/acme/${resolver}/domains`,
-          { signal: AbortSignal.timeout(3000) },
-        );
+    await Promise.allSettled(
+      targets.map((d) =>
+        limit(async () => {
+          const probe = await probeCertificate(d.domain);
+          const verdict = evaluateCertExpiry(probe, Date.now());
 
-        if (acmeRes.ok) {
-          type AcmeDomain = {
-            domain?: { main?: string };
-            certificate?: { notAfter?: string };
-          };
-          const acmeDomains: AcmeDomain[] = await acmeRes.json();
-
-          for (const acmeDomain of acmeDomains) {
-            const certDomain = acmeDomain.domain?.main;
-            if (!certDomain) continue;
-
-            const notAfterStr = acmeDomain.certificate?.notAfter;
-            if (!notAfterStr) continue;
-
-            const notAfter = new Date(notAfterStr);
-            const daysLeft = (notAfter.getTime() - Date.now()) / (1000 * 60 * 60 * 24);
-
-            if (daysLeft < 7) {
-              if (!shouldFire("cert-expiring", certDomain)) continue;
-              markFired("cert-expiring", certDomain);
-
-              await emitAll({
-                type: "system.cert-expiring",
-                title: `Certificate expiring: ${certDomain}`,
-                message: `The TLS certificate for ${certDomain} expires in ${Math.round(daysLeft)} day(s). Traefik should auto-renew — check logs if renewal is not happening.`,
-                domain: certDomain,
-                daysLeft: Math.round(daysLeft),
-                expiresAt: notAfter.toISOString(),
-                resolver: resolver,
-              });
+          if (!certVerdictAlerts(verdict)) {
+            if (verdict.kind === "unknown" || verdict.kind === "not-issued") {
+              log.debug(`Cert check skipped for ${d.domain}: ${verdict.kind} (${verdict.reason})`);
             }
+            return;
           }
-        }
-      } catch {
-        // cert check best-effort per resolver
-      }
-    }
-  } catch {
-    // Traefik may not be running — best-effort
+
+          if (!shouldFire("cert-expiring", d.domain)) return;
+          markFired("cert-expiring", d.domain);
+
+          const { title, message } = certAlertMessage(d.domain, verdict);
+          await emitAll({
+            type: "system.cert-expiring",
+            title,
+            message,
+            domain: d.domain,
+            daysLeft: verdict.daysLeft,
+            expiresAt: verdict.expiresAt,
+            resolver: d.certResolver ?? "unknown",
+          });
+        }),
+      ),
+    );
+  } catch (err) {
+    log.error("Cert check error:", err);
   }
 }
 
