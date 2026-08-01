@@ -164,26 +164,24 @@ function StatCell({
 }) {
   const trend = meter === undefined && data && data.length > 1 && data.some((v) => v > 0);
   return (
-    <div className="min-w-0 px-4 py-2.5">
-      <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+    <div className="min-w-0 px-3 py-2 first:pl-5 last:pr-5">
+      <div className="text-[9px] font-medium uppercase tracking-[0.08em] text-muted-foreground/70">
         {label}
       </div>
-      <div className="mt-0.5 flex items-center justify-between gap-2">
-        <span className="min-w-0 truncate whitespace-nowrap">
-          <span className="text-sm font-medium tabular-nums text-foreground/90">{value}</span>
-          {sub && <span className="ml-1 text-[10px] tabular-nums text-muted-foreground">{sub}</span>}
-        </span>
+      <div className="mt-0.5 truncate whitespace-nowrap text-xs tabular-nums text-foreground/75">
+        {value}
+        {sub && <span className="ml-1 text-[9px] text-muted-foreground/70">{sub}</span>}
+      </div>
+      <div className="mt-1 flex h-3 items-center" aria-hidden="true">
         {meter !== undefined ? (
-          <span className="h-1 w-14 shrink-0 overflow-hidden rounded-full bg-muted" aria-hidden="true">
+          <span className="block h-1 w-full overflow-hidden rounded-full bg-muted">
             <span
-              className={`block h-full rounded-full ${meter > 0.9 ? "bg-status-warning" : "bg-foreground/55"}`}
+              className={`block h-full rounded-full ${meter > 0.9 ? "bg-status-warning" : "bg-foreground/40"}`}
               style={{ width: `${Math.min(meter, 1) * 100}%` }}
             />
           </span>
         ) : trend ? (
-          <span className="h-4 w-14 shrink-0" aria-hidden="true">
-            <Sparkline data={data} variant="line" className="h-full w-full text-muted-foreground" />
-          </span>
+          <Sparkline data={data} variant="line" className="h-full w-full text-muted-foreground/60" />
         ) : null}
       </div>
     </div>
@@ -191,36 +189,38 @@ function StatCell({
 }
 
 /**
- * Four labeled cells — CPU, memory, disk, network — with a small trend strip
- * each. Memory shows a fill meter instead when the limit is known.
+ * Quiet stat footer: four labeled cells — CPU, memory, disk, network — each
+ * with a trend strip. Memory shows a fill meter instead when the limit is
+ * known. Renders at full size before data arrives — values fall back to
+ * history, then to dashes — so cards don't shift when stats stream in.
  */
 export function MetricsBand({
   metrics,
   history,
   memoryLimit = 0,
 }: {
-  metrics: AppMetrics;
+  metrics?: AppMetrics;
   history?: Partial<MetricsHistory>;
   /** Total memory limit in bytes; 0 when unknown. */
   memoryLimit?: number;
 }) {
-  if (metrics.cpuPercent <= 0 && metrics.memoryUsage <= 0) return null;
+  const last = (a?: number[]) => (a && a.length > 0 ? a[a.length - 1] : undefined);
+  const cpu = metrics ? metrics.cpuPercent : last(history?.cpu);
+  const mem = metrics ? metrics.memoryUsage : last(history?.memory);
+  const disk = metrics ? metrics.diskUsage : (last(history?.disk) ?? 0);
+  const net = metrics ? metrics.networkRx + metrics.networkTx : last(history?.network);
   return (
-    <div className="grid grid-cols-2 border-t">
-      <StatCell label="CPU" value={`${metrics.cpuPercent.toFixed(1)}%`} data={history?.cpu} />
+    <div className="grid grid-cols-4 divide-x divide-border/40 border-t">
+      <StatCell label="CPU" value={cpu !== undefined ? `${cpu.toFixed(1)}%` : "—"} data={history?.cpu} />
       <StatCell
         label="Memory"
-        value={formatBytes(metrics.memoryUsage)}
+        value={mem !== undefined ? formatBytes(mem) : "—"}
         sub={memoryLimit > 0 ? `/ ${formatBytes(memoryLimit)}` : undefined}
-        meter={memoryLimit > 0 ? metrics.memoryUsage / memoryLimit : undefined}
+        meter={memoryLimit > 0 && mem !== undefined ? mem / memoryLimit : undefined}
         data={history?.memory}
       />
-      <StatCell label="Disk" value={metrics.diskUsage > 0 ? formatBytes(metrics.diskUsage) : "—"} data={history?.disk} />
-      <StatCell
-        label="Network"
-        value={formatBytes(metrics.networkRx + metrics.networkTx)}
-        data={history?.network}
-      />
+      <StatCell label="Disk" value={disk > 0 ? formatBytes(disk) : "—"} data={history?.disk} />
+      <StatCell label="Network" value={net !== undefined ? formatBytes(net) : "—"} data={history?.network} />
     </div>
   );
 }

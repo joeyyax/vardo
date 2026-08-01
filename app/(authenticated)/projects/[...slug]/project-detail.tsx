@@ -3,8 +3,10 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { formatDistanceToNowStrict } from "date-fns";
 import {
   Plus,
+  Package,
   Pencil,
   Rocket,
   Trash2,
@@ -17,7 +19,6 @@ import {
   Variable,
   FileText,
   Activity,
-  Wrench,
 } from "lucide-react";
 import {
   type AppMetrics as AppMetricsType,
@@ -53,9 +54,8 @@ import {
   BottomSheetDescription,
 } from "@/components/ui/bottom-sheet";
 import { detectAppType } from "@/lib/ui/app-type";
-import { envTypeDotColor } from "@/lib/ui/status-colors";
+import { envTypeDotColor, statusDotColor } from "@/lib/ui/status-colors";
 import { Uptime, StatusIndicator, AppIcon, DeploymentStatusBadge, formatDuration } from "@/components/app-status";
-import { ChildAppChipList } from "@/components/child-app-chip";
 import { EndpointsPopover } from "@/components/endpoints-popover";
 import { LogViewer, DeploymentLog } from "@/components/log-viewer";
 import { EnvEditor } from "@/components/env-editor";
@@ -164,7 +164,14 @@ type DepHighlight = "none" | "hovered" | "dependency" | "dependent";
 // Helpers
 // ---------------------------------------------------------------------------
 
-
+// Service list sorts problems first.
+const CHILD_STATUS_RANK: Record<string, number> = {
+  error: 0,
+  missing: 1,
+  deploying: 2,
+  stopped: 3,
+  active: 4,
+};
 
 // ---------------------------------------------------------------------------
 // App Card
@@ -236,7 +243,7 @@ function AppCard({
       onMouseLeave={onHoverEnd}
       className={`squircle relative flex flex-col rounded-lg bg-card shadow-card dark:border transition-all duration-200 hover:shadow-card-hover overflow-hidden cursor-pointer ${highlightClasses}`}
     >
-      <div className="flex-1 p-4">
+      <div className={`p-5${childApps.length === 0 ? " flex-1" : ""}`}>
       <div className="flex gap-3 w-full">
         <AppIcon app={app} />
         <div className="flex-1 min-w-0">
@@ -314,18 +321,34 @@ function AppCard({
       )}
       </div>
 
-      {/* Resource band — scale and trend, not bare numbers */}
-      {metrics && (
-        <MetricsBand metrics={metrics} history={history} memoryLimit={metrics.memoryLimit} />
+      {/* Recessed service list — compose services on a lower surface */}
+      {childApps.length > 0 && (
+        <div className="flex-1 border-t bg-background-deep px-2.5 py-2">
+          {[...childApps]
+            .sort(
+              (x, y) =>
+                (CHILD_STATUS_RANK[x.status] ?? 3) - (CHILD_STATUS_RANK[y.status] ?? 3) ||
+                x.displayName.localeCompare(y.displayName),
+            )
+            .map((child) => (
+              <div key={child.id} className="flex min-w-0 items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-medium">
+                <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${statusDotColor(child.status)}`} />
+                <span className="truncate">{child.displayName}</span>
+                <span className={
+                  child.status === "active"
+                    ? "sr-only"
+                    : `shrink-0 font-normal ${child.status === "error" ? "text-status-error" : child.status === "deploying" ? "text-status-info" : "text-muted-foreground"}`
+                }>
+                  {child.status === "active" ? ", Running" : child.status === "error" ? "crashed" : child.status === "deploying" ? "deploying" : "stopped"}
+                </span>
+              </div>
+            ))}
+        </div>
       )}
 
-      {/* Compose services sit as raised objects on a recessed tray */}
-      {childApps.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 border-t bg-background-deep px-4 py-3">
-          {childApps.map((child) => (
-            <ChildAppChip key={child.id} displayName={child.displayName} status={child.status} className="bg-card" />
-          ))}
-        </div>
+      {/* Resource footer — space is held while stats stream in */}
+      {(effectiveStatus === "active" || metrics) && (
+        <MetricsBand metrics={metrics} history={history} memoryLimit={metrics?.memoryLimit ?? 0} />
       )}
     </Link>
   );
@@ -685,6 +708,11 @@ export function ProjectDetail({
   const router = useRouter();
   const color = "#a1a1aa"; // neutral — project color is unused
   const { metrics, history } = useAppMetrics(orgId);
+  const updates = useImageUpdates(orgId);
+  const updatesByApp = useMemo(
+    () => new Map((updates?.appsWithUpdates ?? []).map((a) => [a.id, a.count])),
+    [updates],
+  );
   const [activeTab, setActiveTab] = useState(initialTab);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -1226,6 +1254,7 @@ export function ProjectDetail({
                     onHoverEnd={() => setHoveredAppName(null)}
                     childApps={app.childApps ?? []}
                     statusOverride={appStatusOverrides.get(app.id)}
+                    updateCount={updatesByApp.get(app.id) ?? 0}
                   />
                 ))}
             </div>
