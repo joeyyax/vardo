@@ -6,6 +6,17 @@ export default function ActivityLoading() {
         <div className="h-8 w-24 bg-muted animate-pulse rounded-lg" />
       </div>
 
+      {/* Filter chips skeleton */}
+      <div className="flex flex-wrap gap-1.5">
+        {[16, 20, 14, 12, 16].map((width, i) => (
+          <div
+            key={i}
+            className="h-6 bg-muted animate-pulse rounded-full"
+            style={{ width: `${width * 4}px` }}
+          />
+        ))}
+      </div>
+
       {/* Activity feed skeleton */}
       <div className="space-y-1">
         {Array.from({ length: 8 }).map((_, i) => (
