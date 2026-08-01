@@ -1,6 +1,10 @@
-/** A service-degraded entry stops being written once the service recovers, so
- *  anything older than a couple of rate-limit windows is stale, not current. */
-export const SERVICE_DOWN_STALE_MS = 45 * 60 * 1000;
+/**
+ * A service-degraded entry is never cleared on recovery, so recency is the only
+ * signal. A service that is still down re-fires every 15 minutes, so 20 tolerates
+ * one late cycle without showing a recovered service as down for the best part
+ * of an hour.
+ */
+export const SERVICE_DOWN_STALE_MS = 20 * 60 * 1000;
 
 export const ALERT_STATE_KEY = "system_alert_state";
 
