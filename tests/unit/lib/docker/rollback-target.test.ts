@@ -8,6 +8,7 @@ import {
   loadRollbackTarget,
   applyRollbackTarget,
   applyRollbackEnv,
+  pinComposeImage,
   type RollbackTarget,
 } from "@/lib/docker/rollback-target";
 
@@ -223,5 +224,43 @@ describe("applyRollbackEnv", () => {
     applyRollbackEnv(app, makeTarget(), vi.fn());
 
     expect(app.envContent).toBe("current-env-blob");
+  });
+});
+
+describe("pinComposeImage", () => {
+  const DIGEST = "gitea/gitea@sha256:" + "b".repeat(64);
+
+  it("rewrites the only image, preserving indentation and the rest of the file", () => {
+    const compose = [
+      "services:",
+      "  gitea:",
+      "    image: gitea/gitea:1.26.2",
+      "    restart: unless-stopped",
+      "    # keep this comment",
+    ].join("\n");
+
+    expect(pinComposeImage(compose, DIGEST)).toBe([
+      "services:",
+      "  gitea:",
+      "    image: " + DIGEST,
+      "    restart: unless-stopped",
+      "    # keep this comment",
+    ].join("\n"));
+  });
+
+  it("refuses a multi-service compose rather than guessing which image the digest is", () => {
+    const compose = [
+      "services:",
+      "  web:",
+      "    image: nginx:1.27",
+      "  db:",
+      "    image: postgres:17",
+    ].join("\n");
+
+    expect(pinComposeImage(compose, DIGEST)).toBeNull();
+  });
+
+  it("returns null when there is no image to pin", () => {
+    expect(pinComposeImage("services:\n  web:\n    build: .", DIGEST)).toBeNull();
   });
 });

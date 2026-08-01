@@ -78,6 +78,26 @@ export async function loadRollbackTarget(
 }
 
 /**
+ * Rewrite the single service's image to `ref`. Returns null when the compose
+ * declares anything other than exactly one image, since the recorded digest
+ * describes one image and guessing which service it belongs to would be wrong.
+ * Line-targeted rather than a YAML round-trip, which would reformat the file.
+ */
+export function pinComposeImage(composeContent: string, ref: string): string | null {
+  const lines = composeContent.split("\n");
+  const imageLines = lines
+    .map((line, i) => ({ line, i }))
+    .filter(({ line }) => /^\s+image:\s*\S/.test(line));
+
+  if (imageLines.length !== 1) return null;
+
+  const { line, i } = imageLines[0];
+  const indent = line.match(/^\s*/)?.[0] ?? "  ";
+  lines[i] = `${indent}image: ${ref}`;
+  return lines.join("\n");
+}
+
+/**
  * Overlay the target's snapshot onto the app record the deploy pipeline reads,
  * and assert the target is deployable. Mutates `app`.
  */
@@ -111,6 +131,17 @@ export function applyRollbackTarget(
     const digest = config?.imageDigest;
     if (digest) {
       app.imageName = digest;
+      // prepare-repo parses stored composeContent for image apps and never
+      // reads imageName, so an imported app would roll back to the tag. Pin
+      // inside the compose too, or say plainly that we could not.
+      if (app.composeContent) {
+        const pinned = pinComposeImage(app.composeContent, digest);
+        if (pinned) {
+          app.composeContent = pinned;
+        } else {
+          log(`[deploy] Warning: compose has multiple services — rolling back by tag, not digest`);
+        }
+      }
       log(`[deploy] Rollback: pinned image ${digest}`);
     } else if (config?.imageName) {
       log(`[deploy] Warning: no image digest recorded — pinning by tag ${config.imageName}`);
