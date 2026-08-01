@@ -122,6 +122,7 @@ export async function tickStatusReconcile(): Promise<void> {
       containerName: true,
       importedContainerId: true,
       containerStartedAt: true,
+      containerMemoryLimit: true,
     },
   });
 
@@ -139,6 +140,7 @@ export async function tickStatusReconcile(): Promise<void> {
         const observed = deriveStatus(matched);
 
         let startedAt: Date | null = null;
+        let memoryLimit: number | null = null;
         if (observed === "active") {
           const running = matched.find((c) => c.state === "running");
           if (running) {
@@ -146,21 +148,22 @@ export async function tickStatusReconcile(): Promise<void> {
               const info = await inspectContainer(running.id);
               const parsed = new Date(info.state.startedAt);
               if (!isNaN(parsed.getTime())) startedAt = parsed;
+              memoryLimit = info.memoryBytes;
             } catch {
-              // Container went away between list and inspect — keep the old value.
+              // Container went away between list and inspect — keep the old values.
               startedAt = app.containerStartedAt;
+              memoryLimit = app.containerMemoryLimit;
             }
           }
         }
 
         if (observed === "missing" && app.status !== "missing") missing.push(app.name);
 
-        const startedChanged =
-          startedAt?.getTime() !== app.containerStartedAt?.getTime();
-        if (observed === app.status && !startedChanged) {
-          return { id: app.id, touchOnly: true, observed, startedAt };
-        }
-        return { id: app.id, touchOnly: false, observed, startedAt };
+        const unchanged =
+          observed === app.status &&
+          startedAt?.getTime() === app.containerStartedAt?.getTime() &&
+          memoryLimit === app.containerMemoryLimit;
+        return { id: app.id, touchOnly: unchanged, observed, startedAt, memoryLimit };
       }),
     ),
   );
@@ -175,6 +178,7 @@ export async function tickStatusReconcile(): Promise<void> {
       .set({
         status: u.observed,
         containerStartedAt: u.startedAt,
+        containerMemoryLimit: u.memoryLimit,
         statusCheckedAt: now,
         updatedAt: now,
       })
