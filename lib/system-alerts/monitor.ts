@@ -9,7 +9,13 @@ import { promisify } from "util";
 import pLimit from "p-limit";
 import { logger } from "@/lib/logger";
 import { probeCertificate } from "./cert-probe";
-import { evaluateCertExpiry, certVerdictAlerts, certAlertMessage } from "./cert-expiry";
+import {
+  evaluateCertExpiry,
+  certVerdictAlerts,
+  certAlertMessage,
+  groupByCertificate,
+  type CertVerdict,
+} from "./cert-expiry";
 
 const log = logger.child("system-alerts");
 
@@ -223,35 +229,47 @@ async function checkCertAlerts(): Promise<void> {
 
     const limit = pLimit(CERT_PROBE_CONCURRENCY);
 
-    await Promise.allSettled(
+    const probed = await Promise.all(
       targets.map((d) =>
         limit(async () => {
           const probe = await probeCertificate(d.domain);
-          const verdict = evaluateCertExpiry(probe, Date.now());
-
-          if (!certVerdictAlerts(verdict)) {
-            if (verdict.kind === "unknown" || verdict.kind === "not-issued") {
-              log.debug(`Cert check skipped for ${d.domain}: ${verdict.kind} (${verdict.reason})`);
-            }
-            return;
-          }
-
-          if (!shouldFire("cert-expiring", d.domain)) return;
-          markFired("cert-expiring", d.domain);
-
-          const { title, message } = certAlertMessage(d.domain, verdict);
-          await emitAll({
-            type: "system.cert-expiring",
-            title,
-            message,
+          return {
             domain: d.domain,
-            daysLeft: verdict.daysLeft,
-            expiresAt: verdict.expiresAt,
             resolver: d.certResolver ?? "unknown",
-          });
+            fingerprint: probe.status === "ok" ? probe.fingerprint : null,
+            verdict: evaluateCertExpiry(probe, Date.now()),
+          };
         }),
       ),
     );
+
+    const failing = probed.filter((p) => {
+      if (certVerdictAlerts(p.verdict)) return true;
+      if (p.verdict.kind === "unknown" || p.verdict.kind === "not-issued") {
+        log.debug(`Cert check skipped for ${p.domain}: ${p.verdict.kind} (${p.verdict.reason})`);
+      }
+      return false;
+    });
+
+    for (const group of groupByCertificate(failing).values()) {
+      const domains = group.map((g) => g.domain).sort();
+      const verdict = group[0].verdict as Extract<CertVerdict, { kind: "expiring" | "expired" }>;
+
+      if (!shouldFire("cert-expiring", domains[0])) continue;
+      markFired("cert-expiring", domains[0]);
+
+      const { title, message } = certAlertMessage(domains, verdict);
+      await emitAll({
+        type: "system.cert-expiring",
+        title,
+        message,
+        domain: domains[0],
+        domains,
+        daysLeft: verdict.daysLeft,
+        expiresAt: verdict.expiresAt,
+        resolver: group[0].resolver,
+      });
+    }
   } catch (err) {
     log.error("Cert check error:", err);
   }

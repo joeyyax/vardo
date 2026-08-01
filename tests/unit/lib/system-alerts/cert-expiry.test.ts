@@ -4,6 +4,7 @@ import {
   evaluateCertExpiry,
   certVerdictAlerts,
   certAlertMessage,
+  groupByCertificate,
   CERT_EXPIRY_THRESHOLD_DAYS,
   type CertProbe,
 } from "@/lib/system-alerts/cert-expiry";
@@ -16,6 +17,7 @@ function probe(days: number, overrides: Partial<Extract<CertProbe, { status: "ok
   return {
     status: "ok",
     validTo: new Date(NOW + days * DAY).toUTCString(),
+    fingerprint: null,
     authorized: true,
     authorizationError: null,
     ...overrides,
@@ -135,7 +137,7 @@ describe("certAlertMessage", () => {
   it("singularizes one day", () => {
     const verdict = evaluateCertExpiry(probe(1), NOW);
     if (!certVerdictAlerts(verdict)) throw new Error("expected an alerting verdict");
-    const { title, message } = certAlertMessage("app.example.com", verdict);
+    const { title, message } = certAlertMessage(["app.example.com"], verdict);
     expect(title).toBe("Certificate expiring: app.example.com");
     expect(message).toContain("expires in 1 day.");
   });
@@ -143,8 +145,44 @@ describe("certAlertMessage", () => {
   it("reads in the past tense once expired", () => {
     const verdict = evaluateCertExpiry(probe(-2), NOW);
     if (!certVerdictAlerts(verdict)) throw new Error("expected an alerting verdict");
-    const { title, message } = certAlertMessage("app.example.com", verdict);
+    const { title, message } = certAlertMessage(["app.example.com"], verdict);
     expect(title).toBe("Certificate expired: app.example.com");
     expect(message).toContain("expired 2 days ago");
+  });
+
+  it("names the shared certificate once when it covers several domains", () => {
+    const verdict = evaluateCertExpiry(probe(3), NOW);
+    if (!certVerdictAlerts(verdict)) throw new Error("expected an alerting verdict");
+    const { title } = certAlertMessage(["a.example.com", "b.example.com", "c.example.com"], verdict);
+    expect(title).toBe("Certificate expiring: a.example.com and 2 other domains");
+  });
+
+  it("singularizes a two-domain certificate", () => {
+    const verdict = evaluateCertExpiry(probe(3), NOW);
+    if (!certVerdictAlerts(verdict)) throw new Error("expected an alerting verdict");
+    const { title } = certAlertMessage(["a.example.com", "b.example.com"], verdict);
+    expect(title).toBe("Certificate expiring: a.example.com and 1 other domain");
+  });
+});
+
+describe("groupByCertificate", () => {
+  it("collapses domains sharing a fingerprint", () => {
+    const groups = groupByCertificate([
+      { domain: "a.example.com", fingerprint: "AA" },
+      { domain: "b.example.com", fingerprint: "AA" },
+      { domain: "c.example.com", fingerprint: "BB" },
+    ]);
+    expect([...groups.values()].map((g) => g.map((d) => d.domain))).toEqual([
+      ["a.example.com", "b.example.com"],
+      ["c.example.com"],
+    ]);
+  });
+
+  it("keeps fingerprintless domains apart rather than merging them", () => {
+    const groups = groupByCertificate([
+      { domain: "a.example.com", fingerprint: null },
+      { domain: "b.example.com", fingerprint: null },
+    ]);
+    expect(groups.size).toBe(2);
   });
 });
