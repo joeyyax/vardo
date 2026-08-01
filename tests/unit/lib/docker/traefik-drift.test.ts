@@ -3,6 +3,7 @@ import {
   backendIp,
   collectDockerBackends,
   findStaleBackends,
+  findUnroutedContainers,
   decideRestart,
   CONFIRM_STREAK,
   RESTART_BACKOFF_MS,
@@ -117,5 +118,45 @@ describe("decideRestart", () => {
     expect(decideRestart({ streak: CONFIRM_STREAK, recentRestarts: recent, now: NOW })).toBe(
       "giveup",
     );
+  });
+});
+
+describe("findUnroutedContainers", () => {
+  const backend = { service: "a@docker", url: "http://172.18.0.5:3000", ip: "172.18.0.5" };
+
+  function container(over: Partial<{ name: string; labels: Record<string, string>; ips: string[] }> = {}) {
+    return {
+      name: "vardo-frontend",
+      labels: { "traefik.enable": "true" },
+      ips: ["172.18.0.5"],
+      ...over,
+    };
+  }
+
+  it("is quiet when the container has a backend", () => {
+    expect(findUnroutedContainers([container()], [backend])).toEqual([]);
+  });
+
+  it("flags a container that asks for routing and has none", () => {
+    // The vardo.yax.me case: up, healthy, labelled, and absent from Traefik.
+    expect(findUnroutedContainers([container()], [])).toEqual(["vardo-frontend"]);
+  });
+
+  it("ignores containers that never asked to be routed", () => {
+    expect(findUnroutedContainers([container({ labels: {} })], [])).toEqual([]);
+  });
+
+  it("ignores traefik.enable=false", () => {
+    const off = container({ labels: { "traefik.enable": "false" } });
+    expect(findUnroutedContainers([off], [])).toEqual([]);
+  });
+
+  it("ignores a container with no address yet", () => {
+    expect(findUnroutedContainers([container({ ips: [] })], [])).toEqual([]);
+  });
+
+  it("matches on any of a multi-homed container's addresses", () => {
+    const multi = container({ ips: ["10.1.0.9", "172.18.0.5"] });
+    expect(findUnroutedContainers([multi], [backend])).toEqual([]);
   });
 });
