@@ -330,6 +330,7 @@ function emptySignal(now: number): ConditionInput {
     memory: null,
     security: null,
     backup: null,
+    cert: null,
   };
 }
 
@@ -395,6 +396,7 @@ async function persistConditions(
       ...(signals.get(app.id) ?? emptySignal(now)),
       security: advisory?.security ?? null,
       backup: advisory?.backup ?? null,
+      cert: advisory?.cert ?? null,
     };
     const prev = app.conditions ?? [];
     const { conditions, streaks } = evaluateConditions(
