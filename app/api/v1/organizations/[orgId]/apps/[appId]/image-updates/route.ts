@@ -7,6 +7,7 @@ import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { recordActivity } from "@/lib/activity";
+import { planMigration } from "@/lib/docker/image-updates/migration-path";
 import { setImageRefTag, setServiceImageTag } from "@/lib/docker/image-updates/apply";
 import { getAppUpdateStatus } from "@/lib/docker/image-updates/status";
 import { resolveUpdatableApp } from "@/lib/docker/image-updates/resolve-app";
@@ -23,6 +24,8 @@ const applySchema = z
       .min(1)
       .max(128)
       .regex(/^[\w][\w.-]*$/, "Invalid tag"),
+    /** Required to cross a major on an image whose data dir is version-locked. */
+    acknowledgeMigration: z.boolean().optional(),
   })
   .strict();
 
@@ -68,9 +71,30 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "No such service on this app" }, { status: 404 });
     }
     // Only apply what a check actually proposed — this is not a free-form tag editor.
-    if (target.latestTag !== tag) {
+    const offered = new Set(
+      [target.latestTag, target.majorAvailable, ...target.available].filter(
+        (t): t is string => t !== null,
+      ),
+    );
+    if (!offered.has(tag)) {
       return NextResponse.json(
         { error: `No verified update to ${tag}. Re-run the check first.` },
+        { status: 409 },
+      );
+    }
+
+    // A major bump on a major-locked image cannot start against the existing
+    // data directory. Require the caller to say so explicitly.
+    if (target.majorLocked && tag === target.majorAvailable && !parsed.data.acknowledgeMigration) {
+      const plan = planMigration(target.image, target.currentTag, tag);
+      return NextResponse.json(
+        {
+          error: `${target.image} stores data in a format tied to its major version. Moving from ${target.currentTag} to ${tag} needs a data migration — back up first, then confirm.`,
+          requiresMigration: true,
+          from: target.currentTag,
+          to: tag,
+          plan,
+        },
         { status: 409 },
       );
     }

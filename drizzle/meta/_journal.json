@@ -288,6 +288,13 @@
       "when": 1785599281051,
       "tag": "0040_curious_alex_power",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1785600463821,
+      "tag": "0041_gorgeous_scorpion",
+      "breakpoints": true
     }
   ]
 }
