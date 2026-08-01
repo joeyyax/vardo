@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/popover";
 import { detectAppType } from "@/lib/ui/app-type";
 import { Uptime } from "@/components/app-status";
+import { AppConditionsPanel } from "@/components/app-conditions-panel";
 import { useAppMetrics } from "@/components/app-metrics-card";
 import { formatBytes } from "@/lib/metrics/format";
 import { DependencySelector } from "./dependency-selector";
@@ -132,6 +133,8 @@ export function AppHeader({
 
   return (
     <div className="space-y-5">
+      <AppConditionsPanel conditions={app.conditions} />
+
       <div className="flex gap-5">
         {/* App icon */}
         {(() => {
