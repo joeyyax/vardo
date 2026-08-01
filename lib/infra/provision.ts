@@ -172,7 +172,7 @@ async function ensureAppDeployed(
       eq(apps.name, template.name),
       eq(apps.isSystemManaged, true),
     ),
-    columns: { id: true },
+    columns: { id: true, status: true },
   });
 
   if (existing) {
@@ -182,6 +182,21 @@ async function ensureAppDeployed(
       await db.update(apps).set({ gpuEnabled: hasGpu }).where(eq(apps.id, existing.id));
       if (hasGpu) log.info(`cAdvisor: GPU detected, enabled GPU metrics`);
     }
+
+    // Existence was the only check, so an infra app whose container went away
+    // stayed dead forever — the feature reads as enabled and silently does
+    // nothing. Redeploy it instead.
+    if (existing.status === "missing" || existing.status === "error") {
+      log.info(`Infra app "${template.name}" is ${existing.status} — redeploying`);
+      try {
+        const result = await requestDeploy({ appId: existing.id, organizationId: orgId, trigger: "api" });
+        if (!result?.success) log.error(`Redeploy failed for infra app "${template.name}"`);
+      } catch (err) {
+        log.error(`Redeploy threw for infra app "${template.name}":`, err);
+      }
+      return existing.id;
+    }
+
     log.info(`Infra app "${template.name}" already exists`);
     return null;
   }
