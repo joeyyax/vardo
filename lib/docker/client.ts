@@ -72,11 +72,14 @@ export type ContainerInspect = {
     running: boolean;
     status: string;
     startedAt: string;
+    exitCode: number;
     // Health probe state from the container's healthcheck, or null when no
     // healthcheck is configured. status is one of "starting" | "healthy" |
     // "unhealthy". failingStreak is the count of consecutive failing probes.
     health: { status: string; failingStreak: number } | null;
   };
+  /** Times Docker has restarted this container since it was created. */
+  restartCount: number;
   image: string;
   ports: { internal: number; external?: number; protocol: string }[];
   exposedPorts: number[];
@@ -291,6 +294,12 @@ function mapRawContainer(c: RawContainer): ContainerInfo {
   };
 }
 
+/** Every container on the host, including stopped and created ones. */
+export async function listAllContainers(): Promise<ContainerInfo[]> {
+  const containers = await dockerRequest<RawContainer[]>("GET", "/containers/json?all=true");
+  return containers.map(mapRawContainer);
+}
+
 export async function listContainers(projectLabel?: string, environmentLabel?: string): Promise<ContainerInfo[]> {
   if (!projectLabel) {
     const containers = await dockerRequest<RawContainer[]>("GET", "/containers/json");
@@ -360,10 +369,12 @@ export async function inspectContainer(id: string): Promise<ContainerInspect> {
   const data = await dockerRequest<{
     Id: string;
     Name: string;
+    RestartCount?: number;
     State: {
       Running: boolean;
       Status: string;
       StartedAt: string;
+      ExitCode?: number;
       Health?: { Status?: string; FailingStreak?: number } | null;
     };
     Config: {
@@ -419,10 +430,12 @@ export async function inspectContainer(id: string): Promise<ContainerInspect> {
   return {
     id: data.Id,
     name: data.Name.replace(/^\//, ""),
+    restartCount: data.RestartCount ?? 0,
     state: {
       running: data.State.Running,
       status: data.State.Status,
       startedAt: data.State.StartedAt,
+      exitCode: data.State.ExitCode ?? 0,
       health: data.State.Health?.Status
         ? {
             status: data.State.Health.Status,
