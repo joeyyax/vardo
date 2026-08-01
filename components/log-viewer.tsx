@@ -179,7 +179,7 @@ type TerminalOutputProps = {
   className?: string;
 };
 
-export function TerminalOutput({ lines, height = "h-[500px]", showFilters = true, className }: TerminalOutputProps) {
+export function TerminalOutput({ lines, height = "min-h-40 max-h-[500px]", showFilters = true, className }: TerminalOutputProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const userScrolledRef = useRef(false);
@@ -565,7 +565,7 @@ export function LogViewer({ streamUrl, historyUrl, maxLines = 1000 }: LogViewerP
           </div>
         </div>
       ) : (
-        <TerminalOutput lines={lines} height="h-[500px]" />
+        <TerminalOutput lines={lines} height="min-h-40 max-h-[500px]" />
       )}
     </div>
   );

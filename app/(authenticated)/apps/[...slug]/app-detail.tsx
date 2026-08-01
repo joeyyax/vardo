@@ -16,43 +16,16 @@ import {
   Square,
   ChevronDown,
   Check,
-  Container,
   EllipsisVertical,
-  Cpu,
-  Wrench,
   GitBranch,
 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { PageToolbar } from "@/components/page-toolbar";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  BottomSheet,
-  BottomSheetContent,
-  BottomSheetFooter,
-  BottomSheetHeader,
-  BottomSheetTitle,
-  BottomSheetDescription,
-} from "@/components/ui/bottom-sheet";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { LogViewer } from "@/components/log-viewer";
 import dynamic from "next/dynamic";
-import { detectAppType } from "@/lib/ui/app-type";
 import { statusDotColor, envTypeDotColor } from "@/lib/ui/status-colors";
 import { AppMetrics } from "./app-metrics";
 import { AppBackupHistory } from "@/components/backups/app-backup-history";
@@ -73,11 +46,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { isOrgAdmin } from "@/lib/auth/permissions";
-import { BranchSelect } from "@/components/branch-select";
 
 // Extracted modules
 import { Uptime } from "./timer";
-import { DependencySelector } from "./dependency-selector";
+import { AppHeader } from "./app-header";
+import { AppSectionNav, type SectionGroup } from "./app-section-nav";
+import { NewEnvironmentSheet } from "./new-environment-sheet";
 import { AppDeployPanel } from "./app-deploy-panel";
 import { useDeploy } from "./hooks/use-deploy";
 import { AppNetworking } from "./app-networking";
@@ -91,21 +65,6 @@ import { SystemBadge } from "@/components/system-badge";
 
 import type { AppDetailProps, Environment } from "./types";
 
-
-function deployTypeLabel(deployType: string) {
-  switch (deployType) {
-    case "compose":
-      return "Compose";
-    case "dockerfile":
-      return "Dockerfile";
-    case "image":
-      return "Image";
-    case "static":
-      return "Static";
-    default:
-      return deployType;
-  }
-}
 
 function buildAppPath(appName: string, environments: Environment[], envId: string | undefined, tab?: string) {
   const env = environments.find((e) => e.id === envId);
@@ -123,13 +82,9 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
   const [deleting, setDeleting] = useState(false);
   const [deletingEnv, setDeletingEnv] = useState(false);
 
-  // New environment form state
+  // New environment sheet state
   const [newEnvOpen, setNewEnvOpen] = useState(false);
-  const [newEnvName, setNewEnvName] = useState("");
-  const [newEnvType, setNewEnvType] = useState<"staging" | "preview">("staging");
-  const [newEnvCloneFrom, setNewEnvCloneFrom] = useState<string>("__production");
-  const [newEnvBranch, setNewEnvBranch] = useState("");
-  const [newEnvSaving, setNewEnvSaving] = useState(false);
+  const [newEnvCloneDefault, setNewEnvCloneDefault] = useState<string>("__production");
 
   // Environment selection — persist via URL path segment (/apps/{slug}/{env}/{tab})
   const productionEnv = app.environments.find((e) => e.type === "production");
@@ -244,40 +199,6 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [app.id, orgId]);
 
-  // Tag management state
-  const [tagPopoverOpen, setTagPopoverOpen] = useState(false);
-  const [togglingTagId, setTogglingTagId] = useState<string | null>(null);
-
-  const appTagIds = new Set(
-    (app.appTags ?? []).map((pt) => pt.tag.id)
-  );
-
-  async function handleToggleTag(tagId: string) {
-    const isApplied = appTagIds.has(tagId);
-    setTogglingTagId(tagId);
-    try {
-      const res = await fetch(
-        `/api/v1/organizations/${orgId}/apps/${app.id}/tags`,
-        {
-          method: isApplied ? "DELETE" : "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tagId }),
-        }
-      );
-      if (!res.ok) {
-        const data = await res.json();
-        toast.error(data.error || "Failed to update tag");
-        return;
-      }
-      toast.success(isApplied ? "Tag removed" : "Tag added");
-      router.refresh();
-    } catch {
-      toast.error("Failed to update tag");
-    } finally {
-      setTogglingTagId(null);
-    }
-  }
-
   const canDelete = isOrgAdmin(userRole);
 
   async function handleStop() {
@@ -341,64 +262,6 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
       toast.error("Failed to delete environment");
     } finally {
       setDeletingEnv(false);
-    }
-  }
-
-  async function handleCreateEnv() {
-    const name = newEnvName.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-");
-    if (!name) return;
-    setNewEnvSaving(true);
-    try {
-      const cloneFrom = newEnvCloneFrom === "__none" ? undefined
-        : newEnvCloneFrom === "__production" ? productionEnv?.id
-        : newEnvCloneFrom;
-      const res = await fetch(
-        `/api/v1/organizations/${orgId}/apps/${app.id}/environments`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name,
-            type: newEnvType,
-            cloneFrom,
-            gitBranch: newEnvBranch.trim() || undefined,
-          }),
-        }
-      );
-      if (res.ok) {
-        const data = await res.json();
-        const newEnvId = data.environment.id;
-        setSelectedEnvId(newEnvId);
-        setNewEnvOpen(false);
-        setNewEnvName("");
-        setNewEnvBranch("");
-        setNewEnvCloneFrom("__production");
-        router.refresh();
-
-        // Auto-deploy the new environment
-        toast.success(`Environment "${name}" created — deploying...`);
-        fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/deploy`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ environmentId: newEnvId }),
-        }).catch(() => {
-          toast.error("Auto-deploy failed");
-        });
-      } else {
-        const data = await res.json();
-        if (data.error?.includes("already exists")) {
-          const existing = app.environments.find((e) => e.name === name);
-          if (existing) setSelectedEnvId(existing.id);
-          setNewEnvOpen(false);
-          toast.info("Environment already exists");
-        } else {
-          toast.error(data.error || "Failed to create environment");
-        }
-      }
-    } catch {
-      toast.error("Failed to create environment");
-    } finally {
-      setNewEnvSaving(false);
     }
   }
 
@@ -647,7 +510,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
               <DropdownMenuItem
                 className="text-muted-foreground"
                 onClick={() => {
-                  setNewEnvCloneFrom(
+                  setNewEnvCloneDefault(
                     isProduction ? "__production" : (selectedEnvId ?? "__production")
                   );
                   setNewEnvOpen(true);
@@ -743,223 +606,75 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         </div>
       )}
 
-      {/* Overview */}
-      <div className="flex gap-5">
-        {/* Project icon */}
-        {(() => {
-          const { icon: iconUrl } = detectAppType({
-            imageName: app.imageName,
-            gitUrl: app.gitUrl,
-            deployType: app.deployType,
-            name: app.name,
-            displayName: app.displayName,
-          });
-          return iconUrl ? (
-            <img src={iconUrl} alt="" className="size-12 shrink-0 mt-0.5 opacity-60" />
-          ) : (
-            <div className="size-12 shrink-0 rounded-lg bg-muted/50 flex items-center justify-center mt-0.5">
-              <Container className="size-6 text-muted-foreground/50" />
-            </div>
-          );
-        })()}
+      {/* Heading section — identity + at-a-glance health, persistent across sections */}
+      <AppHeader
+        app={app}
+        orgId={orgId}
+        isChildService={isChildService}
+        deployments={filteredDeployments}
+        allTags={allTags}
+        siblings={siblings}
+        onNavigate={setActiveTab}
+      />
 
-        <div className="flex-1 min-w-0 space-y-3">
-          {/* Description + domain */}
-          {app.description && (
-            <p className="text-sm text-muted-foreground">{app.description}</p>
-          )}
-
-          {app.domains.length > 0 && (
-            <div className="flex items-center gap-2">
-              {(() => {
-                const primary = app.domains.find((d) => d.isPrimary) || app.domains[0];
-                const rest = app.domains.length - 1;
-                return (
-                  <>
-                    <a
-                      href={`https://${primary.domain}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm font-mono text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      {primary.domain}
-                    </a>
-                    {rest > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab("networking")}
-                        className="text-xs text-muted-foreground/60 hover:text-muted-foreground transition-colors"
-                      >
-                        +{rest}
-                      </button>
-                    )}
-                  </>
-                );
-              })()}
-            </div>
-          )}
-
-          {/* Source line */}
-          <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-            {app.source === "git" && app.gitUrl && (
-              <span className="font-mono">
-                {app.gitUrl.replace("https://github.com/", "").replace(".git", "")}
-                {app.gitBranch && app.gitBranch !== "main" && (
-                  <span className="text-muted-foreground/50">:{app.gitBranch}</span>
-                )}
-              </span>
-            )}
-            {app.deployType === "image" && app.imageName && (
-              <span className="font-mono">{app.imageName}</span>
-            )}
-            {app.containerPort && (
-              <span>:{app.containerPort}</span>
-            )}
-            <span className="text-muted-foreground/40">
-              {deployTypeLabel(app.deployType)}
-            </span>
-            {app.gpuEnabled && (
-              <span className="flex items-center gap-1 text-muted-foreground/70" title="GPU passthrough enabled">
-                <Cpu className="size-3" aria-hidden="true" />
-                GPU
-              </span>
-            )}
-            {isChildService && (
-              <span
-                className="flex items-center gap-1 text-muted-foreground/70"
-                title={`Decomposed service${app.composeService ? ` "${app.composeService}"` : ""} of a compose app — resources, GPU, volumes and logs are configured here; deploy and networking live on the parent`}
-              >
-                <Container className="size-3" aria-hidden="true" />
-                Service
-              </span>
-            )}
-            <span className="text-muted-foreground/40">
-              {new Date(app.createdAt).toLocaleDateString()}
-            </span>
+      {/* Sections — vertical nav rail on lg+, scroll strip below */}
+      <Tabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        orientation="vertical"
+        className="flex-col gap-6 lg:flex-row lg:gap-8"
+      >
+        <aside className="lg:w-48 lg:shrink-0">
+          <div className="lg:sticky lg:top-24">
+            <AppSectionNav
+              groups={[
+                {
+                  items: [
+                    ...(!isChildService
+                      ? [{ value: "deployments", label: "Deployments", count: filteredDeployments.length }]
+                      : []),
+                    ...(app.connectionInfo && app.connectionInfo.length > 0
+                      ? [{ value: "connect", label: "Connect" }]
+                      : []),
+                  ],
+                },
+                {
+                  label: "Configure",
+                  items: [
+                    { value: "variables", label: "Variables", count: app.envVars.length },
+                    { value: "networking", label: "Networking" },
+                    ...(featureFlags?.cron !== false ? [{ value: "cron", label: "Cron" }] : []),
+                  ],
+                },
+                {
+                  label: "Observe",
+                  items: [
+                    { value: "logs", label: "Logs" },
+                    { value: "metrics", label: "Metrics" },
+                    ...(featureFlags?.errorTracking !== false ? [{ value: "errors", label: "Errors" }] : []),
+                    { value: "security", label: "Security" },
+                  ],
+                },
+                {
+                  label: "Data",
+                  items: [
+                    { value: "volumes", label: "Volumes" },
+                    ...(featureFlags?.backups !== false ? [{ value: "backups", label: "Backups" }] : []),
+                  ],
+                },
+                {
+                  label: "Tools",
+                  items: [
+                    ...(featureFlags?.terminal !== false ? [{ value: "terminal", label: "Terminal" }] : []),
+                    ...(isOrgAdmin(userRole) ? [{ value: "debug", label: "Debug" }] : []),
+                  ],
+                },
+              ] satisfies SectionGroup[]}
+            />
           </div>
+        </aside>
 
-          {/* Tags */}
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {(app.appTags ?? []).map(({ tag }) => (
-              <span
-                key={tag.id}
-                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
-                style={{ backgroundColor: `${tag.color}15`, color: tag.color }}
-              >
-                <span className="size-1.5 rounded-full" style={{ backgroundColor: tag.color }} />
-                {tag.name}
-              </span>
-            ))}
-            {allTags.length > 0 && (
-              <Popover open={tagPopoverOpen} onOpenChange={setTagPopoverOpen}>
-                <PopoverTrigger asChild>
-                  <button className="inline-flex items-center justify-center size-5 rounded-full border border-dashed border-muted-foreground/20 text-muted-foreground/40 hover:text-muted-foreground hover:border-muted-foreground/40 transition-colors">
-                    <Plus className="size-2.5" />
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent align="start" className="w-48 p-1.5">
-                  {allTags.map((tag) => {
-                    const isApplied = appTagIds.has(tag.id);
-                    const isToggling = togglingTagId === tag.id;
-                    return (
-                      <button
-                        key={tag.id}
-                        disabled={isToggling}
-                        onClick={() => handleToggleTag(tag.id)}
-                        className="flex w-full items-center gap-2 rounded px-2 py-1 text-xs hover:bg-accent transition-colors disabled:opacity-50"
-                      >
-                        <span className="size-2.5 rounded-full shrink-0" style={{ backgroundColor: tag.color }} />
-                        <span className="flex-1 text-left truncate">{tag.name}</span>
-                        {isToggling ? <Loader2 className="size-3 animate-spin" /> : isApplied ? <Check className="size-3" /> : null}
-                      </button>
-                    );
-                  })}
-                </PopoverContent>
-              </Popover>
-            )}
-          </div>
-        </div>
-      </div>
-
-
-      {/* Deploy dependencies — only shown for apps in a project with siblings */}
-      {app.projectId && siblings.length > 0 && (
-        <DependencySelector
-          appId={app.id}
-          appName={app.name}
-          orgId={orgId}
-          currentDeps={app.dependsOn ?? []}
-          siblings={siblings}
-        />
-      )}
-
-      {/* Tabbed sections */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList variant="line">
-          {!isChildService && (
-            <TabsTrigger value="deployments">
-              Deployments
-              {filteredDeployments.length > 0 && (
-                <Badge variant="secondary" className="ml-1.5 text-xs">
-                  {filteredDeployments.length}
-                </Badge>
-              )}
-            </TabsTrigger>
-          )}
-          {app.connectionInfo && app.connectionInfo.length > 0 && (
-            <TabsTrigger value="connect">
-              Connect
-            </TabsTrigger>
-          )}
-          <TabsTrigger value="variables">
-            Variables
-            {app.envVars.length > 0 && (
-              <Badge variant="secondary" className="ml-1.5 text-xs">
-                {app.envVars.length}
-              </Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="networking">
-            Networking
-          </TabsTrigger>
-          <TabsTrigger value="logs">
-            Logs
-          </TabsTrigger>
-          <TabsTrigger value="volumes">
-            Volumes
-          </TabsTrigger>
-          {featureFlags?.cron !== false && (
-            <TabsTrigger value="cron">
-              Cron
-            </TabsTrigger>
-          )}
-          {featureFlags?.terminal !== false && (
-            <TabsTrigger value="terminal">
-              Terminal
-            </TabsTrigger>
-          )}
-          <TabsTrigger value="metrics">
-            Metrics
-          </TabsTrigger>
-          {featureFlags?.backups !== false && (
-            <TabsTrigger value="backups">
-              Backups
-            </TabsTrigger>
-          )}
-          <TabsTrigger value="security">
-            Security
-          </TabsTrigger>
-          {featureFlags?.errorTracking !== false && (
-            <TabsTrigger value="errors">
-              Errors
-            </TabsTrigger>
-          )}
-          {isOrgAdmin(userRole) && (
-            <TabsTrigger value="debug">
-              Debug
-            </TabsTrigger>
-          )}
-        </TabsList>
+        <div className="min-w-0 flex-1">
 
         <TabsContent value="deployments">
           <AppDeployPanel
@@ -988,7 +703,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           </TabsContent>
         )}
 
-        <TabsContent value="variables" className="pt-4 space-y-4">
+        <TabsContent value="variables" className="space-y-4">
           {isChildService && (
             <p className="text-sm text-muted-foreground">
               These variables apply only to the{" "}
@@ -1023,14 +738,14 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           />
         </TabsContent>
 
-        <TabsContent value="logs" className="pt-4">
+        <TabsContent value="logs">
           <LogViewer
             key={`logs-${selectedEnvId}`}
             streamUrl={`/api/v1/organizations/${orgId}/apps/${app.id}/logs/stream${selectedEnv ? `?environment=${selectedEnv.name}` : ""}`}
           />
         </TabsContent>
 
-        <TabsContent value="volumes" className="pt-4 space-y-4">
+        <TabsContent value="volumes" className="space-y-4">
           <p className="text-sm text-muted-foreground">
             Persistent volumes survive redeploys and container restarts. Data in non-persistent volumes is ephemeral.
           </p>
@@ -1038,7 +753,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         </TabsContent>
 
         {featureFlags?.cron !== false && (
-          <TabsContent value="cron" className="pt-4 space-y-4">
+          <TabsContent value="cron" className="space-y-4">
             <p className="text-sm text-muted-foreground">
               Schedule commands to run inside this app&apos;s container on a fixed interval. Uses standard cron syntax.
             </p>
@@ -1047,7 +762,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         )}
 
         {featureFlags?.terminal !== false && (
-          <TabsContent value="terminal" className="pt-4 space-y-4">
+          <TabsContent value="terminal" className="space-y-4">
             <p className="text-sm text-muted-foreground">
               Interactive shell session inside the running container. Changes to the filesystem are lost on redeploy unless written to a persistent volume.
             </p>
@@ -1055,12 +770,12 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           </TabsContent>
         )}
 
-        <TabsContent value="metrics" className="pt-4">
+        <TabsContent value="metrics">
           <AppMetrics key={`metrics-${selectedEnvId}`} orgId={orgId} appId={app.id} environmentName={selectedEnv?.name} gpuEnabled={!!app.gpuEnabled} />
         </TabsContent>
 
         {featureFlags?.backups !== false && (
-          <TabsContent value="backups" className="pt-4 space-y-4">
+          <TabsContent value="backups" className="space-y-4">
             <p className="text-sm text-muted-foreground">
               Snapshots of this app&apos;s persistent volumes. Download or restore any backup.
             </p>
@@ -1073,7 +788,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         </TabsContent>
 
         {featureFlags?.errorTracking !== false && (
-          <TabsContent value="errors" className="pt-4 space-y-4">
+          <TabsContent value="errors" className="space-y-4">
             <AppErrors orgId={orgId} appId={app.id} />
           </TabsContent>
         )}
@@ -1083,102 +798,19 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
             <AppDebug orgId={orgId} appId={app.id} />
           </TabsContent>
         )}
-
+        </div>
       </Tabs>
 
-      {/* New Environment Bottom Sheet */}
-      <BottomSheet open={newEnvOpen} onOpenChange={setNewEnvOpen}>
-        <BottomSheetContent>
-          <BottomSheetHeader>
-            <BottomSheetTitle>New environment</BottomSheetTitle>
-            <BottomSheetDescription>
-              Create a new environment from a branch. Variables are cloned from the source environment.
-            </BottomSheetDescription>
-          </BottomSheetHeader>
-
-          <div className="flex-1 overflow-y-auto px-6 pb-6">
-            <div className="grid gap-5 py-4">
-              {/* Branch + Name */}
-              <div className="grid gap-4 sm:grid-cols-2">
-                {app.source === "git" ? (
-                  <div className="grid gap-2">
-                    <Label>Branch</Label>
-                    <BranchSelect
-                      value={newEnvBranch}
-                      onChange={(v) => {
-                        const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
-                        setNewEnvBranch(v);
-                        if (!newEnvName || newEnvName === slugify(newEnvBranch)) {
-                          setNewEnvName(slugify(v));
-                        }
-                      }}
-                      appId={app.id}
-                      orgId={orgId}
-                      excludeBranch={app.gitBranch || "main"}
-                    />
-                  </div>
-                ) : (
-                  <div className="grid gap-2">
-                    <Label>Name</Label>
-                    <Input
-                      placeholder="e.g. staging, qa, demo"
-                      value={newEnvName}
-                      onChange={(e) => setNewEnvName(e.target.value)}
-                    />
-                  </div>
-                )}
-                <div className="grid gap-2">
-                  <Label>Environment name</Label>
-                  <Input
-                    placeholder={app.source === "git" ? "Auto-generated from branch" : "e.g. staging, qa"}
-                    value={newEnvName}
-                    onChange={(e) => setNewEnvName(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              {/* Clone source */}
-              <div className="grid gap-2 sm:w-1/2">
-                <Label>Clone variables from</Label>
-                <Select value={newEnvCloneFrom} onValueChange={setNewEnvCloneFrom}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__production">Production</SelectItem>
-                    {app.environments
-                      .filter((e) => e.type !== "production")
-                      .map((e) => (
-                        <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>
-                      ))}
-                    <SelectItem value="__none">Empty (no variables)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </div>
-
-          <BottomSheetFooter>
-            <Button
-              variant="outline"
-              onClick={() => { setNewEnvOpen(false); setNewEnvName(""); setNewEnvBranch(""); setNewEnvCloneFrom("__production"); }}
-              disabled={newEnvSaving}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleCreateEnv}
-              disabled={!newEnvName.trim() || newEnvSaving || (app.source === "git" && !newEnvBranch.trim())}
-            >
-              {newEnvSaving ? (
-                <><Loader2 className="mr-2 size-4 animate-spin" />Creating...</>
-              ) : (
-                "Create & Deploy"
-              )}
-            </Button>
-          </BottomSheetFooter>
-        </BottomSheetContent>
-      </BottomSheet>
+      {/* New Environment Sheet */}
+      <NewEnvironmentSheet
+        open={newEnvOpen}
+        onOpenChange={setNewEnvOpen}
+        app={app}
+        orgId={orgId}
+        productionEnvId={productionEnv?.id}
+        defaultCloneFrom={newEnvCloneDefault}
+        onSelectEnv={setSelectedEnvId}
+      />
 
       {/* Edit Settings Dialog */}
       <AppSettingsDialog

@@ -124,7 +124,7 @@ export function AppDebug({
   }, [data]);
 
   return (
-    <div className="pt-4 space-y-4">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
           Generated config for this app — compose file, Traefik routing rules, and live container inspect data.

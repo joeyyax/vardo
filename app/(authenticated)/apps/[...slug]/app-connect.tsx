@@ -25,7 +25,7 @@ export function AppConnect({
   const [showVarNames, setShowVarNames] = useState(false);
 
   return (
-    <div className="pt-4">
+    <div>
       <div className="space-y-6">
         {/* Internal connection */}
         <div className="space-y-3">
