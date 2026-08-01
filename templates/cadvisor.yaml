@@ -12,7 +12,6 @@ composeContent: |
   services:
     cadvisor:
       image: gcr.io/cadvisor/cadvisor:latest
-      container_name: vardo-cadvisor
       restart: unless-stopped
       privileged: true
       command:
@@ -25,3 +24,11 @@ composeContent: |
         - /sys:/sys:ro
         - /var/lib/docker/:/var/lib/docker:ro
       mem_limit: 256m
+      # Vardo reaches this at http://cadvisor:8080. Without joining the shared
+      # network the container is unreachable and metrics silently never arrive.
+      networks:
+        - vardo-network
+
+  networks:
+    vardo-network:
+      external: true
