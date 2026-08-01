@@ -1,8 +1,23 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ArrowRight, RefreshCw } from "lucide-react";
+import { ArrowRight, RefreshCw, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "@/lib/messenger";
 
 type Severity = "patch" | "minor" | "major" | "build" | "unknown";
@@ -15,10 +30,40 @@ type ServiceUpdate = {
   latestTag: string | null;
   severity: Severity | null;
   unorderable: string[];
+  available: string[];
+  majorAvailable: string | null;
+  majorLocked: boolean;
   error: string | null;
   checkedAt: string | null;
   stale: boolean;
 };
+
+type MigrationPlan = {
+  engine: string;
+  strategy: string;
+  hops: number[];
+  needsIntermediateSteps: boolean;
+  steps: string[];
+  docs: string;
+};
+
+type MigrationPrompt = {
+  entry: ServiceUpdate;
+  tag: string;
+  plan: MigrationPlan | null;
+};
+
+/** Leading integer of a tag: `16.2-alpine` → 16. */
+function majorOf(tag: string): number | null {
+  const match = tag.match(/^v?(\d+)/);
+  return match ? parseInt(match[1], 10) : null;
+}
+
+function isMajorJump(from: string, to: string): boolean {
+  const a = majorOf(from);
+  const b = majorOf(to);
+  return a !== null && b !== null && b > a;
+}
 
 type AppUpdates = {
   services: ServiceUpdate[];
@@ -118,6 +163,9 @@ export function AppUpdatesPanel({
   const { data, loading, refresh } = useImageUpdates(orgId, appId);
   const [applying, setApplying] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
+  /** service → tag the user picked, when it differs from the default. */
+  const [chosen, setChosen] = useState<Record<string, string>>({});
+  const [migration, setMigration] = useState<MigrationPrompt | null>(null);
 
   const actionable = (data?.services ?? []).filter(
     (entry) => entry.status === "update" || entry.status === "drift",
@@ -126,14 +174,20 @@ export function AppUpdatesPanel({
 
   if (loading || !data || (actionable.length === 0 && unverified.length === 0)) return null;
 
-  async function apply(entry: ServiceUpdate) {
+  /** What the row will apply: the user's pick, else the safe default. */
+  function targetTag(entry: ServiceUpdate): string | null {
+    return chosen[entry.service ?? ""] ?? entry.latestTag ?? entry.majorAvailable ?? null;
+  }
+
+  async function apply(entry: ServiceUpdate, acknowledgeMigration = false) {
     const key = entry.service ?? "";
-    if (!entry.latestTag) {
+    const tag = targetTag(entry);
+    if (!tag) {
       // A drifted floating tag has no new tag — deploying re-pulls it.
       onDeploy();
       return;
     }
-    if (entry.severity === "major" && confirming !== key) {
+    if (entry.severity === "major" && !acknowledgeMigration && confirming !== key) {
       setConfirming(key);
       return;
     }
@@ -144,12 +198,20 @@ export function AppUpdatesPanel({
       const res = await fetch(`/api/v1/organizations/${orgId}/apps/${appId}/image-updates`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ service: entry.service, tag: entry.latestTag }),
+        body: JSON.stringify({
+          service: entry.service,
+          tag,
+          ...(acknowledgeMigration ? { acknowledgeMigration: true } : {}),
+        }),
       });
       const body = await res.json();
+      if (res.status === 409 && body.requiresMigration) {
+        setMigration({ entry, tag, plan: body.plan ?? null });
+        return;
+      }
       if (!res.ok) throw new Error(body.error ?? "Update failed");
 
-      toast.success(`Pinned ${entry.service ?? "image"} to ${entry.latestTag}`);
+      toast.success(`Pinned ${entry.service ?? "image"} to ${tag}`);
       refresh();
       onDeploy();
     } catch (error) {
@@ -187,9 +249,40 @@ export function AppUpdatesPanel({
             <span className="flex items-center gap-2 text-sm">
               <span className="font-mono text-muted-foreground">{entry.currentTag}</span>
               <ArrowRight className="size-3 text-muted-foreground/40" aria-hidden="true" />
-              <span className={`font-mono ${severityClass(entry.severity)}`}>
-                {entry.latestTag ?? "rebuilt"}
-              </span>
+              {entry.available.length > 1 ? (
+                <Select
+                  value={targetTag(entry) ?? undefined}
+                  onValueChange={(tag) =>
+                    setChosen((prev) => ({ ...prev, [key]: tag }))
+                  }
+                >
+                  <SelectTrigger
+                    className="h-7 font-mono"
+                    aria-label={`Version for ${entry.service ?? entry.image}`}
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {entry.available.map((tag) => {
+                      const crossesMajor = entry.majorLocked && isMajorJump(entry.currentTag, tag);
+                      return (
+                        <SelectItem key={tag} value={tag} className="font-mono">
+                          {tag}
+                          {crossesMajor && (
+                            <span className="ml-2 type-label text-status-warning">
+                              needs migration
+                            </span>
+                          )}
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <span className={`font-mono ${severityClass(entry.severity)}`}>
+                  {targetTag(entry) ?? "rebuilt"}
+                </span>
+              )}
             </span>
             {label && (
               <span className="type-label text-muted-foreground/50">{label}</span>
@@ -202,7 +295,7 @@ export function AppUpdatesPanel({
               onClick={() => apply(entry)}
             >
               {confirming === key
-                ? `Confirm ${entry.latestTag}`
+                ? `Confirm ${targetTag(entry)}`
                 : applying === key
                   ? "Applying…"
                   : "Update"}
@@ -217,6 +310,85 @@ export function AppUpdatesPanel({
           {unverified[0].error ? ` — ${unverified[0].error}` : ""}.
         </p>
       )}
+
+      <MigrationDialog
+        prompt={migration}
+        onClose={() => setMigration(null)}
+        onConfirm={(entry) => {
+          setMigration(null);
+          apply(entry, true);
+        }}
+      />
     </section>
+  );
+}
+
+/**
+ * Shown when a pick crosses a major on an image whose data directory is tied to
+ * that major. The deploy would fail on the version check, so the recipe comes
+ * before the confirm rather than after the outage.
+ */
+function MigrationDialog({
+  prompt,
+  onClose,
+  onConfirm,
+}: {
+  prompt: MigrationPrompt | null;
+  onClose: () => void;
+  onConfirm: (entry: ServiceUpdate) => void;
+}) {
+  if (!prompt) return null;
+  const { entry, tag, plan } = prompt;
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <TriangleAlert className="size-4 text-status-warning" aria-hidden="true" />
+            {entry.currentTag} → {tag} is a data migration
+          </DialogTitle>
+          <DialogDescription>
+            {plan?.engine ?? entry.image} stores data in a format tied to its major version. Pinning
+            this tag alone will not start — the new container refuses the existing data directory.
+          </DialogDescription>
+        </DialogHeader>
+
+        {plan?.needsIntermediateSteps && (
+          <p className="text-sm text-status-warning">
+            {plan.engine} cannot jump straight there. Land on {plan.hops.join(", then ")} in order.
+          </p>
+        )}
+
+        {plan && (
+          <ol className="list-decimal space-y-1.5 pl-5 text-sm text-muted-foreground">
+            {plan.steps.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ol>
+        )}
+
+        <DialogFooter className="sm:justify-between">
+          {plan && (
+            <a
+              href={plan.docs}
+              target="_blank"
+              rel="noreferrer"
+              className="text-xs text-muted-foreground underline self-center"
+            >
+              Upstream upgrade notes
+            </a>
+          )}
+          <span className="flex gap-2">
+            <Button variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={() => onConfirm(entry)}>
+              Pin {tag} anyway
+            </Button>
+          </span>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

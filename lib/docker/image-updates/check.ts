@@ -9,6 +9,7 @@ import { appImages, type ServiceImage } from "./compose-images";
 import { isMutableShortForm, refCacheKey, type ImageRef } from "./image-ref";
 import { fetchRemoteDigest, fetchTags, RateLimitedError } from "./registry";
 import { parseTag, selectUpdateCandidate, type BumpSeverity } from "./tag-version";
+import { isMajorLocked } from "./stateful-image";
 
 /**
  * Update checking, budgeted.
@@ -37,6 +38,12 @@ export interface ImageCheckResult {
   /** Digest the tag resolved to, on the floating-tag path only. */
   remoteDigest: string | null;
   unorderable: string[];
+  /** Newer tags to choose from, newest first. */
+  available: string[];
+  /** Newest tag that crosses a major, when this image's data dir is major-locked. */
+  majorAvailable: string | null;
+  /** Whether a major bump means migrating a data directory. */
+  majorLocked: boolean;
   error: string | null;
   checkedAt: Date;
 }
@@ -83,6 +90,9 @@ export async function checkImage(
     severity: null,
     remoteDigest: null,
     unorderable: [],
+    available: [],
+    majorAvailable: null,
+    majorLocked: false,
     error: null,
     checkedAt: new Date(),
   };
@@ -105,13 +115,17 @@ export async function checkImage(
   const tags = await fetchTags(ref);
   if (tags.length === 0) return { ...base, error: "Registry returned no tags" };
 
-  const candidate = selectUpdateCandidate(ref.tag, tags);
+  const capAtMajor = isMajorLocked(imageRef);
+  const candidate = selectUpdateCandidate(ref.tag, tags, { capAtMajor });
   return {
     ...base,
-    status: candidate.latest ? "update" : "current",
+    status: candidate.latest || candidate.majorAvailable ? "update" : "current",
     latestTag: candidate.latest,
     severity: candidate.latest ? candidate.severity : null,
     unorderable: candidate.unorderable.slice(0, 10),
+    available: candidate.available.slice(0, 40),
+    majorAvailable: candidate.majorAvailable,
+    majorLocked: capAtMajor,
   };
 }
 
@@ -125,6 +139,9 @@ async function persist(result: ImageCheckResult) {
       severity: result.severity,
       remoteDigest: result.remoteDigest,
       unorderable: result.unorderable,
+      available: result.available,
+      majorAvailable: result.majorAvailable,
+      majorLocked: result.majorLocked,
       error: result.error,
       checkedAt: result.checkedAt,
     })
@@ -136,6 +153,9 @@ async function persist(result: ImageCheckResult) {
         severity: result.severity,
         remoteDigest: result.remoteDigest,
         unorderable: result.unorderable,
+        available: result.available,
+        majorAvailable: result.majorAvailable,
+        majorLocked: result.majorLocked,
         error: result.error,
         checkedAt: result.checkedAt,
       },
@@ -216,6 +236,9 @@ export async function refreshStaleChecks(limit = SWEEP_BATCH_SIZE): Promise<numb
             severity: null,
             remoteDigest: null,
             unorderable: [],
+            available: [],
+            majorAvailable: null,
+            majorLocked: false,
             error: message,
             checkedAt: new Date(),
           });

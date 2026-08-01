@@ -253,8 +253,16 @@ export function AppDeployPanel({
   const completedDeployments = filteredDeployments
     .filter((d) => d.status !== "queued" && d.status !== "running");
 
+  // "deploying" is included: the old slot serves throughout a deploy and through
+  // a failed one's rollback, so hiding this card is what made a failure read as
+  // an outage.
   const liveDeploy = completedDeployments.find(
-    (d) => d.status === "success" && (appStatus === "active" || appStatus === "stopped" || appStatus === "error")
+    (d) =>
+      d.status === "success" &&
+      (appStatus === "active" ||
+        appStatus === "stopped" ||
+        appStatus === "error" ||
+        appStatus === "deploying")
   );
 
   const showRollbackAction = slotStatus?.standbyAvailable && appStatus === "active";
@@ -280,7 +288,8 @@ export function AppDeployPanel({
     deployment: Deployment,
     variant: "live" | "rollback" | "history",
   ) {
-    const isLive = variant === "live" && appStatus === "active";
+    const isDeploying = variant === "live" && appStatus === "deploying";
+    const isLive = variant === "live" && (appStatus === "active" || isDeploying);
     const isStopped = variant === "live" && appStatus === "stopped";
     const isErrored = variant === "live" && appStatus === "error";
 
@@ -328,7 +337,7 @@ export function AppDeployPanel({
               isLive ? (
                 <Badge className="border-transparent bg-status-success text-white shrink-0">
                   <span className="mr-1.5 size-1.5 rounded-full bg-white animate-pulse" />
-                  Live
+                  {isDeploying ? "Live · still serving" : "Live"}
                 </Badge>
               ) : isStopped ? (
                 <Badge className="border-transparent bg-status-neutral-muted text-status-neutral shrink-0">
