@@ -267,30 +267,30 @@ function ProjectCard({
           return (
             <>
               {visible.map((a) => (
-            <Link
-              key={a.id}
-              href={`/apps/${a.name}`}
-              onClick={(e) => e.stopPropagation()}
-              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                CHIP_TONE[a.status] ?? "border-transparent bg-background hover:bg-accent"
-              }`}
-            >
-              <span aria-hidden="true" className={`size-1.5 rounded-full ${statusDotColor(a.status)}`} />
-              {a.displayName}
-              {CHIP_STATUS_WORD[a.status] && (
-                <span className="font-normal opacity-80">{CHIP_STATUS_WORD[a.status]}</span>
-              )}
-              {a.priority === "critical" && (
-                <ShieldCheck className="size-3 text-status-warning" aria-label="Critical priority" />
-              )}
-              {a.priority === "disposable" && (
-                <Trash2 className="size-3 text-muted-foreground/50" aria-label="Disposable priority" />
-              )}
-              {a.gpuEnabled && (
-                <Cpu className="size-3 text-muted-foreground/50" aria-label="GPU passthrough enabled" />
-              )}
-              {a.status === "active" && <span className="sr-only">, Running</span>}
-            </Link>
+                <Link
+                  key={a.id}
+                  href={`/apps/${a.name}`}
+                  onClick={(e) => e.stopPropagation()}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                    CHIP_TONE[a.status] ?? "border-transparent bg-background hover:bg-accent"
+                  }`}
+                >
+                  <span aria-hidden="true" className={`size-1.5 rounded-full ${statusDotColor(a.status)}`} />
+                  {a.displayName}
+                  {CHIP_STATUS_WORD[a.status] && (
+                    <span className="font-normal opacity-80">{CHIP_STATUS_WORD[a.status]}</span>
+                  )}
+                  {a.priority === "critical" && (
+                    <ShieldCheck className="size-3 text-status-warning" aria-label="Critical priority" />
+                  )}
+                  {a.priority === "disposable" && (
+                    <Trash2 className="size-3 text-muted-foreground/50" aria-label="Disposable priority" />
+                  )}
+                  {a.gpuEnabled && (
+                    <Cpu className="size-3 text-muted-foreground/50" aria-label="GPU passthrough enabled" />
+                  )}
+                  {a.status === "active" && <span className="sr-only">, Running</span>}
+                </Link>
               ))}
               {capped && (
                 <span className="inline-flex items-center rounded-full border border-transparent bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground">
