@@ -42,21 +42,40 @@ export async function collectBusinessMetrics() {
   const orgCounts = await db.execute(sql`
     SELECT
       o.id AS org_id,
+      COALESCE(pc.cnt, 0)::text AS projects,
       COALESCE(ac.cnt, 0)::text AS apps,
       COALESCE(dc.cnt, 0)::text AS deployments,
       COALESCE(dmc.cnt, 0)::text AS domains,
+      COALESCE(bc.cnt, 0)::text AS backups,
+      COALESCE(cc.cnt, 0)::text AS cron_jobs,
       COALESCE(mc.cnt, 0)::text AS members
     FROM "organization" o
+    LEFT JOIN (SELECT organization_id, COUNT(*) AS cnt FROM "project" GROUP BY 1) pc ON pc.organization_id = o.id
     LEFT JOIN (SELECT organization_id, COUNT(*) AS cnt FROM "app" GROUP BY 1) ac ON ac.organization_id = o.id
     LEFT JOIN (SELECT a.organization_id, COUNT(*) AS cnt FROM "deployment" d JOIN "app" a ON d.app_id = a.id GROUP BY 1) dc ON dc.organization_id = o.id
     LEFT JOIN (SELECT a.organization_id, COUNT(*) AS cnt FROM "domain" dm JOIN "app" a ON dm.app_id = a.id GROUP BY 1) dmc ON dmc.organization_id = o.id
+    LEFT JOIN (SELECT a.organization_id, COUNT(*) AS cnt FROM "backup" b JOIN "app" a ON b.app_id = a.id GROUP BY 1) bc ON bc.organization_id = o.id
+    LEFT JOIN (SELECT a.organization_id, COUNT(*) AS cnt FROM "cron_job" cj JOIN "app" a ON cj.app_id = a.id GROUP BY 1) cc ON cc.organization_id = o.id
     LEFT JOIN (SELECT organization_id, COUNT(*) AS cnt FROM "membership" GROUP BY 1) mc ON mc.organization_id = o.id
   `);
+  type OrgCountRow = {
+    org_id: string;
+    projects: string;
+    apps: string;
+    deployments: string;
+    domains: string;
+    backups: string;
+    cron_jobs: string;
+    members: string;
+  };
   await Promise.allSettled(
-    (orgCounts as unknown as { org_id: string; apps: string; deployments: string; domains: string; members: string }[]).flatMap((row) => [
+    (orgCounts as unknown as OrgCountRow[]).flatMap((row) => [
+      storeOrgBusinessMetric(row.org_id, "projects", ts, parseInt(row.projects)),
       storeOrgBusinessMetric(row.org_id, "apps", ts, parseInt(row.apps)),
       storeOrgBusinessMetric(row.org_id, "deployments", ts, parseInt(row.deployments)),
       storeOrgBusinessMetric(row.org_id, "domains", ts, parseInt(row.domains)),
+      storeOrgBusinessMetric(row.org_id, "backups", ts, parseInt(row.backups)),
+      storeOrgBusinessMetric(row.org_id, "cronJobs", ts, parseInt(row.cron_jobs)),
       storeOrgBusinessMetric(row.org_id, "users", ts, parseInt(row.members)),
     ])
   );
