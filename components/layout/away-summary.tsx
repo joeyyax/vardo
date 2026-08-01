@@ -5,11 +5,15 @@ import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 import { X } from "lucide-react";
 
+import { groupNotable, subjectSummary, type AwayGroup } from "@/lib/away/group";
 import { familyLabel, kindLabel, REASON_LABELS, REASON_TONE } from "@/lib/away/labels";
 import type { AwayNotable, AwayReason, AwaySummary } from "@/lib/away/types";
 
 /** Rows shown before the list has to be expanded. */
 const COLLAPSED_ROWS = 4;
+
+/** Group size that gets its subjects named inline rather than counted. */
+const NAMED_SUBJECTS = 3;
 
 const TONE_DOT: Record<"error" | "warning" | "neutral", string> = {
   error: "bg-status-error",
@@ -27,8 +31,17 @@ type WireSummary = Omit<AwaySummary, "since" | "now" | "notable"> & {
   })[];
 };
 
-function Row({ item }: { item: WireSummary["notable"][number] }) {
-  const reason = item.reason as AwayReason;
+type NotableItem = WireSummary["notable"][number];
+
+function Row({ group }: { group: AwayGroup<NotableItem> }) {
+  const reason = group.reason as AwayReason;
+  const [first] = group.items;
+  const many = group.items.length > 1;
+  const names = group.items.map((i) => i.subjectName);
+  // Few enough to name outright reads better than a count plus a second line,
+  // and stops two same-sized groups looking like duplicates of each other.
+  const named = group.items.length <= NAMED_SUBJECTS;
+
   const body = (
     <>
       <span
@@ -37,16 +50,24 @@ function Row({ item }: { item: WireSummary["notable"][number] }) {
       />
       <span className="min-w-0 flex-1">
         <span className="type-body block truncate font-medium text-foreground">
-          {kindLabel(item.kind)}
-          <span className="text-muted-foreground"> · {item.subjectName}</span>
-          {item.count > 1 && (
-            <span className="text-muted-foreground"> ×{item.count}</span>
+          {kindLabel(group.kind)}
+          <span className="text-muted-foreground">
+            {" · "}
+            {named ? subjectSummary(names, NAMED_SUBJECTS) : `${group.items.length} apps`}
+          </span>
+          {!many && first.count > 1 && (
+            <span className="text-muted-foreground"> ×{first.count}</span>
           )}
         </span>
         <span className="type-body-sm block truncate text-muted-foreground">
           {REASON_LABELS[reason]}
-          {item.detail ? ` · ${item.detail}` : ""}
+          {group.detail ? ` · ${group.detail}` : ""}
         </span>
+        {!named && (
+          <span className="type-body-sm block truncate text-muted-foreground/70">
+            {subjectSummary(names)}
+          </span>
+        )}
       </span>
     </>
   );
@@ -54,8 +75,9 @@ function Row({ item }: { item: WireSummary["notable"][number] }) {
   const className =
     "flex items-start gap-2.5 rounded-md px-2 py-1.5 -mx-2 transition-colors";
 
-  return item.href ? (
-    <Link href={item.href} className={`${className} hover:bg-muted`}>
+  // A group spans several subjects, so there is no single place to link to.
+  return !many && first.href ? (
+    <Link href={first.href} className={`${className} hover:bg-muted`}>
       {body}
     </Link>
   ) : (
@@ -98,10 +120,9 @@ export function AwaySummaryBanner({ orgId }: { orgId: string }) {
 
   if (!summary || summary.notable.length === 0) return null;
 
-  const shown = expanded
-    ? summary.notable
-    : summary.notable.slice(0, COLLAPSED_ROWS);
-  const hidden = summary.notable.length - shown.length;
+  const groups = groupNotable(summary.notable);
+  const shown = expanded ? groups : groups.slice(0, COLLAPSED_ROWS);
+  const hidden = groups.length - shown.length;
   const away = formatDistanceToNow(new Date(summary.since));
 
   return (
@@ -130,9 +151,9 @@ export function AwaySummaryBanner({ orgId }: { orgId: string }) {
         </div>
 
         <ul className="space-y-0.5">
-          {shown.map((item) => (
-            <li key={item.id}>
-              <Row item={item} />
+          {shown.map((group) => (
+            <li key={group.key}>
+              <Row group={group} />
             </li>
           ))}
         </ul>
