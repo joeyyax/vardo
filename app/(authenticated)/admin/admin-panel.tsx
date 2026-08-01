@@ -6,6 +6,7 @@ import { Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageToolbar } from "@/components/page-toolbar";
+import { FeatureDisabled } from "@/components/feature-disabled";
 import { DockerPrune, UserManagement } from "./admin-actions";
 import { AdminOverview } from "./admin-overview";
 import { AdminOrganizations } from "./admin-organizations";
@@ -15,9 +16,11 @@ import { AdminMetrics } from "./admin-metrics";
 type AdminPanelProps = {
   activeTab: string;
   orgId: string;
+  metricsEnabled: boolean;
+  metricsFlag: { label: string; description: string };
 };
 
-export function AdminPanel({ activeTab, orgId }: AdminPanelProps) {
+export function AdminPanel({ activeTab, orgId, metricsEnabled, metricsFlag }: AdminPanelProps) {
   const router = useRouter();
 
   function setActiveTab(tab: string) {
@@ -65,7 +68,11 @@ export function AdminPanel({ activeTab, orgId }: AdminPanelProps) {
         </TabsContent>
 
         <TabsContent value="metrics" className="pt-4">
-          <AdminMetrics orgId={orgId} />
+          {metricsEnabled ? (
+            <AdminMetrics orgId={orgId} />
+          ) : (
+            <FeatureDisabled name={metricsFlag.label} description={metricsFlag.description} canManage />
+          )}
         </TabsContent>
 
       </Tabs>

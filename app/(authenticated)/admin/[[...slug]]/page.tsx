@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { user } from "@/lib/db/schema";
 import { getSession, getCurrentOrg } from "@/lib/auth/session";
+import { getFlagConfig, isFeatureEnabledAsync } from "@/lib/config/features";
 import { eq } from "drizzle-orm";
 import { AdminPanel } from "../admin-panel";
 
@@ -30,5 +31,15 @@ export default async function AdminPage({ params }: PageProps) {
   const orgData = await getCurrentOrg();
   if (!orgData) redirect("/login");
 
-  return <AdminPanel activeTab={activeTab} orgId={orgData.organization.id} />;
+  const metricsEnabled = await isFeatureEnabledAsync("metrics");
+  const { label, description } = getFlagConfig("metrics");
+
+  return (
+    <AdminPanel
+      activeTab={activeTab}
+      orgId={orgData.organization.id}
+      metricsEnabled={metricsEnabled}
+      metricsFlag={{ label, description }}
+    />
+  );
 }
