@@ -219,20 +219,24 @@ export function getFlagConfig(flag: FeatureFlag): FlagConfig {
  * Subset of feature flags relevant to UI tab gating in app detail views.
  * Passed from server components to client components as a serializable object.
  */
-export type FeatureFlags = Record<"terminal" | "cron" | "backups" | "errorTracking" | "metrics", boolean>;
+export type FeatureFlags = Record<
+  "terminal" | "cron" | "backups" | "errorTracking" | "metrics" | "logging",
+  boolean
+>;
 
 /**
  * Get feature flags needed for UI tab gating.
  */
 export async function getFeatureFlags(): Promise<FeatureFlags> {
-  const [terminal, cron, backups, errorTracking, metrics] = await Promise.all([
+  const [terminal, cron, backups, errorTracking, metrics, logging] = await Promise.all([
     isFeatureEnabledAsync("terminal"),
     isFeatureEnabledAsync("cron"),
     isFeatureEnabledAsync("backups"),
     isFeatureEnabledAsync("error-tracking"),
     isFeatureEnabledAsync("metrics"),
+    isFeatureEnabledAsync("logging"),
   ]);
-  return { terminal, cron, backups, errorTracking, metrics };
+  return { terminal, cron, backups, errorTracking, metrics, logging };
 }
 
 export type FeatureFlagInfo = {
