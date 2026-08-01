@@ -8,7 +8,7 @@
 // ---------------------------------------------------------------------------
 
 import type { ComposeFile, ComposeService } from "./compose-types";
-import { parsePortString } from "./compose-inject";
+import { parsePortString, isTraefikOptedOut } from "./compose-inject";
 
 /** Images that never serve an app's HTTP port. */
 const DATASTORE_IMAGE =
@@ -78,15 +78,17 @@ export function selectRoutedService(
 ): RoutedServiceSelection {
   const { containerPort, override, imagePorts } = opts;
 
-  if (override && compose.services[override]) {
+  if (override && compose.services[override] && !isTraefikOptedOut(compose.services[override])) {
     return { service: override, reason: "override" };
   }
 
   // Services on host/container/none network modes are unreachable from
-  // vardo-traefik, so they can never carry the route.
+  // vardo-traefik, so they can never carry the route. Neither can a service
+  // the compose opted out with traefik.enable=false.
   const candidates = Object.keys(compose.services).filter((name) => {
     const mode = compose.services[name].network_mode;
-    return !mode || mode === "bridge";
+    if (mode && mode !== "bridge") return false;
+    return !isTraefikOptedOut(compose.services[name]);
   });
 
   if (candidates.length === 0) return { reason: "file-order" };
