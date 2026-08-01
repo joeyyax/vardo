@@ -75,21 +75,39 @@ function smoothPath(pts: [number, number][]): string {
   return d;
 }
 
-export function Sparkline({ data, className, style }: { data: number[]; className?: string; style?: React.CSSProperties }) {
+export function Sparkline({
+  data,
+  className,
+  style,
+  variant = "wash",
+}: {
+  data: number[];
+  className?: string;
+  style?: React.CSSProperties;
+  /** "wash": faint filled background chart. "line": crisp trend for stat cells. */
+  variant?: "wash" | "line";
+}) {
   const id = useId();
   if (data.length === 0) return null;
   const plotData = data.length === 1 ? [data[0], data[0]] : data;
 
   const dataMax = Math.max(...plotData, 0.1);
-  const ceiling = Math.max(dataMax * 3, 10);
   const w = 64;
   const h = 20;
+  // Wash: anchored at zero and kept shallow, it sits behind content. Line:
+  // min–max normalized so the shape fills the box and a steady series reads
+  // as a centered flat line instead of pinning to an edge.
+  const dataMin = Math.min(...plotData);
+  const range = dataMax - dataMin;
+  const pad = variant === "line" ? 2 : 0;
   const pts: [number, number][] = plotData
     .slice(-SPARKLINE_POINTS)
-    .map((v, i, arr) => [
-      (i / (arr.length - 1)) * w,
-      h - (v / ceiling) * h,
-    ]);
+    .map((v, i, arr) => {
+      const x = (i / (arr.length - 1)) * w;
+      if (variant === "wash") return [x, h - (v / Math.max(dataMax * 3, 10)) * h] as [number, number];
+      const t = range > 0 ? (v - dataMin) / range : 0.5;
+      return [x, h - pad - t * (h - pad * 2)] as [number, number];
+    });
 
   const linePath = smoothPath(pts);
   // Closed fill path: line curve + straight bottom edge
@@ -102,22 +120,110 @@ export function Sparkline({ data, className, style }: { data: number[]; classNam
       style={style}
       preserveAspectRatio="none"
     >
-      <defs>
-        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="currentColor" stopOpacity="0.12" />
-          <stop offset="100%" stopColor="currentColor" stopOpacity="0.01" />
-        </linearGradient>
-      </defs>
-      <path d={fillPath} fill={`url(#${id})`} />
+      {variant === "wash" && (
+        <>
+          <defs>
+            <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="currentColor" stopOpacity="0.12" />
+              <stop offset="100%" stopColor="currentColor" stopOpacity="0.01" />
+            </linearGradient>
+          </defs>
+          <path d={fillPath} fill={`url(#${id})`} />
+        </>
+      )}
       <path
         d={linePath}
         fill="none"
         stroke="currentColor"
-        strokeOpacity="0.35"
-        strokeWidth="0.5"
+        strokeOpacity={variant === "wash" ? 0.35 : 1}
+        strokeWidth={variant === "wash" ? 0.5 : 1.1}
+        strokeLinecap="round"
         vectorEffect="non-scaling-stroke"
       />
     </svg>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// MetricsBand — labeled stat cells with trend, a card's metrics footer
+// ---------------------------------------------------------------------------
+
+function StatCell({
+  label,
+  value,
+  sub,
+  data,
+  meter,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  data?: number[];
+  /** 0–1 fill fraction. Takes the trend strip's place when set. */
+  meter?: number;
+}) {
+  const trend = meter === undefined && data && data.length > 1 && data.some((v) => v > 0);
+  return (
+    <div className="min-w-0 px-3 py-2 first:pl-5 last:pr-5">
+      <div className="text-[9px] font-medium uppercase tracking-[0.08em] text-muted-foreground/70">
+        {label}
+      </div>
+      <div className="mt-0.5 truncate whitespace-nowrap text-xs tabular-nums text-foreground/75">
+        {value}
+        {sub && <span className="ml-1 text-[9px] text-muted-foreground/70">{sub}</span>}
+      </div>
+      <div className="mt-1 flex h-3 items-center" aria-hidden="true">
+        {meter !== undefined ? (
+          <span className="block h-1 w-full overflow-hidden rounded-full bg-muted">
+            <span
+              className={`block h-full rounded-full ${meter > 0.9 ? "bg-status-warning" : "bg-foreground/40"}`}
+              style={{ width: `${Math.min(meter, 1) * 100}%` }}
+            />
+          </span>
+        ) : trend ? (
+          <Sparkline data={data} variant="line" className="h-full w-full text-muted-foreground/60" />
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Quiet stat footer: four labeled cells — CPU, memory, disk, network — each
+ * with a trend strip. Memory shows a fill meter instead when the limit is
+ * known. Renders at full size before data arrives — values fall back to
+ * history, then to dashes — so cards don't shift when stats stream in.
+ */
+export function MetricsBand({
+  metrics,
+  history,
+  memoryLimit = 0,
+}: {
+  metrics?: AppMetrics;
+  history?: Partial<MetricsHistory>;
+  /** Total memory limit in bytes; 0 when unknown. */
+  memoryLimit?: number;
+}) {
+  const last = (a?: number[]) => (a && a.length > 0 ? a[a.length - 1] : undefined);
+  const cpu = metrics ? metrics.cpuPercent : last(history?.cpu);
+  const mem = metrics ? metrics.memoryUsage : last(history?.memory);
+  // cAdvisor runs with --disable_metrics=disk, so the live snapshot always
+  // reports 0. Disk comes from Docker via the collector's per-project series.
+  const disk = last(history?.disk) ?? metrics?.diskUsage ?? 0;
+  const net = metrics ? metrics.networkRx + metrics.networkTx : last(history?.network);
+  return (
+    <div className="grid grid-cols-4 divide-x divide-border/40 border-t">
+      <StatCell label="CPU" value={cpu !== undefined ? `${cpu.toFixed(1)}%` : "—"} data={history?.cpu} />
+      <StatCell
+        label="Memory"
+        value={mem !== undefined ? formatBytes(mem) : "—"}
+        sub={memoryLimit > 0 ? `/ ${formatBytes(memoryLimit)}` : undefined}
+        meter={memoryLimit > 0 && mem !== undefined ? mem / memoryLimit : undefined}
+        data={history?.memory}
+      />
+      <StatCell label="Disk" value={disk > 0 ? formatBytes(disk) : "—"} data={history?.disk} />
+      <StatCell label="Network" value={net !== undefined ? formatBytes(net) : "—"} data={history?.network} />
+    </div>
   );
 }
 

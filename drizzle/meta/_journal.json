@@ -274,6 +274,13 @@
       "when": 1785557419932,
       "tag": "0038_daily_blue_marvel",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1785564661649,
+      "tag": "0039_deep_miracleman",
+      "breakpoints": true
     }
   ]
 }

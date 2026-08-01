@@ -4,19 +4,16 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ChevronDown, Package } from "lucide-react";
 
-type Aggregate = {
+export type UpdatesAggregate = {
   appsWithUpdates: { id: string; name: string; displayName: string; count: number }[];
   totalUpdates: number;
   unknownCount: number;
   cooldownUntil: string | null;
 };
 
-/**
- * Org-wide roll-up. Deliberately achromatic — an available update is a fact,
- * not a fault, so it does not borrow the warning treatment.
- */
-export function UpdatesBanner({ orgId }: { orgId: string }) {
-  const [data, setData] = useState<Aggregate | null>(null);
+/** One fetch per page load, shared by the banner and the project cards. */
+export function useImageUpdates(orgId: string) {
+  const [data, setData] = useState<UpdatesAggregate | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -29,6 +26,14 @@ export function UpdatesBanner({ orgId }: { orgId: string }) {
     };
   }, [orgId]);
 
+  return data;
+}
+
+/**
+ * Org-wide roll-up. Deliberately achromatic — an available update is a fact,
+ * not a fault, so it does not borrow the warning treatment.
+ */
+export function UpdatesBanner({ data }: { data: UpdatesAggregate | null }) {
   if (!data || data.appsWithUpdates.length === 0) return null;
 
   const appCount = data.appsWithUpdates.length;

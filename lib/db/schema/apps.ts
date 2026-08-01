@@ -22,6 +22,7 @@ import {
 import { organizations } from "./organizations";
 import { projects } from "./projects";
 import { deployKeys } from "./config";
+import type { AppCondition } from "@/lib/docker/conditions";
 
 // ---------------------------------------------------------------------------
 // Apps (deployable Docker units)
@@ -80,6 +81,9 @@ export const apps = pgTable(
     containerMemoryLimit: bigint("container_memory_limit", { mode: "number" }),
     // Last time the reconciler compared this app against Docker.
     statusCheckedAt: timestamp("status_checked_at"),
+    // How a running app is behaving, written by the health monitor. Separate
+    // from status, which only records what Docker did with the container.
+    conditions: jsonb("conditions").$type<AppCondition[]>(),
     needsRedeploy: boolean("needs_redeploy").default(false),
     cpuLimit: real("cpu_limit"), // CPU cores (e.g. 0.5, 1, 2)
     memoryLimit: integer("memory_limit"), // Memory in MB (e.g. 256, 512, 1024)

@@ -1,6 +1,17 @@
+import { eq } from "drizzle-orm";
+
 import { db } from "@/lib/db";
+import { apps as appsTable } from "@/lib/db/schema";
 import { listContainers, inspectContainer, restartContainer } from "./client";
+import { fetchAllMetrics } from "@/lib/metrics/provider";
 import { emit } from "@/lib/notifications/dispatch";
+import {
+  evaluateConditions,
+  conditionsEqual,
+  type AppCondition,
+  type ConditionInput,
+  type ConditionStreaks,
+} from "./conditions";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("health-monitor");
@@ -102,6 +113,8 @@ const restartBaseline = new Map<string, { count: number; at: number }>();
 const everHealthy = new Set<string>();
 /** containerId → last crash-loop alert, so we escalate once per window. */
 const crashLoopAlerted = new Map<string, number>();
+/** appId → hysteresis streaks, fed back into evaluateConditions each tick. */
+const conditionStreaks = new Map<string, ConditionStreaks>();
 
 function prune(ts: number[], now: number): number[] {
   return ts.filter((t) => now - t < RESTART_WINDOW_MS);
@@ -143,10 +156,40 @@ export async function tickHealthMonitor(): Promise<void> {
       priority: true,
       autoRestartUnhealthy: true,
       organizationId: true,
+      conditions: true,
     },
     where: (t, { inArray }) => inArray(t.id, appIds),
   });
   const appsById = new Map(appRows.map((a) => [a.id, a]));
+
+  // One cAdvisor read for the whole fleet, keyed by the container id the loop
+  // below already has.
+  const usageByContainer = new Map<string, { usage: number; limit: number }>();
+  try {
+    for (const m of await fetchAllMetrics()) {
+      usageByContainer.set(m.containerId, { usage: m.memoryUsage, limit: m.memoryLimit });
+    }
+  } catch (err) {
+    log.warn("Metrics unavailable, skipping memory conditions:", err instanceof Error ? err.message : err);
+  }
+
+  /** Worst signal seen across each app's containers this tick. */
+  const signals = new Map<string, ConditionInput>();
+  const noteSignal = (appId: string, patch: Partial<ConditionInput>) => {
+    const cur = signals.get(appId) ?? { now, crashLoop: null, health: null, selfHealExhausted: false, memory: null };
+    signals.set(appId, {
+      ...cur,
+      ...patch,
+      // An app is crash-looping or unhealthy if any of its containers is.
+      crashLoop: patch.crashLoop ?? cur.crashLoop,
+      health: patch.health === "unhealthy" || cur.health === "unhealthy" ? "unhealthy" : (patch.health ?? cur.health),
+      selfHealExhausted: patch.selfHealExhausted || cur.selfHealExhausted,
+      memory:
+        patch.memory && (!cur.memory || memRatio(patch.memory) > memRatio(cur.memory))
+          ? patch.memory
+          : cur.memory,
+    });
+  };
 
   for (const c of managed) {
     seen.add(c.id);
@@ -163,6 +206,13 @@ export async function tickHealthMonitor(): Promise<void> {
 
     if (info.state.health?.status === "healthy") everHealthy.add(c.id);
     checkCrashLoop(c, info.restartCount, app, now);
+
+    noteSignal(app.id, {
+      health: normalizeHealth(info.state.health?.status),
+      crashLoop: crashLoopSignal(c.id, info.restartCount, now),
+      selfHealExhausted: gaveUp.has(c.id),
+      memory: usageByContainer.get(c.id) ?? null,
+    });
 
     if (!effectiveAutoRestart(app)) {
       unhealthyStreak.delete(c.id);
@@ -249,7 +299,74 @@ export async function tickHealthMonitor(): Promise<void> {
     });
   }
 
+  await persistConditions(appRows, signals, now);
   cleanupState(seen);
+}
+
+function normalizeHealth(status: string | undefined): ConditionInput["health"] {
+  return status === "healthy" || status === "unhealthy" || status === "starting" ? status : null;
+}
+
+function memRatio(m: { usage: number; limit: number }): number {
+  return m.limit > 0 ? m.usage / m.limit : 0;
+}
+
+/**
+ * Crash-loop input for one container, or null when it is not looping. Mirrors
+ * isCrashLooping — restarts since the baseline, never having reported healthy.
+ */
+function crashLoopSignal(
+  containerId: string,
+  restartCount: number,
+  now: number,
+): ConditionInput["crashLoop"] {
+  const baseline = restartBaseline.get(containerId);
+  if (!baseline) return null;
+  const delta = restartCount - baseline.count;
+  if (
+    !isCrashLooping({
+      restartsSinceBaseline: delta,
+      everHealthy: everHealthy.has(containerId),
+      threshold: getCrashLoopThreshold(),
+    })
+  ) {
+    return null;
+  }
+  return { restarts: delta, windowMs: now - baseline.at };
+}
+
+/** Evaluate and write conditions for every app the tick saw. */
+async function persistConditions(
+  appRows: { id: string; conditions: AppCondition[] | null }[],
+  signals: Map<string, ConditionInput>,
+  now: number,
+): Promise<void> {
+  for (const app of appRows) {
+    const input = signals.get(app.id) ?? {
+      now,
+      crashLoop: null,
+      health: null,
+      selfHealExhausted: false,
+      memory: null,
+    };
+    const prev = app.conditions ?? [];
+    const { conditions, streaks } = evaluateConditions(
+      input,
+      prev,
+      conditionStreaks.get(app.id) ?? {},
+    );
+    conditionStreaks.set(app.id, streaks);
+
+    if (conditionsEqual(prev, conditions)) continue;
+    try {
+      await db
+        .update(appsTable)
+        .set({ conditions: conditions.length > 0 ? conditions : null })
+        .where(eq(appsTable.id, app.id));
+    } catch (err) {
+      log.error(`Failed to write conditions for ${app.id}:`, err);
+    }
+  }
 }
 
 /**
@@ -318,6 +435,11 @@ function cleanupState(seen: Set<string>): void {
   for (const id of restartBaseline.keys()) if (!seen.has(id)) restartBaseline.delete(id);
   for (const id of everHealthy) if (!seen.has(id)) everHealthy.delete(id);
   for (const id of crashLoopAlerted.keys()) if (!seen.has(id)) crashLoopAlerted.delete(id);
+}
+
+/** Drop streaks for apps that no longer exist. Keyed by app, not container. */
+export function forgetConditionStreaks(appIds: Set<string>): void {
+  for (const id of conditionStreaks.keys()) if (!appIds.has(id)) conditionStreaks.delete(id);
 }
 
 // ---------------------------------------------------------------------------

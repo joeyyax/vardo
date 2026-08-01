@@ -41,7 +41,7 @@ export default async function ProjectsPage() {
           columns: { id: true, name: true, displayName: true, color: true, isSystemManaged: true },
         },
         childApps: {
-          columns: { id: true, displayName: true, status: true },
+          columns: { id: true, displayName: true, status: true, conditions: true },
         },
       },
     }),
