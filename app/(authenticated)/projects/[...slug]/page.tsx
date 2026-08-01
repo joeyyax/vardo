@@ -121,11 +121,10 @@ export default async function ProjectDetailPage({
     redirect(`/projects/${project.name}${tabPath}`);
   }
 
-  const effectiveTab = tab || "apps";
-
-  // Fetch mesh flag + data in parallel
-  const [meshEnabled, meshPeers, meshInstances] = await Promise.all([
+  // Fetch flags + mesh data in parallel
+  const [meshEnabled, loggingEnabled, meshPeers, meshInstances] = await Promise.all([
     isFeatureEnabledAsync("mesh"),
+    isFeatureEnabledAsync("logging"),
     // Peers are system-level (not org-scoped) — all peers visible to admins
     db.query.meshPeers.findMany({
       columns: { id: true, name: true, type: true, status: true, connectionType: true },
@@ -136,6 +135,9 @@ export default async function ProjectDetailPage({
     }).then((i) => i as ProjectInstanceSummary[]).catch(() => [] as ProjectInstanceSummary[]),
   ]);
 
+  // Requesting a tab gated by a disabled flag falls back to apps
+  const effectiveTab = tab === "logs" && !loggingEnabled ? "apps" : tab || "apps";
+
   return (
     <ProjectDetail
       project={project}
@@ -143,6 +145,7 @@ export default async function ProjectDetailPage({
       initialTab={effectiveTab}
       isAdmin={userIsAdmin}
       meshEnabled={meshEnabled}
+      loggingEnabled={loggingEnabled}
       meshPeers={meshEnabled ? meshPeers : []}
       projectInstances={meshEnabled ? meshInstances : []}
     />

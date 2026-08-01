@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import {
-  queryBusinessMetric,
-  getLatestBusinessMetric,
+  queryOrgBusinessMetric,
+  getLatestOrgBusinessMetric,
   type BusinessMetricName,
 } from "@/lib/metrics/store";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
@@ -10,9 +10,9 @@ type RouteParams = {
   params: Promise<{ orgId: string }>;
 };
 
+// Metrics with a per-org series.
 const VALID_METRICS: BusinessMetricName[] = [
   "users",
-  "organizations",
   "projects",
   "apps",
   "deployments",
@@ -48,7 +48,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       const results = await Promise.all(
         metrics.map(async (metric) => ({
           metric,
-          data: await queryBusinessMetric(metric, fromMs, toMs, bucket),
+          data: await queryOrgBusinessMetric(orgId, metric, fromMs, toMs, bucket),
         }))
       );
 
@@ -61,7 +61,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const results = await Promise.all(
       metrics.map(async (metric) => ({
         metric,
-        ...(await getLatestBusinessMetric(metric)),
+        ...(await getLatestOrgBusinessMetric(orgId, metric)),
       }))
     );
 

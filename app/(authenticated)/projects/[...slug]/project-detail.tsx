@@ -697,6 +697,7 @@ export function ProjectDetail({
   initialTab,
   isAdmin = false,
   meshEnabled = false,
+  loggingEnabled = true,
   meshPeers = [],
   projectInstances = [],
 }: {
@@ -705,6 +706,7 @@ export function ProjectDetail({
   initialTab: string;
   isAdmin?: boolean;
   meshEnabled?: boolean;
+  loggingEnabled?: boolean;
   meshPeers?: MeshPeerSummary[];
   projectInstances?: ProjectInstanceSummary[];
 }) {
@@ -1207,9 +1209,11 @@ export function ProjectDetail({
               </Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="logs">
-            Logs
-          </TabsTrigger>
+          {loggingEnabled && (
+            <TabsTrigger value="logs">
+              Logs
+            </TabsTrigger>
+          )}
           <TabsTrigger value="metrics">
             Metrics
           </TabsTrigger>
@@ -1272,9 +1276,11 @@ export function ProjectDetail({
           <ProjectVariables apps={topLevelApps} orgId={orgId} />
         </TabsContent>
 
-        <TabsContent value="logs" className="pt-4">
-          <ProjectLogs apps={topLevelApps} orgId={orgId} />
-        </TabsContent>
+        {loggingEnabled && (
+          <TabsContent value="logs" className="pt-4">
+            <ProjectLogs apps={topLevelApps} orgId={orgId} />
+          </TabsContent>
+        )}
 
         <TabsContent value="metrics" className="pt-4">
           <ProjectMetricsTab apps={topLevelApps} orgId={orgId} projectId={project.id} />

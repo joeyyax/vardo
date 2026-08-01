@@ -101,3 +101,20 @@ export async function queryOrgBusinessMetric(
     return [];
   }
 }
+
+/**
+ * Get the latest value for a per-org business metric.
+ */
+export async function getLatestOrgBusinessMetric(
+  orgId: string,
+  metric: BusinessMetricName,
+): Promise<{ timestamp: number; value: number } | null> {
+  try {
+    const key = `metrics:business:${orgId}:${metric}`;
+    const result = (await tsRedis.call("TS.GET", key)) as [string, string] | null;
+    if (!result) return null;
+    return { timestamp: parseInt(result[0]), value: parseFloat(result[1]) };
+  } catch {
+    return null;
+  }
+}

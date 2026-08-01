@@ -240,7 +240,8 @@ export default async function AppDetailPage({ params }: PageProps) {
   // Compose parents default to the services tab; child services default to logs
   const isComposeParent = (app.childApps?.length ?? 0) > 0;
   const isChildService = !!app.parentAppId;
-  const defaultTab = isComposeParent ? "services" : isChildService ? "logs" : "deployments";
+  const childServiceDefault = featureFlags.logging ? "logs" : "variables";
+  const defaultTab = isComposeParent ? "services" : isChildService ? childServiceDefault : "deployments";
 
   // If the requested tab is gated by a disabled feature flag, fall back to default
   const gatedTabs: Record<string, keyof typeof featureFlags> = {
@@ -249,6 +250,7 @@ export default async function AppDetailPage({ params }: PageProps) {
     errors: "errorTracking",
     metrics: "metrics",
     backups: "backups",
+    logs: "logging",
   };
   const effectiveTab = tab && gatedTabs[tab] && !featureFlags[gatedTabs[tab]]
     ? defaultTab
