@@ -75,6 +75,15 @@ export async function registerMonitoringPlugin(): Promise<void> {
     log.error("Failed to start app status reconciler:", err);
   }
 
+  // Start Traefik routing drift monitor (stale backend IPs after a daemon restart)
+  try {
+    const { startTraefikDriftMonitor } = await import("@/lib/docker/traefik-drift");
+    startTraefikDriftMonitor();
+    log.info("Traefik drift monitor started");
+  } catch (err) {
+    log.error("Failed to start Traefik drift monitor:", err);
+  }
+
   // Audit stored compose configs for silently-ignored settings
   import("@/lib/docker/compose-audit")
     .then(({ reportStoredComposeConfigs }) => reportStoredComposeConfigs())
