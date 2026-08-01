@@ -23,6 +23,40 @@ import { generateComposeForImage } from "./compose-generate";
 
 const VARDO_LABEL_PREFIX = "vardo.";
 
+/** The one Traefik label Vardo never writes and never removes. */
+function isOptOutLabel(key: string, value: unknown): boolean {
+  return key === "traefik.enable" && (value === "false" || value === false);
+}
+
+/** A service the user has explicitly opted out of Traefik routing. */
+export function isTraefikOptedOut(svc: ComposeService): boolean {
+  return isOptOutLabel("traefik.enable", svc.labels?.["traefik.enable"]);
+}
+
+/**
+ * Drop this app's Traefik routing labels from a service that is not the routed
+ * one. Vardo's Traefik service is app-scoped, so a second service carrying the
+ * same labels becomes a second backend and traffic round-robins into containers
+ * that serve nothing on the port.
+ */
+function dropAppRouting(
+  labels: Record<string, string> | undefined,
+  opts: { serviceLabel: string; routerPrefix: string },
+): Record<string, string> | undefined {
+  if (!labels) return labels;
+  const owned = (k: string) =>
+    k.startsWith(`traefik.http.services.${opts.serviceLabel}.`) ||
+    k.startsWith(`traefik.http.routers.${opts.routerPrefix}.`) ||
+    k.startsWith(`traefik.http.routers.${opts.routerPrefix}-http.`) ||
+    k.startsWith(`traefik.http.middlewares.${opts.routerPrefix}-`);
+  const kept = Object.fromEntries(Object.entries(labels).filter(([k]) => !owned(k)));
+  // Leaving traefik.enable=true on a service with no router of its own would
+  // still publish it under Traefik's default service name.
+  const hasOwnRouter = Object.keys(kept).some((k) => k.startsWith("traefik.http.routers."));
+  if (!hasOwnRouter && kept["traefik.enable"] === "true") delete kept["traefik.enable"];
+  return kept;
+}
+
 // oom_score_adj for a critical-tier app that ALSO has a hard memory limit.
 // Must be > -1000: a value of exactly -1000 makes the process unkillable, which
 // deadlocks the container when it hits its own cgroup memory limit (see the
@@ -56,7 +90,12 @@ export function defaultMemoryLimitMb(tier: QosTier): number {
 // ---------------------------------------------------------------------------
 
 /**
- * Add Traefik reverse-proxy labels to a service in the compose file.
+ * Add Traefik reverse-proxy labels to a service in the compose file, and clear
+ * this app's routing labels from every other service so exactly one backend
+ * declares the app's Traefik service.
+ *
+ * A service carrying `traefik.enable: "false"` is never routed and never
+ * relabeled — the opt-out is the user's, not Vardo's to overwrite.
  * Returns a new ComposeFile -- does not mutate the original.
  */
 export function injectTraefikLabels(
@@ -85,9 +124,12 @@ export function injectTraefikLabels(
   }
 
   const existing = compose.services[serviceName];
+  if (isTraefikOptedOut(existing)) return compose;
+
   const isLocal = domain.endsWith(".localhost") || domain === "localhost";
   const isRedirect = !!opts.redirectTo;
   const permanent = (opts.redirectCode ?? 301) === 301;
+  const svcName = opts.appName || projectName;
 
   const labels: Record<string, string> = {
     ...existing.labels,
@@ -103,10 +145,9 @@ export function injectTraefikLabels(
     labels[`traefik.http.middlewares.${projectName}-redirect.redirectregex.permanent`] = String(permanent);
     labels[`traefik.http.routers.${projectName}.middlewares`] = `${projectName}-redirect`;
     // Redirect routers still need a service reference — point to the app's shared service
-    labels[`traefik.http.routers.${projectName}.service`] = opts.appName || projectName;
+    labels[`traefik.http.routers.${projectName}.service`] = svcName;
   } else {
     // Normal domain — route to the app container
-    const svcName = opts.appName || projectName;
     labels[`traefik.http.services.${svcName}.loadbalancer.server.port`] = String(containerPort);
     labels[`traefik.http.routers.${projectName}.service`] = svcName;
     if (opts.backendProtocol === "https") {
@@ -130,7 +171,7 @@ export function injectTraefikLabels(
     // (or to the domain redirect target, if this is a redirect domain).
     labels[`traefik.http.routers.${projectName}-http.rule`] = `Host(\`${domain}\`)`;
     labels[`traefik.http.routers.${projectName}-http.entrypoints`] = "web";
-    labels[`traefik.http.routers.${projectName}-http.service`] = opts.appName || projectName;
+    labels[`traefik.http.routers.${projectName}-http.service`] = svcName;
 
     if (isRedirect) {
       // For redirect domains, the HTTP router also applies the domain redirect
@@ -150,18 +191,20 @@ export function injectTraefikLabels(
 
   // Host port bindings are stripped separately by stripHostPorts() in the
   // deploy flow for the primary service. Secondary services keep their ports.
-  const updatedService: ComposeService = {
-    ...existing,
-    labels,
-  };
+  const updatedServices: Record<string, ComposeService> = {};
+  for (const [name, svc] of Object.entries(compose.services)) {
+    if (name === serviceName) {
+      updatedServices[name] = { ...existing, labels };
+      continue;
+    }
+    const pruned = dropAppRouting(svc.labels, {
+      serviceLabel: svcName,
+      routerPrefix: projectName,
+    });
+    updatedServices[name] = pruned ? { ...svc, labels: pruned } : svc;
+  }
 
-  return {
-    ...compose,
-    services: {
-      ...compose.services,
-      [serviceName]: updatedService,
-    },
-  };
+  return { ...compose, services: updatedServices };
 }
 
 // ---------------------------------------------------------------------------
@@ -169,9 +212,11 @@ export function injectTraefikLabels(
 // ---------------------------------------------------------------------------
 
 /**
- * Strip all Traefik labels from every service in the compose file.
+ * Strip Vardo-injectable Traefik labels from every service in the compose file.
  * Used before re-injecting fresh Traefik config to prevent stale router names
  * from accumulating (e.g. "appname" from import vs "appname-abc123" from deploy).
+ * An explicit `traefik.enable: "false"` survives — it is the user's opt-out, and
+ * the selection and injection steps both read it.
  * Returns a new ComposeFile — does not mutate the original.
  */
 export function stripTraefikLabels(compose: ComposeFile): ComposeFile {
@@ -182,7 +227,9 @@ export function stripTraefikLabels(compose: ComposeFile): ComposeFile {
       continue;
     }
     const stripped = Object.fromEntries(
-      Object.entries(svc.labels).filter(([k]) => !k.startsWith(TRAEFIK_LABEL_PREFIX))
+      Object.entries(svc.labels).filter(
+        ([k, v]) => !k.startsWith(TRAEFIK_LABEL_PREFIX) || isOptOutLabel(k, v),
+      )
     );
     updatedServices[svcName] = { ...svc, labels: stripped };
   }
@@ -227,7 +274,8 @@ export async function slotComposeFiles(slotDir: string): Promise<string[]> {
 /**
  * Strip all Vardo-injected fields from a compose file, producing the bare user
  * compose. Removes Traefik labels, vardo.* labels, and the Vardo network from
- * services. Used to write the user-facing docker-compose.yml that can be run
+ * services. An explicit `traefik.enable: "false"` is the user's own label and
+ * survives. Used to write the user-facing docker-compose.yml that can be run
  * standalone without Vardo.
  * Returns a new ComposeFile — does not mutate the original.
  */
@@ -240,7 +288,9 @@ export function stripVardoInjections(
     const strippedLabels = svc.labels
       ? Object.fromEntries(
           Object.entries(svc.labels).filter(
-            ([k]) => !k.startsWith(TRAEFIK_LABEL_PREFIX) && !k.startsWith(VARDO_LABEL_PREFIX),
+            ([k, v]) =>
+              isOptOutLabel(k, v) ||
+              (!k.startsWith(TRAEFIK_LABEL_PREFIX) && !k.startsWith(VARDO_LABEL_PREFIX)),
           ),
         )
       : undefined;

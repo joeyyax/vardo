@@ -260,6 +260,83 @@ describe("resolveCompose — vardo-network scoping (agents outage regression)", 
   });
 });
 
+describe("resolveCompose — one Traefik backend (agents 502 regression)", () => {
+  function agentsCompose(): ComposeFile {
+    return {
+      services: {
+        dashboard: { name: "dashboard", image: "dashboard", networks: ["internal"] },
+        worker: { name: "worker", image: "worker", networks: ["internal"] },
+        postgres: {
+          name: "postgres",
+          image: "postgres:17",
+          networks: ["internal"],
+          volumes: ["postgres-data:/var/lib/postgresql/data"],
+        },
+        redis: {
+          name: "redis",
+          image: "redis:7",
+          networks: ["internal"],
+          volumes: ["redis-data:/data"],
+        },
+        bot: { name: "bot", image: "bot", networks: ["internal"] },
+      },
+      networks: { internal: null },
+      volumes: { "postgres-data": null, "redis-data": null },
+    };
+  }
+
+  function traefikLabels(ctx: DeployContext, service: string): Record<string, string> {
+    return Object.fromEntries(
+      Object.entries(ctx.compose.services[service].labels ?? {}).filter(([k]) =>
+        k.startsWith("traefik."),
+      ),
+    );
+  }
+
+  it("enables only the routed service — the other four carry no traefik labels", async () => {
+    const ctx = makeCtx(agentsCompose(), makeApp());
+    await resolveCompose(ctx);
+
+    expect(traefikLabels(ctx, "dashboard")["traefik.enable"]).toBe("true");
+    expect(traefikLabels(ctx, "worker")).toEqual({});
+    expect(traefikLabels(ctx, "bot")).toEqual({});
+    expect(traefikLabels(ctx, "redis")).toEqual({});
+    expect(traefikLabels(ctx, "postgres")).toEqual({});
+  });
+
+  it("declares the app's load balancer exactly once", async () => {
+    const ctx = makeCtx(agentsCompose(), makeApp());
+    await resolveCompose(ctx);
+
+    const declaring = Object.keys(ctx.compose.services).filter((n) =>
+      Object.keys(ctx.compose.services[n].labels ?? {}).some((k) =>
+        k.startsWith("traefik.http.services.agents.loadbalancer"),
+      ),
+    );
+    expect(declaring).toEqual(["dashboard"]);
+  });
+
+  it("honors traefik.enable=false through the strip, the pick and the overlay", async () => {
+    // The opt-out Joey added by hand: bot would otherwise win on file order.
+    const compose = agentsCompose();
+    compose.services.bot.labels = { "traefik.enable": "false" };
+    compose.services.redis.labels = { "traefik.enable": "false" };
+
+    const ctx = makeCtx(
+      { ...compose, services: { bot: compose.services.bot, ...compose.services } },
+      makeApp(),
+    );
+    await resolveCompose(ctx);
+
+    expect(ctx.compose.services.bot.labels?.["traefik.enable"]).toBe("false");
+    expect(ctx.compose.services.redis.labels?.["traefik.enable"]).toBe("false");
+    expect(ctx.compose.services.dashboard.labels?.["traefik.enable"]).toBe("true");
+    // The bare compose written to disk keeps the opt-out too.
+    expect(ctx.bareCompose.services.bot.labels?.["traefik.enable"]).toBe("false");
+    expect(ctx.compose.services.bot.networks ?? []).not.toContain("vardo-network");
+  });
+});
+
 describe("resolveCompose — per-child config (#745)", () => {
   it("builds serviceConfig from child rows and attaches GPU to a child-toggled service", async () => {
     // Parent GPU is OFF; the worker child has gpuEnabled — its device must be
