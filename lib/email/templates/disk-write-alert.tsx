@@ -59,7 +59,7 @@ export function DiskWriteAlertEmail({
         threshold in app settings.
       </Text>
 
-      <CTA href={`${dashboardUrl}?tab=logs`}>Check app logs &rarr;</CTA>
+      <CTA href={`${dashboardUrl}/logs`}>Check app logs &rarr;</CTA>
     </EmailLayout>
   );
 }
@@ -70,7 +70,7 @@ DiskWriteAlertEmail.PreviewProps = {
   writeAmount: "4.2 GB",
   threshold: "1 GB",
   period: "the last hour",
-  dashboardUrl: "https://host.example.com/projects/acme-api",
+  dashboardUrl: "https://host.example.com/apps/acme-api",
 } satisfies DiskWriteAlertProps;
 
 export default DiskWriteAlertEmail;

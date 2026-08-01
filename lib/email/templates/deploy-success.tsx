@@ -141,7 +141,7 @@ export function DeploySuccessEmail({
         </Section>
       )}
 
-      <CTA href={`${dashboardUrl}?tab=deployments`}>
+      <CTA href={`${dashboardUrl}/deployments`}>
         View deployment &rarr;
       </CTA>
     </EmailLayout>
@@ -164,7 +164,7 @@ DeploySuccessEmail.PreviewProps = {
     { name: "Deploy container", duration: "18s", status: "success" as const },
     { name: "Health check", duration: "9s", status: "success" as const },
   ],
-  dashboardUrl: "https://host.example.com/projects/acme-web",
+  dashboardUrl: "https://host.example.com/apps/acme-web",
 } satisfies DeploySuccessProps;
 
 export default DeploySuccessEmail;
