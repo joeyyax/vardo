@@ -8,6 +8,7 @@ import {
 import { user } from "./auth";
 import { apps } from "./apps";
 import { organizations } from "./organizations";
+import { activityFamilyEnum, activityOutcomeEnum } from "./enums";
 
 // ---------------------------------------------------------------------------
 // Activities (audit trail)
@@ -25,11 +26,25 @@ export const activities = pgTable(
     }),
     userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
     action: text("action").notNull(),
+    /** Written by recordActivity. Null on rows predating the column. */
+    family: activityFamilyEnum("family"),
+    outcome: activityOutcomeEnum("outcome"),
     metadata: jsonb("metadata"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [
     index("activity_org_created_at_idx").on(t.organizationId, t.createdAt),
+    index("activity_org_family_created_at_idx").on(
+      t.organizationId,
+      t.family,
+      t.createdAt
+    ),
+    index("activity_org_outcome_created_at_idx").on(
+      t.organizationId,
+      t.outcome,
+      t.createdAt
+    ),
+    index("activity_app_created_at_idx").on(t.appId, t.createdAt),
   ]
 );
 

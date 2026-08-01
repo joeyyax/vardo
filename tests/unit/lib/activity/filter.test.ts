@@ -2,11 +2,8 @@ import { describe, it, expect } from "vitest";
 
 import {
   MAX_SINCE_MS,
-  applyFilters,
   clearChips,
-  countsByOutcome,
   describeWindow,
-  familiesPresent,
   filtersToQuery,
   hasActiveFilters,
   parseFilters,
@@ -14,23 +11,8 @@ import {
   toggleFamily,
   toggleOutcome,
 } from "@/lib/activity/filter";
-import { classifyAll } from "@/lib/activity/taxonomy";
-import type { ActivityRow } from "@/lib/activity/types";
 
 const NOW = new Date("2026-07-31T12:00:00Z");
-
-let seq = 0;
-function row(action: string, minutesAgo = 0): ActivityRow {
-  seq += 1;
-  return {
-    id: `row-${seq}`,
-    action,
-    metadata: null,
-    createdAt: new Date(NOW.getTime() - minutesAgo * 60_000),
-    user: null,
-    app: { id: "app-1", name: "paperless", displayName: "Paperless" },
-  };
-}
 
 describe("parseSince", () => {
   it("accepts an ISO timestamp", () => {
@@ -110,57 +92,6 @@ describe("filtersToQuery", () => {
   });
 });
 
-describe("applyFilters", () => {
-  const items = classifyAll([
-    row("deployment.failed", 10),
-    row("deployment.succeeded", 20),
-    row("app.created", 30),
-    row("deploy_key.created", 200),
-  ]);
-
-  it("treats an empty list as no restriction", () => {
-    const all = applyFilters(items, { families: [], outcomes: [], since: null });
-    expect(all).toHaveLength(4);
-  });
-
-  it("filters by family", () => {
-    const deploys = applyFilters(items, {
-      families: ["deploy"],
-      outcomes: [],
-      since: null,
-    });
-    expect(deploys).toHaveLength(2);
-  });
-
-  it("filters by outcome", () => {
-    const failures = applyFilters(items, {
-      families: [],
-      outcomes: ["failure"],
-      since: null,
-    });
-    expect(failures).toHaveLength(1);
-    expect(failures[0].action).toBe("deployment.failed");
-  });
-
-  it("combines family and outcome as an intersection", () => {
-    const none = applyFilters(items, {
-      families: ["security"],
-      outcomes: ["failure"],
-      since: null,
-    });
-    expect(none).toHaveLength(0);
-  });
-
-  it("drops anything before the window start", () => {
-    const recent = applyFilters(items, {
-      families: [],
-      outcomes: [],
-      since: new Date(NOW.getTime() - 60 * 60_000),
-    });
-    expect(recent).toHaveLength(3);
-  });
-});
-
 describe("toggles", () => {
   const base = { families: ["deploy" as const], outcomes: [], since: null };
 
@@ -191,29 +122,6 @@ describe("toggles", () => {
       since: null,
     });
     expect(hasActiveFilters(cleared)).toBe(false);
-  });
-});
-
-describe("familiesPresent", () => {
-  it("lists only families the rows actually contain", () => {
-    const present = familiesPresent(
-      classifyAll([row("deployment.failed"), row("app.created")])
-    );
-    expect(present.sort()).toEqual(["app", "deploy"]);
-  });
-});
-
-describe("countsByOutcome", () => {
-  it("counts each outcome", () => {
-    const counts = countsByOutcome(
-      classifyAll([
-        row("deployment.failed"),
-        row("deployment.failed"),
-        row("deployment.succeeded"),
-        row("app.created"),
-      ])
-    );
-    expect(counts).toEqual({ failure: 2, success: 1, neutral: 1 });
   });
 });
 

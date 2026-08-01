@@ -148,3 +148,22 @@ export const invitationStatusEnum = pgEnum("invitation_status", [
   "expired",
   "revoked",
 ]);
+
+// Must stay in step with ActivityFamily/ActivityOutcome — asserted in
+// tests/unit/lib/activity/taxonomy.test.ts.
+export const activityFamilyEnum = pgEnum("activity_family", [
+  "deploy",
+  "backup",
+  "cron",
+  "app",
+  "domain",
+  "security",
+  "system",
+  "org",
+]);
+
+export const activityOutcomeEnum = pgEnum("activity_outcome", [
+  "success",
+  "failure",
+  "neutral",
+]);
