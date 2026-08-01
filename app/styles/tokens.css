@@ -1,0 +1,169 @@
+/* Role tokens. Warm achromatic chrome — color belongs to state, never to
+   chrome. Status hues carry meaning; brass is trim (hairlines, focus, labels,
+   the mark), never meaning. Contrast verified: scratchpad/contrast.mjs. */
+
+:root {
+  color-scheme: light;
+
+  /* Motion */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --duration-fast: 150ms;
+  --duration-normal: 250ms;
+  --duration-slow: 400ms;
+
+  /* Operational density — tighter than the editorial sites. */
+  --radius: 0.625rem;
+
+  /* Bone ground, warm ink. */
+  --background: oklch(97.4% 0.005 85);
+  --foreground: oklch(18% 0.012 75);
+  --card: oklch(99.4% 0.002 85);
+  --card-foreground: oklch(18% 0.012 75);
+  --popover: oklch(99.4% 0.002 85);
+  --popover-foreground: oklch(18% 0.012 75);
+  --primary: oklch(20% 0.012 75);
+  --primary-foreground: oklch(98.5% 0.003 85);
+  --secondary: oklch(94% 0.007 83);
+  --secondary-foreground: oklch(20% 0.012 75);
+  --muted: oklch(95.5% 0.006 83);
+  --muted-foreground: oklch(47% 0.012 78);
+  --accent: oklch(92% 0.008 82);
+  --accent-foreground: oklch(20% 0.012 75);
+  --destructive: oklch(50% 0.18 25);
+  --border: oklch(89.5% 0.007 82);
+  --input: oklch(89.5% 0.007 82);
+
+  /* The line between a field and the ground BEHIND it — the only value
+     clearing 3:1 on both white fields and bone. Same value both modes;
+     scope classes never re-declare it, so a field's outer edge always
+     resolves against the band it sits on. */
+  --field-edge: oklch(62% 0.01 78);
+
+  /* Brass. Bronze in light — 6.2:1 on bone. */
+  --brass: oklch(48% 0.105 72);
+  --brass-muted: oklch(48% 0.105 72 / 10%);
+  --ring: var(--brass);
+
+  --chart-1: oklch(45% 0.012 78);
+  --chart-2: oklch(55% 0.08 230);
+  --chart-3: oklch(50% 0.06 155);
+  --chart-4: oklch(65% 0.012 78);
+  --chart-5: oklch(35% 0.012 78);
+
+  --sidebar: oklch(95.8% 0.006 83);
+  --sidebar-foreground: oklch(18% 0.012 75);
+  --sidebar-primary: oklch(20% 0.012 75);
+  --sidebar-primary-foreground: oklch(98.5% 0.003 85);
+  --sidebar-accent: oklch(92% 0.008 82);
+  --sidebar-accent-foreground: oklch(20% 0.012 75);
+  --sidebar-border: oklch(88.5% 0.007 82);
+  --sidebar-ring: var(--brass);
+
+  /* Status — where color lives. */
+  --status-success: oklch(45% 0.14 155);
+  --status-success-muted: oklch(45% 0.14 155 / 10%);
+  --status-error: oklch(50% 0.18 25);
+  --status-error-muted: oklch(50% 0.18 25 / 10%);
+  --status-warning: oklch(55% 0.16 70);
+  --status-warning-muted: oklch(55% 0.16 70 / 10%);
+  --status-info: oklch(45% 0.14 240);
+  --status-info-muted: oklch(45% 0.14 240 / 10%);
+  --status-neutral: oklch(45% 0.012 78);
+  --status-neutral-muted: oklch(45% 0.012 78 / 10%);
+
+  /* magicui rainbow-button palette */
+  --color-1: oklch(66.2% 0.225 25.9);
+  --color-2: oklch(60.4% 0.26 302);
+  --color-3: oklch(69.6% 0.165 251);
+  --color-4: oklch(80.2% 0.134 225);
+  --color-5: oklch(90.7% 0.231 133);
+}
+
+/* Warm charcoal, not near-black. Cards can't separate by fill at any dark
+   lightness (1.06–1.11 measured) — they carry a border instead. */
+.dark {
+  color-scheme: dark;
+
+  --background: oklch(20% 0.008 75);
+  --foreground: oklch(93% 0.006 85);
+  --card: oklch(24% 0.009 75);
+  --card-foreground: oklch(93% 0.006 85);
+  --popover: oklch(24% 0.009 75);
+  --popover-foreground: oklch(93% 0.006 85);
+  --primary: oklch(93% 0.004 85);
+  --primary-foreground: oklch(20% 0.008 75);
+  --secondary: oklch(28% 0.008 75);
+  --secondary-foreground: oklch(93% 0.006 85);
+  --muted: oklch(27% 0.008 75);
+  --muted-foreground: oklch(68% 0.012 80);
+  --accent: oklch(30% 0.009 75);
+  --accent-foreground: oklch(93% 0.006 85);
+  --destructive: oklch(70% 0.14 25);
+  --border: oklch(100% 0.006 85 / 12%);
+  --input: oklch(100% 0.006 85 / 15%);
+
+  --brass: oklch(74% 0.085 82);
+  --brass-muted: oklch(74% 0.085 82 / 12%);
+
+  --chart-1: oklch(85% 0.006 85);
+  --chart-2: oklch(60% 0.08 230);
+  --chart-3: oklch(55% 0.06 155);
+  --chart-4: oklch(45% 0.008 78);
+  --chart-5: oklch(30% 0.008 78);
+
+  --sidebar: oklch(17.5% 0.008 75);
+  --sidebar-foreground: oklch(93% 0.006 85);
+  --sidebar-primary: oklch(93% 0.004 85);
+  --sidebar-primary-foreground: oklch(20% 0.008 75);
+  --sidebar-accent: oklch(26% 0.009 75);
+  --sidebar-accent-foreground: oklch(93% 0.006 85);
+  --sidebar-border: oklch(100% 0.006 85 / 10%);
+
+  --status-success: oklch(70% 0.12 155);
+  --status-success-muted: oklch(70% 0.12 155 / 12%);
+  --status-error: oklch(70% 0.14 25);
+  --status-error-muted: oklch(70% 0.14 25 / 12%);
+  --status-warning: oklch(75% 0.12 70);
+  --status-warning-muted: oklch(75% 0.12 70 / 12%);
+  --status-info: oklch(70% 0.12 240);
+  --status-info-muted: oklch(70% 0.12 240 / 12%);
+  --status-neutral: oklch(45% 0.008 78);
+  --status-neutral-muted: oklch(45% 0.008 78 / 12%);
+
+  --color-1: oklch(66.2% 0.225 25.9);
+  --color-2: oklch(60.4% 0.26 302);
+  --color-3: oklch(69.6% 0.165 251);
+  --color-4: oklch(80.2% 0.134 225);
+  --color-5: oklch(90.7% 0.231 133);
+}
+
+/* Collapse the quiet tiers to full ink, re-declared per ground so each
+   resolves against its own calibrated foreground. .surface-sidebar and
+   .surface-danger read the collapsed values through their var() refs. */
+@media (prefers-contrast: more) {
+  :root {
+    --muted-foreground: var(--foreground);
+    --border: var(--foreground);
+    --input: var(--foreground);
+    --field-edge: var(--foreground);
+    --sidebar-border: var(--sidebar-foreground);
+  }
+  .dark {
+    --muted-foreground: var(--foreground);
+    --border: var(--foreground);
+    --input: var(--foreground);
+    --field-edge: var(--foreground);
+    --sidebar-border: var(--sidebar-foreground);
+  }
+  .surface-danger {
+    --border: var(--destructive);
+    --muted-foreground: var(--foreground);
+  }
+}
+
+::selection {
+  background: var(--brass);
+  color: var(--background);
+}
