@@ -4,17 +4,19 @@ import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { formatDistanceToNowStrict } from "date-fns";
-import { Plus, Cpu, ShieldCheck, Trash2, AlertTriangle, ChevronDown, Package } from "lucide-react";
+import { Plus, Cpu, ShieldCheck, Trash2, Package } from "lucide-react";
 import { EndpointsPopover } from "@/components/endpoints-popover";
 import { detectAppType } from "@/lib/ui/app-type";
 import { statusDotColor, uniformStatus } from "@/lib/ui/status-colors";
-import { conditionLabel, conditionTone, countNeedingAttention } from "@/lib/ui/conditions";
+import { conditionKindLabel, conditionLabel, conditionTone, countNeedingAttention } from "@/lib/ui/conditions";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { AppRowCard } from "@/components/app-row-card";
-import { worstCondition, type AppCondition } from "@/lib/docker/conditions";
+import { worstCondition, type AppCondition, type ConditionKind } from "@/lib/docker/conditions";
 import { StatusIndicator } from "@/components/app-status";
 import { SystemBadge } from "@/components/system-badge";
-import { UpdatesBanner, useImageUpdates } from "./updates-banner";
+import { useImageUpdates } from "./updates-banner";
+import { AttentionPanel, type AttentionRow } from "@/components/attention-panel";
+import type { FleetAttention } from "@/lib/attention/fleet";
 
 import {
   type AppMetrics,
@@ -65,6 +67,7 @@ type AppGridProps = {
   allTags: Tag[];
   orgId: string;
   emptyProjects?: EmptyProject[];
+  fleet?: FleetAttention;
 };
 
 
@@ -409,6 +412,7 @@ export function AppGrid({
   allTags,
   orgId,
   emptyProjects = [],
+  fleet,
 }: AppGridProps) {
   const router = useRouter();
   const [activeTagIds, setActiveTagIds] = useState<Set<string>>(new Set());
@@ -467,40 +471,101 @@ export function AppGrid({
     (a) => a.status === "active" && a.containerMemoryLimit === 0,
   );
 
+  // One row per condition kind across the fleet, plus the two fleet-wide facts
+  // that are not per-app conditions.
+  const attentionRows = useMemo<AttentionRow[]>(() => {
+    const byKind = new Map<ConditionKind, AttentionRow>();
+    for (const app of apps) {
+      for (const condition of app.conditions ?? []) {
+        const row = byKind.get(condition.kind) ?? {
+          key: condition.kind,
+          label: conditionKindLabel(condition.kind),
+          tone: condition.severity === "critical" ? "error" : "warning",
+          items: [],
+        };
+        // Worst severity seen for the kind wins the row's tone.
+        if (condition.severity === "critical") row.tone = "error";
+        row.items.push({
+          id: app.id,
+          name: app.displayName,
+          href: `/apps/${app.name}`,
+          detail: condition.detail,
+        });
+        byKind.set(condition.kind, row);
+      }
+    }
+
+    const rows = [...byKind.values()];
+
+    if (fleet && fleet.servicesDown.length > 0) {
+      rows.push({
+        key: "service-down",
+        label: "Service down",
+        tone: "error",
+        items: fleet.servicesDown.map((s) => ({ id: s.id, name: s.name, href: "/admin" })),
+        footer: "Platform services Vardo depends on. Check the admin overview for reachability.",
+      });
+    }
+
+    if (fleet && fleet.unreachableDomains.length > 0) {
+      rows.push({
+        key: "domain-unreachable",
+        label: "Domain unreachable",
+        tone: "error",
+        items: fleet.unreachableDomains.map((d) => ({
+          id: d.id,
+          name: d.domain,
+          href: d.appName ? `/apps/${d.appName}/networking` : "/settings/domains",
+          detail: d.error ?? undefined,
+        })),
+        footer: "The last check for these domains failed.",
+      });
+    }
+
+    if (unlimited.length > 0) {
+      rows.push({
+        key: "no-memory-limit",
+        label: "No memory limit",
+        tone: "warning",
+        items: unlimited.map((a) => ({
+          id: a.id,
+          name: a.displayName,
+          href: `/apps/${a.name}`,
+        })),
+        footer:
+          "Redeploy to apply the priority tier default, or set a limit in each app's settings.",
+      });
+    }
+
+    if (updates && updates.appsWithUpdates.length > 0) {
+      rows.push({
+        key: "image-updates",
+        label: "Image updates",
+        tone: "neutral",
+        items: updates.appsWithUpdates.map((a) => ({
+          id: a.id,
+          name: a.displayName,
+          count: a.count,
+          href: `/apps/${a.name}/updates`,
+        })),
+        footer: (
+          <>
+            Open an app to review the proposed version and apply it.
+            {updates.unknownCount > 0 &&
+              ` ${updates.unknownCount} image${updates.unknownCount === 1 ? "" : "s"} could not be checked.`}
+            {updates.cooldownUntil &&
+              ` Checks are paused until ${new Date(updates.cooldownUntil).toLocaleTimeString()} after a registry rate limit.`}
+          </>
+        ),
+      });
+    }
+
+    return rows;
+  }, [apps, unlimited, updates, fleet]);
+
   return (
     <div className="space-y-6">
-      {/* Attention cluster — banners group tightly, apart from the grid */}
-      <div className="space-y-2 empty:hidden">
-      <UpdatesBanner data={updates} />
-
-      {unlimited.length > 0 && (
-        <details className="group squircle rounded-lg border border-status-warning/40 bg-status-warning-muted/40 text-sm">
-          <summary className="flex cursor-pointer list-none items-center gap-2 p-3 [&::-webkit-details-marker]:hidden">
-            <AlertTriangle className="size-4 shrink-0 text-status-warning" />
-            <span className="font-medium">
-              {unlimited.length} app{unlimited.length === 1 ? " is" : "s are"} running without a memory limit
-            </span>
-            <ChevronDown className="ml-auto size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
-          </summary>
-          <div className="space-y-2 border-t border-status-warning/20 p-3">
-            <div className="flex flex-wrap gap-1.5">
-              {unlimited.map((a) => (
-                <Link
-                  key={a.id}
-                  href={`/apps/${a.name}`}
-                  className="rounded-md bg-background/60 px-2 py-0.5 text-xs font-medium hover:bg-background transition-colors"
-                >
-                  {a.displayName}
-                </Link>
-              ))}
-            </div>
-            <p className="text-muted-foreground">
-              Redeploy to apply the priority tier default, or set a limit in each app&apos;s settings.
-            </p>
-          </div>
-        </details>
-      )}
-      </div>
+      <AttentionPanel rows={attentionRows} />
 
       <div className="space-y-3">
       {allTags.length > 0 && (

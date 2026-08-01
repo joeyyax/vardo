@@ -99,10 +99,13 @@ export function AwayToast({ orgId }: { orgId: string }) {
           onClick={open}
           className="min-w-0 flex-1 text-left transition-opacity hover:opacity-80"
         >
+          {/* Worded as a delta, not a status count — the attention panel owns
+              current state, and two different totals for "what is wrong" read
+              as a contradiction. */}
           <span className="type-body block font-medium text-foreground">
             {summary.notable.length === 1
-              ? "1 thing needs a look"
-              : `${summary.notable.length} things need a look`}
+              ? "1 thing happened while you were away"
+              : `${summary.notable.length} things happened while you were away`}
           </span>
           <span className="type-body-sm mt-0.5 block truncate text-muted-foreground">
             {named.map((k, i) => (
