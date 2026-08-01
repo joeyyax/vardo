@@ -3,6 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import { resolve } from "path";
+import YAML from "yaml";
 import type { ComposeFile, ValidateOptions } from "./compose-types";
 
 // ---------------------------------------------------------------------------
@@ -11,6 +12,46 @@ import type { ComposeFile, ValidateOptions } from "./compose-types";
 
 export const ALLOWED_NETWORK_MODES = ["host", "bridge", "none", "service", "container"];
 export const ALLOWED_RUNTIMES = ["runc", "nvidia", "sysbox"];
+
+/**
+ * Whether network_mode names a namespace Docker understands.
+ *
+ * Anything else is a network *name*. Docker accepts it without complaint and
+ * then ignores it — the service lands on its compose project's default network
+ * instead. `network_mode: vardo-network` took request.yax.me down this way.
+ */
+export function isSpecialNetworkMode(nm: string): boolean {
+  return ALLOWED_NETWORK_MODES.some((p) => nm === p || nm.startsWith(p + ":"));
+}
+
+/**
+ * Services whose network_mode names a network rather than a namespace.
+ * Takes raw compose YAML so it can audit stored config that was never parsed.
+ */
+export function findNamedNetworkModes(
+  yamlText: string,
+): { service: string; networkMode: string }[] {
+  let root: unknown;
+  try {
+    root = YAML.parse(yamlText);
+  } catch {
+    return [];
+  }
+  if (!root || typeof root !== "object") return [];
+
+  const services = (root as { services?: unknown }).services;
+  if (!services || typeof services !== "object") return [];
+
+  const found: { service: string; networkMode: string }[] = [];
+  for (const [name, raw] of Object.entries(services as Record<string, unknown>)) {
+    if (!raw || typeof raw !== "object") continue;
+    const nm = (raw as { network_mode?: unknown }).network_mode;
+    if (typeof nm !== "string" || !nm) continue;
+    if (isSpecialNetworkMode(nm)) continue;
+    found.push({ service: name, networkMode: nm });
+  }
+  return found;
+}
 
 // ---------------------------------------------------------------------------
 // Internal constants
