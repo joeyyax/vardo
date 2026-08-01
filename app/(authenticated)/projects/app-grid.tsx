@@ -3,7 +3,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Plus, Cpu, ShieldCheck, Trash2 } from "lucide-react";
+import { Plus, Cpu, ShieldCheck, Trash2, AlertTriangle } from "lucide-react";
 import { EndpointsPopover } from "@/components/endpoints-popover";
 import { detectAppType } from "@/lib/ui/app-type";
 import { statusDotColor } from "@/lib/ui/status-colors";
@@ -34,6 +34,7 @@ type AppWithRelations = {
   priority: "critical" | "standard" | "disposable" | null;
   status: string;
   containerStartedAt: Date | null;
+  containerMemoryLimit: number | null;
   needsRedeploy: boolean | null;
   createdAt: Date;
   updatedAt: Date;
@@ -313,8 +314,29 @@ export function AppGrid({
     return Array.from(byProject.values());
   }, [filtered, emptyProjects]);
 
+  // Containers running with no cgroup memory limit can take the whole host, and
+  // a JVM in one sizes its heap from the hypervisor's RAM, not the guest's.
+  const unlimited = apps.filter(
+    (a) => a.status === "active" && a.containerMemoryLimit === 0,
+  );
+
   return (
     <div className="space-y-4">
+      {unlimited.length > 0 && (
+        <div className="squircle flex items-start gap-2 rounded-lg border border-status-warning/40 bg-status-warning-muted/40 p-3 text-sm">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-status-warning" />
+          <div>
+            <p className="font-medium">
+              {unlimited.length} app{unlimited.length === 1 ? " is" : "s are"} running without a memory limit
+            </p>
+            <p className="text-muted-foreground">
+              {unlimited.map((a) => a.displayName).join(", ")} — redeploy to apply the priority
+              tier default, or set a limit on the app.
+            </p>
+          </div>
+        </div>
+      )}
+
       {allTags.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
           {allTags.map((tag) => {

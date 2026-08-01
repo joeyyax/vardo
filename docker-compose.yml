@@ -25,6 +25,7 @@ services:
     profiles:
       - production
     restart: unless-stopped
+    mem_limit: ${VARDO_FRONTEND_MEM:-2g}
     depends_on:
       postgres:
         condition: service_healthy
@@ -135,6 +136,7 @@ services:
     container_name: vardo-postgres
     image: postgres:17
     restart: unless-stopped
+    mem_limit: ${VARDO_POSTGRES_MEM:-1g}
     environment:
       POSTGRES_USER: host
       POSTGRES_PASSWORD: ${DB_PASSWORD:-host}
@@ -155,6 +157,7 @@ services:
     container_name: vardo-redis
     image: redis/redis-stack-server:7.4.0-v3
     restart: unless-stopped
+    mem_limit: ${VARDO_REDIS_MEM:-512m}
     ports:
       - "${REDIS_PORT:-7200}:6379"
     volumes:
@@ -171,6 +174,7 @@ services:
     container_name: vardo-traefik
     image: traefik:v3
     restart: unless-stopped
+    mem_limit: ${VARDO_TRAEFIK_MEM:-256m}
     command:
       - "--api.insecure=true"
       - "--accesslog=true"
