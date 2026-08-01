@@ -8,7 +8,6 @@ import { getSession, getCurrentOrg, getUserOrganizations } from "@/lib/auth/sess
 import { isFeatureEnabled } from "@/lib/config/features";
 import { SessionFooter } from "@/components/layout/session-footer";
 import { UpdateBanner } from "@/components/layout/update-banner";
-import { AwayToast } from "@/components/layout/away-toast";
 import { getVersionData } from "@/lib/version";
 
 
@@ -80,8 +79,6 @@ export default async function AppLayout({
             </div>
           </section>
         </main>
-
-        <AwayToast orgId={organization.id} />
 
         <SessionFooter />
       </div>
