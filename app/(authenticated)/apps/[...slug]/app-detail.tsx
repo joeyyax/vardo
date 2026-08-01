@@ -266,7 +266,8 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     }
   }
 
-  // Compose parent apps get their own dedicated layout
+  // Compose parents share the app-page shell; ComposeDetail supplies the
+  // stack-specific sections and aggregates.
   if (app.childApps && app.childApps.length > 0) {
     return (
       <ComposeDetail
@@ -275,6 +276,8 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         userRole={userRole}
         initialTab={initialTab}
         featureFlags={featureFlags}
+        allTags={allTags}
+        siblings={siblings}
       />
     );
   }
