@@ -1076,7 +1076,7 @@ export function ProjectDetail({
         }
       >
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight">
+          <h1 className="type-h1">
             {project.displayName}
           </h1>
           {project.isSystemManaged && <SystemBadge />}

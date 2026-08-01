@@ -1,0 +1,77 @@
+/* Grounds and surface primitives. Scope classes re-declare the role tokens so
+   anything dropped on that ground resolves correctly. --field-edge is never
+   re-declared by a scope — a field's outer edge belongs to the band behind it. */
+
+@layer components {
+  /* The chrome ground: top nav, sidebar, drawers. */
+  .surface-sidebar {
+    --background: var(--sidebar);
+    --foreground: var(--sidebar-foreground);
+    --card: var(--sidebar);
+    --card-foreground: var(--sidebar-foreground);
+    --primary: var(--sidebar-primary);
+    --primary-foreground: var(--sidebar-primary-foreground);
+    --muted: var(--sidebar-accent);
+    --accent: var(--sidebar-accent);
+    --accent-foreground: var(--sidebar-accent-foreground);
+    --border: var(--sidebar-border);
+    --ring: var(--sidebar-ring);
+  }
+
+  /* Destructive zone — red is allowed to be loud here because it's state. */
+  .surface-danger {
+    background-color: color-mix(in oklch, var(--destructive) 5%, var(--card));
+    --border: color-mix(in oklch, var(--destructive) 30%, transparent);
+    --accent: color-mix(in oklch, var(--destructive) 8%, var(--background));
+    --accent-foreground: var(--destructive);
+    --ring: var(--destructive);
+  }
+}
+
+@layer utilities {
+  /* Vardo lining — a brass hairline tracing a panel's inset edge. Ornament,
+     used sparingly; never a status signal. */
+  .lining {
+    position: relative;
+  }
+  .lining::after {
+    content: "";
+    position: absolute;
+    inset: 0.4rem;
+    border: 1px solid color-mix(in oklch, var(--brass) 45%, transparent);
+    border-radius: calc(var(--radius) - 0.25rem);
+    pointer-events: none;
+  }
+}
+
+/* Squircle progressive enhancement */
+@supports (corner-shape: squircle) {
+  .squircle {
+    corner-shape: squircle;
+
+    /* Squircles need larger radii to match visual size of regular rounded corners */
+    &.rounded-sm { corner-radius: calc(var(--radius-sm) * 2); }
+    &.rounded-md { corner-radius: calc(var(--radius-md) * 2); }
+    &.rounded { corner-radius: calc(var(--radius) * 2); }
+    &.rounded-lg { corner-radius: calc(var(--radius-lg) * 2); }
+    &.rounded-xl { corner-radius: calc(var(--radius-xl) * 2); }
+    &.rounded-2xl { corner-radius: calc(var(--radius-2xl) * 2); }
+    &.rounded-3xl { corner-radius: calc(var(--radius-3xl) * 2); }
+    &.rounded-4xl { corner-radius: calc(var(--radius-4xl) * 2); }
+    &.rounded-full { corner-radius: 9999px; }
+
+    /* Directional rounding */
+    &.rounded-l-2xl {
+      border-top-left-radius: calc(var(--radius-2xl) * 2);
+      border-bottom-left-radius: calc(var(--radius-2xl) * 2);
+      border-top-right-radius: 0;
+      border-bottom-right-radius: 0;
+    }
+    &.rounded-t-3xl {
+      border-top-left-radius: calc(var(--radius-3xl) * 2);
+      border-top-right-radius: calc(var(--radius-3xl) * 2);
+      border-bottom-left-radius: 0;
+      border-bottom-right-radius: 0;
+    }
+  }
+}

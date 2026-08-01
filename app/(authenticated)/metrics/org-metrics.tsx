@@ -303,7 +303,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
             <Cpu className="size-4 text-muted-foreground shrink-0" />
             <p className="text-xs text-muted-foreground">CPU</p>
           </div>
-          <p className="relative text-2xl font-semibold tabular-nums mt-1">
+          <p className="relative type-numeral text-2xl mt-1">
             {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : `${totals.cpu.toFixed(1)}%`}
           </p>
         </div>
@@ -315,7 +315,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
             <MemoryStick className="size-4 text-muted-foreground shrink-0" />
             <p className="text-xs text-muted-foreground">Memory</p>
           </div>
-          <p className="relative text-2xl font-semibold tabular-nums mt-1">
+          <p className="relative type-numeral text-2xl mt-1">
             {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : formatBytes(totals.memory)}
           </p>
         </div>
@@ -327,7 +327,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
             <HardDrive className="size-4 text-muted-foreground shrink-0" />
             <p className="text-xs text-muted-foreground">Disk</p>
           </div>
-          <p className="relative text-2xl font-semibold tabular-nums mt-1">
+          <p className="relative type-numeral text-2xl mt-1">
             {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : formatBytes(orgDiskTotal ?? 0)}
           </p>
           {!loading && displayApps.length > 0 && (
@@ -345,7 +345,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
             <Network className="size-4 text-muted-foreground shrink-0" />
             <p className="text-xs text-muted-foreground">Bandwidth</p>
           </div>
-          <p className="relative text-2xl font-semibold tabular-nums mt-1">
+          <p className="relative type-numeral text-2xl mt-1">
             {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : formatBytes(totals.networkRx + totals.networkTx)}
           </p>
           {!loading && (
@@ -359,7 +359,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
             <Box className="size-4 text-muted-foreground shrink-0" />
             <p className="text-xs text-muted-foreground">Containers</p>
           </div>
-          <p className="text-2xl font-semibold tabular-nums mt-1">
+          <p className="type-numeral text-2xl mt-1">
             {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : totals.containers}
           </p>
           <div className="flex flex-wrap items-center gap-2 mt-1">

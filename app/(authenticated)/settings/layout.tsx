@@ -30,7 +30,7 @@ export default async function OrgSettingsLayout({
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">
+        <h1 className="type-h1">
           Organization Settings
         </h1>
         <OrgSwitcher

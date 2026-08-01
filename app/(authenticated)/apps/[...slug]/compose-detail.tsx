@@ -494,15 +494,15 @@ export function ComposeDetail({
           <>
             <Link
               href={`/projects/${app.project.name}`}
-              className="text-2xl font-semibold tracking-tight text-muted-foreground hover:text-foreground transition-colors"
+              className="type-h1 text-muted-foreground hover:text-foreground transition-colors"
             >
               {app.project.displayName}
             </Link>
             <span className="text-muted-foreground/40 text-xl">›</span>
-            <h1 className="text-2xl font-semibold tracking-tight">{app.displayName}</h1>
+            <h1 className="type-h1">{app.displayName}</h1>
           </>
         ) : (
-          <h1 className="text-2xl font-semibold tracking-tight">{app.displayName}</h1>
+          <h1 className="type-h1">{app.displayName}</h1>
         )}
       </PageToolbar>
 

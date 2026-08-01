@@ -37,7 +37,7 @@ export default async function DiscoverPage({
   return (
     <div className="space-y-6">
       <PageToolbar>
-        <h1 className="text-2xl font-semibold tracking-tight">Discover</h1>
+        <h1 className="type-h1">Discover</h1>
       </PageToolbar>
 
       <p className="text-sm text-muted-foreground max-w-2xl">

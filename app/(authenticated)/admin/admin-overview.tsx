@@ -59,7 +59,7 @@ export function AdminOverview() {
               )}
               <div className="relative">
                 <p className="text-xs text-muted-foreground">{stat.label}</p>
-                <p className="text-2xl font-semibold tabular-nums mt-1">
+                <p className="type-numeral text-2xl mt-1">
                   {stats ? stats[stat.key] : <Loader2 className="size-5 animate-spin text-muted-foreground" />}
                 </p>
               </div>

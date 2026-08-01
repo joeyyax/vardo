@@ -1,0 +1,55 @@
+/* Element resets, layout container, global interaction transitions and the
+   reduced-motion guard. */
+
+.container {
+  @apply mx-auto w-full px-5 lg:px-10;
+  max-width: var(--breakpoint-xl);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    a,
+    button,
+    [role="button"],
+    [role="link"],
+    [data-clickable="true"] {
+      transition: background-color var(--duration-fast) var(--ease-out-quart),
+                  color var(--duration-fast) var(--ease-out-quart),
+                  box-shadow var(--duration-fast) var(--ease-out-quart),
+                  transform var(--duration-fast) var(--ease-out-quart);
+    }
+
+    button:hover,
+    [role="button"]:hover,
+    [data-clickable="true"]:hover {
+      filter: brightness(0.97);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Tiptap editor placeholder */
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--muted-foreground);
+  pointer-events: none;
+  height: 0;
+}

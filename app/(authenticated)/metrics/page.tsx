@@ -24,7 +24,7 @@ export default async function MetricsPage() {
   return (
     <div className="space-y-6">
       <PageToolbar>
-        <h1 className="text-2xl font-semibold tracking-tight">Metrics</h1>
+        <h1 className="type-h1">Metrics</h1>
       </PageToolbar>
 
       <OrgMetrics

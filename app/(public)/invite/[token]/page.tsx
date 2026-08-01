@@ -65,7 +65,7 @@ export default async function InvitePage({ params }: Props) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4 bg-muted/30">
         <div className="w-full max-w-md text-center space-y-3">
-          <h1 className="text-2xl font-semibold">Invalid invitation</h1>
+          <h1 className="type-h1">Invalid invitation</h1>
           <p className="text-muted-foreground">
             This invitation link is invalid or has been removed.
           </p>
@@ -78,7 +78,7 @@ export default async function InvitePage({ params }: Props) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4 bg-muted/30">
         <div className="w-full max-w-md text-center space-y-3">
-          <h1 className="text-2xl font-semibold">Invitation expired</h1>
+          <h1 className="type-h1">Invitation expired</h1>
           <p className="text-muted-foreground">
             This invitation link has expired. Ask your team admin to send a new one.
           </p>
@@ -117,7 +117,7 @@ export default async function InvitePage({ params }: Props) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4 bg-muted/30">
         <div className="w-full max-w-md text-center space-y-3">
-          <h1 className="text-2xl font-semibold">Already accepted</h1>
+          <h1 className="type-h1">Already accepted</h1>
           <p className="text-muted-foreground">
             This invitation has already been accepted.
           </p>

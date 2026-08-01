@@ -23,7 +23,7 @@ export default async function BackupsPage() {
   return (
     <div className="space-y-6">
       <PageToolbar>
-        <h1 className="text-2xl font-semibold tracking-tight">Backups</h1>
+        <h1 className="type-h1">Backups</h1>
       </PageToolbar>
 
       <p className="text-sm text-muted-foreground max-w-2xl">

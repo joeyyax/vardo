@@ -1,7 +1,6 @@
 "use client";
 
-import { Menu, FolderKanban } from "lucide-react";
-import Link from "next/link";
+import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -11,6 +10,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { SidebarNav } from "./sidebar-nav";
+import { Brand } from "../brand";
 import { OrgSwitcher } from "./org-switcher";
 import { UserMenu } from "./user-menu";
 import type { Organization } from "@/lib/types";
@@ -29,14 +29,10 @@ export function MobileSidebar({ currentOrgId, organizations }: MobileSidebarProp
           <span className="sr-only">Toggle menu</span>
         </Button>
       </SheetTrigger>
-      <SheetContent side="left" className="w-64 p-0">
+      <SheetContent side="left" className="surface-sidebar w-64 p-0">
         <SheetHeader className="flex h-16 flex-row items-center justify-between px-5 border-b">
-          <Link href="/projects" className="flex items-center gap-2">
-            <div className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
-              <FolderKanban className="size-4" />
-            </div>
-            <SheetTitle className="text-lg font-semibold">Vardo</SheetTitle>
-          </Link>
+          <SheetTitle className="sr-only">Navigation</SheetTitle>
+          <Brand />
         </SheetHeader>
 
         <div className="flex h-[calc(100%-4rem)] flex-col">

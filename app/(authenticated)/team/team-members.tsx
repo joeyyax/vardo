@@ -195,7 +195,7 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
           >
             <div>
               <div className="flex items-center gap-3">
-                <h1 className="text-2xl font-semibold tracking-tight">Team</h1>
+                <h1 className="type-h1">Team</h1>
                 <OrgSwitcher
                   currentOrgId={orgId}
                   organizations={organizations}

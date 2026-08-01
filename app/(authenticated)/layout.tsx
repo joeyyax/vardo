@@ -27,7 +27,7 @@ export default async function AppLayout({
     return (
       <div className="flex items-center justify-center min-h-dvh bg-background">
         <div className="text-center space-y-2">
-          <h1 className="text-lg font-semibold">Vardo</h1>
+          <h1 className="type-h2">Vardo</h1>
           <p className="text-sm text-muted-foreground">
             Web UI is disabled. Use the API at <code className="bg-muted px-1.5 py-0.5 rounded text-xs">/api/v1/</code>
           </p>

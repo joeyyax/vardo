@@ -24,7 +24,7 @@ export function TopNav({ currentOrgId, organizations }: TopNavProps) {
   const pathname = usePathname();
 
   return (
-    <header className="bg-sidebar shrink-0">
+    <header className="surface-sidebar bg-sidebar border-b shrink-0">
       <div className="container flex items-center h-16 gap-4">
         {/* Left: hamburger (mobile) + brand */}
         <div className="flex-1 flex items-center gap-2">

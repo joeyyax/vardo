@@ -63,7 +63,7 @@ export default async function ProjectsPage() {
     <div className="space-y-6">
       <PageToolbar actions={<ProjectsActions />}>
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
+          <h1 className="type-h1">Projects</h1>
           <OrgSwitcher
             currentOrgId={orgId}
             organizations={organizations}
