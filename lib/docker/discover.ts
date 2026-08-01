@@ -221,12 +221,38 @@ export function groupByComposeProject(containers: DiscoveredContainer[]): Discov
  * Vars that share a key with the image but have a different value are kept
  * because they represent explicit runtime overrides.
  */
+/**
+ * Keys the runtime rewrites, so their value never matches the image's and the
+ * exact-string filter below baked them into compose permanently. A captured
+ * PATH is what broke stirling-pdf: the image moved its JDK and the frozen PATH
+ * no longer found java.
+ */
+const RUNTIME_OWNED_ENV_KEYS = new Set([
+  "PATH",
+  "HOME",
+  "HOSTNAME",
+  "TERM",
+  "LANG",
+  "LANGUAGE",
+  "LC_ALL",
+  "PWD",
+  "SHLVL",
+  "_",
+]);
+
 export function filterImageInheritedEnv(
   containerEnv: string[],
   imageEnv: string[],
 ): string[] {
   const imageSet = new Set(imageEnv);
-  return containerEnv.filter((e) => !imageSet.has(e));
+  const imageKeys = new Set(imageEnv.map((e) => e.split("=", 1)[0]));
+  return containerEnv.filter((e) => {
+    if (imageSet.has(e)) return false;
+    const key = e.split("=", 1)[0];
+    // Drop by key, not value — the runtime's version differs from the image's
+    // by definition, which is exactly why matching on the whole string missed it.
+    return !(RUNTIME_OWNED_ENV_KEYS.has(key) && imageKeys.has(key));
+  });
 }
 
 /**
