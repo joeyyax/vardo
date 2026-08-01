@@ -1,4 +1,5 @@
 import { formatDistanceToNowStrict } from "date-fns";
+import { Cpu, Package, ShieldCheck, Trash2, type LucideIcon } from "lucide-react";
 
 import { formatBytes } from "@/lib/metrics/format";
 import { statusDotColor } from "@/lib/ui/status-colors";
@@ -27,10 +28,24 @@ const STATUS_LABEL: Record<string, string> = {
   missing: "No container",
 };
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+/** `icon` mirrors the glyph on the app row, so this doubles as its legend. */
+function Row({
+  label,
+  icon: Icon,
+  iconClass,
+  children,
+}: {
+  label: string;
+  icon?: LucideIcon;
+  iconClass?: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="flex gap-3">
-      <dt className="w-16 shrink-0 text-muted-foreground">{label}</dt>
+      <dt className="flex w-16 shrink-0 items-center gap-1.5 text-muted-foreground">
+        {Icon && <Icon className={`size-3 shrink-0 ${iconClass ?? "text-muted-foreground/70"}`} />}
+        {label}
+      </dt>
       <dd className="min-w-0 flex-1 break-words text-foreground/90">{children}</dd>
     </div>
   );
@@ -84,14 +99,25 @@ export function AppRowCard({ app, updateCount }: { app: AppRowCardApp; updateCou
           <Row label="Domains">{app.domains.map((d) => d.domain).join(", ")}</Row>
         )}
         {updateCount > 0 && (
-          <Row label="Updates">
+          <Row label="Updates" icon={Package}>
             {updateCount === 1 ? "1 image update" : `${updateCount} image updates`}
           </Row>
         )}
-        {app.priority && app.priority !== "standard" && (
-          <Row label="Priority">{app.priority === "critical" ? "Critical" : "Disposable"}</Row>
+        {app.priority === "critical" && (
+          <Row label="Priority" icon={ShieldCheck} iconClass="text-status-warning">
+            Critical
+          </Row>
         )}
-        {app.gpuEnabled && <Row label="GPU">Passthrough enabled</Row>}
+        {app.priority === "disposable" && (
+          <Row label="Priority" icon={Trash2} iconClass="text-muted-foreground/50">
+            Disposable
+          </Row>
+        )}
+        {app.gpuEnabled && (
+          <Row label="GPU" icon={Cpu} iconClass="text-muted-foreground/50">
+            Passthrough enabled
+          </Row>
+        )}
         {app.needsRedeploy && <Row label="Config">Changed since last deploy</Row>}
       </dl>
     </div>
