@@ -137,6 +137,8 @@ export async function liveContainerIps(): Promise<Set<string>> {
 async function fetchTraefikServices(): Promise<TraefikService[] | null> {
   try {
     const res = await fetch(`${apiUrl()}/api/http/services`, {
+      // Next patches global fetch; a cached routing table would defeat the check.
+      cache: "no-store",
       signal: AbortSignal.timeout(5_000),
     });
     if (!res.ok) {
@@ -174,12 +176,14 @@ let staleStreak = new Map<string, number>();
 /** Restart timestamps within RESTART_WINDOW_MS, ascending. */
 let restartHistory: number[] = [];
 let escalated = false;
+let reported = false;
 
 /** Test seam — reset the accumulated streaks and restart history. */
 export function resetDriftState(): void {
   staleStreak = new Map();
   restartHistory = [];
   escalated = false;
+  reported = false;
 }
 
 async function emitAll(event: BusEvent): Promise<void> {
@@ -209,7 +213,15 @@ export async function tickTraefikDrift(): Promise<void> {
   // backend is stale — restarting Traefik on that would be self-inflicted.
   if (liveIps.size === 0) return;
 
-  const stale = findStaleBackends(collectDockerBackends(services), liveIps);
+  const backends = collectDockerBackends(services);
+  // One line at boot, so a monitor that reads nothing is visible rather than
+  // indistinguishable from a monitor that found no drift.
+  if (!reported) {
+    reported = true;
+    log.info(`Watching ${backends.length} Traefik backend(s) against ${liveIps.size} container IP(s)`);
+  }
+
+  const stale = findStaleBackends(backends, liveIps);
   if (stale.length === 0) {
     staleStreak = new Map();
     escalated = false;
