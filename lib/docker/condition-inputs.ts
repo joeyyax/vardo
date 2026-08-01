@@ -1,20 +1,29 @@
 // ---------------------------------------------------------------------------
 // Advisory condition inputs
 //
-// Backup coverage and security findings change on the order of hours, so they
-// are loaded on their own cadence and cached rather than queried on every
-// health-monitor tick. The monitor stays the single writer of apps.conditions.
+// Backup coverage, security findings and certificate expiry change on the order
+// of hours, so they are loaded on their own cadence and cached rather than
+// queried on every health-monitor tick. The monitor stays the single writer of
+// apps.conditions.
 // ---------------------------------------------------------------------------
 
 import { desc, eq, inArray } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { apps, appSecurityScans, backupJobApps, backupJobs } from "@/lib/db/schema";
+import {
+  apps,
+  appSecurityScans,
+  backupJobApps,
+  backupJobs,
+  domainCertChecks,
+  domains,
+} from "@/lib/db/schema";
 import type { ConditionInput } from "./conditions";
 
 export type AdvisoryInput = {
   security: ConditionInput["security"];
   backup: ConditionInput["backup"];
+  cert: ConditionInput["cert"];
 };
 
 /** How long a loaded snapshot stays usable. */
@@ -64,6 +73,18 @@ export async function loadAdvisoryInputs(now: number): Promise<Map<string, Advis
     }
 
     const scanByApp = await latestScans(appRows.map((a) => a.id));
+    const certByApp = soonestCertPerApp(
+      await db
+        .select({
+          appId: domains.appId,
+          domain: domains.domain,
+          sslEnabled: domains.sslEnabled,
+          expiresAt: domainCertChecks.expiresAt,
+          checkedAt: domainCertChecks.checkedAt,
+        })
+        .from(domainCertChecks)
+        .innerJoin(domains, eq(domainCertChecks.domainId, domains.id)),
+    );
 
     for (const app of appRows) {
       byApp.set(app.id, {
@@ -73,6 +94,7 @@ export async function loadAdvisoryInputs(now: number): Promise<Map<string, Advis
           configured: covered.has(app.id),
           lastRunAt: lastRunByApp.get(app.id) ?? null,
         },
+        cert: certByApp.get(app.id) ?? null,
       });
     }
   } catch {
@@ -81,6 +103,35 @@ export async function loadAdvisoryInputs(now: number): Promise<Map<string, Advis
 
   cache = { at: now, byApp };
   return byApp;
+}
+
+export type CertCheckRow = {
+  appId: string;
+  domain: string;
+  sslEnabled: boolean | null;
+  expiresAt: Date | null;
+  checkedAt: Date;
+};
+
+/**
+ * The observation that lapses first per app. Domains with TLS turned off or with
+ * no readable certificate are skipped — they carry no expiry to report.
+ */
+export function soonestCertPerApp(
+  rows: CertCheckRow[],
+): Map<string, NonNullable<ConditionInput["cert"]>> {
+  const out = new Map<string, NonNullable<ConditionInput["cert"]>>();
+  for (const row of rows) {
+    if (row.sslEnabled === false || row.expiresAt === null) continue;
+    const candidate = {
+      domain: row.domain,
+      expiresAt: row.expiresAt.getTime(),
+      checkedAt: row.checkedAt.getTime(),
+    };
+    const seen = out.get(row.appId);
+    if (!seen || candidate.expiresAt < seen.expiresAt) out.set(row.appId, candidate);
+  }
+  return out;
 }
 
 /** Newest completed scan per app. */

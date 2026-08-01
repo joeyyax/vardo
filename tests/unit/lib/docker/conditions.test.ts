@@ -3,14 +3,20 @@ import {
   evaluateConditions,
   worstCondition,
   conditionsEqual,
+  CERT_OBSERVATION_STALE_MS,
   HYSTERESIS,
   MEMORY_PRESSURE_RATIO,
   type AppCondition,
   type ConditionInput,
   type ConditionStreaks,
 } from "@/lib/docker/conditions";
+import {
+  CERT_EXPIRY_CRITICAL_DAYS,
+  CERT_EXPIRY_THRESHOLD_DAYS,
+} from "@/lib/system-alerts/cert-expiry";
 
 const NOW = Date.parse("2026-07-31T12:00:00.000Z");
+const DAY = 24 * 60 * 60 * 1000;
 
 function input(overrides: Partial<ConditionInput> = {}): ConditionInput {
   return {
@@ -21,8 +27,14 @@ function input(overrides: Partial<ConditionInput> = {}): ConditionInput {
     memory: null,
     security: null,
     backup: null,
+    cert: null,
     ...overrides,
   };
+}
+
+/** A fresh observation of a certificate expiring in `days`. */
+function cert(days: number, checkedAt = NOW): NonNullable<ConditionInput["cert"]> {
+  return { domain: "app.example.com", expiresAt: NOW + days * DAY, checkedAt };
 }
 
 /** Run the evaluator n times over the same input, threading state through. */
@@ -247,5 +259,89 @@ describe("backup coverage", () => {
       {},
     );
     expect(conditions.map((c) => c.kind)).not.toContain("backup-missing");
+  });
+});
+
+describe("certificate expiry", () => {
+  it("stays quiet on a certificate with plenty of life left", () => {
+    const { conditions } = evaluateConditions(input({ cert: cert(60) }), [], {});
+    expect(conditions).toEqual([]);
+  });
+
+  it("warns inside the expiry threshold", () => {
+    const { conditions } = evaluateConditions(
+      input({ cert: cert(CERT_EXPIRY_THRESHOLD_DAYS) }),
+      [],
+      {},
+    );
+    expect(conditions[0]).toMatchObject({
+      kind: "cert-expiring",
+      severity: "warning",
+      detail: `app.example.com certificate expires in ${CERT_EXPIRY_THRESHOLD_DAYS} days`,
+    });
+  });
+
+  it("escalates to critical inside the critical window", () => {
+    const { conditions } = evaluateConditions(
+      input({ cert: cert(CERT_EXPIRY_CRITICAL_DAYS) }),
+      [],
+      {},
+    );
+    expect(conditions[0]).toMatchObject({ kind: "cert-expiring", severity: "critical" });
+  });
+
+  it("says within a day rather than in 0 days", () => {
+    const { conditions } = evaluateConditions(input({ cert: cert(0.5) }), [], {});
+    expect(conditions[0].detail).toBe("app.example.com certificate expires within a day");
+  });
+
+  it("reports an expired certificate as critical", () => {
+    const { conditions } = evaluateConditions(input({ cert: cert(-3) }), [], {});
+    expect(conditions[0]).toMatchObject({
+      kind: "cert-expired",
+      severity: "critical",
+      detail: "app.example.com certificate expired 3 days ago",
+    });
+  });
+
+  it("does not report expiring and expired at once", () => {
+    const { conditions } = evaluateConditions(input({ cert: cert(-1) }), [], {});
+    expect(conditions.map((c) => c.kind)).toEqual(["cert-expired"]);
+  });
+
+  it("clears once a renewed certificate is observed", () => {
+    const expiring = evaluateConditions(input({ cert: cert(1) }), [], {});
+    const renewed = evaluateConditions(
+      input({ cert: cert(90) }),
+      expiring.conditions,
+      expiring.streaks,
+    );
+    expect(renewed.conditions).toEqual([]);
+  });
+});
+
+describe("unknown certificate expiry", () => {
+  it("reports nothing when no domain has ever been checked", () => {
+    expect(evaluateConditions(input({ cert: null }), [], {}).conditions).toEqual([]);
+  });
+
+  it("reports nothing when the observation is stale", () => {
+    const stale = cert(-5, NOW - CERT_OBSERVATION_STALE_MS - 1);
+    expect(evaluateConditions(input({ cert: stale }), [], {}).conditions).toEqual([]);
+  });
+
+  it("still reports an observation right at the staleness edge", () => {
+    const edge = cert(-5, NOW - CERT_OBSERVATION_STALE_MS);
+    expect(evaluateConditions(input({ cert: edge }), [], {}).conditions).toHaveLength(1);
+  });
+
+  it("drops the condition when checks stop and the reading goes stale", () => {
+    const on = evaluateConditions(input({ cert: cert(1) }), [], {});
+    const later = evaluateConditions(
+      { ...input({ cert: cert(1) }), now: NOW + CERT_OBSERVATION_STALE_MS + 1 },
+      on.conditions,
+      on.streaks,
+    );
+    expect(later.conditions).toEqual([]);
   });
 });

@@ -5,7 +5,7 @@ import { deployKeys } from "./config";
 import { projects } from "./projects";
 import { deployments } from "./deployments";
 import { envVars } from "./env-vars";
-import { domains, domainChecks } from "./domains";
+import { domains, domainChecks, domainCertChecks } from "./domains";
 import { environments, groupEnvironments } from "./environments";
 import { activities } from "./monitoring";
 import { tags, appTags } from "./tags";
@@ -86,6 +86,13 @@ export const domainsRelations = relations(domains, ({ one, many }) => ({
     references: [apps.id],
   }),
   domainChecks: many(domainChecks),
+}));
+
+export const domainCertChecksRelations = relations(domainCertChecks, ({ one }) => ({
+  domain: one(domains, {
+    fields: [domainCertChecks.domainId],
+    references: [domains.id],
+  }),
 }));
 
 export const domainChecksRelations = relations(domainChecks, ({ one }) => ({
