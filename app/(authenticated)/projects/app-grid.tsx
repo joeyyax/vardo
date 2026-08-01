@@ -548,7 +548,10 @@ export function AppGrid({
 
       {/* Columns respond to card count: a two-project install fills the row
           instead of orphaning cards in a fixed three-column grid. */}
-      <div className="grid items-stretch gap-4 grid-cols-[repeat(auto-fit,minmax(min(25rem,100%),1fr))]">
+      {/* items-start, not stretch: app counts range from one to a dozen, so
+          equal heights open a void under the smaller card rather than aligning
+          anything worth comparing. */}
+      <div className="grid items-start gap-4 grid-cols-[repeat(auto-fit,minmax(min(25rem,100%),1fr))]">
         {projectCards.map(({ project, apps: projectApps }) => (
           <ProjectCard
             key={project.id}
