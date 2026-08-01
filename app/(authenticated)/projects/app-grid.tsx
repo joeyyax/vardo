@@ -7,7 +7,7 @@ import { formatDistanceToNowStrict } from "date-fns";
 import { Plus, Cpu, ShieldCheck, Trash2, AlertTriangle, ChevronDown, Package } from "lucide-react";
 import { EndpointsPopover } from "@/components/endpoints-popover";
 import { detectAppType } from "@/lib/ui/app-type";
-import { statusDotColor } from "@/lib/ui/status-colors";
+import { statusDotColor, uniformStatus } from "@/lib/ui/status-colors";
 import { conditionLabel, conditionTone, countNeedingAttention } from "@/lib/ui/conditions";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { AppRowCard } from "@/components/app-row-card";
@@ -132,6 +132,8 @@ function ProjectCard({
   const idleStatus = anyMissing ? "missing" : anyDeploying ? "deploying" : "stopped";
   const attention = countNeedingAttention(projectApps);
   const attentionCount = attention.critical + attention.warning;
+
+  const sharedStatus = uniformStatus(projectApps.map((a) => a.status));
 
   // Per-metric history summed across apps
   const aggregatedHistory = useMemo(() => {
@@ -338,7 +340,7 @@ function ProjectCard({
                 >
                   <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${statusDotColor(a.status)}`} />
                   <span className="truncate">{a.displayName}</span>
-                  {STATUS_WORD[a.status] && (
+                  {STATUS_WORD[a.status] && a.status !== sharedStatus && (
                     <span className={`shrink-0 font-normal ${STATUS_WORD_TONE[a.status]}`}>
                       {STATUS_WORD[a.status]}
                     </span>
@@ -546,22 +548,22 @@ export function AppGrid({
         </div>
       )}
 
-      {/* Columns respond to card count: a two-project install fills the row
-          instead of orphaning cards in a fixed three-column grid. */}
-      {/* items-start, not stretch: app counts range from one to a dozen, so
-          equal heights open a void under the smaller card rather than aligning
-          anything worth comparing. */}
-      <div className="grid items-start gap-4 grid-cols-[repeat(auto-fit,minmax(min(25rem,100%),1fr))]">
+      {/* Multi-column, not grid: app counts range from one to a dozen, and grid
+          rows take the taller card's height, leaving a void under the shorter
+          one. Column width drives the count, so a two-project install still
+          fills the row. */}
+      <div className="columns-[25rem] gap-4">
         {projectCards.map(({ project, apps: projectApps }) => (
-          <ProjectCard
-            key={project.id}
-            project={project}
-            projectApps={projectApps}
-            metrics={metrics}
-            history={history}
-            historyTick={historyTick}
-            updatesByApp={updatesByApp}
-          />
+          <div key={project.id} className="mb-4 break-inside-avoid">
+            <ProjectCard
+              project={project}
+              projectApps={projectApps}
+              metrics={metrics}
+              history={history}
+              historyTick={historyTick}
+              updatesByApp={updatesByApp}
+            />
+          </div>
         ))}
       </div>
 
