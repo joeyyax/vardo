@@ -230,6 +230,27 @@ export async function getConcurrencyState(): Promise<{
 }
 
 /**
+ * True when the calling deploy is the last one running and nothing is queued
+ * behind it — the point at which host-global cleanup is safe.
+ *
+ * The caller still holds its own slot, so active counts itself. Fails closed:
+ * a Redis error reports "not drained" so cleanup is skipped rather than run
+ * alongside concurrent pulls.
+ */
+export async function isDeployQueueDrained(): Promise<boolean> {
+  try {
+    const [activeRaw, queued] = await Promise.all([
+      redis.get(ACTIVE_KEY),
+      redis.llen(QUEUE_KEY),
+    ]);
+    const active = Math.max(0, parseInt(activeRaw ?? "0", 10));
+    return active <= 1 && queued === 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Reconcile the Redis queue against a set of deployment IDs that are legitimately
  * queued or running. Removes any orphaned entries — e.g. an ID pushed by
  * enqueueAndTryAcquire whose subsequent eval threw, leaving a ghost at the queue
