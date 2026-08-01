@@ -14,6 +14,7 @@ import {
   slotComposeFiles,
 } from "../compose";
 import { prepareBindMountOwnership } from "./bind-mount-ownership";
+import { demoteStandbyRestart, restoreSlotRestart } from "../restart-policy";
 import {
   NETWORK_NAME as VARDO_NETWORK,
   DEFAULT_HEALTH_CHECK_TIMEOUT,
@@ -245,6 +246,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
         ["compose", ...oldComposeFileArgs, "-p", oldProjectName, "stop"],
         { cwd: oldSlotDir, timeout: COMPOSE_DOWN_TIMEOUT }
       );
+      await demoteStandbyRestart(oldComposeFileArgs, oldProjectName, oldSlotDir);
       stoppedOldServices.push("__all__");
     } catch (err) {
       log(`[deploy] Warning: could not stop old slot — ${err instanceof Error ? err.message : err}`);
@@ -282,6 +284,8 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
         ],
         { cwd: oldSlotDir, timeout: COMPOSE_UP_TIMEOUT }
       );
+      // It is serving again, so it needs its own restart policy back.
+      await restoreSlotRestart(oldComposeFileArgs, oldProjectName, oldSlotDir);
       // Idempotent: calling restoreOldSlot twice is safe because compose up
       // --no-recreate is a no-op for already-running services.
     } catch (err) {
