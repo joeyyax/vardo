@@ -237,12 +237,13 @@ function AppCard({
   );
 
   return (
-    <Link
-      href={`/apps/${app.name}`}
+    <div
       onMouseEnter={onHoverStart}
       onMouseLeave={onHoverEnd}
-      className={`squircle relative flex flex-col rounded-lg bg-card shadow-card dark:border transition-all duration-200 hover:shadow-card-hover overflow-hidden cursor-pointer ${highlightClasses}`}
+      className={`squircle relative flex flex-col rounded-lg bg-card shadow-card dark:border transition-all duration-200 hover:shadow-card-hover overflow-hidden ${highlightClasses}`}
     >
+      {/* Whole-card click target; interactive children stack above it */}
+      <Link href={`/apps/${app.name}`} className="absolute inset-0 z-0" aria-label={app.displayName} />
       <div className={`p-5${childApps.length === 0 ? " flex-1" : ""}`}>
       <div className="flex gap-3 w-full">
         <AppIcon app={app} />
@@ -252,7 +253,9 @@ function AppCard({
               <h3 className="text-sm font-semibold truncate">
                 {app.displayName}
               </h3>
-              <EndpointsPopover endpoints={app.domains.map((d) => ({ domain: d.domain }))} />
+              <span className="relative z-10">
+                <EndpointsPopover endpoints={app.domains.map((d) => ({ domain: d.domain }))} />
+              </span>
             </div>
             <StatusIndicator status={effectiveStatus} startedAt={app.containerStartedAt} needsRedeploy={!!app.needsRedeploy} />
           </div>
@@ -350,7 +353,7 @@ function AppCard({
       {(effectiveStatus === "active" || metrics) && (
         <MetricsBand metrics={metrics} history={history} memoryLimit={metrics?.memoryLimit ?? 0} />
       )}
-    </Link>
+    </div>
   );
 }
 
