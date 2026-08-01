@@ -33,6 +33,7 @@ export {
   isAnonymousVolume,
   isSpecialNetworkMode,
   findNamedNetworkModes,
+  normalizeNamedNetworkModes,
   validateCompose,
   sanitizeCompose,
 } from "./compose-validate";

@@ -46,15 +46,14 @@ export async function reportStoredComposeConfigs(): Promise<void> {
     const findings = await auditStoredComposeConfigs();
     if (findings.length === 0) return;
 
-    log.error(
-      `${findings.length} stored compose service(s) use network_mode with a network name, ` +
-        `which Docker ignores — the service joins its project's default network instead:`,
+    // One warn line, not an error per service. parseCompose rewrites these on
+    // the way to a deploy, so nothing is broken — only the stored YAML is stale.
+    const services = findings.map((f) => `${f.appName}/${f.service}`).join(", ");
+    log.warn(
+      `${findings.length} stored compose service(s) use network_mode with a network name ` +
+        `instead of networks: [...] — corrected at deploy, clear the stored YAML with ` +
+        `scripts/migrate-network-mode.sql (${services})`,
     );
-    for (const f of findings) {
-      log.error(
-        `  ${f.appName}/${f.service}: network_mode "${f.networkMode}" — should be networks: [${f.networkMode}]`,
-      );
-    }
   } catch (err) {
     log.warn("Compose audit failed:", err);
   }
