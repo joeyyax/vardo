@@ -349,9 +349,15 @@ function AppCard({
         </div>
       )}
 
-      {/* Resource footer — space is held while stats stream in */}
-      {(effectiveStatus === "active" || metrics) && (
-        <MetricsBand metrics={metrics} history={history} memoryLimit={metrics?.memoryLimit ?? 0} />
+      {/* Resource footer — space is held while stats stream in. Gated on the
+          app being active: the collector reports zeros for an absent container. */}
+      {effectiveStatus === "active" && (
+        <MetricsBand
+          metrics={metrics}
+          history={history}
+          memoryLimit={metrics?.memoryLimit ?? 0}
+          running={effectiveStatus === "active"}
+        />
       )}
     </div>
   );

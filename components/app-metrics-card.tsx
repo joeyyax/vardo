@@ -198,12 +198,25 @@ export function MetricsBand({
   metrics,
   history,
   memoryLimit = 0,
+  running = true,
 }: {
   metrics?: AppMetrics;
   history?: Partial<MetricsHistory>;
   /** Total memory limit in bytes; 0 when unknown. */
   memoryLimit?: number;
+  /** False when no container exists. */
+  running?: boolean;
 }) {
+  // The collector reports zeros for a container that isn't there, and four
+  // cells of 0 B read as "measured and idle" rather than "not running".
+  if (!running) {
+    return (
+      <div className="border-t px-4 py-2.5">
+        <span className="type-label text-muted-foreground/50">No metrics — not running</span>
+      </div>
+    );
+  }
+
   const last = (a?: number[]) => (a && a.length > 0 ? a[a.length - 1] : undefined);
   const cpu = metrics ? metrics.cpuPercent : last(history?.cpu);
   const mem = metrics ? metrics.memoryUsage : last(history?.memory);
