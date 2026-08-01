@@ -122,15 +122,16 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
       );
     }
 
-    // Trigger a new deploy through the normal blue-green flow.
-    // Config and env changes are applied AFTER the deploy succeeds
-    // to avoid leaving the app record in an inconsistent state on failure.
+    // Trigger a new deploy through the normal blue-green flow. The deploy runs
+    // against the target's snapshot; the app record is only rewritten after it
+    // succeeds, so a failed rollback leaves the app row untouched.
     return createSSEResponse(request, async (sendEvent) => {
       const result = await requestDeploy({
         appId,
         organizationId: orgId,
         trigger: "rollback",
         triggeredBy: org.session.user.id,
+        rollback: { targetDeploymentId: deploymentId, includeEnvVars },
         onLog: (line) => sendEvent("log", line),
         onStage: (stg, status) => sendEvent("stage", { stage: stg, status }),
       });
@@ -159,6 +160,9 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
           appUpdates.restartPolicy = configSnapshot.restartPolicy;
           appUpdates.autoTraefikLabels = configSnapshot.autoTraefikLabels;
           appUpdates.backendProtocol = configSnapshot.backendProtocol ?? null;
+          if (configSnapshot.composeContent != null) {
+            appUpdates.composeContent = configSnapshot.composeContent;
+          }
         }
 
         if (includeEnvVars && targetDeployment.envSnapshot) {
@@ -248,7 +252,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const configChanges: { field: string; from: string | null; to: string | null }[] = [];
 
     if (configSnapshot) {
-      const fields: { key: keyof typeof configSnapshot; label: string }[] = [
+      // Only snapshot fields that are also app columns are diffable.
+      type DiffField = Extract<keyof ConfigSnapshot, keyof typeof app>;
+      const fields: { key: DiffField; label: string }[] = [
         { key: "cpuLimit", label: "CPU Limit" },
         { key: "memoryLimit", label: "Memory Limit" },
         { key: "gpuEnabled", label: "GPU Access" },

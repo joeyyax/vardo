@@ -15,4 +15,8 @@ export type ConfigSnapshot = {
   restartPolicy: string | null;
   autoTraefikLabels: boolean | null;
   backendProtocol: "http" | "https" | null;
+  /** Compose content for direct-source apps. Absent on snapshots taken before it was captured. */
+  composeContent?: string | null;
+  /** Pinned `repo@sha256:...` ref for image apps, so rollback restores the exact image. */
+  imageDigest?: string | null;
 };

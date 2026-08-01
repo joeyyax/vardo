@@ -43,6 +43,7 @@ import {
   buildGitSshCommand,
 } from "@/lib/crypto/deploy-key";
 import { detectPreventiveFixes, detectCompatIssues, applyCompatFixes } from "../compat";
+import { checkoutRollbackSha } from "./checkout-sha";
 import {
   APP_UID,
   GIT_CLONE_TIMEOUT,
@@ -436,6 +437,20 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
         }
         await execFileAsync("git", ["clone", "--depth", "1", "--branch", branch, cloneUrl, repoDir], execOpts);
         log(`[deploy] Cloned repo (${branch})`);
+      }
+
+      // Rollback deploys ship the target commit, not the branch tip.
+      if (ctx.rollback) {
+        if (!ctx.rollback.gitSha) {
+          throw new DeployBlockedError(
+            `Rollback target ${ctx.rollback.targetDeploymentId} has no recorded git SHA — cannot roll back to it`,
+          );
+        }
+        await checkoutRollbackSha(
+          (args) => execFileAsync("git", ["-C", repoDir, ...args], execOpts),
+          ctx.rollback.gitSha,
+          log,
+        );
       }
     } finally {
       if (sshKeyFile) {
