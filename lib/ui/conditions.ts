@@ -21,6 +21,10 @@ export function conditionLabel(c: AppCondition): string {
       return "no backup";
     case "backup-stale":
       return "backup overdue";
+    case "cert-expiring":
+      return "cert expiring";
+    case "cert-expired":
+      return "cert expired";
   }
 }
 
@@ -40,6 +44,9 @@ export function conditionKindLabel(kind: AppCondition["kind"]): string {
     case "backup-missing":
     case "backup-stale":
       return "Backups";
+    case "cert-expiring":
+    case "cert-expired":
+      return "Certificate";
   }
 }
 
