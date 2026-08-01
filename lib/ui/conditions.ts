@@ -24,6 +24,25 @@ export function conditionLabel(c: AppCondition): string {
   }
 }
 
+/** Categorical name, for use next to the condition's own detail text. */
+export function conditionKindLabel(kind: AppCondition["kind"]): string {
+  switch (kind) {
+    case "crash-looping":
+      return "Crash loop";
+    case "self-heal-exhausted":
+      return "Self-heal";
+    case "unhealthy":
+      return "Health";
+    case "memory-pressure":
+      return "Memory";
+    case "security-findings":
+      return "Security";
+    case "backup-missing":
+    case "backup-stale":
+      return "Backups";
+  }
+}
+
 export function conditionTone(severity: ConditionSeverity): string {
   return severity === "critical"
     ? "text-status-error"
