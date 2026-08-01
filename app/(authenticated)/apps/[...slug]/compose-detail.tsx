@@ -735,7 +735,7 @@ export function ComposeDetail({
                 {
                   label: "Observe",
                   items: [
-                    { value: "logs", label: "Logs" },
+                    ...(featureFlags?.logging !== false ? [{ value: "logs", label: "Logs" }] : []),
                     ...(featureFlags?.metrics !== false ? [{ value: "metrics", label: "Metrics" }] : []),
                   ],
                 },
@@ -790,9 +790,11 @@ export function ComposeDetail({
           />
         </TabsContent>
 
-        <TabsContent value="logs">
-          <ComposeLogs services={services} orgId={orgId} />
-        </TabsContent>
+        {featureFlags?.logging !== false && (
+          <TabsContent value="logs">
+            <ComposeLogs services={services} orgId={orgId} />
+          </TabsContent>
+        )}
 
         {featureFlags?.metrics !== false && (
           <TabsContent value="metrics">
