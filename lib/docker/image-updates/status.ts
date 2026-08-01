@@ -17,6 +17,12 @@ export interface ServiceUpdateStatus {
   latestTag: string | null;
   severity: BumpSeverity | null;
   unorderable: string[];
+  /** Newer tags to choose from, newest first. */
+  available: string[];
+  /** Newest tag crossing a major, offered separately from `latestTag`. */
+  majorAvailable: string | null;
+  /** Whether a major bump means migrating a data directory. */
+  majorLocked: boolean;
   error: string | null;
   checkedAt: string | null;
   /** True when the cached answer is past its TTL. */
@@ -56,6 +62,9 @@ export async function getAppUpdateStatus(app: UpdatableApp): Promise<AppUpdateSt
       latestTag: row?.latestTag ?? null,
       severity: (row?.severity as BumpSeverity | null) ?? null,
       unorderable: row?.unorderable ?? [],
+      available: row?.available ?? [],
+      majorAvailable: row?.majorAvailable ?? null,
+      majorLocked: row?.majorLocked ?? false,
       error: row?.error ?? (row ? null : "Not checked yet"),
       checkedAt: row?.checkedAt.toISOString() ?? null,
       stale: !row || row.checkedAt.getTime() < cutoff,

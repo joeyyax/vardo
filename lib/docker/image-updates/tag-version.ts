@@ -316,15 +316,26 @@ export interface CandidateResult {
   unorderable: string[];
   /** Tags actually compared, for reporting confidence. */
   comparedCount: number;
+  /** Every newer tag, newest first — the choices offered in the UI. */
+  available: string[];
+  /**
+   * Newest tag beyond `latest` that crosses a major, when majors were capped.
+   * Offered separately so a migration is always a deliberate pick.
+   */
+  majorAvailable: string | null;
 }
 
 /**
  * Picks the newest tag above `currentTag`. Pre-releases are only offered when
  * the current tag is itself a pre-release.
+ *
+ * With `capAtMajor`, candidates that cross a major are collected into
+ * `majorAvailable` rather than becoming `latest`.
  */
 export function selectUpdateCandidate(
   currentTag: string,
   availableTags: readonly string[],
+  opts: { capAtMajor?: boolean } = {},
 ): CandidateResult {
   const current = parseTag(currentTag);
   const result: CandidateResult = {
@@ -332,10 +343,15 @@ export function selectUpdateCandidate(
     severity: "unknown",
     unorderable: [],
     comparedCount: 0,
+    available: [],
+    majorAvailable: null,
   };
   if (current.kind !== "version") return result;
 
+  const newer: string[] = [];
   let best: string | null = null;
+  let bestMajor: string | null = null;
+
   for (const tag of availableTags) {
     if (tag === current.raw) continue;
     const candidate = parseTag(tag);
@@ -351,10 +367,21 @@ export function selectUpdateCandidate(
     }
     result.comparedCount++;
     if (order !== 1) continue;
+
+    newer.push(candidate.raw);
+
+    const crossesMajor =
+      opts.capAtMajor === true && (candidate.release[0] ?? 0) > (current.release[0] ?? 0);
+    if (crossesMajor) {
+      if (bestMajor === null || compareTags(candidate, bestMajor) === 1) bestMajor = candidate.raw;
+      continue;
+    }
     if (best === null || compareTags(candidate, best) === 1) best = candidate.raw;
   }
 
+  result.available = newer.sort((a, b) => compareTags(b, a) ?? 0);
   result.latest = best;
+  result.majorAvailable = bestMajor;
   if (best) result.severity = classifyBump(current.raw, best);
   return result;
 }

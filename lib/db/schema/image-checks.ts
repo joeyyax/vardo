@@ -1,4 +1,4 @@
-import { index, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, index, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
 /**
  * Registry facts, cached per image reference rather than per app so several
@@ -24,6 +24,12 @@ export const imageUpdateChecks = pgTable(
     remoteDigest: text("remote_digest"),
     /** Tags we could not order, surfaced so a miss is visible. */
     unorderable: jsonb("unorderable").$type<string[]>().default([]),
+    /** Newer tags to choose from, newest first. */
+    available: jsonb("available").$type<string[]>().default([]),
+    /** Newest tag crossing a major, when the image's data dir is major-locked. */
+    majorAvailable: text("major_available"),
+    /** Whether a major bump means migrating a data directory. */
+    majorLocked: boolean("major_locked").default(false).notNull(),
     /** Why the check could not answer. Null on success. */
     error: text("error"),
     checkedAt: timestamp("checked_at").defaultNow().notNull(),
