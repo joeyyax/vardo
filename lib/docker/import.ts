@@ -248,7 +248,12 @@ export function runAsyncContainerMigration(params: MigrationParams): void {
             organizationId: orgId,
             action: "deployment.rolled_back",
             appId,
-            metadata: { deploymentId, ...activityMetadata },
+            userId,
+            metadata: {
+              deploymentId,
+              reason: "Import deploy failed — original containers restarted",
+              ...activityMetadata,
+            },
           }).catch(() => {});
 
           import("@/lib/notifications/dispatch")

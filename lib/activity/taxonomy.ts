@@ -1,9 +1,9 @@
 // ---------------------------------------------------------------------------
 // Activity view — taxonomy
 //
-// The activity table stores an action string and a loose metadata blob, with no
-// family or outcome column. Both are derived here so the feed, the filters and
-// "while you were away" all read the same row the same way.
+// Maps an action string to a family and an outcome. recordActivity writes both
+// to the row at insert time; the rules stay here so the columns, the filters
+// and "while you were away" cannot disagree.
 // ---------------------------------------------------------------------------
 
 import type {
@@ -142,13 +142,14 @@ function subjectLabelFor(row: ActivityRow): string {
   return actionLabel(row.action);
 }
 
+/** Stored values win; derivation covers rows written before the columns existed. */
 export function classify(row: ActivityRow): ClassifiedActivity {
-  const outcome = outcomeFor(row.action);
+  const outcome = row.outcome ?? outcomeFor(row.action);
   const subjectLabel = subjectLabelFor(row);
   return {
     ...row,
     at: new Date(row.createdAt),
-    family: familyFor(row.action),
+    family: row.family ?? familyFor(row.action),
     outcome,
     // app.deleted carries no appId, so fall back to the name — otherwise two
     // different deleted apps would collapse into one row.
