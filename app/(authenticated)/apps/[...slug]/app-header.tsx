@@ -61,6 +61,7 @@ export function AppHeader({
   allTags,
   siblings,
   onNavigate,
+  stack,
 }: {
   app: App;
   orgId: string;
@@ -70,6 +71,8 @@ export function AppHeader({
   allTags: Tag[];
   siblings: { id: string; name: string; displayName: string; status: string; dependsOn: string[] | null }[];
   onNavigate: (tab: string) => void;
+  /** Compose parent: aggregate service counts replace the single-container status. */
+  stack?: { total: number; active: number; errors: number };
 }) {
   const router = useRouter();
 
@@ -218,6 +221,15 @@ export function AppHeader({
                 Service
               </span>
             )}
+            {stack && (
+              <span
+                className="flex items-center gap-1 text-muted-foreground/70"
+                title="Decomposed compose stack — each service is managed as its own app"
+              >
+                <Container className="size-3" aria-hidden="true" />
+                Stack · {stack.total} service{stack.total === 1 ? "" : "s"}
+              </span>
+            )}
             <span className="text-muted-foreground/40">
               Created {new Date(app.createdAt).toLocaleDateString()}
             </span>
@@ -269,13 +281,36 @@ export function AppHeader({
       {/* At-a-glance stats */}
       <dl className="flex flex-wrap gap-x-10 gap-y-4">
         <Stat label="Status">
-          <span className={`flex items-center gap-1.5 ${status.className}`}>
-            <span
-              aria-hidden="true"
-              className={`size-2 rounded-full bg-current ${isRunning ? "animate-pulse" : ""}`}
-            />
-            {status.label}
-          </span>
+          {stack ? (
+            (() => {
+              const tone = stack.errors > 0
+                ? "text-status-error"
+                : stack.active === stack.total
+                  ? "text-status-success"
+                  : stack.active > 0
+                    ? "text-status-warning"
+                    : "text-status-neutral";
+              return (
+                <span className={`flex items-center gap-1.5 ${tone}`}>
+                  <span
+                    aria-hidden="true"
+                    className={`size-2 rounded-full bg-current ${stack.active === stack.total ? "animate-pulse" : ""}`}
+                  />
+                  {stack.errors > 0
+                    ? `${stack.errors} crashed`
+                    : `${stack.active}/${stack.total} services`}
+                </span>
+              );
+            })()
+          ) : (
+            <span className={`flex items-center gap-1.5 ${status.className}`}>
+              <span
+                aria-hidden="true"
+                className={`size-2 rounded-full bg-current ${isRunning ? "animate-pulse" : ""}`}
+              />
+              {status.label}
+            </span>
+          )}
         </Stat>
         {isRunning && lastSuccess && (
           <Stat label="Uptime">
