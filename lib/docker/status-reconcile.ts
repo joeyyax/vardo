@@ -43,6 +43,12 @@ function label(c: ContainerInfo, key: string): string | undefined {
   return c.labels[`vardo.${key}`] ?? c.labels[`host.${key}`];
 }
 
+/** Compose project minus the blue/green suffix: paperless-production-green → paperless. */
+function composeProjectApp(c: ContainerInfo): string | undefined {
+  const project = c.labels["com.docker.compose.project"];
+  return project?.replace(/-production-(blue|green)$/, "");
+}
+
 /**
  * Containers belonging to an app, most specific match first.
  *
@@ -60,11 +66,27 @@ export function matchContainers(app: ReconcilableApp, containers: ContainerInfo[
   const byAppId = containers.filter((c) => label(c, "project.id") === app.id);
   if (byAppId.length > 0) return byAppId;
 
+  // Decomposed children carry the PARENT's vardo.project.id, so narrow the
+  // parent's containers by compose service.
+  if (app.parentAppId && app.composeService) {
+    const byParent = containers.filter(
+      (c) =>
+        label(c, "project.id") === app.parentAppId &&
+        c.labels["com.docker.compose.service"] === app.composeService,
+    );
+    if (byParent.length > 0) return byParent;
+  }
+
   if (app.composeService) {
     const byService = containers.filter(
       (c) => c.labels["com.docker.compose.service"] === app.composeService,
     );
-    const scoped = byService.filter((c) => label(c, "project") === app.name);
+    const scoped = byService.filter(
+      (c) =>
+        label(c, "project") === app.name ||
+        composeProjectApp(c) === app.name ||
+        `${composeProjectApp(c)}-${app.composeService}` === app.name,
+    );
     if (scoped.length > 0) return scoped;
   }
 
@@ -76,7 +98,8 @@ export function matchContainers(app: ReconcilableApp, containers: ContainerInfo[
   const byProject = containers.filter(
     (c) =>
       label(c, "project") === app.name ||
-      c.labels["com.docker.compose.project"] === app.name,
+      c.labels["com.docker.compose.project"] === app.name ||
+      composeProjectApp(c) === app.name,
   );
   return byProject;
 }

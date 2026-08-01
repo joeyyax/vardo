@@ -116,3 +116,48 @@ describe("matchContainers", () => {
     ]);
   });
 });
+
+describe("matchContainers — blue/green decomposition", () => {
+  const container = (over: Record<string, unknown> = {}) =>
+    ({
+      id: "c1",
+      name: "paperless-production-green-paperless-1",
+      state: "running",
+      status: "Up 3 days",
+      labels: {
+        "com.docker.compose.project": "paperless-production-green",
+        "com.docker.compose.service": "paperless",
+        "vardo.project": "paperless",
+        "vardo.project.id": "PARENT_ID",
+      },
+      ...over,
+    }) as never;
+
+  const child = {
+    id: "CHILD_ID",
+    name: "paperless-paperless",
+    status: "active",
+    parentAppId: "PARENT_ID",
+    composeService: "paperless",
+    containerName: null,
+    importedContainerId: null,
+  };
+
+  it("matches a decomposed child via the parent's project.id plus service", () => {
+    expect(matchContainers(child, [container()])).toHaveLength(1);
+  });
+
+  it("does not match a sibling service of the same parent", () => {
+    expect(matchContainers({ ...child, composeService: "paperless-db" }, [container()])).toHaveLength(0);
+  });
+
+  it("matches a parent app by compose project minus the slot suffix", () => {
+    const parent = { ...child, id: "PARENT_ID", name: "paperless", parentAppId: null, composeService: null };
+    expect(matchContainers(parent, [container()])).toHaveLength(1);
+  });
+
+  it("still reports a genuinely absent service as unmatched", () => {
+    const missing = { ...child, id: "X", name: "cadvisor", parentAppId: null, composeService: null };
+    expect(matchContainers(missing, [container()])).toHaveLength(0);
+  });
+});
