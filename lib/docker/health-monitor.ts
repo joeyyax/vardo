@@ -13,7 +13,19 @@ import {
   type ConditionStreaks,
 } from "./conditions";
 import { loadAdvisoryInputs, type AdvisoryInput } from "./condition-inputs";
+import {
+  RESTART_WINDOW_MS,
+  clearGaveUp,
+  hasGivenUp,
+  hydrateSelfHealState,
+  pruneSelfHealState,
+  recentRestarts,
+  recordGaveUp,
+  recordRestart,
+} from "./self-heal-store";
 import { logger } from "@/lib/logger";
+
+export { RESTART_WINDOW_MS };
 
 const log = logger.child("health-monitor");
 
@@ -28,8 +40,6 @@ const POLL_INTERVAL_MS = 30_000;
 export const CONFIRM_STREAK = 2;
 /** Don't restart the same container more often than this. */
 export const RESTART_BACKOFF_MS = 5 * 60_000;
-/** Rolling window for the restart cap. */
-export const RESTART_WINDOW_MS = 60 * 60_000;
 /** Max restarts of one container within RESTART_WINDOW_MS before we give up and
  *  escalate to a human instead of looping forever. */
 export const MAX_RESTARTS_PER_WINDOW = 5;
@@ -103,11 +113,10 @@ export function effectiveAutoRestart(app: {
 // Per-container in-memory state
 // ---------------------------------------------------------------------------
 
+// The restart budget and the give-up marker are persisted in ./self-heal-store.
+// The state below is rebuilt over the next few ticks after a restart.
+
 const unhealthyStreak = new Map<string, number>();
-/** containerId → restart timestamps within the rolling window (ascending). */
-const restartHistory = new Map<string, number[]>();
-/** containerIds we've already escalated as "gave up" — alert once per window. */
-const gaveUp = new Set<string>();
 /** containerId → Docker RestartCount when we first saw it, and when. */
 const restartBaseline = new Map<string, { count: number; at: number }>();
 /** containerIds observed healthy at least once — not crash-looping. */
@@ -116,10 +125,6 @@ const everHealthy = new Set<string>();
 const crashLoopAlerted = new Map<string, number>();
 /** appId → hysteresis streaks, fed back into evaluateConditions each tick. */
 const conditionStreaks = new Map<string, ConditionStreaks>();
-
-function prune(ts: number[], now: number): number[] {
-  return ts.filter((t) => now - t < RESTART_WINDOW_MS);
-}
 
 // ---------------------------------------------------------------------------
 // Tick
@@ -136,6 +141,14 @@ export async function tickHealthMonitor(): Promise<void> {
   } catch (err) {
     // Transient Docker socket error — skip this tick, never throw.
     log.error("Failed to list containers:", err instanceof Error ? err.message : err);
+    return;
+  }
+
+  try {
+    await hydrateSelfHealState(now);
+  } catch (err) {
+    // Skip the tick — an empty budget would hand every container a fresh cap.
+    log.error("Failed to load self-heal state:", err instanceof Error ? err.message : err);
     return;
   }
 
@@ -213,7 +226,7 @@ export async function tickHealthMonitor(): Promise<void> {
     noteSignal(app.id, {
       health: normalizeHealth(info.state.health?.status),
       crashLoop: crashLoopSignal(c.id, info.restartCount, now),
-      selfHealExhausted: gaveUp.has(c.id),
+      selfHealExhausted: hasGivenUp(c.id, now),
       memory: usageByContainer.get(shortId(c.id)) ?? null,
     });
 
@@ -231,7 +244,7 @@ export async function tickHealthMonitor(): Promise<void> {
     if (info.state.health.status !== "unhealthy") {
       // healthy / starting → reset and clear any prior give-up escalation
       unhealthyStreak.delete(c.id);
-      gaveUp.delete(c.id);
+      await clearGaveUp(c.id, now);
       continue;
     }
 
@@ -242,8 +255,7 @@ export async function tickHealthMonitor(): Promise<void> {
     const streak = (unhealthyStreak.get(c.id) ?? 0) + 1;
     unhealthyStreak.set(c.id, streak);
 
-    const history = prune(restartHistory.get(c.id) ?? [], now);
-    restartHistory.set(c.id, history);
+    const history = recentRestarts(c.id, now);
 
     const decision = decideRestart({ streak, recentRestarts: history, now });
 
@@ -252,8 +264,8 @@ export async function tickHealthMonitor(): Promise<void> {
     const appName = app.displayName || app.name;
 
     if (decision === "giveup") {
-      if (gaveUp.has(c.id)) continue; // already escalated this window
-      gaveUp.add(c.id);
+      if (hasGivenUp(c.id, now)) continue; // already escalated this window
+      await recordGaveUp(app.id, c.id, now);
       log.error(
         `${c.name} unhealthy and hit the restart cap (${MAX_RESTARTS_PER_WINDOW}/${RESTART_WINDOW_MS / 60000}m) — giving up`,
       );
@@ -282,15 +294,16 @@ export async function tickHealthMonitor(): Promise<void> {
       log.error(`Failed to restart ${c.name}:`, err instanceof Error ? err.message : err);
     }
 
-    history.push(now);
-    restartHistory.set(c.id, history);
+    // A failed restart still spends budget — otherwise an un-restartable
+    // container retries forever.
+    const spent = await recordRestart(app.id, c.id, now);
     unhealthyStreak.delete(c.id);
 
     emit(app.organizationId, {
       type: "app.auto-restarted",
       title: ok ? `Auto-restarted: ${appName}` : `Auto-restart failed: ${appName}`,
       message: ok
-        ? `${c.name} was unhealthy and has been automatically restarted (${history.length}/${MAX_RESTARTS_PER_WINDOW} restarts this hour).`
+        ? `${c.name} was unhealthy and has been automatically restarted (${spent.length}/${MAX_RESTARTS_PER_WINDOW} restarts this hour).`
         : `${c.name} was unhealthy but the automatic restart command failed. Manual intervention may be required.`,
       appId: app.id,
       appName,
@@ -304,6 +317,7 @@ export async function tickHealthMonitor(): Promise<void> {
 
   const advisories = await loadAdvisoryInputs(now);
   await persistConditions(appRows, signals, advisories, now, usageByContainer.size);
+  await pruneSelfHealState(now);
   cleanupState(seen);
 }
 
@@ -460,11 +474,10 @@ function checkCrashLoop(
   });
 }
 
-/** Drop in-memory state for containers that no longer exist. */
+/** Drop in-memory state for containers that no longer exist. Self-heal state is
+ *  not evicted here; it ages out by window instead. */
 function cleanupState(seen: Set<string>): void {
   for (const id of unhealthyStreak.keys()) if (!seen.has(id)) unhealthyStreak.delete(id);
-  for (const id of restartHistory.keys()) if (!seen.has(id)) restartHistory.delete(id);
-  for (const id of gaveUp) if (!seen.has(id)) gaveUp.delete(id);
   for (const id of restartBaseline.keys()) if (!seen.has(id)) restartBaseline.delete(id);
   for (const id of everHealthy) if (!seen.has(id)) everHealthy.delete(id);
   for (const id of crashLoopAlerted.keys()) if (!seen.has(id)) crashLoopAlerted.delete(id);
