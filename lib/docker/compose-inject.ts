@@ -17,6 +17,7 @@ import type {
 } from "./compose-types";
 import { TRAEFIK_LABEL_PREFIX, resolveBackendProtocol } from "./compose-generate";
 import { parseCompose } from "./compose-parse";
+import { selectRoutedService } from "./routed-service";
 import { sanitizeCompose, isAnonymousVolume } from "./compose-validate";
 import { generateComposeForImage } from "./compose-generate";
 
@@ -839,26 +840,20 @@ export function applyDeployTransforms(
   const allServicesCustomNetwork =
     servicesWithCustomNetwork.length === Object.keys(result.services).length;
 
-  if (!allServicesCustomNetwork) {
+  if (!allServicesCustomNetwork && opts.domains.length > 0) {
+    // Vardo owns routing once the app has a domain — drop any inbound Traefik
+    // labels so they can't declare a second backend for the same service name.
     result = stripTraefikLabels(result);
-
-    const primaryServiceName = Object.keys(result.services).find(
-      (k) => !result.services[k].network_mode || result.services[k].network_mode === "bridge",
-    );
 
     for (const domain of opts.domains) {
       const port = domain.port || opts.containerPort || 3000;
       const resolvedProtocol = resolveBackendProtocol(opts.backendProtocol, port);
-      // If the domain is scoped to a specific compose service (added on a
-      // child app), inject labels onto that service's container instead of
-      // the auto-detected primary. This is what makes child-app domains
-      // actually route — Vardo's UI puts the Networking tab on child
-      // services, but the deploy used to ignore everything except the
-      // parent's primary service.
-      const targetService =
-        (domain.composeService && result.services[domain.composeService])
-          ? domain.composeService
-          : primaryServiceName;
+      // A domain scoped to a compose service (added on a child app) routes to
+      // that service; otherwise pick the service that serves the port.
+      const targetService = selectRoutedService(result, {
+        containerPort: port,
+        override: domain.composeService,
+      }).service;
       result = injectTraefikLabels(result, {
         projectName: `${opts.appName}-${domain.id.slice(0, 6)}`,
         appName: opts.appName,
