@@ -228,7 +228,7 @@ export function ImportDialog({
             Loading container details...
           </div>
         ) : detailError ? (
-          <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+          <div role="alert" className="surface-danger rounded-lg border p-4 text-sm text-destructive">
             Failed to load container details. Close and try again.
           </div>
         ) : (

@@ -22,7 +22,7 @@ export default function AppError({
           <AlertTriangle className="size-5 text-status-error" />
         </div>
         <div className="space-y-1">
-          <h2 className="text-lg font-semibold">Something went wrong</h2>
+          <h2 className="type-h2">Something went wrong</h2>
           <p className="text-sm text-muted-foreground">
             {error.message && error.message !== "An error occurred in the Server Components render."
               ? error.message

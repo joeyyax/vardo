@@ -262,25 +262,25 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled }: AppMet
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="squircle rounded-lg border bg-card px-4 py-3">
           <p className="text-xs text-muted-foreground">CPU Usage</p>
-          <p className="text-2xl font-semibold tabular-nums mt-1">
+          <p className="type-numeral text-2xl mt-1">
             {containers.reduce((s, c) => s + c.cpuPercent, 0).toFixed(1)}%
           </p>
         </div>
         <div className="squircle rounded-lg border bg-card px-4 py-3">
           <p className="text-xs text-muted-foreground">Memory</p>
-          <p className="text-2xl font-semibold tabular-nums mt-1">
+          <p className="type-numeral text-2xl mt-1">
             {formatBytes(containers.reduce((s, c) => s + c.memoryUsage, 0))}
           </p>
         </div>
         <div className="squircle rounded-lg border bg-card px-4 py-3">
           <p className="text-xs text-muted-foreground">Network RX</p>
-          <p className="text-2xl font-semibold tabular-nums mt-1">
+          <p className="type-numeral text-2xl mt-1">
             {formatBytes(containers.reduce((s, c) => s + c.networkRx, 0))}
           </p>
         </div>
         <div className="squircle rounded-lg border bg-card px-4 py-3">
           <p className="text-xs text-muted-foreground">Network TX</p>
-          <p className="text-2xl font-semibold tabular-nums mt-1">
+          <p className="type-numeral text-2xl mt-1">
             {formatBytes(containers.reduce((s, c) => s + c.networkTx, 0))}
           </p>
         </div>
@@ -289,7 +289,7 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled }: AppMet
         <div className={`grid grid-cols-2 gap-4 ${containers.some((c) => c.gpuTemperature > 0) ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
           <div className="squircle rounded-lg border bg-card px-4 py-3">
             <p className="text-xs text-muted-foreground">GPU</p>
-            <p className="text-2xl font-semibold tabular-nums mt-1">
+            <p className="type-numeral text-2xl mt-1">
               {(() => {
                 const gpuContainers = containers.filter((c) => c.gpuMemoryTotal > 0);
                 return gpuContainers.length > 0
@@ -300,14 +300,14 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled }: AppMet
           </div>
           <div className="squircle rounded-lg border bg-card px-4 py-3">
             <p className="text-xs text-muted-foreground">GPU Memory</p>
-            <p className="text-2xl font-semibold tabular-nums mt-1">
+            <p className="type-numeral text-2xl mt-1">
               {formatBytes(containers.reduce((s, c) => s + c.gpuMemoryUsed, 0))}
             </p>
           </div>
           {containers.some((c) => c.gpuTemperature > 0) && (
             <div className="squircle rounded-lg border bg-card px-4 py-3">
               <p className="text-xs text-muted-foreground">GPU Temp</p>
-              <p className="text-2xl font-semibold tabular-nums mt-1">
+              <p className="type-numeral text-2xl mt-1">
                 {Math.round(
                   containers.filter((c) => c.gpuTemperature > 0).reduce((s, c) => s + c.gpuTemperature, 0) /
                   Math.max(1, containers.filter((c) => c.gpuTemperature > 0).length)

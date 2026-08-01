@@ -25,7 +25,7 @@ export default async function ActivityPage() {
   return (
     <div className="space-y-6">
       <PageToolbar>
-        <h1 className="text-2xl font-semibold tracking-tight">Activity</h1>
+        <h1 className="type-h1">Activity</h1>
       </PageToolbar>
       <ActivityFeed activities={recentActivities} orgId={orgId} />
     </div>

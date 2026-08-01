@@ -29,7 +29,7 @@ export function Sidebar({ currentOrgId, organizations }: SidebarProps) {
 
   return (
     <aside
-      className={`flex h-full flex-col bg-sidebar transition-[width] duration-200 ${
+      className={`surface-sidebar flex h-full flex-col bg-sidebar border-r transition-[width] duration-200 ${
         collapsed ? "w-16" : "w-60"
       }`}
     >

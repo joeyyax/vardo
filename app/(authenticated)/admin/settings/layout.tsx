@@ -58,7 +58,7 @@ export default async function AdminSettingsLayout({
   return (
     <div className="space-y-6">
       <PageToolbar>
-        <h1 className="text-2xl font-semibold tracking-tight">
+        <h1 className="type-h1">
           System settings
         </h1>
       </PageToolbar>

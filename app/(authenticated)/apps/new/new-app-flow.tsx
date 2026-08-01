@@ -519,7 +519,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
   return (
     <div className="space-y-6">
       <PageToolbar>
-        <h1 className="text-2xl font-semibold tracking-tight">New App</h1>
+        <h1 className="type-h1">New App</h1>
       </PageToolbar>
 
       {!isConfiguring ? (
@@ -600,7 +600,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
               <ArrowLeft className="size-4" />
             </Button>
             <div>
-              <h2 className="text-lg font-semibold">
+              <h2 className="type-h2">
                 {selectedTemplate
                   ? selectedTemplate.displayName
                   : SOURCE_OPTIONS.find((s) => s.id === selectedSource)?.label || "New App"}

@@ -36,7 +36,7 @@ export function AdminPanel({ activeTab, orgId }: AdminPanelProps) {
           </Button>
         }
       >
-        <h1 className="text-2xl font-semibold tracking-tight">Admin</h1>
+        <h1 className="type-h1">Admin</h1>
       </PageToolbar>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>

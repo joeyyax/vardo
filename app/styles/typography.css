@@ -1,0 +1,54 @@
+/* Console type recipes. Geist carries everything; tiers differ by size and
+   weight, not family. Color stays at the call site. */
+
+@layer components {
+  /* Page title */
+  .type-h1 {
+    font-size: 1.5rem;
+    line-height: 1.2;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    text-wrap: balance;
+  }
+  /* Section / card title */
+  .type-h2 {
+    font-size: 1.125rem;
+    line-height: 1.4;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+  }
+  /* Subsection title */
+  .type-h3 {
+    font-size: 0.9375rem;
+    line-height: 1.45;
+    font-weight: 600;
+  }
+  .type-body {
+    font-size: 0.875rem;
+    line-height: 1.55;
+  }
+  .type-body-sm {
+    font-size: 0.8125rem;
+    line-height: 1.5;
+  }
+  /* Metric voice — no size baked; pair with a size utility. */
+  .type-numeral {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.1;
+  }
+}
+
+@layer utilities {
+  /* Small-caps meta label — pair with text-muted-foreground, or text-brass
+     for the trim voice. */
+  .type-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.35;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+}

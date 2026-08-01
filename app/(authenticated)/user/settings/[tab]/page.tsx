@@ -47,7 +47,7 @@ function TabContent({ tab, orgId }: { tab: ValidTab; orgId: string | null }) {
         <div className="space-y-6">
           <div className="flex items-start justify-between">
             <div>
-              <h2 className="text-lg font-semibold">Profile</h2>
+              <h2 className="type-h2">Profile</h2>
               <p className="text-sm text-muted-foreground">
                 Your identity across the platform — how others see you in teams and activity feeds.
               </p>
@@ -61,7 +61,7 @@ function TabContent({ tab, orgId }: { tab: ValidTab; orgId: string | null }) {
       return (
         <div className="space-y-6">
           <div>
-            <h2 className="text-lg font-semibold">Authentication</h2>
+            <h2 className="type-h2">Authentication</h2>
             <p className="text-sm text-muted-foreground">
               Manage how you sign in and protect your account.
             </p>
@@ -79,7 +79,7 @@ function TabContent({ tab, orgId }: { tab: ValidTab; orgId: string | null }) {
       return (
         <div className="space-y-6">
           <div>
-            <h2 className="text-lg font-semibold">API tokens</h2>
+            <h2 className="type-h2">API tokens</h2>
             <p className="text-sm text-muted-foreground">
               Create tokens for CI/CD pipelines, scripts, and external integrations.
             </p>
@@ -100,7 +100,7 @@ function TabContent({ tab, orgId }: { tab: ValidTab; orgId: string | null }) {
       return (
         <div className="space-y-6">
           <div>
-            <h2 className="text-lg font-semibold">Connections</h2>
+            <h2 className="type-h2">Connections</h2>
             <p className="text-sm text-muted-foreground">
               Link external accounts to enable repo imports and auto-deploy.
             </p>
@@ -112,7 +112,7 @@ function TabContent({ tab, orgId }: { tab: ValidTab; orgId: string | null }) {
       return (
         <div className="space-y-6">
           <div>
-            <h2 className="text-lg font-semibold">Notifications</h2>
+            <h2 className="type-h2">Notifications</h2>
             <p className="text-sm text-muted-foreground">
               Choose which events you want to be notified about, and on which
               channels.
