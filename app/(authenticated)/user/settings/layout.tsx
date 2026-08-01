@@ -32,9 +32,15 @@ export default async function UserSettingsLayout({
         </p>
       </div>
 
-      <SettingsNav items={NAV_ITEMS} />
+      <div className="flex flex-col gap-6 lg:flex-row lg:gap-8">
+        <aside className="lg:w-48 lg:shrink-0">
+          <div className="lg:sticky lg:top-24">
+            <SettingsNav items={NAV_ITEMS} />
+          </div>
+        </aside>
 
-      <div>{children}</div>
+        <div className="min-w-0 flex-1">{children}</div>
+      </div>
     </div>
   );
 }
