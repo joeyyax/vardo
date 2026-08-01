@@ -8,6 +8,7 @@ import { getSession, getCurrentOrg, getUserOrganizations } from "@/lib/auth/sess
 import { isFeatureEnabled } from "@/lib/config/features";
 import { SessionFooter } from "@/components/layout/session-footer";
 import { UpdateBanner } from "@/components/layout/update-banner";
+import { AwaySummaryBanner } from "@/components/layout/away-summary";
 import { getVersionData } from "@/lib/version";
 
 
@@ -71,6 +72,8 @@ export default async function AppLayout({
         </div>
 
         {session.user.isAppAdmin && <UpdateBanner data={versionData} />}
+
+        <AwaySummaryBanner orgId={organization.id} />
 
         <main className="flex-1">
           <section className="py-8">
