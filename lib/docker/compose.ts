@@ -59,6 +59,7 @@ export {
   defaultMemoryLimitMb,
   injectNetwork,
   getTraefikRoutedServices,
+  isTraefikOptedOut,
   injectResourceLimits,
   injectGpuDevices,
   getServicesWithExternalizedVolumes,
