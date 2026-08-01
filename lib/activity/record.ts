@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { activities } from "@/lib/db/schema";
 import { nanoid } from "nanoid";
+import { familyFor, outcomeFor } from "./taxonomy";
 
 type RecordActivityOpts = {
   organizationId: string;
@@ -17,6 +18,8 @@ export async function recordActivity(opts: RecordActivityOpts): Promise<void> {
     action: opts.action,
     appId: opts.appId ?? null,
     userId: opts.userId ?? null,
+    family: familyFor(opts.action),
+    outcome: outcomeFor(opts.action),
     metadata: opts.metadata ?? null,
   });
 }
