@@ -3,19 +3,20 @@
 import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Plus, Cpu, ShieldCheck, Trash2, AlertTriangle, ChevronDown } from "lucide-react";
+import { formatDistanceToNowStrict } from "date-fns";
+import { Plus, Cpu, ShieldCheck, Trash2, AlertTriangle, ChevronDown, Package } from "lucide-react";
 import { EndpointsPopover } from "@/components/endpoints-popover";
 import { detectAppType } from "@/lib/ui/app-type";
 import { statusDotColor } from "@/lib/ui/status-colors";
 import { StatusIndicator } from "@/components/app-status";
 import { SystemBadge } from "@/components/system-badge";
-import { UpdatesBanner } from "./updates-banner";
+import { UpdatesBanner, useImageUpdates } from "./updates-banner";
 
 import {
   type AppMetrics,
   type MetricsHistory,
-  Sparkline,
-  MetricsLine,
+  type MetricKey,
+  MetricsBand,
   useAppMetrics,
 } from "@/components/app-metrics-card";
 
@@ -108,12 +109,14 @@ function ProjectCard({
   metrics,
   history,
   historyTick,
+  updatesByApp,
 }: {
   project: NonNullable<AppWithRelations["project"]>;
   projectApps: AppWithRelations[];
   metrics: Map<string, AppMetrics>;
   history: Map<string, MetricsHistory>;
   historyTick: number;
+  updatesByApp: Map<string, number>;
 }) {
   const color = "#a1a1aa"; // neutral zinc-400 — project color is unused
 
@@ -127,22 +130,65 @@ function ProjectCard({
   const anyDeploying = projectApps.some((a) => a.status === "deploying");
   const idleStatus = anyMissing ? "missing" : anyDeploying ? "deploying" : "stopped";
 
-  // Aggregated CPU across all apps
-  const aggregatedCpu = useMemo(() => {
-    const maxLen = Math.max(...projectApps.map((a) => (history.get(a.id)?.cpu || []).length), 0);
-    if (maxLen < 2) return [];
-    const result: number[] = [];
-    for (let i = 0; i < maxLen; i++) {
-      let sum = 0;
-      for (const a of projectApps) {
-        const cpu = history.get(a.id)?.cpu || [];
-        sum += cpu[i] || 0;
+  // Per-metric history summed across apps
+  const aggregatedHistory = useMemo(() => {
+    const result: Partial<MetricsHistory> = {};
+    for (const key of ["cpu", "memory", "disk", "network"] as MetricKey[]) {
+      const maxLen = Math.max(...projectApps.map((a) => (history.get(a.id)?.[key] || []).length), 0);
+      if (maxLen < 2) continue;
+      const series: number[] = [];
+      for (let i = 0; i < maxLen; i++) {
+        let sum = 0;
+        for (const a of projectApps) {
+          const s = history.get(a.id)?.[key] || [];
+          sum += s[i] || 0;
+        }
+        series.push(sum);
       }
-      result.push(sum);
+      result[key] = series;
     }
     return result;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectApps, historyTick]);
+
+  // Aggregated live metrics. The memory limit is the sum of per-app limits and
+  // only honest when every running app has one — partial sums would understate
+  // the ceiling.
+  const { agg, memoryLimitTotal } = useMemo(() => {
+    const agg: AppMetrics = { cpuPercent: 0, memoryUsage: 0, memoryLimit: 0, diskUsage: 0, networkRx: 0, networkTx: 0 };
+    let limitSum = 0;
+    let allLimited = true;
+    let anyMetrics = false;
+    for (const a of projectApps) {
+      const m = metrics.get(a.id);
+      if (!m) {
+        if (a.status === "active") allLimited = false;
+        continue;
+      }
+      anyMetrics = true;
+      agg.cpuPercent += m.cpuPercent;
+      agg.memoryUsage += m.memoryUsage;
+      agg.diskUsage += m.diskUsage;
+      agg.networkRx += m.networkRx;
+      agg.networkTx += m.networkTx;
+      if (m.memoryLimit > 0) limitSum += m.memoryLimit;
+      else allLimited = false;
+    }
+    return { agg, memoryLimitTotal: anyMetrics && allLimited ? limitSum : 0 };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectApps, metrics, historyTick]);
+
+  // Most recent deployment across the project's apps.
+  const lastDeploy = useMemo(() => {
+    let latest: { status: string; startedAt: Date } | null = null;
+    for (const a of projectApps) {
+      const d = a.deployments[0];
+      if (d && (!latest || new Date(d.startedAt) > new Date(latest.startedAt))) latest = d;
+    }
+    return latest;
+  }, [projectApps]);
+
+  const updateCount = projectApps.reduce((n, a) => n + (updatesByApp.get(a.id) ?? 0), 0);
 
   // Collect unique icons
   const icons = useMemo(() => {
@@ -161,22 +207,26 @@ function ProjectCard({
 
   const isSystem = project.isSystemManaged;
 
+  const deployFragment = lastDeploy && (
+    lastDeploy.status === "failed" ? (
+      <span className="text-status-error">
+        Deploy failed {formatDistanceToNowStrict(new Date(lastDeploy.startedAt), { addSuffix: true })}
+      </span>
+    ) : lastDeploy.status === "running" || lastDeploy.status === "queued" ? (
+      <span className="text-status-info">Deploying now</span>
+    ) : (
+      <span>Deployed {formatDistanceToNowStrict(new Date(lastDeploy.startedAt), { addSuffix: true })}</span>
+    )
+  );
+
   return (
     <Link
       href={`/projects/${project.name}`}
-      className={`squircle relative flex flex-col rounded-lg bg-card shadow-card dark:border transition-shadow hover:shadow-card-hover overflow-hidden cursor-pointer${isSystem ? " ring-2 ring-status-warning/50" : ""}`}
+      className="squircle relative flex flex-col rounded-lg bg-card shadow-card dark:border transition-shadow hover:shadow-card-hover overflow-hidden cursor-pointer"
     >
       {/* Raised panel: identity + aggregate state */}
-      <div className="relative p-4">
-        {aggregatedCpu.length > 0 && (
-          <Sparkline
-            data={aggregatedCpu}
-            className="absolute inset-0 w-full h-full pointer-events-none"
-            style={{ color: "oklch(0.65 0.19 255)" }}
-          />
-        )}
-
-        <div className="relative flex gap-4">
+      <div className="flex-1 p-4">
+        <div className="flex gap-4">
         {/* One icon — a collage of the same marks on every card is noise */}
         {icons.length === 0 ? (
           <div className="size-12 shrink-0 rounded-md flex items-center justify-center" style={{ backgroundColor: `${color}20` }}>
@@ -220,30 +270,28 @@ function ProjectCard({
               <StatusIndicator status={idleStatus} />
             )}
           </div>
-          {/* Aggregated metrics */}
-          {(() => {
-            const agg: AppMetrics = { cpuPercent: 0, memoryUsage: 0, memoryLimit: 0, diskUsage: 0, networkRx: 0, networkTx: 0 };
-            for (const a of projectApps) {
-              const m = metrics.get(a.id);
-              if (m) {
-                agg.cpuPercent += m.cpuPercent;
-                agg.memoryUsage += m.memoryUsage;
-                agg.memoryLimit = Math.max(agg.memoryLimit, m.memoryLimit);
-                agg.diskUsage += m.diskUsage;
-                agg.networkRx += m.networkRx;
-                agg.networkTx += m.networkTx;
-              }
-            }
-            return (agg.cpuPercent > 0 || agg.memoryUsage > 0)
-              ? <MetricsLine metrics={agg} onHover={() => {}} />
-              : null;
-          })()}
+          {/* What changed — deploy recency and pending updates */}
+          {(deployFragment || updateCount > 0) && (
+            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+              {deployFragment}
+              {deployFragment && updateCount > 0 && <span aria-hidden="true">·</span>}
+              {updateCount > 0 && (
+                <span className="flex items-center gap-1">
+                  <Package className="size-3" aria-hidden="true" />
+                  {updateCount} update{updateCount === 1 ? "" : "s"} available
+                </span>
+              )}
+            </p>
+          )}
         </div>
         </div>
       </div>
 
+      {/* Aggregate resource band — scale and trend, not bare numbers */}
+      <MetricsBand metrics={agg} history={aggregatedHistory} memoryLimit={memoryLimitTotal} />
+
       {/* Recessed chip tray — apps sit as raised objects on a lower surface */}
-      <div className="relative flex flex-wrap gap-1.5 border-t bg-background-deep px-4 py-3">
+      <div className="flex flex-wrap gap-1.5 border-t bg-background-deep px-4 py-3">
         {projectApps.length === 0 && (
           <Link
             href={`/apps/new?project=${project.id}`}
@@ -277,6 +325,9 @@ function ProjectCard({
                   {a.displayName}
                   {CHIP_STATUS_WORD[a.status] && (
                     <span className="font-normal opacity-80">{CHIP_STATUS_WORD[a.status]}</span>
+                  )}
+                  {(updatesByApp.get(a.id) ?? 0) > 0 && (
+                    <Package className="size-3 text-muted-foreground/70" aria-label="Update available" />
                   )}
                   {a.priority === "critical" && (
                     <ShieldCheck className="size-3 text-status-warning" aria-label="Critical priority" />
@@ -316,6 +367,11 @@ export function AppGrid({
   const router = useRouter();
   const [activeTagIds, setActiveTagIds] = useState<Set<string>>(new Set());
   const { metrics, history, historyTick } = useAppMetrics(orgId);
+  const updates = useImageUpdates(orgId);
+  const updatesByApp = useMemo(
+    () => new Map((updates?.appsWithUpdates ?? []).map((a) => [a.id, a.count])),
+    [updates],
+  );
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -369,7 +425,7 @@ export function AppGrid({
     <div className="space-y-6">
       {/* Attention cluster — banners group tightly, apart from the grid */}
       <div className="space-y-2 empty:hidden">
-      <UpdatesBanner orgId={orgId} />
+      <UpdatesBanner data={updates} />
 
       {unlimited.length > 0 && (
         <details className="group squircle rounded-lg border border-status-warning/40 bg-status-warning-muted/40 text-sm">
@@ -448,7 +504,7 @@ export function AppGrid({
 
       {/* Columns respond to card count: a two-project install fills the row
           instead of orphaning cards in a fixed three-column grid. */}
-      <div className="grid items-start gap-4 grid-cols-[repeat(auto-fit,minmax(min(20rem,100%),1fr))]">
+      <div className="grid items-start gap-4 grid-cols-[repeat(auto-fit,minmax(min(22rem,100%),1fr))]">
         {projectCards.map(({ project, apps: projectApps }) => (
           <ProjectCard
             key={project.id}
@@ -457,6 +513,7 @@ export function AppGrid({
             metrics={metrics}
             history={history}
             historyTick={historyTick}
+            updatesByApp={updatesByApp}
           />
         ))}
       </div>
