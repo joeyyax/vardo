@@ -25,6 +25,7 @@ import {
   slotComposeFiles,
   excludeServices,
   type ComposeFile,
+  type ComposeService,
   type ContainerConfig,
 } from "@/lib/docker/compose";
 import { mergeComposeFile } from "@/lib/docker/import";
@@ -1137,6 +1138,78 @@ describe("injectTraefikLabels — serviceName", () => {
       injectTraefikLabels(compose, { ...baseOpts, serviceName: "nonexistent" })
     ).toThrow('Service "nonexistent" not found');
   });
+
+  it("leaves a service that opted out untouched", () => {
+    const compose: ComposeFile = {
+      services: {
+        worker: {
+          name: "worker",
+          image: "node",
+          labels: { "traefik.enable": "false", "user.label": "keep" },
+        },
+      },
+    };
+
+    const result = injectTraefikLabels(compose, { ...baseOpts, serviceName: "worker" });
+
+    expect(result.services.worker.labels).toEqual({
+      "traefik.enable": "false",
+      "user.label": "keep",
+    });
+  });
+
+  it("clears the app's routing labels from services it is not routing to", () => {
+    const compose: ComposeFile = {
+      services: {
+        web: {
+          name: "web",
+          image: "nginx",
+          labels: {
+            "traefik.enable": "true",
+            "traefik.http.services.myapp.loadbalancer.server.port": "3000",
+            "user.label": "keep",
+          },
+        },
+        api: { name: "api", image: "node" },
+      },
+    };
+
+    const result = injectTraefikLabels(compose, {
+      ...baseOpts,
+      appName: "myapp",
+      serviceName: "api",
+    });
+
+    expect(result.services.api.labels?.["traefik.enable"]).toBe("true");
+    expect(result.services.web.labels).toEqual({ "user.label": "keep" });
+  });
+
+  it("leaves another service's own router alone", () => {
+    const compose: ComposeFile = {
+      services: {
+        web: {
+          name: "web",
+          image: "nginx",
+          labels: {
+            "traefik.enable": "true",
+            "traefik.http.routers.other.rule": "Host(`other.example.com`)",
+          },
+        },
+        api: { name: "api", image: "node" },
+      },
+    };
+
+    const result = injectTraefikLabels(compose, {
+      ...baseOpts,
+      appName: "myapp",
+      serviceName: "api",
+    });
+
+    expect(result.services.web.labels).toEqual({
+      "traefik.enable": "true",
+      "traefik.http.routers.other.rule": "Host(`other.example.com`)",
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1970,7 +2043,29 @@ describe("stripTraefikLabels", () => {
     const result = stripTraefikLabels(compose);
     expect(result.services.web.labels).toEqual({ "vardo.managed": "true" });
     expect(result.services.db.labels).toEqual({ "vardo.managed": "true" });
-    expect(result.services.cache.labels).toEqual({ "com.example.custom": "keep" });
+    // The opt-out is the user's, not a Vardo injection — it survives the strip.
+    expect(result.services.cache.labels).toEqual({
+      "traefik.enable": "false",
+      "com.example.custom": "keep",
+    });
+  });
+
+  it("keeps an explicit traefik.enable=false while stripping the rest", () => {
+    const compose: ComposeFile = {
+      services: {
+        worker: {
+          name: "worker",
+          image: "worker:latest",
+          labels: {
+            "traefik.enable": "false",
+            "traefik.http.routers.stale.rule": "Host(`old.example.com`)",
+          },
+        },
+      },
+    };
+    expect(stripTraefikLabels(compose).services.worker.labels).toEqual({
+      "traefik.enable": "false",
+    });
   });
 });
 
@@ -2226,6 +2321,160 @@ describe("applyDeployTransforms — routed service selection", () => {
     });
     expect(result.services["authentik-worker"].labels?.["traefik.enable"]).toBe("true");
     expect(result.services["authentik-server"].labels).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyDeployTransforms — one enabled backend per app (agents 502 regression)
+// ---------------------------------------------------------------------------
+
+describe("applyDeployTransforms — single Traefik backend", () => {
+  // The agents stack: five services, nothing declares the app's port, three
+  // share an image. Only dashboard serves HTTP.
+  function agentsCompose(): ComposeFile {
+    return {
+      services: {
+        worker: { name: "worker", image: "agents:latest" },
+        dashboard: { name: "dashboard", image: "agents:latest" },
+        redis: { name: "redis", image: "redis:7" },
+        bot: { name: "bot", image: "agents:latest" },
+        postgres: { name: "postgres", image: "postgres:17" },
+      },
+    };
+  }
+
+  const agentsDomain = {
+    id: "dom-11223344",
+    domain: "agents.example.com",
+    port: null,
+    sslEnabled: true,
+    certResolver: "le-dns",
+    redirectTo: null,
+    redirectCode: null,
+  };
+
+  function traefikLabels(svc: ComposeService | undefined): Record<string, string> {
+    return Object.fromEntries(
+      Object.entries(svc?.labels ?? {}).filter(([k]) => k.startsWith("traefik.")),
+    );
+  }
+
+  it("enables exactly one service and leaves the other four with no traefik labels", () => {
+    const result = applyDeployTransforms(agentsCompose(), {
+      ...baseTransformOpts,
+      appName: "agents",
+      containerPort: 3000,
+      domains: [agentsDomain],
+    });
+
+    expect(traefikLabels(result.services.dashboard)["traefik.enable"]).toBe("true");
+    expect(traefikLabels(result.services.worker)).toEqual({});
+    expect(traefikLabels(result.services.bot)).toEqual({});
+    expect(traefikLabels(result.services.redis)).toEqual({});
+    expect(traefikLabels(result.services.postgres)).toEqual({});
+
+    const enabled = Object.keys(result.services).filter(
+      (n) => result.services[n].labels?.["traefik.enable"] === "true",
+    );
+    expect(enabled).toEqual(["dashboard"]);
+  });
+
+  it("declares the app's load balancer on one service only", () => {
+    const result = applyDeployTransforms(agentsCompose(), {
+      ...baseTransformOpts,
+      appName: "agents",
+      containerPort: 3000,
+      domains: [agentsDomain],
+    });
+
+    const declaring = Object.keys(result.services).filter((n) =>
+      Object.keys(result.services[n].labels ?? {}).some((k) =>
+        k.startsWith("traefik.http.services.agents.loadbalancer"),
+      ),
+    );
+    expect(declaring).toEqual(["dashboard"]);
+    expect(
+      result.services.dashboard.labels?.[
+        "traefik.http.services.agents.loadbalancer.server.port"
+      ],
+    ).toBe("3000");
+  });
+
+  it("keeps one backend when several domains resolve to different services", () => {
+    // Domains added on decomposed children each name their own service. The
+    // Traefik service is app-scoped, so two carriers would round-robin.
+    const result = applyDeployTransforms(agentsCompose(), {
+      ...baseTransformOpts,
+      appName: "agents",
+      containerPort: 3000,
+      domains: [
+        { ...agentsDomain, composeService: "dashboard" },
+        { ...agentsDomain, id: "dom-55667788", domain: "api.example.com", composeService: "worker" },
+      ],
+    });
+
+    const declaring = Object.keys(result.services).filter((n) =>
+      Object.keys(result.services[n].labels ?? {}).some((k) =>
+        k.startsWith("traefik.http.services.agents.loadbalancer"),
+      ),
+    );
+    expect(declaring).toEqual(["worker"]);
+    // Dashboard keeps its own router but no longer declares a second backend.
+    expect(
+      Object.keys(traefikLabels(result.services.dashboard)).filter((k) =>
+        k.startsWith("traefik.http.services."),
+      ),
+    ).toEqual([]);
+  });
+
+  it("routes past a service the compose opted out of, and never rewrites its label", () => {
+    // bot sorts before dashboard here, so file order would pick it.
+    const compose: ComposeFile = {
+      services: {
+        bot: { name: "bot", image: "agents:latest", labels: { "traefik.enable": "false" } },
+        dashboard: { name: "dashboard", image: "agents:latest" },
+        postgres: {
+          name: "postgres",
+          image: "postgres:17",
+          labels: { "traefik.enable": "false" },
+        },
+      },
+    };
+    const result = applyDeployTransforms(compose, {
+      ...baseTransformOpts,
+      appName: "agents",
+      containerPort: 3000,
+      domains: [agentsDomain],
+    });
+
+    expect(result.services.bot.labels).toEqual({ "traefik.enable": "false" });
+    expect(result.services.postgres.labels).toEqual({ "traefik.enable": "false" });
+    expect(result.services.dashboard.labels?.["traefik.enable"]).toBe("true");
+    expect(result.services.bot.networks ?? []).not.toContain("vardo-network");
+    expect(result.services.dashboard.networks).toContain("vardo-network");
+  });
+
+  it("routes nothing when every service opted out", () => {
+    const compose: ComposeFile = {
+      services: {
+        worker: {
+          name: "worker",
+          image: "agents:latest",
+          labels: { "traefik.enable": "false" },
+        },
+        bot: { name: "bot", image: "agents:latest", labels: { "traefik.enable": "false" } },
+      },
+    };
+    const result = applyDeployTransforms(compose, {
+      ...baseTransformOpts,
+      appName: "agents",
+      containerPort: 3000,
+      domains: [agentsDomain],
+    });
+
+    expect(result.services.worker.labels).toEqual({ "traefik.enable": "false" });
+    expect(result.services.bot.labels).toEqual({ "traefik.enable": "false" });
+    expect(result.networks?.["vardo-network"]).toBeUndefined();
   });
 });
 
