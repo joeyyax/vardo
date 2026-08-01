@@ -55,11 +55,12 @@ export async function tickBackupJobs(): Promise<void> {
 
       const results = await runBackup(job.id);
 
-      const succeeded = results.filter((r) => r.success).length;
-      const failed = results.filter((r) => !r.success).length;
+      const succeeded = results.filter((r) => r.outcome === "success").length;
+      const failed = results.filter((r) => r.outcome === "failed").length;
+      const skipped = results.filter((r) => r.outcome === "skipped").length;
 
       log.info(
-        `Job "${job.name}" finished: ${succeeded} succeeded, ${failed} failed`,
+        `Job "${job.name}" finished: ${succeeded} succeeded, ${failed} failed, ${skipped} skipped`,
       );
     } catch (err) {
       log.error(`Job "${job.name}" (${job.id}) error:`, err);

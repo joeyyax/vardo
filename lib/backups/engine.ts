@@ -15,6 +15,7 @@ import { resolve, join } from "path";
 import type { BackupStorage } from "./storage-port";
 import { createBackupStorage } from "./storage-factory";
 import { assertSafeName } from "@/lib/docker/validate";
+import { isUncapturedSource, uncapturedReason } from "./coverage";
 import { listContainers, inspectContainer } from "@/lib/docker/client";
 import { resolveDefaultEnv } from "@/lib/docker/resolve-env";
 import { logger } from "@/lib/logger";
@@ -41,15 +42,23 @@ const BACKUPS_DIR = resolve(
 // Types
 // ---------------------------------------------------------------------------
 
+/** skipped — the source is real but the engine cannot capture it (bind mount). */
+export type BackupOutcome = "success" | "failed" | "skipped";
+
 export type BackupResult = {
   backupId: string;
   appId: string;
   volumeName: string;
-  success: boolean;
+  outcome: BackupOutcome;
   sizeBytes: number;
   storagePath: string;
   error?: string;
   durationMs: number;
+};
+
+export type RunBackupOptions = {
+  /** Restrict the run to these apps. Other apps on the job are left alone. */
+  appIds?: string[];
 };
 
 type VolumeToBackup = {
@@ -59,6 +68,8 @@ type VolumeToBackup = {
   appId: string | null;
   appName: string | null;
   orgSlug: string | null;
+  type: "named" | "bind";
+  source: string | null;
   backupStrategy: string;
   backupMeta: { dumpCmd: string; restoreCmd: string } | null;
 };
@@ -273,11 +284,15 @@ export async function resolveDockerVolume(
 // ---------------------------------------------------------------------------
 
 /**
- * Execute a full backup run for a given job.
+ * Execute a backup run for a given job.
  * Collects volumes from linked apps AND directly linked volumes,
- * then dispatches each by its backup strategy.
+ * then dispatches each by its backup strategy. Pass `appIds` to run a subset
+ * of the job's apps.
  */
-export async function runBackup(jobId: string): Promise<BackupResult[]> {
+export async function runBackup(
+  jobId: string,
+  options: RunBackupOptions = {},
+): Promise<BackupResult[]> {
   const job = await db.query.backupJobs.findFirst({
     where: eq(backupJobs.id, jobId),
     with: {
@@ -305,11 +320,19 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
     throw new Error(`Backup job not found: ${jobId}`);
   }
 
+  const scope = options.appIds ? new Set(options.appIds) : null;
+  const jobApps = scope
+    ? job.backupJobApps.filter((bja) => scope.has(bja.app.id))
+    : job.backupJobApps;
+  const jobVolumes = scope
+    ? job.backupJobVolumes.filter((bjv) => bjv.volume.appId && scope.has(bjv.volume.appId))
+    : job.backupJobVolumes;
+
   const { executeHooks } = await import("@/lib/hooks/execute");
   const hookResult = await executeHooks("before.backup.run", {
     jobId,
     organizationId: job.organizationId,
-    apps: job.backupJobApps.map((bja) => ({ id: bja.app.id, name: bja.app.name })),
+    apps: jobApps.map((bja) => ({ id: bja.app.id, name: bja.app.name })),
   }, { organizationId: job.organizationId ?? undefined });
 
   if (!hookResult.allowed) {
@@ -324,7 +347,7 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
   const volumesToBackup: VolumeToBackup[] = [];
 
   // From linked apps: find their persistent volumes
-  for (const bja of job.backupJobApps) {
+  for (const bja of jobApps) {
     const app = bja.app;
     const orgSlug = app.organization.slug;
 
@@ -341,6 +364,8 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
         appId: app.id,
         appName: app.name,
         orgSlug,
+        type: vol.type,
+        source: vol.source,
         backupStrategy: vol.backupStrategy,
         backupMeta: vol.backupMeta,
       });
@@ -348,7 +373,7 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
   }
 
   // From directly linked volumes (system volumes, etc.)
-  for (const bjv of job.backupJobVolumes) {
+  for (const bjv of jobVolumes) {
     const vol = bjv.volume;
     volumesToBackup.push({
       id: vol.id,
@@ -357,6 +382,8 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
       appId: vol.appId,
       appName: null,
       orgSlug: null,
+      type: vol.type,
+      source: vol.source,
       backupStrategy: vol.backupStrategy,
       backupMeta: vol.backupMeta,
     });
@@ -376,6 +403,35 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
     const log = (msg: string) => {
       logLines.push(`[${new Date().toISOString()}] ${msg}`);
     };
+
+    // Sources the engine can't archive are recorded as skipped, not failed.
+    if (isUncapturedSource(vol)) {
+      const reason = uncapturedReason(vol);
+      log(`Skipping volume ${vol.name}: ${reason}`);
+      const finishedAt = new Date();
+      await db.insert(backups).values({
+        id: backupId,
+        jobId: job.id,
+        appId: vol.appId,
+        targetId: job.target.id,
+        status: "skipped",
+        volumeName: vol.name,
+        startedAt,
+        finishedAt,
+        log: logLines.join("\n"),
+      });
+      results.push({
+        backupId,
+        appId: vol.appId || "",
+        volumeName: vol.name,
+        outcome: "skipped",
+        sizeBytes: 0,
+        storagePath: "",
+        error: reason,
+        durationMs: finishedAt.getTime() - startedAt.getTime(),
+      });
+      continue;
+    }
 
     // Determine storage key based on context
     const ext = vol.backupStrategy === "dump" ? "dump.gz" : "tar.gz";
@@ -440,7 +496,7 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
         backupId,
         appId: vol.appId || "",
         volumeName: vol.name,
-        success: true,
+        outcome: "success",
         sizeBytes: result.sizeBytes,
         storagePath: storageKey,
         durationMs,
@@ -464,7 +520,7 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
         backupId,
         appId: vol.appId || "",
         volumeName: vol.name,
-        success: false,
+        outcome: "failed",
         sizeBytes: 0,
         storagePath: "",
         error: errorMsg,
@@ -473,35 +529,48 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
     }
   }
 
-  // Update job's last run timestamp. lastRunAt feeds the stale-backup deploy
-  // condition, which never fired while only updatedAt was written.
-  const finishedRunAt = new Date();
-  await db
-    .update(backupJobs)
-    .set({ lastRunAt: finishedRunAt, updatedAt: finishedRunAt })
-    .where(eq(backupJobs.id, jobId));
+  // lastRunAt feeds the stale-backup deploy condition, so only a run covering
+  // the whole job may refresh it.
+  const coveredWholeJob =
+    jobApps.length === job.backupJobApps.length &&
+    jobVolumes.length === job.backupJobVolumes.length;
+  if (coveredWholeJob) {
+    const finishedRunAt = new Date();
+    await db
+      .update(backupJobs)
+      .set({ lastRunAt: finishedRunAt, updatedAt: finishedRunAt })
+      .where(eq(backupJobs.id, jobId));
+  }
 
   // Notifications
   try {
-    const hasFailures = results.some((r) => !r.success);
-    const allSuccess = results.every((r) => r.success);
+    const succeeded = results.filter((r) => r.outcome === "success");
+    const failed = results.filter((r) => r.outcome === "failed");
+    const skipped = results.filter((r) => r.outcome === "skipped");
+    // A run that captured nothing is not a success.
+    const capturedNothing = succeeded.length === 0;
+    const hasFailures = failed.length > 0 || capturedNothing;
+    const allSuccess = !hasFailures;
+    const skippedNote = skipped.length > 0 ? ` (${skipped.length} source(s) skipped)` : "";
 
     if (job.organizationId && ((hasFailures && job.notifyOnFailure) || (allSuccess && job.notifyOnSuccess))) {
       const { emit } = await import("@/lib/notifications/dispatch");
-      const names = job.backupJobApps.map((bja) => bja.app.name).join(", ") || job.name;
+      const names = jobApps.map((bja) => bja.app.name).join(", ") || job.name;
       if (hasFailures) {
-        const failed = results.filter((r) => !r.success);
-        emit(job.organizationId, { type: "backup.failed", title: `Backup failed: ${job.name}`, message: `${failed.length} of ${results.length} backup(s) failed for: ${names}`, jobId: job.id, jobName: job.name, failedCount: failed.length, totalCount: results.length, errors: failed.map((r) => `${r.volumeName}: ${r.error}`).join("; ") });
+        const problems = [...failed, ...skipped];
+        const message = failed.length > 0
+          ? `${failed.length} of ${results.length} backup(s) failed for: ${names}${skippedNote}`
+          : `Nothing was captured for: ${names}${skippedNote}`;
+        emit(job.organizationId, { type: "backup.failed", title: `Backup failed: ${job.name}`, message, jobId: job.id, jobName: job.name, failedCount: problems.length, totalCount: results.length, errors: problems.map((r) => `${r.volumeName}: ${r.error}`).join("; ") });
       } else {
-        emit(job.organizationId, { type: "backup.success", title: `Backup successful: ${job.name}`, message: `${results.length} backup(s) completed for: ${names}`, jobId: job.id, jobName: job.name, totalCount: results.length, totalSize: results.reduce((sum, r) => sum + r.sizeBytes, 0) });
+        emit(job.organizationId, { type: "backup.success", title: `Backup successful: ${job.name}`, message: `${succeeded.length} backup(s) completed for: ${names}${skippedNote}`, jobId: job.id, jobName: job.name, totalCount: results.length, totalSize: results.reduce((sum, r) => sum + r.sizeBytes, 0) });
       }
     } else if (!job.organizationId) {
       // System-level job — log to console
-      const hasFailures = results.some((r) => !r.success);
       if (hasFailures && job.notifyOnFailure) {
-        log.error(`${job.name} FAILED — ${results.filter((r) => !r.success).map((r) => `${r.volumeName}: ${r.error}`).join("; ")}`);
+        log.error(`${job.name} FAILED — ${[...failed, ...skipped].map((r) => `${r.volumeName}: ${r.error}`).join("; ")}`);
       } else if (!hasFailures && job.notifyOnSuccess) {
-        log.info(`${job.name} succeeded (${results.reduce((s, r) => s + r.sizeBytes, 0)} bytes)`);
+        log.info(`${job.name} succeeded (${results.reduce((s, r) => s + r.sizeBytes, 0)} bytes)${skippedNote}`);
       }
     }
   } catch (err) {

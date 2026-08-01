@@ -53,6 +53,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           with: {
             app: {
               columns: { id: true, name: true, displayName: true },
+              // Volume sources, so the UI can flag data the engine can't capture.
+              with: {
+                volumes: {
+                  columns: { name: true, type: true, source: true, backupStrategy: true },
+                },
+              },
             },
           },
         },

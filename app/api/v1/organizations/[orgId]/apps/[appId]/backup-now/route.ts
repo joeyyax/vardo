@@ -127,9 +127,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     const job = await db.query.backupJobs.findFirst({
       where: eq(backupJobs.id, jobId),
       columns: { id: true, name: true },
-      with: {
-        backupJobApps: { columns: { appId: true } },
-      },
     });
 
     if (!job) {
@@ -158,8 +155,9 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     const startedAt = new Date();
 
     // Not awaited: a volume backup runs tar, gzip and an upload that can take
-    // many minutes. The client polls the backup history instead.
-    void runBackup(job.id).catch((err) => {
+    // many minutes. The client polls the backup history instead. Scoped to this
+    // app — a shared job also covers sibling apps nobody asked to back up.
+    void runBackup(job.id, { appIds: [app.id] }).catch((err) => {
       log.error(`Manual backup failed for app ${app.name} (job ${job.id}):`, err);
     });
 
@@ -170,8 +168,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         jobName: job.name,
         createdJob,
         startedAt: startedAt.toISOString(),
-        // A pre-existing job may cover sibling apps, which this run also backs up.
-        appIds: job.backupJobApps.map((bja) => bja.appId),
+        appIds: [app.id],
         assessment,
         warnings: assessment.needsManualCopy
           ? [

@@ -108,6 +108,8 @@ export const backupStatusEnum = pgEnum("backup_status", [
   "running",
   "success",
   "failed",
+  // Source the engine cannot capture, e.g. a bind mount. Not a failure.
+  "skipped",
   "pruned",
 ]);
 
