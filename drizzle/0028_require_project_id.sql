@@ -34,5 +34,5 @@ WHERE "project_id" IS NULL;--> statement-breakpoint
 ALTER TABLE "app" ALTER COLUMN "project_id" SET NOT NULL;--> statement-breakpoint
 
 -- Step 4: Replace FK — SET NULL -> RESTRICT
-ALTER TABLE "app" DROP CONSTRAINT "app_project_id_project_id_fk";--> statement-breakpoint
+ALTER TABLE "app" DROP CONSTRAINT IF EXISTS "app_project_id_project_id_fk";--> statement-breakpoint
 ALTER TABLE "app" ADD CONSTRAINT "app_project_id_project_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."project"("id") ON DELETE restrict ON UPDATE no action;
