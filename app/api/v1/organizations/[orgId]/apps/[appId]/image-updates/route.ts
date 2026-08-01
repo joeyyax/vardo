@@ -7,12 +7,20 @@ import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { recordActivity } from "@/lib/activity";
-import { planMigration } from "@/lib/docker/image-updates/migration-path";
+import { majorOf, planMigration } from "@/lib/docker/image-updates/migration-path";
+import { isMajorLocked } from "@/lib/docker/image-updates/stateful-image";
 import { setImageRefTag, setServiceImageTag } from "@/lib/docker/image-updates/apply";
 import { getAppUpdateStatus } from "@/lib/docker/image-updates/status";
 import { resolveUpdatableApp } from "@/lib/docker/image-updates/resolve-app";
 
 type RouteParams = { params: Promise<{ orgId: string; appId: string }> };
+
+/** True when `to` lands on a higher major than `from`. */
+function isMajorJump(from: string, to: string): boolean {
+  const a = majorOf(from);
+  const b = majorOf(to);
+  return a !== null && b !== null && b > a;
+}
 
 const applySchema = z
   .object({
@@ -85,7 +93,12 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 
     // A major bump on a major-locked image cannot start against the existing
     // data directory. Require the caller to say so explicitly.
-    if (target.majorLocked && tag === target.majorAvailable && !parsed.data.acknowledgeMigration) {
+    //
+    // Recomputed from the image rather than read off the cached row: a row
+    // written before this guard existed carries majorLocked = false, and
+    // trusting it would wave through the exact update this prevents.
+    const crossesMajor = isMajorLocked(target.image) && isMajorJump(target.currentTag, tag);
+    if (crossesMajor && !parsed.data.acknowledgeMigration) {
       const plan = planMigration(target.image, target.currentTag, tag);
       return NextResponse.json(
         {
