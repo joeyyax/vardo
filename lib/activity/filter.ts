@@ -1,15 +1,16 @@
 // ---------------------------------------------------------------------------
 // Activity view — filters and the away window
 //
-// Filter state lives in the URL so a view can be linked. `since` is the deep
-// link "while you were away" uses to answer what happened during an absence.
+// Parses and serializes filter state, which lives in the URL so a view can be
+// linked. Narrowing itself happens in SQL — see lib/activity/query.ts. `since`
+// is the deep link "while you were away" uses to answer what happened during
+// an absence.
 // ---------------------------------------------------------------------------
 
 import type {
   ActivityFamily,
   ActivityFilters,
   ActivityOutcome,
-  ClassifiedActivity,
 } from "./types";
 import { isFamily, isOutcome } from "./taxonomy";
 
@@ -122,42 +123,6 @@ export function hasActiveFilters(filters: ActivityFilters): boolean {
     filters.outcomes.length > 0 ||
     filters.since !== null
   );
-}
-
-/** An empty family or outcome list means no restriction, not "match nothing". */
-export function applyFilters(
-  items: ClassifiedActivity[],
-  filters: ActivityFilters,
-): ClassifiedActivity[] {
-  return items.filter((item) => {
-    if (filters.families.length && !filters.families.includes(item.family)) {
-      return false;
-    }
-    if (filters.outcomes.length && !filters.outcomes.includes(item.outcome)) {
-      return false;
-    }
-    if (filters.since && item.at < filters.since) return false;
-    return true;
-  });
-}
-
-/** Families actually present, so the UI never offers a filter that finds nothing. */
-export function familiesPresent(
-  items: ClassifiedActivity[],
-): ActivityFamily[] {
-  return unique(items.map((item) => item.family));
-}
-
-export function countsByOutcome(
-  items: ClassifiedActivity[],
-): Record<ActivityOutcome, number> {
-  const counts: Record<ActivityOutcome, number> = {
-    success: 0,
-    failure: 0,
-    neutral: 0,
-  };
-  for (const item of items) counts[item.outcome] += 1;
-  return counts;
 }
 
 /** Rounded duration of an away window, for the header. */
