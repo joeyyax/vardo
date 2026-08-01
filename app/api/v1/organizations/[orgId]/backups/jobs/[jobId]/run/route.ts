@@ -38,10 +38,13 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
     // Run the backup (this will create history records)
     const results = await runBackup(jobId);
 
-    const allSucceeded = results.every((r) => r.success);
+    // Skipped sources captured nothing, so they can't count towards success.
+    const succeeded = results.filter((r) => r.outcome === "success");
+    const allSucceeded = succeeded.length === results.length && results.length > 0;
 
     return NextResponse.json({
       success: allSucceeded,
+      skipped: results.filter((r) => r.outcome === "skipped").length,
       results,
     });
   } catch (error) {

@@ -1,7 +1,15 @@
+export type AppVolume = {
+  name: string;
+  type: "named" | "bind";
+  source: string | null;
+  backupStrategy: string;
+};
+
 export type App = {
   id: string;
   name: string;
   displayName: string;
+  volumes?: AppVolume[];
 };
 
 export type BackupTarget = {
