@@ -1,3 +1,4 @@
+import type { AppCondition } from "@/lib/docker/conditions";
 import type { FeatureFlags } from "@/lib/config/features";
 
 export type Deployment = {
@@ -100,6 +101,7 @@ export type ChildApp = {
 
 export type App = {
   id: string;
+  conditions: AppCondition[] | null;
   name: string;
   displayName: string;
   description: string | null;
