@@ -111,25 +111,28 @@ export function BackupHistory({
               </td>
               <td className="px-4 py-3 text-right">
                 <span className="flex justify-end gap-1">
-                  <Button
-                    size="icon-xs"
-                    variant="ghost"
-                    aria-label="Restore backup"
-                    disabled={restoringBackups.has(backup.id)}
-                    onClick={() => restoreBackup(backup.id)}
-                  >
-                    {restoringBackups.has(backup.id) ? (
-                      <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-                    ) : (
-                      <RotateCcw className="size-3.5" aria-hidden="true" />
-                    )}
-                  </Button>
+                  {/* Skipped and failed runs have no archive to act on. */}
                   {backup.storagePath && (
-                    <Button size="icon-xs" variant="ghost" aria-label="Download backup" asChild>
-                      <a href={`/api/v1/organizations/${orgId}/backups/history/${backup.id}/download`}>
-                        <Download className="size-3.5" aria-hidden="true" />
-                      </a>
-                    </Button>
+                    <>
+                      <Button
+                        size="icon-xs"
+                        variant="ghost"
+                        aria-label="Restore backup"
+                        disabled={restoringBackups.has(backup.id)}
+                        onClick={() => restoreBackup(backup.id)}
+                      >
+                        {restoringBackups.has(backup.id) ? (
+                          <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                        ) : (
+                          <RotateCcw className="size-3.5" aria-hidden="true" />
+                        )}
+                      </Button>
+                      <Button size="icon-xs" variant="ghost" aria-label="Download backup" asChild>
+                        <a href={`/api/v1/organizations/${orgId}/backups/history/${backup.id}/download`}>
+                          <Download className="size-3.5" aria-hidden="true" />
+                        </a>
+                      </Button>
+                    </>
                   )}
                 </span>
               </td>
