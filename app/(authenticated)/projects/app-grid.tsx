@@ -8,6 +8,10 @@ import { Plus, Cpu, ShieldCheck, Trash2, AlertTriangle, ChevronDown, Package } f
 import { EndpointsPopover } from "@/components/endpoints-popover";
 import { detectAppType } from "@/lib/ui/app-type";
 import { statusDotColor } from "@/lib/ui/status-colors";
+import { conditionLabel, conditionTone, countNeedingAttention } from "@/lib/ui/conditions";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { AppRowCard } from "@/components/app-row-card";
+import { worstCondition, type AppCondition } from "@/lib/docker/conditions";
 import { StatusIndicator } from "@/components/app-status";
 import { SystemBadge } from "@/components/system-badge";
 import { UpdatesBanner, useImageUpdates } from "./updates-banner";
@@ -38,6 +42,7 @@ type AppWithRelations = {
   containerStartedAt: Date | null;
   containerMemoryLimit: number | null;
   needsRedeploy: boolean | null;
+  conditions: AppCondition[] | null;
   createdAt: Date;
   updatedAt: Date;
   domains: { domain: string; isPrimary: boolean | null }[];
@@ -125,6 +130,8 @@ function ProjectCard({
   const anyMissing = projectApps.some((a) => a.status === "missing");
   const anyDeploying = projectApps.some((a) => a.status === "deploying");
   const idleStatus = anyMissing ? "missing" : anyDeploying ? "deploying" : "stopped";
+  const attention = countNeedingAttention(projectApps);
+  const attentionCount = attention.critical + attention.warning;
 
   // Per-metric history summed across apps
   const aggregatedHistory = useMemo(() => {
@@ -246,29 +253,43 @@ function ProjectCard({
                 <EndpointsPopover endpoints={projectApps.flatMap((a) => a.domains.map((d) => ({ label: a.displayName, domain: d.domain })))} />
               </span>
             </div>
+            {/* Reach and health are separate facts — an app can be running and
+                crash-looping, and hiding either behind the other is what made
+                this header read as less informative than the list below it. */}
             {projectApps.length === 0 ? (
               <span className="text-xs text-muted-foreground">Empty</span>
-            ) : errorCount > 0 ? (
-              <span className="flex items-center gap-1.5 text-sm text-status-error shrink-0">
-                <span aria-hidden="true" className="size-2 rounded-full bg-status-error" />
-                {errorCount} crashed
-              </span>
-            ) : partial ? (
-              <span className="flex items-center gap-1.5 text-sm text-status-warning shrink-0">
-                <span aria-hidden="true" className="size-2 rounded-full bg-status-warning" />
-                {activeCount}/{projectApps.length} running
-              </span>
-            ) : allActive ? (
-              projectApps.some((a) => !!a.needsRedeploy) ? (
-                <StatusIndicator status="running" needsRedeploy />
-              ) : (
-                <span className="flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
-                  <span aria-hidden="true" className="size-1.5 rounded-full bg-status-success" />
-                  {projectApps.length} up
-                </span>
-              )
             ) : (
-              <StatusIndicator status={idleStatus} />
+              <span className="flex shrink-0 items-center gap-2 text-sm">
+                {errorCount > 0 ? (
+                  <span className="flex items-center gap-1.5 text-status-error">
+                    <span aria-hidden="true" className="size-2 rounded-full bg-status-error" />
+                    {errorCount} crashed
+                  </span>
+                ) : partial ? (
+                  <span className="flex items-center gap-1.5 text-status-warning">
+                    <span aria-hidden="true" className="size-2 rounded-full bg-status-warning" />
+                    {activeCount}/{projectApps.length} running
+                  </span>
+                ) : allActive ? (
+                  projectApps.some((a) => !!a.needsRedeploy) ? (
+                    <StatusIndicator status="running" needsRedeploy />
+                  ) : (
+                    <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <span aria-hidden="true" className="size-1.5 rounded-full bg-status-success" />
+                      {projectApps.length} up
+                    </span>
+                  )
+                ) : (
+                  <StatusIndicator status={idleStatus} />
+                )}
+                {attentionCount > 0 && (
+                  <span
+                    className={`flex items-center gap-1.5 ${attention.critical > 0 ? "text-status-error" : "text-status-warning"}`}
+                  >
+                    {attentionCount} need{attentionCount === 1 ? "s" : ""} attention
+                  </span>
+                )}
+              </span>
             )}
           </div>
           {/* What changed — deploy recency and pending updates */}
@@ -309,8 +330,9 @@ function ProjectCard({
                   x.displayName.localeCompare(y.displayName),
               )
               .map((a) => (
+                <Tooltip key={a.id}>
+                <TooltipTrigger asChild>
                 <Link
-                  key={a.id}
                   href={`/apps/${a.name}`}
                   className="relative z-10 flex min-w-0 items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors cursor-pointer hover:bg-card"
                 >
@@ -321,6 +343,18 @@ function ProjectCard({
                       {STATUS_WORD[a.status]}
                     </span>
                   )}
+                  {(() => {
+                    const worst = worstCondition(a.conditions ?? []);
+                    if (!worst) return null;
+                    return (
+                      <span
+                        className={`shrink-0 font-normal ${conditionTone(worst.severity)}`}
+                        title={worst.detail}
+                      >
+                        {conditionLabel(worst)}
+                      </span>
+                    );
+                  })()}
                   {a.status === "active" && <span className="sr-only">, Running</span>}
                   <span className="ml-auto flex shrink-0 items-center gap-1.5">
                     {(updatesByApp.get(a.id) ?? 0) > 0 && (
@@ -337,6 +371,16 @@ function ProjectCard({
                     )}
                   </span>
                 </Link>
+                </TooltipTrigger>
+                <TooltipContent
+                  side="right"
+                  align="start"
+                  sideOffset={6}
+                  className="bg-popover text-popover-foreground border shadow-card-hover px-3 py-2.5 [&>span]:hidden"
+                >
+                  <AppRowCard app={a} updateCount={updatesByApp.get(a.id) ?? 0} />
+                </TooltipContent>
+                </Tooltip>
               ))}
           </div>
         )}
