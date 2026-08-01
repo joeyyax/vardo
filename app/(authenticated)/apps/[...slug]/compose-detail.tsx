@@ -41,7 +41,7 @@ import { useDeploy } from "./hooks/use-deploy";
 import { AppUpdatesPanel, useImageUpdates } from "./app-updates";
 import { pendingImageChange, type PendingImage } from "@/lib/docker/image-updates/pending";
 import { AppHeader } from "./app-header";
-import { AppSectionNav, type SectionGroup } from "./app-section-nav";
+import { SectionNav, type SectionGroup } from "@/components/section-nav";
 import { isOrgAdmin } from "@/lib/auth/permissions";
 import type { App, ChildApp, Tag } from "./types";
 import type { FeatureFlags } from "@/lib/config/features";
@@ -751,7 +751,7 @@ export function ComposeDetail({
       >
         <aside className="lg:w-48 lg:shrink-0">
           <div className="lg:sticky lg:top-24">
-            <AppSectionNav
+            <SectionNav
               groups={[
                 {
                   items: [
