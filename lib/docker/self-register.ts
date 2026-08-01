@@ -156,7 +156,6 @@ export async function ensureVardoProject(): Promise<void> {
         isSystemManaged: true,
         deployType: "compose",
         composeContent,
-        status: "active",
       })
       .onConflictDoUpdate({
         target: [apps.organizationId, apps.name],
@@ -166,7 +165,6 @@ export async function ensureVardoProject(): Promise<void> {
           gitBranch: gitBranch ?? "main",
           isSystemManaged: true,
           composeContent,
-          status: "active",
           updatedAt: new Date(),
         },
       })
@@ -189,7 +187,6 @@ export async function ensureVardoProject(): Promise<void> {
           deployType: "compose",
           parentAppId: parentApp.id,
           composeService: service,
-          status: "active",
         })
         .onConflictDoUpdate({
           target: [apps.organizationId, apps.name],
@@ -198,15 +195,14 @@ export async function ensureVardoProject(): Promise<void> {
             parentAppId: parentApp.id,
             composeService: service,
             isSystemManaged: true,
-            status: "active",
             updatedAt: new Date(),
           },
         });
     }
 
-    // If the parent app has no successful deployments but its container is
-    // running (started by docker compose, not by the deploy engine), create
-    // a synthetic deployment record so the UI shows the correct status.
+    // Vardo's own stack is started by docker compose, not the deploy engine, so
+    // it has no deployment history. Seed one record so rollback and history
+    // views have an anchor. Status stays with the reconciler.
     const existingDeploy = await tx.query.deployments.findFirst({
       where: and(
         eq(deployments.appId, parentApp.id),
@@ -225,13 +221,8 @@ export async function ensureVardoProject(): Promise<void> {
         startedAt: now,
         finishedAt: now,
         durationMs: 0,
-        log: "[self-register] Container running via docker compose — registered as managed app",
+        log: "[self-register] Started via docker compose — registered as managed app",
       });
-      // Mark the app as active so the UI shows the correct status
-      await tx
-        .update(apps)
-        .set({ status: "active", updatedAt: now })
-        .where(eq(apps.id, parentApp.id));
     }
   });
 }

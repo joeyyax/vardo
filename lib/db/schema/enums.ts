@@ -20,6 +20,8 @@ export const appStatusEnum = pgEnum("app_status", [
   "stopped",
   "error",
   "deploying",
+  // Registered in Vardo but no container exists on the host.
+  "missing",
 ]);
 
 export const deploymentStatusEnum = pgEnum("deployment_status", [

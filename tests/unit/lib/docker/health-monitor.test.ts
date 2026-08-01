@@ -1,7 +1,9 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import {
   decideRestart,
   effectiveAutoRestart,
+  isCrashLooping,
+  getCrashLoopThreshold,
   CONFIRM_STREAK,
   RESTART_BACKOFF_MS,
   RESTART_WINDOW_MS,
@@ -59,5 +61,42 @@ describe("effectiveAutoRestart", () => {
   it("explicit setting overrides the priority default", () => {
     expect(effectiveAutoRestart({ autoRestartUnhealthy: false, priority: "critical" })).toBe(false);
     expect(effectiveAutoRestart({ autoRestartUnhealthy: true, priority: "standard" })).toBe(true);
+  });
+});
+
+describe("isCrashLooping", () => {
+  it("fires once restarts pass the threshold without ever reaching healthy", () => {
+    expect(isCrashLooping({ restartsSinceBaseline: 5, everHealthy: false, threshold: 5 })).toBe(true);
+  });
+
+  it("stays quiet below the threshold", () => {
+    expect(isCrashLooping({ restartsSinceBaseline: 4, everHealthy: false, threshold: 5 })).toBe(false);
+  });
+
+  it("never fires for a container that has been healthy", () => {
+    expect(isCrashLooping({ restartsSinceBaseline: 50, everHealthy: true, threshold: 5 })).toBe(false);
+  });
+});
+
+describe("getCrashLoopThreshold", () => {
+  const original = process.env.VARDO_CRASH_LOOP_RESTARTS;
+  afterEach(() => {
+    if (original === undefined) delete process.env.VARDO_CRASH_LOOP_RESTARTS;
+    else process.env.VARDO_CRASH_LOOP_RESTARTS = original;
+  });
+
+  it("defaults to 5", () => {
+    delete process.env.VARDO_CRASH_LOOP_RESTARTS;
+    expect(getCrashLoopThreshold()).toBe(5);
+  });
+
+  it("reads the env override", () => {
+    process.env.VARDO_CRASH_LOOP_RESTARTS = "12";
+    expect(getCrashLoopThreshold()).toBe(12);
+  });
+
+  it("floors at 2 so a single restart can never trip it", () => {
+    process.env.VARDO_CRASH_LOOP_RESTARTS = "1";
+    expect(getCrashLoopThreshold()).toBe(2);
   });
 });

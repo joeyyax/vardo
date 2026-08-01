@@ -11,8 +11,8 @@ import type {
   Ulimits,
 } from "./compose-types";
 import {
-  ALLOWED_NETWORK_MODES,
   ALLOWED_RUNTIMES,
+  isSpecialNetworkMode,
 } from "./compose-validate";
 
 /**
@@ -127,8 +127,12 @@ export function parseCompose(yamlString: string): ComposeFile {
     }
     if (raw.network_mode && typeof raw.network_mode === "string") {
       const nm = raw.network_mode;
-      if (ALLOWED_NETWORK_MODES.some((p) => nm === p || nm.startsWith(p + ":"))) {
+      if (isSpecialNetworkMode(nm)) {
         svc.network_mode = nm;
+      } else {
+        // A network name here is ignored by Docker and the service lands on the
+        // project's default network. Treat it as membership instead of dropping it.
+        svc.networks = [...new Set([...(svc.networks ?? []), nm])];
       }
     }
     if (raw.runtime && typeof raw.runtime === "string" && ALLOWED_RUNTIMES.includes(raw.runtime)) {

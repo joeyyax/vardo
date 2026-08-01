@@ -31,6 +31,8 @@ export {
   ALLOWED_NETWORK_MODES,
   ALLOWED_RUNTIMES,
   isAnonymousVolume,
+  isSpecialNetworkMode,
+  findNamedNetworkModes,
   validateCompose,
   sanitizeCompose,
 } from "./compose-validate";
@@ -53,6 +55,7 @@ export {
   stripVardoInjections,
   excludeServices,
   buildVardoOverlay,
+  defaultMemoryLimitMb,
   injectNetwork,
   getTraefikRoutedServices,
   injectResourceLimits,
