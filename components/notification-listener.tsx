@@ -50,7 +50,10 @@ function showToast(event: BusEvent): void {
  * Renders nothing visible — side-effect-only component.
  */
 export function NotificationListener({ orgId }: { orgId: string }) {
-  const onEvent = useCallback((event: BusEvent) => {
+  const onEvent = useCallback((event: BusEvent & { historical?: boolean }) => {
+    // Catch-up events already happened — they belong in the panel, not as a
+    // burst of toasts on sign-in.
+    if (event.historical) return;
     showToast(event);
   }, []);
 
