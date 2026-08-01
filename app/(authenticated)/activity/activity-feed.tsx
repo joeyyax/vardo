@@ -1,282 +1,216 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { getInitials } from "@/lib/utils";
-
-type ActivityUser = {
-  id: string;
-  name: string | null;
-  email: string;
-  image: string | null;
-};
-
-type ActivityApp = {
-  id: string;
-  name: string;
-  displayName: string;
-};
-
-type Activity = {
-  id: string;
-  action: string;
-  metadata: unknown;
-  createdAt: Date | string;
-  user: ActivityUser | null;
-  app: ActivityApp | null;
-};
+import { PageToolbar } from "@/components/page-toolbar";
+import { toast } from "@/lib/messenger";
+import { classifyAll } from "@/lib/activity/taxonomy";
+import {
+  applyFilters,
+  countsByOutcome,
+  describeWindow,
+  familiesPresent,
+  filtersToQuery,
+  hasActiveFilters,
+} from "@/lib/activity/filter";
+import { groupActivities } from "@/lib/activity/group";
+import type {
+  ActivityFilters,
+  ActivityGroup,
+  ActivityRow as ActivityRowData,
+} from "@/lib/activity/types";
+import { ActivityFilterBar } from "./activity-filters";
+import { ActivityRow } from "./activity-row";
 
 type ActivityFeedProps = {
-  activities: Activity[];
+  rows: ActivityRowData[];
   orgId: string;
+  filters: ActivityFilters;
+  /** True when the server returned fewer rows than it asked for. */
+  loadedAll: boolean;
 };
 
-function formatRelativeTime(date: Date | string): string {
-  const now = new Date();
-  const then = new Date(date);
-  const diffMs = now.getTime() - then.getTime();
-  const diffSeconds = Math.floor(diffMs / 1000);
-  const diffMinutes = Math.floor(diffSeconds / 60);
-  const diffHours = Math.floor(diffMinutes / 60);
-  const diffDays = Math.floor(diffHours / 24);
+const PAGE_SIZE = 50;
 
-  if (diffSeconds < 60) return "just now";
-  if (diffMinutes === 1) return "1 minute ago";
-  if (diffMinutes < 60) return `${diffMinutes} minutes ago`;
-  if (diffHours === 1) return "1 hour ago";
-  if (diffHours < 24) return `${diffHours} hours ago`;
-  if (diffDays === 1) return "yesterday";
-  if (diffDays < 7) return `${diffDays} days ago`;
-
-  return then.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: then.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
-  });
-}
-
-function getDateGroup(date: Date | string): string {
-  const now = new Date();
-  const then = new Date(date);
-
+function dayLabel(date: Date, now: Date): string {
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const yesterdayStart = new Date(todayStart.getTime() - 86400000);
 
-  if (then >= todayStart) return "Today";
-  if (then >= yesterdayStart) return "Yesterday";
+  if (date >= todayStart) return "Today";
+  if (date >= yesterdayStart) return "Yesterday";
 
-  return then.toLocaleDateString("en-US", {
+  return date.toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",
     day: "numeric",
-    year: then.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
+    year: date.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
   });
 }
 
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  const seconds = Math.round(ms / 1000);
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
-  return `${minutes}m ${remainingSeconds}s`;
-}
-
-function meta(metadata: unknown): Record<string, unknown> {
-  if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
-    return metadata as Record<string, unknown>;
+function byDay(groups: ActivityGroup[], now: Date) {
+  const days: { label: string; items: ActivityGroup[] }[] = [];
+  for (const group of groups) {
+    const label = dayLabel(group.lastAt, now);
+    const last = days[days.length - 1];
+    if (last && last.label === label) last.items.push(group);
+    else days.push({ label, items: [group] });
   }
-  return {};
+  return days;
 }
 
-function ActionDescription({
-  activity,
+/** States the window a `since` link opened, and offers a way out of it. */
+function WindowHeader({
+  since,
+  filters,
+  matched,
 }: {
-  activity: Activity;
+  since: Date;
+  filters: ActivityFilters;
+  matched: number;
 }) {
-  const { action, app } = activity;
-  const metadata = meta(activity.metadata);
+  const pathname = usePathname();
+  const withoutWindow = filtersToQuery({ ...filters, since: null });
 
-  const appLink = app ? (
-    <Link
-      href={`/apps/${app.name}`}
-      className="font-semibold hover:underline"
-    >
-      {app.displayName}
-    </Link>
-  ) : null;
-
-  switch (action) {
-    case "project.created":
-      return (
-        <span>
-          created {appLink ?? <span className="font-semibold">{(metadata?.displayName as string) || (metadata?.name as string) || "an app"}</span>}
-        </span>
-      );
-
-    case "project.updated": {
-      const changes = metadata?.changes as string[] | undefined;
-      return (
-        <span>
-          updated {appLink ?? "an app"}
-          {changes && changes.length > 0 && (
-            <span className="text-muted-foreground">
-              {" "}({changes.join(", ")})
-            </span>
-          )}
-        </span>
-      );
-    }
-
-    case "project.deleted": {
-      const name = (metadata?.name as string) || "an app";
-      return (
-        <span>
-          deleted project <span className="font-semibold">{name}</span>
-        </span>
-      );
-    }
-
-    case "deployment.started":
-      return (
-        <span>
-          started deploy of {appLink ?? "an app"}
-        </span>
-      );
-
-    case "deployment.succeeded": {
-      const durationMs = metadata?.durationMs as number | undefined;
-      return (
-        <span>
-          deployed {appLink ?? "an app"} successfully
-          {durationMs && (
-            <span className="text-muted-foreground">
-              {" "}in {formatDuration(durationMs)}
-            </span>
-          )}
-        </span>
-      );
-    }
-
-    case "deployment.failed":
-      return (
-        <span>
-          deploy of {appLink ?? "an app"} failed
-        </span>
-      );
-
-    default:
-      return (
-        <span>
-          {action}
-          {appLink && <> on {appLink}</>}
-        </span>
-      );
-  }
+  return (
+    <div className="squircle rounded-lg border border-border bg-muted/40 px-4 py-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <h2 className="text-sm font-medium">
+          While you were away
+          <span className="ml-2 font-normal text-muted-foreground">
+            the last {describeWindow(since)}
+          </span>
+        </h2>
+        <Link
+          href={withoutWindow ? `${pathname}?${withoutWindow}` : pathname}
+          scroll={false}
+          className="text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
+        >
+          Show all activity
+        </Link>
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">
+        {matched === 0
+          ? "Nothing happened in this window."
+          : `${matched} event${matched === 1 ? "" : "s"} since ${since.toLocaleString()}.`}
+      </p>
+    </div>
+  );
 }
 
-export function ActivityFeed({ activities: initialActivities, orgId }: ActivityFeedProps) {
-  const [activities, setActivities] = useState<Activity[]>(initialActivities);
+export function ActivityFeed({
+  rows: initialRows,
+  orgId,
+  filters,
+  loadedAll,
+}: ActivityFeedProps) {
+  const [rows, setRows] = useState(initialRows);
   const [loading, setLoading] = useState(false);
-  const [hasMore, setHasMore] = useState(initialActivities.length === 50);
+  const [exhausted, setExhausted] = useState(loadedAll);
+
+  // Day boundaries depend on the reader's timezone, so grouping happens here
+  // rather than on the server.
+  const now = useMemo(() => new Date(), []);
+
+  const classified = useMemo(() => classifyAll(rows), [rows]);
+  const visible = useMemo(
+    () => applyFilters(classified, filters),
+    [classified, filters]
+  );
+  const groups = useMemo(() => groupActivities(visible), [visible]);
+  const days = useMemo(() => byDay(groups, now), [groups, now]);
+
+  const available = useMemo(() => familiesPresent(classified), [classified]);
+  const counts = useMemo(() => countsByOutcome(classified), [classified]);
 
   const loadMore = useCallback(async () => {
     setLoading(true);
     try {
+      const params = new URLSearchParams({
+        offset: String(rows.length),
+        limit: String(PAGE_SIZE),
+      });
+      if (filters.since) params.set("since", filters.since.toISOString());
+
       const res = await fetch(
-        `/api/v1/organizations/${orgId}/activities?offset=${activities.length}&limit=50`
+        `/api/v1/organizations/${orgId}/activities?${params}`
       );
-      if (!res.ok) return;
+      if (!res.ok) {
+        toast.error("Could not load more activity");
+        return;
+      }
       const data = await res.json();
-      setActivities((prev) => [...prev, ...data.activities]);
-      setHasMore(data.pagination.hasMore);
+      setRows((prev) => [...prev, ...data.activities]);
+      if (!data.pagination.hasMore) setExhausted(true);
+    } catch {
+      toast.error("Could not load more activity");
     } finally {
       setLoading(false);
     }
-  }, [orgId, activities.length]);
+  }, [orgId, rows.length, filters.since]);
 
-  if (activities.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
-        <div className="text-center space-y-1">
-          <p className="text-sm font-medium">No activity yet</p>
-          <p className="text-sm text-muted-foreground">
-            Deployments, configuration changes, and team actions will appear here as they happen.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  // Group activities by date
-  const grouped: { label: string; items: Activity[] }[] = [];
-  for (const activity of activities) {
-    const label = getDateGroup(activity.createdAt);
-    const last = grouped[grouped.length - 1];
-    if (last && last.label === label) {
-      last.items.push(activity);
-    } else {
-      grouped.push({ label, items: [activity] });
-    }
-  }
+  const filtered = hasActiveFilters({ ...filters, since: null });
 
   return (
-    <div className="space-y-8">
-      {grouped.map((group) => (
-        <div key={group.label}>
-          <h2 className="mb-4 text-sm font-medium text-muted-foreground">
-            {group.label}
-          </h2>
-          <div className="space-y-1">
-            {group.items.map((activity) => (
-              <div
-                key={activity.id}
-                className="flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-muted/50"
-              >
-                <Avatar size="sm" className="mt-0.5">
-                  {activity.user?.image && (
-                    <AvatarImage
-                      src={activity.user.image}
-                      alt={activity.user.name || activity.user.email}
-                    />
-                  )}
-                  <AvatarFallback>
-                    {activity.user
-                      ? getInitials(activity.user.name, activity.user.email)
-                      : "?"}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm leading-relaxed">
-                    <span className="font-medium">
-                      {activity.user?.name || activity.user?.email || "System"}
-                    </span>{" "}
-                    <ActionDescription activity={activity} />
-                  </p>
-                </div>
-                <time
-                  className="shrink-0 text-xs text-muted-foreground"
-                  dateTime={new Date(activity.createdAt).toISOString()}
-                  title={new Date(activity.createdAt).toLocaleString()}
-                >
-                  {formatRelativeTime(activity.createdAt)}
-                </time>
-              </div>
-            ))}
+    <div className="space-y-6">
+      <PageToolbar>
+        <h1 className="type-h1">Activity</h1>
+      </PageToolbar>
+
+      <ActivityFilterBar
+        filters={filters}
+        available={available}
+        counts={counts}
+      />
+
+      {filters.since && (
+        <WindowHeader
+          since={filters.since}
+          filters={filters}
+          matched={visible.length}
+        />
+      )}
+
+      {groups.length === 0 ? (
+        <div className="squircle flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
+          <div className="space-y-1 text-center">
+            <p className="text-sm font-medium">
+              {filtered || filters.since
+                ? "Nothing matches this view"
+                : "No activity yet"}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {filtered || filters.since
+                ? "Try widening the filters or the time window."
+                : "Deployments, configuration changes, and team actions will appear here as they happen."}
+            </p>
           </div>
         </div>
-      ))}
+      ) : (
+        <div className="space-y-8">
+          {days.map((day) => (
+            <section key={day.label}>
+              <h2 className="mb-3 text-sm font-medium text-muted-foreground">
+                {day.label}
+              </h2>
+              <div className="space-y-1">
+                {day.items.map((group) => (
+                  <ActivityRow key={group.id} group={group} />
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
 
-      {hasMore && (
+      {!exhausted && (
         <div className="flex justify-center pt-2">
           <Button
             variant="outline"
             size="sm"
             onClick={loadMore}
             disabled={loading}
-            className="squircle"
           >
             {loading ? "Loading..." : "Load more"}
           </Button>
