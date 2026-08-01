@@ -12,7 +12,7 @@ import type {
 } from "./compose-types";
 import {
   ALLOWED_RUNTIMES,
-  isSpecialNetworkMode,
+  normalizeNamedNetworkModes,
 } from "./compose-validate";
 
 /**
@@ -127,14 +127,7 @@ export function parseCompose(yamlString: string): ComposeFile {
       }
     }
     if (raw.network_mode && typeof raw.network_mode === "string") {
-      const nm = raw.network_mode;
-      if (isSpecialNetworkMode(nm)) {
-        svc.network_mode = nm;
-      } else {
-        // A network name here is ignored by Docker and the service lands on the
-        // project's default network. Treat it as membership instead of dropping it.
-        svc.networks = [...new Set([...(svc.networks ?? []), nm])];
-      }
+      svc.network_mode = raw.network_mode;
     }
     if (raw.runtime && typeof raw.runtime === "string" && ALLOWED_RUNTIMES.includes(raw.runtime)) {
       svc.runtime = raw.runtime;
@@ -192,5 +185,8 @@ export function parseCompose(yamlString: string): ComposeFile {
     result.volumes = root.volumes as Record<string, unknown>;
   }
 
-  return result;
+  // Docker accepts network_mode with a network name and ignores it, so the
+  // service silently lands on the project's default network. Correct it here
+  // and every consumer — deploy, preview, analyze, import — sees the fix.
+  return normalizeNamedNetworkModes(result);
 }

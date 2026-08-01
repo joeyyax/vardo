@@ -4,7 +4,7 @@
 
 import { resolve } from "path";
 import YAML from "yaml";
-import type { ComposeFile, ValidateOptions } from "./compose-types";
+import type { ComposeFile, ComposeService, ValidateOptions } from "./compose-types";
 
 // ---------------------------------------------------------------------------
 // Constants (exported for use by compose-parse)
@@ -51,6 +51,39 @@ export function findNamedNetworkModes(
     found.push({ service: name, networkMode: nm });
   }
   return found;
+}
+
+/**
+ * Rewrite `network_mode: <network name>` as membership of that network, and
+ * declare the network external so Compose attaches to the existing one rather
+ * than creating a project-prefixed copy.
+ *
+ * Special modes (host, none, bridge, container:, service:) are namespaces and
+ * are left alone. Returns the input unchanged when there is nothing to move.
+ */
+export function normalizeNamedNetworkModes(compose: ComposeFile): ComposeFile {
+  const services: Record<string, ComposeService> = {};
+  const moved = new Set<string>();
+
+  for (const [name, svc] of Object.entries(compose.services)) {
+    const nm = svc.network_mode;
+    if (!nm || isSpecialNetworkMode(nm)) {
+      services[name] = svc;
+      continue;
+    }
+    const { network_mode: _mode, ...rest } = svc;
+    services[name] = { ...rest, networks: [...new Set([...(svc.networks ?? []), nm])] };
+    moved.add(nm);
+  }
+
+  if (moved.size === 0) return compose;
+
+  const networks = { ...(compose.networks ?? {}) } as Record<string, unknown>;
+  for (const net of moved) {
+    if (!(net in networks)) networks[net] = { external: true };
+  }
+
+  return { ...compose, services, networks };
 }
 
 // ---------------------------------------------------------------------------
