@@ -420,7 +420,9 @@ export function EnvEditor(props: EnvEditorProps) {
           value={content}
           onChange={handleChange}
           extensions={extensions}
-          placeholder="# Environment variables&#10;DATABASE_URL=postgres://localhost:5432/mydb&#10;REDIS_URL=redis://localhost:6379"
+          // One line — the multi-line placeholder collapsed into a single
+          // string that ran off the edge of the editor.
+          placeholder="DATABASE_URL=postgres://localhost:5432/mydb"
           basicSetup={{
             lineNumbers: false,
             foldGutter: false,
