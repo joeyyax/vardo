@@ -561,7 +561,7 @@ export function ComposeDetail({
           )}
         </TabsContent>
 
-        <TabsContent value="deployments">
+        <TabsContent value="deployments" className="pt-4">
           <AppDeployPanel
             orgId={orgId}
             appId={app.id}

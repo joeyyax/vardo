@@ -3,7 +3,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Plus, Cpu, ShieldCheck, Trash2, AlertTriangle } from "lucide-react";
+import { Plus, Cpu, ShieldCheck, Trash2, AlertTriangle, ChevronDown } from "lucide-react";
 import { EndpointsPopover } from "@/components/endpoints-popover";
 import { detectAppType } from "@/lib/ui/app-type";
 import { statusDotColor } from "@/lib/ui/status-colors";
@@ -90,9 +90,11 @@ function ProjectCard({
 }) {
   const color = "#a1a1aa"; // neutral zinc-400 — project color is unused
 
-  // Aggregate status from all apps. Anything not actually running wins over
-  // "running" — a project is only green when every app has a live container.
-  const allActive = projectApps.every((a) => a.status === "active");
+  // Aggregate status: green only when every app runs; a mix shows an honest
+  // count instead of the worst state.
+  const activeCount = projectApps.filter((a) => a.status === "active").length;
+  const allActive = activeCount === projectApps.length;
+  const partial = activeCount > 0 && !allActive;
   const anyError = projectApps.some((a) => a.status === "error");
   const anyMissing = projectApps.some((a) => a.status === "missing");
   const anyDeploying = projectApps.some((a) => a.status === "deploying");
@@ -178,23 +180,18 @@ function ProjectCard({
               {isSystem && <SystemBadge compact className="shrink-0" />}
               <EndpointsPopover endpoints={projectApps.flatMap((a) => a.domains.map((d) => ({ label: a.displayName, domain: d.domain })))} />
             </div>
-            {projectApps.length > 0 ? (
+            {projectApps.length === 0 ? (
+              <span className="text-xs text-muted-foreground">Empty</span>
+            ) : partial ? (
+              <span className="flex items-center gap-1.5 text-sm text-status-warning shrink-0">
+                <span aria-hidden="true" className="size-2 rounded-full bg-status-warning" />
+                {activeCount}/{projectApps.length} running
+              </span>
+            ) : (
               <StatusIndicator
                 status={status}
-                startedAt={allActive ? (() => {
-                  // Oldest container start — the project has been up this long.
-                  let oldest: Date | null = null;
-                  for (const a of projectApps) {
-                    if (!a.containerStartedAt) return null;
-                    const d = new Date(a.containerStartedAt);
-                    if (!oldest || d < oldest) oldest = d;
-                  }
-                  return oldest;
-                })() : undefined}
                 needsRedeploy={projectApps.some((a) => !!a.needsRedeploy)}
               />
-            ) : (
-              <span className="text-xs text-muted-foreground">Empty</span>
             )}
           </div>
           {/* Aggregated metrics */}
@@ -323,18 +320,31 @@ export function AppGrid({
   return (
     <div className="space-y-4">
       {unlimited.length > 0 && (
-        <div className="squircle flex items-start gap-2 rounded-lg border border-status-warning/40 bg-status-warning-muted/40 p-3 text-sm">
-          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-status-warning" />
-          <div>
-            <p className="font-medium">
+        <details className="group squircle rounded-lg border border-status-warning/40 bg-status-warning-muted/40 text-sm">
+          <summary className="flex cursor-pointer list-none items-center gap-2 p-3 [&::-webkit-details-marker]:hidden">
+            <AlertTriangle className="size-4 shrink-0 text-status-warning" />
+            <span className="font-medium">
               {unlimited.length} app{unlimited.length === 1 ? " is" : "s are"} running without a memory limit
-            </p>
+            </span>
+            <ChevronDown className="ml-auto size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+          </summary>
+          <div className="space-y-2 border-t border-status-warning/20 p-3">
+            <div className="flex flex-wrap gap-1.5">
+              {unlimited.map((a) => (
+                <Link
+                  key={a.id}
+                  href={`/apps/${a.name}`}
+                  className="rounded-md bg-background/60 px-2 py-0.5 text-xs font-medium hover:bg-background transition-colors"
+                >
+                  {a.displayName}
+                </Link>
+              ))}
+            </div>
             <p className="text-muted-foreground">
-              {unlimited.map((a) => a.displayName).join(", ")} — redeploy to apply the priority
-              tier default, or set a limit on the app.
+              Redeploy to apply the priority tier default, or set a limit in each app&apos;s settings.
             </p>
           </div>
-        </div>
+        </details>
       )}
 
       {allTags.length > 0 && (

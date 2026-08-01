@@ -445,7 +445,7 @@ export function AppDeployPanel({
 
   return (
     <>
-      <div className="pt-4 space-y-4">
+      <div className="space-y-4">
         {filteredDeployments.length === 0 && !deploying && !serverRunningDeploy ? (
           <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
             <Rocket className="size-8 text-muted-foreground/50" />
