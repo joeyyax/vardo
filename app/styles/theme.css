@@ -79,4 +79,8 @@
   --animate-rainbow: rainbow var(--speed, 2s) infinite linear;
   --animate-shiny-text: shiny-text 8s infinite;
   --animate-aurora: aurora 8s ease-in-out infinite alternate;
+
+  --color-background-deep: var(--background-deep);
+  --shadow-card: var(--shadow-card-value);
+  --shadow-card-hover: var(--shadow-card-hover-value);
 }

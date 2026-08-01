@@ -164,7 +164,7 @@ function ProjectCard({
   return (
     <Link
       href={`/projects/${project.name}`}
-      className={`squircle relative flex flex-col rounded-lg border bg-card transition-colors hover:bg-accent/50 overflow-hidden cursor-pointer${isSystem ? " ring-2 ring-status-warning/50" : ""}`}
+      className={`squircle relative flex flex-col rounded-lg bg-card shadow-card dark:border transition-shadow hover:shadow-card-hover overflow-hidden cursor-pointer${isSystem ? " ring-2 ring-status-warning/50" : ""}`}
     >
       {/* Raised panel: identity + aggregate state */}
       <div className="relative p-4">
@@ -243,7 +243,7 @@ function ProjectCard({
       </div>
 
       {/* Recessed chip tray — apps sit as raised objects on a lower surface */}
-      <div className="relative flex flex-wrap gap-1.5 border-t bg-background/60 px-4 py-3">
+      <div className="relative flex flex-wrap gap-1.5 border-t bg-background-deep px-4 py-3">
         {projectApps.length === 0 && (
           <Link
             href={`/apps/new?project=${project.id}`}
