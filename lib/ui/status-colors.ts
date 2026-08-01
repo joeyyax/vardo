@@ -5,7 +5,9 @@ export function statusDotColor(status: string) {
       ? "bg-status-error"
       : status === "deploying"
         ? "bg-status-info"
-        : "bg-status-neutral";
+        : status === "missing"
+          ? "bg-status-warning"
+          : "bg-status-neutral";
 }
 
 export function envTypeDotColor(type: string) {

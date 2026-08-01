@@ -36,18 +36,21 @@ export function Uptime({ since }: { since: Date }) {
 }
 
 // ---------------------------------------------------------------------------
-// StatusIndicator — shows running/error/deploying/stopped with optional
+// StatusIndicator — shows running/error/deploying/missing/stopped with optional
 // needsRedeploy warning state. Accepts either "active" or "running" for
 // the running state (normalizes internally).
+//
+// startedAt is the container's start time, not a deployment timestamp — an app
+// with no running container must never render an uptime.
 // ---------------------------------------------------------------------------
 
 export function StatusIndicator({
   status,
-  finishedAt,
+  startedAt,
   needsRedeploy,
 }: {
   status: string;
-  finishedAt?: Date | null;
+  startedAt?: Date | null;
   needsRedeploy?: boolean;
 }) {
   const isRunning = status === "active" || status === "running";
@@ -64,10 +67,16 @@ export function StatusIndicator({
     return (
       <span className="flex items-center gap-1.5 text-sm text-status-success shrink-0">
         <span aria-hidden="true" className="size-2 rounded-full bg-status-success animate-pulse" />
-        {finishedAt ? <Uptime since={finishedAt} /> : "Running"}
+        {startedAt ? <Uptime since={startedAt} /> : "Running"}
       </span>
     );
   }
+  if (status === "missing") return (
+    <span className="flex items-center gap-1.5 text-sm text-status-warning shrink-0">
+      <AlertTriangle className="size-3.5" />
+      No container
+    </span>
+  );
   if (status === "error") return (
     <span className="flex items-center gap-1.5 text-sm text-status-error shrink-0">
       <span aria-hidden="true" className="size-2 rounded-full bg-status-error" />
@@ -157,6 +166,12 @@ export function StatusBadge({ status }: { status: string }) {
       return (
         <Badge className="border-transparent bg-status-error-muted text-status-error">
           Crashed
+        </Badge>
+      );
+    case "missing":
+      return (
+        <Badge className="border-transparent bg-status-warning-muted text-status-warning">
+          No container
         </Badge>
       );
     default:

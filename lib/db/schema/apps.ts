@@ -74,6 +74,10 @@ export const apps = pgTable(
     templateName: text("template_name"),
     templateVersion: text("template_version"),
     status: appStatusEnum("status").notNull().default("stopped"),
+    // Container State.StartedAt, written by the status reconciler. Null when nothing is running.
+    containerStartedAt: timestamp("container_started_at"),
+    // Last time the reconciler compared this app against Docker.
+    statusCheckedAt: timestamp("status_checked_at"),
     needsRedeploy: boolean("needs_redeploy").default(false),
     cpuLimit: real("cpu_limit"), // CPU cores (e.g. 0.5, 1, 2)
     memoryLimit: integer("memory_limit"), // Memory in MB (e.g. 256, 512, 1024)

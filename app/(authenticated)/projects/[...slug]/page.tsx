@@ -54,6 +54,7 @@ export default async function ProjectDetailPage({
           displayName: true,
           description: true,
           status: true,
+          containerStartedAt: true,
           needsRedeploy: true,
           imageName: true,
           gitUrl: true,
