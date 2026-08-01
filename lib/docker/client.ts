@@ -879,6 +879,22 @@ export async function listImages(filters?: Record<string, string[]>): Promise<Im
   }));
 }
 
+/**
+ * Resolve an image reference to its registry digest (`repo@sha256:...`).
+ * Returns null for locally-built images and anything not inspectable.
+ */
+export async function inspectImageDigest(imageRef: string): Promise<string | null> {
+  try {
+    const image = await dockerRequest<{ RepoDigests?: string[] | null }>(
+      "GET",
+      `/images/${encodeURIComponent(imageRef)}/json`,
+    );
+    return image.RepoDigests?.[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function removeImage(nameOrId: string, opts?: { force?: boolean }): Promise<void> {
   const query = opts?.force ? "?force=true" : "";
   await dockerRequest("DELETE", `/images/${encodeURIComponent(nameOrId)}${query}`);
