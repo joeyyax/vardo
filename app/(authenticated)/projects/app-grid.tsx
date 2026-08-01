@@ -3,19 +3,24 @@
 import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Plus, Cpu, ShieldCheck, Trash2, AlertTriangle, ChevronDown } from "lucide-react";
+import { formatDistanceToNowStrict } from "date-fns";
+import { Plus, Cpu, ShieldCheck, Trash2, AlertTriangle, ChevronDown, Package } from "lucide-react";
 import { EndpointsPopover } from "@/components/endpoints-popover";
 import { detectAppType } from "@/lib/ui/app-type";
 import { statusDotColor } from "@/lib/ui/status-colors";
+import { conditionLabel, conditionTone, countNeedingAttention } from "@/lib/ui/conditions";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { AppRowCard } from "@/components/app-row-card";
+import { worstCondition, type AppCondition } from "@/lib/docker/conditions";
 import { StatusIndicator } from "@/components/app-status";
 import { SystemBadge } from "@/components/system-badge";
-import { UpdatesBanner } from "./updates-banner";
+import { UpdatesBanner, useImageUpdates } from "./updates-banner";
 
 import {
   type AppMetrics,
   type MetricsHistory,
-  Sparkline,
-  MetricsLine,
+  type MetricKey,
+  MetricsBand,
   useAppMetrics,
 } from "@/components/app-metrics-card";
 
@@ -37,6 +42,7 @@ type AppWithRelations = {
   containerStartedAt: Date | null;
   containerMemoryLimit: number | null;
   needsRedeploy: boolean | null;
+  conditions: AppCondition[] | null;
   createdAt: Date;
   updatedAt: Date;
   domains: { domain: string; isPrimary: boolean | null }[];
@@ -66,7 +72,7 @@ type AppGridProps = {
 // Helpers
 // ---------------------------------------------------------------------------
 
-// Chips: healthy is quiet, deviation is tinted and worded, problems sort first.
+// App list: healthy is quiet, deviation is tinted and worded, problems sort first.
 const STATUS_RANK: Record<string, number> = {
   error: 0,
   missing: 1,
@@ -75,23 +81,19 @@ const STATUS_RANK: Record<string, number> = {
   active: 4,
 };
 
-const CHIP_TONE: Record<string, string> = {
-  error: "border-status-error/40 bg-status-error-muted text-status-error",
-  missing: "border-status-warning/40 bg-status-warning-muted text-status-warning",
-  deploying: "border-status-info/40 bg-status-info-muted text-status-info",
-  stopped: "border-transparent bg-status-neutral-muted text-muted-foreground",
-};
-
-const CHIP_STATUS_WORD: Record<string, string> = {
+const STATUS_WORD: Record<string, string> = {
   error: "crashed",
   missing: "no container",
   deploying: "deploying",
   stopped: "stopped",
 };
 
-// Cap only when it saves more than one chip; sorted deviants-first, so hidden
-// chips are always healthy ones.
-const CHIP_CAP = 12;
+const STATUS_WORD_TONE: Record<string, string> = {
+  error: "text-status-error",
+  missing: "text-status-warning",
+  deploying: "text-status-info",
+  stopped: "text-muted-foreground",
+};
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -108,12 +110,14 @@ function ProjectCard({
   metrics,
   history,
   historyTick,
+  updatesByApp,
 }: {
   project: NonNullable<AppWithRelations["project"]>;
   projectApps: AppWithRelations[];
   metrics: Map<string, AppMetrics>;
   history: Map<string, MetricsHistory>;
   historyTick: number;
+  updatesByApp: Map<string, number>;
 }) {
   const color = "#a1a1aa"; // neutral zinc-400 — project color is unused
 
@@ -126,23 +130,68 @@ function ProjectCard({
   const anyMissing = projectApps.some((a) => a.status === "missing");
   const anyDeploying = projectApps.some((a) => a.status === "deploying");
   const idleStatus = anyMissing ? "missing" : anyDeploying ? "deploying" : "stopped";
+  const attention = countNeedingAttention(projectApps);
+  const attentionCount = attention.critical + attention.warning;
 
-  // Aggregated CPU across all apps
-  const aggregatedCpu = useMemo(() => {
-    const maxLen = Math.max(...projectApps.map((a) => (history.get(a.id)?.cpu || []).length), 0);
-    if (maxLen < 2) return [];
-    const result: number[] = [];
-    for (let i = 0; i < maxLen; i++) {
-      let sum = 0;
-      for (const a of projectApps) {
-        const cpu = history.get(a.id)?.cpu || [];
-        sum += cpu[i] || 0;
+  // Per-metric history summed across apps
+  const aggregatedHistory = useMemo(() => {
+    const result: Partial<MetricsHistory> = {};
+    for (const key of ["cpu", "memory", "disk", "network"] as MetricKey[]) {
+      const maxLen = Math.max(...projectApps.map((a) => (history.get(a.id)?.[key] || []).length), 0);
+      if (maxLen < 2) continue;
+      const series: number[] = [];
+      for (let i = 0; i < maxLen; i++) {
+        let sum = 0;
+        for (const a of projectApps) {
+          const s = history.get(a.id)?.[key] || [];
+          sum += s[i] || 0;
+        }
+        series.push(sum);
       }
-      result.push(sum);
+      result[key] = series;
     }
     return result;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectApps, historyTick]);
+
+  // Aggregated live metrics. The memory limit is the sum of per-app limits and
+  // only honest when every running app has one — partial sums would understate
+  // the ceiling.
+  const { agg, memoryLimitTotal, anyMetrics } = useMemo(() => {
+    const agg: AppMetrics = { cpuPercent: 0, memoryUsage: 0, memoryLimit: 0, diskUsage: 0, networkRx: 0, networkTx: 0 };
+    let limitSum = 0;
+    let allLimited = true;
+    let anyMetrics = false;
+    for (const a of projectApps) {
+      const m = metrics.get(a.id);
+      if (!m) {
+        if (a.status === "active") allLimited = false;
+        continue;
+      }
+      anyMetrics = true;
+      agg.cpuPercent += m.cpuPercent;
+      agg.memoryUsage += m.memoryUsage;
+      agg.diskUsage += m.diskUsage;
+      agg.networkRx += m.networkRx;
+      agg.networkTx += m.networkTx;
+      if (m.memoryLimit > 0) limitSum += m.memoryLimit;
+      else allLimited = false;
+    }
+    return { agg, memoryLimitTotal: anyMetrics && allLimited ? limitSum : 0, anyMetrics };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectApps, metrics, historyTick]);
+
+  // Most recent deployment across the project's apps.
+  const lastDeploy = useMemo(() => {
+    let latest: { status: string; startedAt: Date } | null = null;
+    for (const a of projectApps) {
+      const d = a.deployments[0];
+      if (d && (!latest || new Date(d.startedAt) > new Date(latest.startedAt))) latest = d;
+    }
+    return latest;
+  }, [projectApps]);
+
+  const updateCount = projectApps.reduce((n, a) => n + (updatesByApp.get(a.id) ?? 0), 0);
 
   // Collect unique icons
   const icons = useMemo(() => {
@@ -161,22 +210,29 @@ function ProjectCard({
 
   const isSystem = project.isSystemManaged;
 
-  return (
-    <Link
-      href={`/projects/${project.name}`}
-      className={`squircle relative flex flex-col rounded-lg bg-card shadow-card dark:border transition-shadow hover:shadow-card-hover overflow-hidden cursor-pointer${isSystem ? " ring-2 ring-status-warning/50" : ""}`}
-    >
-      {/* Raised panel: identity + aggregate state */}
-      <div className="relative p-4">
-        {aggregatedCpu.length > 0 && (
-          <Sparkline
-            data={aggregatedCpu}
-            className="absolute inset-0 w-full h-full pointer-events-none"
-            style={{ color: "oklch(0.65 0.19 255)" }}
-          />
-        )}
+  const deployFragment = lastDeploy && (
+    lastDeploy.status === "failed" ? (
+      <span className="text-status-error">
+        Deploy failed {formatDistanceToNowStrict(new Date(lastDeploy.startedAt), { addSuffix: true })}
+      </span>
+    ) : lastDeploy.status === "running" || lastDeploy.status === "queued" ? (
+      <span className="text-status-info">Deploying now</span>
+    ) : (
+      <span>Deployed {formatDistanceToNowStrict(new Date(lastDeploy.startedAt), { addSuffix: true })}</span>
+    )
+  );
 
-        <div className="relative flex gap-4">
+  return (
+    <div className="squircle relative flex flex-col rounded-lg bg-card shadow-card dark:border transition-shadow hover:shadow-card-hover overflow-hidden">
+      {/* Whole-card click target; interactive children stack above it */}
+      <Link
+        href={`/projects/${project.name}`}
+        className="absolute inset-0 z-0"
+        aria-label={project.displayName}
+      />
+      {/* Raised panel: identity + aggregate state */}
+      <div className="p-5">
+        <div className="flex gap-4">
         {/* One icon — a collage of the same marks on every card is noise */}
         {icons.length === 0 ? (
           <div className="size-12 shrink-0 rounded-md flex items-center justify-center" style={{ backgroundColor: `${color}20` }}>
@@ -193,113 +249,152 @@ function ProjectCard({
             <div className="flex items-center gap-2 min-w-0">
               <h3 className="text-base font-semibold truncate">{project.displayName}</h3>
               {isSystem && <SystemBadge compact className="shrink-0" />}
-              <EndpointsPopover endpoints={projectApps.flatMap((a) => a.domains.map((d) => ({ label: a.displayName, domain: d.domain })))} />
+              <span className="relative z-10">
+                <EndpointsPopover endpoints={projectApps.flatMap((a) => a.domains.map((d) => ({ label: a.displayName, domain: d.domain })))} />
+              </span>
             </div>
+            {/* Reach and health are separate facts — an app can be running and
+                crash-looping, and hiding either behind the other is what made
+                this header read as less informative than the list below it. */}
             {projectApps.length === 0 ? (
               <span className="text-xs text-muted-foreground">Empty</span>
-            ) : errorCount > 0 ? (
-              <span className="flex items-center gap-1.5 text-sm text-status-error shrink-0">
-                <span aria-hidden="true" className="size-2 rounded-full bg-status-error" />
-                {errorCount} crashed
-              </span>
-            ) : partial ? (
-              <span className="flex items-center gap-1.5 text-sm text-status-warning shrink-0">
-                <span aria-hidden="true" className="size-2 rounded-full bg-status-warning" />
-                {activeCount}/{projectApps.length} running
-              </span>
-            ) : allActive ? (
-              projectApps.some((a) => !!a.needsRedeploy) ? (
-                <StatusIndicator status="running" needsRedeploy />
-              ) : (
-                <span className="flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
-                  <span aria-hidden="true" className="size-1.5 rounded-full bg-status-success" />
-                  {projectApps.length} up
-                </span>
-              )
             ) : (
-              <StatusIndicator status={idleStatus} />
+              <span className="flex shrink-0 items-center gap-2 text-sm">
+                {errorCount > 0 ? (
+                  <span className="flex items-center gap-1.5 text-status-error">
+                    <span aria-hidden="true" className="size-2 rounded-full bg-status-error" />
+                    {errorCount} crashed
+                  </span>
+                ) : partial ? (
+                  <span className="flex items-center gap-1.5 text-status-warning">
+                    <span aria-hidden="true" className="size-2 rounded-full bg-status-warning" />
+                    {activeCount}/{projectApps.length} running
+                  </span>
+                ) : allActive ? (
+                  projectApps.some((a) => !!a.needsRedeploy) ? (
+                    <StatusIndicator status="running" needsRedeploy />
+                  ) : (
+                    <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <span aria-hidden="true" className="size-1.5 rounded-full bg-status-success" />
+                      {projectApps.length} up
+                    </span>
+                  )
+                ) : (
+                  <StatusIndicator status={idleStatus} />
+                )}
+                {attentionCount > 0 && (
+                  <span
+                    className={`flex items-center gap-1.5 ${attention.critical > 0 ? "text-status-error" : "text-status-warning"}`}
+                  >
+                    {attentionCount} need{attentionCount === 1 ? "s" : ""} attention
+                  </span>
+                )}
+              </span>
             )}
           </div>
-          {/* Aggregated metrics */}
-          {(() => {
-            const agg: AppMetrics = { cpuPercent: 0, memoryUsage: 0, memoryLimit: 0, diskUsage: 0, networkRx: 0, networkTx: 0 };
-            for (const a of projectApps) {
-              const m = metrics.get(a.id);
-              if (m) {
-                agg.cpuPercent += m.cpuPercent;
-                agg.memoryUsage += m.memoryUsage;
-                agg.memoryLimit = Math.max(agg.memoryLimit, m.memoryLimit);
-                agg.diskUsage += m.diskUsage;
-                agg.networkRx += m.networkRx;
-                agg.networkTx += m.networkTx;
-              }
-            }
-            return (agg.cpuPercent > 0 || agg.memoryUsage > 0)
-              ? <MetricsLine metrics={agg} onHover={() => {}} />
-              : null;
-          })()}
+          {/* What changed — deploy recency and pending updates */}
+          {(deployFragment || updateCount > 0) && (
+            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+              {deployFragment}
+              {deployFragment && updateCount > 0 && <span aria-hidden="true">·</span>}
+              {updateCount > 0 && (
+                <span className="flex items-center gap-1">
+                  <Package className="size-3" aria-hidden="true" />
+                  {updateCount} update{updateCount === 1 ? "" : "s"} available
+                </span>
+              )}
+            </p>
+          )}
         </div>
         </div>
       </div>
 
-      {/* Recessed chip tray — apps sit as raised objects on a lower surface */}
-      <div className="relative flex flex-wrap gap-1.5 border-t bg-background-deep px-4 py-3">
-        {projectApps.length === 0 && (
+      {/* Recessed app list — rows sit on a lower surface, problems sort first */}
+      <div className="flex-1 border-t bg-background-deep px-2.5 py-2">
+        {projectApps.length === 0 ? (
           <Link
             href={`/apps/new?project=${project.id}`}
-            onClick={(e) => e.stopPropagation()}
-            className="inline-flex items-center gap-1.5 rounded-full border border-dashed px-2.5 py-1 text-xs text-muted-foreground hover:bg-accent transition-colors cursor-pointer"
+            className="relative z-10 inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-card transition-colors cursor-pointer"
           >
             <Plus className="size-3" />
             Add App
           </Link>
-        )}
-        {(() => {
-          const sorted = [...projectApps].sort(
-            (x, y) =>
-              (STATUS_RANK[x.status] ?? 3) - (STATUS_RANK[y.status] ?? 3) ||
-              x.displayName.localeCompare(y.displayName),
-          );
-          const capped = sorted.length > CHIP_CAP + 1;
-          const visible = capped ? sorted.slice(0, CHIP_CAP) : sorted;
-          return (
-            <>
-              {visible.map((a) => (
+        ) : (
+          <div className="grid content-start gap-x-6 sm:grid-cols-2">
+            {[...projectApps]
+              .sort(
+                (x, y) =>
+                  (STATUS_RANK[x.status] ?? 3) - (STATUS_RANK[y.status] ?? 3) ||
+                  Number(y.priority === "critical") - Number(x.priority === "critical") ||
+                  (updatesByApp.get(y.id) ?? 0) - (updatesByApp.get(x.id) ?? 0) ||
+                  x.displayName.localeCompare(y.displayName),
+              )
+              .map((a) => (
+                <Tooltip key={a.id}>
+                <TooltipTrigger asChild>
                 <Link
-                  key={a.id}
                   href={`/apps/${a.name}`}
-                  onClick={(e) => e.stopPropagation()}
-                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                    CHIP_TONE[a.status] ?? "border-transparent bg-card hover:bg-accent"
-                  }`}
+                  className="relative z-10 flex min-w-0 items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors cursor-pointer hover:bg-card"
                 >
-                  <span aria-hidden="true" className={`size-1.5 rounded-full ${statusDotColor(a.status)}`} />
-                  {a.displayName}
-                  {CHIP_STATUS_WORD[a.status] && (
-                    <span className="font-normal opacity-80">{CHIP_STATUS_WORD[a.status]}</span>
+                  <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${statusDotColor(a.status)}`} />
+                  <span className="truncate">{a.displayName}</span>
+                  {STATUS_WORD[a.status] && (
+                    <span className={`shrink-0 font-normal ${STATUS_WORD_TONE[a.status]}`}>
+                      {STATUS_WORD[a.status]}
+                    </span>
                   )}
-                  {a.priority === "critical" && (
-                    <ShieldCheck className="size-3 text-status-warning" aria-label="Critical priority" />
-                  )}
-                  {a.priority === "disposable" && (
-                    <Trash2 className="size-3 text-muted-foreground/50" aria-label="Disposable priority" />
-                  )}
-                  {a.gpuEnabled && (
-                    <Cpu className="size-3 text-muted-foreground/50" aria-label="GPU passthrough enabled" />
-                  )}
+                  {(() => {
+                    const worst = worstCondition(a.conditions ?? []);
+                    if (!worst) return null;
+                    return (
+                      <span
+                        className={`shrink-0 font-normal ${conditionTone(worst.severity)}`}
+                        title={worst.detail}
+                      >
+                        {conditionLabel(worst)}
+                      </span>
+                    );
+                  })()}
                   {a.status === "active" && <span className="sr-only">, Running</span>}
+                  <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                    {(updatesByApp.get(a.id) ?? 0) > 0 && (
+                      <Package className="size-3 text-muted-foreground/70" aria-label="Update available" />
+                    )}
+                    {a.priority === "critical" && (
+                      <ShieldCheck className="size-3 text-status-warning" aria-label="Critical priority" />
+                    )}
+                    {a.priority === "disposable" && (
+                      <Trash2 className="size-3 text-muted-foreground/50" aria-label="Disposable priority" />
+                    )}
+                    {a.gpuEnabled && (
+                      <Cpu className="size-3 text-muted-foreground/50" aria-label="GPU passthrough enabled" />
+                    )}
+                  </span>
                 </Link>
+                </TooltipTrigger>
+                <TooltipContent
+                  side="right"
+                  align="start"
+                  sideOffset={6}
+                  className="bg-popover text-popover-foreground border shadow-card-hover px-3 py-2.5 [&>span]:hidden"
+                >
+                  <AppRowCard app={a} updateCount={updatesByApp.get(a.id) ?? 0} />
+                </TooltipContent>
+                </Tooltip>
               ))}
-              {capped && (
-                <span className="inline-flex items-center rounded-full border border-transparent bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground">
-                  +{sorted.length - CHIP_CAP} more
-                </span>
-              )}
-            </>
-          );
-        })()}
+          </div>
+        )}
       </div>
-    </Link>
+
+      {/* Aggregate resource footer — space is held while stats stream in */}
+      {activeCount > 0 && (
+        <MetricsBand
+          metrics={anyMetrics ? agg : undefined}
+          history={aggregatedHistory}
+          memoryLimit={memoryLimitTotal}
+        />
+      )}
+    </div>
   );
 }
 
@@ -316,6 +411,11 @@ export function AppGrid({
   const router = useRouter();
   const [activeTagIds, setActiveTagIds] = useState<Set<string>>(new Set());
   const { metrics, history, historyTick } = useAppMetrics(orgId);
+  const updates = useImageUpdates(orgId);
+  const updatesByApp = useMemo(
+    () => new Map((updates?.appsWithUpdates ?? []).map((a) => [a.id, a.count])),
+    [updates],
+  );
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -369,7 +469,7 @@ export function AppGrid({
     <div className="space-y-6">
       {/* Attention cluster — banners group tightly, apart from the grid */}
       <div className="space-y-2 empty:hidden">
-      <UpdatesBanner orgId={orgId} />
+      <UpdatesBanner data={updates} />
 
       {unlimited.length > 0 && (
         <details className="group squircle rounded-lg border border-status-warning/40 bg-status-warning-muted/40 text-sm">
@@ -448,7 +548,7 @@ export function AppGrid({
 
       {/* Columns respond to card count: a two-project install fills the row
           instead of orphaning cards in a fixed three-column grid. */}
-      <div className="grid items-start gap-4 grid-cols-[repeat(auto-fit,minmax(min(20rem,100%),1fr))]">
+      <div className="grid items-stretch gap-4 grid-cols-[repeat(auto-fit,minmax(min(25rem,100%),1fr))]">
         {projectCards.map(({ project, apps: projectApps }) => (
           <ProjectCard
             key={project.id}
@@ -457,6 +557,7 @@ export function AppGrid({
             metrics={metrics}
             history={history}
             historyTick={historyTick}
+            updatesByApp={updatesByApp}
           />
         ))}
       </div>
