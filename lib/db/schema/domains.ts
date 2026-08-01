@@ -54,3 +54,22 @@ export const domainChecks = pgTable(
     index("domain_check_domain_checked_at_idx").on(t.domainId, t.checkedAt),
   ]
 );
+
+// ---------------------------------------------------------------------------
+// Domain Certificate Observations
+// ---------------------------------------------------------------------------
+
+// Latest TLS certificate seen for a domain, one row per domain. Overwritten by
+// each probe — only the current expiry matters.
+export const domainCertChecks = pgTable("domain_cert_check", {
+  domainId: text("domain_id")
+    .primaryKey()
+    .references(() => domains.id, { onDelete: "cascade" }),
+  /** Certificate notAfter. Null when the probe read no usable certificate. */
+  expiresAt: timestamp("expires_at"),
+  /** SHA-256 of the peer certificate, so domains sharing one cert can be grouped. */
+  fingerprint: text("fingerprint"),
+  /** Verdict kind: ok, expiring, expired, not-issued or unknown. */
+  status: text("status").notNull(),
+  checkedAt: timestamp("checked_at").defaultNow().notNull(),
+});
