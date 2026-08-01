@@ -114,7 +114,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     // Verify the app exists and check isSystemManaged before updating
     const existingApp = await db.query.apps.findFirst({
       where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
-      columns: { id: true, projectId: true, isSystemManaged: true },
+      columns: { id: true, projectId: true, isSystemManaged: true, composeContent: true },
     });
     if (!existingApp) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -141,9 +141,18 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       oldProjectId = existingApp.projectId;
     }
 
+    // An edited compose file only reaches containers on the next deploy.
+    const composeChanged =
+      parsed.data.composeContent !== undefined &&
+      parsed.data.composeContent !== existingApp.composeContent;
+
     const [updated] = await db
       .update(apps)
-      .set({ ...parsed.data, updatedAt: new Date() })
+      .set({
+        ...parsed.data,
+        ...(composeChanged ? { needsRedeploy: true } : {}),
+        updatedAt: new Date(),
+      })
       .where(
         and(eq(apps.id, appId), eq(apps.organizationId, orgId))
       )
