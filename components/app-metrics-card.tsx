@@ -249,7 +249,7 @@ export function useAppMetrics(orgId: string) {
       try {
         es = new EventSource(url);
 
-        es.addEventListener("stats", (event) => {
+        const handlePoint = (event: MessageEvent) => {
           retryDelay = 1000; // reset on successful message
           try {
             const data = JSON.parse(event.data);
@@ -281,7 +281,10 @@ export function useAppMetrics(orgId: string) {
             setMetrics(next);
             setHistoryTick((t) => t + 1);
           } catch { /* malformed event */ }
-        });
+        };
+        // The org stream emits "point"; "stats" kept for older streams.
+        es.addEventListener("point", handlePoint);
+        es.addEventListener("stats", handlePoint);
 
         es.onerror = () => {
           es?.close();

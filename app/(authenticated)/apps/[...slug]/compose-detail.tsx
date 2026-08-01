@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -32,7 +32,11 @@ import { LogViewer } from "@/components/log-viewer";
 import { EnvEditor } from "@/components/env-editor";
 import { AppMetrics } from "./app-metrics";
 import { AppBackupHistory } from "@/components/backups/app-backup-history";
-import { statusDotColor } from "@/lib/ui/status-colors";
+import { StatusIndicator, Uptime } from "@/components/app-status";
+import { Sparkline, SPARKLINE_POINTS } from "@/components/app-metrics-card";
+import { CHART_COLORS } from "@/lib/metrics/constants";
+import type { ContainerPoint } from "@/lib/metrics/types";
+import { formatBytes } from "@/lib/metrics/format";
 import { AppDeployPanel } from "./app-deploy-panel";
 import { useDeploy } from "./hooks/use-deploy";
 import { AppUpdatesPanel } from "./app-updates";
@@ -45,33 +49,197 @@ import { ComposeReview } from "@/components/compose-review";
 // Service card for the Services tab
 // ---------------------------------------------------------------------------
 
-function ServiceCard({ service }: { service: ChildApp }) {
+// Repo de-emphasized, tag as a discrete badge. The badge carries
+// data-slot="image-tag" so the image update checker can annotate it.
+function ImageRef({ imageName }: { imageName: string }) {
+  const slash = imageName.lastIndexOf("/");
+  const colon = imageName.lastIndexOf(":");
+  const hasTag = colon > slash;
+  const repo = hasTag ? imageName.slice(0, colon) : imageName;
+  const tag = hasTag ? imageName.slice(colon + 1) : null;
+  return (
+    <span className="flex items-center gap-1.5 min-w-0">
+      <span className="truncate font-mono text-xs text-muted-foreground/60">{repo}</span>
+      <span
+        data-slot="image-tag"
+        className="shrink-0 rounded border px-1.5 py-px font-mono text-[11px] leading-4 text-muted-foreground"
+      >
+        {tag ?? "untagged"}
+      </span>
+    </span>
+  );
+}
+
+function Stat({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5">
+      <span className="type-label text-muted-foreground/70">{label}</span>
+      <span className="text-xs tabular-nums truncate">{children}</span>
+    </div>
+  );
+}
+
+function formatPorts(service: ChildApp): string | null {
+  const ports = service.exposedPorts?.length
+    ? service.exposedPorts
+    : service.containerPort
+      ? [{ internal: service.containerPort }]
+      : [];
+  if (ports.length === 0) return null;
+  const shown = ports
+    .slice(0, 2)
+    .map((p) =>
+      p.external && p.external !== p.internal ? `${p.external}→${p.internal}` : `${p.internal}`,
+    )
+    .join(", ");
+  return ports.length > 2 ? `${shown} +${ports.length - 2}` : shown;
+}
+
+// Stack containers are labeled with the parent app's name, so per-service
+// metrics come from the parent stream's container breakdown, matched by name.
+function matchServiceContainers(containers: ContainerPoint[], service: ChildApp): ContainerPoint[] {
+  const candidates = [service.composeService, service.name].filter(
+    (c): c is string => !!c,
+  );
+  return containers.filter((c) =>
+    candidates.some((cand) => {
+      if (c.containerName === cand) return true;
+      const escaped = cand.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return new RegExp(`[-_]${escaped}([-_]\\d+)?$`).test(c.containerName);
+    }),
+  );
+}
+
+function ServiceCard({
+  service,
+  stats,
+  cpuHistory,
+}: {
+  service: ChildApp;
+  stats?: { cpuPercent: number; memoryUsage: number };
+  cpuHistory?: number[];
+}) {
   const primaryDomain = service.domains.find((d) => d.isPrimary) || service.domains[0];
+  const running = service.status === "active";
+  const ports = formatPorts(service);
   return (
     <Link
       href={`/apps/${service.name}`}
       className="squircle relative flex flex-col rounded-lg border bg-card p-4 transition-all duration-200 hover:bg-accent/50 overflow-hidden cursor-pointer"
     >
-      <div className="flex items-center gap-2 min-w-0">
-        <span aria-hidden="true" className={`size-2 rounded-full shrink-0 ${statusDotColor(service.status)}`} />
-        <h3 className="text-sm font-semibold truncate">{service.displayName}</h3>
+      {running && cpuHistory && cpuHistory.length > 1 && (
+        <Sparkline
+          data={cpuHistory}
+          className="absolute inset-0 w-full h-full pointer-events-none"
+          style={{ color: CHART_COLORS.cpu }}
+        />
+      )}
+
+      <div className="relative flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h3 className="type-h3 truncate">{service.displayName}</h3>
+          <p className="font-mono text-xs text-muted-foreground/60 truncate">
+            {service.composeService ?? service.name}
+          </p>
+        </div>
+        <StatusIndicator status={service.status} needsRedeploy={!!service.needsRedeploy} />
       </div>
-      {service.composeService && (
-        <p className="text-xs text-muted-foreground/60 font-mono mt-1 truncate">
-          {service.composeService}
-        </p>
-      )}
-      {primaryDomain && (
-        <p className="text-xs text-muted-foreground font-mono mt-1 truncate">
-          {primaryDomain.domain}
-        </p>
-      )}
-      {service.imageName && !primaryDomain && (
-        <p className="text-xs text-muted-foreground/60 font-mono mt-0.5 truncate">
-          {service.imageName}
-        </p>
-      )}
+
+      <div className="relative mt-2 space-y-1">
+        {service.imageName && <ImageRef imageName={service.imageName} />}
+        {primaryDomain && (
+          <p className="font-mono text-xs text-muted-foreground truncate">
+            {primaryDomain.domain}
+          </p>
+        )}
+      </div>
+
+      <div className="relative mt-3 grid grid-cols-4 gap-2 border-t pt-3">
+        <Stat label="CPU">
+          {running && stats ? `${stats.cpuPercent.toFixed(1)}%` : "—"}
+        </Stat>
+        <Stat label="Mem">
+          {running && stats ? formatBytes(stats.memoryUsage) : "—"}
+        </Stat>
+        <Stat label="Up">
+          {running && service.containerStartedAt ? (
+            <Uptime since={service.containerStartedAt} />
+          ) : (
+            "—"
+          )}
+        </Stat>
+        <Stat label="Port">{ports ?? "—"}</Stat>
+      </div>
     </Link>
+  );
+}
+
+// Live per-service stats from the parent app's stream. Mounted only while the
+// Services tab is active.
+function ComposeServices({
+  appId,
+  services,
+  orgId,
+}: {
+  appId: string;
+  services: ChildApp[];
+  orgId: string;
+}) {
+  // Rolling window of container snapshots; stats and sparklines derive from it.
+  const [snapshots, setSnapshots] = useState<ContainerPoint[][]>([]);
+
+  useEffect(() => {
+    const es = new EventSource(`/api/v1/organizations/${orgId}/apps/${appId}/stats/stream`);
+    const handlePoint = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (Array.isArray(data.containers)) {
+          setSnapshots((prev) => [...prev.slice(-(SPARKLINE_POINTS - 1)), data.containers]);
+        }
+      } catch { /* malformed event */ }
+    };
+    es.addEventListener("point", handlePoint);
+    return () => es.close();
+  }, [orgId, appId]);
+
+  const { stats, histories } = useMemo(() => {
+    const stats = new Map<string, { cpuPercent: number; memoryUsage: number }>();
+    const histories = new Map<string, number[]>();
+    const latest = snapshots[snapshots.length - 1] ?? [];
+    for (const s of services) {
+      const matched = matchServiceContainers(latest, s);
+      if (matched.length > 0) {
+        stats.set(s.id, {
+          cpuPercent: matched.reduce((sum, c) => sum + c.cpuPercent, 0),
+          memoryUsage: matched.reduce((sum, c) => sum + c.memoryUsage, 0),
+        });
+      }
+      const hist = snapshots
+        .map((snap) => matchServiceContainers(snap, s))
+        .filter((m) => m.length > 0)
+        .map((m) => m.reduce((sum, c) => sum + c.cpuPercent, 0));
+      if (hist.length > 1) histories.set(s.id, hist);
+    }
+    return { stats, histories };
+  }, [snapshots, services]);
+
+  // Two columns for the typical 2-4 service stack (4 reads as an even 2x2);
+  // the third column engages only past four.
+  return (
+    <div
+      className={`grid items-start gap-4 sm:grid-cols-2 ${
+        services.length > 4 ? "lg:grid-cols-3" : ""
+      }`}
+    >
+      {services.map((service) => (
+        <ServiceCard
+          key={service.id}
+          service={service}
+          stats={stats.get(service.id)}
+          cpuHistory={histories.get(service.id)}
+        />
+      ))}
+    </div>
   );
 }
 
@@ -561,11 +729,7 @@ export function ComposeDetail({
               </div>
             </div>
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {services.map((service) => (
-                <ServiceCard key={service.id} service={service} />
-              ))}
-            </div>
+            <ComposeServices appId={app.id} services={services} orgId={orgId} />
           )}
         </TabsContent>
 

@@ -66,6 +66,32 @@ type AppGridProps = {
 // Helpers
 // ---------------------------------------------------------------------------
 
+// Chips: healthy is quiet, deviation is tinted and worded, problems sort first.
+const STATUS_RANK: Record<string, number> = {
+  error: 0,
+  missing: 1,
+  deploying: 2,
+  stopped: 3,
+  active: 4,
+};
+
+const CHIP_TONE: Record<string, string> = {
+  error: "border-status-error/40 bg-status-error-muted text-status-error",
+  missing: "border-status-warning/40 bg-status-warning-muted text-status-warning",
+  deploying: "border-status-info/40 bg-status-info-muted text-status-info",
+  stopped: "border-transparent bg-status-neutral-muted text-muted-foreground",
+};
+
+const CHIP_STATUS_WORD: Record<string, string> = {
+  error: "crashed",
+  missing: "no container",
+  deploying: "deploying",
+  stopped: "stopped",
+};
+
+// Cap only when it saves more than one chip; sorted deviants-first, so hidden
+// chips are always healthy ones.
+const CHIP_CAP = 12;
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -91,23 +117,15 @@ function ProjectCard({
 }) {
   const color = "#a1a1aa"; // neutral zinc-400 — project color is unused
 
-  // Aggregate status: green only when every app runs; a mix shows an honest
-  // count instead of the worst state.
+  // Aggregate status: healthy is quiet, deviation is loud. All-running shows a
+  // muted count; crashes show a red count; a mix shows an honest count.
   const activeCount = projectApps.filter((a) => a.status === "active").length;
+  const errorCount = projectApps.filter((a) => a.status === "error").length;
   const allActive = activeCount === projectApps.length;
   const partial = activeCount > 0 && !allActive;
-  const anyError = projectApps.some((a) => a.status === "error");
   const anyMissing = projectApps.some((a) => a.status === "missing");
   const anyDeploying = projectApps.some((a) => a.status === "deploying");
-  const status = allActive
-    ? "running"
-    : anyError
-      ? "error"
-      : anyMissing
-        ? "missing"
-        : anyDeploying
-          ? "deploying"
-          : "stopped";
+  const idleStatus = anyMissing ? "missing" : anyDeploying ? "deploying" : "stopped";
 
   // Aggregated CPU across all apps
   const aggregatedCpu = useMemo(() => {
@@ -183,16 +201,27 @@ function ProjectCard({
             </div>
             {projectApps.length === 0 ? (
               <span className="text-xs text-muted-foreground">Empty</span>
+            ) : errorCount > 0 ? (
+              <span className="flex items-center gap-1.5 text-sm text-status-error shrink-0">
+                <span aria-hidden="true" className="size-2 rounded-full bg-status-error" />
+                {errorCount} crashed
+              </span>
             ) : partial ? (
               <span className="flex items-center gap-1.5 text-sm text-status-warning shrink-0">
                 <span aria-hidden="true" className="size-2 rounded-full bg-status-warning" />
                 {activeCount}/{projectApps.length} running
               </span>
+            ) : allActive ? (
+              projectApps.some((a) => !!a.needsRedeploy) ? (
+                <StatusIndicator status="running" needsRedeploy />
+              ) : (
+                <span className="flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
+                  <span aria-hidden="true" className="size-1.5 rounded-full bg-status-success" />
+                  {projectApps.length} up
+                </span>
+              )
             ) : (
-              <StatusIndicator
-                status={status}
-                needsRedeploy={projectApps.some((a) => !!a.needsRedeploy)}
-              />
+              <StatusIndicator status={idleStatus} />
             )}
           </div>
           {/* Aggregated metrics */}
@@ -228,29 +257,50 @@ function ProjectCard({
             Add App
           </Link>
         )}
-        {projectApps.map((a) => (
-            <Link
-              key={a.id}
-              href={`/apps/${a.name}`}
-              onClick={(e) => e.stopPropagation()}
-              className="inline-flex items-center gap-1.5 rounded-full border border-transparent px-2.5 py-1 text-xs font-medium bg-background hover:bg-accent transition-colors cursor-pointer"
-            >
-              <span aria-hidden="true" className={`size-1.5 rounded-full ${statusDotColor(a.status)}`} />
-              {a.displayName}
-              {a.priority === "critical" && (
-                <ShieldCheck className="size-3 text-status-warning" aria-label="Critical priority" />
+        {(() => {
+          const sorted = [...projectApps].sort(
+            (x, y) =>
+              (STATUS_RANK[x.status] ?? 3) - (STATUS_RANK[y.status] ?? 3) ||
+              x.displayName.localeCompare(y.displayName),
+          );
+          const capped = sorted.length > CHIP_CAP + 1;
+          const visible = capped ? sorted.slice(0, CHIP_CAP) : sorted;
+          return (
+            <>
+              {visible.map((a) => (
+                <Link
+                  key={a.id}
+                  href={`/apps/${a.name}`}
+                  onClick={(e) => e.stopPropagation()}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                    CHIP_TONE[a.status] ?? "border-transparent bg-background hover:bg-accent"
+                  }`}
+                >
+                  <span aria-hidden="true" className={`size-1.5 rounded-full ${statusDotColor(a.status)}`} />
+                  {a.displayName}
+                  {CHIP_STATUS_WORD[a.status] && (
+                    <span className="font-normal opacity-80">{CHIP_STATUS_WORD[a.status]}</span>
+                  )}
+                  {a.priority === "critical" && (
+                    <ShieldCheck className="size-3 text-status-warning" aria-label="Critical priority" />
+                  )}
+                  {a.priority === "disposable" && (
+                    <Trash2 className="size-3 text-muted-foreground/50" aria-label="Disposable priority" />
+                  )}
+                  {a.gpuEnabled && (
+                    <Cpu className="size-3 text-muted-foreground/50" aria-label="GPU passthrough enabled" />
+                  )}
+                  {a.status === "active" && <span className="sr-only">, Running</span>}
+                </Link>
+              ))}
+              {capped && (
+                <span className="inline-flex items-center rounded-full border border-transparent bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                  +{sorted.length - CHIP_CAP} more
+                </span>
               )}
-              {a.priority === "disposable" && (
-                <Trash2 className="size-3 text-muted-foreground/50" aria-label="Disposable priority" />
-              )}
-              {a.gpuEnabled && (
-                <Cpu className="size-3 text-muted-foreground/50" aria-label="GPU passthrough enabled" />
-              )}
-              <span className="sr-only">
-                {a.status === "active" ? ", Running" : a.status === "error" ? ", Crashed" : a.status === "deploying" ? ", Deploying" : a.status === "missing" ? ", No container" : ", Stopped"}
-              </span>
-            </Link>
-        ))}
+            </>
+          );
+        })()}
       </div>
     </Link>
   );
@@ -395,7 +445,9 @@ export function AppGrid({
         </div>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {/* Columns respond to card count: a two-project install fills the row
+          instead of orphaning cards in a fixed three-column grid. */}
+      <div className="grid items-start gap-4 grid-cols-[repeat(auto-fit,minmax(min(20rem,100%),1fr))]">
         {projectCards.map(({ project, apps: projectApps }) => (
           <ProjectCard
             key={project.id}
