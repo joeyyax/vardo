@@ -321,7 +321,8 @@ export function AppHeader({
           </Stat>
         )}
         <Stat label="Memory">
-          {appMetrics ? (
+          {/* The collector reports zeros for a container that isn't there. */}
+          {appMetrics && isRunning ? (
             <span className="tabular-nums">
               {formatBytes(appMetrics.memoryUsage)}
               {appMetrics.memoryLimit > 0 && (
