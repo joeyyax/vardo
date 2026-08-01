@@ -222,8 +222,14 @@ function ComposeServices({
     return { stats, histories };
   }, [snapshots, services]);
 
+  // Two columns for the typical 2-4 service stack (4 reads as an even 2x2);
+  // the third column engages only past four.
   return (
-    <div className="grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    <div
+      className={`grid items-start gap-4 sm:grid-cols-2 ${
+        services.length > 4 ? "lg:grid-cols-3" : ""
+      }`}
+    >
       {services.map((service) => (
         <ServiceCard
           key={service.id}
