@@ -41,7 +41,7 @@ export default async function BackupsPage() {
             Manage backup targets, schedules and retention for your organization.
           </p>
 
-          <BackupPage scope="org" orgId={orgId} apps={appList} />
+          <BackupPage scope="org" orgId={orgId} apps={appList} showIntro={false} />
         </>
       ) : (
         <FeatureDisabled

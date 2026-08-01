@@ -17,10 +17,13 @@ export function BackupPage({
   scope,
   orgId,
   apps,
+  showIntro = true,
 }: {
   scope: "admin" | "org";
   orgId: string;
   apps: App[];
+  /** False where the page already carries the title and description. */
+  showIntro?: boolean;
 }) {
   const [loading, setLoading] = useState(true);
   const [targets, setTargets] = useState<BackupTarget[]>([]);
@@ -89,7 +92,7 @@ export function BackupPage({
       {/* Auto-backup banner — only shown to org users when system backups exist */}
       {scope === "org" && autoTarget ? (
         <AutoBackupBanner target={autoTarget} jobs={autoJobs} scope={scope} />
-      ) : (
+      ) : showIntro ? (
         <div className="space-y-1">
           <h2 className="text-lg font-medium">Backups</h2>
           <p className="text-sm text-muted-foreground">
@@ -98,7 +101,7 @@ export function BackupPage({
               : "Configure backup targets and schedules for this organization."}
           </p>
         </div>
-      )}
+      ) : null}
 
       {/* Two-column: Storage targets + Backup jobs */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
