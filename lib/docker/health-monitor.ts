@@ -164,10 +164,12 @@ export async function tickHealthMonitor(): Promise<void> {
 
   // One cAdvisor read for the whole fleet, keyed by the container id the loop
   // below already has.
+  // cAdvisor reports the 12-char short id; Docker's list API returns the full
+  // one. Both sides are truncated so the lookup matches.
   const usageByContainer = new Map<string, { usage: number; limit: number }>();
   try {
     for (const m of await fetchAllMetrics()) {
-      usageByContainer.set(m.containerId, { usage: m.memoryUsage, limit: m.memoryLimit });
+      usageByContainer.set(shortId(m.containerId), { usage: m.memoryUsage, limit: m.memoryLimit });
     }
   } catch (err) {
     log.warn("Metrics unavailable, skipping memory conditions:", err instanceof Error ? err.message : err);
@@ -211,7 +213,7 @@ export async function tickHealthMonitor(): Promise<void> {
       health: normalizeHealth(info.state.health?.status),
       crashLoop: crashLoopSignal(c.id, info.restartCount, now),
       selfHealExhausted: gaveUp.has(c.id),
-      memory: usageByContainer.get(c.id) ?? null,
+      memory: usageByContainer.get(shortId(c.id)) ?? null,
     });
 
     if (!effectiveAutoRestart(app)) {
@@ -301,6 +303,10 @@ export async function tickHealthMonitor(): Promise<void> {
 
   await persistConditions(appRows, signals, now);
   cleanupState(seen);
+}
+
+function shortId(id: string): string {
+  return id.slice(0, 12);
 }
 
 function normalizeHealth(status: string | undefined): ConditionInput["health"] {
