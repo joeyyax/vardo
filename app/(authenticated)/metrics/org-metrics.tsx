@@ -182,6 +182,8 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
     return apps;
   }, [metaApps, apps]);
 
+  const [showIdle, setShowIdle] = useState(false);
+
   // Build per-app stats lookup from SSE apps data
   const appStats = useMemo(() => {
     const map: Record<string, AppMeta> = {};
@@ -192,6 +194,20 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
     }
     return map;
   }, [metaApps]);
+
+  // Running apps carry every number in the table; an idle app is six dashes.
+  // Heaviest first, then the idle tail behind a toggle.
+  const [runningApps, idleApps] = useMemo(() => {
+    const memOf = (id: string) =>
+      appStats[id]?.containers.reduce((s, c) => s + c.memoryUsage, 0) ?? 0;
+    const running = displayApps
+      .filter((a) => a.status === "active")
+      .sort((a, b) => memOf(b.id) - memOf(a.id) || a.displayName.localeCompare(b.displayName));
+    const idle = displayApps
+      .filter((a) => a.status !== "active")
+      .sort((a, b) => a.displayName.localeCompare(b.displayName));
+    return [running, idle];
+  }, [displayApps, appStats]);
 
   // Totals from latest point or from meta apps containers
   const totals = useMemo(() => {
@@ -220,7 +236,9 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
   }, [metaApps, points]);
 
   const statusCounts = useMemo(() => {
-    const counts = { active: 0, stopped: 0, error: 0, deploying: 0 };
+    // missing included: left out, those apps land in no bucket and the donut
+    // renders the running slice as the whole fleet.
+    const counts = { active: 0, stopped: 0, error: 0, deploying: 0, missing: 0 };
     for (const app of displayApps) {
       if (app.status in counts) counts[app.status as keyof typeof counts]++;
     }
@@ -413,6 +431,12 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
                   {statusCounts.error} crashed
                 </span>
               )}
+              {statusCounts.missing > 0 && (
+                <span className="inline-flex items-center gap-1 text-[10px] text-status-warning">
+                  <span className="size-1.5 rounded-full bg-status-warning" />
+                  {statusCounts.missing} no container
+                </span>
+              )}
               {statusCounts.stopped > 0 && (
                 <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
                   <span className="size-1.5 rounded-full bg-status-neutral" />
@@ -544,6 +568,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
           { label: "Running", value: statusCounts.active, color: "var(--color-status-success, #22c55e)" },
           { label: "Deploying", value: statusCounts.deploying, color: "var(--color-status-info, #3b82f6)" },
           { label: "Crashed", value: statusCounts.error, color: "var(--color-status-error, #ef4444)" },
+          { label: "No container", value: statusCounts.missing, color: "var(--color-status-warning, #f59e0b)" },
           { label: "Stopped", value: statusCounts.stopped, color: "oklch(0.5 0 0 / 30%)" },
         ].filter((s) => s.value > 0);
 
@@ -613,7 +638,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
         );
       })()}
 
-      {/* Project list with stats */}
+      {/* Per-app stats */}
       {displayApps.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
           <Activity className="size-8 text-muted-foreground/50" />
@@ -634,7 +659,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
         <div className="squircle rounded-lg border bg-card overflow-x-auto">
           {/* Header */}
           <div className="grid grid-cols-[1fr_70px_90px_100px_80px_80px] gap-3 px-4 py-2 border-b text-xs text-muted-foreground whitespace-nowrap min-w-[700px]">
-            <span>Project</span>
+            <span>App</span>
             <span className="text-right">CPU</span>
             <span className="text-right">Memory</span>
             <span className="text-right">Network</span>
@@ -642,7 +667,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
             <span className="text-right">Containers</span>
           </div>
           <div className="divide-y">
-            {displayApps.map((a) => {
+            {(showIdle ? [...runningApps, ...idleApps] : runningApps).map((a) => {
               const ps = appStats[a.id];
               const cpu = ps?.containers.reduce((s, c) => s + c.cpuPercent, 0) ?? 0;
               const mem = ps?.containers.reduce((s, c) => s + c.memoryUsage, 0) ?? 0;
@@ -691,6 +716,19 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
               );
             })}
           </div>
+          {runningApps.length === 0 && !showIdle && (
+            <p className="px-4 py-3 text-xs text-muted-foreground">No apps running.</p>
+          )}
+          {idleApps.length > 0 && (
+            <button
+              onClick={() => setShowIdle((v) => !v)}
+              className="w-full border-t px-4 py-2.5 text-left text-xs text-muted-foreground hover:bg-accent/50 transition-colors"
+            >
+              {showIdle
+                ? `Hide ${idleApps.length} not running`
+                : `Show ${idleApps.length} not running`}
+            </button>
+          )}
         </div>
       )}
     </div>
