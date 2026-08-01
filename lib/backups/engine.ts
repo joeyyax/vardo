@@ -473,10 +473,12 @@ export async function runBackup(jobId: string): Promise<BackupResult[]> {
     }
   }
 
-  // Update job's last run timestamp
+  // Update job's last run timestamp. lastRunAt feeds the stale-backup deploy
+  // condition, which never fired while only updatedAt was written.
+  const finishedRunAt = new Date();
   await db
     .update(backupJobs)
-    .set({ updatedAt: new Date() })
+    .set({ lastRunAt: finishedRunAt, updatedAt: finishedRunAt })
     .where(eq(backupJobs.id, jobId));
 
   // Notifications
