@@ -91,6 +91,10 @@ export type ChildApp = {
   composeService: string | null;
   status: string;
   imageName: string | null;
+  containerStartedAt: Date | null;
+  containerPort: number | null;
+  exposedPorts: { internal: number; external?: number; description?: string }[] | null;
+  needsRedeploy: boolean | null;
   domains: { domain: string; isPrimary: boolean | null }[];
 };
 
