@@ -38,7 +38,8 @@ import type { ContainerPoint } from "@/lib/metrics/types";
 import { formatBytes } from "@/lib/metrics/format";
 import { AppDeployPanel } from "./app-deploy-panel";
 import { useDeploy } from "./hooks/use-deploy";
-import { AppUpdatesPanel } from "./app-updates";
+import { AppUpdatesPanel, useImageUpdates } from "./app-updates";
+import { pendingImageChange, type PendingImage } from "@/lib/docker/image-updates/pending";
 import { AppHeader } from "./app-header";
 import { AppSectionNav, type SectionGroup } from "./app-section-nav";
 import { isOrgAdmin } from "@/lib/auth/permissions";
@@ -52,6 +53,7 @@ import { ComposeReview } from "@/components/compose-review";
 
 // Repo de-emphasized, tag as a discrete badge. The badge carries
 // data-slot="image-tag" so the image update checker can annotate it.
+// Labeled because compose can pin a different tag than the one deployed.
 function ImageRef({ imageName }: { imageName: string }) {
   const slash = imageName.lastIndexOf("/");
   const colon = imageName.lastIndexOf(":");
@@ -60,12 +62,28 @@ function ImageRef({ imageName }: { imageName: string }) {
   const tag = hasTag ? imageName.slice(colon + 1) : null;
   return (
     <span className="flex items-center gap-1.5 min-w-0">
+      <span className="type-label shrink-0 text-muted-foreground/50">Deployed</span>
       <span className="truncate font-mono text-xs text-muted-foreground/60">{repo}</span>
       <span
         data-slot="image-tag"
         className="shrink-0 rounded border px-1.5 py-px font-mono text-[11px] leading-4 text-muted-foreground"
       >
         {tag ?? "untagged"}
+      </span>
+    </span>
+  );
+}
+
+// What compose pins for this service, when the last deploy did not run it.
+function PendingImageRef({ pending }: { pending: PendingImage }) {
+  return (
+    <span className="flex items-center gap-1.5 min-w-0">
+      <span className="type-label shrink-0 text-status-warning">Pending</span>
+      {pending.repo && (
+        <span className="truncate font-mono text-xs text-muted-foreground/60">{pending.repo}</span>
+      )}
+      <span className="shrink-0 rounded border border-status-warning/40 bg-status-warning-muted px-1.5 py-px font-mono text-[11px] leading-4 text-status-warning">
+        {pending.tag}
       </span>
     </span>
   );
@@ -115,10 +133,12 @@ function ServiceCard({
   service,
   stats,
   cpuHistory,
+  pending,
 }: {
   service: ChildApp;
   stats?: { cpuPercent: number; memoryUsage: number };
   cpuHistory?: number[];
+  pending?: PendingImage | null;
 }) {
   const primaryDomain = service.domains.find((d) => d.isPrimary) || service.domains[0];
   const running = service.status === "active";
@@ -145,11 +165,15 @@ function ServiceCard({
               {service.composeService ?? service.name}
             </p>
           </div>
-          <StatusIndicator status={service.status} needsRedeploy={!!service.needsRedeploy} />
+          <StatusIndicator
+            status={service.status}
+            needsRedeploy={!!service.needsRedeploy || !!pending}
+          />
         </div>
 
         <div className="relative mt-2 space-y-1">
           {service.imageName && <ImageRef imageName={service.imageName} />}
+          {pending && <PendingImageRef pending={pending} />}
           {primaryDomain && (
             <p className="font-mono text-xs text-muted-foreground truncate">
               {primaryDomain.domain}
@@ -192,6 +216,12 @@ function ComposeServices({
 }) {
   // Rolling window of container snapshots; stats and sparklines derive from it.
   const [snapshots, setSnapshots] = useState<ContainerPoint[][]>([]);
+  // Compose pins, from the same source the Updates tab reads.
+  const { data: updates } = useImageUpdates(orgId, appId);
+  const pinned = useMemo(
+    () => new Map((updates?.services ?? []).map((entry) => [entry.service, entry.image])),
+    [updates],
+  );
 
   useEffect(() => {
     const es = new EventSource(`/api/v1/organizations/${orgId}/apps/${appId}/stats/stream`);
@@ -242,6 +272,10 @@ function ComposeServices({
           service={service}
           stats={stats.get(service.id)}
           cpuHistory={histories.get(service.id)}
+          pending={pendingImageChange(
+            service.imageName,
+            pinned.get(service.composeService ?? null) ?? null,
+          )}
         />
       ))}
     </div>
@@ -525,6 +559,12 @@ export function ComposeDetail({
 
   const services = app.childApps;
 
+  // Image each service last deployed, for the Updates tab to compare against.
+  const deployedImages = useMemo(
+    () => Object.fromEntries(services.map((s) => [s.composeService ?? "", s.imageName])),
+    [services],
+  );
+
   const setActiveTabAndUrl = useCallback(
     (tab: string) => {
       setActiveTab(tab);
@@ -753,6 +793,7 @@ export function ComposeDetail({
             appId={app.id}
             onDeploy={handleDeployClick}
             deploying={deploy.deploying}
+            deployed={deployedImages}
           />
         </TabsContent>
 
