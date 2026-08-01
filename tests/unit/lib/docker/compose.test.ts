@@ -2136,6 +2136,99 @@ describe("applyDeployTransforms — Traefik labels", () => {
   });
 });
 
+describe("applyDeployTransforms — routed service selection", () => {
+  // Authentik lists the worker first; only the server serves 9000.
+  function authentikCompose(): ComposeFile {
+    return {
+      services: {
+        "authentik-worker": { name: "authentik-worker", image: "ghcr.io/goauthentik/server:2024.10" },
+        "authentik-server": {
+          name: "authentik-server",
+          image: "ghcr.io/goauthentik/server:2024.10",
+          ports: ["9000:9000"],
+        },
+        postgresql: { name: "postgresql", image: "postgres:16-alpine" },
+      },
+    };
+  }
+
+  const domain = {
+    id: "dom-aabbccdd",
+    domain: "auth.example.com",
+    port: null,
+    sslEnabled: true,
+    certResolver: "le-dns",
+    redirectTo: null,
+    redirectCode: null,
+  };
+
+  it("labels the service that serves the port, not the first in the file", () => {
+    const result = applyDeployTransforms(authentikCompose(), {
+      ...baseTransformOpts,
+      appName: "authentik",
+      containerPort: 9000,
+      domains: [domain],
+    });
+    expect(result.services["authentik-server"].labels?.["traefik.enable"]).toBe("true");
+    expect(result.services["authentik-worker"].labels).toBeUndefined();
+    expect(result.services.postgresql.labels).toBeUndefined();
+  });
+
+  it("attaches vardo-network to the serving service only", () => {
+    const result = applyDeployTransforms(authentikCompose(), {
+      ...baseTransformOpts,
+      appName: "authentik",
+      containerPort: 9000,
+      domains: [domain],
+    });
+    expect(result.services["authentik-server"].networks).toContain("vardo-network");
+    expect(result.services["authentik-worker"].networks ?? []).not.toContain("vardo-network");
+  });
+
+  it("drops inbound Traefik labels so only one backend declares the service", () => {
+    const compose = authentikCompose();
+    compose.services["authentik-server"].labels = {
+      "traefik.enable": "true",
+      "traefik.http.services.authentik.loadbalancer.server.port": "9000",
+    };
+    const result = applyDeployTransforms(compose, {
+      ...baseTransformOpts,
+      appName: "authentik",
+      containerPort: 9000,
+      domains: [domain],
+    });
+    const declaring = Object.values(result.services).filter((svc) =>
+      Object.keys(svc.labels ?? {}).some((k) =>
+        k.startsWith("traefik.http.services.authentik.loadbalancer"),
+      ),
+    );
+    expect(declaring).toHaveLength(1);
+  });
+
+  it("keeps inbound Traefik labels when the app has no domains", () => {
+    const compose = authentikCompose();
+    compose.services["authentik-server"].labels = { "traefik.enable": "true" };
+    const result = applyDeployTransforms(compose, {
+      ...baseTransformOpts,
+      appName: "authentik",
+      containerPort: 9000,
+      domains: [],
+    });
+    expect(result.services["authentik-server"].labels?.["traefik.enable"]).toBe("true");
+  });
+
+  it("honors an explicit compose service on the domain", () => {
+    const result = applyDeployTransforms(authentikCompose(), {
+      ...baseTransformOpts,
+      appName: "authentik",
+      containerPort: 9000,
+      domains: [{ ...domain, composeService: "authentik-worker" }],
+    });
+    expect(result.services["authentik-worker"].labels?.["traefik.enable"]).toBe("true");
+    expect(result.services["authentik-server"].labels).toBeUndefined();
+  });
+});
+
 describe("applyDeployTransforms — combined transforms", () => {
   it("applies all transforms in sequence: limits, GPU, labels, network", () => {
     const result = applyDeployTransforms(makeSimpleCompose(), {

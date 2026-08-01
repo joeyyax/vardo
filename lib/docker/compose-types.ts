@@ -53,6 +53,7 @@ export type ComposeService = {
   build?: string | { context: string; dockerfile?: string };
   restart?: string;
   ports?: string[];
+  expose?: string[];
   environment?: Record<string, string>;
   env_file?: string[];
   volumes?: string[];

@@ -63,6 +63,7 @@ export function parseCompose(yamlString: string): ComposeFile {
     if (raw.build !== undefined) svc.build = raw.build as ComposeService["build"];
     if (typeof raw.restart === "string") svc.restart = raw.restart;
     if (Array.isArray(raw.ports)) svc.ports = raw.ports.map(String);
+    if (Array.isArray(raw.expose)) svc.expose = raw.expose.map(String);
     if (raw.environment && typeof raw.environment === "object") {
       if (Array.isArray(raw.environment)) {
         const envMap: Record<string, string> = {};
