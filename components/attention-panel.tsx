@@ -2,27 +2,9 @@
 
 import Link from "next/link";
 import { AlertTriangle, ChevronDown } from "lucide-react";
+import { formatDistanceToNowStrict } from "date-fns";
 
-export type AttentionTone = "error" | "warning" | "neutral";
-
-export type AttentionItem = {
-  id: string;
-  name: string;
-  href: string;
-  /** Occurrences for this subject, shown only when more than one. */
-  count?: number;
-  /** Per-subject specifics, shown on hover. */
-  detail?: string;
-};
-
-export type AttentionRow = {
-  key: string;
-  label: string;
-  tone: AttentionTone;
-  items: AttentionItem[];
-  /** Sentence under the chips — what to do about it. */
-  footer?: React.ReactNode;
-};
+import { isInlineRow, type AttentionRow, type AttentionTone } from "@/lib/ui/attention";
 
 const TONE_RANK: Record<AttentionTone, number> = { error: 0, warning: 1, neutral: 2 };
 
@@ -37,6 +19,10 @@ const LABEL: Record<AttentionTone, string> = {
   warning: "text-status-warning",
   neutral: "text-foreground",
 };
+
+/** Kind column, wide enough for the longest label. Subjects stack under it on phones. */
+const LABEL_WIDTH = "sm:w-40";
+const LABEL_COL = `w-full shrink-0 ${LABEL_WIDTH}`;
 
 /**
  * Every fleet-wide notice in one place, worst first. Faults are counted in the
@@ -82,38 +68,67 @@ export function AttentionPanel({ rows }: { rows: AttentionRow[] }) {
       </header>
 
       <div className="divide-y">
-        {present.map((row) => (
-          <details key={row.key} className="group">
-            <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 transition-colors hover:bg-muted/40 [&::-webkit-details-marker]:hidden">
-              <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${DOT[row.tone]}`} />
-              <span className={LABEL[row.tone]}>{row.label}</span>
-              <span className="ml-auto tabular-nums text-muted-foreground">{row.items.length}</span>
-              <ChevronDown
-                aria-hidden="true"
-                className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
-              />
-            </summary>
-            <div className="space-y-2 bg-background-deep px-3 py-2.5">
-              <div className="flex flex-wrap gap-1.5">
-                {row.items.map((item) => (
-                  <Link
-                    key={item.id}
-                    href={item.href}
-                    title={item.detail}
-                    className="squircle rounded-md bg-card px-2 py-0.5 text-xs font-medium transition-colors hover:bg-muted"
-                  >
-                    {item.name}
-                    {item.count !== undefined && item.count > 1 && (
-                      <span className="ml-1 tabular-nums text-muted-foreground">{item.count}</span>
-                    )}
-                  </Link>
-                ))}
-              </div>
-              {row.footer && <p className="text-xs text-muted-foreground">{row.footer}</p>}
+        {present.map((row) =>
+          isInlineRow(row) ? (
+            <div key={row.key} className="flex flex-wrap items-start gap-x-2 gap-y-1 px-3 py-2">
+              <span className={`${LABEL_COL} flex items-center gap-2 ${LABEL[row.tone]}`}>
+                <Dot tone={row.tone} />
+                {row.label}
+              </span>
+              <Subjects row={row} />
             </div>
-          </details>
-        ))}
+          ) : (
+            <details key={row.key} className="group">
+              <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 transition-colors hover:bg-muted/40 [&::-webkit-details-marker]:hidden">
+                <Dot tone={row.tone} />
+                <span className={LABEL[row.tone]}>{row.label}</span>
+                <span className="ml-auto tabular-nums text-muted-foreground">
+                  {row.items.length}
+                </span>
+                <ChevronDown
+                  aria-hidden="true"
+                  className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
+                />
+              </summary>
+              <div className="flex items-start gap-x-2 px-3 pb-2.5">
+                <span aria-hidden="true" className={`hidden shrink-0 sm:block ${LABEL_WIDTH}`} />
+                <Subjects row={row} wide />
+              </div>
+            </details>
+          ),
+        )}
       </div>
     </section>
+  );
+}
+
+function Dot({ tone }: { tone: AttentionTone }) {
+  return <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${DOT[tone]}`} />;
+}
+
+/** One line per subject: who, what is wrong, and how long it has been wrong. */
+function Subjects({ row, wide = false }: { row: AttentionRow; wide?: boolean }) {
+  return (
+    <div className="min-w-0 flex-1 space-y-1.5 pl-4 sm:pl-0">
+      <ul className={wide ? "gap-x-8 sm:columns-2 xl:columns-3" : "space-y-1"}>
+        {row.items.map((item) => (
+          <li key={item.id} className={wide ? "mb-1 break-inside-avoid" : undefined}>
+            <Link
+              href={item.href}
+              className="squircle -mx-1.5 flex flex-wrap items-baseline gap-x-2 rounded-md px-1.5 transition-colors hover:bg-muted/60"
+            >
+              <span className="font-medium">{item.name}</span>
+              {item.detail && <span className="text-muted-foreground">{item.detail}</span>}
+              {item.since && (
+                <span className="text-xs text-muted-foreground/70">
+                  for {formatDistanceToNowStrict(new Date(item.since))}
+                </span>
+              )}
+            </Link>
+          </li>
+        ))}
+      </ul>
+      {row.footer && <p className="text-xs text-muted-foreground">{row.footer}</p>}
+    </div>
   );
 }
