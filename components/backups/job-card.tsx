@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Play, Loader2, Power, PowerOff, Clock, Trash2 } from "lucide-react";
 import { toast } from "@/lib/messenger";
+import { UncapturedWarning, uncapturedSources } from "./uncaptured-warning";
 import { scheduleLabel } from "./constants";
 import { StatusBadge } from "./status-badge";
 import { RetentionSummary } from "./retention-summary";
@@ -30,6 +31,8 @@ export function JobCard({
   const [deleting, setDeleting] = useState(false);
 
   const lastBackup = job.backups[0];
+
+  const uncaptured = uncapturedSources(job.backupJobApps.map((bja) => bja.app));
 
   async function runNow() {
     setRunning(true);
@@ -154,6 +157,8 @@ export function JobCard({
           <span>Target: {job.target.name}</span>
           <RetentionSummary job={job} />
         </div>
+
+        <UncapturedWarning sources={uncaptured} />
 
         {showApps && job.backupJobApps.length > 0 && (
           <div className="flex flex-wrap gap-1">
