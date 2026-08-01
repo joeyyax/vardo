@@ -27,6 +27,20 @@ describe("selectActiveServiceAlerts", () => {
     expect(active).toEqual([]);
   });
 
+  // A service still down re-fires every 15 minutes; 20 tolerates one late cycle.
+  it("keeps an alert just inside the window and drops one just outside", () => {
+    const inside = selectActiveServiceAlerts(
+      { "service-degraded:Loki": { lastFired: minutesAgo(19), count: 5 } },
+      NOW,
+    );
+    const outside = selectActiveServiceAlerts(
+      { "service-degraded:Loki": { lastFired: minutesAgo(21), count: 5 } },
+      NOW,
+    );
+    expect(inside.map((a) => a.name)).toEqual(["Loki"]);
+    expect(outside).toEqual([]);
+  });
+
   it("ignores alert types that are not service-degraded", () => {
     const active = selectActiveServiceAlerts(
       {
