@@ -164,31 +164,27 @@ function ProjectCard({
   return (
     <Link
       href={`/projects/${project.name}`}
-      className={`squircle relative flex flex-col rounded-lg border bg-card p-4 transition-colors hover:bg-accent/50 overflow-hidden cursor-pointer${isSystem ? " ring-2 ring-status-warning/50" : ""}`}
+      className={`squircle relative flex flex-col rounded-lg border bg-card transition-colors hover:bg-accent/50 overflow-hidden cursor-pointer${isSystem ? " ring-2 ring-status-warning/50" : ""}`}
     >
-      {aggregatedCpu.length > 0 && (
-        <Sparkline
-          data={aggregatedCpu}
-          className="absolute inset-0 w-full h-full pointer-events-none"
-          style={{ color: "oklch(0.65 0.19 255)" }}
-        />
-      )}
+      {/* Raised panel: identity + aggregate state */}
+      <div className="relative p-4">
+        {aggregatedCpu.length > 0 && (
+          <Sparkline
+            data={aggregatedCpu}
+            className="absolute inset-0 w-full h-full pointer-events-none"
+            style={{ color: "oklch(0.65 0.19 255)" }}
+          />
+        )}
 
-      <div className="relative flex gap-4">
-        {/* Icon grid */}
+        <div className="relative flex gap-4">
+        {/* One icon — a collage of the same marks on every card is noise */}
         {icons.length === 0 ? (
           <div className="size-12 shrink-0 rounded-md flex items-center justify-center" style={{ backgroundColor: `${color}20` }}>
             <span className="size-3 rounded-full" style={{ backgroundColor: color }} />
           </div>
-        ) : icons.length === 1 ? (
+        ) : (
           <div className="size-12 shrink-0 rounded-md flex items-center justify-center" style={{ backgroundColor: `${color}10` }}>
             <img src={icons[0]} alt="" className="size-8 opacity-70" />
-          </div>
-        ) : (
-          <div className="size-12 shrink-0 rounded-md grid grid-cols-2 gap-0.5 p-1" style={{ backgroundColor: `${color}10` }}>
-            {icons.slice(0, 4).map((icon, i) => (
-              <img key={i} src={icon} alt="" className="size-full opacity-60" />
-            ))}
           </div>
         )}
 
@@ -243,10 +239,11 @@ function ProjectCard({
               : null;
           })()}
         </div>
+        </div>
       </div>
 
-      {/* App chips */}
-      <div className="relative flex flex-wrap gap-1.5 mt-3 pt-3 border-t">
+      {/* Recessed chip tray — apps sit as raised objects on a lower surface */}
+      <div className="relative flex flex-wrap gap-1.5 border-t bg-background/60 px-4 py-3">
         {projectApps.length === 0 && (
           <Link
             href={`/apps/new?project=${project.id}`}
@@ -273,7 +270,7 @@ function ProjectCard({
                   href={`/apps/${a.name}`}
                   onClick={(e) => e.stopPropagation()}
                   className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                    CHIP_TONE[a.status] ?? "border-transparent bg-background hover:bg-accent"
+                    CHIP_TONE[a.status] ?? "border-transparent bg-card hover:bg-accent"
                   }`}
                 >
                   <span aria-hidden="true" className={`size-1.5 rounded-full ${statusDotColor(a.status)}`} />
@@ -294,7 +291,7 @@ function ProjectCard({
                 </Link>
               ))}
               {capped && (
-                <span className="inline-flex items-center rounded-full border border-transparent bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                <span className="inline-flex items-center rounded-full border border-transparent bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground">
                   +{sorted.length - CHIP_CAP} more
                 </span>
               )}
@@ -369,7 +366,9 @@ export function AppGrid({
   );
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
+      {/* Attention cluster — banners group tightly, apart from the grid */}
+      <div className="space-y-2 empty:hidden">
       <UpdatesBanner orgId={orgId} />
 
       {unlimited.length > 0 && (
@@ -399,7 +398,9 @@ export function AppGrid({
           </div>
         </details>
       )}
+      </div>
 
+      <div className="space-y-3">
       {allTags.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
           {allTags.map((tag) => {
@@ -461,7 +462,7 @@ export function AppGrid({
       </div>
 
       {filtered.length === 0 && apps.length > 0 && (
-        <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
+        <div className="squircle lining flex flex-col items-center justify-center gap-3 rounded-lg border bg-card p-12">
           <p className="text-sm text-muted-foreground">
             No apps match the current filters.
           </p>
@@ -473,6 +474,7 @@ export function AppGrid({
           </button>
         </div>
       )}
+      </div>
     </div>
   );
 }
