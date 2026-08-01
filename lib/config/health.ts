@@ -100,9 +100,6 @@ async function checkService(
 
 async function checkLoki(): Promise<ServiceStatus> {
   const url = process.env.LOKI_URL || "http://localhost:7400";
-  if (!url) {
-    return { name: "Loki", description: "Log aggregation", status: "unconfigured" };
-  }
   return checkService("Loki", "Log aggregation", async () => {
     const res = await fetch(`${url}/ready`, { signal: AbortSignal.timeout(2000) });
     if (!res.ok) throw new Error(`${res.status}`);
@@ -110,8 +107,10 @@ async function checkLoki(): Promise<ServiceStatus> {
 }
 
 async function checkTraefik(): Promise<ServiceStatus> {
+  // Overridable: localhost is the frontend container itself, not the proxy.
+  const url = process.env.TRAEFIK_URL || "http://localhost:8080";
   return checkService("Traefik", "Reverse proxy and SSL", async () => {
-    const res = await fetch("http://localhost:8080/api/overview", { signal: AbortSignal.timeout(2000) });
+    const res = await fetch(`${url}/api/overview`, { signal: AbortSignal.timeout(2000) });
     if (!res.ok) throw new Error(`${res.status}`);
   });
 }
