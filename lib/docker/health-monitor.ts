@@ -335,12 +335,24 @@ function crashLoopSignal(
   return { restarts: delta, windowMs: now - baseline.at };
 }
 
+/** One line on the first tick, so an evaluator that reads nothing is visible
+ *  rather than indistinguishable from one that found nothing wrong. */
+let conditionsReported = false;
+
 /** Evaluate and write conditions for every app the tick saw. */
 async function persistConditions(
   appRows: { id: string; conditions: AppCondition[] | null }[],
   signals: Map<string, ConditionInput>,
   now: number,
 ): Promise<void> {
+  if (!conditionsReported) {
+    conditionsReported = true;
+    const withMetrics = [...signals.values()].filter((s) => s.memory && s.memory.limit > 0).length;
+    log.info(
+      `Evaluating conditions for ${appRows.length} app(s), ${withMetrics} with a memory limit to measure against`,
+    );
+  }
+
   for (const app of appRows) {
     const input = signals.get(app.id) ?? {
       now,
