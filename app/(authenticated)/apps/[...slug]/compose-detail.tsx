@@ -126,7 +126,7 @@ function ServiceCard({
   return (
     <Link
       href={`/apps/${service.name}`}
-      className="squircle relative flex flex-col rounded-lg border bg-card transition-all duration-200 hover:bg-accent/50 overflow-hidden cursor-pointer"
+      className="squircle relative flex flex-col rounded-lg bg-card shadow-card dark:border transition-shadow duration-200 hover:shadow-card-hover overflow-hidden cursor-pointer"
     >
       {/* Raised panel: identity */}
       <div className="relative flex-1 p-4">
@@ -159,7 +159,7 @@ function ServiceCard({
       </div>
 
       {/* Recessed stats band */}
-      <div className="grid grid-cols-4 gap-2 border-t bg-background/60 px-4 py-3">
+      <div className="grid grid-cols-4 gap-2 border-t bg-background-deep px-4 py-3">
         <Stat label="CPU">
           {running && stats ? `${stats.cpuPercent.toFixed(1)}%` : "—"}
         </Stat>

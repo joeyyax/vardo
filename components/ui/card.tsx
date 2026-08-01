@@ -7,7 +7,9 @@ function Card({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="card"
       className={cn(
-        "bg-card text-card-foreground flex flex-col gap-4 border py-5",
+        // Layers over borders — the surface and its shadow define the card.
+        // Dark keeps a hairline because shadows barely read on a dark ground.
+        "bg-card text-card-foreground flex flex-col gap-4 py-5 shadow-card dark:border",
         className
       )}
       {...props}
