@@ -12,7 +12,9 @@ import { join } from "path";
 import { ensureNetwork } from "../client";
 import {
   slotComposeFiles,
+  getTraefikRoutedServices,
 } from "../compose";
+import { selectRoutedService } from "../routed-service";
 import { prepareBindMountOwnership } from "./bind-mount-ownership";
 import { demoteStandbyRestart, restoreSlotRestart } from "../restart-policy";
 import {
@@ -349,9 +351,11 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     }
   }
 
-  const primarySvcName = Object.keys(compose.services).find(
-    (k) => !compose.services[k].network_mode || compose.services[k].network_mode === "bridge"
-  );
+  // Probe the container Traefik was pointed at; a probe against the wrong
+  // container fails open and reports the deploy healthy.
+  const routed = getTraefikRoutedServices(compose);
+  const primarySvcName =
+    [...routed][0] ?? selectRoutedService(compose, { containerPort }).service;
   const httpProbe = primarySvcName
     ? { containerName: `${newProjectName}-${primarySvcName}-1`, port: containerPort }
     : undefined;

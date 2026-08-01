@@ -8,6 +8,7 @@
 
 import type { ComposeFile } from "./compose";
 import { parsePortString, stripHostPorts } from "./compose";
+import { selectRoutedService } from "./routed-service";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -43,19 +44,18 @@ export type NormalizeOptions = {
 /**
  * Determine which services are routed via Traefik (have domains).
  *
- * The primary service is the first bridge-network service in compose order.
- * When the app has at least one domain, the primary service is Traefik-routed.
+ * When the app has at least one domain, the service that serves its port is
+ * Traefik-routed. Pass `containerPort` so the selection can use it.
  */
 export function getRoutedServices(
   compose: ComposeFile,
   domainCount: number,
+  containerPort?: number | null,
 ): Set<string> {
   const routed = new Set<string>();
   if (domainCount > 0) {
-    const primary = Object.keys(compose.services).find(
-      (k) => !compose.services[k].network_mode || compose.services[k].network_mode === "bridge"
-    );
-    if (primary) routed.add(primary);
+    const { service } = selectRoutedService(compose, { containerPort });
+    if (service) routed.add(service);
   }
   return routed;
 }

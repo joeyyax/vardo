@@ -68,6 +68,10 @@ export {
   buildComposePreview,
 } from "./compose-inject";
 
+// Routed-service selection
+export type { RoutedServiceReason, RoutedServiceSelection } from "./routed-service";
+export { selectRoutedService, declaredContainerPorts } from "./routed-service";
+
 // Normalization
 export type { NormalizeChange, NormalizeResult, NormalizeOptions } from "./compose-normalize";
 export { normalizeCompose, getRoutedServices } from "./compose-normalize";
