@@ -45,7 +45,7 @@ export async function SessionFooter() {
     : null;
 
   return (
-    <footer className="px-5 py-2 text-[11px] text-muted-foreground/60 leading-relaxed">
+    <footer className="px-5 py-2 text-[11px] text-muted-foreground leading-relaxed">
       <div className="flex flex-wrap justify-center gap-x-1">
         <span>
           Signed in as{" "}

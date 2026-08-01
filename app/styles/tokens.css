@@ -74,8 +74,9 @@
   --status-success-muted: oklch(45% 0.14 155 / 10%);
   --status-error: oklch(50% 0.18 25);
   --status-error-muted: oklch(50% 0.18 25 / 10%);
-  --status-warning: oklch(55% 0.16 70);
-  --status-warning-muted: oklch(55% 0.16 70 / 10%);
+  /* 52%: at 55% the badge label measured 4.35 on its own 10% tint. */
+  --status-warning: oklch(52% 0.16 70);
+  --status-warning-muted: oklch(52% 0.16 70 / 10%);
   --status-info: oklch(45% 0.14 240);
   --status-info-muted: oklch(45% 0.14 240 / 10%);
   --status-neutral: oklch(45% 0.012 78);

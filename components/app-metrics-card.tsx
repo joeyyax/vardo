@@ -165,12 +165,12 @@ function StatCell({
   const trend = meter === undefined && data && data.length > 1 && data.some((v) => v > 0);
   return (
     <div className="min-w-0 px-3 py-2 first:pl-5 last:pr-5">
-      <div className="text-[9px] font-medium uppercase tracking-[0.08em] text-muted-foreground/70">
+      <div className="text-[9px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
         {label}
       </div>
       <div className="mt-0.5 truncate whitespace-nowrap text-xs tabular-nums text-foreground/75">
         {value}
-        {sub && <span className="ml-1 text-[9px] text-muted-foreground/70">{sub}</span>}
+        {sub && <span className="ml-1 text-[9px] text-muted-foreground">{sub}</span>}
       </div>
       <div className="mt-1 flex h-3 items-center" aria-hidden="true">
         {meter !== undefined ? (
