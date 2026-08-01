@@ -173,6 +173,8 @@ export type SystemCertExpiringEvent = {
   title: string;
   message: string;
   domain: string;
+  /** Every domain the certificate covers. A wildcard cert backs many at once. */
+  domains?: string[];
   daysLeft: number;
   expiresAt: string;
   resolver: string;

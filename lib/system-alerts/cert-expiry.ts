@@ -33,6 +33,8 @@ export type CertProbe =
       status: "ok";
       /** The peer certificate's notAfter, as Node reports it. Unvalidated. */
       validTo: unknown;
+      /** SHA-256 of the peer certificate. Identifies domains sharing one cert. */
+      fingerprint: string | null;
       authorized: boolean;
       authorizationError: string | null;
     }
@@ -114,20 +116,49 @@ export function certVerdictAlerts(
   return verdict.kind === "expiring" || verdict.kind === "expired";
 }
 
-/** Alert copy for a verdict that fires. */
+/** "example.com" / "example.com and 41 other domains" */
+function subject(domains: string[]): string {
+  const [first, ...rest] = domains;
+  if (rest.length === 0) return first;
+  return `${first} and ${rest.length} other domain${rest.length === 1 ? "" : "s"}`;
+}
+
+/**
+ * Alert copy for a verdict that fires, covering every domain served by the
+ * certificate. One wildcard cert can back the whole install, and alerting per
+ * domain would send dozens of notifications for a single renewal failure.
+ */
 export function certAlertMessage(
-  domain: string,
+  domains: string[],
   verdict: Extract<CertVerdict, { kind: "expiring" | "expired" }>,
 ): { title: string; message: string } {
+  const who = subject(domains);
   if (verdict.kind === "expired") {
     const days = Math.abs(verdict.daysLeft);
     return {
-      title: `Certificate expired: ${domain}`,
-      message: `The TLS certificate for ${domain} expired ${days} day${days === 1 ? "" : "s"} ago. Browsers are refusing the connection — check Traefik's ACME logs.`,
+      title: `Certificate expired: ${who}`,
+      message: `The TLS certificate for ${who} expired ${days} day${days === 1 ? "" : "s"} ago. Browsers are refusing the connection — check Traefik's ACME logs.`,
     };
   }
   return {
-    title: `Certificate expiring: ${domain}`,
-    message: `The TLS certificate for ${domain} expires in ${verdict.daysLeft} day${verdict.daysLeft === 1 ? "" : "s"}. Traefik should auto-renew — check its logs if renewal is not happening.`,
+    title: `Certificate expiring: ${who}`,
+    message: `The TLS certificate for ${who} expires in ${verdict.daysLeft} day${verdict.daysLeft === 1 ? "" : "s"}. Traefik should auto-renew — check its logs if renewal is not happening.`,
   };
+}
+
+/**
+ * Group domains onto the certificate each one is served. Domains whose
+ * fingerprint is unavailable stay separate, keyed by their own name.
+ */
+export function groupByCertificate<T extends { domain: string; fingerprint: string | null }>(
+  entries: T[],
+): Map<string, T[]> {
+  const groups = new Map<string, T[]>();
+  for (const entry of entries) {
+    const key = entry.fingerprint ?? `domain:${entry.domain}`;
+    const existing = groups.get(key);
+    if (existing) existing.push(entry);
+    else groups.set(key, [entry]);
+  }
+  return groups;
 }

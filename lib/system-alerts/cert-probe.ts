@@ -53,6 +53,7 @@ export function probeCertificate(
             finish({
               status: "ok",
               validTo: cert.valid_to,
+              fingerprint: cert.fingerprint256 ?? cert.fingerprint ?? null,
               authorized: socket?.authorized ?? false,
               authorizationError: errorCode(socket?.authorizationError),
             });
