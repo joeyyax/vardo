@@ -45,6 +45,17 @@ const SPECS_TTL_MS = 60_000; // 60 seconds
 const specsCacheByUrl = new Map<string, { specs: Record<string, V2SpecEntry>; cachedAt: number }>();
 
 /**
+ * Short container id from a cAdvisor cgroup path. Keys are `/docker/<id>` on
+ * cgroup v1 and `/system.slice/docker-<id>.scope` under systemd, so taking the
+ * last path segment yields "docker-abcde" on any modern host.
+ */
+export function parseContainerId(cgroupPath: string): string {
+  const hex = cgroupPath.match(/([0-9a-f]{64})/i)?.[1];
+  if (hex) return hex.slice(0, 12);
+  return cgroupPath.split("/").pop()?.replace(/^docker[-/]/, "").slice(0, 12) ?? "";
+}
+
+/**
  * Fetch metrics for all Docker containers from cAdvisor v2 API.
  */
 export async function fetchAllContainerMetrics(baseUrl = CADVISOR_URL): Promise<ContainerMetrics[]> {
@@ -149,7 +160,7 @@ export async function fetchAllContainerMetrics(baseUrl = CADVISOR_URL): Promise<
     }
 
     const containerName = spec.aliases?.[0] || key.split("/").pop() || "";
-    const containerId = key.split("/").pop()?.slice(0, 12) || "";
+    const containerId = parseContainerId(key);
 
     metrics.push({
       containerId,
