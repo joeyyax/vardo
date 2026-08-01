@@ -16,17 +16,18 @@
   /* Operational density — tighter than the editorial sites. */
   --radius: 0.625rem;
 
-  /* Bone ground, warm ink. Cards are lifted by shadow, not outlined — a
-     hairline at a 1.06 value step made every card read as a box. */
-  --background: oklch(96.8% 0.005 85);
+  /* Bone ground, warm ink. Cards are lifted by shadow, not outlined. The ground
+     sits low enough to give the card, its tray and the page distinct steps —
+     at a 4% total range every boundary measured under 1.1 and nothing read. */
+  --background: oklch(94.2% 0.007 85);
   --foreground: oklch(18% 0.012 75);
   --card: oklch(100% 0 0);
-  /* Card tray — one step down from the card band, still above the page ground
-     so the card lifts as a whole. Below the page ground it reads as a foreign
-     slab rather than the card's interior. */
-  --background-deep: oklch(97.9% 0.004 85);
-  --shadow-card-value: 0 1px 2px rgba(28, 22, 14, 0.05), 0 6px 18px rgba(28, 22, 14, 0.07);
-  --shadow-card-hover-value: 0 2px 5px rgba(28, 22, 14, 0.07), 0 14px 30px rgba(28, 22, 14, 0.11);
+  /* Card tray — a step down from the card band, still above the page ground so
+     the card lifts as a whole. Below the page ground it reads as a foreign slab
+     rather than the card's interior. */
+  --background-deep: oklch(97.6% 0.004 85);
+  --shadow-card-value: 0 1px 2px rgba(28, 22, 14, 0.07), 0 4px 10px rgba(28, 22, 14, 0.06), 0 12px 28px rgba(28, 22, 14, 0.07);
+  --shadow-card-hover-value: 0 2px 4px rgba(28, 22, 14, 0.09), 0 8px 18px rgba(28, 22, 14, 0.09), 0 20px 40px rgba(28, 22, 14, 0.11);
   --card-foreground: oklch(18% 0.012 75);
   --popover: oklch(99.4% 0.002 85);
   --popover-foreground: oklch(18% 0.012 75);
