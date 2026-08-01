@@ -3,7 +3,8 @@ import { emit } from "@/lib/notifications/dispatch";
 import type { BusEvent } from "@/lib/bus";
 import { shouldFire, markFired, loadAlertState } from "./state";
 import { db } from "@/lib/db";
-import { systemSettings } from "@/lib/db/schema";
+import { domainCertChecks, systemSettings } from "@/lib/db/schema";
+import { sql } from "drizzle-orm";
 import { exec } from "child_process";
 import { promisify } from "util";
 import pLimit from "p-limit";
@@ -212,13 +213,57 @@ function isProbeableDomain(domain: string): boolean {
   return true;
 }
 
+type ProbedDomain = {
+  domainId: string;
+  domain: string;
+  fingerprint: string | null;
+  verdict: CertVerdict;
+};
+
+/**
+ * Keep the latest observation per domain so app conditions can read an expiry
+ * they never probe themselves. Best-effort — a failed write must not cost the
+ * alert.
+ */
+async function recordCertObservations(probed: ProbedDomain[]): Promise<void> {
+  if (probed.length === 0) return;
+  const checkedAt = new Date();
+  const values = probed.map((p) => ({
+    domainId: p.domainId,
+    expiresAt:
+      p.verdict.kind === "not-issued" || p.verdict.kind === "unknown"
+        ? null
+        : new Date(p.verdict.expiresAt),
+    fingerprint: p.fingerprint,
+    status: p.verdict.kind,
+    checkedAt,
+  }));
+
+  try {
+    await db
+      .insert(domainCertChecks)
+      .values(values)
+      .onConflictDoUpdate({
+        target: domainCertChecks.domainId,
+        set: {
+          expiresAt: sql`excluded.expires_at`,
+          fingerprint: sql`excluded.fingerprint`,
+          status: sql`excluded.status`,
+          checkedAt: sql`excluded.checked_at`,
+        },
+      });
+  } catch (err) {
+    log.error("Cert observation write error:", err);
+  }
+}
+
 async function checkCertAlerts(): Promise<void> {
   if (Date.now() - lastCertCheck < CERT_CHECK_INTERVAL_MS) return;
   lastCertCheck = Date.now();
 
   try {
     const rows = await db.query.domains.findMany({
-      columns: { domain: true, certResolver: true, sslEnabled: true },
+      columns: { id: true, domain: true, certResolver: true, sslEnabled: true },
       with: { app: { columns: { status: true } } },
     });
 
@@ -234,6 +279,7 @@ async function checkCertAlerts(): Promise<void> {
         limit(async () => {
           const probe = await probeCertificate(d.domain);
           return {
+            domainId: d.id,
             domain: d.domain,
             resolver: d.certResolver ?? "unknown",
             fingerprint: probe.status === "ok" ? probe.fingerprint : null,
@@ -242,6 +288,8 @@ async function checkCertAlerts(): Promise<void> {
         }),
       ),
     );
+
+    await recordCertObservations(probed);
 
     const failing = probed.filter((p) => {
       if (certVerdictAlerts(p.verdict)) return true;
