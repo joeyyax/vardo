@@ -281,6 +281,13 @@
       "when": 1785564661649,
       "tag": "0039_deep_miracleman",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1785599281051,
+      "tag": "0040_curious_alex_power",
+      "breakpoints": true
     }
   ]
 }
