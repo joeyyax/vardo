@@ -16,11 +16,10 @@ export type SectionGroup = {
 };
 
 /**
- * Section navigation for the app detail page. Follows the settings-nav
- * pattern: vertical rail on lg+, horizontal scroll strip below. Renders
- * inside a Radix Tabs root.
+ * Vertical rail on lg+, horizontal scroll strip below — the same shape as the
+ * settings nav. Renders inside a Radix Tabs root.
  */
-export function AppSectionNav({ groups }: { groups: SectionGroup[] }) {
+export function SectionNav({ groups }: { groups: SectionGroup[] }) {
   return (
     <TabsPrimitive.List
       aria-label="App sections"

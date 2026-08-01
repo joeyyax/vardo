@@ -32,7 +32,8 @@ import { toast } from "@/lib/messenger";
 import { PageToolbar } from "@/components/page-toolbar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
+import { SectionNav, type SectionGroup } from "@/components/section-nav";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -1188,57 +1189,53 @@ export function ProjectDetail({
         <p className="text-muted-foreground">{project.description}</p>
       )}
 
-      {/* Tabbed sections */}
-      <Tabs value={activeTab} onValueChange={handleTabChange}>
-        <TabsList variant="line">
-          <TabsTrigger value="apps">
-            Apps
-            {topLevelApps.length > 0 && (
-              <Badge variant="secondary" className="ml-1.5 text-xs">
-                {topLevelApps.length}
-              </Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="deployments">
-            Deployments
-            {totalDeployments > 0 && (
-              <Badge variant="secondary" className="ml-1.5 text-xs">
-                {totalDeployments}
-              </Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="variables">
-            Variables
-            {totalVars > 0 && (
-              <Badge variant="secondary" className="ml-1.5 text-xs">
-                {totalVars}
-              </Badge>
-            )}
-          </TabsTrigger>
-          {loggingEnabled && (
-            <TabsTrigger value="logs">
-              Logs
-            </TabsTrigger>
-          )}
-          <TabsTrigger value="metrics">
-            Metrics
-          </TabsTrigger>
-          <TabsTrigger value="backups">
-            Backups
-          </TabsTrigger>
-          {meshEnabled && (
-            <TabsTrigger value="instances">
-              Instances
-              {projectInstances.length > 0 && (
-                <Badge variant="secondary" className="ml-1.5 text-xs">
-                  {projectInstances.length}
-                </Badge>
-              )}
-            </TabsTrigger>
-          )}
-        </TabsList>
+      {/* Sections — vertical nav rail on lg+, scroll strip below */}
+      <Tabs
+        value={activeTab}
+        onValueChange={handleTabChange}
+        orientation="vertical"
+        className="flex-col gap-6 lg:flex-row lg:gap-8"
+      >
+        <aside className="lg:w-48 lg:shrink-0">
+          <div className="lg:sticky lg:top-24">
+            <SectionNav
+              groups={[
+                {
+                  items: [
+                    { value: "apps", label: "Apps", count: topLevelApps.length },
+                    { value: "deployments", label: "Deployments", count: totalDeployments },
+                  ],
+                },
+                {
+                  label: "Configure",
+                  items: [
+                    { value: "variables", label: "Variables", count: totalVars },
+                    ...(meshEnabled
+                      ? [{ value: "instances", label: "Instances", count: projectInstances.length }]
+                      : []),
+                  ],
+                },
+                {
+                  label: "Observe",
+                  items: [
+                    ...(loggingEnabled ? [{ value: "logs", label: "Logs" }] : []),
+                    { value: "metrics", label: "Metrics" },
+                  ],
+                },
+                {
+                  label: "Data",
+                  items: [{ value: "backups", label: "Backups" }],
+                },
+              ] satisfies SectionGroup[]}
+            />
+          </div>
+        </aside>
 
-        <TabsContent value="apps" className="pt-4">
+        <div className="min-w-0 flex-1">
+
+        <TabsContent value="apps">
+          {/* Multi-column: a compose app lists a dozen services, a plain one
+              lists none, and grid rows take the taller card's height. */}
           {topLevelApps.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
               <div className="text-center space-y-1">
@@ -1252,47 +1249,48 @@ export function ProjectDetail({
               <AddAppDropdown projectId={project.id} align="center" />
             </div>
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="columns-[20rem] gap-4">
               {project.apps
                 .filter((app) => !app.parentAppId)
                 .map((app) => (
-                  <AppCard
-                    key={app.id}
-                    app={app}
-                    color={color}
-                    metrics={metrics.get(app.id)}
-                    history={history.get(app.id) || EMPTY_HISTORY}
-                    highlight={getHighlight(app.name)}
-                    onHoverStart={() => setHoveredAppName(app.name)}
-                    onHoverEnd={() => setHoveredAppName(null)}
-                    childApps={app.childApps ?? []}
-                    statusOverride={appStatusOverrides.get(app.id)}
-                    updateCount={updatesByApp.get(app.id) ?? 0}
-                  />
+                  <div key={app.id} className="mb-4 break-inside-avoid">
+                    <AppCard
+                      app={app}
+                      color={color}
+                      metrics={metrics.get(app.id)}
+                      history={history.get(app.id) || EMPTY_HISTORY}
+                      highlight={getHighlight(app.name)}
+                      onHoverStart={() => setHoveredAppName(app.name)}
+                      onHoverEnd={() => setHoveredAppName(null)}
+                      childApps={app.childApps ?? []}
+                      statusOverride={appStatusOverrides.get(app.id)}
+                      updateCount={updatesByApp.get(app.id) ?? 0}
+                    />
+                  </div>
                 ))}
             </div>
           )}
         </TabsContent>
 
-        <TabsContent value="deployments" className="pt-4">
+        <TabsContent value="deployments">
           <ProjectDeployments apps={topLevelApps} color={color} />
         </TabsContent>
 
-        <TabsContent value="variables" className="pt-4">
+        <TabsContent value="variables">
           <ProjectVariables apps={topLevelApps} orgId={orgId} />
         </TabsContent>
 
         {loggingEnabled && (
-          <TabsContent value="logs" className="pt-4">
+          <TabsContent value="logs">
             <ProjectLogs apps={topLevelApps} orgId={orgId} />
           </TabsContent>
         )}
 
-        <TabsContent value="metrics" className="pt-4">
+        <TabsContent value="metrics">
           <ProjectMetricsTab apps={topLevelApps} orgId={orgId} projectId={project.id} />
         </TabsContent>
 
-        <TabsContent value="backups" className="pt-4 space-y-4">
+        <TabsContent value="backups" className="space-y-4">
           <p className="text-sm text-muted-foreground">
             Volume snapshots for apps in this project. Download or restore any backup.
           </p>
@@ -1311,7 +1309,7 @@ export function ProjectDetail({
         </TabsContent>
 
         {meshEnabled && (
-          <TabsContent value="instances" className="pt-4">
+          <TabsContent value="instances">
             <ProjectInstances
               projectId={project.id}
               orgId={orgId}
@@ -1321,6 +1319,7 @@ export function ProjectDetail({
           </TabsContent>
         )}
 
+        </div>
       </Tabs>
 
       {/* New environment sheet */}

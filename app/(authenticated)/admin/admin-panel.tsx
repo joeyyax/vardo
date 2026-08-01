@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
+import { SectionNav, type SectionGroup } from "@/components/section-nav";
 import { PageToolbar } from "@/components/page-toolbar";
 import { FeatureDisabled } from "@/components/feature-disabled";
 import { DockerPrune, UserManagement } from "./admin-actions";
@@ -42,32 +43,56 @@ export function AdminPanel({ activeTab, orgId, metricsEnabled, metricsFlag }: Ad
         <h1 className="type-h1">Admin</h1>
       </PageToolbar>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList variant="line">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="organizations">Organizations</TabsTrigger>
-          <TabsTrigger value="users">Users</TabsTrigger>
-          <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
-          <TabsTrigger value="metrics">Metrics</TabsTrigger>
-        </TabsList>
+      {/* Sections — vertical nav rail on lg+, scroll strip below */}
+      <Tabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        orientation="vertical"
+        className="flex-col gap-6 lg:flex-row lg:gap-8"
+      >
+        <aside className="lg:w-48 lg:shrink-0">
+          <div className="lg:sticky lg:top-24">
+            <SectionNav
+              groups={[
+                { items: [{ value: "overview", label: "Overview" }] },
+                {
+                  label: "Manage",
+                  items: [
+                    { value: "organizations", label: "Organizations" },
+                    { value: "users", label: "Users" },
+                  ],
+                },
+                {
+                  label: "Operate",
+                  items: [
+                    { value: "maintenance", label: "Maintenance" },
+                    { value: "metrics", label: "Metrics" },
+                  ],
+                },
+              ] satisfies SectionGroup[]}
+            />
+          </div>
+        </aside>
 
-        <TabsContent value="overview" className="pt-4">
+        <div className="min-w-0 flex-1">
+
+        <TabsContent value="overview">
           <AdminOverview />
         </TabsContent>
 
-        <TabsContent value="organizations" className="pt-4">
+        <TabsContent value="organizations">
           <AdminOrganizations />
         </TabsContent>
 
-        <TabsContent value="users" className="pt-4">
+        <TabsContent value="users">
           <UserManagement />
         </TabsContent>
 
-        <TabsContent value="maintenance" className="pt-4 space-y-4">
+        <TabsContent value="maintenance" className="space-y-4">
           <DockerPrune />
         </TabsContent>
 
-        <TabsContent value="metrics" className="pt-4">
+        <TabsContent value="metrics">
           {metricsEnabled ? (
             <AdminMetrics orgId={orgId} />
           ) : (
@@ -75,6 +100,7 @@ export function AdminPanel({ activeTab, orgId, metricsEnabled, metricsFlag }: Ad
           )}
         </TabsContent>
 
+        </div>
       </Tabs>
     </div>
   );
