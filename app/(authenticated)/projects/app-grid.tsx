@@ -67,7 +67,7 @@ type AppGridProps = {
 // Helpers
 // ---------------------------------------------------------------------------
 
-// Chips: healthy is quiet, deviation is tinted and worded, problems sort first.
+// App list: healthy is quiet, deviation is tinted and worded, problems sort first.
 const STATUS_RANK: Record<string, number> = {
   error: 0,
   missing: 1,
@@ -76,23 +76,19 @@ const STATUS_RANK: Record<string, number> = {
   active: 4,
 };
 
-const CHIP_TONE: Record<string, string> = {
-  error: "border-status-error/40 bg-status-error-muted text-status-error",
-  missing: "border-status-warning/40 bg-status-warning-muted text-status-warning",
-  deploying: "border-status-info/40 bg-status-info-muted text-status-info",
-  stopped: "border-transparent bg-status-neutral-muted text-muted-foreground",
-};
-
-const CHIP_STATUS_WORD: Record<string, string> = {
+const STATUS_WORD: Record<string, string> = {
   error: "crashed",
   missing: "no container",
   deploying: "deploying",
   stopped: "stopped",
 };
 
-// Cap only when it saves more than one chip; sorted deviants-first, so hidden
-// chips are always healthy ones.
-const CHIP_CAP = 12;
+const STATUS_WORD_TONE: Record<string, string> = {
+  error: "text-status-error",
+  missing: "text-status-warning",
+  deploying: "text-status-info",
+  stopped: "text-muted-foreground",
+};
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -154,7 +150,7 @@ function ProjectCard({
   // Aggregated live metrics. The memory limit is the sum of per-app limits and
   // only honest when every running app has one — partial sums would understate
   // the ceiling.
-  const { agg, memoryLimitTotal } = useMemo(() => {
+  const { agg, memoryLimitTotal, anyMetrics } = useMemo(() => {
     const agg: AppMetrics = { cpuPercent: 0, memoryUsage: 0, memoryLimit: 0, diskUsage: 0, networkRx: 0, networkTx: 0 };
     let limitSum = 0;
     let allLimited = true;
@@ -174,7 +170,7 @@ function ProjectCard({
       if (m.memoryLimit > 0) limitSum += m.memoryLimit;
       else allLimited = false;
     }
-    return { agg, memoryLimitTotal: anyMetrics && allLimited ? limitSum : 0 };
+    return { agg, memoryLimitTotal: anyMetrics && allLimited ? limitSum : 0, anyMetrics };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectApps, metrics, historyTick]);
 
@@ -225,7 +221,7 @@ function ProjectCard({
       className="squircle relative flex flex-col rounded-lg bg-card shadow-card dark:border transition-shadow hover:shadow-card-hover overflow-hidden cursor-pointer"
     >
       {/* Raised panel: identity + aggregate state */}
-      <div className="flex-1 p-4">
+      <div className="p-5">
         <div className="flex gap-4">
         {/* One icon — a collage of the same marks on every card is noise */}
         {icons.length === 0 ? (
@@ -287,69 +283,70 @@ function ProjectCard({
         </div>
       </div>
 
-      {/* Aggregate resource band — scale and trend, not bare numbers */}
-      <MetricsBand metrics={agg} history={aggregatedHistory} memoryLimit={memoryLimitTotal} />
-
-      {/* Recessed chip tray — apps sit as raised objects on a lower surface */}
-      <div className="flex flex-wrap gap-1.5 border-t bg-background-deep px-4 py-3">
-        {projectApps.length === 0 && (
+      {/* Recessed app list — rows sit on a lower surface, problems sort first */}
+      <div className="flex-1 border-t bg-background-deep px-2.5 py-2">
+        {projectApps.length === 0 ? (
           <Link
             href={`/apps/new?project=${project.id}`}
             onClick={(e) => e.stopPropagation()}
-            className="inline-flex items-center gap-1.5 rounded-full border border-dashed px-2.5 py-1 text-xs text-muted-foreground hover:bg-accent transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-card transition-colors cursor-pointer"
           >
             <Plus className="size-3" />
             Add App
           </Link>
-        )}
-        {(() => {
-          const sorted = [...projectApps].sort(
-            (x, y) =>
-              (STATUS_RANK[x.status] ?? 3) - (STATUS_RANK[y.status] ?? 3) ||
-              x.displayName.localeCompare(y.displayName),
-          );
-          const capped = sorted.length > CHIP_CAP + 1;
-          const visible = capped ? sorted.slice(0, CHIP_CAP) : sorted;
-          return (
-            <>
-              {visible.map((a) => (
+        ) : (
+          <div className="grid content-start gap-x-6 sm:grid-cols-2">
+            {[...projectApps]
+              .sort(
+                (x, y) =>
+                  (STATUS_RANK[x.status] ?? 3) - (STATUS_RANK[y.status] ?? 3) ||
+                  Number(y.priority === "critical") - Number(x.priority === "critical") ||
+                  (updatesByApp.get(y.id) ?? 0) - (updatesByApp.get(x.id) ?? 0) ||
+                  x.displayName.localeCompare(y.displayName),
+              )
+              .map((a) => (
                 <Link
                   key={a.id}
                   href={`/apps/${a.name}`}
                   onClick={(e) => e.stopPropagation()}
-                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                    CHIP_TONE[a.status] ?? "border-transparent bg-card hover:bg-accent"
-                  }`}
+                  className="flex min-w-0 items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors cursor-pointer hover:bg-card"
                 >
-                  <span aria-hidden="true" className={`size-1.5 rounded-full ${statusDotColor(a.status)}`} />
-                  {a.displayName}
-                  {CHIP_STATUS_WORD[a.status] && (
-                    <span className="font-normal opacity-80">{CHIP_STATUS_WORD[a.status]}</span>
-                  )}
-                  {(updatesByApp.get(a.id) ?? 0) > 0 && (
-                    <Package className="size-3 text-muted-foreground/70" aria-label="Update available" />
-                  )}
-                  {a.priority === "critical" && (
-                    <ShieldCheck className="size-3 text-status-warning" aria-label="Critical priority" />
-                  )}
-                  {a.priority === "disposable" && (
-                    <Trash2 className="size-3 text-muted-foreground/50" aria-label="Disposable priority" />
-                  )}
-                  {a.gpuEnabled && (
-                    <Cpu className="size-3 text-muted-foreground/50" aria-label="GPU passthrough enabled" />
+                  <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${statusDotColor(a.status)}`} />
+                  <span className="truncate">{a.displayName}</span>
+                  {STATUS_WORD[a.status] && (
+                    <span className={`shrink-0 font-normal ${STATUS_WORD_TONE[a.status]}`}>
+                      {STATUS_WORD[a.status]}
+                    </span>
                   )}
                   {a.status === "active" && <span className="sr-only">, Running</span>}
+                  <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                    {(updatesByApp.get(a.id) ?? 0) > 0 && (
+                      <Package className="size-3 text-muted-foreground/70" aria-label="Update available" />
+                    )}
+                    {a.priority === "critical" && (
+                      <ShieldCheck className="size-3 text-status-warning" aria-label="Critical priority" />
+                    )}
+                    {a.priority === "disposable" && (
+                      <Trash2 className="size-3 text-muted-foreground/50" aria-label="Disposable priority" />
+                    )}
+                    {a.gpuEnabled && (
+                      <Cpu className="size-3 text-muted-foreground/50" aria-label="GPU passthrough enabled" />
+                    )}
+                  </span>
                 </Link>
               ))}
-              {capped && (
-                <span className="inline-flex items-center rounded-full border border-transparent bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground">
-                  +{sorted.length - CHIP_CAP} more
-                </span>
-              )}
-            </>
-          );
-        })()}
+          </div>
+        )}
       </div>
+
+      {/* Aggregate resource footer — space is held while stats stream in */}
+      {activeCount > 0 && (
+        <MetricsBand
+          metrics={anyMetrics ? agg : undefined}
+          history={aggregatedHistory}
+          memoryLimit={memoryLimitTotal}
+        />
+      )}
     </Link>
   );
 }
@@ -504,7 +501,7 @@ export function AppGrid({
 
       {/* Columns respond to card count: a two-project install fills the row
           instead of orphaning cards in a fixed three-column grid. */}
-      <div className="grid items-start gap-4 grid-cols-[repeat(auto-fit,minmax(min(22rem,100%),1fr))]">
+      <div className="grid items-stretch gap-4 grid-cols-[repeat(auto-fit,minmax(min(25rem,100%),1fr))]">
         {projectCards.map(({ project, apps: projectApps }) => (
           <ProjectCard
             key={project.id}
