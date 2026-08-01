@@ -12,6 +12,7 @@ import {
   type ConditionInput,
   type ConditionStreaks,
 } from "./conditions";
+import { loadAdvisoryInputs, type AdvisoryInput } from "./condition-inputs";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("health-monitor");
@@ -178,7 +179,7 @@ export async function tickHealthMonitor(): Promise<void> {
   /** Worst signal seen across each app's containers this tick. */
   const signals = new Map<string, ConditionInput>();
   const noteSignal = (appId: string, patch: Partial<ConditionInput>) => {
-    const cur = signals.get(appId) ?? { now, crashLoop: null, health: null, selfHealExhausted: false, memory: null };
+    const cur = signals.get(appId) ?? emptySignal(now);
     signals.set(appId, {
       ...cur,
       ...patch,
@@ -301,8 +302,21 @@ export async function tickHealthMonitor(): Promise<void> {
     });
   }
 
-  await persistConditions(appRows, signals, now, usageByContainer.size);
+  const advisories = await loadAdvisoryInputs(now);
+  await persistConditions(appRows, signals, advisories, now, usageByContainer.size);
   cleanupState(seen);
+}
+
+function emptySignal(now: number): ConditionInput {
+  return {
+    now,
+    crashLoop: null,
+    health: null,
+    selfHealExhausted: false,
+    memory: null,
+    security: null,
+    backup: null,
+  };
 }
 
 function shortId(id: string): string {
@@ -349,6 +363,7 @@ let conditionsReported = false;
 async function persistConditions(
   appRows: { id: string; conditions: AppCondition[] | null }[],
   signals: Map<string, ConditionInput>,
+  advisories: Map<string, AdvisoryInput>,
   now: number,
   sampleCount: number,
 ): Promise<void> {
@@ -361,12 +376,11 @@ async function persistConditions(
   }
 
   for (const app of appRows) {
-    const input = signals.get(app.id) ?? {
-      now,
-      crashLoop: null,
-      health: null,
-      selfHealExhausted: false,
-      memory: null,
+    const advisory = advisories.get(app.id);
+    const input: ConditionInput = {
+      ...(signals.get(app.id) ?? emptySignal(now)),
+      security: advisory?.security ?? null,
+      backup: advisory?.backup ?? null,
     };
     const prev = app.conditions ?? [];
     const { conditions, streaks } = evaluateConditions(
