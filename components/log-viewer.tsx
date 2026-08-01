@@ -411,16 +411,22 @@ export function LogViewer({ streamUrl, historyUrl, maxLines = 1000 }: LogViewerP
   const [timedOut, setTimedOut] = useState(false);
   const [paused, setPaused] = useState(false);
   const [manualReconnect, setManualReconnect] = useState(0);
-  const [logSource, setLogSource] = useState<LogSource>(null);
+  // Tagged with the stream it came from so a URL change clears it without a
+  // setState inside the connection effect.
+  const [sourceState, setSourceState] = useState<{ url: string; source: LogSource }>({
+    url: streamUrl,
+    source: null,
+  });
+  const logSource = sourceState.url === streamUrl ? sourceState.source : null;
   const pausedRef = useRef(paused);
-  pausedRef.current = paused;
+  useEffect(() => {
+    pausedRef.current = paused;
+  }, [paused]);
   const visKey = useVisibilityKey();
 
   useEffect(() => {
     // Don't connect if tab is hidden
     if (typeof document !== "undefined" && document.hidden) return;
-
-    setLogSource(null);
 
     // The SSE stream now backfills history automatically when Loki is available,
     // but if a separate historyUrl is provided, pre-load from it for instant content
@@ -453,7 +459,7 @@ export function LogViewer({ streamUrl, historyUrl, maxLines = 1000 }: LogViewerP
       try {
         const src = JSON.parse(event.data) as string;
         if (src === "loki" || src === "docker") {
-          setLogSource(src);
+          setSourceState({ url: streamUrl, source: src });
         }
       } catch {
         // skip malformed source event

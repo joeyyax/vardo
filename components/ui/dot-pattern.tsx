@@ -61,6 +61,13 @@ interface DotPatternProps extends React.SVGProps<SVGSVGElement> {
  * - Dots color can be controlled via the text color utility classes
  */
 
+// Per-dot animation offset in [0, 1). Math.random() during render is impure and
+// makes the server and client draw different dots.
+function jitter(n: number): number {
+  const s = Math.sin(n * 12.9898) * 43758.5453
+  return s - Math.floor(s)
+}
+
 export function DotPattern({
   width = 16,
   height = 16,
@@ -104,8 +111,8 @@ export function DotPattern({
           return {
             x: col * width + cx,
             y: row * height + cy,
-            delay: Math.random() * 5,
-            duration: Math.random() * 3 + 2,
+            delay: jitter(i) * 5,
+            duration: jitter(i + 0.5) * 3 + 2,
           }
         }
       ),
