@@ -15,7 +15,10 @@ export type ConditionKind =
   | "crash-looping"
   | "unhealthy"
   | "self-heal-exhausted"
-  | "memory-pressure";
+  | "memory-pressure"
+  | "security-findings"
+  | "backup-missing"
+  | "backup-stale";
 
 export type ConditionSeverity = "info" | "warning" | "critical";
 
@@ -48,7 +51,14 @@ const SEVERITY: Record<ConditionKind, ConditionSeverity> = {
   "self-heal-exhausted": "critical",
   unhealthy: "warning",
   "memory-pressure": "warning",
+  // Overridden to critical when the latest scan has critical findings.
+  "security-findings": "warning",
+  "backup-missing": "warning",
+  "backup-stale": "warning",
 };
+
+/** A backup that has not run in this long is overdue regardless of schedule. */
+export const BACKUP_STALE_MS = 48 * 60 * 60 * 1000;
 
 const SEVERITY_RANK: Record<ConditionSeverity, number> = { critical: 0, warning: 1, info: 2 };
 
@@ -62,6 +72,10 @@ export type ConditionInput = {
   selfHealExhausted: boolean;
   /** Live usage against the container's cgroup limit. Limit 0 means unlimited. */
   memory: { usage: number; limit: number } | null;
+  /** Latest completed security scan, null when the app has never been scanned. */
+  security: { critical: number; warning: number } | null;
+  /** Backup coverage. Null when backup state was not loaded this tick. */
+  backup: { hasVolumes: boolean; configured: boolean; lastRunAt: number | null } | null;
 };
 
 /** The raw signal for each kind this tick, before hysteresis. */
@@ -81,6 +95,30 @@ function rawSignals(input: ConditionInput): Partial<Record<ConditionKind, string
     const ratio = input.memory.usage / input.memory.limit;
     if (ratio >= MEMORY_PRESSURE_RATIO) {
       out["memory-pressure"] = `${Math.round(ratio * 100)}% of memory limit`;
+    }
+  }
+
+  if (input.security && (input.security.critical > 0 || input.security.warning > 0)) {
+    const { critical, warning } = input.security;
+    out["security-findings"] =
+      critical > 0
+        ? `${critical} critical finding${critical === 1 ? "" : "s"}`
+        : `${warning} warning${warning === 1 ? "" : "s"}`;
+  }
+
+  // Only apps with persistent data can lose anything, so a stateless app with
+  // no backup job is correct rather than unprotected.
+  if (input.backup?.hasVolumes && !input.backup.configured) {
+    out["backup-missing"] = "No backup job covers this app";
+  }
+
+  if (input.backup?.configured) {
+    const { lastRunAt } = input.backup;
+    if (lastRunAt === null) {
+      out["backup-stale"] = "Backup job has never run";
+    } else if (input.now - lastRunAt > BACKUP_STALE_MS) {
+      const days = Math.floor((input.now - lastRunAt) / (24 * 60 * 60 * 1000));
+      out["backup-stale"] = `Last backup ${days} day${days === 1 ? "" : "s"} ago`;
     }
   }
 
@@ -123,7 +161,10 @@ export function evaluateConditions(
     if (!held) continue;
     conditions.push({
       kind,
-      severity: SEVERITY[kind],
+      severity:
+        kind === "security-findings" && (input.security?.critical ?? 0) > 0
+          ? "critical"
+          : SEVERITY[kind],
       since: was?.since ?? new Date(input.now).toISOString(),
       // A condition kept alive by hysteresis reports the reading that confirmed it.
       detail: detail ?? was?.detail ?? "",

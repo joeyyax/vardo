@@ -50,6 +50,7 @@ import { isOrgAdmin } from "@/lib/auth/permissions";
 // Extracted modules
 import { Uptime } from "./timer";
 import { AppHeader } from "./app-header";
+import { AppConditionsPanel } from "@/components/app-conditions-panel";
 import { AppUpdatesPanel } from "./app-updates";
 import { AppSectionNav, type SectionGroup } from "./app-section-nav";
 import { NewEnvironmentSheet } from "./new-environment-sheet";
@@ -620,6 +621,8 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         siblings={siblings}
         onNavigate={setActiveTab}
       />
+
+      <AppConditionsPanel conditions={app.conditions} />
 
       <AppUpdatesPanel
         orgId={orgId}

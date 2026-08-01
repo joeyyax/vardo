@@ -19,6 +19,8 @@ function input(overrides: Partial<ConditionInput> = {}): ConditionInput {
     health: null,
     selfHealExhausted: false,
     memory: null,
+    security: null,
+    backup: null,
     ...overrides,
   };
 }
@@ -160,5 +162,90 @@ describe("conditionsEqual", () => {
 
   it("catches a length change", () => {
     expect(conditionsEqual(base, [])).toBe(false);
+  });
+});
+
+describe("security findings", () => {
+  it("is critical when the latest scan has critical findings", () => {
+    const { conditions } = evaluateConditions(
+      input({ security: { critical: 3, warning: 5 } }),
+      [],
+      {},
+    );
+    expect(conditions[0]).toMatchObject({
+      kind: "security-findings",
+      severity: "critical",
+      detail: "3 critical findings",
+    });
+  });
+
+  it("is a warning when only warnings were found", () => {
+    const { conditions } = evaluateConditions(
+      input({ security: { critical: 0, warning: 2 } }),
+      [],
+      {},
+    );
+    expect(conditions[0]).toMatchObject({ severity: "warning", detail: "2 warnings" });
+  });
+
+  it("is absent on a clean scan", () => {
+    expect(evaluateConditions(input({ security: { critical: 0, warning: 0 } }), [], {}).conditions)
+      .toEqual([]);
+  });
+});
+
+describe("backup coverage", () => {
+  it("flags an app with volumes and no backup job", () => {
+    const { conditions } = evaluateConditions(
+      input({ backup: { hasVolumes: true, configured: false, lastRunAt: null } }),
+      [],
+      {},
+    );
+    expect(conditions.map((c) => c.kind)).toEqual(["backup-missing"]);
+  });
+
+  it("leaves a stateless app alone — it has nothing to lose", () => {
+    const { conditions } = evaluateConditions(
+      input({ backup: { hasVolumes: false, configured: false, lastRunAt: null } }),
+      [],
+      {},
+    );
+    expect(conditions).toEqual([]);
+  });
+
+  it("flags a configured job that has never run", () => {
+    const { conditions } = evaluateConditions(
+      input({ backup: { hasVolumes: true, configured: true, lastRunAt: null } }),
+      [],
+      {},
+    );
+    expect(conditions[0]).toMatchObject({ kind: "backup-stale", detail: "Backup job has never run" });
+  });
+
+  it("flags a job older than the stale window", () => {
+    const { conditions } = evaluateConditions(
+      input({ backup: { hasVolumes: true, configured: true, lastRunAt: NOW - 3 * 24 * 3600_000 } }),
+      [],
+      {},
+    );
+    expect(conditions[0]).toMatchObject({ kind: "backup-stale", detail: "Last backup 3 days ago" });
+  });
+
+  it("stays quiet on a recent backup", () => {
+    const { conditions } = evaluateConditions(
+      input({ backup: { hasVolumes: true, configured: true, lastRunAt: NOW - 3600_000 } }),
+      [],
+      {},
+    );
+    expect(conditions).toEqual([]);
+  });
+
+  it("does not report missing and stale at once", () => {
+    const { conditions } = evaluateConditions(
+      input({ backup: { hasVolumes: true, configured: true, lastRunAt: null } }),
+      [],
+      {},
+    );
+    expect(conditions.map((c) => c.kind)).not.toContain("backup-missing");
   });
 });

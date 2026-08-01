@@ -13,6 +13,14 @@ export function conditionLabel(c: AppCondition): string {
       const pct = c.detail.match(/^(\d+)%/)?.[1];
       return pct ? `${pct}% memory` : "memory pressure";
     }
+    case "security-findings": {
+      const n = c.detail.match(/^(\d+)/)?.[1];
+      return c.severity === "critical" ? `${n ?? ""} critical`.trim() : `${n ?? ""} warnings`.trim();
+    }
+    case "backup-missing":
+      return "no backup";
+    case "backup-stale":
+      return "backup overdue";
   }
 }
 
