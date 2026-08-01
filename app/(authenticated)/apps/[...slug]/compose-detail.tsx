@@ -35,6 +35,7 @@ import { AppBackupHistory } from "@/components/backups/app-backup-history";
 import { statusDotColor } from "@/lib/ui/status-colors";
 import { AppDeployPanel } from "./app-deploy-panel";
 import { useDeploy } from "./hooks/use-deploy";
+import { AppUpdatesPanel } from "./app-updates";
 import { isOrgAdmin } from "@/lib/auth/permissions";
 import type { App, ChildApp } from "./types";
 import type { FeatureFlags } from "@/lib/config/features";
@@ -505,6 +506,13 @@ export function ComposeDetail({
           <h1 className="type-h1">{app.displayName}</h1>
         )}
       </PageToolbar>
+
+      <AppUpdatesPanel
+        orgId={orgId}
+        appId={app.id}
+        onDeploy={handleDeployClick}
+        deploying={deploy.deploying}
+      />
 
       {/* Tabbed sections */}
       <Tabs value={activeTab} onValueChange={setActiveTabAndUrl}>

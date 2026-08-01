@@ -85,6 +85,7 @@ export async function register() {
       ["digest", async () => { const m = await import("./lib/digest/register"); await m.registerDigestPlugin(); }],
       ["logging", async () => { const m = await import("./lib/logging/register"); await m.registerLoggingFeature(); }],
       ["error-tracking", async () => { const m = await import("./lib/error-tracking/register"); await m.registerErrorTrackingPlugin(); }],
+      ["image-updates", async () => { const m = await import("./lib/docker/image-updates/register"); await m.registerImageUpdatesPlugin(); }],
     ];
 
     for (const [label, register] of features) {
