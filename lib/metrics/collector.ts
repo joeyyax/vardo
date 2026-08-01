@@ -13,11 +13,30 @@ let timeout: ReturnType<typeof setTimeout> | null = null;
 let started = false;
 let tickCount = 0;
 let consecutiveFailures = 0;
+let disabled = false;
 const DEGRADED_THRESHOLD = 3; // mark integration degraded after 3 consecutive failures
 
 const FAST_INTERVAL_MS = 5000;   // First 20 ticks: every 5s
 const NORMAL_INTERVAL_MS = 30000; // After warmup: every 30s
 const WARMUP_TICKS = 20;
+
+/** Cap on the exponential backoff between failed collections. */
+const MAX_BACKOFF_MS = 15 * 60_000;
+/** Consecutive failures before the collector stops polling a provider that isn't there. */
+const DISABLE_THRESHOLD = 20;
+
+/**
+ * Poll interval for the next tick. Failures back off exponentially from the
+ * normal interval so an unreachable provider is retried occasionally rather
+ * than every 30s forever.
+ */
+export function nextInterval(opts: { tickCount: number; consecutiveFailures: number }): number {
+  if (opts.consecutiveFailures > 0) {
+    const backoff = NORMAL_INTERVAL_MS * 2 ** (opts.consecutiveFailures - 1);
+    return Math.min(backoff, MAX_BACKOFF_MS);
+  }
+  return opts.tickCount < WARMUP_TICKS ? FAST_INTERVAL_MS : NORMAL_INTERVAL_MS;
+}
 
 /**
  * Start the metrics collector.
@@ -36,6 +55,8 @@ export async function startCollector() {
   }
   started = true;
   tickCount = 0;
+  consecutiveFailures = 0;
+  disabled = false;
   log.info("Starting metrics collection (fast warmup: 5s × 20, then 30s)");
 
   // Initialize GPU collector (non-blocking — returns null on non-GPU hosts)
@@ -47,8 +68,8 @@ export async function startCollector() {
 }
 
 function scheduleTick() {
-  if (!started) return;
-  const interval = tickCount < WARMUP_TICKS ? FAST_INTERVAL_MS : NORMAL_INTERVAL_MS;
+  if (!started || disabled) return;
+  const interval = nextInterval({ tickCount, consecutiveFailures });
   timeout = setTimeout(async () => {
     await collect();
     tickCount++;
@@ -130,14 +151,27 @@ async function collect() {
 
     // Recovered — mark integration connected if it was degraded
     if (consecutiveFailures >= DEGRADED_THRESHOLD) {
+      log.info(`Metrics provider recovered after ${consecutiveFailures} failed collection(s)`);
       updateIntegrationHealth("connected");
     }
     consecutiveFailures = 0;
   } catch (err) {
-    log.error("Error:", (err as Error).message);
     consecutiveFailures++;
+    // Log the first failure and the shutdown, not each retry.
+    if (consecutiveFailures === 1) {
+      log.error("Error:", (err as Error).message);
+    }
     if (consecutiveFailures === DEGRADED_THRESHOLD) {
       updateIntegrationHealth("degraded");
+    }
+    if (consecutiveFailures >= DISABLE_THRESHOLD) {
+      disabled = true;
+      log.error(
+        `Metrics collection disabled after ${consecutiveFailures} consecutive failures — ` +
+          `the provider is unreachable (${(err as Error).message}). ` +
+          `Check the metrics integration, then restart Vardo or re-toggle the metrics feature.`,
+      );
+      return;
     }
   }
 
@@ -193,6 +227,12 @@ export function stopCollector() {
     timeout = null;
   }
   started = false;
+  disabled = false;
+}
+
+/** True when the collector shut itself off after repeated provider failures. */
+export function isCollectorDisabled() {
+  return disabled;
 }
 
 /** Update metrics integration status (best-effort, non-blocking). */
