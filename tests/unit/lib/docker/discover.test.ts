@@ -188,12 +188,25 @@ describe("filterImageInheritedEnv", () => {
   });
 
   it("keeps vars with the same key but a different value (explicit override)", () => {
-    const imageEnv = ["PATH=/usr/bin:/bin"];
-    const containerEnv = ["PATH=/usr/local/bin:/usr/bin:/bin", "APP_ENV=production"];
+    const imageEnv = ["APP_ENV=development"];
+    const containerEnv = ["APP_ENV=production", "EXTRA=1"];
     expect(filterImageInheritedEnv(containerEnv, imageEnv)).toEqual([
-      "PATH=/usr/local/bin:/usr/bin:/bin",
       "APP_ENV=production",
+      "EXTRA=1",
     ]);
+  });
+
+  it("drops a runtime-rewritten PATH instead of freezing it into compose", () => {
+    // stirling-pdf captured a PATH that later stopped containing the image's
+    // JDK, and the container could no longer exec java.
+    const imageEnv = ["PATH=/opt/java/openjdk/bin:/usr/bin:/bin"];
+    const containerEnv = ["PATH=/opt/venv/bin:/usr/bin:/bin", "APP_KEY=abc"];
+    expect(filterImageInheritedEnv(containerEnv, imageEnv)).toEqual(["APP_KEY=abc"]);
+  });
+
+  it("keeps a runtime-owned key the image never declared", () => {
+    const containerEnv = ["PATH=/custom/bin", "APP_KEY=abc"];
+    expect(filterImageInheritedEnv(containerEnv, ["OTHER=1"])).toEqual(containerEnv);
   });
 
   it("returns all vars when imageEnv is empty (fallback path)", () => {
