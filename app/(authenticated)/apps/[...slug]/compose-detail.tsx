@@ -18,8 +18,7 @@ import {
 import { toast } from "@/lib/messenger";
 import { PageToolbar } from "@/components/page-toolbar";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -40,8 +39,10 @@ import { formatBytes } from "@/lib/metrics/format";
 import { AppDeployPanel } from "./app-deploy-panel";
 import { useDeploy } from "./hooks/use-deploy";
 import { AppUpdatesPanel } from "./app-updates";
+import { AppHeader } from "./app-header";
+import { AppSectionNav, type SectionGroup } from "./app-section-nav";
 import { isOrgAdmin } from "@/lib/auth/permissions";
-import type { App, ChildApp } from "./types";
+import type { App, ChildApp, Tag } from "./types";
 import type { FeatureFlags } from "@/lib/config/features";
 import { ComposeReview } from "@/components/compose-review";
 
@@ -125,36 +126,40 @@ function ServiceCard({
   return (
     <Link
       href={`/apps/${service.name}`}
-      className="squircle relative flex flex-col rounded-lg border bg-card p-4 transition-all duration-200 hover:bg-accent/50 overflow-hidden cursor-pointer"
+      className="squircle relative flex flex-col rounded-lg border bg-card transition-all duration-200 hover:bg-accent/50 overflow-hidden cursor-pointer"
     >
-      {running && cpuHistory && cpuHistory.length > 1 && (
-        <Sparkline
-          data={cpuHistory}
-          className="absolute inset-0 w-full h-full pointer-events-none"
-          style={{ color: CHART_COLORS.cpu }}
-        />
-      )}
-
-      <div className="relative flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <h3 className="type-h3 truncate">{service.displayName}</h3>
-          <p className="font-mono text-xs text-muted-foreground/60 truncate">
-            {service.composeService ?? service.name}
-          </p>
-        </div>
-        <StatusIndicator status={service.status} needsRedeploy={!!service.needsRedeploy} />
-      </div>
-
-      <div className="relative mt-2 space-y-1">
-        {service.imageName && <ImageRef imageName={service.imageName} />}
-        {primaryDomain && (
-          <p className="font-mono text-xs text-muted-foreground truncate">
-            {primaryDomain.domain}
-          </p>
+      {/* Raised panel: identity */}
+      <div className="relative flex-1 p-4">
+        {running && cpuHistory && cpuHistory.length > 1 && (
+          <Sparkline
+            data={cpuHistory}
+            className="absolute inset-0 w-full h-full pointer-events-none"
+            style={{ color: CHART_COLORS.cpu }}
+          />
         )}
+
+        <div className="relative flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <h3 className="type-h3 truncate">{service.displayName}</h3>
+            <p className="font-mono text-xs text-muted-foreground/60 truncate">
+              {service.composeService ?? service.name}
+            </p>
+          </div>
+          <StatusIndicator status={service.status} needsRedeploy={!!service.needsRedeploy} />
+        </div>
+
+        <div className="relative mt-2 space-y-1">
+          {service.imageName && <ImageRef imageName={service.imageName} />}
+          {primaryDomain && (
+            <p className="font-mono text-xs text-muted-foreground truncate">
+              {primaryDomain.domain}
+            </p>
+          )}
+        </div>
       </div>
 
-      <div className="relative mt-3 grid grid-cols-4 gap-2 border-t pt-3">
+      {/* Recessed stats band */}
+      <div className="grid grid-cols-4 gap-2 border-t bg-background/60 px-4 py-3">
         <Stat label="CPU">
           {running && stats ? `${stats.cpuPercent.toFixed(1)}%` : "—"}
         </Stat>
@@ -287,7 +292,7 @@ function ComposeLogs({ services, orgId }: { services: ChildApp[]; orgId: string 
 
   if (!selected) {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
+      <div className="squircle lining flex flex-col items-center justify-center gap-4 rounded-lg border bg-card p-12">
         <p className="text-sm text-muted-foreground">No services to show logs for.</p>
       </div>
     );
@@ -314,7 +319,7 @@ function ComposeMetrics({ services, orgId }: { services: ChildApp[]; orgId: stri
 
   if (!selected) {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
+      <div className="squircle lining flex flex-col items-center justify-center gap-4 rounded-lg border bg-card p-12">
         <p className="text-sm text-muted-foreground">No services to show metrics for.</p>
       </div>
     );
@@ -369,7 +374,7 @@ function ComposeEditor({
 
   if (!app.composeContent && !editing) {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
+      <div className="squircle lining flex flex-col items-center justify-center gap-4 rounded-lg border bg-card p-12">
         <FileCode2 className="size-8 text-muted-foreground/50" />
         <div className="text-center space-y-1">
           <p className="text-sm font-medium">No compose file stored</p>
@@ -443,12 +448,16 @@ export function ComposeDetail({
   userRole,
   initialTab,
   featureFlags,
+  allTags = [],
+  siblings = [],
 }: {
   app: App & { childApps: NonNullable<App["childApps"]> };
   orgId: string;
   userRole: string;
   initialTab: string;
   featureFlags: FeatureFlags;
+  allTags?: Tag[];
+  siblings?: { id: string; name: string; displayName: string; status: string; dependsOn: string[] | null }[];
 }) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState(initialTab);
@@ -675,6 +684,23 @@ export function ComposeDetail({
         )}
       </PageToolbar>
 
+      {/* Same shell as a single-service app: identity header + section rail.
+          A stack is an app page identified as a stack, not a different page. */}
+      <AppHeader
+        app={app}
+        orgId={orgId}
+        isChildService={false}
+        deployments={app.deployments}
+        allTags={allTags}
+        siblings={siblings}
+        onNavigate={setActiveTabAndUrl}
+        stack={{
+          total: services.length,
+          active: services.filter((s) => s.status === "active").length,
+          errors: services.filter((s) => s.status === "error").length,
+        }}
+      />
+
       <AppUpdatesPanel
         orgId={orgId}
         appId={app.id}
@@ -682,44 +708,53 @@ export function ComposeDetail({
         deploying={deploy.deploying}
       />
 
-      {/* Tabbed sections */}
-      <Tabs value={activeTab} onValueChange={setActiveTabAndUrl}>
-        <TabsList variant="line">
-          <TabsTrigger value="services">
-            Services
-            {services.length > 0 && (
-              <Badge variant="secondary" className="ml-1.5 text-xs">
-                {services.length}
-              </Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="deployments">
-            Deployments
-            {totalDeployments > 0 && (
-              <Badge variant="secondary" className="ml-1.5 text-xs">
-                {totalDeployments}
-              </Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="variables">
-            Variables
-            {app.envVars.length > 0 && (
-              <Badge variant="secondary" className="ml-1.5 text-xs">
-                {app.envVars.length}
-              </Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="logs">Logs</TabsTrigger>
-          <TabsTrigger value="metrics">Metrics</TabsTrigger>
-          {featureFlags?.backups !== false && (
-            <TabsTrigger value="backups">Backups</TabsTrigger>
-          )}
-          <TabsTrigger value="compose">Compose</TabsTrigger>
-        </TabsList>
+      {/* Sections — vertical nav rail on lg+, scroll strip below */}
+      <Tabs
+        value={activeTab}
+        onValueChange={setActiveTabAndUrl}
+        orientation="vertical"
+        className="flex-col gap-6 lg:flex-row lg:gap-8"
+      >
+        <aside className="lg:w-48 lg:shrink-0">
+          <div className="lg:sticky lg:top-24">
+            <AppSectionNav
+              groups={[
+                {
+                  items: [
+                    { value: "services", label: "Services", count: services.length },
+                    { value: "deployments", label: "Deployments", count: totalDeployments },
+                  ],
+                },
+                {
+                  label: "Configure",
+                  items: [
+                    { value: "variables", label: "Variables", count: app.envVars.length },
+                    { value: "compose", label: "Compose" },
+                  ],
+                },
+                {
+                  label: "Observe",
+                  items: [
+                    { value: "logs", label: "Logs" },
+                    ...(featureFlags?.metrics !== false ? [{ value: "metrics", label: "Metrics" }] : []),
+                  ],
+                },
+                {
+                  label: "Data",
+                  items: [
+                    ...(featureFlags?.backups !== false ? [{ value: "backups", label: "Backups" }] : []),
+                  ],
+                },
+              ] satisfies SectionGroup[]}
+            />
+          </div>
+        </aside>
 
-        <TabsContent value="services" className="pt-4">
+        <div className="min-w-0 flex-1">
+
+        <TabsContent value="services">
           {services.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
+            <div className="squircle lining flex flex-col items-center justify-center gap-4 rounded-lg border bg-card p-12">
               <Container className="size-8 text-muted-foreground/50" />
               <div className="text-center space-y-1">
                 <p className="text-sm font-medium">No services</p>
@@ -733,7 +768,7 @@ export function ComposeDetail({
           )}
         </TabsContent>
 
-        <TabsContent value="deployments" className="pt-4">
+        <TabsContent value="deployments">
           <AppDeployPanel
             orgId={orgId}
             appId={app.id}
@@ -747,7 +782,7 @@ export function ComposeDetail({
           />
         </TabsContent>
 
-        <TabsContent value="variables" className="pt-4 space-y-4">
+        <TabsContent value="variables" className="space-y-4">
           <EnvEditor
             appId={app.id}
             appName={app.name}
@@ -755,16 +790,18 @@ export function ComposeDetail({
           />
         </TabsContent>
 
-        <TabsContent value="logs" className="pt-4">
+        <TabsContent value="logs">
           <ComposeLogs services={services} orgId={orgId} />
         </TabsContent>
 
-        <TabsContent value="metrics" className="pt-4">
-          <ComposeMetrics services={services} orgId={orgId} />
-        </TabsContent>
+        {featureFlags?.metrics !== false && (
+          <TabsContent value="metrics">
+            <ComposeMetrics services={services} orgId={orgId} />
+          </TabsContent>
+        )}
 
         {featureFlags?.backups !== false && (
-          <TabsContent value="backups" className="pt-4 space-y-4">
+          <TabsContent value="backups" className="space-y-4">
             <p className="text-sm text-muted-foreground">
               Volume snapshots for services in this stack. Download or restore any backup.
             </p>
@@ -783,9 +820,11 @@ export function ComposeDetail({
           </TabsContent>
         )}
 
-        <TabsContent value="compose" className="pt-4">
+        <TabsContent value="compose">
           <ComposeEditor app={app} orgId={orgId} />
         </TabsContent>
+
+        </div>
       </Tabs>
 
       <ConfirmDeleteDialog
