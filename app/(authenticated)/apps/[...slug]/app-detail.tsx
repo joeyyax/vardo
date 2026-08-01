@@ -688,6 +688,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
             appId={app.id}
             onDeploy={handleDeploy}
             deploying={deploy.deploying}
+            deployed={{ [app.composeService ?? ""]: app.imageName }}
           />
         </TabsContent>
 
