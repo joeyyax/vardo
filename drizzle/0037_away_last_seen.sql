@@ -1,0 +1,1 @@
+ALTER TABLE "membership" ADD COLUMN "last_seen_at" timestamp;
