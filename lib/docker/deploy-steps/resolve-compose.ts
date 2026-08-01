@@ -11,9 +11,12 @@ import {
   injectGpuDevices,
   getServicesWithExternalizedVolumes,
   stripVardoInjections,
+  stripTraefikLabels,
   getTraefikRoutedServices,
 } from "../compose";
+import { selectRoutedService } from "../routed-service";
 import { detectExposedPorts } from "../client";
+import type { ComposeFile } from "../compose-types";
 import { normalizeCompose } from "../compose-normalize";
 import { removeAppRouteConfig } from "@/lib/ssl/generate-config";
 import {
@@ -27,6 +30,30 @@ import type { DeployContext } from "../deploy-context";
 import type { ServiceConfigOverride } from "../compose-types";
 
 const NETWORK_NAME = VARDO_NETWORK;
+
+/**
+ * Ports each service's image exposes. Best-effort — an image that isn't pulled
+ * yet contributes nothing, and the caller falls through to weaker signals.
+ */
+async function imagePortsByService(
+  compose: ComposeFile,
+): Promise<Record<string, number[]>> {
+  const entries = Object.entries(compose.services).filter(([, svc]) => svc.image);
+  if (entries.length < 2) return {};
+
+  const result: Record<string, number[]> = {};
+  await Promise.all(
+    entries.map(async ([name, svc]) => {
+      try {
+        const ports = await detectExposedPorts(svc.image!);
+        if (ports.length > 0) result[name] = ports;
+      } catch {
+        // Image not present locally — no signal from it.
+      }
+    }),
+  );
+  return result;
+}
 
 export async function resolveCompose(ctx: DeployContext): Promise<DeployContext> {
   const { app, log, envMap } = ctx;
@@ -149,10 +176,24 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
     .map(([name, svc]) => `${name} (${svc.network_mode})`);
   const allServicesCustomNetwork = servicesWithCustomNetwork.length === Object.keys(compose.services).length;
 
-  if (!allServicesCustomNetwork) {
-    const primaryServiceName = Object.keys(compose.services).find(
-      (k) => !compose.services[k].network_mode || compose.services[k].network_mode === "bridge"
+  if (!allServicesCustomNetwork && app.domains.length > 0) {
+    // Vardo owns routing once the app has a domain. Inbound Traefik labels
+    // otherwise reach the overlay and declare a second backend for the same
+    // Traefik service.
+    compose = stripTraefikLabels(compose);
+
+    // Only worth inspecting images when compose itself doesn't say which
+    // service serves the port.
+    const needsImagePorts = app.domains.some(
+      (d) =>
+        !["override", "sole-candidate", "declared-port"].includes(
+          selectRoutedService(compose, {
+            containerPort: d.port || containerPort,
+            override: d.composeService,
+          }).reason,
+        ),
     );
+    const imagePorts = needsImagePorts ? await imagePortsByService(compose) : {};
     const narrowedProtocol = narrowBackendProtocol(app.backendProtocol);
     for (const domain of app.domains) {
       const port = domain.port || containerPort;
@@ -161,13 +202,19 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
         port,
       );
       // A domain added on a decomposed child app is tagged with that child's
-      // compose service (deploy.ts); route its labels to that service's
-      // container instead of the auto-detected primary. Falls back to the
-      // primary when unset or the service isn't present.
-      const targetService =
-        domain.composeService && compose.services[domain.composeService]
-          ? domain.composeService
-          : primaryServiceName;
+      // compose service (deploy.ts) and routes there; otherwise pick the
+      // service that serves the port.
+      const selection = selectRoutedService(compose, {
+        containerPort: port,
+        override: domain.composeService,
+        imagePorts,
+      });
+      const targetService = selection.service;
+      if (selection.ambiguous) {
+        log(
+          `[deploy] Traefik: nothing identifies which service serves :${port} — routing ${domain.domain} to ${targetService} (candidates: ${selection.ambiguous.join(", ")}). Set the domain's compose service to pin it.`,
+        );
+      }
       compose = injectTraefikLabels(compose, {
         projectName: `${app.name}-${domain.id.slice(0, 8)}`,
         appName: app.name,
@@ -180,7 +227,7 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
         serviceName: targetService,
         backendProtocol: resolvedProtocol,
       });
-      const svcSuffix = targetService && targetService !== primaryServiceName ? ` → ${targetService}` : "";
+      const svcSuffix = targetService ? ` → ${targetService}` : "";
       if (domain.redirectTo) {
         log(`[deploy] Traefik: ${domain.domain} → redirect ${domain.redirectCode ?? 301} ${domain.redirectTo}${svcSuffix}`);
       } else {
@@ -190,7 +237,7 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
 
     // Clean up any stale file-provider config from before this change
     removeAppRouteConfig(app.name).catch(() => {});
-  } else {
+  } else if (allServicesCustomNetwork) {
     log(`[deploy] Skipping Traefik labels — all services use custom network modes: ${servicesWithCustomNetwork.join(", ")}`);
   }
   // Only attach vardo-network to services that carry Traefik router labels
