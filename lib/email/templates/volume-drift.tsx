@@ -78,7 +78,7 @@ export function VolumeDriftEmail({
         operation, or after an interrupted restore.
       </Text>
 
-      <CTA href={`${dashboardUrl}?tab=volumes`}>Review changes &rarr;</CTA>
+      <CTA href={`${dashboardUrl}/volumes`}>Review changes &rarr;</CTA>
     </EmailLayout>
   );
 }
@@ -98,7 +98,7 @@ VolumeDriftEmail.PreviewProps = {
     "logs/access.log",
     "logs/error.log",
   ],
-  dashboardUrl: "https://host.example.com/projects/acme-cms",
+  dashboardUrl: "https://host.example.com/apps/acme-cms",
 } satisfies VolumeDriftProps;
 
 export default VolumeDriftEmail;
