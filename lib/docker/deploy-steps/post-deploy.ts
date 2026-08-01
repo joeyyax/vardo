@@ -25,6 +25,7 @@ import {
   removeContainer,
   stripDockerProjectPrefix,
   listImages,
+  inspectImageDigest,
   removeImage,
   pruneImages,
   pruneBuildCache,
@@ -353,6 +354,12 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
       }
     } catch { /* best-effort snapshot */ }
   }
+  // Image apps pin by digest on rollback — a tag can be re-pointed.
+  const imageDigest =
+    app.deployType === "image" && app.imageName
+      ? await inspectImageDigest(app.imageName)
+      : null;
+
   const configSnapshot: ConfigSnapshot = {
     cpuLimit: app.cpuLimit,
     memoryLimit: app.memoryLimit,
@@ -365,6 +372,8 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
     restartPolicy: app.restartPolicy,
     autoTraefikLabels: app.autoTraefikLabels,
     backendProtocol: narrowBackendProtocol(app.backendProtocol),
+    composeContent: app.composeContent,
+    imageDigest,
   };
 
   const durationMs = Date.now() - ctx.startTime;

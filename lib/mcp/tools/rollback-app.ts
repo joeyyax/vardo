@@ -1,10 +1,12 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { apps, deployments, environments } from "@/lib/db/schema";
+import { apps, deployments, environments, memberships } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { createDeployment } from "@/lib/docker/deploy";
 import { slidingWindowRateLimit } from "@/lib/api/rate-limit";
+import { isOrgAdmin } from "@/lib/auth/permissions";
+import type { ConfigSnapshot } from "@/lib/types/deploy-snapshot";
 import type { McpAuthContext } from "../auth";
 
 // 3 rollbacks per 10 minutes per user/org pair.
@@ -97,7 +99,7 @@ export function registerRollbackApp(
           eq(deployments.id, deploymentId),
           eq(deployments.appId, appId)
         ),
-        columns: { id: true, status: true, gitSha: true, gitMessage: true },
+        columns: { id: true, status: true, gitSha: true, gitMessage: true, configSnapshot: true },
       });
 
       if (!targetDeployment) {
@@ -124,6 +126,33 @@ export function registerRollbackApp(
         };
       }
 
+      const configSnapshot = targetDeployment.configSnapshot as ConfigSnapshot | null;
+
+      // The snapshot now drives the deploy, so restoring GPU passthrough here
+      // grants host hardware access — gate it like enabling GPU directly.
+      if (configSnapshot?.gpuEnabled === true) {
+        const membership = await db.query.memberships.findFirst({
+          where: and(
+            eq(memberships.userId, context.userId),
+            eq(memberships.organizationId, context.organizationId),
+          ),
+          columns: { role: true },
+        });
+        if (!membership || !isOrgAdmin(membership.role)) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({
+                  error: "Only owners and admins can roll back to a snapshot with GPU passthrough enabled",
+                }),
+              },
+            ],
+            isError: true,
+          };
+        }
+      }
+
       // Create the rollback deployment record and fire it asynchronously
       const newDeploymentId = await createDeployment({
         appId,
@@ -139,6 +168,7 @@ export function registerRollbackApp(
         trigger: "rollback",
         triggeredBy: context.userId,
         deploymentId: newDeploymentId,
+        rollback: { targetDeploymentId: deploymentId, includeEnvVars },
       }).then(async (result) => {
         // Tag the new deployment with rollback source
         try {
@@ -148,8 +178,30 @@ export function registerRollbackApp(
             .where(eq(deployments.id, newDeploymentId));
         } catch { /* best-effort */ }
 
-        // Apply env restore after successful deploy
-        if (result.success && includeEnvVars) {
+        // The deploy already ran on the snapshot — write the app record only
+        // once it succeeded, so a failed rollback leaves the row untouched.
+        if (!result.success) return;
+
+        const appUpdates: Record<string, unknown> = { updatedAt: new Date() };
+
+        if (configSnapshot) {
+          appUpdates.cpuLimit = configSnapshot.cpuLimit;
+          appUpdates.memoryLimit = configSnapshot.memoryLimit;
+          appUpdates.gpuEnabled = configSnapshot.gpuEnabled ?? false;
+          appUpdates.containerPort = configSnapshot.containerPort;
+          appUpdates.imageName = configSnapshot.imageName;
+          appUpdates.gitBranch = configSnapshot.gitBranch;
+          appUpdates.composeFilePath = configSnapshot.composeFilePath;
+          appUpdates.rootDirectory = configSnapshot.rootDirectory;
+          appUpdates.restartPolicy = configSnapshot.restartPolicy;
+          appUpdates.autoTraefikLabels = configSnapshot.autoTraefikLabels;
+          appUpdates.backendProtocol = configSnapshot.backendProtocol ?? null;
+          if (configSnapshot.composeContent != null) {
+            appUpdates.composeContent = configSnapshot.composeContent;
+          }
+        }
+
+        if (includeEnvVars) {
           try {
             const target = await db.query.deployments.findFirst({
               where: eq(deployments.id, deploymentId),
@@ -158,11 +210,12 @@ export function registerRollbackApp(
             if (target?.envSnapshot) {
               const { decrypt, encrypt } = await import("@/lib/crypto/encrypt");
               const plainEnv = decrypt(target.envSnapshot, context.organizationId);
-              const encrypted = encrypt(plainEnv, context.organizationId);
-              await db.update(apps).set({ envContent: encrypted }).where(eq(apps.id, appId));
+              appUpdates.envContent = encrypt(plainEnv, context.organizationId);
             }
           } catch { /* env restore is best-effort */ }
         }
+
+        await db.update(apps).set(appUpdates).where(eq(apps.id, appId)).catch(() => {});
       }).catch(() => {
         // Failures recorded on the deployment record
       });
