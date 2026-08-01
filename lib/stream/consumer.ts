@@ -12,6 +12,20 @@ const log = logger.child("stream");
 /** Batch size for XRANGE pagination during catchup. */
 const CATCHUP_BATCH_SIZE = 200;
 
+/** Backoff after a consumer loop error, doubling up to the cap. */
+const CONSUMER_BACKOFF_MIN_MS = 1_000;
+const CONSUMER_BACKOFF_MAX_MS = 60_000;
+/** Consecutive loop errors before the consumer gives up instead of spinning. */
+const CONSUMER_ERROR_LIMIT = 10;
+
+/** A Redis stream ID: "<ms>-<seq>", or the "$"/">"/"0" specials. */
+const STREAM_ID_RE = /^\d+-\d+$/;
+
+export function isValidStreamId(id: string | null | undefined): boolean {
+  if (!id) return false;
+  return STREAM_ID_RE.test(id) || id === "0" || id === "$" || id === "0-0";
+}
+
 // ---------------------------------------------------------------------------
 // Blocking reader connections
 //
@@ -65,9 +79,38 @@ function parseEntries(raw: [string, string[]][]): StreamEntry[] {
 async function ensureGroup(key: string, group: string): Promise<void> {
   try {
     await redis.xgroup("CREATE", key, group, "0", "MKSTREAM");
+    return;
   } catch (err) {
-    if (err instanceof Error && err.message.includes("BUSYGROUP")) return;
-    throw err;
+    if (!(err instanceof Error && err.message.includes("BUSYGROUP"))) throw err;
+  }
+  await repairGroupCursor(key, group);
+}
+
+/**
+ * Reset a group whose persisted last-delivered-ID is not a valid stream ID.
+ * Redis rejects every XREADGROUP against such a group, so the consumer can
+ * never make progress — it just retries the same error forever.
+ */
+async function repairGroupCursor(key: string, group: string): Promise<void> {
+  try {
+    const groups = (await redis.xinfo("GROUPS", key)) as unknown[];
+    for (const raw of groups) {
+      if (!Array.isArray(raw)) continue;
+      const fields: Record<string, string> = {};
+      for (let i = 0; i < raw.length; i += 2) fields[String(raw[i])] = String(raw[i + 1]);
+      if (fields.name !== group) continue;
+
+      const cursor = fields["last-delivered-id"];
+      if (isValidStreamId(cursor)) return;
+
+      log.error(
+        `Consumer group ${group} on ${key} has an invalid last-delivered-ID (${cursor}) — resetting to 0`,
+      );
+      await redis.xgroup("SETID", key, group, "0");
+      return;
+    }
+  } catch (err) {
+    log.warn(`Could not verify consumer group ${group} on ${key}:`, err);
   }
 }
 
@@ -186,16 +229,24 @@ export async function consumeGroup(opts: ConsumeGroupOptions): Promise<() => Pro
       // First, process any pending entries from a previous crash
       await processPending(keys, group, consumer, handler, stopSignal);
 
+      // XREADGROUP takes every key first, then every ID — interleaving them
+      // makes Redis read key 2 as an ID and reject the whole command.
+      const streamArgs = [...keys, ...keys.map(() => ">")];
+      let consecutiveErrors = 0;
+      let backoffMs = CONSUMER_BACKOFF_MIN_MS;
+
       // Then read new entries
       while (!stopSignal.aborted) {
         try {
-          const streamArgs = keys.flatMap((k) => [k, ">"]);
           const result = await blockClient.xreadgroup(
             "GROUP", group, consumer,
             "COUNT", count,
             "BLOCK", blockMs,
             "STREAMS", ...streamArgs,
           ) as [string, [string, string[]][]][] | null;
+
+          consecutiveErrors = 0;
+          backoffMs = CONSUMER_BACKOFF_MIN_MS;
 
           if (!result || stopSignal.aborted) continue;
 
@@ -213,8 +264,21 @@ export async function consumeGroup(opts: ConsumeGroupOptions): Promise<() => Pro
           }
         } catch (err) {
           if (stopSignal.aborted) return;
-          log.error(`Consumer ${group}/${consumer} loop error:`, err);
-          await new Promise((r) => setTimeout(r, 1000));
+          consecutiveErrors++;
+
+          if (consecutiveErrors === 1) {
+            log.error(`Consumer ${group}/${consumer} loop error:`, err);
+          }
+          if (consecutiveErrors >= CONSUMER_ERROR_LIMIT) {
+            log.error(
+              `Consumer ${group}/${consumer} failed ${consecutiveErrors} times in a row — stopping. Last error:`,
+              err,
+            );
+            return;
+          }
+
+          await new Promise((r) => setTimeout(r, backoffMs));
+          backoffMs = Math.min(backoffMs * 2, CONSUMER_BACKOFF_MAX_MS);
         }
       }
     } finally {
