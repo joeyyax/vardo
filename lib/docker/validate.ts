@@ -24,6 +24,17 @@ export function assertSafeBranch(branch: string): void {
   }
 }
 
+const SAFE_GIT_SHA_RE = /^[0-9a-fA-F]{7,40}$/;
+
+/**
+ * Assert that a git commit SHA is a plain hex object name.
+ */
+export function assertSafeGitSha(sha: string): void {
+  if (!SAFE_GIT_SHA_RE.test(sha)) {
+    throw new Error(`Invalid git SHA: ${sha}`);
+  }
+}
+
 // Mount paths are absolute container paths — same safe character set as names
 // but with an optional leading slash and interior slashes allowed.
 const SAFE_MOUNT_PATH_RE = /^\/[a-zA-Z0-9._\-/]*$/;
