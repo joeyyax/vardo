@@ -23,10 +23,10 @@ import {
   type AppMetrics as AppMetricsType,
   type MetricsHistory,
   EMPTY_HISTORY,
-  Sparkline,
-  MetricsLine,
+  MetricsBand,
   useAppMetrics,
 } from "@/components/app-metrics-card";
+import { useImageUpdates } from "../updates-banner";
 import { toast } from "@/lib/messenger";
 import { PageToolbar } from "@/components/page-toolbar";
 import { Button } from "@/components/ui/button";
@@ -181,6 +181,7 @@ function AppCard({
   onHoverEnd,
   childApps = [],
   statusOverride,
+  updateCount = 0,
 }: {
   app: ProjectApp;
   color: string;
@@ -191,13 +192,13 @@ function AppCard({
   onHoverEnd: () => void;
   childApps?: ComposeChildApp[];
   statusOverride?: string;
+  updateCount?: number;
 }) {
   const router = useRouter();
   const effectiveStatus = statusOverride ?? app.status;
   const lastDeploy = app.deployments[0];
   const gitSha = lastDeploy?.gitSha;
   detectAppType(app);
-  const cpuData = history.cpu;
 
   // Source line: repo:branch + sha, or image name
   const sourceLine = app.source === "git" && app.gitUrl
@@ -206,32 +207,37 @@ function AppCard({
 
   const deps = app.dependsOn ?? [];
 
-  // Build highlight ring/border classes
+  // Build highlight ring classes
   const highlightClasses =
     highlight === "hovered"
-      ? "ring-2 ring-foreground/20 border-foreground/30 scale-[1.01]"
+      ? "ring-2 ring-foreground/20 scale-[1.01]"
       : highlight === "dependency"
-        ? "ring-2 ring-blue-500/40 border-blue-500/50"
+        ? "ring-2 ring-blue-500/40"
         : highlight === "dependent"
-          ? "ring-2 ring-emerald-500/40 border-emerald-500/50"
+          ? "ring-2 ring-emerald-500/40"
           : "";
+
+  const deployFragment = lastDeploy && (
+    lastDeploy.status === "failed" ? (
+      <span className="text-status-error">
+        Deploy failed {formatDistanceToNowStrict(new Date(lastDeploy.startedAt), { addSuffix: true })}
+      </span>
+    ) : lastDeploy.status === "running" || lastDeploy.status === "queued" ? (
+      <span className="text-status-info">Deploying now</span>
+    ) : (
+      <span>Deployed {formatDistanceToNowStrict(new Date(lastDeploy.startedAt), { addSuffix: true })}</span>
+    )
+  );
 
   return (
     <Link
       href={`/apps/${app.name}`}
       onMouseEnter={onHoverStart}
       onMouseLeave={onHoverEnd}
-      className={`squircle relative flex flex-col rounded-lg border bg-card p-4 transition-all duration-200 hover:bg-accent/50 overflow-hidden cursor-pointer ${highlightClasses}`}
+      className={`squircle relative flex flex-col rounded-lg bg-card shadow-card dark:border transition-all duration-200 hover:shadow-card-hover overflow-hidden cursor-pointer ${highlightClasses}`}
     >
-      {cpuData.length > 0 && (
-        <Sparkline
-          data={cpuData}
-          className="absolute inset-0 w-full h-full pointer-events-none"
-          style={{ color: "oklch(0.65 0.19 255)" }}
-        />
-      )}
-
-      <div className="relative flex gap-3 w-full">
+      <div className="flex-1 p-4">
+      <div className="flex gap-3 w-full">
         <AppIcon app={app} />
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2">
@@ -262,13 +268,25 @@ function AppCard({
               </code>
             )}
           </div>
-          {metrics && <MetricsLine metrics={metrics} onHover={() => {}} />}
+          {/* What changed — deploy recency and pending updates */}
+          {(deployFragment || updateCount > 0) && (
+            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+              {deployFragment}
+              {deployFragment && updateCount > 0 && <span aria-hidden="true">·</span>}
+              {updateCount > 0 && (
+                <span className="flex items-center gap-1">
+                  <Package className="size-3" aria-hidden="true" />
+                  {updateCount} update{updateCount === 1 ? "" : "s"} available
+                </span>
+              )}
+            </p>
+          )}
         </div>
       </div>
 
       {/* Dependency badges */}
       {deps.length > 0 && (
-        <div className="relative flex flex-wrap items-center gap-1 mt-2 pt-2 border-t border-border/50">
+        <div className="flex flex-wrap items-center gap-1 mt-2 pt-2 border-t border-border/50">
           <span className="text-[10px] text-muted-foreground/60 mr-0.5">depends on</span>
           {deps.map((dep) => (
             <span
@@ -283,20 +301,32 @@ function AppCard({
 
       {/* Direction indicator when highlighted via hover */}
       {highlight === "dependency" && (
-        <div className="relative flex items-center gap-1 mt-1.5 text-[10px] text-blue-600 dark:text-blue-400">
+        <div className="flex items-center gap-1 mt-1.5 text-[10px] text-blue-600 dark:text-blue-400">
           <span>&larr;</span>
           <span>depends on this</span>
         </div>
       )}
       {highlight === "dependent" && (
-        <div className="relative flex items-center gap-1 mt-1.5 text-[10px] text-emerald-600 dark:text-emerald-400">
+        <div className="flex items-center gap-1 mt-1.5 text-[10px] text-emerald-600 dark:text-emerald-400">
           <span>&rarr;</span>
           <span>depends on this</span>
         </div>
       )}
+      </div>
 
-      {/* Compose service chips */}
-      <ChildAppChipList childApps={childApps} />
+      {/* Resource band — scale and trend, not bare numbers */}
+      {metrics && (
+        <MetricsBand metrics={metrics} history={history} memoryLimit={metrics.memoryLimit} />
+      )}
+
+      {/* Compose services sit as raised objects on a recessed tray */}
+      {childApps.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 border-t bg-background-deep px-4 py-3">
+          {childApps.map((child) => (
+            <ChildAppChip key={child.id} displayName={child.displayName} status={child.status} className="bg-card" />
+          ))}
+        </div>
+      )}
     </Link>
   );
 }
