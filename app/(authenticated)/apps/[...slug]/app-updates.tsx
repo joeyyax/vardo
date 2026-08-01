@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "@/lib/messenger";
+import { pendingImageChange } from "@/lib/docker/image-updates/pending";
 
 type Severity = "patch" | "minor" | "major" | "build" | "unknown";
 
@@ -159,11 +160,14 @@ export function AppUpdatesPanel({
   appId,
   onDeploy,
   deploying,
+  deployed,
 }: {
   orgId: string;
   appId: string;
   onDeploy: () => void;
   deploying: boolean;
+  /** Image each service last deployed, keyed by compose service ("" when single-image). */
+  deployed?: Record<string, string | null>;
 }) {
   const { data, loading, refresh } = useImageUpdates(orgId, appId);
   const [applying, setApplying] = useState<string | null>(null);
@@ -176,6 +180,9 @@ export function AppUpdatesPanel({
     (entry) => entry.status === "update" || entry.status === "drift",
   );
   const unverified = (data?.services ?? []).filter((entry) => entry.status === "unknown");
+  const undeployed = (data?.services ?? []).filter((entry) =>
+    pendingImageChange(deployed?.[entry.service ?? ""], entry.image),
+  );
 
   if (loading || !data) return null;
 
@@ -186,7 +193,12 @@ export function AppUpdatesPanel({
         aria-label="Image updates"
         className="squircle rounded-lg border bg-card px-4 py-6 text-center"
       >
-        <p className="type-body text-muted-foreground">Every image is up to date.</p>
+        <p className="type-body text-muted-foreground">Every image in compose is up to date.</p>
+        {undeployed.length > 0 && (
+          <div className="mt-3">
+            <UndeployedNote count={undeployed.length} onDeploy={onDeploy} deploying={deploying} />
+          </div>
+        )}
         <button
           type="button"
           onClick={refresh}
@@ -261,6 +273,20 @@ export function AppUpdatesPanel({
           <RefreshCw className="size-3.5" aria-hidden="true" />
         </button>
       </header>
+
+      {/* Names the fact in each column: these tags come from compose, not from
+          the running containers. */}
+      <div
+        aria-hidden="true"
+        className="hidden px-4 py-1.5 type-label text-muted-foreground/50 sm:grid sm:grid-cols-[minmax(6rem,10rem)_auto_1rem_13rem_minmax(0,1fr)_auto] sm:items-center sm:gap-x-3"
+      >
+        <span>Service</span>
+        <span>In compose</span>
+        <span />
+        <span>Update to</span>
+        <span />
+        <span />
+      </div>
 
       {actionable.map((entry) => {
         const key = entry.service ?? "";
@@ -348,6 +374,12 @@ export function AppUpdatesPanel({
         </p>
       )}
 
+      {undeployed.length > 0 && (
+        <div className="px-4 py-2.5">
+          <UndeployedNote count={undeployed.length} onDeploy={onDeploy} deploying={deploying} />
+        </div>
+      )}
+
       <MigrationDialog
         prompt={migration}
         orgId={orgId}
@@ -359,6 +391,29 @@ export function AppUpdatesPanel({
         }}
       />
     </section>
+  );
+}
+
+/** Compose pins that no deploy has applied yet. */
+function UndeployedNote({
+  count,
+  onDeploy,
+  deploying,
+}: {
+  count: number;
+  onDeploy: () => void;
+  deploying: boolean;
+}) {
+  return (
+    <div className="squircle flex flex-wrap items-center justify-center gap-2 rounded-md border border-status-warning/30 bg-status-warning-muted p-2.5 type-body-sm text-muted-foreground">
+      <TriangleAlert className="size-3.5 shrink-0 text-status-warning" aria-hidden="true" />
+      <span>
+        {count} image{count === 1 ? " is" : "s are"} pinned in compose but not deployed.
+      </span>
+      <Button size="sm" variant="outline" disabled={deploying} onClick={onDeploy}>
+        Deploy
+      </Button>
+    </div>
   );
 }
 
