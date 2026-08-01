@@ -15,6 +15,12 @@ const COLLAPSED_ROWS = 4;
 /** Group size that gets its subjects named inline rather than counted. */
 const NAMED_SUBJECTS = 3;
 
+const TONE_TEXT: Record<"error" | "warning" | "neutral", string> = {
+  error: "text-status-error",
+  warning: "text-status-warning",
+  neutral: "text-muted-foreground",
+};
+
 const TONE_DOT: Record<"error" | "warning" | "neutral", string> = {
   error: "bg-status-error",
   warning: "bg-status-warning",
@@ -85,6 +91,30 @@ function Row({ group }: { group: AwayGroup<NotableItem> }) {
   );
 }
 
+type Tone = "error" | "warning" | "neutral";
+
+/**
+ * Subject totals per kind, worst tone winning. The expanded list splits a kind
+ * by its detail; the one-line summary must not, or the same words repeat.
+ */
+function tallyByKind(
+  groups: AwayGroup<NotableItem>[],
+): { kind: string; count: number; tone: Tone }[] {
+  const order: Tone[] = ["neutral", "warning", "error"];
+  const tally = new Map<string, { kind: string; count: number; tone: Tone }>();
+  for (const group of groups) {
+    const tone = REASON_TONE[group.reason as AwayReason];
+    const existing = tally.get(group.kind);
+    if (existing) {
+      existing.count += group.items.length;
+      if (order.indexOf(tone) > order.indexOf(existing.tone)) existing.tone = tone;
+      continue;
+    }
+    tally.set(group.kind, { kind: group.kind, count: group.items.length, tone });
+  }
+  return [...tally.values()];
+}
+
 /**
  * Reports what needed attention while the user was away. Renders nothing until
  * the server says there is something worth reporting.
@@ -121,8 +151,7 @@ export function AwaySummaryBanner({ orgId }: { orgId: string }) {
   if (!summary || summary.notable.length === 0) return null;
 
   const groups = groupNotable(summary.notable);
-  const shown = expanded ? groups : groups.slice(0, COLLAPSED_ROWS);
-  const hidden = groups.length - shown.length;
+  const shown = groups.slice(0, COLLAPSED_ROWS * 3);
   const away = formatDistanceToNow(new Date(summary.since));
 
   return (
@@ -150,26 +179,38 @@ export function AwaySummaryBanner({ orgId }: { orgId: string }) {
           </button>
         </div>
 
-        <ul className="space-y-0.5">
-          {shown.map((group) => (
-            <li key={group.key}>
-              <Row group={group} />
-            </li>
-          ))}
-        </ul>
-
-        {hidden > 0 && (
-          <button
-            type="button"
-            onClick={() => setExpanded(true)}
-            aria-expanded={expanded}
-            className="type-body-sm mt-2 text-muted-foreground underline underline-offset-2 transition-opacity hover:opacity-80"
-          >
-            Show {hidden} more
-          </button>
+        {!expanded && (
+          <p className="type-body-sm text-muted-foreground">
+            {tallyByKind(groups).map((t, i) => (
+              <span key={t.kind}>
+                {i > 0 && <span className="text-muted-foreground/40"> · </span>}
+                <span className={TONE_TEXT[t.tone]}>{kindLabel(t.kind)}</span>
+                {t.count > 1 && ` (${t.count})`}
+              </span>
+            ))}
+          </p>
         )}
 
-        {(summary.routineCount > 0 || summary.unavailable.length > 0) && (
+        {expanded && (
+          <ul className="space-y-0.5">
+            {shown.map((group) => (
+              <li key={group.key}>
+                <Row group={group} />
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+          className="type-body-sm mt-2 text-muted-foreground underline underline-offset-2 transition-opacity hover:opacity-80"
+        >
+          {expanded ? "Hide details" : "Show details"}
+        </button>
+
+        {expanded && (summary.routineCount > 0 || summary.unavailable.length > 0) && (
           <p className="type-body-sm mt-3 border-t pt-3 text-muted-foreground">
             {summary.routineCount > 0 && (
               <>
