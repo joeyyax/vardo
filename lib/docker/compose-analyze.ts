@@ -10,6 +10,8 @@
 import YAML from "yaml";
 import type { ComposeFile } from "./compose";
 import { parsePortString, parseCompose } from "./compose";
+import { parseImageRef } from "./image-updates/image-ref";
+import { isFloatingTag } from "./image-updates/tag-version";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -22,7 +24,8 @@ export type FindingCategory =
   | "container-name"
   | "restart-policy"
   | "inline-env"
-  | "env-var-ref";
+  | "env-var-ref"
+  | "floating-tag";
 
 export type Finding = {
   /** Which category this finding belongs to. */
@@ -91,6 +94,7 @@ export function analyzeCompose(
     analyzeContainerName(name, undefined, findings);
     analyzeRestartPolicy(name, svc, findings);
     analyzeEnvironment(name, svc, managedEnvKeys, findings);
+    analyzeImageTag(name, svc, findings);
   }
 
   // Build counts
@@ -105,6 +109,27 @@ export function analyzeCompose(
 // ---------------------------------------------------------------------------
 // Individual analyzers
 // ---------------------------------------------------------------------------
+
+/** Flags images on a moving tag, which pin to whatever the registry last built. */
+function analyzeImageTag(
+  name: string,
+  svc: { image?: string; build?: unknown },
+  findings: Finding[],
+): void {
+  if (!svc.image || svc.build) return;
+  const ref = parseImageRef(svc.image);
+  if (!ref) return;
+  if (!isFloatingTag(ref.tag)) return;
+
+  findings.push({
+    category: "floating-tag",
+    severity: "info",
+    service: name,
+    message: `${name} uses the moving tag "${ref.tag}" — pin a version to control when it changes`,
+    detail: { image: svc.image, tag: ref.tag },
+    autoFixed: false,
+  });
+}
 
 function analyzeHostPorts(
   name: string,

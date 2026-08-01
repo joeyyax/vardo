@@ -14,6 +14,7 @@ import { Uptime } from "@/components/app-status";
 import { useAppMetrics } from "@/components/app-metrics-card";
 import { formatBytes } from "@/lib/metrics/format";
 import { DependencySelector } from "./dependency-selector";
+import { AppUpdateStat } from "./app-updates";
 import type { App, Deployment, SlotStatus, Tag } from "./types";
 
 function deployTypeLabel(deployType: string) {
@@ -316,6 +317,9 @@ export function AppHeader({
             </button>
           </Stat>
         )}
+        <Stat label="Image">
+          <AppUpdateStat orgId={orgId} appId={app.id} />
+        </Stat>
       </dl>
 
       {/* Deploy dependencies — only for apps in a project with siblings */}

@@ -9,6 +9,7 @@ import { detectAppType } from "@/lib/ui/app-type";
 import { statusDotColor } from "@/lib/ui/status-colors";
 import { StatusIndicator } from "@/components/app-status";
 import { SystemBadge } from "@/components/system-badge";
+import { UpdatesBanner } from "./updates-banner";
 
 import {
   type AppMetrics,
@@ -319,6 +320,8 @@ export function AppGrid({
 
   return (
     <div className="space-y-4">
+      <UpdatesBanner orgId={orgId} />
+
       {unlimited.length > 0 && (
         <details className="group squircle rounded-lg border border-status-warning/40 bg-status-warning-muted/40 text-sm">
           <summary className="flex cursor-pointer list-none items-center gap-2 p-3 [&::-webkit-details-marker]:hidden">
