@@ -333,36 +333,18 @@ run_with_spinner() {
     echo -e "  ${DIM}[dry-run] $*${RESET}"
     return 0
   fi
-  if $VERBOSE; then
+  # No controlling terminal (ssh without -t) means no spinner and no keepalive
+  # subshell to reap: `wait` on a killed child returns 143 and `set -e` aborts
+  # the script mid-update. Stream the command's own output instead.
+  if $VERBOSE || ! has_tty; then
     info "$label"
     "$@"
     return $?
   fi
   log_to_file "CMD: $*"
 
-  if ! has_tty; then
-    # No controlling terminal (e.g. SSH without -t). Print periodic keepalive
-    # output so the connection doesn't time out during long builds.
-    info "$label"
-    local start_time=$SECONDS
-    (
-      while true; do
-        sleep 30
-        printf "  · %s (%ds)\n" "$label" "$(( SECONDS - start_time ))"
-      done
-    ) &
-    local keepalive_pid=$!
-    local exit_code=0
-    "$@" || exit_code=$?
-    kill $keepalive_pid 2>/dev/null; wait $keepalive_pid 2>/dev/null
-    if [ $exit_code -ne 0 ]; then
-      fail "$label — failed (exit $exit_code). Check ${INSTALL_LOG:-/var/log/vardo-install.log} for details."
-    fi
-    return $exit_code
-  fi
-
-  # Safe to hardcode /dev/tty — the ! has_tty early return above ensures we
-  # only reach this point when a controlling terminal is actually available.
+  # Safe to hardcode /dev/tty — the has_tty check above ensures we only reach
+  # this point when a controlling terminal is actually available.
   local tty_out="/dev/tty"
 
   # Start a timer in a background subshell that updates every 5s
@@ -381,11 +363,11 @@ run_with_spinner() {
   # Run foreground
   local exit_code=0
   if "$@" >> "${INSTALL_LOG:-/dev/null}" 2>&1; then
-    kill $timer_pid 2>/dev/null; wait $timer_pid 2>/dev/null
+    kill $timer_pid 2>/dev/null; wait $timer_pid 2>/dev/null || true
     printf "\r  ${GREEN}✓${RESET} %s (%ds)\n" "$label" "$(( SECONDS - start_time ))" > "$tty_out"
   else
     exit_code=$?
-    kill $timer_pid 2>/dev/null; wait $timer_pid 2>/dev/null
+    kill $timer_pid 2>/dev/null; wait $timer_pid 2>/dev/null || true
     printf "\r  ${RED}✗${RESET} %s (%ds)\n" "$label" "$(( SECONDS - start_time ))" > "$tty_out"
     fail "$label — failed (exit $exit_code). Check ${INSTALL_LOG:-/var/log/vardo-install.log} for details."
   fi
