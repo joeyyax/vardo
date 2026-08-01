@@ -8,14 +8,15 @@ import { Plus, Cpu, ShieldCheck, Trash2, Package } from "lucide-react";
 import { EndpointsPopover } from "@/components/endpoints-popover";
 import { detectAppType } from "@/lib/ui/app-type";
 import { statusDotColor, uniformStatus } from "@/lib/ui/status-colors";
-import { conditionKindLabel, conditionLabel, conditionTone, countNeedingAttention } from "@/lib/ui/conditions";
+import { conditionLabel, conditionTone, countNeedingAttention } from "@/lib/ui/conditions";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { AppRowCard } from "@/components/app-row-card";
-import { worstCondition, type AppCondition, type ConditionKind } from "@/lib/docker/conditions";
+import { worstCondition, type AppCondition } from "@/lib/docker/conditions";
 import { StatusIndicator } from "@/components/app-status";
 import { SystemBadge } from "@/components/system-badge";
 import { useImageUpdates } from "./updates-banner";
-import { AttentionPanel, type AttentionRow } from "@/components/attention-panel";
+import { AttentionPanel } from "@/components/attention-panel";
+import { conditionRows, type AttentionRow } from "@/lib/ui/attention";
 import type { FleetAttention } from "@/lib/attention/fleet";
 
 import {
@@ -474,35 +475,19 @@ export function AppGrid({
   // One row per condition kind across the fleet, plus the two fleet-wide facts
   // that are not per-app conditions.
   const attentionRows = useMemo<AttentionRow[]>(() => {
-    const byKind = new Map<ConditionKind, AttentionRow>();
-    for (const app of apps) {
-      for (const condition of app.conditions ?? []) {
-        const row = byKind.get(condition.kind) ?? {
-          key: condition.kind,
-          label: conditionKindLabel(condition.kind),
-          tone: condition.severity === "critical" ? "error" : "warning",
-          items: [],
-        };
-        // Worst severity seen for the kind wins the row's tone.
-        if (condition.severity === "critical") row.tone = "error";
-        row.items.push({
-          id: app.id,
-          name: app.displayName,
-          href: `/apps/${app.name}`,
-          detail: condition.detail,
-        });
-        byKind.set(condition.kind, row);
-      }
-    }
-
-    const rows = [...byKind.values()];
+    const rows = conditionRows(apps);
 
     if (fleet && fleet.servicesDown.length > 0) {
       rows.push({
         key: "service-down",
         label: "Service down",
         tone: "error",
-        items: fleet.servicesDown.map((s) => ({ id: s.id, name: s.name, href: "/admin" })),
+        items: fleet.servicesDown.map((s) => ({
+          id: s.id,
+          name: s.name,
+          href: "/admin",
+          detail: `Last alert ${formatDistanceToNowStrict(new Date(s.lastFired))} ago`,
+        })),
         footer: "Platform services Vardo depends on. Check the admin overview for reachability.",
       });
     }
@@ -545,8 +530,8 @@ export function AppGrid({
         items: updates.appsWithUpdates.map((a) => ({
           id: a.id,
           name: a.displayName,
-          count: a.count,
           href: `/apps/${a.name}/updates`,
+          detail: `${a.count} image${a.count === 1 ? "" : "s"}`,
         })),
         footer: (
           <>
