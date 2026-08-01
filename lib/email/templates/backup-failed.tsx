@@ -33,7 +33,7 @@ export function BackupFailedEmail({
         <Text style={styles.errorText}>{errorMessage}</Text>
       </ErrorBox>
 
-      <CTA href={`${dashboardUrl}?tab=backups`}>View logs &rarr;</CTA>
+      <CTA href={`${dashboardUrl}/backups`}>View logs &rarr;</CTA>
     </EmailLayout>
   );
 }
@@ -42,7 +42,7 @@ BackupFailedEmail.PreviewProps = {
   appName: "acme-db",
   volumeName: "postgres_data",
   errorMessage: "tar: /var/lib/postgresql/data: Cannot open: Permission denied",
-  dashboardUrl: "https://host.example.com/projects/acme-db",
+  dashboardUrl: "https://host.example.com/apps/acme-db",
 } satisfies BackupFailedProps;
 
 export default BackupFailedEmail;

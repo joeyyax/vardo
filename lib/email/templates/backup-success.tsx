@@ -50,7 +50,7 @@ export function BackupSuccessEmail({
         )}
       </SuccessBox>
 
-      <CTA href={`${dashboardUrl}?tab=backups`}>View backups &rarr;</CTA>
+      <CTA href={`${dashboardUrl}/backups`}>View backups &rarr;</CTA>
     </EmailLayout>
   );
 }
@@ -61,7 +61,7 @@ BackupSuccessEmail.PreviewProps = {
   totalSize: "2.4 GB",
   duration: "3m 12s",
   storageBucket: "s3://backups/acme-db",
-  dashboardUrl: "https://host.example.com/projects/acme-db",
+  dashboardUrl: "https://host.example.com/apps/acme-db",
 } satisfies BackupSuccessProps;
 
 export default BackupSuccessEmail;

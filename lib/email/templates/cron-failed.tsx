@@ -58,7 +58,7 @@ export function CronFailedEmail({
         </Section>
       )}
 
-      <CTA href={`${dashboardUrl}?tab=cron`}>View cron history &rarr;</CTA>
+      <CTA href={`${dashboardUrl}/cron`}>View cron history &rarr;</CTA>
     </EmailLayout>
   );
 }
@@ -71,7 +71,7 @@ CronFailedEmail.PreviewProps = {
     "Error: ECONNREFUSED 127.0.0.1:5432\n    at TCPConnectWrap.afterConnect\nFailed to connect to database\nCleanup aborted",
   duration: "0.8s",
   exitCode: 1,
-  dashboardUrl: "https://host.example.com/projects/acme-api",
+  dashboardUrl: "https://host.example.com/apps/acme-api",
 } satisfies CronFailedProps;
 
 export default CronFailedEmail;

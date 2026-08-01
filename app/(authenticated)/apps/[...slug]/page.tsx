@@ -7,8 +7,7 @@ import { nanoid } from "nanoid";
 import { AppDetail } from "./app-detail";
 import { getFeatureFlags } from "@/lib/config/features";
 
-const VALID_TABS = ["apps", "deployments", "updates", "connect", "variables", "networking", "logs", "volumes", "cron", "terminal", "metrics", "backups", "security", "errors", "debug", "services", "compose"] as const;
-type ValidTab = (typeof VALID_TABS)[number];
+import { APP_TABS as VALID_TABS, type AppTab as ValidTab } from "@/lib/ui/app-tabs";
 
 type PageProps = {
   params: Promise<{ slug: string[] }>;

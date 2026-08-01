@@ -115,7 +115,7 @@ export function DeployFailedEmail({
         </InfoBox>
       )}
 
-      <CTA href={`${dashboardUrl}?tab=deployments`}>View logs &rarr;</CTA>
+      <CTA href={`${dashboardUrl}/deployments`}>View logs &rarr;</CTA>
     </EmailLayout>
   );
 }
@@ -132,7 +132,7 @@ DeployFailedEmail.PreviewProps = {
   gitAuthor: "Joey Yax",
   gitBranch: "main",
   triggerReason: "Push to main",
-  dashboardUrl: "https://host.example.com/projects/acme-web",
+  dashboardUrl: "https://host.example.com/apps/acme-web",
 } satisfies DeployFailedProps;
 
 export default DeployFailedEmail;

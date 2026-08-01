@@ -46,7 +46,7 @@ export function AutoRollbackEmail({
         minimize downtime.
       </Text>
 
-      <CTA href={`${dashboardUrl}?tab=deployments`}>
+      <CTA href={`${dashboardUrl}/deployments`}>
         View deployment &rarr;
       </CTA>
     </EmailLayout>
@@ -58,7 +58,7 @@ AutoRollbackEmail.PreviewProps = {
   reason: "Container exited with code 137 (OOMKilled) within 30s of deploy",
   fromDeploymentId: "dep_abc123def456",
   toDeploymentId: "dep_789xyz012345",
-  dashboardUrl: "https://host.example.com/projects/acme-web",
+  dashboardUrl: "https://host.example.com/apps/acme-web",
 } satisfies AutoRollbackProps;
 
 export default AutoRollbackEmail;
