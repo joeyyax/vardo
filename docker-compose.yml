@@ -40,8 +40,11 @@ services:
       NEXT_PUBLIC_BETTER_AUTH_URL: https://${VARDO_DOMAIN:-localhost}
       NEXT_PUBLIC_APP_URL: https://${VARDO_DOMAIN:-localhost}
       VARDO_HOME_DIR: ${VARDO_HOME_DIR:-${VARDO_DIR:-/opt/vardo}}
-      CADVISOR_URL: ${CADVISOR_URL:-}
-      LOKI_URL: ${LOKI_URL:-}
+      # Service names on vardo-network. Empty here meant the health probes fell
+      # back to localhost, which is this container, so they always failed.
+      CADVISOR_URL: ${CADVISOR_URL:-http://cadvisor:8080}
+      LOKI_URL: ${LOKI_URL:-http://loki:3100}
+      TRAEFIK_URL: ${TRAEFIK_URL:-http://vardo-traefik:8080}
       WIREGUARD_GATEWAY: 10.88.0.2
       DOCKER_GID: ${DOCKER_GID:-999}
     healthcheck:
