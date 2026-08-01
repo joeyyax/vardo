@@ -45,6 +45,7 @@ import {
 import type { ConfigSnapshot } from "@/lib/types/deploy-snapshot";
 import { checkEndpoint, sendDeployNotification } from "../deploy";
 import type { DeployContext } from "../deploy-context";
+import { demoteStandbyRestart } from "../restart-policy";
 
 /** Serializes the host-global prune across deploys. */
 const PRUNE_LOCK_KEY = "deploy:prune:lock";
@@ -71,6 +72,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
         ["compose", ...oldComposeFileArgs, "-p", oldProjectName, "stop"],
         { cwd: oldSlotDir, timeout: COMPOSE_DOWN_TIMEOUT }
       );
+      await demoteStandbyRestart(oldComposeFileArgs, oldProjectName, oldSlotDir);
       log(`[deploy] Old slot (${activeSlot}) stopped — available for instant rollback`);
     } catch (err) {
       log(`[deploy] Warning: old slot stop — ${err instanceof Error ? err.message : err}`);

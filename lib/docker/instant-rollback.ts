@@ -20,6 +20,7 @@ import {
   INSTANT_ROLLBACK_POLL_INTERVAL,
 } from "./constants";
 import type { ResolvedEnv } from "./resolve-env";
+import { demoteStandbyRestart, restoreSlotRestart } from "./restart-policy";
 
 const execFileAsync = promisify(execFile);
 
@@ -137,6 +138,8 @@ export async function performInstantRollback(
       ],
       { cwd: standbyDir, timeout: COMPOSE_UP_TIMEOUT },
     );
+    // It is about to serve, so it needs its own restart policy back.
+    await restoreSlotRestart(standbyComposeFileArgs, standbyProjectName, standbyDir);
   } catch (err) {
     return {
       success: false, deploymentId: "", fromSlot: activeSlot, toSlot: standbySlot,
@@ -204,6 +207,8 @@ export async function performInstantRollback(
       ["compose", ...activeComposeFileArgs, "-p", activeProjectName, "stop"],
       { cwd: activeDir, timeout: COMPOSE_DOWN_TIMEOUT },
     );
+    // It is the standby now, so it must not come back on a daemon restart.
+    await demoteStandbyRestart(activeComposeFileArgs, activeProjectName, activeDir);
   } catch { /* best-effort — standby is already serving */ }
 
   // Step 5: Flip the current symlink
