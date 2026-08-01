@@ -124,7 +124,7 @@ function normalizeHostPorts(
  * Normalize restart policies across all services.
  * - Missing → set to target policy
  * - "no" → set to target policy (services should restart in production)
- * - "always" → left as-is (valid choice, just aggressive)
+ * - "always" → downgraded to "unless-stopped"
  * - "unless-stopped" / "on-failure" → left as-is
  */
 function normalizeRestart(
@@ -133,26 +133,41 @@ function normalizeRestart(
   changes: NormalizeChange[],
 ): ComposeFile {
   const services = { ...compose.services };
+  const safePolicy = targetPolicy === "always" ? "unless-stopped" : targetPolicy;
 
   for (const [name, svc] of Object.entries(services)) {
     if (!svc.restart) {
-      services[name] = { ...svc, restart: targetPolicy };
+      services[name] = { ...svc, restart: safePolicy };
       changes.push({
         service: name,
         field: "restart",
         action: "added",
-        after: targetPolicy,
+        after: safePolicy,
         reason: "Restart policy set — services should restart on failure in production",
       });
     } else if (svc.restart === "no") {
-      services[name] = { ...svc, restart: targetPolicy };
+      services[name] = { ...svc, restart: safePolicy };
       changes.push({
         service: name,
         field: "restart",
         action: "changed",
         before: "no",
-        after: targetPolicy,
+        after: safePolicy,
         reason: 'restart: "no" changed — services should restart on failure in production',
+      });
+    } else if (svc.restart === "always") {
+      // Docker restarts an "always" container when the daemon restarts even if it
+      // was explicitly stopped, which would bring a standby slot back up alongside
+      // the active one. "unless-stopped" is identical except for that case.
+      services[name] = { ...svc, restart: "unless-stopped" };
+      changes.push({
+        service: name,
+        field: "restart",
+        action: "changed",
+        before: "always",
+        after: "unless-stopped",
+        reason:
+          'restart: "always" downgraded — it would resurrect the stopped standby slot on daemon restart',
       });
     }
   }
