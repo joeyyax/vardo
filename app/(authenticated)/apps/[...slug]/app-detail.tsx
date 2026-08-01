@@ -650,7 +650,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                   label: "Observe",
                   items: [
                     { value: "logs", label: "Logs" },
-                    { value: "metrics", label: "Metrics" },
+                    ...(featureFlags?.metrics !== false ? [{ value: "metrics", label: "Metrics" }] : []),
                     ...(featureFlags?.errorTracking !== false ? [{ value: "errors", label: "Errors" }] : []),
                     { value: "security", label: "Security" },
                   ],
@@ -770,9 +770,11 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           </TabsContent>
         )}
 
-        <TabsContent value="metrics">
-          <AppMetrics key={`metrics-${selectedEnvId}`} orgId={orgId} appId={app.id} environmentName={selectedEnv?.name} gpuEnabled={!!app.gpuEnabled} />
-        </TabsContent>
+        {featureFlags?.metrics !== false && (
+          <TabsContent value="metrics">
+            <AppMetrics key={`metrics-${selectedEnvId}`} orgId={orgId} appId={app.id} environmentName={selectedEnv?.name} gpuEnabled={!!app.gpuEnabled} />
+          </TabsContent>
+        )}
 
         {featureFlags?.backups !== false && (
           <TabsContent value="backups" className="space-y-4">
