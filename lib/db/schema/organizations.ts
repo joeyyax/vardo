@@ -37,6 +37,9 @@ export const memberships = pgTable(
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     role: text("role").notNull(),
+    // Anchor for the "while you were away" summary. Advanced when the summary
+    // is dismissed, or immediately when there was nothing to report.
+    lastSeenAt: timestamp("last_seen_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [
