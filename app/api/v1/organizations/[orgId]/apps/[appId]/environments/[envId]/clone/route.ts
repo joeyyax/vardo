@@ -8,6 +8,7 @@ import { z } from "zod";
 import { verifyAppAccess } from "@/lib/api/verify-access";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { requirePlugin } from "@/lib/api/require-plugin";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string; envId: string }>;
@@ -29,6 +30,9 @@ const cloneSchema = z.object({
 // POST /api/v1/organizations/[orgId]/apps/[appId]/environments/[envId]/clone
 async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
+    const gate = await requirePlugin("environments");
+    if (gate) return gate;
+
     const { orgId, appId, envId } = await params;
     const app = await verifyAppAccess(orgId, appId);
 
