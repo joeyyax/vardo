@@ -84,15 +84,40 @@ export function sanitizeError(message: string): string {
     .replace(/redis:\/\/\S+/gi, "[url]")
     .replace(/postgres(?:ql)?:\/\/\S+/gi, "[url]")
     .replace(/\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\b/g, "[host]")
+    // IPv6, including the `::1:7300` a dual-stack connect failure reports.
+    .replace(/(?:[0-9a-f]{0,4}:){2,}[0-9a-f]{0,4}(?::\d+)?/gi, "[host]")
     .replace(/\blocalhost(?::\d+)?\b/gi, "[host]")
     .replace(/\b(role|database|user) "[^"]+"/gi, "$1 [name]")
     .slice(0, MAX_ERROR_LENGTH);
 }
 
-/** `fetch` reports "fetch failed" and puts the reason on the cause. */
+/**
+ * The reason behind a wrapper error, or "" when there isn't one worth printing.
+ *
+ * `fetch` reports "fetch failed" and hangs the reason off the cause. On a
+ * dual-stack host that cause is an AggregateError whose own message is empty —
+ * the ECONNREFUSED sits one level further down, in `errors`.
+ */
+function errorReason(err: Error): string {
+  if (err.message) return err.message;
+  const inner = (err as AggregateError).errors;
+  if (Array.isArray(inner)) {
+    for (const e of inner) {
+      if (e instanceof Error) {
+        const reason = errorReason(e);
+        if (reason) return reason;
+      }
+    }
+  }
+  return "";
+}
+
 function describeError(err: unknown): string {
   if (!(err instanceof Error)) return String(err);
-  if (err.cause instanceof Error) return `${err.message}: ${err.cause.message}`;
+  if (err.cause instanceof Error) {
+    const reason = errorReason(err.cause);
+    if (reason) return `${err.message}: ${reason}`;
+  }
   return err.message;
 }
 
