@@ -367,9 +367,10 @@ async function getResourceStatuses(): Promise<ResourceStatus[]> {
       });
     }
 
-    // Memory
-    if (systemInfo) {
-      const totalMemUsed = (metrics || []).reduce((s, m) => s + m.memoryUsage, 0);
+    // Memory. Gated on a sample like CPU is: the snapshot is empty for the first
+    // interval after a restart, and summing nothing reported "0 B / 24 GB".
+    if (systemInfo && metrics.length > 0) {
+      const totalMemUsed = metrics.reduce((s, m) => s + m.memoryUsage, 0);
       const memPercent = systemInfo.memoryTotal > 0
         ? (totalMemUsed / systemInfo.memoryTotal) * 100
         : 0;
