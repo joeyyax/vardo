@@ -76,3 +76,18 @@ describe("keys the allowlist used to drop", () => {
     expect(twice.services.frontend.group_add).toEqual(["999"]);
   });
 });
+
+describe("top-level compose name", () => {
+  it("is kept, since it pins the shared project", () => {
+    expect(parseCompose("name: vardo\nservices:\n  web:\n    image: app\n").name).toBe("vardo");
+  });
+
+  it("survives a YAML round trip", () => {
+    const once = parseCompose("name: vardo\nservices:\n  web:\n    image: app\n");
+    expect(parseCompose(composeToYaml(once)).name).toBe("vardo");
+  });
+
+  it("is absent when the file declares none", () => {
+    expect(parseCompose("services:\n  web:\n    image: app\n").name).toBeUndefined();
+  });
+});
