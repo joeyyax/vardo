@@ -4,16 +4,18 @@ import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { spawn } from "child_process";
-import { resolve } from "path";
-import { readlink } from "fs/promises";
 import { createSSEResponse } from "@/lib/api/sse";
-import { isLokiAvailable, queryRange, tailLogs, buildLogQLQuery } from "@/lib/logging/client";
+import { isLokiAvailable, tailLogs, buildLogQLQuery } from "@/lib/logging/client";
+import { readLogHistory, resolveComposeTarget } from "@/lib/logging/history";
+import { resolveLogScope, type LogScope } from "@/lib/logging/scope";
+import { parseComposeLine, type ServiceLine } from "@/lib/logging/compose-lines";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
-import { appEnvDir, appBaseDir } from "@/lib/paths";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
 };
+
+type SendEvent = (event: string, data: unknown) => void;
 
 // GET /api/v1/organizations/[orgId]/apps/[appId]/logs/stream
 export async function GET(request: NextRequest, { params }: RouteParams) {
@@ -34,65 +36,31 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return new Response("Not found", { status: 404 });
     }
 
-    // Compose decomposition: a child app (parentAppId set) doesn't have
-    // its own deploy directory — its containers live under the parent's
-    // /opt/vardo/apps/<parent>/<env>/<slot>/. Resolve the parent's name
-    // and scope `docker compose logs` to just this child's service so
-    // we still tail only the right container.
-    let logRootName = app.name;
-    let scopeService: string | null = null;
-    if (app.parentAppId) {
-      const parent = await db.query.apps.findFirst({
-        where: eq(apps.id, app.parentAppId),
-        columns: { name: true },
-      });
-      if (parent) {
-        logRootName = parent.name;
-        scopeService = app.composeService;
-      }
-    }
-
     const searchParams = request.nextUrl.searchParams;
-    const tail = searchParams.get("tail") || "200";
+    const tail = parseInt(searchParams.get("tail") || "200");
     const environmentName = searchParams.get("environment") || "production";
     const search = searchParams.get("search") || undefined;
-    const service = searchParams.get("service") || undefined;
+    const allServices = searchParams.get("services") === "all";
 
-    // Use Loki if available, otherwise fall back to Docker compose logs
+    const scope = await resolveLogScope(app, { allServices });
+
     if (await isLokiAvailable()) {
       const query = buildLogQLQuery({
-        project: app.name,
+        project: scope.project,
         environment: environmentName,
-        service,
+        service: scope.service ?? undefined,
         search,
       });
 
       return createSSEResponse(request, async (sendEvent) => {
-        sendEvent("source", "loki");
+        await sendInit(sendEvent, "loki", scope, environmentName, search, tail);
 
-        // Backfill recent history so the viewer has content immediately
-        try {
-          const tailCount = parseInt(tail);
-          const start = String((Date.now() - 3600_000) * 1_000_000);
-          const history = await queryRange({
-            query,
-            start,
-            limit: tailCount,
-            direction: "backward",
-          });
-          history.reverse();
-          for (const entry of history) {
-            sendEvent("log", entry.line);
-          }
-        } catch {
-          // History unavailable — continue to live tail
-        }
-
-        // Live tail via WebSocket
-        const tailStart = String(Date.now() * 1_000_000);
         await tailLogs(
-          { query, start: tailStart, delayFor: 2 },
-          (entry) => sendEvent("log", entry.line),
+          { query, start: String(Date.now() * 1_000_000), delayFor: 2 },
+          (entry) => sendEvent("logs", [{
+            text: entry.line,
+            service: scope.prefixed ? entry.labels.service : undefined,
+          }]),
           request.signal,
         );
       });
@@ -100,58 +68,51 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     // Docker compose logs fallback
     return createSSEResponse(request, async (sendEvent) => {
-      sendEvent("source", "docker");
+      const target = await resolveComposeTarget(scope.project, environmentName);
 
-      let appDir = appEnvDir(logRootName, environmentName);
-      let activeSlot = "blue";
-      try {
-        activeSlot = (await readlink(resolve(appDir, "current"))).trim();
-      } catch {
-        appDir = appBaseDir(logRootName);
-        try {
-          activeSlot = (await readlink(resolve(appDir, "current"))).trim();
-        } catch { /* default to blue */ }
-      }
-
-      const slotDir = resolve(appDir, activeSlot);
-      const composePath = resolve(slotDir, "docker-compose.yml");
-      const envAware = appDir.endsWith(environmentName);
-      const composeProject = envAware
-        ? `${logRootName}-${environmentName}-${activeSlot}`
-        : `${logRootName}-${activeSlot}`;
+      // Follow first, backfill second: anything written while history is read
+      // is held here rather than lost between the two calls.
+      const pending: ServiceLine[] = [];
+      let live = false;
 
       const proc = spawn("docker", [
         "compose",
-        "-f", composePath,
-        "-p", composeProject,
+        "-f", target.composePath,
+        "-p", target.composeProject,
         "logs",
         "-f",
-        "--tail", tail,
-        "--no-log-prefix",
-        ...(scopeService ? [scopeService] : []),
-      ], { cwd: slotDir });
+        "--no-color",
+        "--tail", "0",
+        ...(scope.prefixed ? [] : ["--no-log-prefix", ...(scope.service ? [scope.service] : [])]),
+      ], { cwd: target.slotDir });
 
-      proc.stdout.on("data", (chunk: Buffer) => {
-        const lines = chunk.toString().split("\n");
-        for (const line of lines) {
-          if (line) sendEvent("log", line);
+      // Whole chunks go out as one event — a per-line loop outruns the SSE
+      // queue and the surplus lines are dropped.
+      function forward(chunk: Buffer) {
+        const raw = chunk.toString().split("\n").filter(Boolean);
+        if (raw.length === 0) return;
+        const lines = scope.prefixed ? raw.map(parseComposeLine) : raw.map((text) => ({ text }));
+        if (!live) {
+          pending.push(...lines);
+          return;
         }
-      });
+        sendEvent("logs", lines);
+      }
 
-      proc.stderr.on("data", (chunk: Buffer) => {
-        const lines = chunk.toString().split("\n");
-        for (const line of lines) {
-          if (line) sendEvent("log", line);
-        }
-      });
+      proc.stdout.on("data", forward);
+      proc.stderr.on("data", forward);
 
       proc.on("error", (err) => {
-        sendEvent("log", `[error] ${err.message}`);
+        sendEvent("logs", [{ text: `[error] ${err.message}` }]);
       });
 
       request.signal.addEventListener("abort", () => {
         proc.kill();
       });
+
+      await sendInit(sendEvent, "docker", scope, environmentName, search, tail);
+      live = true;
+      if (pending.length > 0) sendEvent("logs", pending.splice(0));
 
       await new Promise<void>((resolve) => {
         proc.on("close", () => resolve());
@@ -160,4 +121,34 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   } catch (error) {
     return handleRouteError(error, "Error streaming logs");
   }
+}
+
+/**
+ * Source, service list and backfill in a single event. The SSE queue only
+ * admits one chunk before the client pulls, so opening sends must not be split.
+ */
+async function sendInit(
+  sendEvent: SendEvent,
+  source: "loki" | "docker",
+  scope: LogScope,
+  environment: string,
+  search: string | undefined,
+  tail: number,
+) {
+  let lines: ServiceLine[] = [];
+  try {
+    const history = await readLogHistory({
+      project: scope.project,
+      environment,
+      service: scope.service,
+      prefixed: scope.prefixed,
+      search,
+      tail,
+    });
+    lines = history.lines;
+  } catch {
+    // Backfill unavailable — the live tail still runs
+  }
+
+  sendEvent("init", { source, services: scope.services, lines });
 }
