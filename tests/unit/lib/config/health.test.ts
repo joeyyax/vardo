@@ -1,5 +1,7 @@
-import { describe, it, expect } from "vitest";
-import { sanitizeError } from "@/lib/config/health";
+import { describe, it, expect, afterEach } from "vitest";
+import { createServer, type Server, type ServerResponse } from "node:http";
+import type { AddressInfo } from "node:net";
+import { checkServiceByName, probeErrorText, sanitizeError, SERVICE_PROBES } from "@/lib/config/health";
 
 // ---------------------------------------------------------------------------
 // sanitizeError — strips sensitive internals from library error messages
@@ -109,5 +111,146 @@ describe("sanitizeError", () => {
 
   it("passes through an empty string unchanged", () => {
     expect(sanitizeError("")).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// probeErrorText — what an operator reads on a failed check
+// ---------------------------------------------------------------------------
+
+describe("probeErrorText", () => {
+  it("names the budget a probe ran out, so slow reads apart from refused", () => {
+    const err = new Error("timeout");
+    err.name = "TimeoutError";
+    expect(probeErrorText(err, 2000)).toBe("Timed out after 2s");
+    expect(probeErrorText(err, 5000)).toBe("Timed out after 5s");
+  });
+
+  it("treats an aborted fetch as a timeout", () => {
+    const err = new Error("This operation was aborted");
+    err.name = "AbortError";
+    expect(probeErrorText(err, 2000)).toBe("Timed out after 2s");
+  });
+
+  it("unwraps the cause fetch hides behind 'fetch failed'", () => {
+    const err = new Error("fetch failed", {
+      cause: new Error("connect ECONNREFUSED 127.0.0.1:7300"),
+    });
+    expect(probeErrorText(err, 2000)).toBe("fetch failed: connect ECONNREFUSED [host]");
+  });
+
+  it("keeps an HTTP status as the error", () => {
+    expect(probeErrorText(new Error("HTTP 503"), 2000)).toBe("HTTP 503");
+  });
+
+  it("stringifies a non-Error throw", () => {
+    expect(probeErrorText("boom", 2000)).toBe("boom");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Probe registry
+// ---------------------------------------------------------------------------
+
+describe("SERVICE_PROBES", () => {
+  it("bounds every probe, so no check can hang the strip", () => {
+    for (const probe of SERVICE_PROBES) {
+      expect(probe.timeoutMs).toBeGreaterThan(0);
+    }
+  });
+
+  it("keeps the HTTP probes on their 2s budget", () => {
+    for (const name of ["cAdvisor", "Loki", "Traefik"]) {
+      expect(SERVICE_PROBES.find((p) => p.name === name)?.timeoutMs).toBe(2000);
+    }
+  });
+
+  it("points cAdvisor and Loki at their own app logs", () => {
+    expect(SERVICE_PROBES.find((p) => p.name === "cAdvisor")?.logsApp).toBe("cadvisor");
+    expect(SERVICE_PROBES.find((p) => p.name === "Loki")?.logsApp).toBe("loki");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// checkServiceByName — the re-probe behind "check again"
+// ---------------------------------------------------------------------------
+
+/** A stand-in Loki, so a probe can be broken and mended inside one test run. */
+async function listen(handler: (res: ServerResponse) => void): Promise<Server> {
+  const server = createServer((_req, res) => handler(res));
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  return server;
+}
+
+function urlOf(server: Server): string {
+  const address = server.address() as AddressInfo;
+  return `http://127.0.0.1:${address.port}`;
+}
+
+async function close(server: Server): Promise<void> {
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+}
+
+describe("checkServiceByName", () => {
+  const original = process.env.LOKI_URL;
+
+  afterEach(() => {
+    if (original === undefined) delete process.env.LOKI_URL;
+    else process.env.LOKI_URL = original;
+  });
+
+  it("returns null for a name no probe answers to", async () => {
+    await expect(checkServiceByName("nginx")).resolves.toBeNull();
+  });
+
+  it("matches a probe regardless of how the caller cased it", async () => {
+    const server = await listen((res) => res.end("ready"));
+    process.env.LOKI_URL = urlOf(server);
+    await expect(checkServiceByName("loki")).resolves.toMatchObject({ name: "Loki" });
+    await close(server);
+  });
+
+  it("reports healthy with a latency and a check time", async () => {
+    const server = await listen((res) => res.end("ready"));
+    process.env.LOKI_URL = urlOf(server);
+
+    const status = await checkServiceByName("Loki");
+    expect(status?.status).toBe("healthy");
+    expect(status?.error).toBeUndefined();
+    expect(status?.latencyMs).toBeGreaterThanOrEqual(0);
+    expect(Number.isNaN(Date.parse(status!.checkedAt))).toBe(false);
+    expect(status?.timeoutMs).toBe(2000);
+
+    await close(server);
+  });
+
+  it("reports the status a service answered with", async () => {
+    const server = await listen((res) => {
+      res.statusCode = 503;
+      res.end();
+    });
+    process.env.LOKI_URL = urlOf(server);
+
+    await expect(checkServiceByName("Loki")).resolves.toMatchObject({
+      status: "unhealthy",
+      error: "HTTP 503",
+    });
+
+    await close(server);
+  });
+
+  it("recovers on the next check once the service is back", async () => {
+    const down = await listen((res) => {
+      res.statusCode = 503;
+      res.end();
+    });
+    process.env.LOKI_URL = urlOf(down);
+    expect((await checkServiceByName("Loki"))?.status).toBe("unhealthy");
+    await close(down);
+
+    const up = await listen((res) => res.end("ready"));
+    process.env.LOKI_URL = urlOf(up);
+    expect((await checkServiceByName("Loki"))?.status).toBe("healthy");
+    await close(up);
   });
 });
