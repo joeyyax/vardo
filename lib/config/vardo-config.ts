@@ -27,6 +27,8 @@ export type VardoConfig = {
   auth?: {
     registrationMode?: "closed" | "open" | "approval";
     sessionDurationDays?: number;
+    /** Sign-in methods, keyed by method name: password, passkey, magic-link, totp, github. */
+    methods?: Record<string, boolean>;
   };
   email?: {
     provider?: "smtp" | "mailpace" | "resend" | "postmark";
@@ -287,8 +289,9 @@ export async function systemSettingsToVardoConfig(): Promise<{
     getFeatureFlagsConfig,
   } = await import("@/lib/system-settings");
   const { getInstanceId } = await import("@/lib/constants");
+  const { getAuthMethodStates } = await import("@/lib/config/auth-methods");
 
-  const [instance, auth, email, backup, github, ssl, features] = await Promise.all([
+  const [instance, auth, email, backup, github, ssl, features, methods] = await Promise.all([
     getInstanceConfig(),
     getAuthConfig(),
     getEmailProviderConfig(),
@@ -296,6 +299,7 @@ export async function systemSettingsToVardoConfig(): Promise<{
     getGitHubAppConfig(),
     getSslConfig(),
     getFeatureFlagsConfig(),
+    getAuthMethodStates(),
   ]);
 
   let instanceId: string | undefined;
@@ -316,6 +320,7 @@ export async function systemSettingsToVardoConfig(): Promise<{
     auth: {
       registrationMode: auth.registrationMode,
       sessionDurationDays: auth.sessionDurationDays,
+      methods,
     },
     ...(email && {
       email: {
@@ -415,8 +420,14 @@ export async function importVardoConfig(
   }
 
   if (full.auth) {
-    await setSystemSetting("auth_config", JSON.stringify(full.auth));
+    const { methods, ...authConfig } = full.auth;
+    await setSystemSetting("auth_config", JSON.stringify(authConfig));
     imported.push("auth");
+
+    if (methods) {
+      await setSystemSetting("auth_methods", JSON.stringify(methods));
+      imported.push("auth methods");
+    }
   }
 
   if (full.email) {
