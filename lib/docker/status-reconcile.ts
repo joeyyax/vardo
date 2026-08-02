@@ -44,10 +44,10 @@ function label(c: ContainerInfo, key: string): string | undefined {
   return c.labels[`vardo.${key}`] ?? c.labels[`host.${key}`];
 }
 
-/** Compose project minus the blue/green suffix: paperless-production-green → paperless. */
+/** Compose project minus the slot suffix: paperless-production-green → paperless. */
 function composeProjectApp(c: ContainerInfo): string | undefined {
   const project = c.labels["com.docker.compose.project"];
-  return project?.replace(/-production-(blue|green)$/, "");
+  return project?.replace(/-production-(blue|green|shared)$/, "");
 }
 
 /**
