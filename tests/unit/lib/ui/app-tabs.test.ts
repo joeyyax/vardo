@@ -16,6 +16,7 @@ const allFeatures = {
   errorTracking: true,
   metrics: true,
   logging: true,
+  imageUpdates: true,
 };
 
 function context(overrides: Partial<AppTabContext> = {}): AppTabContext {

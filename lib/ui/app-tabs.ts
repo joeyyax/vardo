@@ -35,6 +35,7 @@ export type AppTabContext = {
 };
 
 type FeatureToggles = {
+  imageUpdates: boolean;
   terminal: boolean;
   cron: boolean;
   backups: boolean;
@@ -50,7 +51,7 @@ export function availableAppTabs(ctx: AppTabContext): AppTab[] {
     return [
       "services",
       "deployments",
-      "updates",
+      ...(f.imageUpdates ? (["updates"] as const) : []),
       "variables",
       "networking",
       "compose",
@@ -65,7 +66,7 @@ export function availableAppTabs(ctx: AppTabContext): AppTab[] {
   }
   return [
     "deployments",
-    "updates",
+    ...(f.imageUpdates ? (["updates"] as const) : []),
     ...(ctx.hasConnectionInfo ? (["connect"] as const) : []),
     "variables",
     "networking",
