@@ -137,6 +137,7 @@ services:
 
   postgres:
     container_name: vardo-postgres
+    x-vardo-shared: true
     image: postgres:17
     restart: unless-stopped
     mem_limit: ${VARDO_POSTGRES_MEM:-1g}
@@ -158,6 +159,7 @@ services:
 
   redis:
     container_name: vardo-redis
+    x-vardo-shared: true
     image: redis/redis-stack-server:7.4.0-v3
     restart: unless-stopped
     mem_limit: ${VARDO_REDIS_MEM:-512m}
@@ -175,6 +177,7 @@ services:
 
   traefik:
     container_name: vardo-traefik
+    x-vardo-shared: true
     image: traefik:v3
     restart: unless-stopped
     mem_limit: ${VARDO_TRAEFIK_MEM:-256m}
@@ -243,6 +246,7 @@ services:
 
   wireguard:
     container_name: vardo-wireguard
+    x-vardo-shared: true
     image: linuxserver/wireguard
     restart: unless-stopped
     cap_add:
