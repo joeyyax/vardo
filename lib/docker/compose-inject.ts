@@ -23,6 +23,10 @@ import { generateComposeForImage } from "./compose-generate";
 
 const VARDO_LABEL_PREFIX = "vardo.";
 
+/** Label a service sets to declare its own Traefik routing. */
+export const TRAEFIK_MANUAL_LABEL = "vardo.traefik";
+const TRAEFIK_MANUAL_VALUE = "manual";
+
 /** The one Traefik label Vardo never writes and never removes. */
 function isOptOutLabel(key: string, value: unknown): boolean {
   return key === "traefik.enable" && (value === "false" || value === false);
@@ -31,6 +35,20 @@ function isOptOutLabel(key: string, value: unknown): boolean {
 /** A service the user has explicitly opted out of Traefik routing. */
 export function isTraefikOptedOut(svc: ComposeService): boolean {
   return isOptOutLabel("traefik.enable", svc.labels?.["traefik.enable"]);
+}
+
+/**
+ * A service that routes itself: Vardo generates no Traefik labels for it and
+ * removes none, so hand-written routers survive a deploy intact. The opt-out
+ * above says "never routed"; this one says "routed, but not by Vardo".
+ */
+export function isTraefikSelfRouted(svc: ComposeService): boolean {
+  return svc.labels?.[TRAEFIK_MANUAL_LABEL] === TRAEFIK_MANUAL_VALUE;
+}
+
+/** On a self-routed service, the labels that belong to the user rather than Vardo. */
+function isSelfRoutedLabel(key: string): boolean {
+  return key.startsWith(TRAEFIK_LABEL_PREFIX) || key === TRAEFIK_MANUAL_LABEL;
 }
 
 /**
@@ -95,7 +113,9 @@ export function defaultMemoryLimitMb(tier: QosTier): number {
  * declares the app's Traefik service.
  *
  * A service carrying `traefik.enable: "false"` is never routed and never
- * relabeled — the opt-out is the user's, not Vardo's to overwrite.
+ * relabeled — the opt-out is the user's, not Vardo's to overwrite. A service
+ * marked `vardo.traefik: "manual"` is skipped for the same reason: it declares
+ * its own routers.
  * Returns a new ComposeFile -- does not mutate the original.
  */
 export function injectTraefikLabels(
@@ -124,7 +144,7 @@ export function injectTraefikLabels(
   }
 
   const existing = compose.services[serviceName];
-  if (isTraefikOptedOut(existing)) return compose;
+  if (isTraefikOptedOut(existing) || isTraefikSelfRouted(existing)) return compose;
 
   const isLocal = domain.endsWith(".localhost") || domain === "localhost";
   const isRedirect = !!opts.redirectTo;
@@ -197,6 +217,10 @@ export function injectTraefikLabels(
       updatedServices[name] = { ...existing, labels };
       continue;
     }
+    if (isTraefikSelfRouted(svc)) {
+      updatedServices[name] = svc;
+      continue;
+    }
     const pruned = dropAppRouting(svc.labels, {
       serviceLabel: svcName,
       routerPrefix: projectName,
@@ -216,13 +240,14 @@ export function injectTraefikLabels(
  * Used before re-injecting fresh Traefik config to prevent stale router names
  * from accumulating (e.g. "appname" from import vs "appname-abc123" from deploy).
  * An explicit `traefik.enable: "false"` survives — it is the user's opt-out, and
- * the selection and injection steps both read it.
+ * the selection and injection steps both read it. A self-routed service is left
+ * whole: its routers are hand-written, so there is no stale Vardo name to clear.
  * Returns a new ComposeFile — does not mutate the original.
  */
 export function stripTraefikLabels(compose: ComposeFile): ComposeFile {
   const updatedServices: Record<string, ComposeService> = {};
   for (const [svcName, svc] of Object.entries(compose.services)) {
-    if (!svc.labels) {
+    if (!svc.labels || isTraefikSelfRouted(svc)) {
       updatedServices[svcName] = svc;
       continue;
     }
@@ -275,8 +300,8 @@ export async function slotComposeFiles(slotDir: string): Promise<string[]> {
  * Strip all Vardo-injected fields from a compose file, producing the bare user
  * compose. Removes Traefik labels, vardo.* labels, and the Vardo network from
  * services. An explicit `traefik.enable: "false"` is the user's own label and
- * survives. Used to write the user-facing docker-compose.yml that can be run
- * standalone without Vardo.
+ * survives, as does a self-routed service's whole Traefik block. Used to write
+ * the user-facing docker-compose.yml that can be run standalone without Vardo.
  * Returns a new ComposeFile — does not mutate the original.
  */
 export function stripVardoInjections(
@@ -285,11 +310,13 @@ export function stripVardoInjections(
 ): ComposeFile {
   const updatedServices: Record<string, ComposeService> = {};
   for (const [name, svc] of Object.entries(compose.services)) {
+    const selfRouted = isTraefikSelfRouted(svc);
     const strippedLabels = svc.labels
       ? Object.fromEntries(
           Object.entries(svc.labels).filter(
             ([k, v]) =>
               isOptOutLabel(k, v) ||
+              (selfRouted && isSelfRoutedLabel(k)) ||
               (!k.startsWith(TRAEFIK_LABEL_PREFIX) && !k.startsWith(VARDO_LABEL_PREFIX)),
           ),
         )
@@ -415,10 +442,15 @@ export function buildVardoOverlay(opts: {
 
   const overlayServices: Record<string, ComposeService> = {};
   for (const [name, svc] of Object.entries(fullCompose.services)) {
+    // A self-routed service's Traefik block stays in the base file, where
+    // stripVardoInjections left it — copying it here would duplicate it.
+    const selfRouted = isTraefikSelfRouted(svc);
     const vardoLabels = svc.labels
       ? Object.fromEntries(
           Object.entries(svc.labels).filter(
-            ([k]) => k.startsWith(TRAEFIK_LABEL_PREFIX) || k.startsWith(VARDO_LABEL_PREFIX),
+            ([k]) =>
+              (k.startsWith(TRAEFIK_LABEL_PREFIX) || k.startsWith(VARDO_LABEL_PREFIX)) &&
+              !(selfRouted && isSelfRoutedLabel(k)),
           ),
         )
       : undefined;

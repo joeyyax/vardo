@@ -90,7 +90,12 @@ const { dbMock, isFeatureEnabledMock, readFileMock, execFileAsyncMock, execFileM
 
 vi.mock("@/lib/db", () => ({ db: dbMock }));
 vi.mock("@/lib/config/features", () => ({ isFeatureEnabledAsync: isFeatureEnabledMock }));
-vi.mock("@/lib/docker/compose", () => ({ parseCompose: parseComposeMock }));
+vi.mock("@/lib/docker/compose", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/docker/compose")>(
+    "@/lib/docker/compose",
+  );
+  return { ...actual, parseCompose: parseComposeMock };
+});
 vi.mock("@/lib/infra/vardo-org", () => ({
   ensureVardoOrg: vi.fn().mockResolvedValue({ id: "org-1" }),
 }));
