@@ -37,7 +37,10 @@ export {
   validateCompose,
   sanitizeCompose,
   sharedServiceNames,
+  findMistypedSharedMarkers,
+  sharedMarkerTypeErrors,
 } from "./compose-validate";
+export type { MistypedSharedMarker } from "./compose-validate";
 
 // Generation
 export {
