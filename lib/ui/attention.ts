@@ -23,6 +23,8 @@ export type AttentionRow = {
   items: AttentionItem[];
   /** Sentence under the subjects — what to do about it. */
   footer?: string;
+  /** Link beside the footer, for a page that handles the whole row at once. */
+  action?: { label: string; href: string };
 };
 
 const TONE_RANK: Record<AttentionTone, number> = { error: 0, warning: 1, neutral: 2 };
