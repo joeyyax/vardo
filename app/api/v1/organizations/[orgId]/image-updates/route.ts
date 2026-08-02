@@ -5,13 +5,17 @@ import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
-import { getAggregateUpdateStatus } from "@/lib/docker/image-updates/status";
+import {
+  getAggregateUpdateStatus,
+  getFleetUpdateStatus,
+} from "@/lib/docker/image-updates/status";
 import { getCooldownUntil, refreshStaleChecks } from "@/lib/docker/image-updates/check";
 
 type RouteParams = { params: Promise<{ orgId: string }> };
 
-// GET — org-wide roll-up, read straight from the cache.
-async function handleGet(_request: NextRequest, { params }: RouteParams) {
+// GET — org-wide roll-up, read straight from the cache. `?detail=services`
+// returns the rows behind the counts, for /updates.
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   const { orgId } = await params;
   try {
     const org = await verifyOrgAccess(orgId);
@@ -32,7 +36,11 @@ async function handleGet(_request: NextRequest, { params }: RouteParams) {
       .where(and(eq(apps.organizationId, orgId), isNull(apps.parentAppId)));
 
     const cooldownUntil = await getCooldownUntil();
-    return NextResponse.json(await getAggregateUpdateStatus(rows, cooldownUntil));
+    return NextResponse.json(
+      request.nextUrl.searchParams.get("detail") === "services"
+        ? await getFleetUpdateStatus(orgId, rows, cooldownUntil)
+        : await getAggregateUpdateStatus(orgId, rows, cooldownUntil),
+    );
   } catch (error) {
     return handleRouteError(error, "Error reading image updates");
   }
