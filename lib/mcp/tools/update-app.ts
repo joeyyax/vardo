@@ -5,6 +5,7 @@ import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { slidingWindowRateLimit } from "@/lib/api/rate-limit";
 import { systemManagedRefusal } from "@/lib/api/system-managed";
+import { sharedMarkerTypeErrors } from "@/lib/docker/compose";
 import type { McpAuthContext } from "../auth";
 
 // 10 updates per 5 minutes per user/org pair.
@@ -91,6 +92,18 @@ export function registerUpdateApp(
       if (refused) {
         return {
           content: [{ type: "text" as const, text: JSON.stringify({ error: refused }) }],
+          isError: true,
+        };
+      }
+
+      // The marker only survives as a boolean; a quoted one is dropped by the
+      // parser at deploy time and the service gets blue/green'd.
+      const markerErrors = config.composeContent
+        ? sharedMarkerTypeErrors(config.composeContent)
+        : [];
+      if (markerErrors.length > 0) {
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: markerErrors.join("\n") }) }],
           isError: true,
         };
       }

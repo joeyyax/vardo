@@ -10,6 +10,7 @@ import {
   injectNetwork,
   composeToYaml,
   excludeServices,
+  sharedMarkerTypeErrors,
 } from "@/lib/docker/compose";
 import { readProjectConfig } from "@/lib/config/vardo-config";
 import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
@@ -131,6 +132,15 @@ export function registerAdoptApp(
               }),
             },
           ],
+          isError: true,
+        };
+      }
+
+      // Before parseCompose, which drops a non-boolean marker and leaves no trace.
+      const markerErrors = sharedMarkerTypeErrors(composeContent);
+      if (markerErrors.length > 0) {
+        return {
+          content: [{ type: "text" as const, text: markerErrors.join("\n") }],
           isError: true,
         };
       }
