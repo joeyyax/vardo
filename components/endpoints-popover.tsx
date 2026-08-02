@@ -29,7 +29,8 @@ export function EndpointsPopover({ endpoints }: { endpoints: Endpoint[] }) {
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
-            className="shrink-0 text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+            aria-label={`Open ${endpoints[0].domain}`}
+            className="-m-2 shrink-0 p-2 text-muted-foreground transition-colors hover:text-foreground"
           >
             <Globe className="size-3.5" />
           </a>
@@ -47,7 +48,8 @@ export function EndpointsPopover({ endpoints }: { endpoints: Endpoint[] }) {
         <button
           type="button"
           onClick={(e) => e.preventDefault()}
-          className="shrink-0 text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+          aria-label={`${endpoints.length} endpoints`}
+          className="-m-2 shrink-0 p-2 text-muted-foreground transition-colors hover:text-foreground"
         >
           <Globe className="size-3.5" />
         </button>

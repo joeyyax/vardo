@@ -38,7 +38,8 @@ export default function NotFound() {
           />
         </svg>
         <p className={`type-body-sm font-mono transition-opacity duration-300 ${clicked ? "opacity-100" : "opacity-0"}`}>
-          <AuroraText speed={0.5} colors={["#ffffff", "#666666", "#999999", "#ffffff"]}>there&apos;s nothing here</AuroraText>
+          {/* Mid-tones only — the previous whites vanished on a light ground. */}
+          <AuroraText speed={0.5} colors={["#8a8a8a", "#5c5c5c", "#a3a3a3", "#8a8a8a"]}>there&apos;s nothing here</AuroraText>
         </p>
       </div>
     </div>
