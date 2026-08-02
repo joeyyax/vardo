@@ -27,10 +27,11 @@ export type AttentionRow = {
 
 const TONE_RANK: Record<AttentionTone, number> = { error: 0, warning: 1, neutral: 2 };
 
-/** Non-empty rows, worst first. */
+/** Non-empty rows, worst first, subjects alphabetical within each. */
 export function presentRows(rows: AttentionRow[]): AttentionRow[] {
   return rows
     .filter((r) => r.items.length > 0)
+    .map((r) => ({ ...r, items: [...r.items].sort((a, b) => a.name.localeCompare(b.name)) }))
     .sort((a, b) => TONE_RANK[a.tone] - TONE_RANK[b.tone] || a.label.localeCompare(b.label));
 }
 
