@@ -13,6 +13,7 @@ import { detectAppType } from "@/lib/ui/app-type";
 import { Uptime } from "@/components/app-status";
 import { RelativeTime } from "@/components/relative-time";
 import { AppConditionsPanel } from "@/components/app-conditions-panel";
+import { HelpTip } from "@/components/ui/help-tip";
 import { useAppMetrics } from "@/components/app-metrics-card";
 import { formatBytes } from "@/lib/metrics/format";
 import { DependencySelector } from "./dependency-selector";
@@ -42,10 +43,21 @@ const STATUS_META: Record<string, { label: string; className: string }> = {
   missing: { label: "No container", className: "text-status-warning" },
 };
 
-function Stat({ label, children }: { label: string; children: React.ReactNode }) {
+function Stat({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
     <div>
-      <dt className="type-label text-muted-foreground/60">{label}</dt>
+      <dt className="type-label text-muted-foreground/60 flex items-center gap-1">
+        {label}
+        {hint && <HelpTip label={label}>{hint}</HelpTip>}
+      </dt>
       <dd className="mt-1 text-sm">{children}</dd>
     </div>
   );
@@ -335,7 +347,10 @@ export function AppHeader({
           )}
         </Stat>
         {slotStatus && (
-          <Stat label="Slot">
+          <Stat
+            label="Slot"
+            hint="Deploys run into one of two slots, blue and green. The active slot serves traffic while the other holds the previous version, so a rollback is a swap rather than a rebuild."
+          >
             <span className="capitalize">{slotStatus.activeSlot}</span>
             <span className="text-muted-foreground">
               {" · "}

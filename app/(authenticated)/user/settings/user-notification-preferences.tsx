@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { toast } from "@/lib/messenger";
 import { Loader2, Bell, AlertCircle } from "lucide-react";
 import { EVENT_CATEGORIES, type BusEventType, type EventCategory } from "@/lib/bus/events";
@@ -182,13 +183,12 @@ export function UserNotificationPreferences({ orgId }: { orgId: string }) {
 
   if (loadError) {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 border border-dashed border-border rounded-lg p-12">
-        <AlertCircle className="size-8 text-destructive/50" />
-        <div className="text-center space-y-1">
-          <p className="text-sm font-medium">Failed to load notification preferences</p>
-          <p className="text-sm text-muted-foreground">
-            There was a problem fetching your preferences. Check your connection
-            and{" "}
+      <EmptyState
+        icon={AlertCircle}
+        title="Failed to load notification preferences"
+        body={
+          <>
+            There was a problem fetching your preferences. Check your connection and{" "}
             <button
               className="underline underline-offset-2 hover:text-foreground transition-colors"
               onClick={() => {
@@ -199,24 +199,19 @@ export function UserNotificationPreferences({ orgId }: { orgId: string }) {
               try again
             </button>
             .
-          </p>
-        </div>
-      </div>
+          </>
+        }
+      />
     );
   }
 
   if (channels.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 border border-dashed border-border rounded-lg p-12">
-        <Bell className="size-8 text-muted-foreground/50" />
-        <div className="text-center space-y-1">
-          <p className="text-sm font-medium">No notification channels</p>
-          <p className="text-sm text-muted-foreground">
-            Your organization has no notification channels configured. Ask an
-            admin to add one in organization settings.
-          </p>
-        </div>
-      </div>
+      <EmptyState
+        icon={Bell}
+        title="No notification channels"
+        body="Your organization has no notification channels configured. Ask an admin to add one in organization settings."
+      />
     );
   }
 
