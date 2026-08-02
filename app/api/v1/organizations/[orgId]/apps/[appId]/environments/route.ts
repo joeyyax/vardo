@@ -134,6 +134,11 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    if (parsed.data.type === "preview") {
+      const previewGate = await requirePlugin("previews");
+      if (previewGate) return previewGate;
+    }
+
     // Check if this app belongs to a project — if so, create a group environment
     const appRecord = await db.query.apps.findFirst({
       where: eq(apps.id, appId),
