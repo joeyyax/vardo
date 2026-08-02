@@ -5,10 +5,16 @@ import Link from "next/link";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
-import { Activity, AlertTriangle, Box, Cpu, HardDrive, MemoryStick, Network, Loader2, RefreshCw } from "lucide-react";
+import { Activity, AlertTriangle, ArrowDown, ArrowUp, Box, Cpu, HardDrive, MemoryStick, Network, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatBytes, formatBytesShort, formatMemLimit, formatTime } from "@/lib/metrics/format";
 import { CHART_COLORS, chartTickStyle, type TimeRange } from "@/lib/metrics/constants";
+import { networkRates } from "@/lib/metrics/rates";
+import { countApps, describeScopeCounts } from "@/lib/metrics/scope";
+import {
+  DEFAULT_SORT, nextSortDirection, sortAppRows,
+  type AppSortKey, type SortDirection,
+} from "@/lib/metrics/table-sort";
 import { useMetricsStream } from "@/hooks/use-metrics-stream";
 import { Sparkline } from "@/components/app-metrics-card";
 import { MetricsTooltip } from "@/components/metrics-chart";
@@ -18,6 +24,7 @@ type AppSummary = {
   name: string;
   displayName: string;
   status: string;
+  parentAppId?: string | null;
 };
 
 type OrgMetricsProps = {
@@ -33,6 +40,7 @@ type AppMeta = {
   name: string;
   displayName: string;
   status: string;
+  parentAppId?: string | null;
   containers: { cpuPercent: number; memoryUsage: number; memoryLimit: number; networkRx: number; networkTx: number }[];
 };
 
@@ -83,42 +91,65 @@ function NoValue() {
   return <span className="text-muted-foreground">&mdash;</span>;
 }
 
+function Skeleton({ className = "w-12" }: { className?: string }) {
+  return <span className={`inline-block h-3.5 rounded bg-muted animate-pulse align-middle ${className}`} />;
+}
+
+type SortState = { key: AppSortKey; direction: SortDirection };
+
+function SortHeader({ label, sortKey, sort, onSort, align = "right" }: {
+  label: string;
+  sortKey: AppSortKey;
+  sort: SortState;
+  onSort: (next: SortState) => void;
+  align?: "left" | "right";
+}) {
+  const active = sort.key === sortKey;
+  const Arrow = sort.direction === "asc" ? ArrowUp : ArrowDown;
+  return (
+    <button
+      type="button"
+      title={`Sort by ${label.toLowerCase()}`}
+      onClick={() => onSort({ key: sortKey, direction: nextSortDirection(sort, sortKey) })}
+      className={`inline-flex items-center gap-1 transition-colors hover:text-foreground ${
+        align === "right" ? "justify-end" : "justify-start"
+      } ${active ? "text-foreground" : ""}`}
+    >
+      {label}
+      {active && <Arrow className="size-3" />}
+    </button>
+  );
+}
+
 type Slice = { label: string; value: number; color: string; detail?: string };
 
-function HalfDonut({ title, subtitle, slices, centerLabel, centerSub }: {
-  title: string; subtitle?: string; slices: Slice[]; centerLabel: string; centerSub?: string;
+/** Share of a total: one bar the slices fill, with the total spelled out beside it. */
+function ShareBar({ title, subtitle, total, totalLabel, slices, footnote }: {
+  title: string; subtitle?: string; total: string; totalLabel: string; slices: Slice[]; footnote?: string;
 }) {
-  const total = slices.reduce((s, sl) => s + sl.value, 0) || 1;
+  const sum = slices.reduce((s, sl) => s + sl.value, 0);
   return (
     <div className="squircle rounded-lg border bg-card overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-2 border-b">
+      <div className="flex items-center justify-between gap-2 px-4 py-2 border-b">
         <h3 className="text-sm font-medium">{title}</h3>
-        {subtitle && <span className="text-[10px] text-muted-foreground">{subtitle}</span>}
+        {subtitle && <span className="text-[10px] text-muted-foreground text-right">{subtitle}</span>}
       </div>
-      <div className="flex justify-center pt-4 pb-2">
-        <svg viewBox="0 0 120 68" className="w-28">
-          {slices.reduce<{ paths: React.ReactNode[]; angle: number }>(
-            ({ paths, angle }, sl) => {
-              const r = 48, cx = 60, cy = 58;
-              const ang = (sl.value / total) * Math.PI;
-              const x1 = cx + r * Math.cos(angle), y1 = cy + r * Math.sin(angle);
-              const nextAngle = angle + ang;
-              const x2 = cx + r * Math.cos(nextAngle), y2 = cy + r * Math.sin(nextAngle);
-              return {
-                paths: [...paths, (
-                  <path key={sl.label} d={`M${cx} ${cy}L${x1} ${y1}A${r} ${r} 0 ${ang > Math.PI ? 1 : 0} 1 ${x2} ${y2}Z`}
-                    fill={sl.color} opacity={0.85} />
-                )],
-                angle: nextAngle,
-              };
-            },
-            { paths: [], angle: Math.PI }
-          ).paths}
-          <text x="60" y="52" textAnchor="middle" fill="currentColor" fontSize="16" fontWeight="600">{centerLabel}</text>
-          {centerSub && <text x="60" y="63" textAnchor="middle" fill="currentColor" opacity={0.5} fontSize="8">{centerSub}</text>}
-        </svg>
+      <div className="px-4 pt-3">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="type-numeral text-lg">{total}</span>
+          <span className="type-label text-muted-foreground whitespace-nowrap">{totalLabel}</span>
+        </div>
+        <div className="mt-2 flex h-2 w-full gap-px overflow-hidden rounded-full bg-muted">
+          {sum > 0 && slices.map((sl) => (
+            <span
+              key={sl.label}
+              style={{ width: `${(sl.value / sum) * 100}%`, backgroundColor: sl.color }}
+            />
+          ))}
+        </div>
       </div>
-      <div className="px-4 pb-3 space-y-1">
+      <div className="px-4 py-3 space-y-1">
+        {slices.length === 0 && <p className="text-xs text-muted-foreground">Nothing to break down yet.</p>}
         {slices.map((sl) => (
           <div key={sl.label} className="flex items-center justify-between py-0.5">
             <span className="inline-flex items-center gap-1.5 text-xs truncate">
@@ -127,9 +158,11 @@ function HalfDonut({ title, subtitle, slices, centerLabel, centerSub }: {
             </span>
             <span className="text-xs tabular-nums text-muted-foreground shrink-0 ml-2">
               {sl.detail ?? sl.value}
+              {sum > 0 && <span className="ml-1.5 opacity-60">{Math.round((sl.value / sum) * 100)}%</span>}
             </span>
           </div>
         ))}
+        {footnote && <p className="pt-1 text-[10px] text-muted-foreground">{footnote}</p>}
       </div>
     </div>
   );
@@ -146,7 +179,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
     ? `/api/v1/admin/stats/stream`
     : `/api/v1/organizations/${orgId}/stats/stream`;
 
-  const { points, meta, connected, loading, reconnecting } = useMetricsStream({
+  const { points, meta, connected, hasLiveFrame, loading, reconnecting } = useMetricsStream({
     historyUrl,
     streamUrl,
     timeRange,
@@ -155,6 +188,10 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
   const metaApps = meta?.apps as AppMeta[] | undefined;
   const streamProjectCount = meta?.projectCount as number | undefined;
   const orgDiskTotal = meta?.orgDiskTotal as number | undefined;
+  const cpuCores = (meta?.system as { cpus?: number } | null)?.cpus ?? meta?.cpuCount ?? 0;
+  // Org scope sums per-app disk; admin scope reports the host's docker usage.
+  const diskTotal = orgDiskTotal ?? points[points.length - 1]?.diskTotal ?? 0;
+  const scopeNote = adminMode ? "all organizations" : "this organization";
 
   // Container counts only ever come from the stream; history points don't carry them.
   const containerCountKnown = Boolean(metaApps && metaApps.length > 0);
@@ -163,6 +200,8 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
   // Grace period so a first paint or a blip isn't an outage. Deferred both
   // ways: setState directly in an effect cascades renders.
   const [streamDown, setStreamDown] = useState(false);
+  // Per-app figures are all zero until the first frame — skeletons, not an idle fleet.
+  const awaitingFirstFrame = !hasLiveFrame && !streamDown;
   useEffect(() => {
     const live = connected || loading;
     const timer = setTimeout(() => setStreamDown(!live), live ? 0 : 10000);
@@ -177,12 +216,14 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
         name: a.name,
         displayName: a.displayName,
         status: a.status,
+        parentAppId: a.parentAppId ?? null,
       }));
     }
     return apps;
   }, [metaApps, apps]);
 
   const [showIdle, setShowIdle] = useState(false);
+  const [sort, setSort] = useState(DEFAULT_SORT);
 
   // Build per-app stats lookup from SSE apps data
   const appStats = useMemo(() => {
@@ -195,19 +236,45 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
     return map;
   }, [metaApps]);
 
-  // Running apps carry every number in the table; an idle app is six dashes.
-  // Heaviest first, then the idle tail behind a toggle.
-  const [runningApps, idleApps] = useMemo(() => {
-    const memOf = (id: string) =>
-      appStats[id]?.containers.reduce((s, c) => s + c.memoryUsage, 0) ?? 0;
-    const running = displayApps
-      .filter((a) => a.status === "active")
-      .sort((a, b) => memOf(b.id) - memOf(a.id) || a.displayName.localeCompare(b.displayName));
-    const idle = displayApps
-      .filter((a) => a.status !== "active")
-      .sort((a, b) => a.displayName.localeCompare(b.displayName));
-    return [running, idle];
+  const scope = useMemo(() => countApps(displayApps), [displayApps]);
+
+  // One row per top-level app. A compose child's containers are reported under
+  // its parent's compose project, so a child row can only ever be blank.
+  const appRows = useMemo(() => {
+    const serviceCounts: Record<string, number> = {};
+    for (const a of displayApps) {
+      if (a.parentAppId) serviceCounts[a.parentAppId] = (serviceCounts[a.parentAppId] ?? 0) + 1;
+    }
+    return displayApps
+      .filter((a) => !a.parentAppId)
+      .map((a) => {
+        const containers = appStats[a.id]?.containers ?? [];
+        const rx = containers.reduce((s, c) => s + c.networkRx, 0);
+        const tx = containers.reduce((s, c) => s + c.networkTx, 0);
+        return {
+          id: a.id,
+          appName: a.name,
+          name: a.displayName,
+          status: a.status,
+          isActive: a.status === "active",
+          services: serviceCounts[a.id] ?? 0,
+          cpu: containers.reduce((s, c) => s + c.cpuPercent, 0),
+          memory: containers.reduce((s, c) => s + c.memoryUsage, 0),
+          network: rx + tx,
+          networkRx: rx,
+          networkTx: tx,
+          limit: Math.max(0, ...containers.map((c) => c.memoryLimit), 0),
+          containers: containers.length,
+        };
+      });
   }, [displayApps, appStats]);
+
+  // Running apps carry every number in the table; an idle app is six dashes.
+  // Sorted rows first, then the idle tail behind a toggle.
+  const [runningApps, idleApps] = useMemo(() => [
+    sortAppRows(appRows.filter((a) => a.isActive), sort.key, sort.direction),
+    sortAppRows(appRows.filter((a) => !a.isActive), "name", "asc"),
+  ], [appRows, sort]);
 
   // Totals from latest point or from meta apps containers
   const totals = useMemo(() => {
@@ -235,41 +302,18 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
     return { cpu: 0, memory: 0, networkRx: 0, networkTx: 0, containers: 0 };
   }, [metaApps, points]);
 
-  const statusCounts = useMemo(() => {
-    // missing included: left out, those apps land in no bucket and the donut
-    // renders the running slice as the whole fleet.
-    const counts = { active: 0, stopped: 0, error: 0, deploying: 0, missing: 0 };
-    for (const app of displayApps) {
-      if (app.status in counts) counts[app.status as keyof typeof counts]++;
-    }
-    return counts;
-  }, [displayApps]);
+  // Status counts cover top-level apps — the same set /projects lists.
+  const statusCounts = useMemo(() => countApps(appRows).byStatus, [appRows]);
 
   // Memoized chart data with network rate computation
-  const chartPoints = useMemo(
-    () =>
-      points.map((p, i) => {
-        let networkRxRate = 0;
-        let networkTxRate = 0;
-        if (i > 0) {
-          const prev = points[i - 1];
-          const dtSec = (p.timestamp - prev.timestamp) / 1000;
-          if (dtSec > 0) {
-            const rxDelta = p.networkRx - prev.networkRx;
-            const txDelta = p.networkTx - prev.networkTx;
-            networkRxRate = Math.max(0, rxDelta / dtSec);
-            networkTxRate = Math.max(0, txDelta / dtSec);
-          }
-        }
-        return {
-          ...p,
-          time: formatTime(p.timestamp),
-          networkRxRate,
-          networkTxRate,
-        };
-      }),
-    [points],
-  );
+  const chartPoints = useMemo(() => {
+    const rates = networkRates(points);
+    return points.map((p, i) => ({
+      ...p,
+      time: formatTime(p.timestamp),
+      ...rates[i],
+    }));
+  }, [points]);
 
   // Memoized sparkline data arrays
   const cpuSparkData = useMemo(() => points.map((p) => p.cpu), [points]);
@@ -359,6 +403,11 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
           <p className="relative type-numeral text-2xl mt-1">
             {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : hasSamples ? `${totals.cpu.toFixed(1)}%` : <NoValue />}
           </p>
+          <p className="relative text-[10px] text-muted-foreground mt-0.5">
+            {cpuCores > 0
+              ? `of ${cpuCores * 100}% · ${cpuCores} cores`
+              : `summed across containers · ${scopeNote}`}
+          </p>
         </div>
         <div className="squircle relative rounded-lg border bg-card px-4 py-3 overflow-hidden">
           {points.length > 1 && (
@@ -371,6 +420,11 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
           <p className="relative type-numeral text-2xl mt-1">
             {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : hasSamples ? formatBytes(totals.memory) : <NoValue />}
           </p>
+          <p className="relative text-[10px] text-muted-foreground mt-0.5">
+            {containerCountKnown
+              ? `across ${totals.containers} running container${totals.containers === 1 ? "" : "s"}`
+              : `running containers · ${scopeNote}`}
+          </p>
         </div>
         <div className="squircle relative rounded-lg border bg-card px-4 py-3 overflow-hidden">
           {points.length > 1 && (
@@ -381,11 +435,13 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
             <p className="text-xs text-muted-foreground">Disk</p>
           </div>
           <p className="relative type-numeral text-2xl mt-1">
-            {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : hasSamples ? formatBytes(orgDiskTotal ?? 0) : <NoValue />}
+            {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : hasSamples ? formatBytes(diskTotal) : <NoValue />}
           </p>
-          {!loading && hasSamples && displayApps.length > 0 && (
+          {!loading && hasSamples && (
             <p className="relative text-[10px] text-muted-foreground mt-0.5">
-              across {displayApps.length} app{displayApps.length !== 1 ? "s" : ""}
+              {adminMode
+                ? "images, volumes and build cache · whole host"
+                : `across ${scope.topLevel} app${scope.topLevel !== 1 ? "s" : ""} in ${scopeNote}`}
             </p>
           )}
         </div>
@@ -403,7 +459,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
           </p>
           {!loading && hasSamples && (
             <p className="relative text-[10px] text-muted-foreground mt-0.5">
-              ↓ {formatBytes(totals.networkRx)} · ↑ {formatBytes(totals.networkTx)}
+              ↓ {formatBytes(totals.networkRx)} · ↑ {formatBytes(totals.networkTx)} since start
             </p>
           )}
         </div>
@@ -415,42 +471,11 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
           <p className="type-numeral text-2xl mt-1">
             {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : containerCountKnown ? totals.containers : <NoValue />}
           </p>
-          {/* Labelled: these come from app records, not the metrics stream. */}
-          {displayApps.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2 mt-1">
-              <span className="type-label text-muted-foreground">Apps</span>
-              {statusCounts.active > 0 && (
-                <span className="inline-flex items-center gap-1 text-[10px] text-status-success">
-                  <span className="size-1.5 rounded-full bg-status-success" />
-                  {statusCounts.active} running
-                </span>
-              )}
-              {statusCounts.error > 0 && (
-                <span className="inline-flex items-center gap-1 text-[10px] text-status-error">
-                  <span className="size-1.5 rounded-full bg-status-error" />
-                  {statusCounts.error} crashed
-                </span>
-              )}
-              {statusCounts.missing > 0 && (
-                <span className="inline-flex items-center gap-1 text-[10px] text-status-warning">
-                  <span className="size-1.5 rounded-full bg-status-warning" />
-                  {statusCounts.missing} no container
-                </span>
-              )}
-              {statusCounts.stopped > 0 && (
-                <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
-                  <span className="size-1.5 rounded-full bg-status-neutral" />
-                  {statusCounts.stopped} stopped
-                </span>
-              )}
-              {statusCounts.deploying > 0 && (
-                <span className="inline-flex items-center gap-1 text-[10px] text-status-info">
-                  <span className="size-1.5 rounded-full bg-status-info animate-pulse" />
-                  {statusCounts.deploying} deploying
-                </span>
-              )}
-            </div>
-          )}
+          {/* App counts live in the Apps breakdown below — a container count and an
+              app count never match, and side by side they read as one figure. */}
+          <p className="text-[10px] text-muted-foreground mt-0.5">
+            reporting to cAdvisor now · {scopeNote}
+          </p>
         </div>
       </div>
 
@@ -522,10 +547,10 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
                   <XAxis dataKey="time" tick={chartTickStyle} />
-                  <YAxis width={65} tickFormatter={(v) => `${formatBytesShort(v)}/s`} tick={chartTickStyle} />
+                  <YAxis width={65} tickFormatter={(v) => `${formatBytesShort(v)}/s`} tick={chartTickStyle} domain={[0, "auto"]} />
                   <Tooltip content={<NetTooltip />} />
-                  <Area isAnimationActive={false} type="monotone" dataKey="networkRxRate" stroke={CHART_COLORS.networkRx} fill="url(#orgNetRxGradient)" />
-                  <Area isAnimationActive={false} type="monotone" dataKey="networkTxRate" stroke={CHART_COLORS.networkTx} fill="url(#orgNetTxGradient)" />
+                  <Area isAnimationActive={false} connectNulls={false} type="monotone" dataKey="networkRxRate" stroke={CHART_COLORS.networkRx} fill="url(#orgNetRxGradient)" />
+                  <Area isAnimationActive={false} connectNulls={false} type="monotone" dataKey="networkTxRate" stroke={CHART_COLORS.networkTx} fill="url(#orgNetTxGradient)" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -555,7 +580,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
           </div>
       </div>
 
-      {/* Infrastructure overview — half donuts on top, tables below */}
+      {/* Infrastructure overview — share-of-total bars, table below */}
       {(() => {
         const MAX_SLICES = 8;
         const appColors = [
@@ -563,7 +588,6 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
           "oklch(0.65 0.16 335)", "oklch(0.68 0.16 175)", "oklch(0.65 0.18 290)", "oklch(0.67 0.17 120)",
         ];
 
-        // Status donut
         const statusSlices = [
           { label: "Running", value: statusCounts.active, color: "var(--color-status-success, #22c55e)" },
           { label: "Deploying", value: statusCounts.deploying, color: "var(--color-status-info, #3b82f6)" },
@@ -572,20 +596,9 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
           { label: "Stopped", value: statusCounts.stopped, color: "oklch(0.5 0 0 / 30%)" },
         ].filter((s) => s.value > 0);
 
-        // Per-app resource data
-        const allActive = displayApps
-          .filter((a) => a.status === "active")
-          .map((a) => {
-            const ps = appStats[a.id];
-            const containers = ps?.containers || [];
-            return {
-              name: a.displayName,
-              cpu: containers.reduce((s, c) => s + c.cpuPercent, 0),
-              memory: containers.reduce((s, c) => s + c.memoryUsage, 0),
-              network: containers.reduce((s, c) => s + c.networkRx + c.networkTx, 0),
-            };
-          })
-          .filter((a) => a.memory > 0);
+        const allActive = runningApps
+          .filter((a) => a.memory > 0)
+          .map((a) => ({ name: a.name, cpu: a.cpu, memory: a.memory, network: a.network }));
 
         function topN(items: typeof allActive, key: "cpu" | "memory" | "network") {
           const sorted = [...items].sort((a, b) => b[key] - a[key]);
@@ -605,34 +618,38 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
         const cpuApps = topN(allActive, "cpu");
         const netApps = topN(allActive, "network");
 
-
-
         return (
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <HalfDonut
-              title="Status"
-              subtitle={`${streamProjectCount ?? projectCount ?? 0} projects`}
+            <ShareBar
+              title="Apps"
+              subtitle={`${scopeNote} · ${streamProjectCount ?? projectCount ?? 0} projects`}
+              total={`${scope.topLevel} app${scope.topLevel === 1 ? "" : "s"}`}
+              totalLabel="top-level"
               slices={statusSlices}
-              centerLabel={String(displayApps.length)}
-              centerSub="apps"
+              footnote={scope.composeServices > 0
+                ? `${describeScopeCounts(scope)} = ${scope.total} app records`
+                : undefined}
             />
-            <HalfDonut
+            <ShareBar
               title="CPU"
               subtitle="by app"
+              total={`${totals.cpu.toFixed(1)}%`}
+              totalLabel={cpuCores > 0 ? `of ${cpuCores * 100}%` : "total"}
               slices={cpuApps.map((a, i) => ({ label: a.name, value: a.cpu, color: appColors[i % appColors.length], detail: `${a.cpu.toFixed(1)}%` }))}
-              centerLabel={`${totals.cpu.toFixed(1)}%`}
             />
-            <HalfDonut
+            <ShareBar
               title="Memory"
               subtitle="by app"
+              total={formatBytes(totals.memory)}
+              totalLabel="total"
               slices={memApps.map((a, i) => ({ label: a.name, value: a.memory, color: appColors[i % appColors.length], detail: formatBytes(a.memory) }))}
-              centerLabel={formatBytes(totals.memory)}
             />
-            <HalfDonut
+            <ShareBar
               title="Network"
-              subtitle="by app"
+              subtitle="by app · since container start"
+              total={formatBytes(totals.networkRx + totals.networkTx)}
+              totalLabel="total"
               slices={netApps.map((a, i) => ({ label: a.name, value: a.network, color: appColors[i % appColors.length], detail: formatBytes(a.network) }))}
-              centerLabel={formatBytes(totals.networkRx + totals.networkTx)}
             />
           </div>
         );
@@ -657,60 +674,61 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
         </div>
       ) : (
         <div className="squircle rounded-lg border bg-card overflow-x-auto">
+          <div className="flex items-center justify-between gap-2 px-4 py-2 border-b">
+            <h3 className="text-sm font-medium">Apps</h3>
+            <span className="text-[10px] text-muted-foreground">
+              top-level apps in {scopeNote}
+              {scope.composeServices > 0 && ` · compose services counted on their parent`}
+            </span>
+          </div>
           {/* Header */}
           <div className="grid grid-cols-[1fr_70px_90px_100px_80px_80px] gap-3 px-4 py-2 border-b text-xs text-muted-foreground whitespace-nowrap min-w-[700px]">
-            <span>App</span>
-            <span className="text-right">CPU</span>
-            <span className="text-right">Memory</span>
-            <span className="text-right">Network</span>
-            <span className="text-right">Limit</span>
-            <span className="text-right">Containers</span>
+            <SortHeader label="App" sortKey="name" sort={sort} onSort={setSort} align="left" />
+            <SortHeader label="CPU" sortKey="cpu" sort={sort} onSort={setSort} />
+            <SortHeader label="Memory" sortKey="memory" sort={sort} onSort={setSort} />
+            <SortHeader label="Network" sortKey="network" sort={sort} onSort={setSort} />
+            <SortHeader label="Limit" sortKey="limit" sort={sort} onSort={setSort} />
+            <SortHeader label="Containers" sortKey="containers" sort={sort} onSort={setSort} />
           </div>
           <div className="divide-y">
             {(showIdle ? [...runningApps, ...idleApps] : runningApps).map((a) => {
-              const ps = appStats[a.id];
-              const cpu = ps?.containers.reduce((s, c) => s + c.cpuPercent, 0) ?? 0;
-              const mem = ps?.containers.reduce((s, c) => s + c.memoryUsage, 0) ?? 0;
-              const memLimit = Math.max(0, ...(ps?.containers.map((c) => c.memoryLimit) ?? [0]));
-              const netRx = ps?.containers.reduce((s, c) => s + c.networkRx, 0) ?? 0;
-              const netTx = ps?.containers.reduce((s, c) => s + c.networkTx, 0) ?? 0;
-
-              const containerCount = ps?.containers.length ?? 0;
-              const isActive = a.status === "active";
-              const rowLoading = loading && !ps;
+              const cell = (content: React.ReactNode) => (
+                awaitingFirstFrame ? <Skeleton className="w-10" /> : a.isActive ? content : "-"
+              );
 
               return (
                 <Link
                   key={a.id}
-                  href={`/apps/${a.name}/metrics`}
+                  href={`/apps/${a.appName}/metrics`}
                   className="grid grid-cols-[1fr_70px_90px_100px_80px_80px] gap-3 px-4 py-3 hover:bg-accent/50 transition-colors items-center whitespace-nowrap min-w-[700px]"
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <span
                       className={`size-2 rounded-full shrink-0 ${
-                        isActive ? "bg-status-success" : "bg-status-neutral"
+                        a.isActive ? "bg-status-success" : "bg-status-neutral"
                       }`}
                     />
-                    <span className="text-sm font-medium truncate">
-                      {a.displayName}
-                    </span>
+                    <span className="text-sm font-medium truncate">{a.name}</span>
+                    {a.services > 0 && (
+                      <span className="text-[10px] text-muted-foreground shrink-0">
+                        +{a.services} service{a.services !== 1 ? "s" : ""}
+                      </span>
+                    )}
                   </div>
                   <span className="text-xs text-right tabular-nums text-muted-foreground">
-                    {rowLoading ? <Loader2 className="size-3 animate-spin ml-auto" /> : isActive ? `${cpu.toFixed(1)}%` : "-"}
+                    {cell(`${a.cpu.toFixed(1)}%`)}
                   </span>
                   <span className="text-xs text-right tabular-nums text-muted-foreground">
-                    {rowLoading ? <Loader2 className="size-3 animate-spin ml-auto" /> : isActive && mem > 0 ? formatBytes(mem) : "-"}
+                    {cell(a.memory > 0 ? formatBytes(a.memory) : "-")}
                   </span>
                   <span className="text-xs text-right tabular-nums text-muted-foreground">
-                    {rowLoading ? <Loader2 className="size-3 animate-spin ml-auto" /> : isActive && (netRx > 0 || netTx > 0) ? (
-                      <>{formatBytes(netRx)} / {formatBytes(netTx)}</>
-                    ) : "-"}
+                    {cell(a.network > 0 ? `${formatBytes(a.networkRx)} / ${formatBytes(a.networkTx)}` : "-")}
                   </span>
                   <span className="text-xs text-right tabular-nums text-muted-foreground">
-                    {rowLoading ? <Loader2 className="size-3 animate-spin ml-auto" /> : isActive && memLimit > 0 ? formatMemLimit(memLimit) : "-"}
+                    {cell(a.limit > 0 ? formatMemLimit(a.limit) : "-")}
                   </span>
                   <span className="text-xs text-right tabular-nums text-muted-foreground">
-                    {rowLoading ? <Loader2 className="size-3 animate-spin ml-auto" /> : isActive ? containerCount : "-"}
+                    {cell(a.containers)}
                   </span>
                 </Link>
               );
