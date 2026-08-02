@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { Loader2 } from "lucide-react";
 import { Sparkline } from "@/components/app-metrics-card";
 import { formatBytes } from "@/lib/metrics/format";
+import { ServiceDot } from "./service-dot";
 import type { ResourceStatus, ServiceStatus } from "@/lib/config/health";
 
 type Stats = {
@@ -129,23 +130,19 @@ export function AdminOverview() {
         )}
       </div>
 
-      {/* Service dots */}
+      {/* Service dots — each one opens its own check detail */}
       <div className="flex flex-wrap items-center gap-3 mt-4 min-h-[20px]">
         {services ? (
           services.map((svc) => (
-            <div key={svc.name} className="flex items-start gap-1.5">
-              <span className={`size-1.5 rounded-full shrink-0 mt-[3px] ${
-                svc.status === "healthy" ? "bg-status-success" :
-                svc.status === "unhealthy" ? "bg-status-error" :
-                "bg-status-neutral"
-              }`} />
-              <div>
-                <span className="text-xs text-muted-foreground">{svc.name}</span>
-                {svc.status === "unhealthy" && svc.error && (
-                  <p className="text-xs text-muted-foreground max-w-[200px] truncate">{svc.error}</p>
-                )}
-              </div>
-            </div>
+            <ServiceDot
+              key={svc.name}
+              service={svc}
+              onChecked={(next) =>
+                setServices((prev) =>
+                  (prev ?? []).map((s) => (s.name === next.name ? next : s)),
+                )
+              }
+            />
           ))
         ) : (
           <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
