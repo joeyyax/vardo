@@ -254,3 +254,34 @@ describe("checkServiceByName", () => {
     await close(up);
   });
 });
+
+describe("describeError through an AggregateError cause", () => {
+  it("reaches the reason a dual-stack fetch buries two levels down", () => {
+    const cause = new AggregateError([
+      new Error("connect ECONNREFUSED ::1:7300"),
+      new Error("connect ECONNREFUSED 127.0.0.1:7300"),
+    ]);
+    const err = new TypeError("fetch failed", { cause });
+
+    const text = probeErrorText(err, 2000);
+    expect(text).toBe("fetch failed: connect ECONNREFUSED [host]");
+    expect(text).not.toMatch(/:\s*$/);
+  });
+
+  it("does not leave a dangling colon when nothing underneath has a message", () => {
+    const err = new TypeError("fetch failed", { cause: new AggregateError([]) });
+    expect(probeErrorText(err, 2000)).toBe("fetch failed");
+  });
+});
+
+describe("sanitizeError on IPv6", () => {
+  it("masks an IPv6 host and port", () => {
+    expect(sanitizeError("connect ECONNREFUSED ::1:7300")).toBe("connect ECONNREFUSED [host]");
+    expect(sanitizeError("connect ETIMEDOUT fd00::1234:5678:443")).toBe("connect ETIMEDOUT [host]");
+  });
+
+  it("leaves ordinary text with a colon alone", () => {
+    expect(sanitizeError("HTTP 503")).toBe("HTTP 503");
+    expect(sanitizeError("fetch failed: timeout")).toBe("fetch failed: timeout");
+  });
+});

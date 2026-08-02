@@ -50,16 +50,11 @@ export function ServiceDot({ service, onChecked }: ServiceDotProps) {
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="flex items-start gap-1.5 rounded-md px-1 py-0.5 -mx-1 text-left transition-colors hover:bg-accent cursor-pointer"
+          className="flex items-center gap-1.5 rounded-md px-1 py-0.5 -mx-1 text-left transition-colors hover:bg-accent cursor-pointer"
           aria-label={`${service.name}: ${serviceStatusWord(service.status)}`}
         >
-          <span className={`size-1.5 rounded-full shrink-0 mt-[5px] ${serviceDotColor(service.status)}`} />
-          <div>
-            <span className="text-xs text-muted-foreground">{service.name}</span>
-            {service.status === "unhealthy" && service.error && (
-              <p className="text-xs text-muted-foreground max-w-[200px] truncate">{service.error}</p>
-            )}
-          </div>
+          <span className={`size-1.5 rounded-full shrink-0 ${serviceDotColor(service.status)}`} />
+          <span className="text-xs text-muted-foreground">{service.name}</span>
         </button>
       </PopoverTrigger>
 
