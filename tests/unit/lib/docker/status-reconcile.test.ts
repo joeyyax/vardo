@@ -175,3 +175,58 @@ describe("matchContainers — blue/green decomposition", () => {
     expect(matchContainers(parent, [shared])).toHaveLength(1);
   });
 });
+
+describe("matchContainers — non-production environments", () => {
+  const unlabelled = (project: string, service = "paperless") =>
+    ({
+      id: "c1",
+      name: `${project}-${service}-1`,
+      state: "running",
+      status: "Up 3 days",
+      labels: {
+        "com.docker.compose.project": project,
+        "com.docker.compose.service": service,
+      },
+    }) as never;
+
+  const parent = {
+    id: "PARENT_ID",
+    name: "paperless",
+    status: "active",
+    parentAppId: null,
+    composeService: null,
+    containerName: null,
+    importedContainerId: null,
+  };
+
+  it("matches a staging slot project", () => {
+    expect(matchContainers(parent, [unlabelled("paperless-staging-green")])).toHaveLength(1);
+  });
+
+  it("matches a staging shared project", () => {
+    expect(matchContainers(parent, [unlabelled("paperless-staging-shared", "db")])).toHaveLength(1);
+  });
+
+  it("matches a preview slot project", () => {
+    expect(matchContainers(parent, [unlabelled("paperless-pr-42-blue")])).toHaveLength(1);
+  });
+
+  it("does not conflate an app with a longer-named sibling", () => {
+    const sibling = { ...parent, id: "SIBLING", name: "paperless-db" };
+    const c = unlabelled("paperless-db-staging-green", "db");
+    expect(matchContainers(sibling, [c])).toHaveLength(1);
+    expect(matchContainers(parent, [c])).toHaveLength(0);
+  });
+
+  it("matches a decomposed child of a staging project by derived parent name", () => {
+    const staging = unlabelled("paperless-staging-green", "db");
+    const dbChild = {
+      ...parent,
+      id: "CHILD",
+      name: "paperless-db",
+      parentAppId: "PARENT_ID",
+      composeService: "db",
+    };
+    expect(matchContainers(dbChild, [staging])).toHaveLength(1);
+  });
+});
