@@ -75,7 +75,7 @@ export async function buildAttentionRows(
 
   const [fleet, updates, version, failedBackups] = await Promise.all([
     getFleetAttention(orgId),
-    getCooldownUntil().then((cooldown) => getAggregateUpdateStatus(appRows, cooldown)),
+    getCooldownUntil().then((cooldown) => getAggregateUpdateStatus(orgId, appRows, cooldown)),
     isAppAdmin ? getVersionData().catch(() => null) : null,
     loadFailedBackups(appRows.map((a) => a.id)),
   ]);
@@ -141,7 +141,7 @@ export async function buildAttentionRows(
   }
 
   if (updates.appsWithUpdates.length > 0) {
-    const notes = ["Open an app to review the proposed version and apply it."];
+    const notes = ["Review the proposed version before applying it."];
     if (updates.unknownCount > 0) {
       notes.push(
         `${updates.unknownCount} image${updates.unknownCount === 1 ? "" : "s"} could not be checked.`,
@@ -163,6 +163,7 @@ export async function buildAttentionRows(
         detail: `${a.count} image${a.count === 1 ? "" : "s"}`,
       })),
       footer: notes.join(" "),
+      action: { label: "Review all updates", href: "/updates" },
     });
   }
 

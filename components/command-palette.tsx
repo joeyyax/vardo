@@ -18,6 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import {
   FolderKanban,
   LayoutDashboard,
@@ -34,11 +35,34 @@ import {
   HardDrive,
   GitBranch,
   Blocks,
+  ArrowUpCircle,
+  ChevronLeft,
+  RotateCcw,
+  Rocket,
+  ScrollText,
+  Undo2,
 } from "lucide-react";
 import { AppIcon } from "@/components/app-status";
+import { toast } from "@/lib/messenger";
+import {
+  byRelevance,
+  fillApp,
+  rankActions,
+  rankResult,
+  ID_SEP,
+  type CommandActionDef,
+  type CommandActionId,
+} from "@/lib/ui/command-palette";
 
 type CommandPaletteProps = {
   orgId: string | null;
+};
+
+const ACTION_ICON: Record<CommandActionId, typeof RotateCcw> = {
+  restart: RotateCcw,
+  deploy: Rocket,
+  logs: ScrollText,
+  rollback: Undo2,
 };
 
 const OPEN_EVENT = "vardo:open-command-palette";
@@ -56,6 +80,8 @@ type SearchableApp = {
   source: string;
   deployType: string;
   imageName: string | null;
+  /** Compose parent, when this app is one of its services. */
+  parentName: string | null;
   projectName: string | null;
   domains: string[];
 };
@@ -66,39 +92,47 @@ type SearchableProject = {
   displayName: string;
 };
 
-/** cmdk keys items by lowercased value, so two apps named Gitea and gitea collide. */
-const ID_SEP = "\u241f";
+/** An action holding at its confirm step. */
+type PendingConfirm = { action: CommandActionDef; app: SearchableApp };
 
 /**
- * Name matches beat keyword matches, and nothing matches loosely. cmdk's default
- * is fuzzy, which ranked plextraktsync above plex for "plex" and returned Kroki
- * for "loki" — on a fleet this size the noise costs more than the typo tolerance.
+ * Drains the deploy stream so the palette reports what the deploy did, not
+ * that it dispatched one.
  */
-function rankResult(value: string, search: string, keywords?: string[]): number {
-  const q = search.trim().toLowerCase();
-  if (!q) return 1;
-
-  const name = value.split(ID_SEP)[0].toLowerCase();
-  if (name === q) return 1;
-  if (name.startsWith(q)) return 0.9;
-  if (name.includes(q)) return 0.7;
-
-  const kw = (keywords ?? []).map((k) => k.toLowerCase());
-  if (kw.some((k) => k === q)) return 0.5;
-  if (kw.some((k) => k.startsWith(q))) return 0.4;
-  if (kw.some((k) => k.includes(q))) return 0.3;
-
-  return 0;
-}
-
-/** cmdk hides non-matches but keeps source order, so relevance is sorted here. */
-function byRelevance<T>(items: T[], search: string, fields: (item: T) => [string, string[]]) {
-  if (!search.trim()) return items;
-  return [...items].sort((a, b) => {
-    const [an, ak] = fields(a);
-    const [bn, bk] = fields(b);
-    return rankResult(bn, search, bk) - rankResult(an, search, ak);
+async function runDeploy(orgId: string, app: SearchableApp) {
+  const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/deploy`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
   });
+  if (!res.ok || !res.body) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? "Deploy failed");
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let event = "";
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      if (line.startsWith("event: ")) {
+        event = line.slice(7);
+      } else if (line.startsWith("data: ") && (event === "done" || event === "error")) {
+        const data = JSON.parse(line.slice(6));
+        if (event === "error") throw new Error(data.message ?? "Deploy failed");
+        if (!data.success) throw new Error(data.error ?? "Deploy failed");
+        return;
+      }
+    }
+  }
+  throw new Error("Deploy stream ended without a result");
 }
 
 export function CommandPalette({ orgId }: CommandPaletteProps) {
@@ -108,13 +142,19 @@ export function CommandPalette({ orgId }: CommandPaletteProps) {
   const [projects, setProjects] = useState<SearchableProject[]>([]);
   const [orgEnvKeys, setOrgEnvKeys] = useState<string[]>([]);
   const [loaded, setLoaded] = useState(false);
+  /** Verb picked in step one; the list then picks the app. */
+  const [pendingAction, setPendingAction] = useState<CommandActionDef | null>(null);
+  const [confirming, setConfirming] = useState<PendingConfirm | null>(null);
+  const [running, setRunning] = useState(false);
   const router = useRouter();
 
   const rankedApps = useMemo(
     () =>
       byRelevance(apps, search, (a) => [
         a.displayName,
-        [a.name, a.projectName, a.imageName, ...a.domains].filter((k): k is string => !!k),
+        [a.name, a.parentName, a.projectName, a.imageName, ...a.domains].filter(
+          (k): k is string => !!k,
+        ),
       ]),
     [apps, search],
   );
@@ -122,14 +162,72 @@ export function CommandPalette({ orgId }: CommandPaletteProps) {
     () => byRelevance(projects, search, (p) => [p.displayName, [p.name]]),
     [projects, search],
   );
+  const rankedActions = useMemo(() => rankActions(search), [search]);
 
   const runCommand = useCallback(
     (command: () => void) => {
       setOpen(false);
       setSearch("");
+      setPendingAction(null);
       command();
     },
     []
+  );
+
+  const execute = useCallback(
+    async ({ action, app }: PendingConfirm) => {
+      if (!orgId) return;
+      const base = `/api/v1/organizations/${orgId}/apps/${app.id}`;
+      setRunning(true);
+      try {
+        if (action.id === "restart") {
+          const res = await fetch(`${base}/restart`, { method: "POST" });
+          const body = await res.json();
+          if (!res.ok || !body.success) throw new Error(body.error ?? "Restart failed");
+          toast.success(`Restarted ${app.displayName}`);
+          router.refresh();
+        } else if (action.id === "rollback") {
+          const res = await fetch(`${base}/instant-rollback`, { method: "POST" });
+          const body = await res.json();
+          if (!res.ok || body.success === false) throw new Error(body.error ?? "Rollback failed");
+          toast.success(`Rolled ${app.displayName} back to the previous release`);
+          router.refresh();
+        } else if (action.id === "deploy") {
+          // Land on the app first, so the run has somewhere to be watched.
+          router.push(`/apps/${app.name}/deployments`);
+          toast.info(`Deploying ${app.displayName}…`);
+          await runDeploy(orgId, app);
+          toast.success(`Deployed ${app.displayName}`);
+          router.refresh();
+        }
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : `${action.verb} failed`);
+      } finally {
+        setRunning(false);
+        setConfirming(null);
+      }
+    },
+    [orgId, router],
+  );
+
+  /** Step two: the app is chosen, so navigate or ask before firing. */
+  const chooseApp = useCallback(
+    (app: SearchableApp) => {
+      const action = pendingAction;
+      if (!action) {
+        runCommand(() => router.push(`/apps/${app.name}`));
+        return;
+      }
+      if (action.id === "logs") {
+        runCommand(() => router.push(`/apps/${app.name}/logs`));
+        return;
+      }
+      setOpen(false);
+      setSearch("");
+      setPendingAction(null);
+      setConfirming({ action, app });
+    },
+    [pendingAction, router, runCommand],
   );
 
   // Global keyboard listener for Cmd/Ctrl+K, plus an event for external triggers
@@ -176,6 +274,7 @@ export function CommandPalette({ orgId }: CommandPaletteProps) {
   }, [open]);
 
   return (
+    <>
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogHeader className="sr-only">
         <DialogTitle>Command Palette</DialogTitle>
@@ -184,17 +283,59 @@ export function CommandPalette({ orgId }: CommandPaletteProps) {
       <DialogContent className="overflow-hidden p-0 sm:max-w-[550px]" showCloseButton={false}>
         <Command filter={rankResult} className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5">
           <CommandInput
-            placeholder="Search apps, projects, pages..."
+            placeholder={pendingAction ? pendingAction.prompt : "Search apps, projects, pages..."}
             value={search}
             onValueChange={setSearch}
+            onKeyDown={(e) => {
+              if (e.key === "Backspace" && !search && pendingAction) {
+                e.preventDefault();
+                setPendingAction(null);
+              }
+            }}
             autoFocus
           />
+
+          {pendingAction && (
+            <button
+              type="button"
+              onClick={() => setPendingAction(null)}
+              className="flex w-full items-center gap-1.5 border-b px-3 py-2 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <ChevronLeft className="size-3.5" aria-hidden="true" />
+              {pendingAction.verb} — pick an app
+            </button>
+          )}
+
           <CommandList className="max-h-[400px]">
             <CommandEmpty>No results found.</CommandEmpty>
 
+            {/* Actions — matched on the verb, with the app chosen next. */}
+            {!pendingAction && rankedActions.length > 0 && (
+              <CommandGroup heading="Actions">
+                {rankedActions.map((action) => {
+                  const Icon = ACTION_ICON[action.id];
+                  return (
+                    <CommandItem
+                      key={action.id}
+                      value={`${action.verb}${ID_SEP}action-${action.id}`}
+                      keywords={action.keywords}
+                      onSelect={() => {
+                        setPendingAction(action);
+                        setSearch("");
+                      }}
+                      className="gap-2"
+                    >
+                      <Icon className="size-4 shrink-0 text-muted-foreground" />
+                      <span>{action.verb} an app</span>
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+            )}
+
             {/* Apps */}
             {apps.length > 0 && (
-              <CommandGroup heading="Apps">
+              <CommandGroup heading={pendingAction ? "Pick an app" : "Apps"}>
                 {rankedApps.map((app) => (
                   <CommandItem
                     key={app.id}
@@ -202,16 +343,26 @@ export function CommandPalette({ orgId }: CommandPaletteProps) {
                     // them into one string made cmdk score the blob, which put
                     // plex sixth behind plextraktsync on a search for "plex".
                     value={`${app.displayName}${ID_SEP}${app.id}`}
-                    keywords={[app.name, app.projectName, app.imageName, ...app.domains].filter(
-                      (k): k is string => !!k,
-                    )}
-                    onSelect={() => runCommand(() => router.push(`/apps/${app.name}`))}
+                    keywords={[
+                      app.name,
+                      app.parentName,
+                      app.projectName,
+                      app.imageName,
+                      ...app.domains,
+                    ].filter((k): k is string => !!k)}
+                    onSelect={() => chooseApp(app)}
                     className="gap-2"
                   >
                     <AppIcon app={app} size="sm" />
-                    <span>{app.displayName}</span>
-                    {app.projectName && (
-                      <span className="text-xs text-muted-foreground ml-auto">{app.projectName}</span>
+                    <span>
+                      {pendingAction ? fillApp(`${pendingAction.verb} {app}`, app.displayName) : app.displayName}
+                    </span>
+                    {/* Three stacks each have a service called Redis; the parent
+                        is what tells those rows apart. */}
+                    {(app.parentName || app.projectName) && (
+                      <span className="text-xs text-muted-foreground ml-auto truncate">
+                        {app.parentName ?? app.projectName}
+                      </span>
                     )}
                   </CommandItem>
                 ))}
@@ -219,7 +370,7 @@ export function CommandPalette({ orgId }: CommandPaletteProps) {
             )}
 
             {/* Projects */}
-            {projects.length > 0 && (
+            {!pendingAction && projects.length > 0 && (
               <CommandGroup heading="Projects">
                 {rankedProjects.map((project) => (
                   <CommandItem
@@ -237,7 +388,7 @@ export function CommandPalette({ orgId }: CommandPaletteProps) {
             )}
 
             {/* Org environment variables */}
-            {orgEnvKeys.length > 0 && (
+            {!pendingAction && orgEnvKeys.length > 0 && (
               <CommandGroup heading="Shared Variables">
                 {orgEnvKeys.map((key) => (
                   <CommandItem
@@ -254,9 +405,10 @@ export function CommandPalette({ orgId }: CommandPaletteProps) {
               </CommandGroup>
             )}
 
-            <CommandSeparator />
+            {!pendingAction && <CommandSeparator />}
 
             {/* Pages */}
+            {!pendingAction && (
             <CommandGroup heading="Pages">
               <CommandItem
                 value="Dashboard Projects Home"
@@ -291,6 +443,14 @@ export function CommandPalette({ orgId }: CommandPaletteProps) {
                 <span>Activity</span>
               </CommandItem>
               <CommandItem
+                value="Updates Image updates"
+                onSelect={() => runCommand(() => router.push("/updates"))}
+                className="gap-2"
+              >
+                <ArrowUpCircle className="size-4" />
+                <span>Updates</span>
+              </CommandItem>
+              <CommandItem
                 value="Team Members"
                 onSelect={() => runCommand(() => router.push("/settings/team"))}
                 className="gap-2"
@@ -315,8 +475,10 @@ export function CommandPalette({ orgId }: CommandPaletteProps) {
                 <span>Account settings</span>
               </CommandItem>
             </CommandGroup>
+            )}
 
             {/* Admin */}
+            {!pendingAction && (
             <CommandGroup heading="Admin">
               <CommandItem
                 value="Admin Overview"
@@ -375,9 +537,25 @@ export function CommandPalette({ orgId }: CommandPaletteProps) {
                 <span>Admin settings: Services</span>
               </CommandItem>
             </CommandGroup>
+            )}
           </CommandList>
         </Command>
       </DialogContent>
     </Dialog>
+
+    {confirming?.action.confirm && (
+      <ConfirmDeleteDialog
+        open
+        onOpenChange={(next) => !next && !running && setConfirming(null)}
+        title={fillApp(confirming.action.confirm.title, confirming.app.displayName)}
+        description={confirming.action.confirm.description}
+        confirmLabel={confirming.action.confirm.label}
+        loadingLabel={confirming.action.confirm.loadingLabel}
+        variant={confirming.action.confirm.variant}
+        loading={running}
+        onConfirm={() => execute(confirming)}
+      />
+    )}
+    </>
   );
 }
