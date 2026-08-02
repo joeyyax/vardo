@@ -321,9 +321,14 @@ export async function runBackup(
   }
 
   const scope = options.appIds ? new Set(options.appIds) : null;
-  const jobApps = scope
+  const scoped = scope
     ? job.backupJobApps.filter((bja) => scope.has(bja.app.id))
     : job.backupJobApps;
+  // A retired app's volumes are empty or gone, so a scheduled run against it
+  // fails every night with nothing to fix. An explicit request still runs.
+  const jobApps = options.appIds
+    ? scoped
+    : scoped.filter((bja) => bja.app.status !== "missing" && bja.app.status !== "stopped");
   const jobVolumes = scope
     ? job.backupJobVolumes.filter((bjv) => bjv.volume.appId && scope.has(bjv.volume.appId))
     : job.backupJobVolumes;
