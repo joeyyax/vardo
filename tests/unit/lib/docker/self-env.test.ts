@@ -68,3 +68,22 @@ describe("seedSelfEnv", () => {
     await expect(readFile(join(target, ".env"), "utf-8")).rejects.toThrow();
   });
 });
+
+describe("seedSelfEnv when the source is unreadable", () => {
+  it("skips a missing candidate and takes the next one", async () => {
+    const root = await mkdtemp(join(tmpdir(), "self-env-fallback-"));
+    try {
+      const appDir = join(root, "vardo", "production");
+      const target = join(appDir, "blue");
+      await mkdir(target, { recursive: true });
+      // No `current`, so the active slot is the only readable candidate.
+      const green = join(appDir, "green");
+      await mkdir(green, { recursive: true });
+      await writeFile(join(green, ".env"), "VARDO_DOMAIN=from-green\n");
+
+      await expect(seedSelfEnv("vardo", appDir, target, "green")).resolves.toContain("green");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
