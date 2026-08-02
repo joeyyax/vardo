@@ -878,6 +878,7 @@ export function ComposeDetail({
           <AppUpdatesPanel
             orgId={orgId}
             appId={app.id}
+            appName={app.displayName}
             onDeploy={handleDeployClick}
             deploying={deploy.deploying}
             deployed={deployedImages}
