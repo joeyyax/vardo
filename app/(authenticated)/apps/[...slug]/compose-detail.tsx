@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import {
   Rocket,
@@ -37,6 +38,10 @@ import { CHART_COLORS } from "@/lib/metrics/constants";
 import type { ContainerPoint } from "@/lib/metrics/types";
 import { formatBytes } from "@/lib/metrics/format";
 import { AppDeployPanel } from "./app-deploy-panel";
+import { AppNetworking } from "./app-networking";
+import { AppSecurity } from "./app-security";
+import { AppDebug } from "./app-debug";
+import { VolumesPanel } from "@/components/volumes-panel";
 import { useDeploy } from "./hooks/use-deploy";
 import { AppUpdatesPanel, useImageUpdates } from "./app-updates";
 import { pendingImageChange, type PendingImage } from "@/lib/docker/image-updates/pending";
@@ -48,6 +53,11 @@ import type { FeatureFlags } from "@/lib/config/features";
 import { ComposeReview } from "@/components/compose-review";
 import { tabPanelSurface } from "@/lib/ui/tab-panel";
 import { cn } from "@/lib/utils";
+
+const AppTerminal = dynamic(
+  () => import("./app-terminal").then((m) => m.AppTerminal),
+  { ssr: false },
+);
 
 // ---------------------------------------------------------------------------
 // Service card for the Services tab
@@ -370,6 +380,69 @@ function ComposeMetrics({ services, orgId }: { services: ChildApp[]; orgId: stri
 }
 
 // ---------------------------------------------------------------------------
+// Networking tab — stack domains, plus where each service's own domains live
+// ---------------------------------------------------------------------------
+
+function ComposeNetworking({
+  app,
+  services,
+  orgId,
+  activeTab,
+  initialSubView,
+}: {
+  app: App;
+  services: ChildApp[];
+  orgId: string;
+  activeTab: string;
+  initialSubView?: string;
+}) {
+  const serviceDomains = services.flatMap((service) =>
+    service.domains.map((d) => ({ service, domain: d.domain })),
+  );
+
+  return (
+    <div className="space-y-8">
+      <AppNetworking
+        domains={app.domains}
+        exposedPorts={null}
+        containerPort={app.containerPort}
+        appId={app.id}
+        appName={app.name}
+        orgId={orgId}
+        activeTab={activeTab}
+        initialSubView={initialSubView}
+        showPorts={false}
+      />
+
+      {serviceDomains.length > 0 && (
+        <div className="space-y-4">
+          <div>
+            <h3 className="text-sm font-medium">Service domains</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Pinned to one service. Open the service to edit its domains and ports.
+            </p>
+          </div>
+          <div className="space-y-2">
+            {serviceDomains.map(({ service, domain }) => (
+              <Link
+                key={`${service.id}-${domain}`}
+                href={`/apps/${service.name}/networking`}
+                className="squircle flex items-center justify-between gap-4 rounded-lg border bg-background-deep p-4 transition-colors hover:bg-accent"
+              >
+                <span className="truncate font-mono text-sm font-medium">{domain}</span>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {service.displayName}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Compose editor tab
 // ---------------------------------------------------------------------------
 
@@ -483,6 +556,7 @@ export function ComposeDetail({
   orgId,
   userRole,
   initialTab,
+  initialSubView,
   featureFlags,
   allTags = [],
   siblings = [],
@@ -491,6 +565,7 @@ export function ComposeDetail({
   orgId: string;
   userRole: string;
   initialTab: string;
+  initialSubView?: string;
   featureFlags: FeatureFlags;
   allTags?: Tag[];
   siblings?: { id: string; name: string; displayName: string; status: string; dependsOn: string[] | null }[];
@@ -766,6 +841,7 @@ export function ComposeDetail({
                   label: "Configure",
                   items: [
                     { value: "variables", label: "Variables", count: app.envVars.length },
+                    { value: "networking", label: "Networking" },
                     { value: "compose", label: "Compose" },
                   ],
                 },
@@ -774,12 +850,21 @@ export function ComposeDetail({
                   items: [
                     ...(featureFlags?.logging !== false ? [{ value: "logs", label: "Logs" }] : []),
                     ...(featureFlags?.metrics !== false ? [{ value: "metrics", label: "Metrics" }] : []),
+                    { value: "security", label: "Security" },
                   ],
                 },
                 {
                   label: "Data",
                   items: [
+                    { value: "volumes", label: "Volumes" },
                     ...(featureFlags?.backups !== false ? [{ value: "backups", label: "Backups" }] : []),
+                  ],
+                },
+                {
+                  label: "Tools",
+                  items: [
+                    ...(featureFlags?.terminal !== false ? [{ value: "terminal", label: "Terminal" }] : []),
+                    ...(isOrgAdmin(userRole) ? [{ value: "debug", label: "Debug" }] : []),
                   ],
                 },
               ] satisfies SectionGroup[]}
@@ -837,6 +922,16 @@ export function ComposeDetail({
           />
         </TabsContent>
 
+        <TabsContent value="networking" className={cn(tabPanelSurface, "space-y-4")}>
+          <ComposeNetworking
+            app={app}
+            services={services}
+            orgId={orgId}
+            activeTab={activeTab}
+            initialSubView={activeTab === "networking" ? initialSubView : undefined}
+          />
+        </TabsContent>
+
         {featureFlags?.logging !== false && (
           <TabsContent value="logs">
             <ComposeLogs services={services} orgId={orgId} />
@@ -866,6 +961,29 @@ export function ComposeDetail({
             ) : (
               <p className="text-sm text-muted-foreground">No services in this stack yet.</p>
             )}
+          </TabsContent>
+        )}
+
+        <TabsContent value="security" className={tabPanelSurface}>
+          <AppSecurity appId={app.id} orgId={orgId} />
+        </TabsContent>
+
+        <TabsContent value="volumes" className={tabPanelSurface}>
+          <VolumesPanel appId={app.id} orgId={orgId} />
+        </TabsContent>
+
+        {featureFlags?.terminal !== false && (
+          <TabsContent value="terminal" className={cn(tabPanelSurface, "space-y-4")}>
+            <p className="text-sm text-muted-foreground">
+              Interactive shell in one of the stack&apos;s containers. Filesystem changes are lost on redeploy unless written to a persistent volume.
+            </p>
+            <AppTerminal appId={app.id} orgId={orgId} />
+          </TabsContent>
+        )}
+
+        {isOrgAdmin(userRole) && (
+          <TabsContent value="debug" className={tabPanelSurface}>
+            <AppDebug orgId={orgId} appId={app.id} />
           </TabsContent>
         )}
 

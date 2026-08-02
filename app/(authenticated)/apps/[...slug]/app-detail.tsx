@@ -279,6 +279,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         orgId={orgId}
         userRole={userRole}
         initialTab={initialTab}
+        initialSubView={initialSubView}
         featureFlags={featureFlags}
         allTags={allTags}
         siblings={siblings}

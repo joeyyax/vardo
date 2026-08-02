@@ -34,17 +34,50 @@ const plainApp = context();
 const childService = context({ isChildService: true });
 
 describe("availableAppTabs", () => {
-  it("gives a compose parent the stack sections only", () => {
-    expect(availableAppTabs(composeParent)).toEqual([
+  it("gives a compose parent the stack sections", () => {
+    expect(availableAppTabs(context({ isComposeParent: true, isOrgAdmin: true }))).toEqual([
       "services",
       "deployments",
       "updates",
       "variables",
+      "networking",
       "compose",
       "logs",
       "metrics",
+      "security",
+      "volumes",
       "backups",
+      "terminal",
+      "debug",
     ]);
+  });
+
+  it("withholds per-container sections from a compose parent", () => {
+    const tabs = availableAppTabs(composeParent);
+    expect(tabs).not.toContain("cron");
+    expect(tabs).not.toContain("errors");
+    expect(tabs).not.toContain("connect");
+  });
+
+  it("drops parent tabs behind disabled feature flags", () => {
+    const tabs = availableAppTabs(
+      context({
+        isComposeParent: true,
+        isOrgAdmin: true,
+        features: { ...allFeatures, terminal: false, backups: false },
+      }),
+    );
+    expect(tabs).not.toContain("terminal");
+    expect(tabs).not.toContain("backups");
+    expect(tabs).toContain("networking");
+    expect(tabs).toContain("volumes");
+  });
+
+  it("only offers a compose parent debug to org admins", () => {
+    expect(availableAppTabs(composeParent)).not.toContain("debug");
+    expect(
+      availableAppTabs(context({ isComposeParent: true, isOrgAdmin: true })),
+    ).toContain("debug");
   });
 
   it("gives a plain app the container sections, without stack-only ones", () => {
@@ -114,11 +147,17 @@ describe("resolveAppTab", () => {
     expect(resolveAppTab("compose", composeParent)).toBe("compose");
   });
 
+  it("keeps a compose parent on the domain and exposure tabs", () => {
+    // An unreachable-domain row links to /apps/{name}/networking.
+    expect(resolveAppTab("networking", composeParent)).toBe("networking");
+    expect(resolveAppTab("volumes", composeParent)).toBe("volumes");
+    expect(resolveAppTab("security", composeParent)).toBe("security");
+  });
+
   it("falls back when the tab isn't available for this app", () => {
     // The blank-column case: valid route segments the compose shell never renders.
-    expect(resolveAppTab("networking", composeParent)).toBe("services");
-    expect(resolveAppTab("volumes", composeParent)).toBe("services");
-    expect(resolveAppTab("security", composeParent)).toBe("services");
+    expect(resolveAppTab("cron", composeParent)).toBe("services");
+    expect(resolveAppTab("errors", composeParent)).toBe("services");
     expect(resolveAppTab("compose", plainApp)).toBe("deployments");
     expect(resolveAppTab("services", plainApp)).toBe("deployments");
     expect(resolveAppTab("compose", childService)).toBe("logs");
