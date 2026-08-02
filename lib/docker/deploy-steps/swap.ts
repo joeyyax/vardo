@@ -31,12 +31,6 @@ import type { DeployContext } from "../deploy-context";
 import { classifyComposeServices } from "./classify-services";
 import { publishesHostPorts } from "../host-ports";
 import { partitionBySlot, sharedProjectName, slotScopeArgs } from "../slot-partition";
-import { isSelfApp } from "../self-env";
-import {
-  DEFERRED_STOP_DELAY_SECONDS,
-  deferredStopArgs,
-  parseContainerIds,
-} from "../deferred-stop";
 
 const execFileAsync = promisify(execFile);
 const NETWORK_NAME = VARDO_NETWORK;
@@ -262,39 +256,8 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   // them if the new slot fails to come up.
   const stoppedOldServices: string[] = [];
 
-  /**
-   * Hand the stop to a detached container when the old slot is running this
-   * process. Stopping it inline kills the deploy before it can record itself.
-   */
-  const deferStopOldSlot = async (): Promise<boolean> => {
-    if (!oldSlotDir || !oldProjectName) return false;
-    const oldComposeFileArgs = await getOldComposeFileArgs();
-    const { stdout } = await execFileAsync(
-      "docker",
-      ["compose", ...oldComposeFileArgs, "-p", oldProjectName, "ps", "-q"],
-      { cwd: oldSlotDir, timeout: COMPOSE_QUERY_TIMEOUT }
-    );
-    const args = deferredStopArgs(parseContainerIds(stdout));
-    if (!args) return false;
-
-    await execFileAsync("docker", args, { timeout: COMPOSE_QUERY_TIMEOUT });
-    log(
-      `[deploy] ${activeSlot} stops in ${DEFERRED_STOP_DELAY_SECONDS}s — it is running this deploy`,
-    );
-    stoppedOldServices.push("__all__");
-    return true;
-  };
-
   const stopOldSlot = async () => {
     if (!oldSlotDir || !oldProjectName) return;
-    // Vardo deploying Vardo: the old slot holds the process writing this log.
-    if (isSelfApp(app.name)) {
-      try {
-        if (await deferStopOldSlot()) return;
-      } catch (err) {
-        log(`[deploy] Warning: could not defer the stop — ${err instanceof Error ? err.message : err}`);
-      }
-    }
     const oldComposeFileArgs = await getOldComposeFileArgs();
     log(`[deploy] Stopping old slot (${activeSlot})...`);
     try {
