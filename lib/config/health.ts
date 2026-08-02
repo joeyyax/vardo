@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import nextPkg from "next/package.json";
 import { getGitHubAppConfig } from "@/lib/system-settings";
+import { formatDuration } from "@/lib/ui/service-health";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -13,6 +14,12 @@ export type ServiceStatus = {
   status: "healthy" | "unhealthy" | "unconfigured";
   latencyMs?: number;
   error?: string;
+  /** ISO timestamp of the probe that produced this status. */
+  checkedAt: string;
+  /** Bound on the probe, so a slow service reads differently from a dead one. */
+  timeoutMs: number;
+  /** Logs page for the service, when the instance runs it as an app. */
+  logsHref?: string;
 };
 
 export type ResourceStatus = {
@@ -82,49 +89,208 @@ export function sanitizeError(message: string): string {
     .slice(0, MAX_ERROR_LENGTH);
 }
 
-async function checkService(
-  name: string,
-  description: string,
-  check: () => Promise<void>,
-): Promise<ServiceStatus> {
+/** `fetch` reports "fetch failed" and puts the reason on the cause. */
+function describeError(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  if (err.cause instanceof Error) return `${err.message}: ${err.cause.message}`;
+  return err.message;
+}
+
+function isTimeout(err: unknown): boolean {
+  return err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
+}
+
+/**
+ * What the operator reads on a failed probe. A probe that ran out its budget
+ * says so — "too slow" and "refused the connection" call for different work.
+ */
+export function probeErrorText(err: unknown, timeoutMs: number): string {
+  return isTimeout(err)
+    ? `Timed out after ${formatDuration(timeoutMs)}`
+    : sanitizeError(describeError(err));
+}
+
+type Probe = {
+  name: string;
+  description: string;
+  /** Rejects on failure. Timing and error shaping belong to the runner. */
+  run: (timeoutMs: number) => Promise<void>;
+  timeoutMs: number;
+  /** System-managed app carrying this service's logs. */
+  logsApp?: string;
+  /** Probed only when this resolves true. */
+  applies?: () => Promise<boolean>;
+};
+
+async function httpProbe(url: string, timeoutMs: number): Promise<void> {
+  const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+}
+
+export const SERVICE_PROBES: Probe[] = [
+  {
+    name: "PostgreSQL",
+    description: "Primary database",
+    timeoutMs: 5000,
+    run: async () => {
+      await db.execute(sql`SELECT 1`);
+    },
+  },
+  {
+    name: "Redis",
+    description: "Cache and time-series metrics",
+    timeoutMs: 2000,
+    run: async (timeoutMs) => {
+      const Redis = (await import("ioredis")).default;
+      const url = process.env.REDIS_URL || "redis://localhost:7200";
+      const redis = new Redis(url, { maxRetriesPerRequest: 1, connectTimeout: timeoutMs });
+      try {
+        await redis.ping();
+      } finally {
+        redis.disconnect();
+      }
+    },
+  },
+  {
+    name: "Docker",
+    description: "Container runtime",
+    timeoutMs: 5000,
+    run: async () => {
+      const { isDockerAvailable } = await import("@/lib/docker/client");
+      const ok = await isDockerAvailable();
+      if (!ok) throw new Error("unreachable");
+    },
+  },
+  {
+    name: "cAdvisor",
+    description: "Container metrics",
+    timeoutMs: 2000,
+    logsApp: "cadvisor",
+    run: (timeoutMs) =>
+      httpProbe(`${process.env.CADVISOR_URL || "http://localhost:7300"}/healthz`, timeoutMs),
+  },
+  {
+    name: "Loki",
+    description: "Log aggregation",
+    timeoutMs: 2000,
+    logsApp: "loki",
+    run: (timeoutMs) =>
+      httpProbe(`${process.env.LOKI_URL || "http://localhost:7400"}/ready`, timeoutMs),
+  },
+  {
+    name: "Traefik",
+    description: "Reverse proxy and SSL",
+    timeoutMs: 2000,
+    // Overridable: localhost is the frontend container itself, not the proxy.
+    run: (timeoutMs) =>
+      httpProbe(`${process.env.TRAEFIK_URL || "http://localhost:8080"}/api/overview`, timeoutMs),
+  },
+  {
+    name: "WireGuard",
+    description: "Mesh network tunnels",
+    timeoutMs: 5000,
+    applies: async () => {
+      const { isFeatureEnabledAsync } = await import("@/lib/config/features");
+      return isFeatureEnabledAsync("mesh");
+    },
+    run: async () => {
+      const { isWireguardRunning } = await import("@/lib/mesh/wireguard");
+      const running = await isWireguardRunning();
+      if (!running) throw new Error("not running");
+    },
+  },
+];
+
+/** Run one probe, bounding it at its own timeout. */
+async function runProbe(probe: Probe): Promise<ServiceStatus> {
   const start = Date.now();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const base = { name: probe.name, description: probe.description, timeoutMs: probe.timeoutMs };
+
+  // A probe that loses the race still settles later, so it keeps a handler.
+  const running = probe.run(probe.timeoutMs);
+  running.catch(() => {});
+
   try {
-    await check();
-    return { name, description, status: "healthy", latencyMs: Date.now() - start };
+    await Promise.race([
+      running,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          const err = new Error("timeout");
+          err.name = "TimeoutError";
+          reject(err);
+        }, probe.timeoutMs);
+      }),
+    ]);
+    return {
+      ...base,
+      status: "healthy",
+      latencyMs: Date.now() - start,
+      checkedAt: new Date().toISOString(),
+    };
   } catch (err) {
-    const raw = err instanceof Error ? err.message : String(err);
-    const error = sanitizeError(raw);
-    return { name, description, status: "unhealthy", latencyMs: Date.now() - start, error };
+    return {
+      ...base,
+      status: "unhealthy",
+      latencyMs: Date.now() - start,
+      checkedAt: new Date().toISOString(),
+      error: probeErrorText(err, probe.timeoutMs),
+    };
+  } finally {
+    clearTimeout(timer);
   }
 }
 
-async function checkLoki(): Promise<ServiceStatus> {
-  const url = process.env.LOKI_URL || "http://localhost:7400";
-  return checkService("Loki", "Log aggregation", async () => {
-    const res = await fetch(`${url}/ready`, { signal: AbortSignal.timeout(2000) });
-    if (!res.ok) throw new Error(`${res.status}`);
-  });
+/**
+ * Re-probe a single service by name. Returns null when the name is unknown or
+ * the service does not apply to this instance.
+ */
+export async function checkServiceByName(name: string): Promise<ServiceStatus | null> {
+  const probe = SERVICE_PROBES.find((p) => p.name.toLowerCase() === name.toLowerCase());
+  if (!probe) return null;
+  if (probe.applies && !(await probe.applies())) return null;
+
+  const [status, logsHrefs] = await Promise.all([runProbe(probe), resolveLogsHrefs()]);
+  return { ...status, logsHref: logsHrefs.get(probe.name) };
 }
 
-async function checkTraefik(): Promise<ServiceStatus> {
-  // Overridable: localhost is the frontend container itself, not the proxy.
-  const url = process.env.TRAEFIK_URL || "http://localhost:8080";
-  return checkService("Traefik", "Reverse proxy and SSL", async () => {
-    const res = await fetch(`${url}/api/overview`, { signal: AbortSignal.timeout(2000) });
-    if (!res.ok) throw new Error(`${res.status}`);
-  });
-}
+/**
+ * Logs pages for services Vardo runs as system-managed apps. The route resolves
+ * an app against the viewer's current org, so a link is only offered when the
+ * system org and the logs tab are both reachable.
+ */
+async function resolveLogsHrefs(): Promise<Map<string, string>> {
+  const hrefs = new Map<string, string>();
+  const slugs = SERVICE_PROBES.map((p) => p.logsApp).filter((s): s is string => !!s);
+  if (slugs.length === 0) return hrefs;
 
-async function checkWireguard(): Promise<ServiceStatus | null> {
-  const { isFeatureEnabledAsync } = await import("@/lib/config/features");
-  const meshEnabled = await isFeatureEnabledAsync("mesh");
-  if (!meshEnabled) return null;
+  try {
+    const { isFeatureEnabledAsync } = await import("@/lib/config/features");
+    const [logging, selfManagement] = await Promise.all([
+      isFeatureEnabledAsync("logging"),
+      isFeatureEnabledAsync("selfManagement"),
+    ]);
+    if (!logging || !selfManagement) return hrefs;
 
-  return checkService("WireGuard", "Mesh network tunnels", async () => {
-    const { isWireguardRunning } = await import("@/lib/mesh/wireguard");
-    const running = await isWireguardRunning();
-    if (!running) throw new Error("not running");
-  });
+    const { apps } = await import("@/lib/db/schema");
+    const { and, eq, inArray } = await import("drizzle-orm");
+    const rows = await db
+      .select({ name: apps.name })
+      .from(apps)
+      .where(and(inArray(apps.name, slugs), eq(apps.isSystemManaged, true)));
+
+    const present = new Set(rows.map((r) => r.name));
+    for (const probe of SERVICE_PROBES) {
+      if (probe.logsApp && present.has(probe.logsApp)) {
+        hrefs.set(probe.name, `/apps/${probe.logsApp}/logs`);
+      }
+    }
+  } catch {
+    // A missing logs link is not worth failing the health check over
+  }
+
+  return hrefs;
 }
 
 // ---------------------------------------------------------------------------
@@ -223,33 +389,15 @@ async function getResourceStatuses(): Promise<ResourceStatus[]> {
  * Check health of all infrastructure services, resource usage, and auth config.
  */
 export async function getSystemHealth(): Promise<SystemHealth> {
-  const [services, resources] = await Promise.all([
-    Promise.all([
-      checkService("PostgreSQL", "Primary database", async () => {
-        await db.execute(sql`SELECT 1`);
+  const [services, resources, logsHrefs] = await Promise.all([
+    Promise.all(
+      SERVICE_PROBES.map(async (probe) => {
+        if (probe.applies && !(await probe.applies())) return null;
+        return runProbe(probe);
       }),
-      checkService("Redis", "Cache and time-series metrics", async () => {
-        const Redis = (await import("ioredis")).default;
-        const url = process.env.REDIS_URL || "redis://localhost:7200";
-        const redis = new Redis(url, { maxRetriesPerRequest: 1, connectTimeout: 2000 });
-        await redis.ping();
-        redis.disconnect();
-      }),
-      checkService("Docker", "Container runtime", async () => {
-        const { isDockerAvailable } = await import("@/lib/docker/client");
-        const ok = await isDockerAvailable();
-        if (!ok) throw new Error("unreachable");
-      }),
-      checkService("cAdvisor", "Container metrics", async () => {
-        const url = process.env.CADVISOR_URL || "http://localhost:7300";
-        const res = await fetch(`${url}/healthz`, { signal: AbortSignal.timeout(2000) });
-        if (!res.ok) throw new Error(`${res.status}`);
-      }),
-      checkLoki(),
-      checkTraefik(),
-      checkWireguard(),
-    ]),
+    ),
     getResourceStatuses(),
+    resolveLogsHrefs(),
   ]);
 
   const githubConfig = await getGitHubAppConfig();
@@ -277,7 +425,9 @@ export async function getSystemHealth(): Promise<SystemHealth> {
   };
 
   return {
-    services: services.filter((s): s is ServiceStatus => s !== null),
+    services: services
+      .filter((s): s is ServiceStatus => s !== null)
+      .map((s) => ({ ...s, logsHref: logsHrefs.get(s.name) })),
     resources,
     runtime,
     auth,
