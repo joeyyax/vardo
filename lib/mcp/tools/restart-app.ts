@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { restartContainers, createDeployment } from "@/lib/docker/deploy";
+import { resolveDefaultEnv } from "@/lib/docker/resolve-env";
 import { slidingWindowRateLimit } from "@/lib/api/rate-limit";
 import type { McpAuthContext } from "../auth";
 
@@ -129,14 +130,15 @@ export function registerRestartApp(
       // Active app: restart in place. A decomposed child runs inside its
       // parent's compose project, so restart just that service from the parent's
       // slot directory rather than redeploying the whole stack.
-      let result: { success: boolean; log: string };
+      let ownerId = app.id;
+      let project = app.name;
       if (app.parentAppId) {
         const parent = await db.query.apps.findFirst({
           where: and(
             eq(apps.id, app.parentAppId),
             eq(apps.organizationId, context.organizationId)
           ),
-          columns: { name: true },
+          columns: { id: true, name: true },
         });
         if (!parent || !app.composeService) {
           return {
@@ -151,10 +153,18 @@ export function registerRestartApp(
             isError: true,
           };
         }
-        result = await restartContainers(parent.name, undefined, app.composeService);
-      } else {
-        result = await restartContainers(app.name);
+        ownerId = parent.id;
+        project = parent.name;
       }
+
+      // Slot directories and compose projects are environment-scoped; without
+      // the name this resolves to the legacy layout and finds nothing.
+      const env = await resolveDefaultEnv(ownerId);
+      const result = await restartContainers(
+        project,
+        env.name,
+        app.parentAppId ? app.composeService ?? undefined : undefined
+      );
 
       return {
         content: [
