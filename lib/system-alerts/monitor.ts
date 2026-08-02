@@ -67,11 +67,12 @@ async function checkServiceAlerts(health: Awaited<ReturnType<typeof getSystemHea
       if (service.status === "unhealthy") {
         unhealthyStreak.set(service.name, (unhealthyStreak.get(service.name) ?? 0) + 1);
       } else {
-        // Recovered: forget the alert so the next outage reads as new, and so
-        // the attention bar stops listing it.
-        if ((unhealthyStreak.get(service.name) ?? 0) > 0) {
-          clearFired("service-degraded", service.name);
-        }
+        // Healthy: forget any alert so the next outage reads as new and the
+        // attention bar stops listing it. Not gated on the in-memory streak —
+        // that starts empty every boot, which would strand an entry written
+        // before a restart. clearFired is a no-op when there is nothing to
+        // clear.
+        clearFired("service-degraded", service.name);
         unhealthyStreak.set(service.name, 0);
       }
 
