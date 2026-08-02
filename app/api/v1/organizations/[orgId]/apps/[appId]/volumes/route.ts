@@ -68,8 +68,10 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     });
     const savedByName = new Map(savedVolumes.map((v) => [v.name, v]));
 
-    // Get volumes from running containers
+    // Get volumes from running containers. A stack's services can share a
+    // mount, so each volume is listed once.
     const dockerVolumes: VolumeInfo[] = [];
+    const seenMounts = new Set<string>();
     try {
       const containers = await listContainers(app.name);
       for (const container of containers) {
@@ -77,6 +79,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
           const info = await inspectContainer(container.id);
           for (const mount of info.mounts) {
             const name = mount.type === "volume" ? resolveVolumeName(mount) : mount.source;
+            if (seenMounts.has(`${name}:${mount.destination}`)) continue;
+            seenMounts.add(`${name}:${mount.destination}`);
             const saved = savedByName.get(name);
             dockerVolumes.push({
               id: saved?.id ?? null,

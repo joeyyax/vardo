@@ -52,10 +52,15 @@ export function availableAppTabs(ctx: AppTabContext): AppTab[] {
       "deployments",
       "updates",
       "variables",
+      "networking",
       "compose",
       ...(f.logging ? (["logs"] as const) : []),
       ...(f.metrics ? (["metrics"] as const) : []),
+      "security",
+      "volumes",
       ...(f.backups ? (["backups"] as const) : []),
+      ...(f.terminal ? (["terminal"] as const) : []),
+      ...(ctx.isOrgAdmin ? (["debug"] as const) : []),
     ];
   }
   return [
