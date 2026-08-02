@@ -12,6 +12,7 @@ import {
   type ConditionInput,
   type ConditionStreaks,
 } from "./conditions";
+import { hasRuntimeConditions, withoutRuntimeConditions } from "./runtime-conditions";
 import { loadAdvisoryInputs, type AdvisoryInput } from "./condition-inputs";
 import {
   RESTART_WINDOW_MS,
@@ -157,6 +158,11 @@ export async function tickHealthMonitor(): Promise<void> {
 
   // Load the apps referenced by these containers once, keyed by id.
   const appIds = [...new Set(managed.map((c) => c.labels["vardo.project.id"]).filter(Boolean))];
+
+  // Apps with no containers are not evaluated below, so their last-written
+  // runtime conditions would stand forever.
+  await clearConditionsForContainerlessApps(appIds);
+
   if (appIds.length === 0) {
     cleanupState(seen);
     return;
@@ -373,6 +379,33 @@ function crashLoopSignal(
 /** One line on the first tick, so an evaluator that reads nothing is visible
  *  rather than indistinguishable from one that found nothing wrong. */
 let conditionsReported = false;
+
+/**
+ * Strip runtime conditions from apps this tick saw no containers for. Advisory
+ * conditions stay — a missing backup is still missing while an app is stopped.
+ */
+async function clearConditionsForContainerlessApps(seenAppIds: string[]): Promise<void> {
+  try {
+    const stale = await db.query.apps.findMany({
+      columns: { id: true, conditions: true },
+      where: (t, { and: andOp, isNotNull, notInArray }) =>
+        seenAppIds.length > 0
+          ? andOp(isNotNull(t.conditions), notInArray(t.id, seenAppIds))
+          : isNotNull(t.conditions),
+    });
+
+    for (const app of stale) {
+      if (!hasRuntimeConditions(app.conditions)) continue;
+      const kept = withoutRuntimeConditions(app.conditions);
+      await db
+        .update(appsTable)
+        .set({ conditions: kept.length > 0 ? kept : null })
+        .where(eq(appsTable.id, app.id));
+    }
+  } catch (err) {
+    log.error("Failed to clear stale conditions:", err instanceof Error ? err.message : err);
+  }
+}
 
 /** Evaluate and write conditions for every app the tick saw. */
 async function persistConditions(
