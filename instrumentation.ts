@@ -37,6 +37,15 @@ export async function register() {
       log.info("Encryption key configured");
     }
 
+    // Carry existing hook registrations onto the new hooks flag. Needs the
+    // encryption key, so it runs after the check above.
+    try {
+      const { backfillHooksFlag } = await import("./lib/hooks/backfill-flag");
+      await backfillHooksFlag();
+    } catch (err) {
+      log.error("Hooks flag backfill failed:", err);
+    }
+
     // Ensure backup target exists first (sequential dependency for scheduler)
     let backupTargetReady: Promise<void> | undefined;
     try {
