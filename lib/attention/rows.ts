@@ -9,6 +9,7 @@ import { defaultMemoryLimitMb, type QosTier } from "@/lib/docker/compose-inject"
 import { getCooldownUntil } from "@/lib/docker/image-updates/check";
 import { getAggregateUpdateStatus } from "@/lib/docker/image-updates/status";
 import { conditionRows, type AttentionRow } from "@/lib/ui/attention";
+import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { getVersionData } from "@/lib/version";
 import { getFleetAttention } from "./fleet";
 
@@ -72,6 +73,8 @@ export async function buildAttentionRows(
     })
     .from(apps)
     .where(and(eq(apps.organizationId, orgId), isNull(apps.parentAppId)));
+
+  const imageUpdatesEnabled = await isFeatureEnabledAsync("image-updates");
 
   const [fleet, updates, version, failedBackups] = await Promise.all([
     getFleetAttention(orgId),
@@ -140,7 +143,7 @@ export async function buildAttentionRows(
     });
   }
 
-  if (updates.appsWithUpdates.length > 0) {
+  if (imageUpdatesEnabled && updates.appsWithUpdates.length > 0) {
     const notes = ["Review the proposed version before applying it."];
     if (updates.unknownCount > 0) {
       notes.push(

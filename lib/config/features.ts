@@ -36,6 +36,7 @@ export type FeatureFlag =
   | "monitoring"
   | "error-tracking"
   | "hooks"
+  | "image-updates"
   | "teams"
   | "templates"
   | "activity"
@@ -198,6 +199,12 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
     description: "Discover Docker containers already running on the host and adopt them as Vardo apps.",
     group: "deployment",
   },
+  "image-updates": {
+    label: "Image updates",
+    description:
+      "Poll registries for newer image tags and surface what is available. Disabling stops the outbound checks; cached results are kept.",
+    group: "observability",
+  },
   digest: {
     label: "Weekly digest",
     description: "Emailed summary of deployments, failures and alerts from the past week.",
@@ -338,7 +345,7 @@ export function getFlagConfig(flag: FeatureFlag): FlagConfig {
  * Passed from server components to client components as a serializable object.
  */
 export type FeatureFlags = Record<
-  "terminal" | "cron" | "backups" | "errorTracking" | "metrics" | "logging" | "environments",
+  "terminal" | "cron" | "backups" | "errorTracking" | "metrics" | "logging" | "environments" | "imageUpdates",
   boolean
 >;
 
@@ -346,7 +353,7 @@ export type FeatureFlags = Record<
  * Get feature flags needed for UI tab gating.
  */
 export async function getFeatureFlags(): Promise<FeatureFlags> {
-  const [terminal, cron, backups, errorTracking, metrics, logging, environments] = await Promise.all([
+  const [terminal, cron, backups, errorTracking, metrics, logging, environments, imageUpdates] = await Promise.all([
     isFeatureEnabledAsync("terminal"),
     isFeatureEnabledAsync("cron"),
     isFeatureEnabledAsync("backups"),
@@ -354,8 +361,9 @@ export async function getFeatureFlags(): Promise<FeatureFlags> {
     isFeatureEnabledAsync("metrics"),
     isFeatureEnabledAsync("logging"),
     isFeatureEnabledAsync("environments"),
+    isFeatureEnabledAsync("image-updates"),
   ]);
-  return { terminal, cron, backups, errorTracking, metrics, logging, environments };
+  return { terminal, cron, backups, errorTracking, metrics, logging, environments, imageUpdates };
 }
 
 /** Every declared flag, in declaration order. */

@@ -1,3 +1,4 @@
+import { isFeatureEnabled } from "@/lib/config/features";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("image-updates");
@@ -41,6 +42,10 @@ export function startImageUpdateChecks(): void {
 }
 
 export async function registerImageUpdatesPlugin(): Promise<void> {
+  if (!isFeatureEnabled("image-updates")) {
+    log.info("Image updates disabled, skipping registration");
+    return;
+  }
   startImageUpdateChecks();
 }
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, eq, isNull } from "drizzle-orm";
 import { handleRouteError } from "@/lib/api/error-response";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { requirePlugin } from "@/lib/api/require-plugin";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
@@ -20,6 +21,9 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+    const gate = await requirePlugin("image-updates");
+    if (gate) return gate;
 
     // Parents own the compose; including children would double-count.
     const rows = await db
@@ -52,6 +56,9 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
   try {
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+    const gate = await requirePlugin("image-updates");
+    if (gate) return gate;
 
     const cooldownUntil = await getCooldownUntil();
     if (Date.now() < cooldownUntil) {
