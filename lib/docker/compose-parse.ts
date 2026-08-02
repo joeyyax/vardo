@@ -174,19 +174,15 @@ export function parseCompose(yamlString: string): ComposeFile {
     }
     if (Array.isArray(raw.tmpfs)) svc.tmpfs = raw.tmpfs.map(String);
     else if (typeof raw.tmpfs === "string") svc.tmpfs = [raw.tmpfs];
+    if (Array.isArray(raw.group_add)) svc.group_add = raw.group_add.map(String);
+
     // Carried through by hand — the field list above drops unknown keys, and
     // the deploy pipeline reads the blue/green opt-out off the parsed compose.
     if (typeof raw[SHARED_MARKER] === "boolean") svc[SHARED_MARKER] = raw[SHARED_MARKER];
 
-    if (Array.isArray(raw.group_add)) svc.group_add = raw.group_add.map(String);
-
-    // Parsing is an allowlist, so an extension field has to be named here or it
-    // is dropped between the user's YAML and the deploy.
-    if (raw["x-vardo-shared"] === true) svc["x-vardo-shared"] = true;
-
     // A fixed name can only belong to a service that is never duplicated, so
     // it rides along only with the shared marker. Blue and green would collide.
-    if (svc["x-vardo-shared"] && typeof raw.container_name === "string") {
+    if (svc[SHARED_MARKER] && typeof raw.container_name === "string") {
       svc.container_name = raw.container_name;
     }
 
