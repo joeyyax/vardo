@@ -8,6 +8,7 @@ import { deployGroup } from "@/lib/docker/deploy-group";
 import { createSSEResponse } from "@/lib/api/sse";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { refuseSystemManaged } from "@/lib/api/system-managed";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -27,12 +28,15 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
         eq(apps.id, appId),
         eq(apps.organizationId, orgId)
       ),
-      columns: { id: true, projectId: true, isSystemManaged: true },
+      columns: { id: true, name: true, projectId: true, isSystemManaged: true },
     });
 
     if (!app) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+
+    const refused = refuseSystemManaged(app, "deploy");
+    if (refused) return refused;
 
     // Parse optional environmentId, groupEnvironmentId, and deployAll flag from body
     let environmentId: string | undefined;

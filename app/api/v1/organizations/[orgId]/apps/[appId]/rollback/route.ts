@@ -11,6 +11,7 @@ import { decrypt, encrypt } from "@/lib/crypto/encrypt";
 import type { ConfigSnapshot } from "@/lib/types/deploy-snapshot";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { isOrgAdmin } from "@/lib/auth/permissions";
+import { refuseSystemManaged } from "@/lib/api/system-managed";
 
 const rollbackSchema = z.object({
   deploymentId: z.string().min(1, "deploymentId is required"),
@@ -77,12 +78,8 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
       return NextResponse.json({ error: "App not found" }, { status: 404 });
     }
 
-    if (app.isSystemManaged) {
-      return NextResponse.json(
-        { error: "System-managed apps cannot be rolled back via the API" },
-        { status: 403 }
-      );
-    }
+    const refused = refuseSystemManaged(app, "rollback");
+    if (refused) return refused;
 
     // Fetch the target deployment (the one we are rolling back to)
     const targetDeployment = await db.query.deployments.findFirst({

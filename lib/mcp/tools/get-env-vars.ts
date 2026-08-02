@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { decryptOrFallback, encrypt } from "@/lib/crypto/encrypt";
+import { systemManagedRefusal } from "@/lib/api/system-managed";
 import type { McpAuthContext } from "../auth";
 
 export function registerGetEnvVars(
@@ -22,7 +23,7 @@ export function registerGetEnvVars(
           eq(apps.id, appId),
           eq(apps.organizationId, context.organizationId)
         ),
-        columns: { id: true, envContent: true },
+        columns: { id: true, name: true, isSystemManaged: true, envContent: true },
       });
 
       if (!app) {
@@ -33,6 +34,14 @@ export function registerGetEnvVars(
               text: JSON.stringify({ error: "App not found or access denied" }),
             },
           ],
+          isError: true,
+        };
+      }
+
+      const refused = systemManagedRefusal(app, "env-vars");
+      if (refused) {
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: refused }) }],
           isError: true,
         };
       }

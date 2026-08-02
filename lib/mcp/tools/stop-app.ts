@@ -5,6 +5,7 @@ import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { stopProject } from "@/lib/docker/deploy";
 import { slidingWindowRateLimit } from "@/lib/api/rate-limit";
+import { systemManagedRefusal } from "@/lib/api/system-managed";
 import type { McpAuthContext } from "../auth";
 
 // 10 stops per 10 minutes per user/org pair.
@@ -47,7 +48,7 @@ export function registerStopApp(
           eq(apps.id, appId),
           eq(apps.organizationId, context.organizationId)
         ),
-        columns: { id: true, name: true },
+        columns: { id: true, name: true, isSystemManaged: true },
       });
 
       if (!app) {
@@ -58,6 +59,14 @@ export function registerStopApp(
               text: JSON.stringify({ error: "App not found or access denied" }),
             },
           ],
+          isError: true,
+        };
+      }
+
+      const refused = systemManagedRefusal(app, "stop");
+      if (refused) {
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: refused }) }],
           isError: true,
         };
       }
