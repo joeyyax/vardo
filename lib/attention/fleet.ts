@@ -26,11 +26,13 @@ export async function getFleetAttention(orgId: string, now = new Date()): Promis
 }
 
 async function loadUnreachableDomains(orgId: string): Promise<FleetAttention["unreachableDomains"]> {
+  // Only running apps. The monitor already skips the rest, so a retired app's
+  // final failed check would otherwise sit here forever with nothing to act on.
   const orgDomains = await db
     .select({ id: domains.id, domain: domains.domain, appName: apps.name })
     .from(domains)
     .leftJoin(apps, eq(apps.id, domains.appId))
-    .where(eq(apps.organizationId, orgId));
+    .where(and(eq(apps.organizationId, orgId), eq(apps.status, "active")));
 
   if (orgDomains.length === 0) return [];
 
