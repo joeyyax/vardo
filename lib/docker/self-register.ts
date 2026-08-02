@@ -18,10 +18,15 @@ import { nanoid } from "nanoid";
 import { db } from "@/lib/db";
 import { apps, deployments, projects } from "@/lib/db/schema";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
-import { parseCompose } from "@/lib/docker/compose";
+import {
+  parseCompose,
+  isTraefikSelfRouted,
+  TRAEFIK_MANUAL_LABEL,
+} from "@/lib/docker/compose";
 import { ensureVardoOrg } from "@/lib/infra/vardo-org";
 import { logger } from "@/lib/logger";
 import { VARDO_HOME_DIR, VARDO_CURRENT_DIR } from "@/lib/paths";
+import type { ComposeService } from "@/lib/docker/compose-types";
 
 const execFileAsync = promisify(execFile);
 
@@ -30,6 +35,9 @@ const log = logger.child("self-register");
 // Fallback when the running checkout has no readable git remote. Must stay in
 // the format getSystemManagedApp() matches: https host, no .git suffix.
 const DEFAULT_REPO_URL = "https://github.com/joeyyax/vardo";
+
+/** Compose service serving the dashboard. */
+const FRONTEND_SERVICE = "frontend";
 
 /** Port the frontend service listens on. */
 const FRONTEND_PORT = 3000;
@@ -42,6 +50,20 @@ const INFRA_SERVICES = new Set([
   "traefik",
   "wireguard",
 ]);
+
+/**
+ * Warn when the frontend has not claimed its own Traefik labels.
+ *
+ * Its host, fallback, unknown-host and /_next routers are hand-written. Without
+ * the marker a deploy would strip them and generate a single host router from
+ * the app's domains, so IP access and the unknown-host page would stop working.
+ */
+function warnIfRoutingIsReplaceable(frontend: ComposeService | undefined): void {
+  if (!frontend || isTraefikSelfRouted(frontend)) return;
+  log.warn(
+    `${FRONTEND_SERVICE} is missing the ${TRAEFIK_MANUAL_LABEL}="manual" label — a deploy would replace its hand-written Traefik routers`,
+  );
+}
 
 /**
  * Ensure Vardo is registered as a managed project in the database.
@@ -79,6 +101,8 @@ export async function ensureVardoProject(): Promise<void> {
   const composePath = join(vardoDir, "docker-compose.yml");
   const composeContent = await readFile(composePath, "utf-8");
   const compose = parseCompose(composeContent);
+
+  warnIfRoutingIsReplaceable(compose.services[FRONTEND_SERVICE]);
 
   const org = await ensureVardoOrg();
   if (!org) {
