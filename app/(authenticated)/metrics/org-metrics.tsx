@@ -668,7 +668,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
           <Button size="sm" asChild>
             <Link href="/projects">
               <Box className="mr-1.5 size-4" />
-              Go to Projects
+              Go to projects
             </Link>
           </Button>
         </div>
