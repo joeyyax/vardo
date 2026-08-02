@@ -26,6 +26,7 @@ import {
 } from "../constants";
 import type { DeployContext } from "../deploy-context";
 import { detectActiveSlot } from "../slots";
+import { crossBoundaryVolumeName, volumesByOwner } from "../shared-volumes";
 
 const execFileAsync = promisify(execFile);
 const NETWORK_NAME = VARDO_NETWORK;
@@ -113,10 +114,16 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
   ctx.stableVolumePrefix = stableVolumePrefix;
   if (compose.volumes && Object.keys(compose.volumes).length > 0) {
     const externalized: string[] = [];
+    // Volumes belonging only to non-rotating services keep compose-native
+    // naming, so a pinned shared project still finds the data it created.
+    const { sharedOnly, crossBoundary } = volumesByOwner(compose);
 
     for (const volName of Object.keys(compose.volumes)) {
       if (isAnonymousVolume(volName)) continue;
-      const stableName = `${stableVolumePrefix}_${volName}`;
+      if (sharedOnly.has(volName)) continue;
+      const stableName = crossBoundary.has(volName)
+        ? crossBoundaryVolumeName(compose, volName, stableVolumePrefix)
+        : `${stableVolumePrefix}_${volName}`;
 
       try {
         await execFileAsync("docker", ["volume", "create", stableName], { timeout: VOLUME_CREATE_TIMEOUT });

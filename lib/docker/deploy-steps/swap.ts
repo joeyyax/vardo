@@ -157,7 +157,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   const { shared, slotted } = partitionBySlot(compose);
   const sharedNames = Object.keys(shared);
   const slottedNames = Object.keys(slotted);
-  const sharedProject = sharedProjectName(app.name, ctx.envName);
+  const sharedProject = sharedProjectName(app.name, ctx.envName, compose.name);
 
   const onlySlotted = slotScopeArgs({ shared, slotted });
 

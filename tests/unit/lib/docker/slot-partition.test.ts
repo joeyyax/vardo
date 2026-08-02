@@ -158,3 +158,22 @@ describe("sharedProjectName", () => {
     expect(slots).not.toContain(sharedProjectName("shop", "production"));
   });
 });
+
+describe("sharedProjectName with a pinned compose name", () => {
+  it("uses the compose name in the app's own environment, so a running stack keeps its project", () => {
+    expect(sharedProjectName("vardo", "production", "vardo")).toBe("vardo");
+  });
+
+  it("ignores the pin for a preview, which must not join production's database", () => {
+    expect(sharedProjectName("vardo", "pr-42", "vardo")).toBe("vardo-pr-42-shared");
+  });
+
+  it("falls back to the generated name when the compose declares none", () => {
+    expect(sharedProjectName("shop", "production")).toBe("shop-production-shared");
+    expect(sharedProjectName("shop", "production", "")).toBe("shop-production-shared");
+  });
+
+  it("honors the pin in a non-production environment that is not a preview", () => {
+    expect(sharedProjectName("vardo", "staging", "vardo")).toBe("vardo");
+  });
+});

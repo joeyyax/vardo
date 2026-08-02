@@ -109,6 +109,8 @@ export type ComposeService = {
 };
 
 export type ComposeFile = {
+  /** Top-level `name:`. Pins the shared project — see lib/docker/slot-partition.ts. */
+  name?: string;
   services: Record<string, ComposeService>;
   networks?: Record<string, unknown>;
   volumes?: Record<string, unknown>;
