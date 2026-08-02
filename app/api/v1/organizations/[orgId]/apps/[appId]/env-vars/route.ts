@@ -6,6 +6,7 @@ import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { verifyAppAccess } from "@/lib/api/verify-access";
 import { encrypt, decryptOrFallback } from "@/lib/crypto/encrypt";
+import { refuseSystemManaged } from "@/lib/api/system-managed";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -23,12 +24,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    if (app.isSystemManaged) {
-      return NextResponse.json(
-        { error: "Env vars for system-managed apps cannot be accessed via the API" },
-        { status: 403 }
-      );
-    }
+    const refused = refuseSystemManaged(app, "env-vars");
+    if (refused) return refused;
 
     const reveal = request.nextUrl.searchParams.get("reveal") === "true";
 
@@ -88,12 +85,8 @@ async function handlePut(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    if (app.isSystemManaged) {
-      return NextResponse.json(
-        { error: "Env vars for system-managed apps cannot be modified via the API" },
-        { status: 403 }
-      );
-    }
+    const refused = refuseSystemManaged(app, "env-vars");
+    if (refused) return refused;
 
     const body = await request.json();
     const parsed = putSchema.safeParse(body);

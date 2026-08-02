@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { slidingWindowRateLimit } from "@/lib/api/rate-limit";
+import { systemManagedRefusal } from "@/lib/api/system-managed";
 import type { McpAuthContext } from "../auth";
 
 // 10 updates per 5 minutes per user/org pair.
@@ -69,10 +70,9 @@ export function registerUpdateApp(
         };
       }
 
-      // Verify app exists, belongs to org, and is not system-managed
       const existingApp = await db.query.apps.findFirst({
         where: and(eq(apps.id, appId), eq(apps.organizationId, context.organizationId)),
-        columns: { id: true },
+        columns: { id: true, name: true, isSystemManaged: true },
       });
 
       if (!existingApp) {
@@ -83,6 +83,14 @@ export function registerUpdateApp(
               text: JSON.stringify({ error: "App not found or access denied" }),
             },
           ],
+          isError: true,
+        };
+      }
+
+      const refused = systemManagedRefusal(existingApp, "edit");
+      if (refused) {
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: refused }) }],
           isError: true,
         };
       }

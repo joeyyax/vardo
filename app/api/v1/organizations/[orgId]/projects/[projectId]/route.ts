@@ -5,6 +5,7 @@ import { projects, apps } from "@/lib/db/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { z } from "zod";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { refuseSystemManaged } from "@/lib/api/system-managed";
 import { isOrgAdmin } from "@/lib/auth/permissions";
 import { logger } from "@/lib/logger";
 import { recordActivity } from "@/lib/activity";
@@ -121,12 +122,8 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
 
-    if (existing.isSystemManaged) {
-      return NextResponse.json(
-        { error: "System-managed projects cannot be modified via the API" },
-        { status: 403 }
-      );
-    }
+    const refused = refuseSystemManaged(existing, "edit");
+    if (refused) return refused;
 
     // Check for name conflicts when renaming
     if (parsed.data.name && parsed.data.name !== existing.name) {
@@ -206,12 +203,8 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
 
-    if (existing.isSystemManaged) {
-      return NextResponse.json(
-        { error: "System-managed projects cannot be deleted via the API" },
-        { status: 403 }
-      );
-    }
+    const refused = refuseSystemManaged(existing, "delete");
+    if (refused) return refused;
 
     // Block deletion when apps still exist in this project
     const appCount = await db
