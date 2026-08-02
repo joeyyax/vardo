@@ -5,6 +5,7 @@ import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { recreateProject } from "@/lib/docker/deploy";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { refuseSystemManaged } from "@/lib/api/system-managed";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -27,12 +28,8 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    if (app.isSystemManaged) {
-      return NextResponse.json(
-        { error: "System-managed apps cannot be recreated via the API" },
-        { status: 403 }
-      );
-    }
+    const refused = refuseSystemManaged(app, "recreate");
+    if (refused) return refused;
 
     const result = await recreateProject(appId, app.name);
     return NextResponse.json(result);

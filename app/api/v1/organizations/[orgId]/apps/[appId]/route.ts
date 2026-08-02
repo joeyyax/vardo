@@ -8,6 +8,7 @@ import { stopProject } from "@/lib/docker/deploy";
 import { recordActivity } from "@/lib/activity";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { isOrgAdmin } from "@/lib/auth/permissions";
+import { refuseSystemManaged } from "@/lib/api/system-managed";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -111,20 +112,16 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Verify the app exists and check isSystemManaged before updating
     const existingApp = await db.query.apps.findFirst({
       where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
-      columns: { id: true, projectId: true, isSystemManaged: true, composeContent: true },
+      columns: { id: true, name: true, projectId: true, isSystemManaged: true, composeContent: true },
     });
     if (!existingApp) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-    if (existingApp.isSystemManaged) {
-      return NextResponse.json(
-        { error: "System-managed apps cannot be modified via the API" },
-        { status: 403 }
-      );
-    }
+
+    const refused = refuseSystemManaged(existingApp, "edit");
+    if (refused) return refused;
 
     // Validate projectId changes — must belong to same org
     let oldProjectId: string | null = null;
@@ -211,12 +208,8 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    if (app.isSystemManaged) {
-      return NextResponse.json(
-        { error: "System-managed apps cannot be deleted via the API" },
-        { status: 403 }
-      );
-    }
+    const refused = refuseSystemManaged(app, "delete");
+    if (refused) return refused;
 
     // A decomposed compose child is managed by its parent stack — refuse
     // independent deletes (the compose declares it; a deploy would recreate it).

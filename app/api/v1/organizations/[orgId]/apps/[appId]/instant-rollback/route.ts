@@ -6,6 +6,7 @@ import { eq, and } from "drizzle-orm";
 import { resolveDefaultEnv } from "@/lib/docker/resolve-env";
 import { performInstantRollback } from "@/lib/docker/instant-rollback";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { refuseSystemManaged } from "@/lib/api/system-managed";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 async function handler(request: NextRequest, { params }: { params: Promise<{ orgId: string; appId: string }> }) {
@@ -22,9 +23,8 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
 
     if (!app) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    if (app.isSystemManaged) {
-      return NextResponse.json({ error: "System-managed apps cannot be rolled back" }, { status: 403 });
-    }
+    const refused = refuseSystemManaged(app, "rollback");
+    if (refused) return refused;
 
     const env = await resolveDefaultEnv(appId);
 
