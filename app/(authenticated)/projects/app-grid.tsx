@@ -511,11 +511,13 @@ export function AppGrid({
         </div>
       )}
 
-      {/* One project per row. Apps list one per row inside, so a full-width
-          card keeps names, status words and badges on one line. */}
-      <div className="space-y-4">
+      {/* Multi-column, not grid: app counts range from one to a dozen, and grid
+          rows take the taller card's height, leaving a void under the shorter
+          one. Column width drives the count, so a two-project install still
+          fills the row. */}
+      <div className="columns-[25rem] gap-4">
         {projectCards.map(({ project, apps: projectApps }) => (
-          <div key={project.id}>
+          <div key={project.id} className="mb-4 break-inside-avoid">
             <ProjectCard
               project={project}
               projectApps={projectApps}
