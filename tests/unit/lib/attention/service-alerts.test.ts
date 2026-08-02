@@ -17,24 +17,24 @@ describe("selectActiveServiceAlerts", () => {
     expect(active.map((a) => a.name)).toEqual(["Loki"]);
   });
 
-  // Nothing clears the ledger on recovery, so a stale entry is a recovered
-  // service, not a down one.
-  it("drops an entry older than the staleness window", () => {
+  // Recovery clears the entry, so an hours-old entry is a service still down.
+  it("keeps an entry from earlier in an ongoing outage", () => {
     const active = selectActiveServiceAlerts(
-      { "service-degraded:Loki": { lastFired: minutesAgo(120), count: 9000 } },
+      { "service-degraded:Loki": { lastFired: minutesAgo(120), count: 2 } },
       NOW,
     );
-    expect(active).toEqual([]);
+    expect(active.map((a) => a.name)).toEqual(["Loki"]);
   });
 
-  // A service still down re-fires every 15 minutes; 20 tolerates one late cycle.
+  // The window only catches a monitor that died mid-outage. A live outage
+  // re-alerts daily, so the guard has to outlast that.
   it("keeps an alert just inside the window and drops one just outside", () => {
     const inside = selectActiveServiceAlerts(
-      { "service-degraded:Loki": { lastFired: minutesAgo(19), count: 5 } },
+      { "service-degraded:Loki": { lastFired: minutesAgo(25 * 60), count: 5 } },
       NOW,
     );
     const outside = selectActiveServiceAlerts(
-      { "service-degraded:Loki": { lastFired: minutesAgo(21), count: 5 } },
+      { "service-degraded:Loki": { lastFired: minutesAgo(27 * 60), count: 5 } },
       NOW,
     );
     expect(inside.map((a) => a.name)).toEqual(["Loki"]);

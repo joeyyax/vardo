@@ -1,7 +1,7 @@
 import { getSystemHealth } from "@/lib/config/health";
 import { emit } from "@/lib/notifications/dispatch";
 import type { BusEvent } from "@/lib/bus";
-import { shouldFire, markFired, loadAlertState } from "./state";
+import { shouldFire, markFired, clearFired, loadAlertState } from "./state";
 import { db } from "@/lib/db";
 import { domainCertChecks, systemSettings } from "@/lib/db/schema";
 import { sql } from "drizzle-orm";
@@ -67,6 +67,11 @@ async function checkServiceAlerts(health: Awaited<ReturnType<typeof getSystemHea
       if (service.status === "unhealthy") {
         unhealthyStreak.set(service.name, (unhealthyStreak.get(service.name) ?? 0) + 1);
       } else {
+        // Recovered: forget the alert so the next outage reads as new, and so
+        // the attention bar stops listing it.
+        if ((unhealthyStreak.get(service.name) ?? 0) > 0) {
+          clearFired("service-degraded", service.name);
+        }
         unhealthyStreak.set(service.name, 0);
       }
 
@@ -81,7 +86,7 @@ async function checkServiceAlerts(health: Awaited<ReturnType<typeof getSystemHea
         await emitAll({
           type: "system.service-down",
           title: `Service degraded: ${service.name}`,
-          message: `${service.name} (${service.description}) is no longer responding. Check system health for details.`,
+          message: `${service.name} (${service.description}) is no longer responding.`,
           service: service.name,
           description: service.description,
           latencyMs: service.latencyMs?.toString() ?? "",
