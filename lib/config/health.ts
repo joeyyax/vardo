@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import nextPkg from "next/package.json";
-import { getGitHubAppConfig } from "@/lib/system-settings";
+import { getAuthMethodStates } from "@/lib/config/auth-methods";
 import { formatDuration } from "@/lib/ui/service-health";
 
 // ---------------------------------------------------------------------------
@@ -436,13 +436,13 @@ export async function getSystemHealth(): Promise<SystemHealth> {
     resolveLogsHrefs(),
   ]);
 
-  const githubConfig = await getGitHubAppConfig();
+  const methods = await getAuthMethodStates();
   const auth: AuthConfig = {
-    passkeys: true,
-    magicLink: true,
-    github: !!(githubConfig?.clientId && githubConfig?.clientSecret),
-    passwords: false,
-    twoFactor: true,
+    passkeys: methods.passkey,
+    magicLink: methods["magic-link"],
+    github: methods.github,
+    passwords: methods.password,
+    twoFactor: methods.totp,
   };
 
   const mem = process.memoryUsage();
