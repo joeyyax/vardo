@@ -14,6 +14,7 @@ import {
   injectNetwork,
   composeToYaml,
   excludeServices,
+  sharedMarkerTypeErrors,
 } from "@/lib/docker/compose";
 import type { ComposeFile } from "@/lib/docker/compose";
 import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
@@ -97,6 +98,16 @@ async function handler(request: NextRequest, { params }: RouteParams) {
           appId: existingBySlug.id,
         },
         { status: 409 }
+      );
+    }
+
+    // The marker survives the parse only as a boolean, and this route stores
+    // the re-serialized compose — a quoted one would vanish without a trace.
+    const markerErrors = sharedMarkerTypeErrors(data.composeContent);
+    if (markerErrors.length > 0) {
+      return NextResponse.json(
+        { error: markerErrors.join("\n"), errors: markerErrors },
+        { status: 400 }
       );
     }
 

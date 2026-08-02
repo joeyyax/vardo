@@ -7,6 +7,7 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { generateSubdomain } from "@/lib/domain-monitoring/auto-domain";
 import { allocatePorts } from "@/lib/docker/ports";
+import { sharedMarkerTypeErrors } from "@/lib/docker/compose";
 import { recordActivity } from "@/lib/activity";
 import { isReservedSlug } from "@/lib/domain-monitoring/reserved";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
@@ -133,6 +134,16 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     }
 
     const data = parsed.data;
+
+    // A quoted x-vardo-shared is dropped by the parser, so it has to be caught
+    // against the raw YAML — before the compose is stored.
+    const markerErrors = sharedMarkerTypeErrors(data.composeContent ?? "");
+    if (markerErrors.length > 0) {
+      return NextResponse.json(
+        { error: markerErrors.join("\n"), errors: markerErrors },
+        { status: 400 }
+      );
+    }
 
     // Check reserved slugs — only when generating a subdomain on our base domain
     if (data.generateDomain && isReservedSlug(data.name)) {
