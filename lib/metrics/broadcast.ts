@@ -55,6 +55,18 @@ export function getLatestSnapshot(): ContainerMetrics[] | null {
   return latestMetrics;
 }
 
+/**
+ * Publish a snapshot fetched elsewhere.
+ *
+ * The broadcast loop only runs while something is subscribed, so on an instance
+ * with no metrics stream open the snapshot stayed null and the admin overview
+ * reported the whole host at zero. The collector tick fetches the same data on
+ * its own schedule and hands it over here.
+ */
+export function setLatestSnapshot(metrics: ContainerMetrics[]): void {
+  latestMetrics = metrics;
+}
+
 function startPolling() {
   if (timer) return;
   poll(); // immediate first poll

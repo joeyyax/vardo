@@ -6,6 +6,7 @@ import { checkDiskWriteAlerts } from "./disk-write-alerts";
 import { getSystemDiskUsage, getPerProjectDiskUsage } from "@/lib/docker/client";
 import { collectBusinessMetrics } from "./collect-business-metrics";
 import { initGpuCollector, getGpuCollector, setGpuSnapshot } from "@/lib/gpu/collector";
+import { setLatestSnapshot } from "./broadcast";
 
 const log = logger.child("collector");
 
@@ -81,6 +82,7 @@ async function collect() {
   let metrics: Awaited<ReturnType<typeof fetchAllMetrics>> = [];
   try {
     metrics = await fetchAllMetrics();
+    setLatestSnapshot(metrics);
     const results = await Promise.allSettled(
       metrics.flatMap((m) => {
         const ops = [
