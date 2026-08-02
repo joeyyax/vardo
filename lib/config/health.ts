@@ -344,39 +344,33 @@ async function getResourceStatuses(): Promise<ResourceStatus[]> {
 
   try {
     const { getSystemInfo } = await import("@/lib/docker/client");
-    const { getLatestSnapshot } = await import("@/lib/metrics/broadcast");
+    const { getFleetTotals } = await import("@/lib/metrics/fleet-totals");
 
-    // Use cached metrics snapshot (no cAdvisor call) + system info (fast, ~20ms)
-    const [systemInfo, metrics] = await Promise.all([
+    // Both cards need a real sample. Without one they are omitted rather than
+    // rendered at zero — an idle fleet and an unmeasured one look identical.
+    const [systemInfo, totals] = await Promise.all([
       getSystemInfo().catch(() => null),
-      Promise.resolve(getLatestSnapshot() || []),
+      getFleetTotals().catch(() => null),
     ]);
 
-    // CPU — aggregate across all containers
-    if (systemInfo && metrics.length > 0) {
-      const totalCpu = metrics.reduce((s, m) => s + m.cpuPercent, 0);
+    if (systemInfo && totals) {
       const maxCpu = systemInfo.cpus * 100;
-      const cpuPercent = maxCpu > 0 ? (totalCpu / maxCpu) * 100 : 0;
+      const cpuPercent = maxCpu > 0 ? (totals.cpuPercent / maxCpu) * 100 : 0;
       resources.push({
         name: "CPU",
-        current: Math.round(totalCpu * 100) / 100,
+        current: Math.round(totals.cpuPercent * 100) / 100,
         total: maxCpu,
         percent: Math.round(cpuPercent * 10) / 10,
         unit: "%",
         status: resourceStatus(cpuPercent, THRESHOLDS.cpu),
       });
-    }
 
-    // Memory. Gated on a sample like CPU is: the snapshot is empty for the first
-    // interval after a restart, and summing nothing reported "0 B / 24 GB".
-    if (systemInfo && metrics.length > 0) {
-      const totalMemUsed = metrics.reduce((s, m) => s + m.memoryUsage, 0);
       const memPercent = systemInfo.memoryTotal > 0
-        ? (totalMemUsed / systemInfo.memoryTotal) * 100
+        ? (totals.memoryBytes / systemInfo.memoryTotal) * 100
         : 0;
       resources.push({
         name: "Memory",
-        current: totalMemUsed,
+        current: totals.memoryBytes,
         total: systemInfo.memoryTotal,
         percent: Math.round(memPercent * 10) / 10,
         unit: "bytes",
