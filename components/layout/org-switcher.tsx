@@ -32,6 +32,7 @@ type OrgSwitcherProps = {
   collapsed?: boolean;
 };
 
+/** Renders nothing when the teams flag is off — callers gate on it. */
 export function OrgSwitcher({ currentOrgId, organizations: initialOrganizations, collapsed }: OrgSwitcherProps) {
   const router = useRouter();
   const [organizations, setOrganizations] = useState<Organization[]>(initialOrganizations || []);

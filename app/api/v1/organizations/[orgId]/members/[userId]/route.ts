@@ -5,6 +5,7 @@ import { memberships } from "@/lib/db/schema";
 import { requireOrgAdmin } from "@/lib/auth/permissions";
 import { eq, and } from "drizzle-orm";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { requirePlugin } from "@/lib/api/require-plugin";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -18,6 +19,9 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     const { orgId, userId } = await params;
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+    const gate = await requirePlugin("teams");
+    if (gate) return gate;
 
     requireOrgAdmin(org.membership.role);
 
@@ -76,6 +80,9 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
     const { orgId, userId } = await params;
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+    const gate = await requirePlugin("teams");
+    if (gate) return gate;
 
     requireOrgAdmin(org.membership.role);
 

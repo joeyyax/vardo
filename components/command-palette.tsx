@@ -39,6 +39,8 @@ import { AppIcon } from "@/components/app-status";
 
 type CommandPaletteProps = {
   orgId: string | null;
+  teamsEnabled?: boolean;
+  activityEnabled?: boolean;
 };
 
 const OPEN_EVENT = "vardo:open-command-palette";
@@ -101,7 +103,7 @@ function byRelevance<T>(items: T[], search: string, fields: (item: T) => [string
   });
 }
 
-export function CommandPalette({ orgId }: CommandPaletteProps) {
+export function CommandPalette({ orgId, teamsEnabled = true, activityEnabled = true }: CommandPaletteProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [apps, setApps] = useState<SearchableApp[]>([]);
@@ -282,22 +284,26 @@ export function CommandPalette({ orgId }: CommandPaletteProps) {
                 <Archive className="size-4" />
                 <span>Backups</span>
               </CommandItem>
-              <CommandItem
-                value="Activity Log"
-                onSelect={() => runCommand(() => router.push("/activity"))}
-                className="gap-2"
-              >
-                <Activity className="size-4" />
-                <span>Activity</span>
-              </CommandItem>
-              <CommandItem
-                value="Team Members"
-                onSelect={() => runCommand(() => router.push("/settings/team"))}
-                className="gap-2"
-              >
-                <Users className="size-4" />
-                <span>Team</span>
-              </CommandItem>
+              {activityEnabled && (
+                <CommandItem
+                  value="Activity Log"
+                  onSelect={() => runCommand(() => router.push("/activity"))}
+                  className="gap-2"
+                >
+                  <Activity className="size-4" />
+                  <span>Activity</span>
+                </CommandItem>
+              )}
+              {teamsEnabled && (
+                <CommandItem
+                  value="Team Members"
+                  onSelect={() => runCommand(() => router.push("/settings/team"))}
+                  className="gap-2"
+                >
+                  <Users className="size-4" />
+                  <span>Team</span>
+                </CommandItem>
+              )}
               <CommandItem
                 value="Settings Organization"
                 onSelect={() => runCommand(() => router.push("/settings"))}
