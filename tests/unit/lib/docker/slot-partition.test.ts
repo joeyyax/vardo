@@ -6,6 +6,7 @@ import {
   hasSharedServices,
   isSharedService,
   partitionBySlot,
+  sharedProjectName,
   slotScopeArgs,
 } from "@/lib/docker/slot-partition";
 import type { ComposeFile, ComposeService } from "@/lib/docker/compose-types";
@@ -142,5 +143,18 @@ describe("slotScopeArgs", () => {
   it("never names a shared service, which belongs to the other project", () => {
     const partition = partitionBySlot(file({ web: {}, postgres: { [SHARED_MARKER]: true } }));
     expect(slotScopeArgs(partition)).not.toContain("postgres");
+  });
+});
+
+describe("sharedProjectName", () => {
+  it("scopes by environment so a preview never joins production's database", () => {
+    expect(sharedProjectName("shop", "production")).toBe("shop-production-shared");
+    expect(sharedProjectName("shop", "pr-42")).toBe("shop-pr-42-shared");
+    expect(sharedProjectName("shop", "pr-42")).not.toBe(sharedProjectName("shop", "production"));
+  });
+
+  it("never collides with a slot project name", () => {
+    const slots = ["shop-production-blue", "shop-production-green"];
+    expect(slots).not.toContain(sharedProjectName("shop", "production"));
   });
 });
