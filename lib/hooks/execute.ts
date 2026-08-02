@@ -14,6 +14,7 @@ import { createHmac } from "crypto";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { getHooksForEvent, getInternalHandler } from "./registry";
+import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { addDeployLog } from "@/lib/stream/producer";
 import type {
   HookResult,
@@ -50,6 +51,8 @@ function buildScriptEnv(context: HookContext): NodeJS.ProcessEnv {
  * action should proceed.
  *
  * Optionally writes hook status to a deploy stream for UI visibility.
+ *
+ * Returns allowed with no results when the hooks feature is off.
  */
 export async function executeHooks(
   event: string,
@@ -61,6 +64,10 @@ export async function executeHooks(
     deployId?: string;
   },
 ): Promise<HookExecutionResult> {
+  if (!(await isFeatureEnabledAsync("hooks"))) {
+    return { allowed: true, results: [] };
+  }
+
   const hooks = await getHooksForEvent(event, {
     organizationId: opts?.organizationId,
     appId: opts?.appId,

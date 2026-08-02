@@ -25,7 +25,8 @@ type SessionResult = Awaited<ReturnType<typeof auth.api.getSession>> & AuthMeta;
  * Get the current session on the server.
  *
  * Resolution order:
- *  1. `Authorization: Bearer <token>` header — resolves to the token owner's session
+ *  1. `Authorization: Bearer <token>` header — resolves to the token owner's session,
+ *     and only when the api-tokens feature is enabled
  *  2. Session cookie via Better Auth
  *
  * Returns null if not authenticated.
@@ -35,7 +36,7 @@ export const getSession = cache(async (): Promise<SessionResult | null> => {
 
   // Check for Bearer token first (API token auth)
   const authHeader = reqHeaders.get("authorization");
-  if (authHeader?.startsWith("Bearer ")) {
+  if (authHeader?.startsWith("Bearer ") && (await isFeatureEnabledAsync("api-tokens"))) {
     const rawToken = authHeader.slice(7).trim();
     if (rawToken) {
       const tokenHash = createHash("sha256").update(rawToken).digest("hex");

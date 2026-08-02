@@ -50,6 +50,11 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    if (parsed.data.type === "preview") {
+      const previewGate = await requirePlugin("previews");
+      if (previewGate) return previewGate;
+    }
+
     // Get the source environment
     const sourceEnv = await db.query.environments.findFirst({
       where: and(
