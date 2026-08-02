@@ -6,6 +6,7 @@ import { eq, and, asc, desc, or, type AnyColumn } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { AppDetail } from "./app-detail";
 import { getFeatureFlags } from "@/lib/config/features";
+import { sharedServiceNames } from "@/lib/docker/compose";
 
 import { isOrgAdmin } from "@/lib/auth/permissions";
 import {
@@ -252,6 +253,13 @@ export default async function AppDetailPage({ params }: PageProps) {
   };
   const effectiveTab = resolveAppTab(tab, tabContext);
 
+  // Which services a deploy leaves running, for the Services tab to mark.
+  const shared = new Set(app.composeContent ? sharedServiceNames(app.composeContent) : []);
+  const childApps = app.childApps?.map((child) => ({
+    ...child,
+    isShared: shared.has(child.composeService ?? child.name),
+  }));
+
   // Fell back to the default — put that in the URL.
   if (tab && tab !== effectiveTab) {
     const envPath = envSegment ? `/${envSegment}` : "";
@@ -261,7 +269,7 @@ export default async function AppDetailPage({ params }: PageProps) {
 
   return (
     <AppDetail
-      app={app}
+      app={{ ...app, childApps }}
       orgId={orgId}
       userRole={orgData.membership.role}
       allTags={allTags}

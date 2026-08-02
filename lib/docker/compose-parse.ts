@@ -14,6 +14,7 @@ import {
   ALLOWED_RUNTIMES,
   normalizeNamedNetworkModes,
 } from "./compose-validate";
+import { SHARED_MARKER } from "./slot-partition";
 
 /**
  * Serialize a ComposeFile to a YAML string.
@@ -173,6 +174,9 @@ export function parseCompose(yamlString: string): ComposeFile {
     }
     if (Array.isArray(raw.tmpfs)) svc.tmpfs = raw.tmpfs.map(String);
     else if (typeof raw.tmpfs === "string") svc.tmpfs = [raw.tmpfs];
+    // Carried through by hand — the field list above drops unknown keys, and
+    // the deploy pipeline reads the blue/green opt-out off the parsed compose.
+    if (typeof raw[SHARED_MARKER] === "boolean") svc[SHARED_MARKER] = raw[SHARED_MARKER];
 
     if (Array.isArray(raw.group_add)) svc.group_add = raw.group_add.map(String);
 

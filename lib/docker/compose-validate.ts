@@ -5,6 +5,10 @@
 import { resolve } from "path";
 import YAML from "yaml";
 import type { ComposeFile, ComposeService, ValidateOptions } from "./compose-types";
+import { dependsOnKeys } from "./compose-types";
+import { SHARED_MARKER, isSharedService } from "./slot-partition";
+import { getTraefikRoutedServices } from "./compose-inject";
+import { selectRoutedService } from "./routed-service";
 
 // ---------------------------------------------------------------------------
 // Constants (exported for use by compose-parse)
@@ -144,6 +148,105 @@ function isDockerSocketMount(mountSource: string, rootResolved: string): boolean
     DOCKER_SOCKET_PATHS.includes(mountSource) ||
     DOCKER_SOCKET_PATHS.includes(rootResolved)
   );
+}
+
+// ---------------------------------------------------------------------------
+// x-vardo-shared
+// ---------------------------------------------------------------------------
+
+/**
+ * Services a deploy will put behind Traefik, resolved the way swap.ts does it:
+ * the labeled ones, or the one Vardo would pick. A pick that was a guess is
+ * dropped — swap.ts settles it with a container port validation doesn't have.
+ */
+function routedServiceNames(compose: ComposeFile): string[] {
+  const labeled = getTraefikRoutedServices(compose);
+  if (labeled.size > 0) return [...labeled];
+  const selection = selectRoutedService(compose);
+  return selection.service && !selection.ambiguous ? [selection.service] : [];
+}
+
+/**
+ * Misuses of x-vardo-shared, caught before a deploy runs. The last two reach
+ * Docker as an unresolvable reference, or don't fail at all.
+ */
+function sharedServiceErrors(compose: ComposeFile): string[] {
+  const errors: string[] = [];
+  const names = Object.keys(compose.services);
+  const shared = new Set(names.filter((n) => isSharedService(compose.services[n])));
+  if (shared.size === 0) return errors;
+
+  if (shared.size === names.length) {
+    errors.push(
+      `Every service is marked ${SHARED_MARKER}, so a deploy would have nothing to replace — leave at least one service out of it`,
+    );
+    return errors;
+  }
+
+  for (const name of shared) {
+    const svc = compose.services[name];
+
+    const rotating = dependsOnKeys(svc.depends_on ?? []).filter(
+      (dep) => dep in compose.services && !shared.has(dep),
+    );
+    if (rotating.length > 0) {
+      errors.push(
+        `Service "${name}" is marked ${SHARED_MARKER} but depends on ${rotating.join(", ")}, which ${rotating.length === 1 ? "is" : "are"} replaced on every deploy — a shared service can only depend on other shared services`,
+      );
+    }
+
+    if (svc.build) {
+      errors.push(
+        `Service "${name}" is marked ${SHARED_MARKER} but has "build" — shared services are brought up with --no-recreate, so the image rebuilt on each deploy would never run; drop the marker or use "image"`,
+      );
+    }
+  }
+
+  for (const name of names) {
+    if (shared.has(name)) continue;
+    const nm = compose.services[name].network_mode;
+    if (!nm?.startsWith("service:")) continue;
+    const target = nm.slice("service:".length);
+    if (shared.has(target)) {
+      errors.push(
+        `Service "${name}" has network_mode "${nm}", but "${target}" is marked ${SHARED_MARKER} — the two deploy as separate compose projects, where that reference cannot resolve`,
+      );
+    }
+  }
+
+  for (const name of routedServiceNames(compose)) {
+    if (shared.has(name)) {
+      errors.push(
+        `Service "${name}" is marked ${SHARED_MARKER} but it is the service Vardo routes traffic to — a deploy would replace every service except the one users reach, so it would appear to succeed while shipping nothing`,
+      );
+    }
+  }
+
+  return errors;
+}
+
+/**
+ * Services marked x-vardo-shared.
+ * Takes raw compose YAML so the UI can read stored config directly.
+ */
+export function sharedServiceNames(yamlText: string): string[] {
+  let root: unknown;
+  try {
+    root = YAML.parse(yamlText);
+  } catch {
+    return [];
+  }
+  if (!root || typeof root !== "object") return [];
+
+  const services = (root as { services?: unknown }).services;
+  if (!services || typeof services !== "object") return [];
+
+  const marked: string[] = [];
+  for (const [name, raw] of Object.entries(services as Record<string, unknown>)) {
+    if (!raw || typeof raw !== "object") continue;
+    if ((raw as Record<string, unknown>)[SHARED_MARKER] === true) marked.push(name);
+  }
+  return marked;
 }
 
 /**
@@ -298,6 +401,8 @@ export function validateCompose(compose: ComposeFile, opts?: ValidateOptions): {
       );
     }
   }
+
+  errors.push(...sharedServiceErrors(compose));
 
   return { valid: errors.length === 0, errors };
 }
