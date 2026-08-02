@@ -8,6 +8,8 @@ import { appEnvDir } from "@/lib/paths";
 import { rm, symlink, rename } from "fs/promises";
 import { listContainers, inspectContainer } from "./client";
 import { slotComposeFiles } from "./compose";
+import { slotScopeArgs } from "./slot-partition";
+import { readSlotPartition } from "./shared-project";
 import { addEvent, addDeployLog } from "@/lib/stream/producer";
 import { recordActivity } from "@/lib/activity";
 import { logger } from "@/lib/logger";
@@ -195,15 +197,20 @@ async function performRollback(opts: PerformRollbackOpts): Promise<void> {
     );
   }
 
-  // Step 2: Bring the previous slot back up
+  // Step 2: Bring the previous slot back up, naming the rotating set only —
+  // an unqualified `up` would start a second copy of the shared services here.
   const prevSlotDir = join(appDir, previousSlot);
   const prevProjectName = `${appName}-${envName}-${previousSlot}`;
   const prevComposeFileArgs = await slotComposeFiles(prevSlotDir);
+  const prevPartition = await readSlotPartition(prevSlotDir);
 
   try {
     await execFileAsync(
       "docker",
-      ["compose", ...prevComposeFileArgs, "-p", prevProjectName, "up", "-d"],
+      [
+        "compose", ...prevComposeFileArgs, "-p", prevProjectName, "up", "-d",
+        ...(prevPartition ? slotScopeArgs(prevPartition) : []),
+      ],
       { cwd: prevSlotDir, timeout: 60000 }
     );
   } catch (err) {
