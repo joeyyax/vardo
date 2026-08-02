@@ -10,6 +10,7 @@ import crypto from "crypto";
 import { sendEmail } from "@/lib/email/send";
 import { InviteEmail } from "@/lib/email/templates/invite";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { requirePlugin } from "@/lib/api/require-plugin";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -29,6 +30,9 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+    const gate = await requirePlugin("teams");
+    if (gate) return gate;
 
     const pending = await db.query.invitations.findMany({
       where: and(
@@ -56,6 +60,9 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+    const gate = await requirePlugin("teams");
+    if (gate) return gate;
 
     requireOrgAdmin(org.membership.role);
 

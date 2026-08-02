@@ -18,9 +18,10 @@ import type { Organization } from "@/lib/types";
 type MobileSidebarProps = {
   currentOrgId?: string;
   organizations?: Organization[];
+  teamsEnabled?: boolean;
 };
 
-export function MobileSidebar({ currentOrgId, organizations }: MobileSidebarProps) {
+export function MobileSidebar({ currentOrgId, organizations, teamsEnabled = true }: MobileSidebarProps) {
   return (
     <Sheet>
       <SheetTrigger asChild>
@@ -44,8 +45,10 @@ export function MobileSidebar({ currentOrgId, organizations }: MobileSidebarProp
           {/* Footer - Org Switcher & User Menu */}
           <div className="mt-auto border-t p-3">
             <div className="flex flex-col gap-1.5">
-              <OrgSwitcher currentOrgId={currentOrgId} organizations={organizations} />
-              <UserMenu />
+              {teamsEnabled && (
+                <OrgSwitcher currentOrgId={currentOrgId} organizations={organizations} />
+              )}
+              <UserMenu teamsEnabled={teamsEnabled} />
             </div>
           </div>
         </div>
