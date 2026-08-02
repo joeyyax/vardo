@@ -3,9 +3,11 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { listContainers, getContainerLogs } from "@/lib/docker/client";
-import { isLokiAvailable, queryRange, buildLogQLQuery } from "@/lib/logging/client";
+import { listContainers } from "@/lib/docker/client";
+import { readLogHistory } from "@/lib/logging/history";
+import { resolveLogScope } from "@/lib/logging/scope";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
 };
@@ -22,7 +24,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         eq(apps.id, appId),
         eq(apps.organizationId, orgId)
       ),
-      columns: { id: true, name: true },
+      columns: { id: true, name: true, parentAppId: true, composeService: true },
     });
 
     if (!app) {
@@ -31,79 +33,27 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const searchParams = request.nextUrl.searchParams;
     const tail = parseInt(searchParams.get("tail") || "200");
-    const since = searchParams.get("since") || "1h";
     const search = searchParams.get("search") || undefined;
-    const service = searchParams.get("service") || undefined;
-    const environment = searchParams.get("environment") || undefined;
+    const environment = searchParams.get("environment") || "production";
+    const allServices = searchParams.get("services") === "all";
 
-    // Use Loki if available
-    if (await isLokiAvailable()) {
-      const query = buildLogQLQuery({
-        project: app.name,
-        environment,
-        service,
-        search,
-      });
+    const scope = await resolveLogScope(app, { allServices });
+    const history = await readLogHistory({
+      project: scope.project,
+      environment,
+      service: scope.service,
+      prefixed: scope.prefixed,
+      search,
+      tail,
+    });
 
-      const start = relativeToTimestamp(since);
-
-      const entries = await queryRange({
-        query,
-        start,
-        limit: tail,
-        direction: "backward",
-      });
-
-      // Reverse so oldest is first
-      entries.reverse();
-
-      const containers = await listContainers(app.name).catch(() => []);
-
-      return NextResponse.json({
-        source: "loki",
-        logs: entries.map((e) => e.line).join("\n"),
-        entries: entries.map((e) => ({
-          timestamp: e.timestamp,
-          line: e.line,
-          labels: e.labels,
-        })),
-        containers: containers.map((c) => ({
-          id: c.id,
-          name: c.name,
-          state: c.state,
-          image: c.image,
-        })),
-      });
-    }
-
-    // Docker direct fallback
-    const containers = await listContainers(app.name);
-
-    if (containers.length === 0) {
-      return NextResponse.json({
-        source: "docker",
-        logs: "No running containers found for this app.",
-        containers: [],
-      });
-    }
-
-    const allLogs: string[] = [];
-    for (const container of containers) {
-      try {
-        const log = await getContainerLogs(container.id, { tail });
-        allLogs.push(`── ${container.name} ──`);
-        allLogs.push(log || "(no output)");
-        allLogs.push("");
-      } catch (err) {
-        allLogs.push(`── ${container.name} ──`);
-        allLogs.push(`Error fetching logs: ${err instanceof Error ? err.message : err}`);
-        allLogs.push("");
-      }
-    }
+    const containers = await listContainers(scope.project).catch(() => []);
 
     return NextResponse.json({
-      source: "docker",
-      logs: allLogs.join("\n"),
+      source: history.source,
+      logs: history.lines.map((l) => l.text).join("\n"),
+      lines: history.lines,
+      services: scope.services,
       containers: containers.map((c) => ({
         id: c.id,
         name: c.name,
@@ -114,18 +64,4 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   } catch (error) {
     return handleRouteError(error, "Error fetching logs");
   }
-}
-
-function relativeToTimestamp(duration: string): string {
-  const match = duration.match(/^(\d+)(s|m|h|d)$/);
-  if (!match) {
-    return String((Date.now() - 3600_000) * 1_000_000);
-  }
-
-  const value = parseInt(match[1]);
-  const unit = match[2];
-  const ms: Record<string, number> = { s: 1000, m: 60_000, h: 3600_000, d: 86400_000 };
-
-  const ago = Date.now() - value * ms[unit];
-  return String(ago * 1_000_000);
 }
