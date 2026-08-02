@@ -132,6 +132,15 @@ export async function createVardoPreview(
     throw new Error(`Invalid repo name: ${repoFullName}`);
   }
 
+  // Refuse rather than silently fall back to DATABASE_URL. A preview runs PR
+  // code with write access to whatever database it is handed.
+  if (!process.env.PREVIEW_DATABASE_URL && process.env.VARDO_ALLOW_PREVIEW_PROD_DB !== "true") {
+    throw new Error(
+      "PREVIEW_DATABASE_URL is not set, so this preview would run PR code against the production database. " +
+      "Point it at an isolated database, or set VARDO_ALLOW_PREVIEW_PROD_DB=true to accept the risk.",
+    );
+  }
+
   const projectName = `${PREVIEW_PROJECT_PREFIX}-${prNumber}`;
   const previewDir = join(tmpdir(), projectName);
 
