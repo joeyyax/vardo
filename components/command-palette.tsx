@@ -41,6 +41,13 @@ type CommandPaletteProps = {
   orgId: string | null;
 };
 
+const OPEN_EVENT = "vardo:open-command-palette";
+
+/** Opens the command palette from outside it, e.g. the top nav's search hint. */
+export function openCommandPalette() {
+  window.dispatchEvent(new Event(OPEN_EVENT));
+}
+
 type SearchableApp = {
   id: string;
   name: string;
@@ -125,7 +132,7 @@ export function CommandPalette({ orgId }: CommandPaletteProps) {
     []
   );
 
-  // Global keyboard listener for Cmd/Ctrl+K
+  // Global keyboard listener for Cmd/Ctrl+K, plus an event for external triggers
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
@@ -134,9 +141,14 @@ export function CommandPalette({ orgId }: CommandPaletteProps) {
         return;
       }
     };
+    const handleOpenEvent = () => setOpen(true);
 
     document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener(OPEN_EVENT, handleOpenEvent);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener(OPEN_EVENT, handleOpenEvent);
+    };
   }, [open]);
 
   // Fetch searchable data when opened

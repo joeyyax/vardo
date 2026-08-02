@@ -90,7 +90,7 @@ function DiscussionAvatar({
 type DiscussionActivityProps = {
   icon?: React.ReactNode;
   children: React.ReactNode;
-  timestamp?: string;
+  timestamp?: React.ReactNode;
 };
 
 function DiscussionActivityItem({

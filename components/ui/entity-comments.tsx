@@ -26,8 +26,8 @@ import {
   PinOff,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatDistanceToNow } from "date-fns";
 import { toast } from "@/lib/messenger";
+import { RelativeTime } from "@/components/relative-time";
 import {
   DiscussionPanel,
   DiscussionEmptyState,
@@ -504,16 +504,12 @@ function EntityComments({
               }
 
               const activity = item.data;
-              const timeAgo = formatDistanceToNow(
-                new Date(activity.createdAt),
-                { addSuffix: true }
-              );
 
               return (
                 <DiscussionActivityItem
                   key={`activity-${activity.id}`}
                   icon={fieldIcons[activity.field || ""] ?? undefined}
-                  timestamp={timeAgo}
+                  timestamp={<RelativeTime date={activity.createdAt} />}
                 >
                   {formatActivity(activity)}
                 </DiscussionActivityItem>
@@ -564,9 +560,6 @@ function CommentItem({
   const isAuthor = comment.authorId === currentUserId;
   const authorName =
     comment.author.name || comment.author.email.split("@")[0];
-  const timeAgo = formatDistanceToNow(new Date(comment.createdAt), {
-    addSuffix: true,
-  });
   const wasEdited = comment.createdAt !== comment.updatedAt;
 
   return (
@@ -577,7 +570,7 @@ function CommentItem({
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium truncate">{authorName}</span>
           <span className="text-xs text-muted-foreground shrink-0">
-            {timeAgo}
+            <RelativeTime date={comment.createdAt} />
             {wasEdited && " (edited)"}
           </span>
           {comment.isPinned && (
