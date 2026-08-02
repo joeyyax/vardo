@@ -6,9 +6,8 @@ import { eq, desc, asc, isNull, and, type AnyColumn } from "drizzle-orm";
 import { PageToolbar } from "@/components/page-toolbar";
 import { OrgSwitcher } from "@/components/layout/org-switcher";
 import { AppGrid } from "./app-grid";
-import Link from "next/link";
-import { Plus } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { isFeatureEnabledAsync } from "@/lib/config/features";
+import { FirstRun } from "./first-run";
 import { ProjectsActions } from "./projects-actions";
 
 export default async function ProjectsPage() {
@@ -21,7 +20,7 @@ export default async function ProjectsPage() {
   const orgId = orgData.organization.id;
   const organizations = await getUserOrganizations();
 
-  const [appList, tagList, projectList] = await Promise.all([
+  const [appList, tagList, projectList, containerImportEnabled] = await Promise.all([
     db.query.apps.findMany({
       where: and(eq(apps.organizationId, orgId), isNull(apps.parentAppId)),
       orderBy: [asc(apps.sortOrder), desc(apps.createdAt)],
@@ -53,6 +52,7 @@ export default async function ProjectsPage() {
       where: eq(projects.organizationId, orgId),
       columns: { id: true, name: true, displayName: true, color: true, isSystemManaged: true },
     }),
+    isFeatureEnabledAsync("container-import"),
   ]);
 
   // Projects that have no apps assigned
@@ -73,22 +73,7 @@ export default async function ProjectsPage() {
       </PageToolbar>
 
       {appList.length === 0 && emptyProjects.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
-          <div className="text-center space-y-1">
-            <p className="text-sm font-medium">
-              Create your first project
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Projects organize your apps. Create a project, then add apps to it.
-            </p>
-          </div>
-          <Button asChild>
-            <Link href="/projects/new">
-              <Plus className="mr-1.5 size-4" />
-              New project
-            </Link>
-          </Button>
-        </div>
+        <FirstRun canImportContainers={containerImportEnabled} />
       ) : (
         <AppGrid
           apps={appList}

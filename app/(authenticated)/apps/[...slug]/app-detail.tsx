@@ -311,7 +311,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                     ) : (
                       <span className="mr-1.5 size-2 rounded-full bg-status-success animate-pulse" />
                     )}
-                    {app.needsRedeploy ? "Restart Needed" : "Running"}
+                    {app.needsRedeploy ? "Restart needed" : "Running"}
                     {!app.needsRedeploy && (() => {
                       const lastDeploy = app.deployments.find((d) => d.status === "success");
                       return lastDeploy ? (
@@ -708,6 +708,8 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
             source={app.source}
             autoDeploy={app.autoDeploy}
             deploy={deploy}
+            onDeploy={handleDeploy}
+            deployActionLabel={app.status === "error" ? "Retry" : "Deploy"}
           />
         </TabsContent>
 

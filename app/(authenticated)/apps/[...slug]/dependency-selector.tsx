@@ -9,6 +9,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { HelpTip } from "@/components/ui/help-tip";
 import { statusDotColor } from "@/lib/ui/status-colors";
 
 export function DependencySelector({
@@ -91,6 +92,10 @@ export function DependencySelector({
     <div className="space-y-2">
       <div className="flex items-center gap-2">
         <p className="text-xs font-medium text-muted-foreground">Deploy dependencies</p>
+        <HelpTip label="Deploy dependencies">
+          Apps in this project that deploy before this one. Deploying the whole project sorts it
+          into tiers, so a database is up before whatever connects to it.
+        </HelpTip>
         {saving && <Loader2 className="size-3 animate-spin text-muted-foreground" />}
       </div>
       <div className="flex flex-wrap items-center gap-1.5">

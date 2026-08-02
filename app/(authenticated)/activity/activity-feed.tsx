@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { PageToolbar } from "@/components/page-toolbar";
 import { RelativeTime } from "@/components/relative-time";
 import { toast } from "@/lib/messenger";
@@ -167,20 +168,14 @@ export function ActivityFeed({
       )}
 
       {groups.length === 0 ? (
-        <div className="squircle flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
-          <div className="space-y-1 text-center">
-            <p className="text-sm font-medium">
-              {filtered || filters.since
-                ? "Nothing matches this view"
-                : "No activity yet"}
-            </p>
-            <p className="text-sm text-muted-foreground">
-              {filtered || filters.since
-                ? "Try widening the filters or the time window."
-                : "Deployments, configuration changes, and team actions will appear here as they happen."}
-            </p>
-          </div>
-        </div>
+        <EmptyState
+          title={filtered || filters.since ? "Nothing matches this view" : "No activity yet"}
+          body={
+            filtered || filters.since
+              ? "Try widening the filters or the time window."
+              : "Deployments, configuration changes and team actions appear here as they happen."
+          }
+        />
       ) : (
         <div className="space-y-8">
           {days.map((day) => (

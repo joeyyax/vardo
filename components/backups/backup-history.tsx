@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Archive, Download, Loader2, RotateCcw } from "lucide-react";
 import { formatBytes } from "@/lib/metrics/format";
 import { toast } from "@/lib/messenger";
@@ -57,15 +58,12 @@ export function BackupHistory({
 
   if (history.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-8">
-        <Archive className="size-8 text-muted-foreground/50" aria-hidden="true" />
-        <div className="text-center space-y-1">
-          <p className="text-sm font-medium">No backups yet</p>
-          <p className="text-sm text-muted-foreground">
-            Backups will appear here after the first scheduled or manual run.
-          </p>
-        </div>
-      </div>
+      <EmptyState
+        className="p-8"
+        icon={Archive}
+        title="No backups yet"
+        body="Backups appear here after the first scheduled or manual run."
+      />
     );
   }
 

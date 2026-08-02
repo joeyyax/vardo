@@ -23,6 +23,7 @@ import {
   BottomSheetTitle,
 } from "@/components/ui/bottom-sheet";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
 import { isOrgAdmin } from "@/lib/auth/permissions";
 import { RelativeTime } from "@/components/relative-time";
@@ -199,20 +200,18 @@ export function InvitationsPanel({
         </div>
 
         {invitations.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-center rounded-lg border border-dashed gap-2">
-            <Mail className="size-8 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">No invitations yet</p>
-            {canManage && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="mt-2"
-                onClick={() => setInviteOpen(true)}
-              >
-                Send your first invitation
-              </Button>
-            )}
-          </div>
+          <EmptyState
+            icon={Mail}
+            title="No invitations yet"
+            body="Invite a teammate to give them access to this organization."
+            action={
+              canManage && (
+                <Button size="sm" variant="outline" onClick={() => setInviteOpen(true)}>
+                  Send your first invitation
+                </Button>
+              )
+            }
+          />
         ) : (
           <div className="divide-y rounded-lg border">
             {invitations.map((invitation) => {

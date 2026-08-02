@@ -3,8 +3,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import Link from "next/link";
 import {
   ArrowLeft,
+  Boxes,
   Loader2,
   Github,
   Lock,
@@ -103,6 +105,9 @@ type Props = {
   defaultName?: string;
   defaultImage?: string;
   defaultTemplate?: string;
+  defaultSource?: string;
+  /** Offer the adopt-an-existing-container card. */
+  containerImportEnabled?: boolean;
 };
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -132,7 +137,7 @@ function generatePassword(length = 24): string {
 import { isSecretKey } from "@/lib/env/is-secret-key";
 import { slugify } from "@/lib/ui/slugify";
 
-export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDomain: baseDomainProp, defaultParentId, defaultProjectId, defaultName, defaultImage, defaultTemplate }: Props) {
+export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDomain: baseDomainProp, defaultParentId, defaultProjectId, defaultName, defaultImage, defaultTemplate, defaultSource, containerImportEnabled }: Props) {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
   const [slugEdited, setSlugEdited] = useState(false);
@@ -259,6 +264,8 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
     if (defaultImage) {
       selectSource("image");
       setImageName(defaultImage);
+    } else if (SOURCE_OPTIONS.some((s) => s.id === defaultSource)) {
+      selectSource(defaultSource as SourceOption);
     }
     if (defaultName) {
       setDisplayName(defaultName);
@@ -519,7 +526,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
   return (
     <div className="space-y-6">
       <PageToolbar>
-        <h1 className="type-h1">New App</h1>
+        <h1 className="type-h1">New app</h1>
       </PageToolbar>
 
       {!isConfiguring ? (
@@ -548,6 +555,18 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
                   </button>
                 );
               })}
+              {containerImportEnabled && (
+                <Link
+                  href="/discover"
+                  className="squircle flex flex-col items-center gap-2 rounded-lg border bg-card p-4 text-center transition-colors hover:bg-accent/50"
+                >
+                  <Boxes className="size-6 text-muted-foreground" aria-hidden="true" />
+                  <span className="text-sm font-medium">Existing containers</span>
+                  <span className="text-xs text-muted-foreground">
+                    Adopt what&apos;s already running on this host
+                  </span>
+                </Link>
+              )}
             </div>
           </div>
 
@@ -603,7 +622,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
               <h2 className="type-h2">
                 {selectedTemplate
                   ? selectedTemplate.displayName
-                  : SOURCE_OPTIONS.find((s) => s.id === selectedSource)?.label || "New App"}
+                  : SOURCE_OPTIONS.find((s) => s.id === selectedSource)?.label || "New app"}
               </h2>
               <p className="text-sm text-muted-foreground">
                 {selectedTemplate?.description || "Configure your app."}
@@ -1175,7 +1194,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
               {creating ? (
                 <><Loader2 className="mr-2 size-4 animate-spin" />Creating...</>
               ) : (
-                "Create App"
+                "Create app"
               )}
             </Button>
             <Button variant="ghost" onClick={() => router.push("/projects")}>

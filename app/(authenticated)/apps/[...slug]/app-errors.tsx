@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { AlertTriangle, ExternalLink, RefreshCw, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/lib/messenger";
 
@@ -63,12 +64,12 @@ export function AppErrors({ orgId, appId }: { orgId: string; appId: string }) {
 
   if (!available) {
     return (
-      <div className="rounded-lg border border-dashed p-8 text-center">
-        <AlertTriangle className="mx-auto mb-3 size-8 text-muted-foreground/50" />
-        <p className="text-sm text-muted-foreground">
-          GlitchTip is not reachable. It may still be starting up — check back in a moment.
-        </p>
-      </div>
+      <EmptyState
+        className="p-8"
+        icon={AlertTriangle}
+        title="Error tracking unavailable"
+        body="GlitchTip is not reachable. It may still be starting up — check back in a moment."
+      />
     );
   }
 
@@ -85,9 +86,7 @@ export function AppErrors({ orgId, appId }: { orgId: string; appId: string }) {
       </div>
 
       {issues.length === 0 ? (
-        <div className="rounded-lg border border-dashed p-8 text-center">
-          <p className="text-sm text-muted-foreground">No errors recorded yet.</p>
-        </div>
+        <EmptyState className="p-8" title="No errors recorded yet" />
       ) : (
         <div className="divide-y rounded-lg border">
           {issues.map((issue) => (
