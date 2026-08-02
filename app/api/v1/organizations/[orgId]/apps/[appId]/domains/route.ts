@@ -7,6 +7,7 @@ import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { verifyAppAccess } from "@/lib/api/verify-access";
+import { refuseSystemManaged } from "@/lib/api/system-managed";
 import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
 import { apps } from "@/lib/db/schema";
 
@@ -41,12 +42,8 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    if (app.isSystemManaged) {
-      return NextResponse.json(
-        { error: "Domains for system-managed apps cannot be modified via the API" },
-        { status: 403 }
-      );
-    }
+    const refused = refuseSystemManaged(app, "domains");
+    if (refused) return refused;
 
     const body = await request.json();
     const parsed = createDomainSchema.safeParse(body);
@@ -126,12 +123,8 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    if (app.isSystemManaged) {
-      return NextResponse.json(
-        { error: "Domains for system-managed apps cannot be modified via the API" },
-        { status: 403 }
-      );
-    }
+    const refused = refuseSystemManaged(app, "domains");
+    if (refused) return refused;
 
     const body = await request.json();
     const parsed = updateDomainSchema.safeParse(body);
@@ -188,12 +181,8 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    if (app.isSystemManaged) {
-      return NextResponse.json(
-        { error: "Domains for system-managed apps cannot be modified via the API" },
-        { status: 403 }
-      );
-    }
+    const refused = refuseSystemManaged(app, "domains");
+    if (refused) return refused;
 
     const body = await request.json();
     const parsed = deleteDomainSchema.safeParse(body);

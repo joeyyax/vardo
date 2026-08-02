@@ -6,6 +6,7 @@ import { eq, and } from "drizzle-orm";
 import { restartContainers } from "@/lib/docker/deploy";
 import { resolveDefaultEnv } from "@/lib/docker/resolve-env";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { refuseSystemManaged } from "@/lib/api/system-managed";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -34,12 +35,8 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    if (app.isSystemManaged) {
-      return NextResponse.json(
-        { error: "System-managed apps cannot be restarted via the API" },
-        { status: 403 }
-      );
-    }
+    const refused = refuseSystemManaged(app, "restart");
+    if (refused) return refused;
 
     // A compose child has no deployed directory of its own — the parent owns
     // the project, and the child is one service inside it.
