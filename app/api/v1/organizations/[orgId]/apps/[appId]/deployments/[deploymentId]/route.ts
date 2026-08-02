@@ -54,7 +54,7 @@ async function forceCancel(deploymentId: string, appId: string, orgId: string): 
   // Release the concurrency slot, clear the active deploy marker, and remove
   // from queue so the next deploy can start immediately.
   await clearActiveInRedis(appId, deploymentId).catch(() => {});
-  await releaseConcurrencySlot().catch(() => {});
+  await releaseConcurrencySlot(deploymentId).catch(() => {});
   await removeFromQueue(deploymentId).catch(() => {});
 
   addEvent(orgId, {
