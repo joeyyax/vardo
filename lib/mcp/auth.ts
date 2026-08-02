@@ -2,6 +2,7 @@ import { createHash } from "crypto";
 import { db } from "@/lib/db";
 import { apiTokens, user } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { isFeatureEnabledAsync } from "@/lib/config/features";
 
 export type McpAuthContext = {
   userId: string;
@@ -14,11 +15,14 @@ export type McpAuthContext = {
  * Standalone function that takes a raw Request — no dependency on
  * Next.js AsyncLocalStorage (headers()/cookies()).
  *
- * Returns the resolved user + org context, or null if invalid.
+ * Returns the resolved user + org context, or null if invalid or if the
+ * api-tokens feature is off.
  */
 export async function authenticateRequest(
   request: Request
 ): Promise<McpAuthContext | null> {
+  if (!(await isFeatureEnabledAsync("api-tokens"))) return null;
+
   const authHeader = request.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) return null;
 

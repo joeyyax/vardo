@@ -6,7 +6,7 @@ import { eq, and } from "drizzle-orm";
 import { requestDeploy } from "@/lib/docker/deploy-cancel";
 import { createPreview, destroyPreview } from "@/lib/docker/preview";
 import { getSystemManagedApp, createVardoPreview, destroyVardoPreview } from "@/lib/docker/self-preview";
-import { isFeatureEnabled } from "@/lib/config/features";
+import { isFeatureEnabled, isFeatureEnabledAsync } from "@/lib/config/features";
 import { getGitHubAppConfig } from "@/lib/system-settings";
 import { logger } from "@/lib/logger";
 
@@ -158,12 +158,16 @@ async function handlePullRequest(payload: Record<string, unknown>): Promise<Next
 
   log.info(`PR #${prNumber} ${action} on ${repoFullName}:${branch} by ${author}`);
 
+  // Closing a PR still tears down whatever is running, so turning previews
+  // off never strands a stack.
+  const previewsEnabled = await isFeatureEnabledAsync("previews");
+
   // Vardo self-preview: if selfManagement is enabled and this repo is a
   // system-managed app, deploy a frontend-only preview instead of the generic flow.
   if (isFeatureEnabled("selfManagement")) {
     const vardoApp = await getSystemManagedApp(repoFullName);
     if (vardoApp) {
-      if (action === "opened" || action === "reopened" || action === "synchronize") {
+      if (previewsEnabled && (action === "opened" || action === "reopened" || action === "synchronize")) {
         try {
           const result = await createVardoPreview({ prNumber, branch, repoFullName });
           try {
@@ -188,11 +192,14 @@ async function handlePullRequest(payload: Record<string, unknown>): Promise<Next
         }
         return NextResponse.json({ ok: true, destroyed: true });
       }
-      return NextResponse.json({ ok: true, skipped: `PR action: ${action}` });
+      return NextResponse.json({
+        ok: true,
+        skipped: previewsEnabled ? `PR action: ${action}` : "previews disabled",
+      });
     }
   }
 
-  if (action === "opened" || action === "reopened" || action === "synchronize") {
+  if (previewsEnabled && (action === "opened" || action === "reopened" || action === "synchronize")) {
     // Create or update preview
     try {
       const result = await createPreview({
@@ -243,7 +250,10 @@ async function handlePullRequest(payload: Record<string, unknown>): Promise<Next
     }
   }
 
-  return NextResponse.json({ ok: true, skipped: `PR action: ${action}` });
+  return NextResponse.json({
+    ok: true,
+    skipped: previewsEnabled ? `PR action: ${action}` : "previews disabled",
+  });
 }
 
 export const POST = withRateLimit(handler, { tier: "public", key: "webhook" });

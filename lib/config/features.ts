@@ -13,7 +13,9 @@
 export type FeatureFlag =
   | "ui"
   | "environments"
+  | "previews"
   | "passwordAuth"
+  | "api-tokens"
   | "mesh"
   | "bindMounts"
   | "dockerSocket"
@@ -32,7 +34,8 @@ export type FeatureFlag =
   | "container-import"
   | "digest"
   | "monitoring"
-  | "error-tracking";
+  | "error-tracking"
+  | "hooks";
 
 /** Section a flag is filed under on the admin Feature flags page. */
 export type FlagGroup =
@@ -60,6 +63,8 @@ type FlagConfig = {
   group: FlagGroup;
   /** Settable only from vardo.yml or an env var — never rendered on the admin page. */
   configOnly?: boolean;
+  /** Flag this one can't work without. When it's off, this one reads as unavailable. */
+  dependsOn?: FeatureFlag;
 };
 
 const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
@@ -76,10 +81,22 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
       "Multiple deployment environments per app (staging, preview). Disabling limits apps to a single production environment.",
     group: "deployment",
   },
+  previews: {
+    label: "PR previews",
+    description:
+      "Ephemeral preview environments for pull requests, created on PR open and torn down on close. Disabling leaves git deploys working without spinning up per-PR stacks. Previews of Vardo itself also need Self-management.",
+    group: "deployment",
+  },
   passwordAuth: {
     label: "Password sign-in",
     description:
       "Email/password sign-in and onboarding. When disabled, users must authenticate via passkey, magic link or GitHub — set one of those up first or nobody can sign in.",
+    group: "access",
+  },
+  "api-tokens": {
+    label: "API tokens",
+    description:
+      "Bearer token authentication for the REST API and MCP endpoint. Disabling leaves browser sessions as the only way in and hides token management.",
     group: "access",
   },
   mesh: {
@@ -157,6 +174,14 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
   mcp: {
     label: "MCP server",
     description: "Model Context Protocol endpoint at /api/mcp, letting AI tools manage apps and deployments.",
+    group: "advanced",
+    dependsOn: "api-tokens",
+  },
+  hooks: {
+    label: "Lifecycle hooks",
+    description:
+      "Run registered hooks at deploy and backup checkpoints. Script hooks execute arbitrary commands on the host as the Vardo process — a sharp tool, equivalent to shell access for anyone who can register one. Disabled by default; webhook and internal hooks stop firing too.",
+    defaultValue: false,
     group: "advanced",
   },
   "domain-monitoring": {
@@ -324,6 +349,10 @@ export type FeatureFlagInfo = {
   locked: boolean;
   /** Env var name that pins this flag, shown alongside a locked toggle. */
   envVar: string;
+  /** True when the flag this one depends on is off, so turning it on changes nothing. */
+  unavailable: boolean;
+  /** The dependency and its label, for explaining an unavailable flag. */
+  dependsOn?: { flag: FeatureFlag; label: string };
 };
 
 /** Resolve a flag's value and the layer it came from. */
@@ -351,6 +380,7 @@ export async function getAllFeatureFlags(): Promise<FeatureFlagInfo[]> {
 
   return entries.map(([flag, config]) => {
     const { enabled, source } = resolveFeatureFlag(flag, layers);
+    const dependency = config.dependsOn;
     return {
       flag,
       enabled,
@@ -360,6 +390,8 @@ export async function getAllFeatureFlags(): Promise<FeatureFlagInfo[]> {
       source,
       locked: source === "env" || source === "config",
       envVar: featureFlagEnvVar(flag),
+      unavailable: dependency ? !resolveFeatureFlag(dependency, layers).enabled : false,
+      dependsOn: dependency ? { flag: dependency, label: FLAG_CONFIG[dependency].label } : undefined,
     };
   });
 }

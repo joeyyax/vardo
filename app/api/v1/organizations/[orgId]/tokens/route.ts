@@ -9,6 +9,7 @@ import { createHash, randomBytes } from "crypto";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { requirePlugin } from "@/lib/api/require-plugin";
 
 const createTokenSchema = z.object({ name: z.string().min(1, "Name is required").max(100).trim() }).strict();
 const deleteTokenSchema = z.object({ id: z.string().min(1, "Token ID is required") }).strict();
@@ -25,6 +26,9 @@ function hashToken(token: string): string {
 // List all API tokens for the current user in this org
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
+    const gate = await requirePlugin("api-tokens");
+    if (gate) return gate;
+
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -62,6 +66,9 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 // Create a new API token
 async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
+    const gate = await requirePlugin("api-tokens");
+    if (gate) return gate;
+
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -98,6 +105,9 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 // Delete an API token
 async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
+    const gate = await requirePlugin("api-tokens");
+    if (gate) return gate;
+
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
