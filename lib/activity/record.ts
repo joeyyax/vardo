@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { activities } from "@/lib/db/schema";
 import { nanoid } from "nanoid";
+import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { familyFor, outcomeFor } from "./taxonomy";
 
 type RecordActivityOpts = {
@@ -12,6 +13,9 @@ type RecordActivityOpts = {
 };
 
 export async function recordActivity(opts: RecordActivityOpts): Promise<void> {
+  // Skip the write, not just the page — disabling activity stops the volume.
+  if (!(await isFeatureEnabledAsync("activity"))) return;
+
   await db.insert(activities).values({
     id: nanoid(),
     organizationId: opts.organizationId,

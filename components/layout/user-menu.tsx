@@ -24,9 +24,10 @@ type UserMenuProps = {
   compact?: boolean;
   currentOrgId?: string;
   organizations?: Organization[];
+  teamsEnabled?: boolean;
 };
 
-export function UserMenu({ collapsed, compact, currentOrgId, organizations }: UserMenuProps) {
+export function UserMenu({ collapsed, compact, currentOrgId, organizations, teamsEnabled = true }: UserMenuProps) {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
   const { data: session, isPending } = useSession();
@@ -121,7 +122,9 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations }: Us
         {/* Organizations */}
         <DropdownMenuSeparator />
         <DropdownMenuLabel className="flex items-center justify-between">
-          <span className="text-xs text-muted-foreground">Organizations</span>
+          <span className="text-xs text-muted-foreground">
+            {teamsEnabled ? "Organizations" : "Organization"}
+          </span>
           <button
             onClick={() => router.push("/settings")}
             className="rounded-md p-1 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
@@ -130,26 +133,30 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations }: Us
             <Settings className="size-3.5" />
           </button>
         </DropdownMenuLabel>
-        {organizations?.map((org) => (
-          <DropdownMenuItem
-            key={org.id}
-            className="gap-2 cursor-pointer"
-            onClick={() => handleSwitchOrg(org.id)}
-          >
-            <Building2 className="size-4" />
-            <span className="truncate">{org.name}</span>
-            {org.id === currentOrg?.id && (
-              <Check className="ml-auto size-4 text-primary" />
-            )}
-          </DropdownMenuItem>
-        ))}
-        <DropdownMenuItem
-          className="gap-2 cursor-pointer"
-          onClick={() => router.push("/onboarding")}
-        >
-          <Plus className="size-4" />
-          New organization
-        </DropdownMenuItem>
+        {teamsEnabled && (
+          <>
+            {organizations?.map((org) => (
+              <DropdownMenuItem
+                key={org.id}
+                className="gap-2 cursor-pointer"
+                onClick={() => handleSwitchOrg(org.id)}
+              >
+                <Building2 className="size-4" />
+                <span className="truncate">{org.name}</span>
+                {org.id === currentOrg?.id && (
+                  <Check className="ml-auto size-4 text-primary" />
+                )}
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuItem
+              className="gap-2 cursor-pointer"
+              onClick={() => router.push("/onboarding")}
+            >
+              <Plus className="size-4" />
+              New organization
+            </DropdownMenuItem>
+          </>
+        )}
 
         {/* Admin */}
         {isAdmin && (
