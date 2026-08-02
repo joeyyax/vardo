@@ -15,9 +15,6 @@ import { worstCondition, type AppCondition } from "@/lib/docker/conditions";
 import { StatusIndicator } from "@/components/app-status";
 import { SystemBadge } from "@/components/system-badge";
 import { useImageUpdates } from "./updates-banner";
-import { AttentionPanel } from "@/components/attention-panel";
-import { conditionRows, type AttentionRow } from "@/lib/ui/attention";
-import type { FleetAttention } from "@/lib/attention/fleet";
 
 import {
   type AppMetrics,
@@ -68,7 +65,6 @@ type AppGridProps = {
   allTags: Tag[];
   orgId: string;
   emptyProjects?: EmptyProject[];
-  fleet?: FleetAttention;
 };
 
 
@@ -413,7 +409,6 @@ export function AppGrid({
   allTags,
   orgId,
   emptyProjects = [],
-  fleet,
 }: AppGridProps) {
   const router = useRouter();
   const [activeTagIds, setActiveTagIds] = useState<Set<string>>(new Set());
@@ -466,92 +461,8 @@ export function AppGrid({
     return Array.from(byProject.values());
   }, [filtered, emptyProjects]);
 
-  // Containers running with no cgroup memory limit can take the whole host, and
-  // a JVM in one sizes its heap from the hypervisor's RAM, not the guest's.
-  const unlimited = apps.filter(
-    (a) => a.status === "active" && a.containerMemoryLimit === 0,
-  );
-
-  // One row per condition kind across the fleet, plus the two fleet-wide facts
-  // that are not per-app conditions.
-  const attentionRows = useMemo<AttentionRow[]>(() => {
-    const rows = conditionRows(apps);
-
-    if (fleet && fleet.servicesDown.length > 0) {
-      rows.push({
-        key: "service-down",
-        label: "Service down",
-        tone: "error",
-        items: fleet.servicesDown.map((s) => ({
-          id: s.id,
-          name: s.name,
-          href: "/admin",
-          detail: `Last alert ${formatDistanceToNowStrict(new Date(s.lastFired))} ago`,
-        })),
-        footer: "Platform services Vardo depends on. Check the admin overview for reachability.",
-      });
-    }
-
-    if (fleet && fleet.unreachableDomains.length > 0) {
-      rows.push({
-        key: "domain-unreachable",
-        label: "Domain unreachable",
-        tone: "error",
-        items: fleet.unreachableDomains.map((d) => ({
-          id: d.id,
-          name: d.domain,
-          href: d.appName ? `/apps/${d.appName}/networking` : "/settings/domains",
-          detail: d.error ?? undefined,
-        })),
-        footer: "The last check for these domains failed.",
-      });
-    }
-
-    if (unlimited.length > 0) {
-      rows.push({
-        key: "no-memory-limit",
-        label: "No memory limit",
-        tone: "warning",
-        items: unlimited.map((a) => ({
-          id: a.id,
-          name: a.displayName,
-          href: `/apps/${a.name}`,
-        })),
-        footer:
-          "Redeploy to apply the priority tier default, or set a limit in each app's settings.",
-      });
-    }
-
-    if (updates && updates.appsWithUpdates.length > 0) {
-      rows.push({
-        key: "image-updates",
-        label: "Image updates",
-        tone: "neutral",
-        items: updates.appsWithUpdates.map((a) => ({
-          id: a.id,
-          name: a.displayName,
-          href: `/apps/${a.name}/updates`,
-          detail: `${a.count} image${a.count === 1 ? "" : "s"}`,
-        })),
-        footer: (
-          <>
-            Open an app to review the proposed version and apply it.
-            {updates.unknownCount > 0 &&
-              ` ${updates.unknownCount} image${updates.unknownCount === 1 ? "" : "s"} could not be checked.`}
-            {updates.cooldownUntil &&
-              ` Checks are paused until ${new Date(updates.cooldownUntil).toLocaleTimeString()} after a registry rate limit.`}
-          </>
-        ),
-      });
-    }
-
-    return rows;
-  }, [apps, unlimited, updates, fleet]);
-
   return (
     <div className="space-y-6">
-      <AttentionPanel rows={attentionRows} />
-
       <div className="space-y-3">
       {allTags.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
