@@ -157,7 +157,8 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
       compose.networks[netName] = external;
       // The bare file is written separately and would otherwise still declare
       // the network, so compose creates a second one and a pinned subnet clashes.
-      if (ctx.bareCompose.networks?.[netName]) {
+      // Key presence, not truthiness: `internal:` with no config parses to null.
+      if (ctx.bareCompose.networks && netName in ctx.bareCompose.networks) {
         ctx.bareCompose.networks[netName] = external;
       }
     }
