@@ -23,6 +23,8 @@ export function AutoBackupBanner({
   const offsite = OFFSITE_TYPES.has(target.type);
 
   const failures = recent.filter((r) => r.status === "failed");
+  // The attention bar counts apps, this counts runs — say both so they reconcile.
+  const failedApps = new Set(failures.map((r) => r.app.displayName)).size;
   const lastRun = recent[0];
   const healthy = failures.length === 0 && lastRun?.status === "success";
 
@@ -40,7 +42,7 @@ export function AutoBackupBanner({
         <div className="space-y-1">
           <h3 className="text-sm font-medium">
             {failures.length > 0
-              ? `${failures.length} recent backup${failures.length === 1 ? "" : "s"} failed`
+              ? `${failures.length} failed run${failures.length === 1 ? "" : "s"} across ${failedApps} app${failedApps === 1 ? "" : "s"}`
               : lastRun
                 ? "Automatic backups are running"
                 : "Automatic backups are configured"}
