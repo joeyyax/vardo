@@ -3,8 +3,24 @@
 import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Plus, Cpu, ShieldCheck, Trash2, Package } from "lucide-react";
+import { Plus, Cpu, ShieldCheck, Trash2, Package, Search } from "lucide-react";
 import { EndpointsPopover } from "@/components/endpoints-popover";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  filterApps,
+  isSortKey,
+  matchesProject,
+  sortProjectCards,
+  SORT_OPTIONS,
+  type SortKey,
+} from "@/lib/ui/app-filter";
 import { RelativeTime } from "@/components/relative-time";
 import { detectAppType } from "@/lib/ui/app-type";
 import { statusDotColor, uniformStatus } from "@/lib/ui/status-colors";
@@ -414,6 +430,8 @@ export function AppGrid({
 }: AppGridProps) {
   const router = useRouter();
   const [activeTagIds, setActiveTagIds] = useState<Set<string>>(new Set());
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<SortKey>("attention");
   const { metrics, history, historyTick } = useAppMetrics(orgId);
   const updates = useImageUpdates(orgId);
   const updatesByApp = useMemo(
@@ -437,8 +455,8 @@ export function AppGrid({
         return true;
       });
     }
-    return list;
-  }, [apps, activeTagIds]);
+    return filterApps(list, query);
+  }, [apps, activeTagIds, query]);
 
   // Group apps by project for rendering
   const projectCards = useMemo(() => {
@@ -455,17 +473,50 @@ export function AppGrid({
 
     // Include empty projects that have no apps
     for (const ep of emptyProjects) {
-      if (!byProject.has(ep.id)) {
+      if (!byProject.has(ep.id) && matchesProject(ep, query)) {
         byProject.set(ep.id, { project: ep, apps: [] });
       }
     }
 
-    return Array.from(byProject.values());
-  }, [filtered, emptyProjects]);
+    return sortProjectCards(Array.from(byProject.values()), sort);
+  }, [filtered, emptyProjects, query, sort]);
 
   return (
     <div className="space-y-6">
       <div className="space-y-3">
+      {/* Find and order — the grid is the only path to an app that isn't the palette */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[14rem] flex-1 sm:max-w-sm">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Filter by app, project or domain"
+            aria-label="Filter apps"
+            className="squircle pl-8"
+          />
+        </div>
+        <Select value={sort} onValueChange={(v) => isSortKey(v) && setSort(v)}>
+          <SelectTrigger className="squircle w-44" aria-label="Sort projects">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SORT_OPTIONS.map((option) => (
+              <SelectItem key={option.key} value={option.key}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {query.trim() && (
+          <span className="text-xs text-muted-foreground">
+            {filtered.length} app{filtered.length === 1 ? "" : "s"} in {projectCards.length} project
+            {projectCards.length === 1 ? "" : "s"}
+          </span>
+        )}
+      </div>
+
       {allTags.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
           {allTags.map((tag) => {
@@ -530,13 +581,16 @@ export function AppGrid({
         ))}
       </div>
 
-      {filtered.length === 0 && apps.length > 0 && (
+      {projectCards.length === 0 && (apps.length > 0 || emptyProjects.length > 0) && (
         <div className="squircle lining flex flex-col items-center justify-center gap-3 rounded-lg border bg-card p-12">
           <p className="text-sm text-muted-foreground">
             No apps match the current filters.
           </p>
           <button
-            onClick={() => setActiveTagIds(new Set())}
+            onClick={() => {
+              setActiveTagIds(new Set());
+              setQuery("");
+            }}
             className="text-sm text-primary hover:underline"
           >
             Clear filters
