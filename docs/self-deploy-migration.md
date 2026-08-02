@@ -70,6 +70,14 @@ cp /opt/vardo/apps/vardo/env/current/.env .
 cp /opt/vardo/apps/vardo/repo/docker-compose.yml .
 ```
 
+The `.env` is not optional: `frontend` sits behind a `production` profile, and `COMPOSE_PROFILES` lives in that file. Run from a directory without it and compose reports no such service.
+
+Confirm the copy took before going on:
+
+```
+docker compose -p vardo-production-blue config --services   # must list frontend
+```
+
 ### 3. Start the new frontend in its slot
 
 ```
