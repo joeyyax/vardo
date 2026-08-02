@@ -7,7 +7,13 @@ import { nanoid } from "nanoid";
 import { AppDetail } from "./app-detail";
 import { getFeatureFlags } from "@/lib/config/features";
 
-import { APP_TABS as VALID_TABS, type AppTab as ValidTab } from "@/lib/ui/app-tabs";
+import { isOrgAdmin } from "@/lib/auth/permissions";
+import {
+  APP_TABS as VALID_TABS,
+  type AppTab as ValidTab,
+  resolveAppTab,
+  rootAppTab,
+} from "@/lib/ui/app-tabs";
 
 type PageProps = {
   params: Promise<{ slug: string[] }>;
@@ -236,24 +242,21 @@ export default async function AppDetailPage({ params }: PageProps) {
 
   const featureFlags = await getFeatureFlags();
 
-  // Compose parents default to the services tab; child services default to logs
-  const isComposeParent = (app.childApps?.length ?? 0) > 0;
-  const isChildService = !!app.parentAppId;
-  const childServiceDefault = featureFlags.logging ? "logs" : "variables";
-  const defaultTab = isComposeParent ? "services" : isChildService ? childServiceDefault : "deployments";
-
-  // If the requested tab is gated by a disabled feature flag, fall back to default
-  const gatedTabs: Record<string, keyof typeof featureFlags> = {
-    cron: "cron",
-    terminal: "terminal",
-    errors: "errorTracking",
-    metrics: "metrics",
-    backups: "backups",
-    logs: "logging",
+  const tabContext = {
+    isComposeParent: (app.childApps?.length ?? 0) > 0,
+    isChildService: !!app.parentAppId,
+    hasConnectionInfo: (app.connectionInfo?.length ?? 0) > 0,
+    isOrgAdmin: isOrgAdmin(orgData.membership.role),
+    features: featureFlags,
   };
-  const effectiveTab = tab && gatedTabs[tab] && !featureFlags[gatedTabs[tab]]
-    ? defaultTab
-    : tab || defaultTab;
+  const effectiveTab = resolveAppTab(tab, tabContext);
+
+  // Fell back to the default — put that in the URL.
+  if (tab && tab !== effectiveTab) {
+    const envPath = envSegment ? `/${envSegment}` : "";
+    const tabPath = effectiveTab === rootAppTab(tabContext) ? "" : `/${effectiveTab}`;
+    redirect(`/apps/${app.name}${envPath}${tabPath}`);
+  }
 
   return (
     <AppDetail

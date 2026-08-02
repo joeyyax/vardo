@@ -46,6 +46,8 @@ import { isOrgAdmin } from "@/lib/auth/permissions";
 import type { App, ChildApp, Tag } from "./types";
 import type { FeatureFlags } from "@/lib/config/features";
 import { ComposeReview } from "@/components/compose-review";
+import { tabPanelSurface } from "@/lib/ui/tab-panel";
+import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Service card for the Services tab
@@ -408,7 +410,7 @@ function ComposeEditor({
 
   if (!app.composeContent && !editing) {
     return (
-      <div className="squircle lining flex flex-col items-center justify-center gap-4 rounded-lg border bg-card p-12">
+      <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
         <FileCode2 className="size-8 text-muted-foreground/50" />
         <div className="text-center space-y-1">
           <p className="text-sm font-medium">No compose file stored</p>
@@ -827,7 +829,7 @@ export function ComposeDetail({
           />
         </TabsContent>
 
-        <TabsContent value="variables" className="space-y-4">
+        <TabsContent value="variables" className={cn(tabPanelSurface, "space-y-4")}>
           <EnvEditor
             appId={app.id}
             appName={app.name}
@@ -848,7 +850,7 @@ export function ComposeDetail({
         )}
 
         {featureFlags?.backups !== false && (
-          <TabsContent value="backups" className="space-y-4">
+          <TabsContent value="backups" className={cn(tabPanelSurface, "space-y-4")}>
             <p className="text-sm text-muted-foreground">
               Volume snapshots for services in this stack. Download or restore any backup.
             </p>
@@ -867,7 +869,7 @@ export function ComposeDetail({
           </TabsContent>
         )}
 
-        <TabsContent value="compose">
+        <TabsContent value="compose" className={tabPanelSurface}>
           <ComposeEditor app={app} orgId={orgId} />
         </TabsContent>
 
