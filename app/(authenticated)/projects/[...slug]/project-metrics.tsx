@@ -7,6 +7,7 @@ import {
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { Cpu, MemoryStick, Network } from "lucide-react";
 import { ChartCard } from "@/components/app-status";
+import { EmptyState } from "@/components/ui/empty-state";
 import { formatBytes, formatBytesShort, formatTime } from "@/lib/metrics/format";
 import { CHART_COLORS, chartTickStyle, TIME_RANGES, type TimeRange } from "@/lib/metrics/constants";
 import { MetricsTooltip } from "@/components/metrics-chart";
@@ -91,13 +92,11 @@ export function ProjectMetrics({ orgId, projectId, apps }: ProjectMetricsProps) 
 
   if (error && !connected && !loading && points.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
-        <AlertTriangle className="size-6 text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">Metrics unavailable</p>
-        <p className="text-xs text-muted-foreground max-w-xs text-center">
-          Could not connect to the metrics service. This may be a temporary issue.
-        </p>
-      </div>
+      <EmptyState
+        icon={AlertTriangle}
+        title="Metrics unavailable"
+        body="Could not connect to the metrics service. This may be a temporary issue."
+      />
     );
   }
 

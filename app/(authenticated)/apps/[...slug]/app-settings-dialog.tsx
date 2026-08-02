@@ -538,7 +538,7 @@ export function AppSettingsDialog({
                 Saving...
               </>
             ) : (
-              "Save Changes"
+              "Save changes"
             )}
           </Button>
         </BottomSheetFooter>

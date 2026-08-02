@@ -31,7 +31,7 @@ export default async function OrgSettingsLayout({
     <div className="space-y-6">
       <div className="flex items-center gap-3">
         <h1 className="type-h1">
-          Organization Settings
+          Organization settings
         </h1>
         <OrgSwitcher
           currentOrgId={orgData.organization.id}

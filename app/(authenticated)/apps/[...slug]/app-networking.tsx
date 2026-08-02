@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
 import {
   BottomSheet,
@@ -283,7 +284,7 @@ export function AppNetworking({
             }}
           >
             <Plus className="mr-1.5 size-4" />
-            Add Domain
+            Add domain
           </Button>
         </div>
 
@@ -358,14 +359,12 @@ export function AppNetworking({
         )}
 
         {domains.length === 0 && !domainOpen ? (
-          <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-8">
-            <Globe2 className="size-6 text-muted-foreground/50" />
-            <div className="text-center space-y-1">
-              <p className="text-sm text-muted-foreground">
-                Add a domain to make this app accessible over the web.
-              </p>
-            </div>
-          </div>
+          <EmptyState
+            className="p-8"
+            icon={Globe2}
+            title="No domains yet"
+            body="Add a domain to make this app accessible over the web."
+          />
         ) : domains.length > 0 && (
           <div className="space-y-2">
             {domains

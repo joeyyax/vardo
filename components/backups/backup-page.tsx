@@ -5,6 +5,7 @@ import { Loader2, Plus, Check, Info, Archive } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ShineBorder } from "@/components/ui/shine-border";
+import { EmptyState } from "@/components/ui/empty-state";
 import { AutoBackupBanner } from "./auto-backup-banner";
 import { TargetCard } from "./target-card";
 import { JobCard } from "./job-card";
@@ -120,11 +121,11 @@ export function BackupPage({
           </CardHeader>
           <CardContent>
             {!hasVisibleTargets ? (
-              <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-8">
-                <p className="text-sm text-muted-foreground text-center">
-                  Add an S3 bucket, Cloudflare R2, Backblaze B2, or SSH server to start backing up.
-                </p>
-              </div>
+              <EmptyState
+                className="p-8"
+                title="No storage targets"
+                body="Add an S3 bucket, Cloudflare R2, Backblaze B2 or SSH server to start backing up."
+              />
             ) : (
               <div className="space-y-2">
                 {visibleTargets.map((target) => (
@@ -155,22 +156,24 @@ export function BackupPage({
           </CardHeader>
           <CardContent>
             {!hasVisibleTargets ? (
-              <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-8">
-                <p className="text-sm text-muted-foreground text-center">
-                  Jobs can be added after you add a storage target.
-                </p>
-              </div>
+              <EmptyState
+                className="p-8"
+                title="No backup jobs yet"
+                body="Jobs can be added after you add a storage target."
+              />
             ) : visibleJobs.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-3 p-8">
-                <Archive className="size-6 text-muted-foreground/50" aria-hidden="true" />
-                <p className="text-sm text-muted-foreground text-center">
-                  No backup jobs configured. Create one to schedule automatic backups.
-                </p>
-                <Button size="sm" variant="outline" onClick={() => setJobFormOpen(true)}>
-                  <Plus className="mr-1.5 size-4" aria-hidden="true" />
-                  New job
-                </Button>
-              </div>
+              <EmptyState
+                className="border-none p-8"
+                icon={Archive}
+                title="No backup jobs configured"
+                body="Create one to schedule automatic backups."
+                action={
+                  <Button size="sm" variant="outline" onClick={() => setJobFormOpen(true)}>
+                    <Plus className="mr-1.5 size-4" aria-hidden="true" />
+                    New job
+                  </Button>
+                }
+              />
             ) : (
               <div className="space-y-2">
                 {visibleJobs.map((job) => (

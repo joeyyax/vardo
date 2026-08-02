@@ -19,6 +19,7 @@ import {
 import { toast } from "@/lib/messenger";
 import { PageToolbar } from "@/components/page-toolbar";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import {
   DropdownMenu,
@@ -90,7 +91,7 @@ function ImageRef({ imageName }: { imageName: string }) {
 function PendingImageRef({ pending }: { pending: PendingImage }) {
   return (
     <span className="flex items-center gap-1.5 min-w-0">
-      <span className="type-label shrink-0 text-status-warning">Pending</span>
+      <span className="type-label shrink-0 text-status-warning">Available</span>
       {pending.repo && (
         <span className="truncate font-mono text-xs text-muted-foreground/60">{pending.repo}</span>
       )}
@@ -483,18 +484,16 @@ function ComposeEditor({
 
   if (!app.composeContent && !editing) {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
-        <FileCode2 className="size-8 text-muted-foreground/50" />
-        <div className="text-center space-y-1">
-          <p className="text-sm font-medium">No compose file stored</p>
-          <p className="text-sm text-muted-foreground">
-            Deploy from a git repo to sync the compose file, or paste one below.
-          </p>
-        </div>
-        <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
-          Paste compose file
-        </Button>
-      </div>
+      <EmptyState
+        icon={FileCode2}
+        title="No compose file stored"
+        body="Deploy from a git repo to sync the compose file, or paste one below."
+        action={
+          <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
+            Paste compose file
+          </Button>
+        }
+      />
     );
   }
 
@@ -725,7 +724,7 @@ export function ComposeDetail({
                     }
                   >
                     {app.needsRedeploy ? (
-                      <><RotateCcw className="mr-1.5 size-3.5" />Restart Needed</>
+                      <><RotateCcw className="mr-1.5 size-3.5" />Restart needed</>
                     ) : (
                       <><span className="mr-1.5 size-2 rounded-full bg-status-success animate-pulse" />Running</>
                     )}
@@ -735,15 +734,15 @@ export function ComposeDetail({
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem disabled={deploy.deploying} onClick={handleDeployClick}>
                     <Rocket className="mr-2 size-4" />
-                    Redeploy Stack
+                    Redeploy stack
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={handleRestart}>
                     <RotateCcw className="mr-2 size-4" />
-                    Restart Stack
+                    Restart stack
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={handleRecreate}>
                     <RefreshCw className="mr-2 size-4" />
-                    Rebuild Stack
+                    Rebuild stack
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
@@ -751,7 +750,7 @@ export function ComposeDetail({
                     onClick={() => setStopOpen(true)}
                   >
                     <Square className="mr-2 size-4" />
-                    Stop Stack
+                    Stop stack
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -760,7 +759,7 @@ export function ComposeDetail({
                 {deploy.deploying ? (
                   <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
                 ) : (
-                  <><Rocket className="mr-1.5 size-4" />Deploy Stack</>
+                  <><Rocket className="mr-1.5 size-4" />Deploy stack</>
                 )}
               </Button>
             )}
@@ -911,6 +910,8 @@ export function ComposeDetail({
             source={app.source}
             autoDeploy={app.autoDeploy}
             deploy={deploy}
+            onDeploy={handleDeployClick}
+            deployActionLabel="Deploy stack"
           />
         </TabsContent>
 

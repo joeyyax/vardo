@@ -6,6 +6,7 @@ import Link from "next/link";
 import { RelativeTime } from "@/components/relative-time";
 import {
   Plus,
+  Boxes,
   Package,
   Pencil,
   Rocket,
@@ -42,6 +43,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -380,17 +382,11 @@ function ProjectDeployments({ apps, color }: { apps: ProjectApp[]; color: string
 
   if (allDeployments.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
-        <Rocket className="size-8 text-muted-foreground/50" />
-        <div className="text-center space-y-1">
-          <p className="text-sm font-medium">
-            Ready for your first deploy
-          </p>
-          <p className="text-sm text-muted-foreground">
-            Deploy an app from the Apps tab, or push to a connected repo to trigger an automatic deploy.
-          </p>
-        </div>
-      </div>
+      <EmptyState
+        icon={Rocket}
+        title="Ready for your first deploy"
+        body="Deploy an app from the Apps tab, or push to a connected repo to trigger an automatic deploy."
+      />
     );
   }
 
@@ -537,13 +533,11 @@ function ProjectVariables({ apps, orgId }: { apps: ProjectApp[]; orgId: string }
 
   if (apps.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
-        <Variable className="size-8 text-muted-foreground/50" />
-        <div className="text-center space-y-1">
-          <p className="text-sm font-medium">No variables to show</p>
-          <p className="text-sm text-muted-foreground">Add an app to this project to manage its environment variables.</p>
-        </div>
-      </div>
+      <EmptyState
+        icon={Variable}
+        title="No variables to show"
+        body="Add an app to this project to manage its environment variables."
+      />
     );
   }
 
@@ -590,13 +584,11 @@ function ProjectLogs({ apps, orgId }: { apps: ProjectApp[]; orgId: string }) {
 
   if (apps.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
-        <FileText className="size-8 text-muted-foreground/50" />
-        <div className="text-center space-y-1">
-          <p className="text-sm font-medium">No logs to show</p>
-          <p className="text-sm text-muted-foreground">Logs appear here once an app is running in this project.</p>
-        </div>
-      </div>
+      <EmptyState
+        icon={FileText}
+        title="No logs to show"
+        body="Logs appear here once an app is running in this project."
+      />
     );
   }
 
@@ -639,13 +631,11 @@ function ProjectMetricsTab({ apps, orgId, projectId }: { apps: ProjectApp[]; org
 
   if (apps.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
-        <Activity className="size-8 text-muted-foreground/50" />
-        <div className="text-center space-y-1">
-          <p className="text-sm font-medium">No metrics to show</p>
-          <p className="text-sm text-muted-foreground">Metrics appear here once an app is running in this project.</p>
-        </div>
-      </div>
+      <EmptyState
+        icon={Activity}
+        title="No metrics to show"
+        body="Metrics appear here once an app is running in this project."
+      />
     );
   }
 
@@ -1097,7 +1087,7 @@ export function ProjectDetail({
                             onClick={() => setStopAllOpen(true)}
                           >
                             <Square className="mr-2 size-4" />
-                            Stop All
+                            Stop all
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -1239,17 +1229,12 @@ export function ProjectDetail({
           {/* Multi-column: a compose app lists a dozen services, a plain one
               lists none, and grid rows take the taller card's height. */}
           {topLevelApps.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
-              <div className="text-center space-y-1">
-                <p className="text-sm font-medium">
-                  Add your first app
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  Connect a Git repo, Docker image, or Compose file to start deploying.
-                </p>
-              </div>
-              <AddAppDropdown projectId={project.id} align="center" />
-            </div>
+            <EmptyState
+              icon={Boxes}
+              title="Add your first app"
+              body="Connect a Git repo, Docker image or compose file to start deploying."
+              action={<AddAppDropdown projectId={project.id} align="center" />}
+            />
           ) : (
             <div className="columns-[20rem] gap-4">
               {project.apps
@@ -1328,7 +1313,7 @@ export function ProjectDetail({
       <BottomSheet open={newEnvOpen} onOpenChange={setNewEnvOpen}>
         <BottomSheetContent>
           <BottomSheetHeader>
-            <BottomSheetTitle>New Environment</BottomSheetTitle>
+            <BottomSheetTitle>New environment</BottomSheetTitle>
             <BottomSheetDescription>
               Create a new environment for all apps in this project.
             </BottomSheetDescription>
@@ -1467,14 +1452,14 @@ export function ProjectDetail({
         )}
       </ConfirmDeleteDialog>
 
-      {/* Stop All confirmation */}
+      {/* Stop all confirmation */}
       <ConfirmDeleteDialog
         open={stopAllOpen}
         onOpenChange={setStopAllOpen}
         onConfirm={handleStopAll}
         title="Stop all apps"
         description={`This will stop all ${topLevelApps.length} running app${topLevelApps.length === 1 ? "" : "s"} in "${project.displayName}". You can restart them at any time.`}
-        confirmLabel="Stop All"
+        confirmLabel="Stop all"
       />
     </div>
   );

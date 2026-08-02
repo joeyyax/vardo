@@ -7,6 +7,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import { Loader2, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Callout } from "@/components/ui/callout";
 import {
   Select,
@@ -329,15 +330,16 @@ export function AppTerminal({ appId, orgId }: AppTerminalProps) {
   // No containers
   if (containers.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
-        <p className="text-sm text-muted-foreground">
-          {errorMessage || "No running containers found. Deploy the app first."}
-        </p>
-        <Button size="sm" variant="outline" onClick={fetchContainers}>
-          <RotateCcw className="mr-1.5 size-4" />
-          Refresh
-        </Button>
-      </div>
+      <EmptyState
+        title="No shell to attach to"
+        body={errorMessage || "Nothing is running for this app. Deploy it first."}
+        action={
+          <Button size="sm" variant="outline" onClick={fetchContainers}>
+            <RotateCcw className="mr-1.5 size-4" />
+            Refresh
+          </Button>
+        }
+      />
     );
   }
 

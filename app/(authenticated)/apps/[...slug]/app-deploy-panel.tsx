@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import {
@@ -55,6 +56,10 @@ export interface AppDeployPanelProps {
   source: string;
   autoDeploy: boolean | null;
   deploy: ReturnType<typeof useDeploy>;
+  /** Same action the toolbar button runs, so the empty state can offer it. */
+  onDeploy: () => void;
+  /** Wording of the toolbar button, mirrored in the empty state. */
+  deployActionLabel: string;
 }
 
 function triggerLabel(trigger: string): string {
@@ -111,6 +116,8 @@ export function AppDeployPanel({
   source,
   autoDeploy,
   deploy,
+  onDeploy,
+  deployActionLabel,
 }: AppDeployPanelProps) {
   const {
     deploying,
@@ -246,6 +253,10 @@ export function AppDeployPanel({
       });
     }
   }, [orgId, appId, router]);
+
+  // Containers exist but no deployment records — the app was adopted from Docker.
+  const adopted =
+    filteredDeployments.length === 0 && (appStatus === "active" || appStatus === "error");
 
   const queuedDeployments = filteredDeployments
     .filter((d) => d.status === "queued" && d.id !== serverRunningDeploy?.id)
@@ -457,17 +468,26 @@ export function AppDeployPanel({
     <>
       <div className="space-y-4">
         {filteredDeployments.length === 0 && !deploying && !serverRunningDeploy ? (
-          <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
-            <Rocket className="size-8 text-muted-foreground/50" />
-            <div className="text-center space-y-1">
-              <p className="text-sm font-medium">Ready for your first deploy</p>
-              <p className="text-sm text-muted-foreground">
-                {source === "git" && autoDeploy
-                  ? "Push to your connected repo to trigger an automatic deploy, or deploy manually."
-                  : "Hit the Deploy button above to get started."}
-              </p>
-            </div>
-          </div>
+          <EmptyState
+            icon={Rocket}
+            title={adopted ? "Running, but never deployed from here" : "Ready for your first deploy"}
+            body={
+              adopted
+                ? "These containers were adopted from Docker, so there is no deploy history to show. Deploying records one and unlocks rollback."
+                : source === "git" && autoDeploy
+                  ? "Push to your connected repo to trigger an automatic deploy, or deploy now."
+                  : "Nothing has shipped yet."
+            }
+            action={
+              <Button size="sm" disabled={deploying} onClick={onDeploy}>
+                {deploying ? (
+                  <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
+                ) : (
+                  <><Rocket className="mr-1.5 size-4" />{deployActionLabel}</>
+                )}
+              </Button>
+            }
+          />
         ) : (
           <>
             {/* Infrastructure toggle */}
