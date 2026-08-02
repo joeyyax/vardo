@@ -175,13 +175,16 @@ export default async function AppDetailPage({ params }: PageProps) {
     }
   }
 
+  const featureFlags = await getFeatureFlags();
+
   // Validate environment segment against actual environments
   if (envSegment && !app.environments.some((e) => e.name === envSegment)) {
     notFound();
   }
 
-  // Strip "production" from URL — it's the default, no need to spell it out
-  if (envSegment === "production") {
+  // Strip "production" from URL — it's the default, no need to spell it out.
+  // With environments off, every env segment collapses to production the same way.
+  if (envSegment === "production" || (envSegment && !featureFlags.environments)) {
     const tabPath = tab ? `/${tab}` : "";
     redirect(`/apps/${app.name}${tabPath}`);
   }
@@ -239,8 +242,6 @@ export default async function AppDetailPage({ params }: PageProps) {
       columns: { id: true, name: true, displayName: true },
     }) ?? null;
   }
-
-  const featureFlags = await getFeatureFlags();
 
   const tabContext = {
     isComposeParent: (app.childApps?.length ?? 0) > 0,
