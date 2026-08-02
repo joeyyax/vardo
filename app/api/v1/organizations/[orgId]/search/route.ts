@@ -30,6 +30,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
           source: true,
           deployType: true,
           imageName: true,
+          parentAppId: true,
         },
         with: {
           project: { columns: { name: true, displayName: true } },
@@ -46,6 +47,10 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       }),
     ]);
 
+    // Compose children share a display name across stacks — three services all
+    // read "Redis" — so each carries the parent that tells them apart.
+    const byId = new Map(orgApps.map((app) => [app.id, app]));
+
     const response = NextResponse.json({
       apps: orgApps.map((app) => ({
         id: app.id,
@@ -55,6 +60,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         source: app.source,
         deployType: app.deployType,
         imageName: app.imageName,
+        parentName: app.parentAppId ? byId.get(app.parentAppId)?.displayName ?? null : null,
         projectName: app.project?.displayName || null,
         domains: app.domains?.map((d) => d.domain) || [],
       })),
