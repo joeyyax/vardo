@@ -256,9 +256,8 @@ export async function checkServiceByName(name: string): Promise<ServiceStatus | 
 }
 
 /**
- * Logs pages for services Vardo runs as system-managed apps. The route resolves
- * an app against the viewer's current org, so a link is only offered when the
- * system org and the logs tab are both reachable.
+ * Logs pages for services Vardo runs as system-managed apps. Only offered when
+ * the logs tab is reachable and the app belongs to the viewer's current org.
  */
 async function resolveLogsHrefs(): Promise<Map<string, string>> {
   const hrefs = new Map<string, string>();
@@ -273,12 +272,24 @@ async function resolveLogsHrefs(): Promise<Map<string, string>> {
     ]);
     if (!logging || !selfManagement) return hrefs;
 
+    // Scoped to the viewer's current org, not to any org. The route resolves a
+    // slug within the active org, so an app owned by another one links to a 404.
+    const { getCurrentOrg } = await import("@/lib/auth/session");
+    const orgData = await getCurrentOrg();
+    if (!orgData) return hrefs;
+
     const { apps } = await import("@/lib/db/schema");
     const { and, eq, inArray } = await import("drizzle-orm");
     const rows = await db
       .select({ name: apps.name })
       .from(apps)
-      .where(and(inArray(apps.name, slugs), eq(apps.isSystemManaged, true)));
+      .where(
+        and(
+          inArray(apps.name, slugs),
+          eq(apps.isSystemManaged, true),
+          eq(apps.organizationId, orgData.organization.id),
+        ),
+      );
 
     const present = new Set(rows.map((r) => r.name));
     for (const probe of SERVICE_PROBES) {
