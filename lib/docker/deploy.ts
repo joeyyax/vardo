@@ -143,11 +143,9 @@ export async function runDeployment(
 
     if (!app) throw new Error("App not found");
 
-    // For multi-service compose apps, the Networking UI lives on each
-    // child service (the parent app page has no Networking tab), so most
-    // user-managed domains end up attached to a child app. Aggregate
-    // those into the deploy and tag each with its compose service so the
-    // injection step can target the right service's container.
+    // A domain on a child service is stored against that child app.
+    // Aggregate those into the deploy and tag each with its compose service
+    // so the injection step can target the right service's container.
     const childDomains = await db.query.domains.findMany({
       where: inArray(
         domains.appId,
