@@ -36,6 +36,7 @@ export {
   normalizeNamedNetworkModes,
   validateCompose,
   sanitizeCompose,
+  sharedServiceNames,
 } from "./compose-validate";
 
 // Generation

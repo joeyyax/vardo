@@ -3886,3 +3886,39 @@ describe("defaultMemoryLimitMb", () => {
     expect(defaultMemoryLimitMb("disposable")).toBe(512);
   });
 });
+
+// ---------------------------------------------------------------------------
+// parseCompose — x-vardo-shared
+// ---------------------------------------------------------------------------
+
+describe("parseCompose — x-vardo-shared", () => {
+  const yaml = `
+services:
+  web:
+    image: web
+  postgres:
+    image: postgres:17
+    x-vardo-shared: true
+`;
+
+  it("carries the marker through to the deploy pipeline", () => {
+    const compose = parseCompose(yaml);
+    expect(compose.services.postgres["x-vardo-shared"]).toBe(true);
+    expect(compose.services.web["x-vardo-shared"]).toBeUndefined();
+  });
+
+  it("drops a non-boolean marker rather than treating it as set", () => {
+    const compose = parseCompose(`
+services:
+  postgres:
+    image: postgres:17
+    x-vardo-shared: "true"
+`);
+    expect(compose.services.postgres["x-vardo-shared"]).toBeUndefined();
+  });
+
+  it("survives a YAML round-trip", () => {
+    const compose = parseCompose(composeToYaml(parseCompose(yaml)));
+    expect(compose.services.postgres["x-vardo-shared"]).toBe(true);
+  });
+});
