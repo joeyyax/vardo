@@ -22,7 +22,7 @@ type AlertState = {
 
 // Rate limit windows in milliseconds per alert type
 const RATE_LIMITS: Record<AlertType, number> = {
-  "service-degraded": 15 * 60 * 1000, // 15 min
+  "service-degraded": 24 * 60 * 60 * 1000, // once per outage; recovery clears it
   "disk-space": 60 * 60 * 1000, // 1 hour
   "host-restarted": 365 * 24 * 60 * 60 * 1000, // effectively once per startup (reset on process restart)
   "cert-expiring": 24 * 60 * 60 * 1000, // 1 day
@@ -114,6 +114,16 @@ export function markFired(type: AlertType, key: string): void {
   });
   // Fire-and-forget — don't block the caller on DB I/O
   persistToDb().catch(() => {});
+}
+
+/**
+ * Forget an alert so the next occurrence fires again. Called on recovery — an
+ * entry that survives recovery makes the next outage look like a repeat.
+ */
+export function clearFired(type: AlertType, key: string): void {
+  if (state.delete(makeKey(type, key))) {
+    persistToDb().catch(() => {});
+  }
 }
 
 export function getAlertState(): Array<{
