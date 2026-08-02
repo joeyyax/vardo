@@ -38,6 +38,7 @@ import {
 import { DeploymentLog } from "@/components/log-viewer";
 import { DeploymentStatusBadge, formatDuration } from "@/components/app-status";
 import { toast } from "@/lib/messenger";
+import { RelativeTime } from "@/components/relative-time";
 import { Uptime } from "./timer";
 import { InProgressDeployCard } from "./in-progress-deploy-card";
 
@@ -393,7 +394,7 @@ export function AppDeployPanel({
             {deployment.durationMs != null && (
               <span>built in {formatDuration(deployment.durationMs)}</span>
             )}
-            <span>{new Date(deployment.startedAt).toLocaleDateString()}</span>
+            <RelativeTime date={deployment.startedAt} />
             {variant === "rollback" && !deploying && (
               <div onClick={(e) => e.stopPropagation()}>
                 <Button
@@ -647,7 +648,7 @@ export function AppDeployPanel({
                           {rollbackPreview.gitSha.slice(0, 7)}
                         </code>
                       )}
-                      <span>{new Date(rollbackPreview.deployedAt).toLocaleString()}</span>
+                      <RelativeTime date={rollbackPreview.deployedAt} absoluteFirst />
                     </div>
                   </div>
                 </div>

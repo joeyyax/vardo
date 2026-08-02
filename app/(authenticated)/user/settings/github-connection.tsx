@@ -7,6 +7,7 @@ import { toast } from "@/lib/messenger";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { RelativeTime } from "@/components/relative-time";
 
 type Installation = {
   id: string;
@@ -176,8 +177,7 @@ export function GitHubConnection() {
                   </Badge>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Connected{" "}
-                  {new Date(installation.createdAt).toLocaleDateString()}
+                  Connected <RelativeTime date={installation.createdAt} />
                 </p>
               </div>
               <div className="flex items-center gap-1">
