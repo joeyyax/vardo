@@ -90,9 +90,11 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
   const [newEnvCloneDefault, setNewEnvCloneDefault] = useState<string>("__production");
 
   // Environment selection — persist via URL path segment (/apps/{slug}/{env}/{tab})
+  // With the environments flag off, the app is pinned to production.
+  const envsEnabled = featureFlags?.environments !== false;
   const productionEnv = app.environments.find((e) => e.type === "production");
   const initialEnvId = (() => {
-    if (initialEnv) {
+    if (initialEnv && envsEnabled) {
       const match = app.environments.find((e) => e.name === initialEnv);
       if (match) return match.id;
     }
@@ -481,7 +483,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           </h1>
         )}
         {app.isSystemManaged && <SystemBadge label="System Managed" />}
-        {!isChildService && (
+        {!isChildService && envsEnabled && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -818,6 +820,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
       </Tabs>
 
       {/* New Environment Sheet */}
+      {envsEnabled && (
       <NewEnvironmentSheet
         open={newEnvOpen}
         onOpenChange={setNewEnvOpen}
@@ -827,6 +830,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         defaultCloneFrom={newEnvCloneDefault}
         onSelectEnv={setSelectedEnvId}
       />
+      )}
 
       {/* Edit Settings Dialog */}
       <AppSettingsDialog
