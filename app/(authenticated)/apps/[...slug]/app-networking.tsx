@@ -37,6 +37,7 @@ export function AppNetworking({
   orgId,
   activeTab,
   initialSubView,
+  showPorts = true,
 }: {
   domains: Domain[];
   exposedPorts: { internal: number; external?: number; description?: string }[] | null;
@@ -46,6 +47,8 @@ export function AppNetworking({
   orgId: string;
   activeTab: string;
   initialSubView?: string;
+  /** Off for a compose parent — published ports belong to a service. */
+  showPorts?: boolean;
 }) {
   const router = useRouter();
 
@@ -560,11 +563,13 @@ export function AppNetworking({
       </div>
 
       {/* Exposed Ports */}
-      <PortsManager
-        ports={exposedPorts || []}
-        appId={appId}
-        orgId={orgId}
-      />
+      {showPorts && (
+        <PortsManager
+          ports={exposedPorts || []}
+          appId={appId}
+          orgId={orgId}
+        />
+      )}
 
       {/* Domain Status Sheet */}
       {(() => {
