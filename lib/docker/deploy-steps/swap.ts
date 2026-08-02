@@ -30,6 +30,7 @@ import {
 import type { DeployContext } from "../deploy-context";
 import { classifyComposeServices } from "./classify-services";
 import { publishesHostPorts } from "../host-ports";
+import { partitionBySlot, slotScopeArgs } from "../slot-partition";
 
 const execFileAsync = promisify(execFile);
 const NETWORK_NAME = VARDO_NETWORK;
@@ -150,6 +151,16 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     log(`[deploy] Warning: network — ${err instanceof Error ? err.message : err}`);
   }
 
+  // Services marked x-vardo-shared sit outside the rotation, in their own
+  // compose project. Everything below operates on the slotted set only; the
+  // shared set is brought up once, further down, and never stopped by a swap.
+  const { shared, slotted } = partitionBySlot(compose);
+  const sharedNames = Object.keys(shared);
+  const slottedNames = Object.keys(slotted);
+  const sharedProjectName = `${app.name}-${ctx.envName}-shared`;
+
+  const onlySlotted = slotScopeArgs({ shared, slotted });
+
   // Stop ALL services in the old slot before starting the new one. This
   // prevents port conflicts from any service with host port bindings (not
   // just services with externalized volumes). Without this, services like
@@ -160,8 +171,9 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   // Nothing binds the host, so both slots can run at once. Traefik treats the
   // two as backends of one service and drains to the survivor, which turns the
   // cutover from a gap into an overlap. Anything publishing a port keeps the
-  // stop-then-start order — the second bind would fail.
-  const canOverlapSlots = mustStopOldSlot && !publishesHostPorts(compose.services);
+  // stop-then-start order — the second bind would fail. Only the rotating
+  // services are asked: a shared postgres holds its port across the swap.
+  const canOverlapSlots = mustStopOldSlot && !publishesHostPorts(slotted);
   const stopOldBeforeUp = mustStopOldSlot && !canOverlapSlots;
 
   // Pre-clean the new slot to remove orphaned containers from any previous
@@ -297,7 +309,8 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
           "up", "-d",
           "--no-recreate",
           "--pull", "never",
-          ...serviceNames,
+          ...(sharedNames.length > 0 ? ["--no-deps"] : []),
+          ...(serviceNames.length > 0 ? serviceNames : slottedNames),
         ],
         { cwd: oldSlotDir, timeout: COMPOSE_UP_TIMEOUT }
       );
@@ -309,6 +322,34 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       log(`[deploy] Warning: failed to restore old-slot services — ${err instanceof Error ? err.message : err}`);
     }
   };
+
+  // Step 6b2: Bring up the shared services. --no-recreate means an already
+  // running database is left exactly as it is; only a missing one is created.
+  // Runs before the new slot so anything depending on it can connect.
+  if (sharedNames.length > 0) {
+    log(`[deploy] Shared services (not rotated): ${sharedNames.join(", ")}`);
+    try {
+      const { stdout, stderr } = await execFileAsync(
+        "docker",
+        [
+          "compose",
+          ...composeFileArgs,
+          "-p", sharedProjectName,
+          "up", "-d",
+          "--no-recreate",
+          "--no-deps",
+          ...sharedNames,
+        ],
+        { cwd: slotDir, timeout: COMPOSE_UP_TIMEOUT }
+      );
+      for (const line of `${stdout}\n${stderr}`.split(/\r?\n|\r/).filter(Boolean)) {
+        logs.push(`[deploy][shared] ${line.trim()}`);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(`Shared services failed to start (old slot unaffected): ${message}`);
+    }
+  }
 
   // Step 6c: Pre-create and chown bind-mount targets to each service's non-root
   // uid. Without this, the daemon creates missing host paths root-owned and
@@ -323,7 +364,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   try {
     const { stdout, stderr } = await execFileAsync(
       "docker",
-      ["compose", ...composeFileArgs, "-p", newProjectName, "up", "-d", "--pull", "never"],
+      ["compose", ...composeFileArgs, "-p", newProjectName, "up", "-d", "--pull", "never", ...onlySlotted],
       { cwd: slotDir, timeout: composeUpTimeout }
     );
     for (const line of stdout.split(/\r?\n|\r/).filter(Boolean)) {
@@ -369,8 +410,11 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   // Probe the container Traefik was pointed at; a probe against the wrong
   // container fails open and reports the deploy healthy.
   const routed = getTraefikRoutedServices(compose);
-  const primarySvcName =
+  const routedName =
     [...routed][0] ?? selectRoutedService(compose, { containerPort }).service;
+  // A shared routed service is never replaced, so the deploy would prove
+  // nothing. Validation rejects it on save; this catches apps saved earlier.
+  const primarySvcName = sharedNames.includes(routedName) ? undefined : routedName;
   const httpProbe = primarySvcName
     ? { containerName: `${newProjectName}-${primarySvcName}-1`, port: containerPort }
     : undefined;
@@ -414,10 +458,13 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   if (!isLocalEnv) {
     try {
       const serviceNames = Object.keys(compose.services);
-      const primaryServiceName = serviceNames[0];
+      // A shared service keeps its own project name; only slotted ones move.
+      const projectFor = (svc: string) =>
+        sharedNames.includes(svc) ? sharedProjectName : newProjectName;
+      const primaryServiceName = slottedNames[0] ?? serviceNames[0];
 
       if (primaryServiceName) {
-        const parentContainerName = `${newProjectName}-${primaryServiceName}-1`;
+        const parentContainerName = `${projectFor(primaryServiceName)}-${primaryServiceName}-1`;
         await db
           .update(apps)
           .set({ containerName: parentContainerName, updatedAt: new Date() })
@@ -427,7 +474,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
 
       if (serviceNames.length > 1) {
         for (const serviceName of serviceNames) {
-          const childContainerName = `${newProjectName}-${serviceName}-1`;
+          const childContainerName = `${projectFor(serviceName)}-${serviceName}-1`;
           const childName = `${app.name}-${serviceName}`;
           await db
             .update(apps)
