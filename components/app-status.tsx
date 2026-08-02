@@ -213,17 +213,25 @@ export function DeploymentStatusBadge({ status }: { status: "queued" | "running"
 export function ChartCard({
   title,
   icon: Icon,
+  value,
   children,
 }: {
   title: string;
   icon: React.ComponentType<{ className?: string }>;
+  /** Latest reading, shown in the header so the chart needs no stat tile beside it. */
+  value?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <div className="squircle rounded-lg border bg-card overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-3 border-b">
-        <Icon className="size-4 text-muted-foreground" />
-        <h3 className="text-sm font-medium">{title}</h3>
+      <div className="flex items-center justify-between gap-3 px-4 py-3 border-b">
+        <div className="flex items-center gap-2 min-w-0">
+          <Icon className="size-4 text-muted-foreground shrink-0" />
+          <h3 className="text-sm font-medium truncate">{title}</h3>
+        </div>
+        {value !== undefined && (
+          <div className="type-numeral text-sm tabular-nums shrink-0">{value}</div>
+        )}
       </div>
       <div className="p-4">{children}</div>
     </div>

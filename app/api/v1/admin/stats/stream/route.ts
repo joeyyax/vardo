@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
     }
 
     const allApps = await db.query.apps.findMany({
-      columns: { id: true, name: true, displayName: true, status: true, organizationId: true, projectId: true },
+      columns: { id: true, name: true, displayName: true, status: true, organizationId: true, projectId: true, parentAppId: true },
     });
     const projectCount = new Set(allApps.map((a) => a.projectId).filter(Boolean)).size;
 
@@ -78,6 +78,7 @@ export async function GET(request: NextRequest) {
             displayName: app.displayName,
             status: app.status,
             organizationId: app.organizationId,
+            parentAppId: app.parentAppId,
             diskUsage: 0,
             containers: (byApp[app.id] || []).map(containerToPoint),
           })),
