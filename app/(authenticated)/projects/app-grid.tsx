@@ -322,7 +322,9 @@ function ProjectCard({
             Add App
           </Link>
         ) : (
-          <div className="grid content-start gap-x-6 sm:grid-cols-2">
+          /* One app per row: two columns halved the width available to a name,
+             its status word and its badges, which is what truncated first. */
+          <div className="grid content-start">
             {[...projectApps]
               .sort(
                 (x, y) =>
