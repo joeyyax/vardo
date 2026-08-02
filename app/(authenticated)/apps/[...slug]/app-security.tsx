@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect } from "react";
 import { Shield, ShieldAlert, ShieldCheck, RefreshCw, Loader2, AlertTriangle, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/lib/messenger";
+import { RelativeTime } from "@/components/relative-time";
 import type { SecurityFinding } from "@/lib/db/schema/security";
 
 type Scan = {
@@ -61,7 +62,6 @@ function ScanSummary({ scan }: { scan: Scan }) {
   const info = findings.filter((f) => f.severity === "info");
 
   const scannedAt = scan.completedAt ?? scan.startedAt;
-  const timeLabel = new Date(scannedAt).toLocaleString();
   const triggerLabel = scan.trigger === "deploy" ? "after deploy" : scan.trigger === "scheduled" ? "scheduled" : "manual";
 
   return (
@@ -97,7 +97,7 @@ function ScanSummary({ scan }: { scan: Scan }) {
           )}
         </span>
         <span className="text-xs">
-          {timeLabel} &middot; {triggerLabel}
+          <RelativeTime date={scannedAt} /> &middot; {triggerLabel}
         </span>
       </div>
 

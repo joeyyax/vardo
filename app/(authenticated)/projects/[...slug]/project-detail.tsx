@@ -3,7 +3,7 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { formatDistanceToNowStrict } from "date-fns";
+import { RelativeTime } from "@/components/relative-time";
 import {
   Plus,
   Package,
@@ -228,12 +228,12 @@ function AppCard({
   const deployFragment = lastDeploy && (
     lastDeploy.status === "failed" ? (
       <span className="text-status-error">
-        Deploy failed {formatDistanceToNowStrict(new Date(lastDeploy.startedAt), { addSuffix: true })}
+        Deploy failed <RelativeTime date={lastDeploy.startedAt} />
       </span>
     ) : lastDeploy.status === "running" || lastDeploy.status === "queued" ? (
       <span className="text-status-info">Deploying now</span>
     ) : (
-      <span>Deployed {formatDistanceToNowStrict(new Date(lastDeploy.startedAt), { addSuffix: true })}</span>
+      <span>Deployed <RelativeTime date={lastDeploy.startedAt} /></span>
     )
   );
 
@@ -507,9 +507,7 @@ function ProjectDeployments({ apps, color }: { apps: ProjectApp[]; color: string
                   {deployment.durationMs != null && (
                     <span>built in {formatDuration(deployment.durationMs)}</span>
                   )}
-                  <span>
-                    {new Date(deployment.startedAt).toLocaleDateString()}
-                  </span>
+                  <RelativeTime date={deployment.startedAt} />
                   <ChevronDown className={`size-4 transition-transform ${viewingLogId === deployment.id ? "rotate-180" : ""}`} />
                 </div>
               </button>

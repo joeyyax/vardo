@@ -34,6 +34,7 @@ import {
   BottomSheetDescription,
 } from "@/components/ui/bottom-sheet";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
+import { RelativeTime } from "@/components/relative-time";
 
 type CronJob = {
   id: string;
@@ -303,8 +304,7 @@ export function CronManager({ appId, orgId }: Props) {
                       </span>
                       {job.lastRunAt && (
                         <span>
-                          Last run:{" "}
-                          {new Date(job.lastRunAt).toLocaleString()}
+                          Last run: <RelativeTime date={job.lastRunAt} />
                         </span>
                       )}
                     </div>

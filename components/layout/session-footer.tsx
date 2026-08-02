@@ -3,16 +3,7 @@ import { db } from "@/lib/db";
 import { session as sessionTable } from "@/lib/db/schema";
 import { eq, and, gt } from "drizzle-orm";
 import { getSession, getCurrentOrg } from "@/lib/auth/session";
-
-function formatSessionTime(date: Date): string {
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-  }) + " at " + date.toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
+import { RelativeTime } from "@/components/relative-time";
 
 export async function SessionFooter() {
   const [session, orgData] = await Promise.all([
@@ -70,8 +61,8 @@ export async function SessionFooter() {
         )}
         {createdAt && expiresAt && (
           <span>
-            Session started {formatSessionTime(createdAt)}, expires{" "}
-            {formatSessionTime(expiresAt)}.
+            Session started <RelativeTime date={createdAt} absoluteFirst />, expires{" "}
+            <RelativeTime date={expiresAt} absoluteFirst />.
           </span>
         )}
         {sessionCount > 1 && (

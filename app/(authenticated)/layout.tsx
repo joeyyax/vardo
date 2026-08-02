@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { TopNav } from "@/components/layout/top-nav";
 import { CommandPalette } from "@/components/command-palette";
+import { KeyboardShortcuts } from "@/components/keyboard-shortcuts";
 import { NotificationListener } from "@/components/notification-listener";
 import { getSession, getCurrentOrg, getUserOrganizations } from "@/lib/auth/session";
 import { isFeatureEnabled } from "@/lib/config/features";
@@ -73,6 +74,7 @@ export default async function AppLayout({
       </div>
 
       <CommandPalette orgId={organization.id} />
+      <KeyboardShortcuts />
       <NotificationListener orgId={organization.id} />
     </TooltipProvider>
   );
