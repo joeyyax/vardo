@@ -120,6 +120,14 @@ export async function register() {
         })
         .catch((err) => log.error("Failed to start mesh heartbeat scheduler:", err)),
 
+      // Preview reaper — expired preview environments are never otherwise removed
+      import("./lib/docker/preview-scheduler")
+        .then(({ startPreviewReaper }) => {
+          startPreviewReaper();
+          log.info("Preview reaper started");
+        })
+        .catch((err) => log.error("Failed to start preview reaper:", err)),
+
       // Self-registration — Vardo managing itself, core feature
       import("./lib/docker/self-register")
         .then(({ ensureVardoProject }) => ensureVardoProject())
