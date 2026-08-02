@@ -3,6 +3,12 @@ import type { NextRequest } from "next/server";
 /** Default SSE idle timeout: 10 minutes */
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 
+/** Events the stream will buffer for a client that is reading normally. */
+const BUFFER_CHUNKS = 1024;
+
+/** How far past the buffer a client must fall before its events are dropped. */
+const STALLED_CLIENT_CHUNKS = 4096;
+
 type SSEOptions = {
   /** Timeout in ms before the stream auto-closes. Set to 0 to disable. */
   timeoutMs?: number;
@@ -27,10 +33,24 @@ export function createSSEResponse(
     start(controller) {
       let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
+      let dropped = 0;
+
       function sendEvent(event: string, data: unknown) {
         try {
-          // Backpressure: skip events if the client can't keep up
-          if (controller.desiredSize !== null && controller.desiredSize <= 0) return;
+          // Only a client that has stopped reading entirely gets dropped. The
+          // previous check dropped at desiredSize <= 0, which a default stream
+          // reaches after one enqueue — a 200-line backfill delivered 10.
+          if (controller.desiredSize !== null && controller.desiredSize <= -STALLED_CLIENT_CHUNKS) {
+            dropped++;
+            return;
+          }
+          if (dropped > 0) {
+            const lost = dropped;
+            dropped = 0;
+            controller.enqueue(
+              encoder.encode(`event: dropped\ndata: ${JSON.stringify({ count: lost })}\n\n`),
+            );
+          }
           controller.enqueue(
             encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
           );
@@ -65,7 +85,7 @@ export function createSSEResponse(
         try { controller.close(); } catch { /* already closed */ }
       });
     },
-  });
+  }, new CountQueuingStrategy({ highWaterMark: BUFFER_CHUNKS }));
 
   return new Response(stream, {
     headers: {
