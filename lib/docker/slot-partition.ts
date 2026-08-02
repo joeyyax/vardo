@@ -103,6 +103,17 @@ export function composeSubset(
   return { ...compose, services };
 }
 
+/**
+ * Compose project holding an app's shared services.
+ *
+ * Scoped by environment, not just app: a PR preview must get its own database
+ * rather than attaching to production's. Volumes are externalized under the
+ * matching `${app}-${env}_` prefix, so the data follows the same boundary.
+ */
+export function sharedProjectName(appName: string, envName: string): string {
+  return `${appName}-${envName}-shared`;
+}
+
 /** Whether this app needs the two-project deploy at all. */
 export function hasSharedServices(compose: ComposeFile): boolean {
   return Object.values(compose.services ?? {}).some(isSharedService);

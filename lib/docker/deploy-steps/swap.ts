@@ -30,7 +30,7 @@ import {
 import type { DeployContext } from "../deploy-context";
 import { classifyComposeServices } from "./classify-services";
 import { publishesHostPorts } from "../host-ports";
-import { partitionBySlot, slotScopeArgs } from "../slot-partition";
+import { partitionBySlot, sharedProjectName, slotScopeArgs } from "../slot-partition";
 
 const execFileAsync = promisify(execFile);
 const NETWORK_NAME = VARDO_NETWORK;
@@ -157,7 +157,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   const { shared, slotted } = partitionBySlot(compose);
   const sharedNames = Object.keys(shared);
   const slottedNames = Object.keys(slotted);
-  const sharedProjectName = `${app.name}-${ctx.envName}-shared`;
+  const sharedProject = sharedProjectName(app.name, ctx.envName);
 
   const onlySlotted = slotScopeArgs({ shared, slotted });
 
@@ -334,7 +334,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
         [
           "compose",
           ...composeFileArgs,
-          "-p", sharedProjectName,
+          "-p", sharedProject,
           "up", "-d",
           "--no-recreate",
           "--no-deps",
@@ -460,7 +460,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       const serviceNames = Object.keys(compose.services);
       // A shared service keeps its own project name; only slotted ones move.
       const projectFor = (svc: string) =>
-        sharedNames.includes(svc) ? sharedProjectName : newProjectName;
+        sharedNames.includes(svc) ? sharedProject : newProjectName;
       const primaryServiceName = slottedNames[0] ?? serviceNames[0];
 
       if (primaryServiceName) {
