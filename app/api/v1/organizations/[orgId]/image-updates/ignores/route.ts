@@ -4,6 +4,7 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { handleRouteError } from "@/lib/api/error-response";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { requirePlugin } from "@/lib/api/require-plugin";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { db } from "@/lib/db";
 import { apps, imageUpdateIgnores } from "@/lib/db/schema";
@@ -37,6 +38,9 @@ async function handleGet(_request: NextRequest, { params }: RouteParams) {
   try {
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+    const gate = await requirePlugin("image-updates");
+    if (gate) return gate;
     return NextResponse.json({ rules: await readIgnoreRules(orgId) });
   } catch (error) {
     return handleRouteError(error, "Error reading ignore rules");
@@ -49,6 +53,9 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+    const gate = await requirePlugin("image-updates");
+    if (gate) return gate;
 
     const parsed = ruleSchema.safeParse(await request.json().catch(() => ({})));
     if (!parsed.success) {
@@ -109,6 +116,9 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+    const gate = await requirePlugin("image-updates");
+    if (gate) return gate;
 
     const parsed = deleteSchema.safeParse(await request.json().catch(() => ({})));
     if (!parsed.success) {
