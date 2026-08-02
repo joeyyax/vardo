@@ -81,6 +81,11 @@ export function formatDuration(ms: number): string {
   return `${minutes}m ${seconds % 60}s`;
 }
 
+/** Acronyms keep their casing; everything else reads as written. */
+function triggerLabel(trigger: string): string {
+  return trigger === "api" ? "API" : trigger;
+}
+
 /**
  * Short trailing facts for a row — duration, what changed, what triggered it.
  * Only read from a single event, since a collapsed run has no one answer.
@@ -94,7 +99,7 @@ export function detailsFor(group: ActivityGroup): string[] {
   if (typeof duration === "number") details.push(`in ${formatDuration(duration)}`);
 
   const trigger = metadata.trigger;
-  if (typeof trigger === "string" && trigger) details.push(`via ${trigger}`);
+  if (typeof trigger === "string" && trigger) details.push(`via ${triggerLabel(trigger)}`);
 
   const changes = metadata.changes;
   if (Array.isArray(changes) && changes.length) {

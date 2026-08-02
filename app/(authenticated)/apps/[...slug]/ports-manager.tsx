@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Plus, X } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export function PortsManager({
   ports: initialPorts,
@@ -78,7 +79,7 @@ export function PortsManager({
         </div>
         <Button size="sm" onClick={() => setAdding(!adding)} disabled={saving}>
           <Plus className="mr-1.5 size-4" />
-          Add Port
+          Add port
         </Button>
       </div>
 
@@ -127,12 +128,11 @@ export function PortsManager({
       )}
 
       {ports.length === 0 && !adding ? (
-        <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-8">
-          <p className="text-sm text-muted-foreground">
-            No ports exposed to the host. Container ports are accessible within the Docker network by default.
-            Expose a port to access this service directly.
-          </p>
-        </div>
+        <EmptyState
+          className="p-8"
+          title="No ports exposed to the host"
+          body="Container ports are reachable inside the Docker network by default. Expose one to reach this service directly."
+        />
       ) : ports.length > 0 && (
         <div className="divide-y rounded-lg border">
           {ports.map((port, i) => (
