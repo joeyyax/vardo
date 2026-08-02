@@ -256,4 +256,32 @@ services:
     expect(nameFindings).toHaveLength(1);
     expect(nameFindings[0].detail.containerName).toBe("my-custom-name");
   });
+
+  it("flags a non-boolean x-vardo-shared as critical", () => {
+    const result = analyzeRawCompose(`
+services:
+  app:
+    image: nginx:latest
+  postgres:
+    image: postgres:17
+    x-vardo-shared: "true"
+`);
+    const found = result.findings.filter((f) => f.category === "shared-marker");
+    expect(found).toHaveLength(1);
+    expect(found[0].severity).toBe("critical");
+    expect(found[0].service).toBe("postgres");
+    expect(result.counts["shared-marker"]).toBe(1);
+  });
+
+  it("says nothing when the marker is a real boolean", () => {
+    const result = analyzeRawCompose(`
+services:
+  app:
+    image: nginx:latest
+  postgres:
+    image: postgres:17
+    x-vardo-shared: true
+`);
+    expect(result.findings.filter((f) => f.category === "shared-marker")).toHaveLength(0);
+  });
 });
