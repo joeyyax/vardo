@@ -15,6 +15,10 @@ function volumeSource(mount: string): string {
  *
  * A volume touched by any rotating service is excluded: that one still has to
  * outlive the slot.
+ *
+ * Each slot creates an empty copy of these. One compose file serves both
+ * projects, so suppressing the copy would mean naming the real volume in the
+ * slot's own file — the clutter is the safer trade.
  */
 export function sharedOnlyVolumes(compose: ComposeFile): Set<string> {
   return volumesByOwner(compose).sharedOnly;

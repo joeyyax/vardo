@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { validateCompose, sharedServiceNames } from "@/lib/docker/compose-validate";
+import {
+  validateCompose,
+  sharedServiceNames,
+  findMistypedSharedMarkers,
+  sharedMarkerTypeErrors,
+} from "@/lib/docker/compose-validate";
 import { SHARED_MARKER } from "@/lib/docker/slot-partition";
 import type { ComposeFile, ComposeService } from "@/lib/docker/compose-types";
 
@@ -166,5 +171,125 @@ services:
   it("returns nothing for unparseable or serviceless YAML", () => {
     expect(sharedServiceNames("::: not yaml :::")).toEqual([]);
     expect(sharedServiceNames("version: '3'")).toEqual([]);
+  });
+});
+
+describe("findMistypedSharedMarkers", () => {
+  const withMarker = (value: string) => `
+services:
+  web:
+    image: web
+  postgres:
+    image: postgres:17
+    ${SHARED_MARKER}: ${value}
+`;
+
+  it("catches the quoted marker the parser drops", () => {
+    expect(findMistypedSharedMarkers(withMarker('"true"'))).toEqual([
+      { service: "postgres", value: "true" },
+    ]);
+    expect(findMistypedSharedMarkers(withMarker("'true'"))).toEqual([
+      { service: "postgres", value: "true" },
+    ]);
+  });
+
+  // The yaml package resolves the YAML 1.2 core schema: only true/false and
+  // their capitalizations are booleans. The 1.1 spellings are plain strings.
+  it.each(["yes", "Yes", "YES", "on", "On", "ON", "y", "Y"])(
+    "catches the YAML 1.1 truthy spelling %s",
+    (value) => {
+      expect(findMistypedSharedMarkers(withMarker(value))).toEqual([
+        { service: "postgres", value },
+      ]);
+    },
+  );
+
+  it.each(["no", "No", "off", "Off", "n", "N", '"false"'])(
+    "catches the falsy near-miss %s",
+    (value) => {
+      expect(findMistypedSharedMarkers(withMarker(value))).toHaveLength(1);
+    },
+  );
+
+  it("catches numeric, null and structured values", () => {
+    expect(findMistypedSharedMarkers(withMarker("1"))).toEqual([
+      { service: "postgres", value: 1 },
+    ]);
+    expect(findMistypedSharedMarkers(withMarker("0"))).toEqual([
+      { service: "postgres", value: 0 },
+    ]);
+    expect(findMistypedSharedMarkers(withMarker("null"))).toEqual([
+      { service: "postgres", value: null },
+    ]);
+    expect(findMistypedSharedMarkers(withMarker("[]"))).toHaveLength(1);
+  });
+
+  it("catches a typo in the casing the parser would not read", () => {
+    expect(findMistypedSharedMarkers(withMarker("tRue"))).toEqual([
+      { service: "postgres", value: "tRue" },
+    ]);
+  });
+
+  it.each(["true", "True", "TRUE", "false", "False", "FALSE"])(
+    "accepts the boolean %s",
+    (value) => {
+      expect(findMistypedSharedMarkers(withMarker(value))).toEqual([]);
+    },
+  );
+
+  it("accepts a compose file with no marker at all", () => {
+    expect(
+      findMistypedSharedMarkers(`
+services:
+  web:
+    image: web
+`),
+    ).toEqual([]);
+  });
+
+  it("reports every offending service", () => {
+    const found = findMistypedSharedMarkers(`
+services:
+  postgres:
+    image: postgres:17
+    ${SHARED_MARKER}: "true"
+  redis:
+    image: redis
+    ${SHARED_MARKER}: yes
+`);
+    expect(found.map((f) => f.service)).toEqual(["postgres", "redis"]);
+  });
+
+  it("returns nothing for unparseable or serviceless YAML", () => {
+    expect(findMistypedSharedMarkers("::: not yaml :::")).toEqual([]);
+    expect(findMistypedSharedMarkers("")).toEqual([]);
+    expect(findMistypedSharedMarkers("version: '3'")).toEqual([]);
+  });
+});
+
+describe("sharedMarkerTypeErrors", () => {
+  it("names the service, the value and the fix", () => {
+    const [error] = sharedMarkerTypeErrors(`
+services:
+  postgres:
+    image: postgres:17
+    ${SHARED_MARKER}: "true"
+`);
+    expect(error).toContain('"postgres"');
+    expect(error).toContain('the string "true"');
+    expect(error).toContain(`${SHARED_MARKER}: true`);
+  });
+
+  it("is empty for a correctly marked file", () => {
+    expect(
+      sharedMarkerTypeErrors(`
+services:
+  web:
+    image: web
+  postgres:
+    image: postgres:17
+    ${SHARED_MARKER}: true
+`),
+    ).toEqual([]);
   });
 });

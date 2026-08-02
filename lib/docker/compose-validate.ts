@@ -249,6 +249,62 @@ export function sharedServiceNames(yamlText: string): string[] {
   return marked;
 }
 
+export type MistypedSharedMarker = { service: string; value: unknown };
+
+/**
+ * Services setting x-vardo-shared to anything other than a boolean.
+ *
+ * parseCompose only carries the marker through when it is a boolean, so
+ * `x-vardo-shared: "true"` is dropped and the service is blue/green'd — two
+ * database containers onto one data directory. Takes raw YAML because after
+ * parsing, a quoted marker and an absent one are the same thing.
+ */
+export function findMistypedSharedMarkers(yamlText: string): MistypedSharedMarker[] {
+  let root: unknown;
+  try {
+    root = YAML.parse(yamlText);
+  } catch {
+    return [];
+  }
+  if (!root || typeof root !== "object") return [];
+
+  const services = (root as { services?: unknown }).services;
+  if (!services || typeof services !== "object") return [];
+
+  const found: MistypedSharedMarker[] = [];
+  for (const [name, raw] of Object.entries(services as Record<string, unknown>)) {
+    if (!raw || typeof raw !== "object") continue;
+    if (!(SHARED_MARKER in (raw as Record<string, unknown>))) continue;
+    const value = (raw as Record<string, unknown>)[SHARED_MARKER];
+    if (typeof value === "boolean") continue;
+    found.push({ service: name, value });
+  }
+  return found;
+}
+
+/** How a rejected marker value reads back to the operator. */
+function describeMarkerValue(value: unknown): string {
+  if (value === null || value === undefined) return "null";
+  if (Array.isArray(value)) return "a list";
+  if (typeof value === "string") return `the string ${JSON.stringify(value)}`;
+  if (typeof value === "number") return `the number ${value}`;
+  if (typeof value === "object") return "a mapping";
+  return String(value);
+}
+
+/**
+ * Mistyped x-vardo-shared markers as blocking error messages.
+ * Every caller holding raw compose text should run this before storing it.
+ */
+export function sharedMarkerTypeErrors(yamlText: string): string[] {
+  return findMistypedSharedMarkers(yamlText).map(
+    ({ service, value }) =>
+      `Service "${service}" sets ${SHARED_MARKER} to ${describeMarkerValue(value)}, not a boolean — ` +
+      `the marker is ignored, so the service would be replaced on every deploy. ` +
+      `Write it unquoted: ${SHARED_MARKER}: true`,
+  );
+}
+
 /**
  * Basic validation of a ComposeFile structure.
  */

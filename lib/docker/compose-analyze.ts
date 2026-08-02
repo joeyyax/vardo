@@ -10,6 +10,8 @@
 import YAML from "yaml";
 import type { ComposeFile } from "./compose";
 import { parsePortString, parseCompose } from "./compose";
+import { findMistypedSharedMarkers } from "./compose-validate";
+import { SHARED_MARKER } from "./slot-partition";
 import { parseImageRef } from "./image-updates/image-ref";
 import { isFloatingTag } from "./image-updates/tag-version";
 
@@ -25,7 +27,8 @@ export type FindingCategory =
   | "restart-policy"
   | "inline-env"
   | "env-var-ref"
-  | "floating-tag";
+  | "floating-tag"
+  | "shared-marker";
 
 export type Finding = {
   /** Which category this finding belongs to. */
@@ -287,6 +290,19 @@ export function analyzeRawCompose(
   // Parse to get the typed compose for standard analysis
   const compose = parseCompose(yamlContent);
   const analysis = analyzeCompose(compose, opts);
+
+  // A non-boolean marker is dropped by the parser, so it can only be seen here.
+  for (const { service, value } of findMistypedSharedMarkers(yamlContent)) {
+    analysis.findings.push({
+      category: "shared-marker",
+      severity: "critical",
+      service,
+      message: `${SHARED_MARKER} on ${service} is not a boolean — the marker is ignored, so this service would be replaced on every deploy. Write it unquoted: ${SHARED_MARKER}: true`,
+      detail: { value },
+      autoFixed: false,
+    });
+    analysis.counts["shared-marker"] = (analysis.counts["shared-marker"] || 0) + 1;
+  }
 
   // Also check the raw YAML for fields the parser drops
   try {
