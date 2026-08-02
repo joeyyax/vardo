@@ -1561,6 +1561,13 @@ run_env_migrations() {
 do_update() {
   [[ "$PLATFORM" != "macos" ]] && check_root
 
+  # Once Vardo deploys itself, this path would start a second frontend
+  # competing for the same domain. See docs/self-deploy-migration.md.
+  if [ -L "$VARDO_DIR/apps/vardo/production/current" ]; then
+    dimln "            Redeploy the 'vardo' app, or POST to its deploy endpoint."
+    fail "This instance deploys itself. Update it from the dashboard instead."
+  fi
+
   # Migrate legacy flat installs to slot layout before proceeding
   if ! has_slot_layout && [ -d "$VARDO_DIR/.git" ]; then
     migrate_to_slots
