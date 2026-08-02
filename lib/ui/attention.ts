@@ -1,5 +1,3 @@
-import type { ReactNode } from "react";
-
 import type { AppCondition } from "@/lib/docker/conditions";
 import { conditionKindLabel } from "@/lib/ui/conditions";
 
@@ -13,16 +11,69 @@ export type AttentionItem = {
   detail?: string;
   /** ISO timestamp of first confirmation, rendered as "for 5 hours". */
   since?: string;
+  /** Opens in a new tab — release notes and other off-instance links. */
+  external?: boolean;
 };
 
+/** Serializable: rows cross the API boundary, so no ReactNode in here. */
 export type AttentionRow = {
   key: string;
   label: string;
   tone: AttentionTone;
   items: AttentionItem[];
   /** Sentence under the subjects — what to do about it. */
-  footer?: ReactNode;
+  footer?: string;
 };
+
+const TONE_RANK: Record<AttentionTone, number> = { error: 0, warning: 1, neutral: 2 };
+
+/** Non-empty rows, worst first. */
+export function presentRows(rows: AttentionRow[]): AttentionRow[] {
+  return rows
+    .filter((r) => r.items.length > 0)
+    .sort((a, b) => TONE_RANK[a.tone] - TONE_RANK[b.tone] || a.label.localeCompare(b.label));
+}
+
+/** An available update is a fact, not a fault, so neutral rows are listed but not counted. */
+export function faultCount(rows: AttentionRow[]): number {
+  return rows.filter((r) => r.tone !== "neutral").reduce((n, r) => n + r.items.length, 0);
+}
+
+/** Faults this few are named in the collapsed bar rather than hidden behind it. */
+export const BAR_SUBJECT_LIMIT = 2;
+
+export type BarSummary = {
+  rows: AttentionRow[];
+  faults: number;
+  worst: AttentionTone | null;
+  /** Named outright when there are few enough to fit; otherwise counted by kind. */
+  subjects: AttentionItem[];
+  kinds: { key: string; label: string; tone: AttentionTone; count: number }[];
+};
+
+/**
+ * What the one-line bar says before anyone clicks it. A single fault reads as
+ * itself — expanding to find one chip is the failure this replaces.
+ */
+export function summarize(rows: AttentionRow[]): BarSummary {
+  const present = presentRows(rows);
+  const faults = faultCount(present);
+  const faultRows = present.filter((r) => r.tone !== "neutral");
+
+  return {
+    rows: present,
+    faults,
+    worst: present[0]?.tone ?? null,
+    subjects:
+      faults > 0 && faults <= BAR_SUBJECT_LIMIT ? faultRows.flatMap((r) => r.items) : [],
+    kinds: present.map((r) => ({
+      key: r.key,
+      label: r.label,
+      tone: r.tone,
+      count: r.items.length,
+    })),
+  };
+}
 
 /** Rows this short list their subjects outright; longer ones collapse. */
 export const INLINE_SUBJECT_LIMIT = 5;
