@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
 
-import { conditionRows, isInlineRow, INLINE_SUBJECT_LIMIT } from "@/lib/ui/attention";
+import {
+  conditionRows,
+  isInlineRow,
+  summarize,
+  INLINE_SUBJECT_LIMIT,
+} from "@/lib/ui/attention";
 import type { AppCondition } from "@/lib/docker/conditions";
 
 function app(name: string, conditions: AppCondition[]) {
@@ -75,5 +80,59 @@ describe("isInlineRow", () => {
 
   it("collapses a row past the limit", () => {
     expect(isInlineRow(row(INLINE_SUBJECT_LIMIT + 1))).toBe(false);
+  });
+});
+
+describe("summarize", () => {
+  const row = (
+    key: string,
+    tone: "error" | "warning" | "neutral",
+    count: number,
+  ) => ({
+    key,
+    label: key,
+    tone,
+    items: Array.from({ length: count }, (_, i) => ({
+      id: `${key}-${i}`,
+      name: `${key}-${i}`,
+      href: "/",
+    })),
+  });
+
+  it("drops empty rows and sorts the worst first", () => {
+    const s = summarize([
+      row("updates", "neutral", 3),
+      row("empty", "error", 0),
+      row("memory", "warning", 1),
+      row("down", "error", 1),
+    ]);
+    expect(s.rows.map((r) => r.key)).toEqual(["down", "memory", "updates"]);
+    expect(s.worst).toBe("error");
+  });
+
+  // An available update is a fact, not a fault.
+  it("counts faults without counting neutral rows", () => {
+    const s = summarize([row("updates", "neutral", 40), row("down", "error", 2)]);
+    expect(s.faults).toBe(2);
+  });
+
+  // Expanding the bar to find one chip is the failure this replaces.
+  it("names the subjects when there are few enough to fit", () => {
+    const s = summarize([row("down", "error", 1)]);
+    expect(s.subjects.map((i) => i.name)).toEqual(["down-0"]);
+  });
+
+  it("falls back to counts by kind once past the limit", () => {
+    const s = summarize([row("down", "error", 3)]);
+    expect(s.subjects).toEqual([]);
+    expect(s.kinds).toEqual([{ key: "down", label: "down", tone: "error", count: 3 }]);
+  });
+
+  // Neutral rows are listed, so a healthy fleet with updates still opens.
+  it("reports no worst tone and no rows when everything is empty", () => {
+    const s = summarize([row("empty", "error", 0)]);
+    expect(s.rows).toEqual([]);
+    expect(s.worst).toBeNull();
+    expect(s.faults).toBe(0);
   });
 });
