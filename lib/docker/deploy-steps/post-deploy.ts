@@ -438,5 +438,20 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
     log(`[deploy] Warning: post-deploy hooks — ${err instanceof Error ? err.message : err}`);
   }
 
+  // A self-deploy stops the container running this code, so the caller may
+  // never get to write the outcome. Record it here, then stop. The caller's
+  // write still lands if the process survives, and only adds the full log.
+  if (ctx.stopOldSlot) {
+    try {
+      await db
+        .update(deployments)
+        .set({ status: "success", finishedAt: new Date() })
+        .where(eq(deployments.id, ctx.deploymentId));
+    } catch (err) {
+      log(`[deploy] Warning: could not record success early — ${err instanceof Error ? err.message : err}`);
+    }
+    await ctx.stopOldSlot().catch(() => {});
+  }
+
   return ctx;
 }

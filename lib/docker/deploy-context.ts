@@ -182,6 +182,12 @@ export type DeployContext = {
   /** Stable volume prefix for externalization. */
   stableVolumePrefix: string;
 
+  /**
+   * Set when the old slot must be stopped after post-deploy rather than during
+   * the swap, because it is running this process. Vardo deploying Vardo.
+   */
+  stopOldSlot?: () => Promise<void>;
+
   // -----------------------------------------------------------------------
   // Logging & lifecycle
   // -----------------------------------------------------------------------
