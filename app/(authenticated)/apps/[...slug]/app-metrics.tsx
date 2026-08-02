@@ -8,9 +8,14 @@ import { Activity, AlertTriangle, Container, Cpu, Microchip, MemoryStick, Networ
 import { ChartCard } from "@/components/app-status";
 import { formatBytes, formatBytesShort, formatMemLimit, formatBytesRate, formatTime } from "@/lib/metrics/format";
 import { CHART_COLORS, chartTickStyle, TIME_RANGES, type TimeRange } from "@/lib/metrics/constants";
+import { networkRates } from "@/lib/metrics/rates";
 import { MetricsTooltip } from "@/components/metrics-chart";
 import type { ContainerPoint } from "@/lib/metrics/types";
 import { useMetricsStream } from "@/hooks/use-metrics-stream";
+
+/** Two points draw a line between two dots — not a trend anyone can read. */
+const MIN_CHART_POINTS = 3;
+const CHART_HEIGHT = 200;
 
 type AppMetricsProps = {
   orgId: string;
@@ -27,8 +32,8 @@ type ChartPoint = {
   memoryLimit: number;
   networkRx: number;
   networkTx: number;
-  networkRxRate: number;
-  networkTxRate: number;
+  networkRxRate: number | null;
+  networkTxRate: number | null;
   gpuUtilization: number;
   gpuMemoryUsed: number;
   gpuMemoryTotal: number;
@@ -97,6 +102,38 @@ function GpuTempTooltip(props: { active?: boolean; payload?: Array<{ dataKey?: s
   );
 }
 
+function Skeleton({ className = "w-14" }: { className?: string }) {
+  return <span className={`inline-block h-3.5 rounded bg-muted animate-pulse align-middle ${className}`} />;
+}
+
+/** Stands in for a chart with too few samples to plot. */
+function Collecting({ count }: { count: number }) {
+  return (
+    <div
+      className="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed"
+      style={{ height: CHART_HEIGHT }}
+    >
+      <Loader2 className="size-4 animate-spin text-muted-foreground" />
+      <p className="text-xs text-muted-foreground">Collecting data</p>
+      <p className="text-[10px] text-muted-foreground tabular-nums">
+        {count} of {MIN_CHART_POINTS} samples
+      </p>
+    </div>
+  );
+}
+
+/** Every sample came back empty — a flat line here would be a byte axis over nothing. */
+function NoSamples() {
+  return (
+    <div
+      className="flex items-center justify-center rounded-md border border-dashed"
+      style={{ height: CHART_HEIGHT }}
+    >
+      <p className="text-xs text-muted-foreground">No samples in this range</p>
+    </div>
+  );
+}
+
 function ContainerTable({ containers }: { containers: ContainerPoint[] }) {
   return (
     <div className="squircle rounded-lg border bg-card overflow-x-auto">
@@ -140,7 +177,7 @@ function ContainerTable({ containers }: { containers: ContainerPoint[] }) {
 export function AppMetrics({ orgId, appId, environmentName, gpuEnabled }: AppMetricsProps) {
   const [timeRange, setTimeRange] = useState<TimeRange>("1h");
 
-  const { points, containers, connected, loading, reconnecting, error } = useMetricsStream({
+  const { points, containers, connected, hasLiveFrame, loading, reconnecting, error } = useMetricsStream({
     historyUrl: `/api/v1/organizations/${orgId}/apps/${appId}/stats/history`,
     streamUrl: `/api/v1/organizations/${orgId}/apps/${appId}/stats/stream${environmentName ? "?environment=" + environmentName : ""}`,
     timeRange,
@@ -148,37 +185,22 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled }: AppMet
 
   // Map MetricsPoint[] to chart-friendly shape with network rates
   const chartData = useMemo<ChartPoint[]>(() => {
-    return points.map((p, i) => {
-      let networkRxRate = 0;
-      let networkTxRate = 0;
-
-      if (i > 0) {
-        const prev = points[i - 1];
-        const dtSec = (p.timestamp - prev.timestamp) / 1000;
-        if (dtSec > 0) {
-          const rxDelta = p.networkRx - prev.networkRx;
-          const txDelta = p.networkTx - prev.networkTx;
-          networkRxRate = Math.max(0, rxDelta / dtSec);
-          networkTxRate = Math.max(0, txDelta / dtSec);
-        }
-      }
-
-      return {
-        time: formatTime(p.timestamp),
-        timestamp: p.timestamp,
-        cpu: Math.round(p.cpu * 100) / 100,
-        memory: p.memory,
-        memoryLimit: p.memoryLimit,
-        networkRx: p.networkRx,
-        networkTx: p.networkTx,
-        networkRxRate,
-        networkTxRate,
-        gpuUtilization: p.gpuUtilization,
-        gpuMemoryUsed: p.gpuMemoryUsed,
-        gpuMemoryTotal: p.gpuMemoryTotal,
-        gpuTemperature: p.gpuTemperature,
-      };
-    });
+    const rates = networkRates(points);
+    return points.map((p, i) => ({
+      time: formatTime(p.timestamp),
+      timestamp: p.timestamp,
+      cpu: Math.round(p.cpu * 100) / 100,
+      memory: p.memory,
+      memoryLimit: p.memoryLimit,
+      networkRx: p.networkRx,
+      networkTx: p.networkTx,
+      networkRxRate: rates[i].networkRxRate,
+      networkTxRate: rates[i].networkTxRate,
+      gpuUtilization: p.gpuUtilization,
+      gpuMemoryUsed: p.gpuMemoryUsed,
+      gpuMemoryTotal: p.gpuMemoryTotal,
+      gpuTemperature: p.gpuTemperature,
+    }));
   }, [points]);
 
   // Determine if GPU data is actually present in the stream (covers live containers
@@ -227,6 +249,31 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled }: AppMet
   const latestMemoryLimit = chartData.length > 0 ? chartData[chartData.length - 1].memoryLimit : 0;
   const latestGpuMemTotal = chartData.length > 0 ? chartData[chartData.length - 1].gpuMemoryTotal : 0;
 
+  // Every figure below is zero until the first frame lands — skeleton until it does.
+  const awaitingFirstFrame = !hasLiveFrame;
+  const sparse = chartData.length < MIN_CHART_POINTS;
+  const noSamples = !sparse && chartData.every(
+    (p) => p.cpu === 0 && p.memory === 0 && p.networkRx === 0 && p.networkTx === 0,
+  );
+  const gpuContainers = containers.filter((c) => c.gpuMemoryTotal > 0);
+  const tempContainers = containers.filter((c) => c.gpuTemperature > 0);
+  const latest = {
+    cpu: containers.reduce((s, c) => s + c.cpuPercent, 0),
+    memory: containers.reduce((s, c) => s + c.memoryUsage, 0),
+    networkRx: containers.reduce((s, c) => s + c.networkRx, 0),
+    networkTx: containers.reduce((s, c) => s + c.networkTx, 0),
+    gpuUtilization: gpuContainers.length > 0
+      ? gpuContainers.reduce((s, c) => s + c.gpuUtilization, 0) / gpuContainers.length
+      : 0,
+    gpuMemoryUsed: containers.reduce((s, c) => s + c.gpuMemoryUsed, 0),
+    gpuTemperature: tempContainers.length > 0
+      ? tempContainers.reduce((s, c) => s + c.gpuTemperature, 0) / tempContainers.length
+      : 0,
+  };
+
+  const headerValue = (content: React.ReactNode) =>
+    awaitingFirstFrame ? <Skeleton /> : content;
+
   return (
     <div className="space-y-6">
       {/* Time range + connection status */}
@@ -258,69 +305,10 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled }: AppMet
         </div>
       </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="squircle rounded-lg border bg-card px-4 py-3">
-          <p className="text-xs text-muted-foreground">CPU Usage</p>
-          <p className="type-numeral text-2xl mt-1">
-            {containers.reduce((s, c) => s + c.cpuPercent, 0).toFixed(1)}%
-          </p>
-        </div>
-        <div className="squircle rounded-lg border bg-card px-4 py-3">
-          <p className="text-xs text-muted-foreground">Memory</p>
-          <p className="type-numeral text-2xl mt-1">
-            {formatBytes(containers.reduce((s, c) => s + c.memoryUsage, 0))}
-          </p>
-        </div>
-        <div className="squircle rounded-lg border bg-card px-4 py-3">
-          <p className="text-xs text-muted-foreground">Network RX</p>
-          <p className="type-numeral text-2xl mt-1">
-            {formatBytes(containers.reduce((s, c) => s + c.networkRx, 0))}
-          </p>
-        </div>
-        <div className="squircle rounded-lg border bg-card px-4 py-3">
-          <p className="text-xs text-muted-foreground">Network TX</p>
-          <p className="type-numeral text-2xl mt-1">
-            {formatBytes(containers.reduce((s, c) => s + c.networkTx, 0))}
-          </p>
-        </div>
-      </div>
-      {hasGpuData && (
-        <div className={`grid grid-cols-2 gap-4 ${containers.some((c) => c.gpuTemperature > 0) ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
-          <div className="squircle rounded-lg border bg-card px-4 py-3">
-            <p className="text-xs text-muted-foreground">GPU</p>
-            <p className="type-numeral text-2xl mt-1">
-              {(() => {
-                const gpuContainers = containers.filter((c) => c.gpuMemoryTotal > 0);
-                return gpuContainers.length > 0
-                  ? (gpuContainers.reduce((s, c) => s + c.gpuUtilization, 0) / gpuContainers.length).toFixed(1)
-                  : "0.0";
-              })()}%
-            </p>
-          </div>
-          <div className="squircle rounded-lg border bg-card px-4 py-3">
-            <p className="text-xs text-muted-foreground">GPU Memory</p>
-            <p className="type-numeral text-2xl mt-1">
-              {formatBytes(containers.reduce((s, c) => s + c.gpuMemoryUsed, 0))}
-            </p>
-          </div>
-          {containers.some((c) => c.gpuTemperature > 0) && (
-            <div className="squircle rounded-lg border bg-card px-4 py-3">
-              <p className="text-xs text-muted-foreground">GPU Temp</p>
-              <p className="type-numeral text-2xl mt-1">
-                {Math.round(
-                  containers.filter((c) => c.gpuTemperature > 0).reduce((s, c) => s + c.gpuTemperature, 0) /
-                  Math.max(1, containers.filter((c) => c.gpuTemperature > 0).length)
-                )}°C
-              </p>
-            </div>
-          )}
-        </div>
-      )}
-
       {/* CPU Chart */}
-      <ChartCard title="CPU Usage" icon={Cpu}>
-        <ResponsiveContainer width="100%" height={200}>
+      <ChartCard title="CPU Usage" icon={Cpu} value={headerValue(`${latest.cpu.toFixed(1)}%`)}>
+        {sparse ? <Collecting count={chartData.length} /> : noSamples ? <NoSamples /> : (
+        <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
           <AreaChart data={chartData}>
             <defs>
               <linearGradient id="appCpuGradient" x1="0" y1="0" x2="0" y2="1">
@@ -330,21 +318,23 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled }: AppMet
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
             <XAxis dataKey="time" tick={chartTickStyle} />
-            <YAxis width={45} tickFormatter={(v) => `${v}%`} tick={chartTickStyle} />
+            <YAxis width={45} tickFormatter={(v) => `${v}%`} tick={chartTickStyle} domain={[0, "auto"]} />
             <Tooltip content={<CpuTooltip />} />
             <Area isAnimationActive={false} type="monotone" dataKey="cpu" stroke={CHART_COLORS.cpu} fill="url(#appCpuGradient)" />
           </AreaChart>
         </ResponsiveContainer>
+        )}
       </ChartCard>
 
       {/* Memory Chart */}
-      <ChartCard title="Memory Usage" icon={MemoryStick}>
+      <ChartCard title="Memory Usage" icon={MemoryStick} value={headerValue(formatBytes(latest.memory))}>
         {latestMemoryLimit > 0 && (
           <p className="text-[10px] text-muted-foreground mb-1" style={{ color: CHART_COLORS.memoryLimit }}>
             Limit: {formatBytes(latestMemoryLimit, 0)}
           </p>
         )}
-        <ResponsiveContainer width="100%" height={200}>
+        {sparse ? <Collecting count={chartData.length} /> : noSamples ? <NoSamples /> : (
+        <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
           <AreaChart data={chartData}>
             <defs>
               <linearGradient id="appMemGradient" x1="0" y1="0" x2="0" y2="1">
@@ -364,11 +354,17 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled }: AppMet
             <Area isAnimationActive={false} type="monotone" dataKey="memory" stroke={CHART_COLORS.memory} fill="url(#appMemGradient)" />
           </AreaChart>
         </ResponsiveContainer>
+        )}
       </ChartCard>
 
       {/* Network I/O Chart */}
-      <ChartCard title="Network I/O" icon={Network}>
-        <ResponsiveContainer width="100%" height={200}>
+      <ChartCard
+        title="Network I/O"
+        icon={Network}
+        value={headerValue(`↓ ${formatBytes(latest.networkRx)} · ↑ ${formatBytes(latest.networkTx)}`)}
+      >
+        {sparse ? <Collecting count={chartData.length} /> : noSamples ? <NoSamples /> : (
+        <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
           <AreaChart data={chartData}>
             <defs>
               <linearGradient id="appNetRxGradient" x1="0" y1="0" x2="0" y2="1">
@@ -382,19 +378,21 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled }: AppMet
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
             <XAxis dataKey="time" tick={chartTickStyle} />
-            <YAxis width={75} tickFormatter={(v) => `${formatBytesShort(v)}/s`} tick={chartTickStyle} />
+            <YAxis width={75} tickFormatter={(v) => `${formatBytesShort(v)}/s`} tick={chartTickStyle} domain={[0, "auto"]} />
             <Tooltip content={<NetTooltip />} />
-            <Area isAnimationActive={false} type="monotone" dataKey="networkRxRate" stroke={CHART_COLORS.networkRx} fill="url(#appNetRxGradient)" />
-            <Area isAnimationActive={false} type="monotone" dataKey="networkTxRate" stroke={CHART_COLORS.networkTx} fill="url(#appNetTxGradient)" />
+            <Area isAnimationActive={false} connectNulls={false} type="monotone" dataKey="networkRxRate" stroke={CHART_COLORS.networkRx} fill="url(#appNetRxGradient)" />
+            <Area isAnimationActive={false} connectNulls={false} type="monotone" dataKey="networkTxRate" stroke={CHART_COLORS.networkTx} fill="url(#appNetTxGradient)" />
           </AreaChart>
         </ResponsiveContainer>
+        )}
       </ChartCard>
 
       {/* GPU Charts — only rendered when gpuEnabled or live GPU data present */}
       {hasGpuData && (
         <>
-          <ChartCard title="GPU Utilization" icon={Microchip}>
-            <ResponsiveContainer width="100%" height={200}>
+          <ChartCard title="GPU Utilization" icon={Microchip} value={headerValue(`${latest.gpuUtilization.toFixed(1)}%`)}>
+            {sparse ? <Collecting count={chartData.length} /> : noSamples ? <NoSamples /> : (
+            <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
               <AreaChart data={chartData}>
                 <defs>
                   <linearGradient id="appGpuUtilGradient" x1="0" y1="0" x2="0" y2="1">
@@ -409,15 +407,17 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled }: AppMet
                 <Area isAnimationActive={false} type="monotone" dataKey="gpuUtilization" stroke={CHART_COLORS.gpuUtilization} fill="url(#appGpuUtilGradient)" />
               </AreaChart>
             </ResponsiveContainer>
+            )}
           </ChartCard>
 
-          <ChartCard title="GPU Memory" icon={MemoryStick}>
+          <ChartCard title="GPU Memory" icon={MemoryStick} value={headerValue(formatBytes(latest.gpuMemoryUsed))}>
             {latestGpuMemTotal > 0 && (
               <p className="text-[10px] text-muted-foreground mb-1" style={{ color: CHART_COLORS.memoryLimit }}>
                 Total: {formatBytes(latestGpuMemTotal, 0)}
               </p>
             )}
-            <ResponsiveContainer width="100%" height={200}>
+            {sparse ? <Collecting count={chartData.length} /> : noSamples ? <NoSamples /> : (
+            <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
               <AreaChart data={chartData}>
                 <defs>
                   <linearGradient id="appGpuMemGradient" x1="0" y1="0" x2="0" y2="1">
@@ -437,10 +437,16 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled }: AppMet
                 <Area isAnimationActive={false} type="monotone" dataKey="gpuMemoryUsed" stroke={CHART_COLORS.gpuMemory} fill="url(#appGpuMemGradient)" />
               </AreaChart>
             </ResponsiveContainer>
+            )}
           </ChartCard>
 
-          <ChartCard title="GPU Temperature" icon={Thermometer}>
-            <ResponsiveContainer width="100%" height={200}>
+          <ChartCard
+            title="GPU Temperature"
+            icon={Thermometer}
+            value={headerValue(`${Math.round(latest.gpuTemperature)}°C`)}
+          >
+            {sparse ? <Collecting count={chartData.length} /> : noSamples ? <NoSamples /> : (
+            <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
               <AreaChart data={chartData}>
                 <defs>
                   <linearGradient id="appGpuTempGradient" x1="0" y1="0" x2="0" y2="1">
@@ -450,19 +456,35 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled }: AppMet
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
                 <XAxis dataKey="time" tick={chartTickStyle} />
-                <YAxis width={50} tickFormatter={(v) => `${v}°C`} tick={chartTickStyle} />
+                <YAxis width={50} tickFormatter={(v) => `${v}°C`} tick={chartTickStyle} domain={[0, "auto"]} />
                 <Tooltip content={<GpuTempTooltip />} />
                 <Area isAnimationActive={false} type="monotone" dataKey="gpuTemperature" stroke={CHART_COLORS.gpuTemperature} fill="url(#appGpuTempGradient)" />
               </AreaChart>
             </ResponsiveContainer>
+            )}
           </ChartCard>
         </>
       )}
 
       {/* Container list */}
-      {containers.length > 0 && (
+      {containers.length > 0 ? (
         <ContainerTable containers={containers} />
-      )}
+      ) : awaitingFirstFrame ? (
+        <div className="squircle rounded-lg border bg-card">
+          <div className="flex items-center gap-2 px-4 py-3 border-b">
+            <Container className="size-4 text-muted-foreground" />
+            <h3 className="text-sm font-medium">Containers</h3>
+          </div>
+          <div className="divide-y">
+            {[0, 1].map((i) => (
+              <div key={i} className="flex items-center justify-between px-4 py-3">
+                <Skeleton className="w-40" />
+                <Skeleton className="w-24" />
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

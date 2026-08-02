@@ -23,7 +23,7 @@ export default async function MetricsPage() {
     ? await db.query.apps.findMany({
         where: eq(apps.organizationId, orgId),
         orderBy: [asc(apps.sortOrder), desc(apps.createdAt)],
-        columns: { id: true, name: true, displayName: true, status: true },
+        columns: { id: true, name: true, displayName: true, status: true, parentAppId: true },
       })
     : [];
 
