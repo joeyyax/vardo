@@ -4,10 +4,15 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { invitations, memberships } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth/session";
+import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
 export async function acceptInvitation(token: string): Promise<{ error?: string }> {
+  if (!(await isFeatureEnabledAsync("teams"))) {
+    return { error: "Team management is disabled on this instance" };
+  }
+
   const session = await getSession();
 
   if (!session?.user?.id) {

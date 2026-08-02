@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { invitations, organizations } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { getSession } from "@/lib/auth/session";
+import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { InviteAcceptClient } from "./invite-accept-client";
 import { acceptInvitation } from "./actions";
 
@@ -50,6 +51,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 export default async function InvitePage({ params }: Props) {
+  if (!(await isFeatureEnabledAsync("teams"))) notFound();
+
   const { token } = await params;
 
   const invitation = await db.query.invitations.findFirst({

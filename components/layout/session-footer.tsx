@@ -3,12 +3,14 @@ import { db } from "@/lib/db";
 import { session as sessionTable } from "@/lib/db/schema";
 import { eq, and, gt } from "drizzle-orm";
 import { getSession, getCurrentOrg } from "@/lib/auth/session";
+import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { RelativeTime } from "@/components/relative-time";
 
 export async function SessionFooter() {
-  const [session, orgData] = await Promise.all([
+  const [session, orgData, teamsEnabled] = await Promise.all([
     getSession(),
     getCurrentOrg(),
+    isFeatureEnabledAsync("teams"),
   ]);
 
   if (!session?.user?.id || !orgData) return null;
@@ -46,9 +48,13 @@ export async function SessionFooter() {
           ({user.email}),
         </span>
         <span>
-          <Link href="/settings/team" className="text-muted-foreground hover:text-foreground transition-colors">
-            {membership.role}
-          </Link>{" "}
+          {teamsEnabled ? (
+            <Link href="/settings/team" className="text-muted-foreground hover:text-foreground transition-colors">
+              {membership.role}
+            </Link>
+          ) : (
+            membership.role
+          )}{" "}
           in{" "}
           <Link href="/settings/general" className="text-muted-foreground hover:text-foreground transition-colors">
             {organization.name}

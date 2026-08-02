@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { activities } from "@/lib/db/schema";
 import { and, desc } from "drizzle-orm";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { requirePlugin } from "@/lib/api/require-plugin";
 import {
   parseFamilies,
   parseOutcomes,
@@ -21,6 +22,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+    const gate = await requirePlugin("activity");
+    if (gate) return gate;
 
     const searchParams = request.nextUrl.searchParams;
     const appId = searchParams.get("appId");

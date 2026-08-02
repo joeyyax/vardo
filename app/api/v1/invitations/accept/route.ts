@@ -4,6 +4,7 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { invitations, memberships } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth/session";
+import { requirePlugin } from "@/lib/api/require-plugin";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
@@ -15,6 +16,9 @@ const acceptSchema = z.object({ token: z.string().min(1, "Token is required") })
 // Accept an invitation by token
 async function handlePost(request: NextRequest) {
   try {
+    const gate = await requirePlugin("teams");
+    if (gate) return gate;
+
     const body = await request.json();
     const parsed = acceptSchema.safeParse(body);
     if (!parsed.success) {

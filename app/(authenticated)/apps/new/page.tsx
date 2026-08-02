@@ -22,8 +22,8 @@ export default async function NewAppPage({
 
   const orgId = orgData.organization.id;
 
-  const [templateList, parentAppList, instanceConfig, containerImportEnabled] = await Promise.all([
-    loadTemplates(),
+  const [templatesEnabled, parentAppList, instanceConfig, containerImportEnabled] = await Promise.all([
+    isFeatureEnabledAsync("templates"),
     // Load projects for grouping
     db.query.projects.findMany({
       where: eq(projects.organizationId, orgId),
@@ -33,6 +33,8 @@ export default async function NewAppPage({
     getInstanceConfig(),
     isFeatureEnabledAsync("container-import"),
   ]);
+
+  const templateList = templatesEnabled ? await loadTemplates() : [];
 
   const parentOptions = parentAppList.map((p) => ({
     id: p.id,
