@@ -17,6 +17,8 @@ type FlagState = {
   source: "env" | "config" | "database" | "default";
   locked: boolean;
   envVar: string;
+  unavailable: boolean;
+  dependsOn?: { flag: string; label: string };
 };
 
 type FlagGroup = {
@@ -61,7 +63,7 @@ export function FeatureFlagsSettings() {
   }, [fetchFlags]);
 
   async function handleToggle(flag: FlagState, next: boolean) {
-    if (flag.locked) return;
+    if (flag.locked || flag.unavailable) return;
 
     const seq = (writeSeq.current[flag.flag] ?? 0) + 1;
     writeSeq.current[flag.flag] = seq;
@@ -95,6 +97,10 @@ export function FeatureFlagsSettings() {
 
     if (ok) {
       toast.success(`${flag.label} ${next ? "enabled" : "disabled"}`);
+      // Dependents render as unavailable off the server's view, so refetch.
+      if (flags.some((f) => f.dependsOn?.flag === flag.flag)) {
+        await fetchFlags().catch(() => {});
+      }
       router.refresh();
       return;
     }
@@ -146,10 +152,10 @@ export function FeatureFlagsSettings() {
                         {f.label}
                       </Label>
                       <Badge
-                        variant={f.enabled ? "default" : "outline"}
-                        className={f.enabled ? "" : "text-muted-foreground"}
+                        variant={f.enabled && !f.unavailable ? "default" : "outline"}
+                        className={f.enabled && !f.unavailable ? "" : "text-muted-foreground"}
                       >
-                        {f.enabled ? "On" : "Off"}
+                        {f.unavailable ? "Unavailable" : f.enabled ? "On" : "Off"}
                       </Badge>
                       {f.locked && (
                         <Badge variant="outline" className="gap-1 text-muted-foreground">
@@ -159,6 +165,11 @@ export function FeatureFlagsSettings() {
                       )}
                     </div>
                     <div className="text-xs text-muted-foreground">{f.description}</div>
+                    {f.unavailable && f.dependsOn && (
+                      <div className="text-xs text-muted-foreground">
+                        Needs {f.dependsOn.label}, which is off. Turn that on first.
+                      </div>
+                    )}
                     {f.locked && (
                       <div className="text-xs text-muted-foreground">
                         Pinned by {pinnedBy(f)} — change it there, then restart.
@@ -172,8 +183,8 @@ export function FeatureFlagsSettings() {
                     )}
                     <Switch
                       id={`flag-${f.flag}`}
-                      checked={f.enabled}
-                      disabled={f.locked || !!pending[f.flag]}
+                      checked={f.enabled && !f.unavailable}
+                      disabled={f.locked || f.unavailable || !!pending[f.flag]}
                       onCheckedChange={(next) => handleToggle(f, next)}
                       aria-label={`${f.enabled ? "Disable" : "Enable"} ${f.label}`}
                       aria-describedby={f.locked ? `flag-${f.flag}-pinned` : undefined}

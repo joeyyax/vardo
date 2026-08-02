@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { createPreview } from "@/lib/docker/preview";
+import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { slidingWindowRateLimit } from "@/lib/api/rate-limit";
 import type { McpAuthContext } from "../auth";
 
@@ -48,6 +49,18 @@ export function registerCreatePreview(
         .describe("Days before auto-cleanup (default 7)"),
     },
     async ({ repo, branch, pr_number, pr_url, ttl_days }) => {
+      if (!(await isFeatureEnabledAsync("previews"))) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: "Previews are not enabled on this instance" }),
+            },
+          ],
+          isError: true,
+        };
+      }
+
       // Rate limit: cap preview deployments to prevent resource exhaustion.
       // Keyed per user+org so one bad actor can't starve the whole organization.
       const rl = await slidingWindowRateLimit(

@@ -61,6 +61,11 @@ export type { CreatePreviewOpts, PreviewResult };
 export async function createPreview(
   opts: CreatePreviewOpts
 ): Promise<PreviewResult | null> {
+  if (!(await isFeatureEnabledAsync("previews"))) {
+    log.info("Previews are disabled, skipping preview creation");
+    return null;
+  }
+
   // A preview is a non-production environment, so it needs the environments flag.
   if (!(await isFeatureEnabledAsync("environments"))) {
     log.info("Environments are disabled, skipping preview creation");
@@ -175,6 +180,9 @@ export async function createPreview(
 
 /**
  * Destroy a preview environment when a PR is closed/merged.
+ *
+ * Not gated on the previews flag — turning previews off must not strand
+ * stacks that are already running.
  */
 export async function destroyPreview(
   repoFullName: string,
