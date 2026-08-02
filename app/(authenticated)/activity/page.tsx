@@ -1,8 +1,9 @@
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { and, desc } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { activities } from "@/lib/db/schema";
 import { getCurrentOrg } from "@/lib/auth/session";
+import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { filtersToQuery, parseFilters } from "@/lib/activity/filter";
 import {
   activityConditions,
@@ -18,6 +19,8 @@ type PageProps = {
 };
 
 export default async function ActivityPage({ searchParams }: PageProps) {
+  if (!(await isFeatureEnabledAsync("activity"))) notFound();
+
   const orgData = await getCurrentOrg();
   if (!orgData) redirect("/login");
 

@@ -13,17 +13,22 @@ import type { Organization } from "@/lib/types";
 type TopNavProps = {
   currentOrgId?: string;
   organizations?: Organization[];
+  teamsEnabled?: boolean;
+  activityEnabled?: boolean;
 };
 
 const navItems = [
   { label: "Projects", href: "/projects" },
   { label: "Metrics", href: "/metrics" },
   { label: "Backups", href: "/backups" },
-  { label: "Activity", href: "/activity" },
+  { label: "Activity", href: "/activity", requires: "activity" as const },
 ];
 
-export function TopNav({ currentOrgId, organizations }: TopNavProps) {
+export function TopNav({ currentOrgId, organizations, teamsEnabled = true, activityEnabled = true }: TopNavProps) {
   const pathname = usePathname();
+  const visibleNavItems = navItems.filter(
+    (item) => item.requires !== "activity" || activityEnabled,
+  );
 
   return (
     <header className="surface-sidebar bg-sidebar border-b shrink-0">
@@ -33,13 +38,14 @@ export function TopNav({ currentOrgId, organizations }: TopNavProps) {
           <MobileSidebar
             currentOrgId={currentOrgId}
             organizations={organizations}
+            teamsEnabled={teamsEnabled}
           />
           <Brand />
         </div>
 
         {/* Center: nav (hidden on mobile) */}
         <nav className="hidden lg:flex items-center gap-1">
-          {navItems.map((item) => {
+          {visibleNavItems.map((item) => {
             const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
               <Link
@@ -74,6 +80,7 @@ export function TopNav({ currentOrgId, organizations }: TopNavProps) {
             <UserMenu
               currentOrgId={currentOrgId}
               organizations={organizations}
+              teamsEnabled={teamsEnabled}
             />
           </div>
         </div>

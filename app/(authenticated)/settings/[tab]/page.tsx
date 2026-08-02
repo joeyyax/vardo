@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { memberships, invitations, apps } from "@/lib/db/schema";
 import { getSession, getCurrentOrg, getUserOrganizations } from "@/lib/auth/session";
+import { isFeatureEnabledAsync, type FeatureFlag } from "@/lib/config/features";
 import { eq, and } from "drizzle-orm";
 import { OrgEnvVarsEditor } from "../org-env-vars";
 import { OrgDomainEditor } from "../org-domain-editor";
@@ -15,6 +16,12 @@ import { BackupPage } from "@/components/backups/backup-page";
 const VALID_TABS = ["general", "variables", "domains", "backups", "notifications", "team", "invitations"] as const;
 type ValidTab = (typeof VALID_TABS)[number];
 
+/** Feature flag each tab needs, where it has one. */
+const TAB_GATES: Partial<Record<ValidTab, FeatureFlag>> = {
+  team: "teams",
+  invitations: "teams",
+};
+
 export default async function OrgSettingsTabPage({
   params,
 }: {
@@ -23,6 +30,11 @@ export default async function OrgSettingsTabPage({
   const { tab } = await params;
 
   if (!VALID_TABS.includes(tab as ValidTab)) {
+    notFound();
+  }
+
+  const gate = TAB_GATES[tab as ValidTab];
+  if (gate && !(await isFeatureEnabledAsync(gate))) {
     notFound();
   }
 

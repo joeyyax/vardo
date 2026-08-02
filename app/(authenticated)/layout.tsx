@@ -6,7 +6,7 @@ import { CommandPalette } from "@/components/command-palette";
 import { KeyboardShortcuts } from "@/components/keyboard-shortcuts";
 import { NotificationListener } from "@/components/notification-listener";
 import { getSession, getCurrentOrg, getUserOrganizations } from "@/lib/auth/session";
-import { isFeatureEnabled } from "@/lib/config/features";
+import { isFeatureEnabled, isFeatureEnabledAsync } from "@/lib/config/features";
 import { SessionFooter } from "@/components/layout/session-footer";
 import { AttentionBar } from "@/components/layout/attention-bar";
 
@@ -50,6 +50,10 @@ export default async function AppLayout({
 
   const { organization } = orgData;
   const organizations = await getUserOrganizations();
+  const [teamsEnabled, activityEnabled] = await Promise.all([
+    isFeatureEnabledAsync("teams"),
+    isFeatureEnabledAsync("activity"),
+  ]);
 
   return (
     <TooltipProvider>
@@ -58,6 +62,8 @@ export default async function AppLayout({
           <TopNav
             currentOrgId={organization.id}
             organizations={organizations}
+            teamsEnabled={teamsEnabled}
+            activityEnabled={activityEnabled}
           />
           <AttentionBar orgId={organization.id} />
         </div>
@@ -73,7 +79,11 @@ export default async function AppLayout({
         <SessionFooter />
       </div>
 
-      <CommandPalette orgId={organization.id} />
+      <CommandPalette
+        orgId={organization.id}
+        teamsEnabled={teamsEnabled}
+        activityEnabled={activityEnabled}
+      />
       <KeyboardShortcuts />
       <NotificationListener orgId={organization.id} />
     </TooltipProvider>

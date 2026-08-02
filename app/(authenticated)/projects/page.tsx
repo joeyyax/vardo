@@ -55,6 +55,8 @@ export default async function ProjectsPage() {
     isFeatureEnabledAsync("container-import"),
   ]);
 
+  const teamsEnabled = await isFeatureEnabledAsync("teams");
+
   // Projects that have no apps assigned
   const projectIdsWithApps = new Set(appList.map((a) => a.projectId).filter(Boolean));
   const emptyProjects = projectList.filter((p) => !projectIdsWithApps.has(p.id));
@@ -64,11 +66,13 @@ export default async function ProjectsPage() {
       <PageToolbar actions={<ProjectsActions />}>
         <div className="flex items-center gap-3">
           <h1 className="type-h1">Projects</h1>
-          <OrgSwitcher
-            currentOrgId={orgId}
-            organizations={organizations}
-            collapsed={false}
-          />
+          {teamsEnabled && (
+            <OrgSwitcher
+              currentOrgId={orgId}
+              organizations={organizations}
+              collapsed={false}
+            />
+          )}
         </div>
       </PageToolbar>
 
