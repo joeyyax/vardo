@@ -1,157 +1,47 @@
 "use client";
 
-import { useEffect, useRef, useState, useMemo, useCallback } from "react";
-import { Loader2, Pause, Play, ArrowDown, X, Copy, Check, Database, HardDrive } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState, useMemo, useCallback } from "react";
+import {
+  Loader2, Pause, Play, ArrowDown, ArrowUp, X, Copy, Check, Download,
+  Database, HardDrive, Search, ChevronUp, ChevronDown, Layers,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { toast } from "@/lib/messenger";
 import { useVisibilityKey } from "@/hooks/use-visible";
-
-type LogLine = {
-  id: number;
-  text: string;
-  html: string;
-  level?: LogLevel;
-  /** Parsed stage prefix (e.g. "deploy", "deploy > compose", "health"). */
-  stage?: string;
-  /** Line content with the stage prefix stripped. */
-  content?: string;
-};
-
-type LogLevel = "error" | "warn" | "info" | "debug" | "other";
-
-// ---------------------------------------------------------------------------
-// Stage prefix parsing — extracts [deploy], [deploy][compose], etc.
-// ---------------------------------------------------------------------------
-
-const STAGE_PREFIX_RE = /^(\[[a-z]+\](?:\[[a-z]+\])?)\s*/i;
-
-/** Human-friendly stage labels and colors. */
-const STAGE_META: Record<string, { label: string; color: string }> = {
-  "deploy":          { label: "Deploy",   color: "text-cyan-400" },
-  "deploy > compose":{ label: "Compose",  color: "text-cyan-300" },
-  "deploy > crash":  { label: "Container logs", color: "text-red-400" },
-  "build":           { label: "Build",    color: "text-amber-400" },
-  "build > nixpacks":{ label: "Nixpacks", color: "text-violet-400" },
-  "build > docker":  { label: "Docker Build", color: "text-amber-300" },
-  "health":          { label: "Health",   color: "text-green-400" },
-  "docker":          { label: "Docker",   color: "text-cyan-300" },
-  "error":           { label: "Error",    color: "text-red-400" },
-  "compat":          { label: "Compat",   color: "text-yellow-400" },
-  "nixpacks":        { label: "Nixpacks", color: "text-violet-400" },
-};
-
-function parseStagePrefix(text: string): { stage: string; content: string } | null {
-  const m = text.match(STAGE_PREFIX_RE);
-  if (!m) return null;
-  // Convert "[deploy][compose]" → "deploy > compose"
-  const raw = m[1];
-  const stage = raw
-    .replace(/\]\[/g, " > ")
-    .replace(/^\[/, "")
-    .replace(/\]$/, "");
-  return { stage, content: text.slice(m[0].length) };
-}
-
-// Log syntax highlighting patterns
-//
-// Uses bright terminal-native colors (not design system tokens) because
-// the log viewer always renders on a zinc-950 background regardless of theme.
-const PATTERNS: [RegExp, string][] = [
-  // Deploy stage markers — compound tags first to prevent partial matches
-  [/\[deploy\]\[compose\]/g, "text-cyan-400 font-medium"],
-  [/\[build\]\[nixpacks\]/g, "text-amber-400 font-medium"],
-  [/\[build\]\[docker\]/g, "text-amber-400 font-medium"],
-  // Single markers
-  [/\[deploy\]/g, "text-cyan-400 font-medium"],
-  [/\[docker\]/g, "text-cyan-300 font-medium"],
-  [/\[health\]/g, "text-green-400 font-medium"],
-  [/\[build\]/g, "text-amber-400 font-medium"],
-  [/\[nixpacks\]/g, "text-violet-400 font-medium"],
-  [/\[compat\]/g, "text-yellow-400 font-medium"],
-  [/\[error\]/g, "text-red-400 font-medium"],
-  // Timestamps: ISO, common log formats
-  [/\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[.\d]*Z?/g, "text-zinc-500"],
-  // Error levels
-  [/\b(ERROR|FATAL|PANIC|CRIT(ICAL)?)\b/gi, "text-red-400 font-semibold"],
-  [/\b(WARN(ING)?)\b/gi, "text-yellow-400"],
-  [/\b(INFO)\b/gi, "text-blue-400"],
-  [/\b(DEBUG|TRACE)\b/gi, "text-zinc-500"],
-  // HTTP methods
-  [/\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b/g, "text-cyan-400 font-medium"],
-  // HTTP status codes
-  [/\b([2]\d{2})\b/g, "text-green-400"],
-  [/\b([3]\d{2})\b/g, "text-blue-400"],
-  [/\b([4]\d{2})\b/g, "text-yellow-400"],
-  [/\b([5]\d{2})\b/g, "text-red-400"],
-  // Arrow operators (volume mappings, etc.)
-  [/→/g, "text-zinc-500"],
-  // Key: Value pairs in deploy output (e.g. "Environment: production")
-  [/\b(Environment|App|Source|Type|Active slot):/g, "text-zinc-500"],
-  // URLs
-  [/https?:\/\/[^\s"']+/g, "text-blue-400 underline"],
-  // Quoted strings
-  [/"[^"]*"/g, "text-amber-300/80"],
-  // Numbers with units
-  [/\b\d+(\.\d+)?(ms|s|m|MB|KB|GB|B)?\b/g, "text-purple-300/80"],
-];
+import {
+  detectLevel, assignLevels, countLevels, filterByLevel, type LogLevel,
+} from "@/lib/logging/levels";
+import { highlightLine, serviceColor } from "@/lib/logging/highlight";
+import { findMatches, matchedLines, filterToMatches, stepMatch } from "@/lib/logging/search";
+import {
+  capLines, mergeOlder, historyUrlFor, SCROLLBACK_OPTIONS, DEFAULT_SCROLLBACK,
+} from "@/lib/logging/buffer";
 
 export { detectLevel as detectLogLevel };
 
-function detectLevel(text: string): LogLevel {
-  if (/\b(ERROR|FATAL|PANIC|CRIT(ICAL)?)\b/i.test(text) || /\[error\]/i.test(text) || /\b[5]\d{2}\b/.test(text)) return "error";
-  if (/\b(WARN(ING)?)\b/i.test(text) || /\[compat\]/i.test(text) || /\b[4]\d{2}\b/.test(text)) return "warn";
-  if (/\b(INFO)\b/i.test(text) || /\[(deploy|health|docker)\]/i.test(text)) return "info";
-  if (/\b(DEBUG|TRACE)\b/i.test(text)) return "debug";
-  return "other";
-}
-
 export function highlightLogLine(text: string): string {
-  return applyHighlight(text);
+  return highlightLine(text);
 }
 
-function highlightLine(text: string): { html: string; stage?: string; content?: string } {
-  const parsed = parseStagePrefix(text);
-  const html = applyHighlight(text);
-  return {
-    html,
-    stage: parsed?.stage,
-    content: parsed?.content,
-  };
-}
+type ViewLine = {
+  text: string;
+  html: string;
+  level: LogLevel;
+  /** Compose service the line came from, in the all-services view. */
+  service?: string;
+};
 
-function applyHighlight(text: string): string {
-  // Escape HTML first
-  let html = text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-
-  // Apply patterns — wrap matches in spans
-  const replacements: { start: number; end: number; replacement: string }[] = [];
-
-  for (const [pattern, className] of PATTERNS) {
-    const re = new RegExp(pattern.source, pattern.flags);
-    let match;
-    while ((match = re.exec(html)) !== null) {
-      const overlaps = replacements.some(
-        (r) => match!.index < r.end && match!.index + match![0].length > r.start
-      );
-      if (!overlaps) {
-        replacements.push({
-          start: match.index,
-          end: match.index + match[0].length,
-          replacement: `<span class="${className}">${match[0]}</span>`,
-        });
-      }
-    }
-  }
-
-  replacements.sort((a, b) => b.start - a.start);
-  for (const { start, end, replacement } of replacements) {
-    html = html.slice(0, start) + replacement + html.slice(end);
-  }
-
-  return html;
+/** Build render-ready lines, threading levels so stack traces stay one color. */
+function toViewLines(input: { text: string; service?: string }[], previous?: LogLevel): ViewLine[] {
+  const levels = assignLevels(input.map((l) => l.text));
+  if (previous && input.length > 0) levels[0] = detectLevel(input[0].text, previous);
+  return input.map((line, i) => ({
+    text: line.text,
+    service: line.service,
+    html: highlightLine(line.text),
+    level: levels[i],
+  }));
 }
 
 // --- Shared terminal output component ---
@@ -172,46 +62,118 @@ const LEVEL_COLORS: Record<LogLevel, string> = {
   other: "text-zinc-400",
 };
 
+const CHIP_ORDER: LogLevel[] = ["error", "warn", "info", "debug", "other"];
+
 type TerminalOutputProps = {
-  lines: { text: string; html: string; level?: LogLevel; stage?: string; content?: string }[];
+  lines: { text: string; html: string; level?: LogLevel; service?: string }[];
   height?: string;
+  /** Grow the pane to the bottom of the viewport instead of a fixed height. */
+  fill?: boolean;
   showFilters?: boolean;
+  onLoadOlder?: () => Promise<void>;
+  hasOlder?: boolean;
   className?: string;
 };
 
-export function TerminalOutput({ lines, height = "min-h-40 max-h-[500px]", showFilters = true, className }: TerminalOutputProps) {
+export function TerminalOutput({
+  lines,
+  height = "min-h-40 max-h-[500px]",
+  fill = false,
+  showFilters = true,
+  onLoadOlder,
+  hasOlder = false,
+  className,
+}: TerminalOutputProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const userScrolledRef = useRef(false);
   const [activeFilters, setActiveFilters] = useState<Set<LogLevel>>(new Set());
+  const [query, setQuery] = useState("");
+  const [onlyMatches, setOnlyMatches] = useState(false);
+  const [activeMatch, setActiveMatch] = useState(-1);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [copied, setCopied] = useState(false);
 
-  // Count lines by level
-  const levelCounts = useMemo(() => {
-    const counts: Record<LogLevel, number> = { error: 0, warn: 0, info: 0, debug: 0, other: 0 };
-    for (const line of lines) {
-      const level = line.level || detectLevel(line.text);
-      counts[level]++;
+  const levelCounts = useMemo(() => countLevels(lines), [lines]);
+
+  const levelFiltered = useMemo(
+    () => filterByLevel(lines, activeFilters),
+    [lines, activeFilters],
+  );
+
+  const visibleLines = useMemo(() => {
+    if (!onlyMatches || !query) return levelFiltered;
+    const matched = matchedLines(findMatches(levelFiltered.map((l) => l.text), query));
+    return filterToMatches(levelFiltered, matched);
+  }, [levelFiltered, onlyMatches, query]);
+
+  const matches = useMemo(
+    () => findMatches(visibleLines.map((l) => l.text), query),
+    [visibleLines, query],
+  );
+
+  // Only matched lines are re-marked; the rest keep the HTML built at ingest.
+  const markedHtml = useMemo(() => {
+    const map = new Map<number, string>();
+    if (!query) return map;
+    for (const line of matchedLines(matches)) {
+      map.set(line, highlightLine(visibleLines[line].text, query));
     }
-    return counts;
-  }, [lines]);
+    return map;
+  }, [matches, visibleLines, query]);
 
-  // Filter lines
-  const filteredLines = useMemo(() => {
-    if (activeFilters.size === 0) return lines;
-    return lines.filter((line) => {
-      const level = line.level || detectLevel(line.text);
-      return activeFilters.has(level);
-    });
-  }, [lines, activeFilters]);
+  const active = activeMatch >= 0 ? matches[activeMatch] : undefined;
+
+  useEffect(() => {
+    setActiveMatch(matches.length > 0 ? 0 : -1);
+    // Re-anchoring on every keystroke is the point — a new query starts at its first hit.
+  }, [query, matches.length]);
+
+  const step = useCallback((delta: number) => {
+    setActiveMatch((current) => stepMatch(current, matches.length, delta));
+    setAutoScroll(false);
+    userScrolledRef.current = true;
+  }, [matches.length]);
+
+  // Center the current match without scrolling the page around it
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!active || !container) return;
+    const row = container.querySelector(`[data-line="${active.line}"]`);
+    if (!row) return;
+    const pane = container.getBoundingClientRect();
+    const line = row.getBoundingClientRect();
+    container.scrollTop += line.top - pane.top - (pane.height - line.height) / 2;
+  }, [active]);
+
+  // Fill the rest of the viewport
+  const [fillHeight, setFillHeight] = useState<number>();
+  useLayoutEffect(() => {
+    if (!fill) return;
+    function measure() {
+      const top = containerRef.current?.getBoundingClientRect().top;
+      if (!top || top <= 0) return;
+      setFillHeight(Math.max(280, window.innerHeight - top - 24));
+    }
+    measure();
+    window.addEventListener("resize", measure);
+    const observer = headerRef.current ? new ResizeObserver(measure) : null;
+    if (headerRef.current) observer?.observe(headerRef.current);
+    return () => {
+      window.removeEventListener("resize", measure);
+      observer?.disconnect();
+    };
+  }, [fill]);
 
   // Auto-scroll to bottom when new lines arrive
   useEffect(() => {
     if (autoScroll && containerRef.current) {
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
     }
-  }, [filteredLines, autoScroll]);
+  }, [visibleLines, autoScroll, fillHeight]);
 
-  // Detect manual scroll — disable auto-scroll when user scrolls up
   const handleScroll = useCallback(() => {
     if (!containerRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
@@ -237,83 +199,176 @@ export function TerminalOutput({ lines, height = "min-h-40 max-h-[500px]", showF
   function toggleFilter(level: LogLevel) {
     setActiveFilters((prev) => {
       const next = new Set(prev);
-      if (next.has(level)) {
-        next.delete(level);
-      } else {
-        next.add(level);
-      }
+      if (next.has(level)) next.delete(level);
+      else next.add(level);
       return next;
     });
   }
 
-  const [copied, setCopied] = useState(false);
+  async function loadOlder() {
+    if (!onLoadOlder || loadingOlder) return;
+    const el = containerRef.current;
+    const before = el?.scrollHeight ?? 0;
+    setLoadingOlder(true);
+    try {
+      await onLoadOlder();
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (el) el.scrollTop += el.scrollHeight - before;
+      }));
+    } finally {
+      setLoadingOlder(false);
+    }
+  }
+
+  function plainText() {
+    return visibleLines.map((l) => (l.service ? `${l.service} | ${l.text}` : l.text)).join("\n");
+  }
 
   function copyToClipboard() {
-    const text = filteredLines.map((l) => l.text).join("\n");
-    navigator.clipboard.writeText(text).then(() => {
+    navigator.clipboard.writeText(plainText()).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
   }
 
+  function download() {
+    const url = URL.createObjectURL(new Blob([plainText()], { type: "text/plain" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `logs-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "")}.log`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function onKeyDown(e: React.KeyboardEvent) {
+    const typing = e.target instanceof HTMLInputElement;
+    if (typing) {
+      if (e.key === "Enter") { e.preventDefault(); step(e.shiftKey ? -1 : 1); }
+      if (e.key === "Escape") { setQuery(""); searchRef.current?.blur(); }
+      return;
+    }
+    if (e.key === "n" || e.key === "N") { e.preventDefault(); step(e.key === "n" ? 1 : -1); }
+    if (e.key === "/") { e.preventDefault(); searchRef.current?.focus(); }
+  }
+
+  const filtering = activeFilters.size > 0 || (onlyMatches && query.length > 0);
+
   return (
-    <div className={cn("rounded-lg border border-zinc-800 bg-zinc-950 overflow-hidden", className)}>
+    <div
+      onKeyDown={onKeyDown}
+      className={cn("rounded-lg border border-zinc-800 bg-zinc-950 overflow-hidden", className)}
+    >
       {/* Control bar */}
       {showFilters && (
-        <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-zinc-800 bg-zinc-900/50">
-          <div className="flex items-center gap-1">
-            {(["error", "warn", "info", "debug"] as const).map((level) => {
-              const count = levelCounts[level];
-              // A lone "Errors" chip on a clean stream reads as an alarm.
-              if (count === 0) return null;
-              const isActive = activeFilters.has(level);
-              return (
+        <div ref={headerRef} className="border-b border-zinc-800 bg-zinc-900/50">
+          <div className="flex items-center gap-2 px-3 py-1.5">
+            <div className="relative flex-1 min-w-32 max-w-md">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3 text-zinc-500" />
+              <input
+                ref={searchRef}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Find in logs"
+                aria-label="Find in logs"
+                className="w-full rounded bg-zinc-950 border border-zinc-800 pl-7 pr-2 py-1 text-xs font-mono text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-600"
+              />
+            </div>
+            {query && (
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-zinc-500 tabular-nums" aria-live="polite">
+                  {matches.length === 0 ? "No matches" : `${activeMatch + 1} of ${matches.length}`}
+                </span>
                 <button
-                  key={level}
-                  onClick={() => toggleFilter(level)}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-xs font-medium transition-colors",
-                    isActive
-                      ? "bg-zinc-700 text-zinc-100"
-                      : count > 0
-                        ? `${LEVEL_COLORS[level]} hover:bg-zinc-800`
-                        : "text-zinc-600 hover:bg-zinc-800"
-                  )}
+                  onClick={() => step(-1)}
+                  disabled={matches.length === 0}
+                  className="text-zinc-500 hover:text-zinc-200 disabled:opacity-40 p-0.5"
+                  title="Previous match (N)"
                 >
-                  {LEVEL_LABELS[level]}
-                  {count > 0 && (
-                    <span className={cn(
-                      "tabular-nums",
-                      level === "error" && !isActive && "text-red-400",
-                      level === "warn" && !isActive && "text-yellow-400",
-                    )}>
-                      {count}
-                    </span>
-                  )}
+                  <ChevronUp className="size-3.5" />
                 </button>
-              );
-            })}
-            {activeFilters.size > 0 && (
-              <button
-                onClick={() => setActiveFilters(new Set())}
-                className="text-zinc-500 hover:text-zinc-300 ml-1 p-0.5"
-                title="Clear filters"
-              >
-                <X className="size-3" />
-              </button>
+                <button
+                  onClick={() => step(1)}
+                  disabled={matches.length === 0}
+                  className="text-zinc-500 hover:text-zinc-200 disabled:opacity-40 p-0.5"
+                  title="Next match (n)"
+                >
+                  <ChevronDown className="size-3.5" />
+                </button>
+                <button
+                  onClick={() => setOnlyMatches((v) => !v)}
+                  className={cn(
+                    "rounded px-1.5 py-0.5 text-xs transition-colors",
+                    onlyMatches ? "bg-zinc-700 text-zinc-100" : "text-zinc-500 hover:bg-zinc-800",
+                  )}
+                  title="Hide lines without a match"
+                >
+                  Only matches
+                </button>
+                <button
+                  onClick={() => setQuery("")}
+                  className="text-zinc-500 hover:text-zinc-300 p-0.5"
+                  title="Clear search"
+                >
+                  <X className="size-3" />
+                </button>
+              </div>
             )}
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-zinc-500 tabular-nums">
-              {activeFilters.size > 0 ? `${filteredLines.length} / ${lines.length}` : lines.length} lines
-            </span>
-            <button
-              onClick={copyToClipboard}
-              className="text-zinc-500 hover:text-zinc-300 p-0.5 transition-colors"
-              title="Copy to clipboard"
-            >
-              {copied ? <Check className="size-3.5 text-status-success" /> : <Copy className="size-3.5" />}
-            </button>
+          <div className="flex items-center justify-between gap-2 px-3 pb-1.5">
+            <div className="flex items-center gap-1 flex-wrap">
+              {CHIP_ORDER.map((level) => {
+                const count = levelCounts[level];
+                // A lone "Errors" chip on a clean stream reads as an alarm.
+                if (count === 0) return null;
+                const isActive = activeFilters.has(level);
+                return (
+                  <button
+                    key={level}
+                    onClick={() => toggleFilter(level)}
+                    aria-pressed={isActive}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-xs font-medium transition-colors",
+                      isActive ? "bg-zinc-700 text-zinc-100" : `${LEVEL_COLORS[level]} hover:bg-zinc-800`,
+                    )}
+                  >
+                    {LEVEL_LABELS[level]}
+                    <span className={cn("tabular-nums", !isActive && LEVEL_COLORS[level])}>
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+              {activeFilters.size > 0 && (
+                <button
+                  onClick={() => setActiveFilters(new Set())}
+                  className="text-zinc-500 hover:text-zinc-300 ml-1 p-0.5"
+                  title="Clear filters"
+                >
+                  <X className="size-3" />
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-zinc-500 tabular-nums whitespace-nowrap">
+                {filtering
+                  ? `${visibleLines.length.toLocaleString()} / ${lines.length.toLocaleString()}`
+                  : lines.length.toLocaleString()} lines
+              </span>
+              <button
+                onClick={copyToClipboard}
+                className="text-zinc-500 hover:text-zinc-300 p-0.5 transition-colors"
+                title="Copy to clipboard"
+              >
+                {copied ? <Check className="size-3.5 text-status-success" /> : <Copy className="size-3.5" />}
+              </button>
+              <button
+                onClick={download}
+                className="text-zinc-500 hover:text-zinc-300 p-0.5 transition-colors"
+                title="Download"
+              >
+                <Download className="size-3.5" />
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -323,6 +378,11 @@ export function TerminalOutput({ lines, height = "min-h-40 max-h-[500px]", showF
         <div
           ref={containerRef}
           onScroll={handleScroll}
+          // Focusable so the pane scrolls by keyboard and n/N step matches.
+          tabIndex={0}
+          role="log"
+          aria-label="Log output"
+          style={fill && fillHeight ? { height: fillHeight } : undefined}
           onCopy={(e) => {
             // Intercept copy to provide clean plain text instead of HTML spans
             const selection = window.getSelection();
@@ -331,30 +391,61 @@ export function TerminalOutput({ lines, height = "min-h-40 max-h-[500px]", showF
             // Walk selected nodes and extract the raw text from data attributes
             const range = selection.getRangeAt(0);
             const fragment = range.cloneContents();
-            const lines: string[] = [];
+            const copied: string[] = [];
             fragment.querySelectorAll("[data-raw]").forEach((el) => {
-              lines.push((el as HTMLElement).dataset.raw || "");
+              copied.push((el as HTMLElement).dataset.raw || "");
             });
 
-            if (lines.length > 0) {
+            if (copied.length > 0) {
               e.preventDefault();
-              e.clipboardData.setData("text/plain", lines.join("\n"));
+              e.clipboardData.setData("text/plain", copied.join("\n"));
             }
           }}
-          className={cn("p-4 overflow-auto font-mono text-xs leading-5 select-text", height)}
+          className={cn(
+            "p-4 overflow-auto font-mono text-xs leading-5 select-text",
+            (!fill || !fillHeight) && height,
+          )}
         >
-          {filteredLines.length === 0 ? (
+          {onLoadOlder && hasOlder && lines.length > 0 && (
+            <button
+              onClick={loadOlder}
+              disabled={loadingOlder}
+              className="w-full mb-2 flex items-center justify-center gap-1.5 rounded border border-dashed border-zinc-800 py-1 text-xs text-zinc-500 hover:text-zinc-300 hover:border-zinc-700 transition-colors"
+            >
+              {loadingOlder
+                ? <><Loader2 className="size-3 animate-spin" />Loading</>
+                : <><ArrowUp className="size-3" />Load older lines</>}
+            </button>
+          )}
+          {visibleLines.length === 0 ? (
             <div className="text-zinc-500">
               {lines.length === 0 ? "No output." : "No lines match the current filter."}
             </div>
           ) : (
-            filteredLines.map((line, i) => (
+            visibleLines.map((line, i) => (
               <div
                 key={i}
-                data-raw={line.text}
-                className="text-zinc-300 hover:bg-white/5 px-1 -mx-1 rounded"
-                dangerouslySetInnerHTML={{ __html: line.html }}
-              />
+                data-line={i}
+                data-raw={line.service ? `${line.service} | ${line.text}` : line.text}
+                className={cn(
+                  "flex gap-2 text-zinc-300 hover:bg-white/5 px-1 -mx-1 rounded",
+                  active?.line === i && "bg-white/5",
+                )}
+              >
+                {line.service && (
+                  <span className={cn("select-none w-24 shrink-0 truncate", serviceColor(line.service))}>
+                    {line.service}
+                  </span>
+                )}
+                <span
+                  className="min-w-0 flex-1 whitespace-pre-wrap break-words"
+                  dangerouslySetInnerHTML={{
+                    __html: active?.line === i
+                      ? highlightLine(line.text, query, active.ordinal)
+                      : markedHtml.get(i) ?? line.html,
+                  }}
+                />
+              </div>
             ))
           )}
         </div>
@@ -382,12 +473,10 @@ type StaticLogProps = {
 };
 
 export function DeploymentLog({ log, maxHeight = "max-h-96" }: StaticLogProps) {
-  const lines = useMemo(() => {
-    return log.split("\n").filter(Boolean).map((text) => {
-      const hl = highlightLine(text);
-      return { text, ...hl, level: detectLevel(text) };
-    });
-  }, [log]);
+  const lines = useMemo(
+    () => toViewLines(log.split("\n").filter(Boolean).map((text) => ({ text }))),
+    [log],
+  );
 
   return (
     <div className="border-t">
@@ -400,92 +489,96 @@ export function DeploymentLog({ log, maxHeight = "max-h-96" }: StaticLogProps) {
 
 type LogSource = "loki" | "docker" | null;
 
+type StreamLine = { text: string; service?: string };
+
+type InitEvent = {
+  source: LogSource;
+  services?: string[];
+  lines?: StreamLine[];
+};
+
 type LogViewerProps = {
   streamUrl: string;
-  historyUrl?: string;
   maxLines?: number;
 };
 
-export function LogViewer({ streamUrl, historyUrl, maxLines = 1000 }: LogViewerProps) {
-  const [lines, setLines] = useState<{ text: string; html: string; level: LogLevel }[]>([]);
+export function LogViewer({ streamUrl, maxLines = DEFAULT_SCROLLBACK }: LogViewerProps) {
+  const [lines, setLines] = useState<ViewLine[]>([]);
   const [connected, setConnected] = useState(false);
   const [timedOut, setTimedOut] = useState(false);
   const [paused, setPaused] = useState(false);
   const [manualReconnect, setManualReconnect] = useState(0);
+  const [scrollback, setScrollback] = useState(maxLines);
+  const [allServices, setAllServices] = useState(false);
+  const [hasOlder, setHasOlder] = useState(true);
   // Tagged with the stream it came from so a URL change clears it without a
   // setState inside the connection effect.
-  const [sourceState, setSourceState] = useState<{ url: string; source: LogSource }>({
+  const [sourceState, setSourceState] = useState<{ url: string; source: LogSource; services: string[] }>({
     url: streamUrl,
     source: null,
+    services: [],
   });
-  const logSource = sourceState.url === streamUrl ? sourceState.source : null;
+
+  const url = allServices ? appendParam(streamUrl, "services", "all") : streamUrl;
+  const logSource = sourceState.url === url ? sourceState.source : null;
+  const services = sourceState.services;
+
   const pausedRef = useRef(paused);
   useEffect(() => {
     pausedRef.current = paused;
   }, [paused]);
+  const scrollbackRef = useRef(scrollback);
+  useEffect(() => {
+    scrollbackRef.current = scrollback;
+  }, [scrollback]);
   const visKey = useVisibilityKey();
 
   useEffect(() => {
     // Don't connect if tab is hidden
     if (typeof document !== "undefined" && document.hidden) return;
 
-    // The SSE stream now backfills history automatically when Loki is available,
-    // but if a separate historyUrl is provided, pre-load from it for instant content
-    if (historyUrl) {
-      fetch(historyUrl)
-        .then((res) => res.json())
-        .then((data: { logs?: string }) => {
-          if (!data.logs) return;
-          const initial = data.logs
-            .split("\n")
-            .filter(Boolean)
-            .map((text: string) => {
-              const hl = highlightLine(text);
-              return { text, ...hl, level: detectLevel(text) };
-            });
-          if (initial.length > 0) {
-            setLines(initial.slice(-maxLines));
-          }
-        })
-        .catch(() => {
-          // History unavailable — stream will provide content
-        });
-    }
-
-    const es = new EventSource(streamUrl);
+    const es = new EventSource(url);
 
     es.onopen = () => setConnected(true);
 
-    es.addEventListener("source", (event: MessageEvent) => {
+    function append(incoming: StreamLine[]) {
+      if (pausedRef.current || incoming.length === 0) return;
+      setLines((prev) => capLines(
+        [...prev, ...toViewLines(incoming, prev[prev.length - 1]?.level)],
+        scrollbackRef.current,
+      ));
+    }
+
+    es.addEventListener("init", (event: MessageEvent) => {
       try {
-        const src = JSON.parse(event.data) as string;
-        if (src === "loki" || src === "docker") {
-          setSourceState({ url: streamUrl, source: src });
-        }
+        const data = JSON.parse(event.data) as InitEvent;
+        setSourceState({ url, source: data.source ?? null, services: data.services ?? [] });
+        setHasOlder(true);
+        if (pausedRef.current) return;
+        setLines(capLines(toViewLines(data.lines ?? []), scrollbackRef.current));
       } catch {
-        // skip malformed source event
+        // skip malformed init
       }
     });
 
-    function handleLogEvent(event: MessageEvent) {
-      if (pausedRef.current) return;
+    function handleBatch(event: MessageEvent) {
       try {
-        const text = JSON.parse(event.data) as string;
-        const hl = highlightLine(text);
-        const level = detectLevel(text);
-        setLines((prev) => {
-          const next = [...prev, { text, ...hl, level }];
-          if (next.length > maxLines) return next.slice(-maxLines);
-          return next;
-        });
+        append(JSON.parse(event.data) as StreamLine[]);
       } catch {
         // Skip malformed messages
       }
     }
 
-    // Listen for both named "log" events and unnamed events
-    es.addEventListener("log", handleLogEvent);
-    es.onmessage = handleLogEvent;
+    function handleSingle(event: MessageEvent) {
+      try {
+        append([{ text: JSON.parse(event.data) as string }]);
+      } catch {
+        // Skip malformed messages
+      }
+    }
+
+    es.addEventListener("logs", handleBatch);
+    es.addEventListener("log", handleSingle);
 
     // Handle stream timeout — show resume button
     es.addEventListener("timeout", () => {
@@ -499,16 +592,33 @@ export function LogViewer({ streamUrl, historyUrl, maxLines = 1000 }: LogViewerP
     };
 
     return () => {
-      es.removeEventListener("log", handleLogEvent);
       es.close();
     };
-   
-  }, [streamUrl, historyUrl, maxLines, visKey, manualReconnect]);
+  }, [url, visKey, manualReconnect]);
+
+  const loadOlder = useCallback(async () => {
+    const depth = lines.length + 500;
+    const historyUrl = historyUrlFor(url, { tail: String(depth) });
+    try {
+      const res = await fetch(historyUrl);
+      if (!res.ok) throw new Error(`Request failed (${res.status})`);
+      const data = await res.json() as { lines?: StreamLine[] };
+      const older = toViewLines(data.lines ?? []);
+      setLines((prev) => {
+        const merged = mergeOlder(older, prev);
+        if (merged.length === prev.length) setHasOlder(false);
+        return merged;
+      });
+      setScrollback((prev) => Math.max(prev, depth));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not load older lines");
+    }
+  }, [lines.length, url]);
 
   return (
     <div className="space-y-2">
       {/* Stream toolbar */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2">
           <span aria-hidden="true" className={`size-2 rounded-full ${connected ? "bg-status-success" : timedOut ? "bg-status-warning" : "bg-status-error"}`} />
           <span className="text-xs text-muted-foreground" aria-live="polite" aria-atomic="true">
@@ -523,6 +633,21 @@ export function LogViewer({ streamUrl, historyUrl, maxLines = 1000 }: LogViewerP
               )}
             </span>
           )}
+          {services.length > 1 && (
+            <button
+              onClick={() => setAllServices((v) => !v)}
+              aria-pressed={allServices}
+              className={cn(
+                "inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium transition-colors",
+                allServices
+                  ? "bg-foreground text-background"
+                  : "bg-muted text-muted-foreground hover:bg-accent",
+              )}
+            >
+              <Layers className="size-3" />
+              All services
+            </button>
+          )}
           {timedOut && (
             <Button
               size="xs"
@@ -535,6 +660,17 @@ export function LogViewer({ streamUrl, historyUrl, maxLines = 1000 }: LogViewerP
           )}
         </div>
         <div className="flex items-center gap-1">
+          <label className="sr-only" htmlFor="log-scrollback">Scrollback</label>
+          <select
+            id="log-scrollback"
+            value={scrollback}
+            onChange={(e) => setScrollback(Number(e.target.value))}
+            className="rounded border bg-transparent px-1.5 py-1 text-xs text-muted-foreground"
+          >
+            {SCROLLBACK_OPTIONS.map((size) => (
+              <option key={size} value={size}>{size.toLocaleString()} lines</option>
+            ))}
+          </select>
           <Button
             size="xs"
             variant="ghost"
@@ -566,8 +702,12 @@ export function LogViewer({ streamUrl, historyUrl, maxLines = 1000 }: LogViewerP
           </div>
         </div>
       ) : (
-        <TerminalOutput lines={lines} height="min-h-40 max-h-[500px]" />
+        <TerminalOutput lines={lines} fill onLoadOlder={loadOlder} hasOlder={hasOlder} />
       )}
     </div>
   );
+}
+
+function appendParam(url: string, key: string, value: string): string {
+  return `${url}${url.includes("?") ? "&" : "?"}${key}=${value}`;
 }
