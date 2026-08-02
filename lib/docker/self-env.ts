@@ -1,6 +1,11 @@
-import { copyFile, access } from "fs/promises";
-import { join } from "path";
+import { copyFile } from "fs/promises";
+import { execFile } from "child_process";
+import { promisify } from "util";
+import { dirname, join } from "path";
 import { VARDO_SELF_APP_NAME } from "@/lib/api/system-managed";
+import { APP_UID, DOCKER_CLEANUP_TIMEOUT } from "./constants";
+
+const execFileAsync = promisify(execFile);
 
 /** The self-app is the only app whose env lives on the host, not in the database. */
 export function isSelfApp(appName: string): boolean {
@@ -35,12 +40,40 @@ export async function seedSelfEnv(
 
   for (const source of candidates) {
     try {
-      await access(source);
-    } catch {
-      continue;
+      await copyFile(source, target);
+      return source;
+    } catch (err) {
+      if (!isAccessError(err)) continue;
+      // The host `.env` is root-owned and mode 600; the app runs unprivileged.
+      await copyAsRoot(source, target);
+      return source;
     }
-    await copyFile(source, target);
-    return source;
   }
   return null;
+}
+
+function isAccessError(err: unknown): boolean {
+  if (!err || typeof err !== "object" || !("code" in err)) return false;
+  return (err as { code: string }).code === "EACCES" || (err as { code: string }).code === "EPERM";
+}
+
+/** Copy through a throwaway container, then hand the copy to the app's uid. */
+async function copyAsRoot(source: string, target: string): Promise<void> {
+  await execFileAsync(
+    "docker",
+    [
+      "run", "--rm",
+      "-v", `${await realDir(source)}:/from:ro`,
+      "-v", `${dirname(target)}:/to`,
+      "alpine", "sh", "-c",
+      `cp /from/.env /to/.env && chown ${APP_UID}:${APP_UID} /to/.env && chmod 600 /to/.env`,
+    ],
+    { timeout: DOCKER_CLEANUP_TIMEOUT },
+  );
+}
+
+/** Bind mounts follow symlinks on the host, so resolve before mounting. */
+async function realDir(source: string): Promise<string> {
+  const { realpath } = await import("fs/promises");
+  return dirname(await realpath(source));
 }
