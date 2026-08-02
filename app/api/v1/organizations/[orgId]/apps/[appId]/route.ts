@@ -9,6 +9,7 @@ import { recordActivity } from "@/lib/activity";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { isOrgAdmin } from "@/lib/auth/permissions";
 import { refuseSystemManaged } from "@/lib/api/system-managed";
+import { sharedMarkerTypeErrors } from "@/lib/docker/compose";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -122,6 +123,16 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
 
     const refused = refuseSystemManaged(existingApp, "edit");
     if (refused) return refused;
+
+    // A quoted x-vardo-shared is dropped by the parser, so it has to be caught
+    // against the raw YAML — before the compose is stored.
+    const markerErrors = sharedMarkerTypeErrors(parsed.data.composeContent ?? "");
+    if (markerErrors.length > 0) {
+      return NextResponse.json(
+        { error: markerErrors.join("\n"), errors: markerErrors },
+        { status: 400 }
+      );
+    }
 
     // Validate projectId changes — must belong to same org
     let oldProjectId: string | null = null;
