@@ -9,15 +9,31 @@ import type { ResourceStatus, ServiceStatus } from "@/lib/config/health";
 type Stats = {
   userCount: number;
   appCount: number;
+  composeServiceCount: number;
   deploymentCount: number;
   templateCount: number;
 };
 
+// Each figure covers the whole instance — the subtitle says so, since the same
+// names on /metrics and /projects count one org.
 const statCardConfig = [
-  { key: "userCount" as const, label: "Users", sparklineKey: "users", color: "oklch(0.65 0.18 290)" },
-  { key: "appCount" as const, label: "Apps", sparklineKey: "apps", color: "oklch(0.68 0.16 175)" },
-  { key: "deploymentCount" as const, label: "Deployments", sparklineKey: "deployments", color: "oklch(0.67 0.17 120)" },
-  { key: "templateCount" as const, label: "Templates", sparklineKey: null, color: "oklch(0.65 0.16 335)" },
+  {
+    key: "userCount" as const, label: "Users", sparklineKey: "users", color: "oklch(0.65 0.18 290)",
+    scope: () => "all organizations",
+  },
+  {
+    key: "appCount" as const, label: "Apps", sparklineKey: "apps", color: "oklch(0.68 0.16 175)",
+    scope: (s: Stats) =>
+      `${s.appCount - s.composeServiceCount} top-level · ${s.composeServiceCount} compose services · all orgs`,
+  },
+  {
+    key: "deploymentCount" as const, label: "Deployments", sparklineKey: "deployments", color: "oklch(0.67 0.17 120)",
+    scope: () => "all time, all organizations",
+  },
+  {
+    key: "templateCount" as const, label: "Templates", sparklineKey: null, color: "oklch(0.65 0.16 335)",
+    scope: () => "available to install",
+  },
 ];
 
 export function AdminOverview() {
@@ -62,6 +78,9 @@ export function AdminOverview() {
                 <p className="type-numeral text-2xl mt-1">
                   {stats ? stats[stat.key] : <Loader2 className="size-5 animate-spin text-muted-foreground" />}
                 </p>
+                {stats && (
+                  <p className="text-[10px] text-muted-foreground mt-0.5">{stat.scope(stats)}</p>
+                )}
               </div>
             </div>
           );
