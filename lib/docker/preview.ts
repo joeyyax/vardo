@@ -14,6 +14,7 @@ import {
   destroyGroupEnvironment,
 } from "./clone";
 import { deployGroup } from "./deploy-group";
+import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("preview");
@@ -60,6 +61,12 @@ export type { CreatePreviewOpts, PreviewResult };
 export async function createPreview(
   opts: CreatePreviewOpts
 ): Promise<PreviewResult | null> {
+  // A preview is a non-production environment, so it needs the environments flag.
+  if (!(await isFeatureEnabledAsync("environments"))) {
+    log.info("Environments are disabled, skipping preview creation");
+    return null;
+  }
+
   const gitUrl = `https://github.com/${opts.repoFullName}.git`;
 
   // Find apps matching this repo
