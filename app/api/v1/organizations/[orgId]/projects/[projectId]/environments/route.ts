@@ -8,6 +8,7 @@ import { z } from "zod";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { requirePlugin } from "@/lib/api/require-plugin";
 
 type RouteParams = {
   params: Promise<{ orgId: string; projectId: string }>;
@@ -50,6 +51,9 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 // POST /api/v1/organizations/[orgId]/projects/[projectId]/environments
 async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
+    const gate = await requirePlugin("environments");
+    if (gate) return gate;
+
     const { orgId, projectId } = await params;
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });

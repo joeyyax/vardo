@@ -11,6 +11,7 @@ import { getGitHubAppConfig } from "@/lib/system-settings";
 import { logger } from "@/lib/logger";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { requirePlugin } from "@/lib/api/require-plugin";
 
 const log = logger.child("webhook");
 
@@ -21,6 +22,9 @@ async function handler(request: NextRequest) {
   if (process.env.VARDO_PREVIEW === "true") {
     return NextResponse.json({ ok: true, skipped: "preview instance" });
   }
+
+  const gate = await requirePlugin("git-integration");
+  if (gate) return gate;
 
   try {
     const body = await request.text();

@@ -705,6 +705,7 @@ export function ProjectDetail({
   isAdmin = false,
   meshEnabled = false,
   loggingEnabled = true,
+  environmentsEnabled = true,
   meshPeers = [],
   projectInstances = [],
 }: {
@@ -714,6 +715,7 @@ export function ProjectDetail({
   isAdmin?: boolean;
   meshEnabled?: boolean;
   loggingEnabled?: boolean;
+  environmentsEnabled?: boolean;
   meshPeers?: MeshPeerSummary[];
   projectInstances?: ProjectInstanceSummary[];
 }) {
@@ -1150,7 +1152,8 @@ export function ProjectDetail({
             {project.displayName}
           </h1>
           {project.isSystemManaged && <SystemBadge />}
-          {/* Environment switcher */}
+          {/* Environment switcher — nothing to switch when environments are off */}
+          {environmentsEnabled && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="gap-1.5">
@@ -1182,6 +1185,7 @@ export function ProjectDetail({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          )}
         </div>
       </PageToolbar>
 

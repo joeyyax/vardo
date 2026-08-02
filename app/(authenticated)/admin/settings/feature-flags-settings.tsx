@@ -1,81 +1,109 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Loader2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Loader2, Lock } from "lucide-react";
 import { toast } from "@/lib/messenger";
+
 type FlagState = {
   flag: string;
   label: string;
   description: string;
   enabled: boolean;
+  group: string;
+  source: "env" | "config" | "database" | "default";
+  locked: boolean;
+  envVar: string;
 };
+
+type FlagGroup = {
+  id: string;
+  label: string;
+  description: string;
+};
+
+function pinnedBy(f: FlagState) {
+  return f.source === "env" ? f.envVar : "vardo.yml";
+}
 
 export function FeatureFlagsSettings() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [flags, setFlags] = useState<FlagState[]>([]);
+  const [groups, setGroups] = useState<FlagGroup[]>([]);
+  const [pending, setPending] = useState<Record<string, boolean>>({});
 
-  async function refetchFlags() {
+  // Per-flag write counter. A response only wins if it's still the latest
+  // write for that flag, so rapid flips settle on what was clicked last.
+  const writeSeq = useRef<Record<string, number>>({});
+
+  const fetchFlags = useCallback(async () => {
     const res = await fetch("/api/setup/feature-flags");
     if (!res.ok) throw new Error("Failed to fetch");
     const data = await res.json();
     setFlags(data.flags ?? []);
-  }
+    setGroups(data.groups ?? []);
+  }, []);
 
   useEffect(() => {
     (async () => {
       try {
-        await refetchFlags();
+        await fetchFlags();
       } catch {
-        // defaults
+        toast.error("Couldn't load feature flags");
       } finally {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [fetchFlags]);
 
-  function toggleFlag(flag: string) {
-    setFlags((prev) =>
-      prev.map((f) => (f.flag === flag ? { ...f, enabled: !f.enabled } : f)),
-    );
-  }
+  async function handleToggle(flag: FlagState, next: boolean) {
+    if (flag.locked) return;
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setSaving(true);
+    const seq = (writeSeq.current[flag.flag] ?? 0) + 1;
+    writeSeq.current[flag.flag] = seq;
+
+    setFlags((prev) => prev.map((f) => (f.flag === flag.flag ? { ...f, enabled: next } : f)));
+    setPending((prev) => ({ ...prev, [flag.flag]: true }));
+
+    let ok = false;
+    let message = "";
     try {
-      const payload: Record<string, boolean> = {};
-      for (const f of flags) {
-        payload[f.flag] = f.enabled;
-      }
-
       const res = await fetch("/api/setup/feature-flags", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ [flag.flag]: next }),
       });
       const data = await res.json().catch(() => null);
-      if (res.ok) {
-        toast.success("Feature flags saved");
-      } else if (data?.failed?.length) {
-        // An integration's first deploy failed and was rolled back server-side.
-        toast.error(data.error ?? "An integration failed to start and was reverted");
-      } else {
-        throw new Error("Failed to save");
-      }
-      // Re-sync toggles with server truth — reverted flags show as off again.
-      await refetchFlags();
-      router.refresh();
+      ok = res.ok;
+      message = data?.error ?? "Couldn't save that change";
     } catch {
-      toast.error("Failed to save feature flags");
-    } finally {
-      setSaving(false);
+      message = "Couldn't reach the server";
     }
+
+    // A newer flip for this flag has already been sent — let it settle instead.
+    if (writeSeq.current[flag.flag] !== seq) return;
+
+    setPending((prev) => {
+      const rest = { ...prev };
+      delete rest[flag.flag];
+      return rest;
+    });
+
+    if (ok) {
+      toast.success(`${flag.label} ${next ? "enabled" : "disabled"}`);
+      router.refresh();
+      return;
+    }
+
+    // Reset to server truth rather than leaving a switch the server rejected.
+    toast.error(message);
+    await fetchFlags().catch(() => {
+      setFlags((prev) => prev.map((f) => (f.flag === flag.flag ? { ...f, enabled: !next } : f)));
+    });
   }
 
   if (loading) {
@@ -88,37 +116,80 @@ export function FeatureFlagsSettings() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div className="space-y-1">
         <h2 className="text-lg font-medium">Feature flags</h2>
         <p className="text-sm text-muted-foreground">
-          Enable or disable features across your instance.
+          Changes save as you flip them. A flag set in vardo.yml or by a{" "}
+          <code className="bg-muted rounded px-1 py-0.5 text-xs">VARDO_FEATURE_*</code> env var is
+          shown here but can only be changed there.
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        {flags.map((f) => (
-            <div key={f.flag} className="flex items-center justify-between rounded-lg border p-4">
-              <div className="space-y-0.5">
-                <Label htmlFor={`flag-${f.flag}`} className="text-sm font-medium">
-                  {f.label}
-                </Label>
-                <div className="text-xs text-muted-foreground">{f.description}</div>
-              </div>
-              <Switch
-                id={`flag-${f.flag}`}
-                checked={f.enabled}
-                onCheckedChange={() => toggleFlag(f.flag)}
-                aria-label={`${f.enabled ? "Disable" : "Enable"} ${f.label}`}
-              />
-            </div>
-          ))}
+      {groups.map((group) => {
+        const groupFlags = flags.filter((f) => f.group === group.id);
+        if (groupFlags.length === 0) return null;
 
-        <Button type="submit" className="squircle" disabled={saving} aria-label="Save feature flags">
-          {saving && <Loader2 className="size-4 animate-spin" />}
-          Save
-        </Button>
-      </form>
+        return (
+          <section key={group.id} className="space-y-3">
+            <div className="space-y-0.5">
+              <h3 className="text-sm font-medium">{group.label}</h3>
+              <p className="text-xs text-muted-foreground">{group.description}</p>
+            </div>
+
+            <div className="squircle divide-y rounded-lg border">
+              {groupFlags.map((f) => (
+                <div key={f.flag} className="flex items-start justify-between gap-4 p-4">
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Label htmlFor={`flag-${f.flag}`} className="text-sm font-medium">
+                        {f.label}
+                      </Label>
+                      <Badge
+                        variant={f.enabled ? "default" : "outline"}
+                        className={f.enabled ? "" : "text-muted-foreground"}
+                      >
+                        {f.enabled ? "On" : "Off"}
+                      </Badge>
+                      {f.locked && (
+                        <Badge variant="outline" className="gap-1 text-muted-foreground">
+                          <Lock className="size-3" />
+                          {pinnedBy(f)}
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="text-xs text-muted-foreground">{f.description}</div>
+                    {f.locked && (
+                      <div className="text-xs text-muted-foreground">
+                        Pinned by {pinnedBy(f)} — change it there, then restart.
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex shrink-0 items-center gap-2 pt-0.5">
+                    {pending[f.flag] && (
+                      <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden />
+                    )}
+                    <Switch
+                      id={`flag-${f.flag}`}
+                      checked={f.enabled}
+                      disabled={f.locked || !!pending[f.flag]}
+                      onCheckedChange={(next) => handleToggle(f, next)}
+                      aria-label={`${f.enabled ? "Disable" : "Enable"} ${f.label}`}
+                      aria-describedby={f.locked ? `flag-${f.flag}-pinned` : undefined}
+                    />
+                    {f.locked && (
+                      <span id={`flag-${f.flag}-pinned`} className="sr-only">
+                        Pinned by {pinnedBy(f)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        );
+      })}
     </div>
   );
 }

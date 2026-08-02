@@ -238,16 +238,27 @@ export async function getBackupStorageConfig(): Promise<BackupStorageConfig | nu
 // Feature flags (DB-stored overrides)
 // ---------------------------------------------------------------------------
 
-export async function getFeatureFlagsConfig(): Promise<Record<string, boolean> | null> {
-  // Config file takes priority
+/**
+ * Feature flags from each source, unmerged. Callers that need to tell an
+ * admin which source is pinning a flag read this.
+ */
+export async function getFeatureFlagLayers(): Promise<{
+  config: Record<string, boolean>;
+  database: Record<string, boolean>;
+}> {
   const fileConfig = await getVardoConfig();
-  if (fileConfig?.features && Object.keys(fileConfig.features).length > 0) {
-    return fileConfig.features;
-  }
-
   const raw = await getSystemSettingRaw("feature_flags");
-  if (!raw) return null;
-  return parseJson<Record<string, boolean>>(raw, "feature_flags");
+  return {
+    config: fileConfig?.features ?? {},
+    database: (raw ? parseJson<Record<string, boolean>>(raw, "feature_flags") : null) ?? {},
+  };
+}
+
+/** Feature flags with vardo.yml layered over the DB, per key. */
+export async function getFeatureFlagsConfig(): Promise<Record<string, boolean> | null> {
+  const { config, database } = await getFeatureFlagLayers();
+  const merged = { ...database, ...config };
+  return Object.keys(merged).length > 0 ? merged : null;
 }
 
 // ---------------------------------------------------------------------------
