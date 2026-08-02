@@ -10,7 +10,6 @@ import Link from "next/link";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ProjectsActions } from "./projects-actions";
-import { getFleetAttention } from "@/lib/attention/fleet";
 
 export default async function ProjectsPage() {
   const orgData = await getCurrentOrg();
@@ -21,8 +20,6 @@ export default async function ProjectsPage() {
 
   const orgId = orgData.organization.id;
   const organizations = await getUserOrganizations();
-
-  const fleet = await getFleetAttention(orgId);
 
   const [appList, tagList, projectList] = await Promise.all([
     db.query.apps.findMany({
@@ -95,7 +92,6 @@ export default async function ProjectsPage() {
       ) : (
         <AppGrid
           apps={appList}
-          fleet={fleet}
           allTags={tagList}
           orgId={orgId}
           emptyProjects={emptyProjects}
