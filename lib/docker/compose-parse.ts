@@ -21,6 +21,7 @@ import { SHARED_MARKER } from "./slot-partition";
  */
 export function composeToYaml(compose: ComposeFile): string {
   const doc: Record<string, unknown> = {};
+  if (compose.name) doc.name = compose.name;
 
   const services: Record<string, Record<string, unknown>> = {};
   for (const [key, svc] of Object.entries(compose.services)) {
@@ -190,6 +191,7 @@ export function parseCompose(yamlString: string): ComposeFile {
   }
 
   const result: ComposeFile = { services };
+  if (typeof root.name === "string" && root.name) result.name = root.name;
   if (root.networks && typeof root.networks === "object") {
     result.networks = root.networks as Record<string, unknown>;
   }

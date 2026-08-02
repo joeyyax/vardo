@@ -107,11 +107,27 @@ export function composeSubset(
  * Compose project holding an app's shared services.
  *
  * Scoped by environment, not just app: a PR preview must get its own database
- * rather than attaching to production's. Volumes are externalized under the
- * matching `${app}-${env}_` prefix, so the data follows the same boundary.
+ * rather than attaching to production's.
+ *
+ * A top-level `name:` in the compose file wins, and only in the app's own
+ * environment. That is what lets an already-running stack adopt this layout:
+ * the shared services stay in the project that created them, under the volume
+ * names they already have, so nothing has to be stopped or copied. Previews
+ * still get their own, or they would attach to production's database.
  */
-export function sharedProjectName(appName: string, envName: string): string {
-  return `${appName}-${envName}-shared`;
+export function sharedProjectName(
+  appName: string,
+  envName: string,
+  composeName?: string,
+): string {
+  const generated = `${appName}-${envName}-shared`;
+  if (!composeName) return generated;
+  return isOwnEnvironment(envName) ? composeName : generated;
+}
+
+/** Preview environments are named `pr-<n>`; anything else is the app's own. */
+function isOwnEnvironment(envName: string): boolean {
+  return !envName.startsWith("pr-");
 }
 
 /** Whether this app needs the two-project deploy at all. */
