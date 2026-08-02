@@ -6,6 +6,8 @@ import { db } from "@/lib/db";
 import * as schema from "@/lib/db/schema";
 import { DEFAULT_APP_NAME } from "@/lib/constants";
 import { createDefaultOrgForUser } from "@/lib/organizations/create-default-org";
+import { isAuthMethodEnabled } from "@/lib/config/auth-methods";
+import { isPasswordAuthAllowed } from "@/lib/config/provider-restrictions";
 
 // GitHub OAuth credentials are stored in the database (system_settings).
 // Better Auth requires credentials at init time, so we cache them and
@@ -52,15 +54,69 @@ export async function ensureGitHubCredentials() {
   }
 }
 
+/**
+ * Drop the cached auth instance so the next access rebuilds it against the
+ * current sign-in methods. Call after writing to auth_methods.
+ */
+export function refreshAuthMethods() {
+  _authInstance = null;
+}
+
+// Creating the first user always uses a password, so the email endpoints stay
+// available while the instance has no accounts even if the method is off.
+let _setupPending = false;
+
+/** Re-read whether the instance still has no users. Called at startup. */
+export async function refreshSetupState() {
+  const { needsSetup } = await import("@/lib/setup");
+  _setupPending = await needsSetup().catch(() => false);
+  _authInstance = null;
+}
+
+/** Whether first-user signup is still pending, so password endpoints stay open. */
+export function isSetupPending() {
+  return _setupPending;
+}
+
+function passwordEnabled() {
+  return _setupPending || (isPasswordAuthAllowed() && isAuthMethodEnabled("password"));
+}
+
+function magicLinkPlugin() {
+  return magicLink({
+    sendMagicLink: async ({ email, url }) => {
+      if (process.env.NODE_ENV === "development") {
+        console.log(`\n📧 Magic link for ${email}:\n${url}\n`);
+      }
+
+      const { sendEmail } = await import("@/lib/email/send");
+      const { MagicLinkEmail } = await import("@/lib/email/templates/magic-link");
+      await sendEmail({
+        to: email,
+        subject: `Sign in to ${DEFAULT_APP_NAME}`,
+        template: MagicLinkEmail({ url, email }),
+      });
+    },
+  });
+}
+
 function buildAuth() {
   // Build socialProviders conditionally — only include GitHub if credentials exist
   const socialProviders: Record<string, unknown> = {};
-  if (_cachedGitHubClientId && _cachedGitHubClientSecret) {
+  if (isAuthMethodEnabled("github") && _cachedGitHubClientId && _cachedGitHubClientSecret) {
     socialProviders.github = {
       clientId: _cachedGitHubClientId,
       clientSecret: _cachedGitHubClientSecret,
     };
   }
+
+  // A disabled method's plugin is left out, so its endpoints don't exist.
+  // The cast keeps the inferred API surface the same whichever are on.
+  const plugins = [
+    ...(isAuthMethodEnabled("passkey") ? [passkey()] : []),
+    ...(isAuthMethodEnabled("totp") ? [twoFactor({ issuer: "Vardo" })] : []),
+    ...(isAuthMethodEnabled("magic-link") ? [magicLinkPlugin()] : []),
+  ] as [ReturnType<typeof passkey>, ReturnType<typeof twoFactor>, ReturnType<typeof magicLinkPlugin>];
 
   return betterAuth({
   database: drizzleAdapter(db, {
@@ -79,41 +135,12 @@ function buildAuth() {
     level: "debug",
   },
 
-  // Password auth enabled — required for onboarding first-user signup
-  // and password-based sign-in on the login page
   emailAndPassword: {
-    enabled: true,
+    enabled: passwordEnabled(),
     minPasswordLength: 8,
   },
 
-  plugins: [
-    // Passkey authentication (WebAuthn)
-    passkey(),
-
-    // Two-factor authentication (TOTP only, no SMS)
-    twoFactor({
-      issuer: "Vardo",
-      // TOTP is enabled by default
-      // Backup codes are enabled by default
-    }),
-
-    // Magic link authentication
-    magicLink({
-      sendMagicLink: async ({ email, url }) => {
-        if (process.env.NODE_ENV === "development") {
-          console.log(`\n📧 Magic link for ${email}:\n${url}\n`);
-        }
-
-        const { sendEmail } = await import("@/lib/email/send");
-        const { MagicLinkEmail } = await import("@/lib/email/templates/magic-link");
-        await sendEmail({
-          to: email,
-          subject: `Sign in to ${DEFAULT_APP_NAME}`,
-          template: MagicLinkEmail({ url, email }),
-        });
-      },
-    }),
-  ],
+  plugins,
 
   // Expose isAppAdmin on the session user object so callers don't need
   // a separate DB query. This field is already in the user table schema.
@@ -151,6 +178,7 @@ function buildAuth() {
       create: {
         after: async (user) => {
           await createDefaultOrgForUser(user.id, user.name, user.email);
+          if (_setupPending) await refreshSetupState();
         },
       },
     },

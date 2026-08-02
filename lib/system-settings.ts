@@ -361,6 +361,22 @@ export type AuthConfig = {
   sessionDurationDays: number;
 };
 
+/**
+ * Sign-in method overrides from each source, unmerged. Resolution and the
+ * read-through to the retired passwordAuth flag live in lib/config/auth-methods.
+ */
+export async function getAuthMethodConfigLayers(): Promise<{
+  config: Record<string, boolean>;
+  database: Record<string, boolean>;
+}> {
+  const fileConfig = await getVardoConfig();
+  const raw = await getSystemSettingRaw("auth_methods");
+  return {
+    config: fileConfig?.auth?.methods ?? {},
+    database: (raw ? parseJson<Record<string, boolean>>(raw, "auth_methods") : null) ?? {},
+  };
+}
+
 const VALID_REGISTRATION_MODES = ["closed", "open", "approval"] as const;
 
 export async function getAuthConfig(): Promise<AuthConfig> {

@@ -1,9 +1,12 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -11,28 +14,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Check, X, Loader2 } from "lucide-react";
+import { Loader2, Lock } from "lucide-react";
+import { toast } from "@/lib/messenger";
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
-  CardDescription,
 } from "@/components/ui/card";
 import { useSystemSetting } from "./use-system-setting";
-
-type AuthMethodStatus = {
-  passkeys: boolean;
-  magicLink: boolean;
-  github: boolean;
-  passwords: boolean;
-  twoFactor: boolean;
-};
 
 export function AuthSettings() {
   const [registrationMode, setRegistrationMode] = useState<string>("closed");
   const [sessionDurationDays, setSessionDurationDays] = useState("7");
-  const [authMethods, setAuthMethods] = useState<AuthMethodStatus | null>(null);
 
   const onLoad = useCallback(
     (data: Record<string, unknown>) => {
@@ -46,20 +40,6 @@ export function AuthSettings() {
     label: "Authentication settings",
     onLoad,
   });
-
-  // Fetch auth method status from the health endpoint
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch("/api/v1/admin/health");
-        if (!res.ok) return;
-        const data = await res.json();
-        if (data.auth) setAuthMethods(data.auth);
-      } catch {
-        // best effort
-      }
-    })();
-  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -83,7 +63,7 @@ export function AuthSettings() {
       <div className="space-y-1">
         <h2 className="text-lg font-medium">Authentication</h2>
         <p className="text-sm text-muted-foreground">
-          Control who can sign up and how sessions work.
+          Control who can sign up, how they sign in and how sessions work.
         </p>
       </div>
 
@@ -136,43 +116,175 @@ export function AuthSettings() {
       </CardContent>
     </Card>
 
-    <Card className="squircle rounded-lg">
-      <CardHeader>
-        <CardTitle className="text-sm">Authentication methods</CardTitle>
-        <CardDescription>
-          Configured methods are determined by environment variables and provider setup.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        {authMethods ? (
-          <div className="flex flex-wrap gap-2">
-            {([
-              { label: "Password auth", enabled: authMethods.passwords },
-              { label: "GitHub OAuth", enabled: authMethods.github },
-              { label: "Magic link", enabled: authMethods.magicLink },
-              { label: "Passkeys", enabled: authMethods.passkeys },
-              { label: "2FA", enabled: authMethods.twoFactor },
-            ]).map(({ label, enabled }) => (
-              <div
-                key={label}
-                className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium ${
-                  enabled ? "bg-status-success-muted text-status-success" : "bg-muted text-muted-foreground"
-                }`}
-              >
-                {enabled ? <Check className="size-3" /> : <X className="size-3" />}
-                {label}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="flex gap-2">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="h-6 w-20 bg-muted rounded animate-pulse" />
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+    <SignInMethods />
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Sign-in methods
+// ---------------------------------------------------------------------------
+
+type MethodState = {
+  method: string;
+  label: string;
+  description: string;
+  enabled: boolean;
+  source: "env" | "config" | "database" | "default";
+  locked: boolean;
+  envVar: string;
+  unavailable: boolean;
+  unavailableReason?: string;
+};
+
+function pinnedBy(m: MethodState) {
+  return m.source === "env" ? m.envVar : "vardo.yml";
+}
+
+function SignInMethods() {
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [methods, setMethods] = useState<MethodState[]>([]);
+  const [pending, setPending] = useState<Record<string, boolean>>({});
+
+  // Per-method write counter, so rapid flips settle on what was clicked last.
+  const writeSeq = useRef<Record<string, number>>({});
+
+  const fetchMethods = useCallback(async () => {
+    const res = await fetch("/api/setup/auth-methods");
+    if (!res.ok) throw new Error("Failed to fetch");
+    const data = await res.json();
+    setMethods(data.methods ?? []);
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        await fetchMethods();
+      } catch {
+        toast.error("Couldn't load sign-in methods");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [fetchMethods]);
+
+  async function handleToggle(method: MethodState, next: boolean) {
+    if (method.locked || method.unavailable) return;
+
+    const seq = (writeSeq.current[method.method] ?? 0) + 1;
+    writeSeq.current[method.method] = seq;
+
+    setMethods((prev) => prev.map((m) => (m.method === method.method ? { ...m, enabled: next } : m)));
+    setPending((prev) => ({ ...prev, [method.method]: true }));
+
+    let ok = false;
+    let message = "";
+    try {
+      const res = await fetch("/api/setup/auth-methods", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [method.method]: next }),
+      });
+      const data = await res.json().catch(() => null);
+      ok = res.ok;
+      message = data?.error ?? "Couldn't save that change";
+    } catch {
+      message = "Couldn't reach the server";
+    }
+
+    if (writeSeq.current[method.method] !== seq) return;
+
+    setPending((prev) => {
+      const rest = { ...prev };
+      delete rest[method.method];
+      return rest;
+    });
+
+    if (ok) {
+      toast.success(`${method.label} ${next ? "enabled" : "disabled"}`);
+      router.refresh();
+      return;
+    }
+
+    toast.error(message);
+    await fetchMethods().catch(() => {
+      setMethods((prev) => prev.map((m) => (m.method === method.method ? { ...m, enabled: !next } : m)));
+    });
+  }
+
+  return (
+    <section className="space-y-3">
+      <div className="space-y-0.5">
+        <h3 className="text-sm font-medium">Sign-in methods</h3>
+        <p className="text-xs text-muted-foreground">
+          Changes save as you flip them and take effect immediately — a disabled method is refused at
+          the API, not just hidden. At least one has to stay usable. A method set in vardo.yml or by a{" "}
+          <code className="bg-muted rounded px-1 py-0.5 text-xs">VARDO_AUTH_*</code> env var is shown
+          here but can only be changed there.
+        </p>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-8" role="status" aria-live="polite">
+          <Loader2 className="size-5 animate-spin text-muted-foreground" />
+          <span className="sr-only">Loading sign-in methods</span>
+        </div>
+      ) : (
+        <div className="squircle divide-y rounded-lg border">
+          {methods.map((m) => (
+            <div key={m.method} className="flex items-start justify-between gap-4 p-4">
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Label htmlFor={`auth-method-${m.method}`} className="text-sm font-medium">
+                    {m.label}
+                  </Label>
+                  <Badge
+                    variant={m.enabled && !m.unavailable ? "default" : "outline"}
+                    className={m.enabled && !m.unavailable ? "" : "text-muted-foreground"}
+                  >
+                    {m.unavailable ? "Unavailable" : m.enabled ? "On" : "Off"}
+                  </Badge>
+                  {m.locked && (
+                    <Badge variant="outline" className="gap-1 text-muted-foreground">
+                      <Lock className="size-3" />
+                      {pinnedBy(m)}
+                    </Badge>
+                  )}
+                </div>
+                <div className="text-xs text-muted-foreground">{m.description}</div>
+                {m.unavailable && m.unavailableReason && (
+                  <div className="text-xs text-muted-foreground">{m.unavailableReason}</div>
+                )}
+                {m.locked && (
+                  <div className="text-xs text-muted-foreground">
+                    Pinned by {pinnedBy(m)} — change it there, then restart.
+                  </div>
+                )}
+              </div>
+
+              <div className="flex shrink-0 items-center gap-2 pt-0.5">
+                {pending[m.method] && (
+                  <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden />
+                )}
+                <Switch
+                  id={`auth-method-${m.method}`}
+                  checked={m.enabled && !m.unavailable}
+                  disabled={m.locked || m.unavailable || !!pending[m.method]}
+                  onCheckedChange={(next) => handleToggle(m, next)}
+                  aria-label={`${m.enabled ? "Disable" : "Enable"} ${m.label}`}
+                  aria-describedby={m.locked ? `auth-method-${m.method}-pinned` : undefined}
+                />
+                {m.locked && (
+                  <span id={`auth-method-${m.method}-pinned`} className="sr-only">
+                    Pinned by {pinnedBy(m)}
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }

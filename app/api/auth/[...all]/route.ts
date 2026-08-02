@@ -3,48 +3,83 @@ import { auth, ensureGitHubCredentials } from "@/lib/auth";
 import { toNextJsHandler } from "better-auth/next-js";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { isPasswordAuthAllowed } from "@/lib/config/provider-restrictions";
-import { isFeatureEnabled } from "@/lib/config/features";
+import { isAuthMethodEnabledAsync, getAuthMethodConfig, type AuthMethod } from "@/lib/config/auth-methods";
 
 const handler = toNextJsHandler(auth);
 
-// Wrap GET to ensure DB-stored GitHub credentials are loaded before first use
-export async function GET(request: NextRequest) {
-  await ensureGitHubCredentials();
-  return handler.GET(request);
+// Endpoint prefixes owned by each sign-in method. Checked against the path
+// under /api/auth, so a disabled method is refused even if a stale auth
+// instance still has its routes mounted.
+const METHOD_PATHS: [AuthMethod, string[]][] = [
+  ["password", ["/sign-in/email", "/sign-up/email", "/forget-password", "/reset-password", "/change-password"]],
+  ["passkey", ["/passkey", "/sign-in/passkey"]],
+  ["magic-link", ["/sign-in/magic-link", "/magic-link"]],
+  ["totp", ["/two-factor"]],
+  ["github", ["/callback/github", "/oauth2/callback/github"]],
+];
+
+function methodForPath(authPath: string): AuthMethod | null {
+  for (const [method, prefixes] of METHOD_PATHS) {
+    if (prefixes.some((p) => authPath.startsWith(p))) return method;
+  }
+  return null;
 }
 
-// Paths that require password auth to be allowed
-const PASSWORD_AUTH_PATHS = ["/sign-in/email", "/sign-up/email"];
+/** Social sign-in names its provider in the body rather than the path. */
+async function socialProviderMethod(request: NextRequest, authPath: string): Promise<AuthMethod | null> {
+  if (!authPath.startsWith("/sign-in/social") && !authPath.startsWith("/link-social")) return null;
+  try {
+    const body = await request.clone().json();
+    return body?.provider === "github" ? "github" : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
- * Guard password-based auth endpoints when restricted.
- * Setup (first user creation) bypasses this check since there
- * are no other auth methods available yet.
+ * Refuse requests to a sign-in method that is switched off. Creating the first
+ * user bypasses the password check, since setup has no other way in.
  */
-async function guardPasswordAuth(request: NextRequest) {
+async function guardAuthMethods(request: NextRequest): Promise<NextResponse | null> {
   const url = new URL(request.url);
   const authPath = url.pathname.replace(/^\/api\/auth/, "");
 
-  if (PASSWORD_AUTH_PATHS.some((p) => authPath.startsWith(p))) {
-    const passwordAllowed = isPasswordAuthAllowed() && isFeatureEnabled("passwordAuth");
-    if (!passwordAllowed) {
-      // Allow setup (first user) — the setup wizard always uses password signup
-      const { needsSetup } = await import("@/lib/setup");
-      if (!(await needsSetup())) {
-        return NextResponse.json(
-          { error: "Password authentication is not available on this instance" },
-          { status: 403 },
-        );
-      }
-    }
+  const method = methodForPath(authPath) ?? (await socialProviderMethod(request, authPath));
+  if (!method) return null;
+
+  if (method === "password" && !isPasswordAuthAllowed()) {
+    return NextResponse.json(
+      { error: "Password authentication is not available on this instance" },
+      { status: 403 },
+    );
   }
 
-  return handler.POST(request);
+  if (await isAuthMethodEnabledAsync(method)) return null;
+
+  if (method === "password") {
+    const { needsSetup } = await import("@/lib/setup");
+    if (await needsSetup()) return null;
+  }
+
+  return NextResponse.json(
+    { error: `${getAuthMethodConfig(method).label} sign-in is turned off on this instance` },
+    { status: 403 },
+  );
+}
+
+export async function GET(request: NextRequest) {
+  await ensureGitHubCredentials();
+  const blocked = await guardAuthMethods(request);
+  if (blocked) return blocked;
+  return handler.GET(request);
 }
 
 // POST (login, signup, passkey) gets strict auth-tier rate limiting
-async function guardPasswordAuthWithCredentials(request: NextRequest) {
+async function handlePost(request: NextRequest) {
   await ensureGitHubCredentials();
-  return guardPasswordAuth(request);
+  const blocked = await guardAuthMethods(request);
+  if (blocked) return blocked;
+  return handler.POST(request);
 }
-export const POST = withRateLimit(guardPasswordAuthWithCredentials, { tier: "auth" });
+
+export const POST = withRateLimit(handlePost, { tier: "auth" });

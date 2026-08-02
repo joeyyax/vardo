@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { isPasswordAuthAllowed } from "@/lib/config/provider-restrictions";
-import { isFeatureEnabled } from "@/lib/config/features";
+import { getAuthMethodStates, checkPrerequisites } from "@/lib/config/auth-methods";
 import { LoginPageClient } from "./login-form";
 
 export const metadata: Metadata = {
@@ -12,10 +12,19 @@ export const metadata: Metadata = {
   },
 };
 
-export default function LoginPage() {
-  // Password auth can be disabled at both the deployment level (env var)
-  // and the feature flag level. Both must allow it.
-  const allowPasswordAuth = isPasswordAuthAllowed() && isFeatureEnabled("passwordAuth");
+export default async function LoginPage() {
+  const [methods, prerequisites] = await Promise.all([getAuthMethodStates(), checkPrerequisites()]);
 
-  return <LoginPageClient allowPasswordAuth={allowPasswordAuth} />;
+  // Password can also be shut off at the deployment level; the others need
+  // their prerequisite configured before they can appear.
+  return (
+    <LoginPageClient
+      methods={{
+        password: methods.password && isPasswordAuthAllowed(),
+        passkey: methods.passkey,
+        magicLink: methods["magic-link"] && prerequisites.email,
+        github: methods.github && prerequisites["github-app"],
+      }}
+    />
+  );
 }

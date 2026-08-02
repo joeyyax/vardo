@@ -8,13 +8,15 @@
  *
  * Resolution: config file (vardo.yml) > DB system_settings > default (true).
  * Core features (projects, apps, deployments) cannot be disabled.
+ *
+ * Sign-in methods live in lib/config/auth-methods.ts, which still reads the
+ * retired passwordAuth key from here as an alias.
  */
 
 export type FeatureFlag =
   | "ui"
   | "environments"
   | "previews"
-  | "passwordAuth"
   | "api-tokens"
   | "mesh"
   | "bindMounts"
@@ -91,12 +93,6 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
     description:
       "Ephemeral preview environments for pull requests, created on PR open and torn down on close. Disabling leaves git deploys working without spinning up per-PR stacks. Previews of Vardo itself also need Self-management.",
     group: "deployment",
-  },
-  passwordAuth: {
-    label: "Password sign-in",
-    description:
-      "Email/password sign-in and onboarding. When disabled, users must authenticate via passkey, magic link or GitHub — set one of those up first or nobody can sign in.",
-    group: "access",
   },
   "api-tokens": {
     label: "API tokens",
@@ -250,7 +246,7 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
 // Every flag maps to VARDO_FEATURE_<NAME>, where <NAME> is the flag name
 // upper-snake-cased: hyphens become underscores and camelCase word boundaries
 // gain one. So error-tracking -> VARDO_FEATURE_ERROR_TRACKING and
-// passwordAuth -> VARDO_FEATURE_PASSWORD_AUTH.
+// bindMounts -> VARDO_FEATURE_BIND_MOUNTS.
 // ---------------------------------------------------------------------------
 
 const TRUTHY = new Set(["1", "true", "yes", "on", "enabled"]);
