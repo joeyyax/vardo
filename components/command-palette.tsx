@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   Command,
@@ -59,6 +59,41 @@ type SearchableProject = {
   displayName: string;
 };
 
+/** cmdk keys items by lowercased value, so two apps named Gitea and gitea collide. */
+const ID_SEP = "\u241f";
+
+/**
+ * Name matches beat keyword matches, and nothing matches loosely. cmdk's default
+ * is fuzzy, which ranked plextraktsync above plex for "plex" and returned Kroki
+ * for "loki" — on a fleet this size the noise costs more than the typo tolerance.
+ */
+function rankResult(value: string, search: string, keywords?: string[]): number {
+  const q = search.trim().toLowerCase();
+  if (!q) return 1;
+
+  const name = value.split(ID_SEP)[0].toLowerCase();
+  if (name === q) return 1;
+  if (name.startsWith(q)) return 0.9;
+  if (name.includes(q)) return 0.7;
+
+  const kw = (keywords ?? []).map((k) => k.toLowerCase());
+  if (kw.some((k) => k === q)) return 0.5;
+  if (kw.some((k) => k.startsWith(q))) return 0.4;
+  if (kw.some((k) => k.includes(q))) return 0.3;
+
+  return 0;
+}
+
+/** cmdk hides non-matches but keeps source order, so relevance is sorted here. */
+function byRelevance<T>(items: T[], search: string, fields: (item: T) => [string, string[]]) {
+  if (!search.trim()) return items;
+  return [...items].sort((a, b) => {
+    const [an, ak] = fields(a);
+    const [bn, bk] = fields(b);
+    return rankResult(bn, search, bk) - rankResult(an, search, ak);
+  });
+}
+
 export function CommandPalette({ orgId }: CommandPaletteProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -67,6 +102,19 @@ export function CommandPalette({ orgId }: CommandPaletteProps) {
   const [orgEnvKeys, setOrgEnvKeys] = useState<string[]>([]);
   const [loaded, setLoaded] = useState(false);
   const router = useRouter();
+
+  const rankedApps = useMemo(
+    () =>
+      byRelevance(apps, search, (a) => [
+        a.displayName,
+        [a.name, a.projectName, a.imageName, ...a.domains].filter((k): k is string => !!k),
+      ]),
+    [apps, search],
+  );
+  const rankedProjects = useMemo(
+    () => byRelevance(projects, search, (p) => [p.displayName, [p.name]]),
+    [projects, search],
+  );
 
   const runCommand = useCallback(
     (command: () => void) => {
@@ -122,7 +170,7 @@ export function CommandPalette({ orgId }: CommandPaletteProps) {
         <DialogDescription>Search for commands and navigate</DialogDescription>
       </DialogHeader>
       <DialogContent className="overflow-hidden p-0 sm:max-w-[550px]" showCloseButton={false}>
-        <Command className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5">
+        <Command filter={rankResult} className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5">
           <CommandInput
             placeholder="Search apps, projects, pages..."
             value={search}
@@ -135,10 +183,16 @@ export function CommandPalette({ orgId }: CommandPaletteProps) {
             {/* Apps */}
             {apps.length > 0 && (
               <CommandGroup heading="Apps">
-                {apps.map((app) => (
+                {rankedApps.map((app) => (
                   <CommandItem
                     key={app.id}
-                    value={`${app.displayName} ${app.name} ${app.projectName || ""} ${app.imageName || ""} ${app.domains.join(" ")}`}
+                    // Name is the value; everything else is a keyword. Folding
+                    // them into one string made cmdk score the blob, which put
+                    // plex sixth behind plextraktsync on a search for "plex".
+                    value={`${app.displayName}${ID_SEP}${app.id}`}
+                    keywords={[app.name, app.projectName, app.imageName, ...app.domains].filter(
+                      (k): k is string => !!k,
+                    )}
                     onSelect={() => runCommand(() => router.push(`/apps/${app.name}`))}
                     className="gap-2"
                   >
@@ -155,10 +209,11 @@ export function CommandPalette({ orgId }: CommandPaletteProps) {
             {/* Projects */}
             {projects.length > 0 && (
               <CommandGroup heading="Projects">
-                {projects.map((project) => (
+                {rankedProjects.map((project) => (
                   <CommandItem
                     key={project.id}
-                    value={`${project.displayName} ${project.name}`}
+                    value={`${project.displayName}${ID_SEP}${project.id}`}
+                    keywords={[project.name]}
                     onSelect={() => runCommand(() => router.push(`/projects/${project.name}`))}
                     className="gap-2"
                   >
@@ -175,7 +230,8 @@ export function CommandPalette({ orgId }: CommandPaletteProps) {
                 {orgEnvKeys.map((key) => (
                   <CommandItem
                     key={key}
-                    value={`env variable ${key}`}
+                    value={key}
+                    keywords={["env", "variable"]}
                     onSelect={() => runCommand(() => router.push("/settings/variables"))}
                     className="gap-2"
                   >

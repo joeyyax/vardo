@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 
 // ---------------------------------------------------------------------------
 // Docker Prune (existing)
@@ -20,6 +21,7 @@ import { Badge } from "@/components/ui/badge";
 
 export function DockerPrune() {
   const [pruning, setPruning] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   async function handleDockerPrune() {
     setPruning(true);
@@ -46,13 +48,26 @@ export function DockerPrune() {
           Remove unused images, stopped containers, and dangling volumes.
         </p>
       </div>
-      <Button size="sm" variant="outline" onClick={handleDockerPrune} disabled={pruning}>
+      <Button size="sm" variant="outline" onClick={() => setConfirmOpen(true)} disabled={pruning}>
         {pruning ? (
           <><Loader2 className="mr-1.5 size-4 animate-spin" />Cleaning...</>
         ) : (
-          <><Trash2 className="mr-1.5 size-4" />Clean Up</>
+          <><Trash2 className="mr-1.5 size-4" />Clean up</>
         )}
       </Button>
+
+      <ConfirmDeleteDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        onConfirm={() => {
+          setConfirmOpen(false);
+          handleDockerPrune();
+        }}
+        title="Clean up Docker"
+        description="Removes every unused image, stopped container and dangling volume on the host — including ones Vardo did not create. A stopped app's data volume is not dangling and survives; anything you were keeping to inspect later does not."
+        confirmLabel="Clean up"
+        loadingLabel="Cleaning up..."
+      />
     </div>
   );
 }
