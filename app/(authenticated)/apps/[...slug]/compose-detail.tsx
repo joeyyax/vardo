@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { PageToolbar } from "@/components/page-toolbar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
@@ -102,6 +103,19 @@ function PendingImageRef({ pending }: { pending: PendingImage }) {
   );
 }
 
+// Marks a service a deploy leaves running instead of replacing.
+function SharedBadge() {
+  return (
+    <Badge
+      variant="outline"
+      className="shrink-0 border-border px-1.5 py-0 text-[11px] font-medium leading-4 text-muted-foreground"
+      title="Deployed once. A deploy leaves this service running instead of replacing it."
+    >
+      Shared
+    </Badge>
+  );
+}
+
 function Stat({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex min-w-0 flex-col gap-0.5">
@@ -174,9 +188,12 @@ function ServiceCard({
         <div className="relative flex items-start justify-between gap-2">
           <div className="min-w-0">
             <h3 className="type-h3 truncate">{service.displayName}</h3>
-            <p className="font-mono text-xs text-muted-foreground/60 truncate">
-              {service.composeService ?? service.name}
-            </p>
+            <div className="flex min-w-0 items-center gap-1.5">
+              <p className="font-mono text-xs text-muted-foreground/60 truncate">
+                {service.composeService ?? service.name}
+              </p>
+              {service.isShared && <SharedBadge />}
+            </div>
           </div>
           <StatusIndicator
             status={service.status}
