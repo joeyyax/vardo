@@ -30,6 +30,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { EmptyState } from "@/components/ui/empty-state";
 import {
   Select,
   SelectContent,
@@ -698,17 +699,16 @@ export function VolumesPanel({ appId, orgId }: Props) {
             }}
           >
             <Plus className="mr-1.5 size-4" />
-            Add Volume
+            Add volume
           </Button>
         </div>
 
         {volumes.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
-            <HardDrive className="size-8 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">
-              No volumes configured. Deploy the project to see detected volumes, or add one manually.
-            </p>
-          </div>
+          <EmptyState
+            icon={HardDrive}
+            title="No volumes configured"
+            body="Deploy the project to see detected volumes, or add one manually."
+          />
         ) : (
           <div className="space-y-2">
             {volumes.map((vol) => (
@@ -1058,7 +1058,7 @@ export function VolumesPanel({ appId, orgId }: Props) {
               {saving ? (
                 <><Loader2 className="mr-2 size-4 animate-spin" />Adding...</>
               ) : (
-                "Add Volume"
+                "Add volume"
               )}
             </Button>
           </BottomSheetFooter>

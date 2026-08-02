@@ -179,7 +179,7 @@ export function OrgEnvVarsEditor({ orgId }: Props) {
         <Button size="sm" onClick={handleSave} disabled={saving || !modified}>
           {saving ? (
             <><Loader2 className="mr-1.5 size-4 animate-spin" />Saving...</>
-          ) : modified ? "Save Changes" : "Saved"}
+          ) : modified ? "Save changes" : "Saved"}
         </Button>
       </div>
 

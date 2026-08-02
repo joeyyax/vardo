@@ -325,7 +325,7 @@ export function OrgDomainEditor({
         className="squircle"
       >
         <Plus className="size-4 mr-1.5" />
-        Add Domain
+        Add domain
       </Button>
 
       </CardContent>
@@ -402,7 +402,7 @@ export function OrgDomainEditor({
               disabled={adding || !newDomain.trim()}
               className="squircle"
             >
-              {adding ? "Adding..." : "Add Domain"}
+              {adding ? "Adding..." : "Add domain"}
             </Button>
           </BottomSheetFooter>
         </BottomSheetContent>

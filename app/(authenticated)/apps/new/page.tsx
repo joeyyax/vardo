@@ -5,14 +5,15 @@ import { getCurrentOrg } from "@/lib/auth/session";
 import { eq, asc } from "drizzle-orm";
 import { loadTemplates } from "@/lib/templates/load";
 import { getInstanceConfig } from "@/lib/system-settings";
+import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { NewAppFlow } from "./new-app-flow";
 
 export default async function NewAppPage({
   searchParams,
 }: {
-  searchParams: Promise<{ parent?: string; project?: string; name?: string; image?: string; template?: string }>;
+  searchParams: Promise<{ parent?: string; project?: string; name?: string; image?: string; template?: string; source?: string }>;
 }) {
-  const { parent: preselectedParentId, project: preselectedProjectId, name: prefilledName, image: prefilledImage, template: prefilledTemplate } = await searchParams;
+  const { parent: preselectedParentId, project: preselectedProjectId, name: prefilledName, image: prefilledImage, template: prefilledTemplate, source: preselectedSource } = await searchParams;
   const orgData = await getCurrentOrg();
 
   if (!orgData) {
@@ -21,7 +22,7 @@ export default async function NewAppPage({
 
   const orgId = orgData.organization.id;
 
-  const [templateList, parentAppList, instanceConfig] = await Promise.all([
+  const [templateList, parentAppList, instanceConfig, containerImportEnabled] = await Promise.all([
     loadTemplates(),
     // Load projects for grouping
     db.query.projects.findMany({
@@ -30,6 +31,7 @@ export default async function NewAppPage({
       orderBy: [asc(projects.name)],
     }),
     getInstanceConfig(),
+    isFeatureEnabledAsync("container-import"),
   ]);
 
   const parentOptions = parentAppList.map((p) => ({
@@ -53,6 +55,8 @@ export default async function NewAppPage({
       defaultName={prefilledName}
       defaultImage={prefilledImage}
       defaultTemplate={prefilledTemplate}
+      defaultSource={preselectedSource}
+      containerImportEnabled={containerImportEnabled}
     />
   );
 }

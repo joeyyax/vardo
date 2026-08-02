@@ -319,7 +319,7 @@ function ProjectCard({
             className="relative z-10 inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-card transition-colors cursor-pointer"
           >
             <Plus className="size-3" />
-            Add App
+            Add app
           </Link>
         ) : (
           /* One app per row: two columns halved the width available to a name,

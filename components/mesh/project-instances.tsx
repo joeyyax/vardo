@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
 import {
   Dialog,
   DialogContent,
@@ -131,42 +132,35 @@ export function ProjectInstances({
 
   if (peers.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
-        <Network className="size-8 text-muted-foreground" aria-hidden="true" />
-        <div className="text-center space-y-1">
-          <p className="text-sm font-medium">No connected instances</p>
-          <p className="text-sm text-muted-foreground">
-            Connect to other Vardo instances in Settings to promote, pull or clone projects.
-          </p>
-        </div>
-      </div>
+      <EmptyState
+        icon={Network}
+        title="No connected instances"
+        body="Connect to other Vardo instances in Settings to promote, pull or clone projects."
+      />
     );
   }
 
   if (allInstances.length === 0) {
     return (
       <div className="space-y-4">
-        <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
-          <Network className="size-8 text-muted-foreground" aria-hidden="true" />
-          <div className="text-center space-y-1">
-            <p className="text-sm font-medium">No deployments across instances</p>
-            <p className="text-sm text-muted-foreground">
-              Promote, pull or clone this project to connected instances.
-            </p>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="squircle"
-            onClick={() => {
-              setTransferAction("clone");
-              setTargetPeerId("");
-            }}
-          >
-            <Copy className="size-3.5 mr-1.5" aria-hidden="true" />
-            Clone to...
-          </Button>
-        </div>
+        <EmptyState
+          icon={Network}
+          title="No deployments across instances"
+          body="Promote, pull or clone this project to connected instances."
+          action={
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setTransferAction("clone");
+                setTargetPeerId("");
+              }}
+            >
+              <Copy className="size-3.5 mr-1.5" aria-hidden="true" />
+              Clone to...
+            </Button>
+          }
+        />
         {renderDialog()}
       </div>
     );
