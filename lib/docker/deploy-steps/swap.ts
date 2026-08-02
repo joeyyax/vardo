@@ -29,6 +29,7 @@ import {
 } from "../constants";
 import type { DeployContext } from "../deploy-context";
 import { classifyComposeServices } from "./classify-services";
+import { publishesHostPorts } from "../host-ports";
 
 const execFileAsync = promisify(execFile);
 const NETWORK_NAME = VARDO_NETWORK;
@@ -156,6 +157,13 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   // running, causing "port already allocated" errors in the new slot.
   const mustStopOldSlot = activeSlot !== null && !isLocalEnv;
 
+  // Nothing binds the host, so both slots can run at once. Traefik treats the
+  // two as backends of one service and drains to the survivor, which turns the
+  // cutover from a gap into an overlap. Anything publishing a port keeps the
+  // stop-then-start order — the second bind would fail.
+  const canOverlapSlots = mustStopOldSlot && !publishesHostPorts(compose.services);
+  const stopOldBeforeUp = mustStopOldSlot && !canOverlapSlots;
+
   // Pre-clean the new slot to remove orphaned containers from any previous
   // failed deploy that didn't fully clean up (process crash, timeout, etc.).
   try {
@@ -236,7 +244,8 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   // them if the new slot fails to come up.
   const stoppedOldServices: string[] = [];
 
-  if (mustStopOldSlot && oldSlotDir && oldProjectName) {
+  const stopOldSlot = async () => {
+    if (!oldSlotDir || !oldProjectName) return;
     const oldComposeFileArgs = await getOldComposeFileArgs();
     log(`[deploy] Stopping old slot (${activeSlot})...`);
     try {
@@ -253,6 +262,12 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     } catch (err) {
       log(`[deploy] Warning: could not stop old slot — ${err instanceof Error ? err.message : err}`);
     }
+  };
+
+  if (stopOldBeforeUp) {
+    await stopOldSlot();
+  } else if (canOverlapSlots) {
+    log(`[deploy] No published host ports — ${activeSlot} keeps serving until ${newSlot} is healthy`);
   }
 
   // Local helper — restart any old-slot services we stopped, so the old slot
@@ -388,6 +403,12 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   ctx.stage("healthcheck", "success");
   ctx.stage("routing", "running");
   log(`[deploy] ${newSlot} healthy`);
+
+  // Both slots have been serving since the new one came up. Drop the old one
+  // now that the new one is proven, so the cutover never leaves a gap.
+  if (canOverlapSlots) {
+    await stopOldSlot();
+  }
 
   // Step 9: Update container names in DB
   if (!isLocalEnv) {
