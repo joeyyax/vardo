@@ -810,12 +810,34 @@ export function detectPorts(compose: ComposeFile): PortMapping[] {
   return results;
 }
 
+/** Split on `:`, ignoring any inside a `${...}` interpolation. */
+function splitOutsideInterpolation(value: string): string[] {
+  const parts: string[] = [];
+  let current = "";
+  let depth = 0;
+  for (let i = 0; i < value.length; i++) {
+    const char = value[i];
+    if (char === "$" && value[i + 1] === "{") depth++;
+    else if (char === "}" && depth > 0) depth--;
+    if (char === ":" && depth === 0) {
+      parts.push(current);
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  parts.push(current);
+  return parts;
+}
+
 export function parsePortString(
   raw: string,
 ): { internal: number; external?: number } | null {
   // Strip protocol suffix (e.g. /tcp, /udp)
   const stripped = raw.split("/")[0];
-  const parts = stripped.split(":");
+  // `${VAR:-default}` carries a colon that is not a port separator, and
+  // splitting on it read the default as a negative host port.
+  const parts = splitOutsideInterpolation(stripped);
 
   if (parts.length === 1) {
     // "3000"
