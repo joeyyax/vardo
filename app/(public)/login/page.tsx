@@ -12,6 +12,9 @@ export const metadata: Metadata = {
   },
 };
 
+// Which buttons appear comes from the database and changes without a rebuild.
+export const dynamic = "force-dynamic";
+
 export default async function LoginPage() {
   const [methods, prerequisites] = await Promise.all([getAuthMethodStates(), checkPrerequisites()]);
 
