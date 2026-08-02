@@ -27,6 +27,13 @@ const execFileAsync = promisify(execFile);
 
 const log = logger.child("self-register");
 
+// Fallback when the running checkout has no readable git remote. Must stay in
+// the format getSystemManagedApp() matches: https host, no .git suffix.
+const DEFAULT_REPO_URL = "https://github.com/joeyyax/vardo";
+
+/** Port the frontend service listens on. */
+const FRONTEND_PORT = 3000;
+
 // Infrastructure services managed as child app records.
 // cadvisor, loki, and promtail are provisioned separately via lib/infra/provision.ts.
 const INFRA_SERVICES = new Set([
@@ -89,12 +96,12 @@ export async function ensureVardoProject(): Promise<void> {
       { timeout: 5000 },
     );
     gitUrl = remoteOut.trim();
-    // Normalize SSH URLs to HTTPS.
+    // Normalize SSH URLs to HTTPS. The .git suffix is stripped for both forms —
+    // getSystemManagedApp() matches on the suffix-free URL.
     if (gitUrl.startsWith("git@")) {
-      gitUrl = gitUrl
-        .replace(/^git@([^:]+):/, "https://$1/")
-        .replace(/\.git$/, "");
+      gitUrl = gitUrl.replace(/^git@([^:]+):/, "https://$1/");
     }
+    gitUrl = gitUrl.replace(/\.git$/, "");
 
     const { stdout: branchOut } = await execFileAsync(
       "git",
@@ -102,9 +109,14 @@ export async function ensureVardoProject(): Promise<void> {
       { timeout: 5000 },
     );
     gitBranch = branchOut.trim() || null;
-  } catch {
-    // Not a git repo or no remote — proceed without git info.
+  } catch (err) {
+    log.warn(
+      `could not read git remote from ${vardoDir}, falling back to ${DEFAULT_REPO_URL}: ${err instanceof Error ? err.message : err}`,
+    );
   }
+
+  // A deploy needs somewhere to check out from; an empty git_url blocks it.
+  if (!gitUrl) gitUrl = DEFAULT_REPO_URL;
 
   const infraServices = Object.keys(compose.services).filter((name) =>
     INFRA_SERVICES.has(name),
@@ -153,6 +165,7 @@ export async function ensureVardoProject(): Promise<void> {
         isSystemManaged: true,
         deployType: "compose",
         composeContent,
+        containerPort: FRONTEND_PORT,
       })
       .onConflictDoUpdate({
         target: [apps.organizationId, apps.name],
@@ -162,6 +175,7 @@ export async function ensureVardoProject(): Promise<void> {
           gitBranch: gitBranch ?? "main",
           isSystemManaged: true,
           composeContent,
+          containerPort: FRONTEND_PORT,
           updatedAt: new Date(),
         },
       })

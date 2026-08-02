@@ -120,6 +120,10 @@ import { ensureVardoProject } from "@/lib/docker/self-register";
 describe("ensureVardoProject", () => {
   const savedEnv: Record<string, string | undefined> = {};
 
+  /** Values passed to the second insert — the parent app upsert. */
+  const parentAppValues = () =>
+    dbMock.insert.mock.results[1].value.values.mock.calls[0][0];
+
   beforeEach(() => {
     vi.clearAllMocks();
     savedEnv["VARDO_DIR"] = process.env["VARDO_DIR"];
@@ -206,12 +210,33 @@ describe("ensureVardoProject", () => {
     process.env["VARDO_HOME_DIR"] = "/opt/vardo";
     readFileMock.mockResolvedValue("services:\n  vardo:\n    image: vardo\n");
 
-    // git commands fail — not a git repo
-    execFileAsyncMock.mockRejectedValue(new Error("not a git repository"));
+    // git commands fail — not a git repo. Reset first: beforeEach queues
+    // mockResolvedValueOnce values that would otherwise win.
+    execFileAsyncMock.mockReset().mockRejectedValue(new Error("not a git repository"));
 
     // Should still complete (git failure is caught internally)
     await ensureVardoProject();
 
     expect(dbMock.insert).toHaveBeenCalled();
+    expect(parentAppValues()).toMatchObject({
+      gitUrl: "https://github.com/joeyyax/vardo",
+      gitBranch: "main",
+      containerPort: 3000,
+    });
+  });
+
+  it("strips the .git suffix from an https remote", async () => {
+    isFeatureEnabledMock.mockResolvedValue(true);
+    process.env["VARDO_HOME_DIR"] = "/opt/vardo";
+    readFileMock.mockResolvedValue("services:\n  vardo:\n    image: vardo\n");
+
+    execFileAsyncMock
+      .mockReset()
+      .mockResolvedValueOnce({ stdout: "https://github.com/acme/vardo.git\n", stderr: "" })
+      .mockResolvedValueOnce({ stdout: "main\n", stderr: "" });
+
+    await ensureVardoProject();
+
+    expect(parentAppValues()).toMatchObject({ gitUrl: "https://github.com/acme/vardo" });
   });
 });
