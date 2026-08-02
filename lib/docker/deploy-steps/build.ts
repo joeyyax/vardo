@@ -28,6 +28,7 @@ import type { DeployContext } from "../deploy-context";
 import { detectActiveSlot } from "../slots";
 import { crossBoundaryVolumeName, volumesByOwner } from "../shared-volumes";
 import { isSelfApp, seedSelfEnv } from "../self-env";
+import { networkCreateArgs, sharedNetworkName, sharedNetworks } from "../shared-networks";
 
 const execFileAsync = promisify(execFile);
 const NETWORK_NAME = VARDO_NETWORK;
@@ -136,6 +137,26 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
 
     if (externalized.length > 0) {
       log(`[deploy] Externalized ${externalized.length} volume(s): ${externalized.join(", ")}`);
+    }
+  }
+
+  // Step 5a2: Externalize networks a shared service attaches to, so the shared
+  // and slot projects join one network instead of each declaring their own.
+  if (compose.networks) {
+    const shared = sharedNetworks(compose);
+    for (const netName of shared) {
+      const externalName = sharedNetworkName(compose, netName, stableVolumePrefix);
+      try {
+        await execFileAsync(
+          "docker",
+          networkCreateArgs(compose.networks[netName], externalName),
+          { timeout: VOLUME_CREATE_TIMEOUT },
+        );
+      } catch { /* already exists — fine */ }
+      compose.networks[netName] = { external: true, name: externalName };
+    }
+    if (shared.size > 0) {
+      log(`[deploy] Shared network(s): ${[...shared].join(", ")}`);
     }
   }
 
