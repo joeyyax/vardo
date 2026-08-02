@@ -18,7 +18,16 @@ import { KeyRound, Mail, Lock, Loader2, Eye, EyeOff } from "lucide-react";
 
 type SignInMethod = "passkey" | "password" | "magic";
 
-function LoginForm({ allowPasswordAuth = true }: { allowPasswordAuth?: boolean }) {
+export type EnabledMethods = {
+  password: boolean;
+  passkey: boolean;
+  magicLink: boolean;
+  github: boolean;
+};
+
+const ALL_METHODS: EnabledMethods = { password: true, passkey: true, magicLink: true, github: true };
+
+function LoginForm({ methods }: { methods: EnabledMethods }) {
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") ?? "/projects";
 
@@ -27,8 +36,16 @@ function LoginForm({ allowPasswordAuth = true }: { allowPasswordAuth?: boolean }
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState<string | null>(null);
   const [magicLinkSent, setMagicLinkSent] = useState(false);
-  const [method, setMethod] = useState<SignInMethod>(allowPasswordAuth ? "password" : "magic");
+  const [method, setMethod] = useState<SignInMethod>(methods.password ? "password" : "magic");
   const [error, setError] = useState<string | null>(null);
+
+  const emailMethod = !methods.magicLink
+    ? "password"
+    : !methods.password
+      ? "magic"
+      : method;
+  const showEmailForm = methods.password || methods.magicLink;
+  const nothingEnabled = !showEmailForm && !methods.passkey && !methods.github;
 
   const handlePasskeySignIn = async () => {
     setIsLoading("passkey");
@@ -142,7 +159,15 @@ function LoginForm({ allowPasswordAuth = true }: { allowPasswordAuth?: boolean }
           </div>
         )}
 
+        {nothingEnabled && (
+          <div role="alert" className="p-3 text-sm text-muted-foreground bg-muted rounded-lg">
+            Every sign-in method is turned off on this instance. An administrator has to enable one
+            in vardo.yml or the VARDO_AUTH_* environment variables.
+          </div>
+        )}
+
         {/* Passkey - Primary method */}
+        {methods.passkey && (
         <Button
           variant="default"
           className="w-full h-11 squircle rounded-lg"
@@ -156,8 +181,10 @@ function LoginForm({ allowPasswordAuth = true }: { allowPasswordAuth?: boolean }
           )}
           Sign in with Passkey
         </Button>
+        )}
 
         {/* GitHub OAuth */}
+        {methods.github && (
         <Button
           variant="outline"
           className="w-full h-11 squircle rounded-lg"
@@ -185,20 +212,23 @@ function LoginForm({ allowPasswordAuth = true }: { allowPasswordAuth?: boolean }
           )}
           Sign in with GitHub
         </Button>
+        )}
 
-        <div className="relative">
-          <div className="absolute inset-0 flex items-center">
-            <Separator />
+        {showEmailForm && (methods.passkey || methods.github) && (
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <Separator />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-card px-2 text-muted-foreground">
+                or use email
+              </span>
+            </div>
           </div>
-          <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-card px-2 text-muted-foreground">
-              or use email
-            </span>
-          </div>
-        </div>
+        )}
 
         {/* Email + password or magic link */}
-        {method === "password" && allowPasswordAuth ? (
+        {!showEmailForm ? null : emailMethod === "password" ? (
           <form onSubmit={handlePasswordSignIn} className="space-y-3">
             <div className="space-y-2">
               <Label htmlFor="email">Email address</Label>
@@ -284,17 +314,17 @@ function LoginForm({ allowPasswordAuth = true }: { allowPasswordAuth?: boolean }
           </form>
         )}
 
-        {allowPasswordAuth && (
+        {methods.password && methods.magicLink && (
           <div className="text-center">
             <button
               type="button"
               onClick={() => {
-                setMethod(method === "password" ? "magic" : "password");
+                setMethod(emailMethod === "password" ? "magic" : "password");
                 setError(null);
               }}
               className="text-xs text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
             >
-              {method === "password"
+              {emailMethod === "password"
                 ? "Use magic link instead"
                 : "Use password instead"}
             </button>
@@ -321,11 +351,11 @@ function LoginSkeleton() {
   );
 }
 
-export function LoginPageClient({ allowPasswordAuth = true }: { allowPasswordAuth?: boolean }) {
+export function LoginPageClient({ methods = ALL_METHODS }: { methods?: EnabledMethods }) {
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-muted/30">
       <Suspense fallback={<LoginSkeleton />}>
-        <LoginForm allowPasswordAuth={allowPasswordAuth} />
+        <LoginForm methods={methods} />
       </Suspense>
     </div>
   );
