@@ -16,6 +16,8 @@ import {
   slotComposeFiles,
 } from "./compose";
 import { detectActiveSlot } from "./slots";
+import { sharedProjectName } from "./slot-partition";
+import { readSlotPartition } from "./shared-project";
 import { recordActivity } from "@/lib/activity";
 import { DeployBlockedError } from "./errors";
 import { createDeployLogger } from "./deploy-logger";
@@ -635,20 +637,32 @@ async function stopSlotInDir(
   projectPrefix: string,
   logs: string[],
   removeVolumes = false,
+  /** App and environment names — omitted for the legacy unscoped layout. */
+  shared?: { appName: string; envName: string },
 ): Promise<void> {
   const { slotDir, composeProject } = await resolveActiveSlot(dir, projectPrefix);
   const composeFileArgs = await slotComposeFiles(slotDir);
 
-  try {
-    const args = ["compose", ...composeFileArgs, "-p", composeProject, "down"];
-    if (removeVolumes) {
-      args.push("--volumes");
+  const down = async (project: string) => {
+    try {
+      const args = ["compose", ...composeFileArgs, "-p", project, "down"];
+      if (removeVolumes) {
+        args.push("--volumes");
+      }
+      const { stdout, stderr } = await execFileAsync("docker", args, { cwd: slotDir, timeout: COMPOSE_RESTART_TIMEOUT });
+      if (stdout.trim()) logs.push(stdout.trim());
+      if (stderr.trim()) logs.push(stderr.trim());
+    } catch (err) {
+      logs.push(`Warning: ${err instanceof Error ? err.message : String(err)}`);
     }
-    const { stdout, stderr } = await execFileAsync("docker", args, { cwd: slotDir, timeout: COMPOSE_RESTART_TIMEOUT });
-    if (stdout.trim()) logs.push(stdout.trim());
-    if (stderr.trim()) logs.push(stderr.trim());
-  } catch (err) {
-    logs.push(`Warning: ${err instanceof Error ? err.message : String(err)}`);
+  };
+
+  await down(composeProject);
+
+  // No deploy ever takes the shared project down. Left up, its containers
+  // outlive the app and the reconciler reports the stopped app as active.
+  if (shared && (await readSlotPartition(slotDir))) {
+    await down(sharedProjectName(shared.appName, shared.envName));
   }
 }
 
@@ -663,7 +677,10 @@ export async function stopProject(
     if (environmentName) {
       // Stop specific environment
       const envDir = appEnvDir(appName, environmentName);
-      await stopSlotInDir(envDir, `${appName}-${environmentName}`, logs, removeVolumes);
+      await stopSlotInDir(envDir, `${appName}-${environmentName}`, logs, removeVolumes, {
+        appName,
+        envName: environmentName,
+      });
     } else {
       // Stop all environments — try env-aware layout first
       const baseDir = appBaseDir(appName);
@@ -679,7 +696,10 @@ export async function stopProject(
               break;
             }
             const envDir = join(baseDir, entry.name);
-            await stopSlotInDir(envDir, `${appName}-${entry.name}`, logs, removeVolumes);
+            await stopSlotInDir(envDir, `${appName}-${entry.name}`, logs, removeVolumes, {
+              appName,
+              envName: entry.name,
+            });
           }
         } else {
           // Legacy: slot dirs directly under app
@@ -740,7 +760,17 @@ export async function restartContainers(
 
     const composeFileArgs = await slotComposeFiles(slotDir);
 
-    const restartArgs = ["compose", ...composeFileArgs, "-p", composeProject, "restart"];
+    // A shared service has no container in the slot project, where `restart`
+    // would silently match nothing.
+    let targetProject = composeProject;
+    if (service && environmentName) {
+      const partition = await readSlotPartition(slotDir);
+      if (partition && service in partition.shared) {
+        targetProject = sharedProjectName(appName, environmentName);
+      }
+    }
+
+    const restartArgs = ["compose", ...composeFileArgs, "-p", targetProject, "restart"];
     if (service) restartArgs.push(service);
 
     const { stdout, stderr } = await execFileAsync(

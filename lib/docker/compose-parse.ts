@@ -14,6 +14,7 @@ import {
   ALLOWED_RUNTIMES,
   normalizeNamedNetworkModes,
 } from "./compose-validate";
+import { SHARED_MARKER } from "./slot-partition";
 
 /**
  * Serialize a ComposeFile to a YAML string.
@@ -173,6 +174,8 @@ export function parseCompose(yamlString: string): ComposeFile {
     }
     if (Array.isArray(raw.tmpfs)) svc.tmpfs = raw.tmpfs.map(String);
     else if (typeof raw.tmpfs === "string") svc.tmpfs = [raw.tmpfs];
+    // Dropping this makes the whole shared-service split inert.
+    if (raw[SHARED_MARKER] === true) svc[SHARED_MARKER] = true;
 
     services[name] = svc;
   }
