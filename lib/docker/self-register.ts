@@ -59,15 +59,12 @@ export async function ensureVardoProject(): Promise<void> {
     vardoDir = VARDO_HOME_DIR;
   }
 
-  // Warn operators who haven't configured an isolated preview database.
-  // Without PREVIEW_DATABASE_URL, preview containers fall back to the
-  // production DATABASE_URL — acceptable only for private repos with
-  // trusted contributors, but easy to misconfigure silently.
   if (!process.env.PREVIEW_DATABASE_URL) {
+    const overridden = process.env.VARDO_ALLOW_PREVIEW_PROD_DB === "true";
     log.warn(
-      "selfManagement is enabled but PREVIEW_DATABASE_URL is not set — " +
-      "preview containers will use the production database. " +
-      "Set PREVIEW_DATABASE_URL in .env to point previews at an isolated database."
+      overridden
+        ? "PREVIEW_DATABASE_URL is not set and VARDO_ALLOW_PREVIEW_PROD_DB=true — previews will run PR code against the production database."
+        : "PREVIEW_DATABASE_URL is not set, so preview creation will be refused. Set it to an isolated database to enable previews.",
     );
   }
 
