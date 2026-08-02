@@ -160,4 +160,18 @@ describe("matchContainers — blue/green decomposition", () => {
     const missing = { ...child, id: "X", name: "cadvisor", parentAppId: null, composeService: null };
     expect(matchContainers(missing, [container()])).toHaveLength(0);
   });
+
+  // A shared service sits in `${app}-${env}-shared`, so the label-less fallback
+  // has to strip that suffix the same way it strips blue/green.
+  it("matches a parent app by the shared project name when the container carries no vardo labels", () => {
+    const shared = container({
+      name: "paperless-production-shared-db-1",
+      labels: {
+        "com.docker.compose.project": "paperless-production-shared",
+        "com.docker.compose.service": "db",
+      },
+    });
+    const parent = { ...child, id: "PARENT_ID", name: "paperless", parentAppId: null, composeService: null };
+    expect(matchContainers(parent, [shared])).toHaveLength(1);
+  });
 });

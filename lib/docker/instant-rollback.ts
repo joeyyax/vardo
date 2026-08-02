@@ -9,6 +9,8 @@ import { nanoid } from "nanoid";
 import { appEnvDir } from "@/lib/paths";
 import { slotComposeFiles } from "./compose";
 import { detectActiveSlot } from "./slots";
+import { slotScopeArgs } from "./slot-partition";
+import { readSlotPartition } from "./shared-project";
 import { addEvent } from "@/lib/stream/producer";
 import { recordActivity } from "@/lib/activity";
 import {
@@ -129,12 +131,16 @@ export async function performInstantRollback(
 
   // Step 1: Start standby slot — use `up -d --no-recreate --pull never` for
   // resilience (handles missing containers, reconnects networks) over bare `start`.
+  // Named to the rotating set only — the slot compose still declares the
+  // shared services, and an unqualified `up` would start a second database.
+  const standbyPartition = await readSlotPartition(standbyDir);
+  const onlySlotted = standbyPartition ? slotScopeArgs(standbyPartition) : [];
   try {
     await execFileAsync(
       "docker",
       [
         "compose", ...standbyComposeFileArgs, "-p", standbyProjectName,
-        "up", "-d", "--no-recreate", "--pull", "never",
+        "up", "-d", "--no-recreate", "--pull", "never", ...onlySlotted,
       ],
       { cwd: standbyDir, timeout: COMPOSE_UP_TIMEOUT },
     );
