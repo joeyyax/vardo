@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { recreateProject } from "@/lib/docker/deploy";
+import { resolveDefaultEnv } from "@/lib/docker/resolve-env";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { refuseSystemManaged } from "@/lib/api/system-managed";
 
@@ -31,7 +32,10 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
     const refused = refuseSystemManaged(app, "recreate");
     if (refused) return refused;
 
-    const result = await recreateProject(appId, app.name);
+    // Slot directories and compose projects are environment-scoped; without
+    // the name this resolves to the legacy layout and finds nothing.
+    const env = await resolveDefaultEnv(appId);
+    const result = await recreateProject(appId, app.name, env.name);
     return NextResponse.json(result);
   } catch (error) {
     return handleRouteError(error, "Error recreating app");
