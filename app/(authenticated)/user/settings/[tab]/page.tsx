@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { getCurrentOrg } from "@/lib/auth/session";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
+import { getAuthMethodStates } from "@/lib/config/auth-methods";
 import {
   AccountInfo,
   PasswordManagement,
@@ -42,10 +43,20 @@ export default async function UserSettingsTabPage({
     orgId = orgData.organization?.id ?? null;
   }
 
-  return <TabContent tab={validTab} orgId={orgId} />;
+  const methods = await getAuthMethodStates();
+
+  return <TabContent tab={validTab} orgId={orgId} methods={methods} />;
 }
 
-function TabContent({ tab, orgId }: { tab: ValidTab; orgId: string | null }) {
+function TabContent({
+  tab,
+  orgId,
+  methods,
+}: {
+  tab: ValidTab;
+  orgId: string | null;
+  methods: Awaited<ReturnType<typeof getAuthMethodStates>>;
+}) {
   switch (tab) {
     case "profile":
       return (
@@ -72,11 +83,11 @@ function TabContent({ tab, orgId }: { tab: ValidTab; orgId: string | null }) {
             </p>
           </div>
           <div className="grid gap-6 lg:grid-cols-2">
-            <PasskeyManager />
-            <LinkedAccounts />
+            {methods.passkey && <PasskeyManager />}
+            {methods.github && <LinkedAccounts />}
           </div>
-          <PasswordManagement />
-          <TwoFactorAuth />
+          {methods.password && <PasswordManagement />}
+          {methods.totp && <TwoFactorAuth />}
           <ActiveSessions />
         </div>
       );

@@ -28,6 +28,16 @@ export async function register() {
       log.warn("Failed to load feature flags:", err)
     );
 
+    // Sign-in methods, same deal — buildAuth() reads them synchronously.
+    const { loadAuthMethods } = await import("./lib/config/auth-methods");
+    await loadAuthMethods().catch((err) =>
+      log.warn("Failed to load sign-in methods:", err)
+    );
+    const { refreshSetupState } = await import("./lib/auth");
+    await refreshSetupState().catch((err) =>
+      log.warn("Failed to read setup state:", err)
+    );
+
     // Check encryption key — must run first, before any other initialization
     const { checkEncryptionKey } = await import("./lib/crypto/encrypt");
     const keyCheck = checkEncryptionKey();
