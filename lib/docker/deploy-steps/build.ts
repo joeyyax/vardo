@@ -153,7 +153,13 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
           { timeout: VOLUME_CREATE_TIMEOUT },
         );
       } catch { /* already exists — fine */ }
-      compose.networks[netName] = { external: true, name: externalName };
+      const external = { external: true, name: externalName };
+      compose.networks[netName] = external;
+      // The bare file is written separately and would otherwise still declare
+      // the network, so compose creates a second one and a pinned subnet clashes.
+      if (ctx.bareCompose.networks?.[netName]) {
+        ctx.bareCompose.networks[netName] = external;
+      }
     }
     if (shared.size > 0) {
       log(`[deploy] Shared network(s): ${[...shared].join(", ")}`);
