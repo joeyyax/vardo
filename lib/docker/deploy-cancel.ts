@@ -364,7 +364,7 @@ export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
     throw err;
   } finally {
     if (concurrencySlotHeld) {
-      await releaseConcurrencySlot();
+      await releaseConcurrencySlot(newDeploymentId);
     }
     // Only remove from the local registry if we are still the active deploy for
     // this app. A deploy that started after us may have already replaced the

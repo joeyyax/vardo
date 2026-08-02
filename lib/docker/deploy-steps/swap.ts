@@ -39,6 +39,14 @@ const DEFAULT_HEALTH_CHECK_TIMEOUT_MS = DEFAULT_HEALTH_CHECK_TIMEOUT;
 const HEALTH_CHECK_INTERVAL_MS = 2000;
 
 /**
+ * Whether the old slot's stop must wait until every deploy record is written.
+ * True only when Vardo is deploying itself and both slots can serve at once.
+ */
+export function deferSlotStop(canOverlapSlots: boolean, appName: string): boolean {
+  return canOverlapSlots && isSelfApp(appName);
+}
+
+/**
  * Parse a Docker duration string (e.g. "1m", "30s", "1m30s", "500ms") to milliseconds.
  */
 function parseDuration(d: string | undefined): number {
@@ -262,6 +270,9 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     const oldComposeFileArgs = await getOldComposeFileArgs();
     log(`[deploy] Stopping old slot (${activeSlot})...`);
     try {
+      // Demote before stopping, not after — when the old slot is running this
+      // process there is no "after".
+      await demoteStandbyRestart(oldComposeFileArgs, oldProjectName, oldSlotDir);
       // `stop`, not `down` — the old slot stays as a warm standby, keeping its
       // containers and their logs for rollback. It is removed by the pre-clean
       // above on the next deploy that reuses this slot dir.
@@ -270,7 +281,6 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
         ["compose", ...oldComposeFileArgs, "-p", oldProjectName, "stop"],
         { cwd: oldSlotDir, timeout: COMPOSE_DOWN_TIMEOUT }
       );
-      await demoteStandbyRestart(oldComposeFileArgs, oldProjectName, oldSlotDir);
       stoppedOldServices.push("__all__");
     } catch (err) {
       log(`[deploy] Warning: could not stop old slot — ${err instanceof Error ? err.message : err}`);
@@ -454,8 +464,8 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   //
   // Vardo deploying Vardo is the exception: the old slot is running this
   // process, so stopping it here kills the deploy before it records itself.
-  // The stop is deferred to post-deploy, after the bookkeeping is durable.
-  const deferStopToPostDeploy = canOverlapSlots && isSelfApp(app.name);
+  // The stop is deferred to the end of post-deploy, once every write is durable.
+  const deferStopToPostDeploy = deferSlotStop(canOverlapSlots, app.name);
   if (canOverlapSlots && !deferStopToPostDeploy) {
     await stopOldSlot();
   }
