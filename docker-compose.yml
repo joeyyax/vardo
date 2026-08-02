@@ -80,6 +80,8 @@ services:
       # Frontend writes YAML files here; Traefik watches and reloads automatically.
       - traefik_dynamic:/etc/traefik/dynamic:rw
     labels:
+      # Routers below are hand-written — this stops a deploy replacing them.
+      - "vardo.traefik=manual"
       - "traefik.enable=true"
       # Primary router — domain with TLS
       - "traefik.http.routers.vardo.rule=Host(`${VARDO_DOMAIN:-localhost}`)"

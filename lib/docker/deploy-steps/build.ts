@@ -27,6 +27,7 @@ import {
 import type { DeployContext } from "../deploy-context";
 import { detectActiveSlot } from "../slots";
 import { crossBoundaryVolumeName, volumesByOwner } from "../shared-volumes";
+import { isSelfApp, seedSelfEnv } from "../self-env";
 
 const execFileAsync = promisify(execFile);
 const NETWORK_NAME = VARDO_NETWORK;
@@ -365,6 +366,15 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
     for (const [service, raw] of Object.entries(serviceEnvRaw)) {
       resolvedServiceEnv[service] = await resolveAllEnvVars(raw, resolveCtx);
     }
+  }
+
+  // Vardo's own secrets live on the host, not in its database, so the write
+  // above is skipped and compose would silently fall back to its defaults.
+  const seededEnv = await seedSelfEnv(app.name, appDir, slotDir, activeSlot);
+  if (seededEnv) {
+    log(`[deploy] Seeded slot .env from ${seededEnv}`);
+  } else if (isSelfApp(app.name)) {
+    log(`[deploy] Warning: no .env found to seed — compose defaults would apply`);
   }
 
   const overlayCompose = buildVardoOverlay({
