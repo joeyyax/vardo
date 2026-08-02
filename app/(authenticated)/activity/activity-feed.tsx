@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { PageToolbar } from "@/components/page-toolbar";
+import { RelativeTime } from "@/components/relative-time";
 import { toast } from "@/lib/messenger";
 import { classifyAll } from "@/lib/activity/taxonomy";
 import {
@@ -91,9 +92,14 @@ function WindowHeader({
         </Link>
       </div>
       <p className="mt-1 text-xs text-muted-foreground">
-        {matched === 0
-          ? "Nothing happened in this window."
-          : `${matched} event${matched === 1 ? "" : "s"} since ${since.toLocaleString()}.`}
+        {matched === 0 ? (
+          "Nothing happened in this window."
+        ) : (
+          <>
+            {matched} event{matched === 1 ? "" : "s"} since{" "}
+            <RelativeTime date={since} absoluteFirst />.
+          </>
+        )}
       </p>
     </div>
   );

@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/popover";
 import { detectAppType } from "@/lib/ui/app-type";
 import { Uptime } from "@/components/app-status";
+import { RelativeTime } from "@/components/relative-time";
 import { AppConditionsPanel } from "@/components/app-conditions-panel";
 import { useAppMetrics } from "@/components/app-metrics-card";
 import { formatBytes } from "@/lib/metrics/format";
@@ -234,7 +235,7 @@ export function AppHeader({
               </span>
             )}
             <span className="text-muted-foreground/40">
-              Created {new Date(app.createdAt).toLocaleDateString()}
+              Created <RelativeTime date={app.createdAt} absoluteFirst />
             </span>
           </div>
 
@@ -349,7 +350,7 @@ export function AppHeader({
               onClick={() => onNavigate("deployments")}
               className="hover:text-foreground transition-colors text-left"
             >
-              {new Date(lastSuccess.finishedAt || lastSuccess.startedAt).toLocaleDateString()}
+              <RelativeTime date={lastSuccess.finishedAt || lastSuccess.startedAt} absoluteFirst />
               {lastSuccess.gitSha && (
                 <span className="font-mono text-muted-foreground"> · {lastSuccess.gitSha.slice(0, 7)}</span>
               )}

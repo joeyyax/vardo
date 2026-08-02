@@ -25,7 +25,7 @@ import {
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { isOrgAdmin } from "@/lib/auth/permissions";
-import { formatDistanceToNow } from "date-fns";
+import { RelativeTime } from "@/components/relative-time";
 
 type Invitation = {
   id: string;
@@ -235,9 +235,7 @@ export function InvitationsPanel({
                         {invitation.inviter?.name
                           ? `Invited by ${invitation.inviter.name}`
                           : "Invited"}{" "}
-                        {formatDistanceToNow(new Date(invitation.createdAt), {
-                          addSuffix: true,
-                        })}
+                        <RelativeTime date={invitation.createdAt} />
                       </p>
                     </div>
                   </div>
