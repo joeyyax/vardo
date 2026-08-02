@@ -264,7 +264,8 @@ export function TerminalOutput({ lines, height = "min-h-40 max-h-[500px]", showF
           <div className="flex items-center gap-1">
             {(["error", "warn", "info", "debug"] as const).map((level) => {
               const count = levelCounts[level];
-              if (count === 0 && level !== "error") return null;
+              // A lone "Errors" chip on a clean stream reads as an alarm.
+              if (count === 0) return null;
               const isActive = activeFilters.has(level);
               return (
                 <button

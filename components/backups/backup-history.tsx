@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { Archive, Download, Loader2, RotateCcw } from "lucide-react";
 import { formatBytes } from "@/lib/metrics/format";
 import { toast } from "@/lib/messenger";
@@ -37,6 +39,8 @@ export function BackupHistory({
   onRefresh: () => void;
 }) {
   const [restoringBackups, setRestoringBackups] = useState<Set<string>>(new Set());
+  const [pendingRestore, setPendingRestore] = useState<RecentBackup | null>(null);
+  const [acknowledged, setAcknowledged] = useState(false);
 
   async function restoreBackup(backupId: string) {
     setRestoringBackups((prev) => new Set([...prev, backupId]));
@@ -119,7 +123,10 @@ export function BackupHistory({
                         variant="ghost"
                         aria-label="Restore backup"
                         disabled={restoringBackups.has(backup.id)}
-                        onClick={() => restoreBackup(backup.id)}
+                        onClick={() => {
+                          setAcknowledged(false);
+                          setPendingRestore(backup);
+                        }}
                       >
                         {restoringBackups.has(backup.id) ? (
                           <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
@@ -140,6 +147,38 @@ export function BackupHistory({
           ))}
         </tbody>
       </table>
+
+      <ConfirmDeleteDialog
+        open={!!pendingRestore}
+        onOpenChange={(open) => {
+          if (!open) setPendingRestore(null);
+        }}
+        onConfirm={() => {
+          const id = pendingRestore?.id;
+          setPendingRestore(null);
+          if (id) restoreBackup(id);
+        }}
+        title="Restore this backup"
+        description={
+          pendingRestore
+            ? `This overwrites ${pendingRestore.app.displayName}'s current volume data with the archive from ${new Date(pendingRestore.startedAt).toLocaleString()}. Anything written since is lost, and there is no undo.`
+            : ""
+        }
+        confirmLabel="Restore"
+        loadingLabel="Restoring..."
+        confirmDisabled={!acknowledged}
+      >
+        <label className="flex cursor-pointer select-none items-start gap-3">
+          <Checkbox
+            checked={acknowledged}
+            onCheckedChange={(checked) => setAcknowledged(checked === true)}
+            className="mt-0.5"
+          />
+          <span className="text-sm text-muted-foreground">
+            I understand current data will be overwritten
+          </span>
+        </label>
+      </ConfirmDeleteDialog>
     </div>
   );
 }
