@@ -91,7 +91,11 @@ export function BackupPage({
     <div className="space-y-8">
       {/* Auto-backup banner — only shown to org users when system backups exist */}
       {scope === "org" && autoTarget ? (
-        <AutoBackupBanner target={autoTarget} jobs={autoJobs} scope={scope} />
+        <AutoBackupBanner
+          target={autoTarget}
+          jobs={autoJobs}
+          recent={history.filter((h) => autoJobs.some((j) => j.id === h.job.id))}
+        />
       ) : showIntro ? (
         <div className="space-y-1">
           <h2 className="text-lg font-medium">Backups</h2>

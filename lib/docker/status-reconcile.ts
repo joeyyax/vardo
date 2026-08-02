@@ -15,6 +15,7 @@ import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { listAllContainers, inspectContainer, type ContainerInfo } from "./client";
 import { logger } from "@/lib/logger";
+import { memoryLimitDrifted } from "./limit-drift";
 
 const log = logger.child("status-reconcile");
 
@@ -146,6 +147,8 @@ export async function tickStatusReconcile(): Promise<void> {
       importedContainerId: true,
       containerStartedAt: true,
       containerMemoryLimit: true,
+      memoryLimit: true,
+      needsRedeploy: true,
     },
   });
 
@@ -182,11 +185,17 @@ export async function tickStatusReconcile(): Promise<void> {
 
         if (observed === "missing" && app.status !== "missing") missing.push(app.name);
 
+        // A configured limit the container is not running is a redeploy away
+        // from being real, and nothing else notices the difference.
+        const drifted = memoryLimitDrifted(app.memoryLimit, memoryLimit);
+        const needsRedeploy = drifted || !!app.needsRedeploy;
+
         const unchanged =
           observed === app.status &&
           startedAt?.getTime() === app.containerStartedAt?.getTime() &&
-          memoryLimit === app.containerMemoryLimit;
-        return { id: app.id, touchOnly: unchanged, observed, startedAt, memoryLimit };
+          memoryLimit === app.containerMemoryLimit &&
+          needsRedeploy === !!app.needsRedeploy;
+        return { id: app.id, touchOnly: unchanged, observed, startedAt, memoryLimit, needsRedeploy };
       }),
     ),
   );
@@ -202,6 +211,7 @@ export async function tickStatusReconcile(): Promise<void> {
         status: u.observed,
         containerStartedAt: u.startedAt,
         containerMemoryLimit: u.memoryLimit,
+        needsRedeploy: u.needsRedeploy,
         statusCheckedAt: now,
         updatedAt: now,
       })
