@@ -40,3 +40,39 @@ describe("x-vardo-shared through the compose pipeline", () => {
     expect(compose.services.db["x-vardo-shared"]).toBeUndefined();
   });
 });
+
+describe("keys the allowlist used to drop", () => {
+  const SRC = `services:
+  frontend:
+    image: app
+    group_add:
+      - "999"
+    container_name: pinned-frontend
+  db:
+    image: postgres:17
+    x-vardo-shared: true
+    container_name: vardo-postgres
+    group_add:
+      - "docker"
+`;
+
+  it("keeps group_add, without which a container loses socket access", () => {
+    const compose = parseCompose(SRC);
+    expect(compose.services.frontend.group_add).toEqual(["999"]);
+    expect(compose.services.db.group_add).toEqual(["docker"]);
+  });
+
+  it("keeps container_name on a shared service, which is never duplicated", () => {
+    expect(parseCompose(SRC).services.db.container_name).toBe("vardo-postgres");
+  });
+
+  it("drops container_name on a rotating service, where two slots would collide", () => {
+    expect(parseCompose(SRC).services.frontend.container_name).toBeUndefined();
+  });
+
+  it("keeps both through a YAML round trip", () => {
+    const twice = parseCompose(composeToYaml(parseCompose(SRC)));
+    expect(twice.services.db.container_name).toBe("vardo-postgres");
+    expect(twice.services.frontend.group_add).toEqual(["999"]);
+  });
+});

@@ -97,6 +97,13 @@ export type ComposeService = {
   entrypoint?: string | string[];
   command?: string | string[];
   tmpfs?: string[];
+  /** Supplementary groups, e.g. the docker group for socket access. */
+  group_add?: string[];
+  /**
+   * Fixed container name. Only honored on a shared service — two slots cannot
+   * both hold one name, so it is dropped for anything that rotates.
+   */
+  container_name?: string;
   /** Opt this service out of blue/green — see lib/docker/slot-partition.ts. */
   "x-vardo-shared"?: boolean;
 };
