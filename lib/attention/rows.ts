@@ -1,15 +1,46 @@
 import "server-only";
 
-import { and, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull } from "drizzle-orm";
 import { formatDistanceToNowStrict } from "date-fns";
 
 import { db } from "@/lib/db";
-import { apps } from "@/lib/db/schema";
+import { apps, backups } from "@/lib/db/schema";
+import { defaultMemoryLimitMb, type QosTier } from "@/lib/docker/compose-inject";
 import { getCooldownUntil } from "@/lib/docker/image-updates/check";
 import { getAggregateUpdateStatus } from "@/lib/docker/image-updates/status";
 import { conditionRows, type AttentionRow } from "@/lib/ui/attention";
 import { getVersionData } from "@/lib/version";
 import { getFleetAttention } from "./fleet";
+
+/** A failure older than this is history, not something to act on now. */
+const BACKUP_FAILURE_WINDOW_HOURS = 48;
+
+function formatMb(mb: number): string {
+  return mb >= 1024 ? `${(mb / 1024).toFixed(mb % 1024 === 0 ? 0 : 1)} GB` : `${mb} MB`;
+}
+
+/** Most recent failure per app, so one broken job is one row rather than seven. */
+async function loadFailedBackups(appIds: string[]) {
+  if (appIds.length === 0) return [];
+  const since = new Date(Date.now() - BACKUP_FAILURE_WINDOW_HOURS * 3_600_000);
+  const rows = await db
+    .select({ id: backups.id, appId: backups.appId, startedAt: backups.startedAt })
+    .from(backups)
+    .where(
+      and(
+        eq(backups.status, "failed"),
+        gte(backups.startedAt, since),
+        inArray(backups.appId, appIds),
+      ),
+    )
+    .orderBy(desc(backups.startedAt));
+
+  const latest = new Map<string, (typeof rows)[number]>();
+  for (const row of rows) {
+    if (row.appId && !latest.has(row.appId)) latest.set(row.appId, row);
+  }
+  return [...latest.values()];
+}
 
 type BuildOptions = {
   /** Release availability is admin business — non-admins never see the row. */
@@ -33,6 +64,7 @@ export async function buildAttentionRows(
       status: apps.status,
       conditions: apps.conditions,
       containerMemoryLimit: apps.containerMemoryLimit,
+      priority: apps.priority,
       deployType: apps.deployType,
       imageName: apps.imageName,
       composeContent: apps.composeContent,
@@ -41,10 +73,11 @@ export async function buildAttentionRows(
     .from(apps)
     .where(and(eq(apps.organizationId, orgId), isNull(apps.parentAppId)));
 
-  const [fleet, updates, version] = await Promise.all([
+  const [fleet, updates, version, failedBackups] = await Promise.all([
     getFleetAttention(orgId),
     getCooldownUntil().then((cooldown) => getAggregateUpdateStatus(appRows, cooldown)),
     isAppAdmin ? getVersionData().catch(() => null) : null,
+    loadFailedBackups(appRows.map((a) => a.id)),
   ]);
 
   const rows = conditionRows(appRows);
@@ -81,6 +114,9 @@ export async function buildAttentionRows(
 
   // Containers running with no cgroup memory limit can take the whole host, and
   // a JVM in one sizes its heap from the hypervisor's RAM, not the guest's.
+  //
+  // Neutral, not a fault: every app deployed before limits were injected lands
+  // here, so counting them buries the handful of things actually broken.
   const unlimited = appRows.filter(
     (a) => a.status === "active" && a.containerMemoryLimit === 0,
   );
@@ -88,14 +124,19 @@ export async function buildAttentionRows(
     rows.push({
       key: "no-memory-limit",
       label: "No memory limit",
-      tone: "warning",
-      items: unlimited.map((a) => ({
-        id: a.id,
-        name: a.displayName,
-        href: `/apps/${a.name}`,
-      })),
+      tone: "neutral",
+      items: unlimited
+        .map((a) => {
+          const tier = (a.priority ?? "standard") as QosTier;
+          return {
+            id: a.id,
+            name: a.displayName,
+            href: `/apps/${a.name}`,
+            detail: `${tier} · would cap at ${formatMb(defaultMemoryLimitMb(tier))}`,
+          };
+        }),
       footer:
-        "Redeploy to apply the priority tier default, or set a limit in each app's settings.",
+        "Redeploying applies the tier cap shown. Set an explicit limit first on anything that needs more than its cap.",
     });
   }
 
@@ -122,6 +163,25 @@ export async function buildAttentionRows(
         detail: `${a.count} image${a.count === 1 ? "" : "s"}`,
       })),
       footer: notes.join(" "),
+    });
+  }
+
+  if (failedBackups.length > 0) {
+    const byApp = new Map(appRows.map((a) => [a.id, a]));
+    rows.push({
+      key: "backup-failed",
+      label: "Backup failed",
+      tone: "error",
+      items: failedBackups.map((b) => {
+        const app = b.appId ? byApp.get(b.appId) : undefined;
+        return {
+          id: b.id,
+          name: app?.displayName ?? "Unknown app",
+          href: app ? `/apps/${app.name}/backups` : "/backups",
+          since: b.startedAt.toISOString(),
+        };
+      }),
+      footer: `${failedBackups.length} failed in the last ${BACKUP_FAILURE_WINDOW_HOURS} hours.`,
     });
   }
 

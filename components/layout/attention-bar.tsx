@@ -90,8 +90,9 @@ export function AttentionBar({ orgId }: { orgId: string }) {
       ? "Nothing needs attention"
       : `${summary.faults} thing${summary.faults === 1 ? "" : "s"} need${summary.faults === 1 ? "s" : ""} attention`;
 
-  // Neutral ground on purpose. The bar sits on every page, and a permanent red
-  // wash stops being read as an alarm within a day.
+  // Neutral ground on purpose: the bar sits on every page, and a permanent red
+  // wash stops being read as an alarm within a day. Card, not muted — muted is
+  // within 1 L of the page background in light mode, so the band vanishes.
   return (
     <div ref={containerRef} className="relative">
       <button
@@ -99,7 +100,7 @@ export function AttentionBar({ orgId }: { orgId: string }) {
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-controls="attention-detail"
-        className="w-full border-b bg-muted/40 text-sm transition-colors hover:bg-muted/70"
+        className="w-full border-b bg-card text-sm transition-colors hover:bg-muted/50"
       >
         <div className="container flex h-11 items-center gap-3">
           {summary.faults > 0 ? (
@@ -116,9 +117,14 @@ export function AttentionBar({ orgId }: { orgId: string }) {
               {summary.subjects.map((s) => s.name).join(", ")}
             </span>
           ) : (
-            <span className="hidden min-w-0 gap-x-3 truncate sm:flex">
-              {summary.kinds.map((k) => (
-                <span key={k.key} className={`shrink-0 ${ACCENT[k.tone]}`}>
+            /* Narrow screens get the worst kind rather than nothing — a bare
+               count is the most alarming, least useful thing to show. */
+            <span className="flex min-w-0 gap-x-3 truncate">
+              {summary.kinds.map((k, i) => (
+                <span
+                  key={k.key}
+                  className={`shrink-0 ${ACCENT[k.tone]} ${i === 0 ? "" : "hidden sm:inline"}`}
+                >
                   {k.label}
                   <span className="ml-1 tabular-nums opacity-70">{k.count}</span>
                 </span>
