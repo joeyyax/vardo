@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
+import { RelativeTime } from "@/components/relative-time";
 
 // ---------------------------------------------------------------------------
 // Docker Prune (existing)
@@ -232,8 +233,7 @@ export function UserManagement() {
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground truncate">
-                    {u.email} &middot; Joined{" "}
-                    {new Date(u.createdAt).toLocaleDateString()}
+                    {u.email} &middot; Joined <RelativeTime date={u.createdAt} />
                   </p>
                 </div>
               </div>

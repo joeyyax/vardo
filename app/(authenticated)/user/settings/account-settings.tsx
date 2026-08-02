@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { RelativeTime } from "@/components/relative-time";
 import { authClient, useSession, passkey as passkeyMethods } from "@/lib/auth/client";
 
 // ---------------------------------------------------------------------------
@@ -566,8 +567,7 @@ export function PasskeyManager() {
                     </p>
                     {pk.createdAt && (
                       <p className="text-xs text-muted-foreground">
-                        Added{" "}
-                        {new Date(pk.createdAt).toLocaleDateString()}
+                        Added <RelativeTime date={pk.createdAt} />
                       </p>
                     )}
                   </div>
@@ -686,8 +686,7 @@ export function LinkedAccounts() {
                         {provider?.label ?? acct.providerId}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        Connected{" "}
-                        {new Date(acct.createdAt).toLocaleDateString()}
+                        Connected <RelativeTime date={acct.createdAt} />
                       </p>
                     </div>
                   </div>
@@ -810,7 +809,7 @@ export function ActiveSessions() {
                       </div>
                       <p className="text-xs text-muted-foreground">
                         {s.ipAddress || "Unknown IP"} &middot; Created{" "}
-                        {new Date(s.createdAt).toLocaleDateString()}
+                        <RelativeTime date={s.createdAt} />
                       </p>
                     </div>
                   </div>
@@ -1025,9 +1024,13 @@ export function ApiTokens({ orgId }: { orgId: string }) {
                 <div className="min-w-0">
                   <p className="text-sm font-medium truncate">{token.name}</p>
                   <p className="text-xs text-muted-foreground">
-                    Created {new Date(token.createdAt).toLocaleDateString()}
-                    {token.lastUsedAt &&
-                      ` \u00b7 Last used ${new Date(token.lastUsedAt).toLocaleDateString()}`}
+                    Created <RelativeTime date={token.createdAt} />
+                    {token.lastUsedAt && (
+                      <>
+                        {" \u00b7 Last used "}
+                        <RelativeTime date={token.lastUsedAt} />
+                      </>
+                    )}
                   </p>
                 </div>
                 <Button

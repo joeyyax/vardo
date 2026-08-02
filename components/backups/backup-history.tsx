@@ -7,6 +7,7 @@ import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { Archive, Download, Loader2, RotateCcw } from "lucide-react";
 import { formatBytes } from "@/lib/metrics/format";
 import { toast } from "@/lib/messenger";
+import { RelativeTime } from "@/components/relative-time";
 import { StatusBadge } from "./status-badge";
 import type { RecentBackup } from "./types";
 
@@ -15,18 +16,6 @@ function formatDuration(startedAt: string, finishedAt: string | null): string {
   const ms = new Date(finishedAt).getTime() - new Date(startedAt).getTime();
   if (ms < 1000) return `${ms}ms`;
   return `${Math.round(ms / 1000)}s`;
-}
-
-function formatRelativeTime(dateStr: string): string {
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60_000);
-  if (diffMins < 1) return "Just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
-  return date.toLocaleDateString();
 }
 
 export function BackupHistory({
@@ -110,8 +99,8 @@ export function BackupHistory({
               <td className="px-4 py-3 text-muted-foreground text-xs">
                 {backup.sizeBytes != null ? formatBytes(backup.sizeBytes) : "—"}
               </td>
-              <td className="px-4 py-3 text-muted-foreground text-xs" title={new Date(backup.startedAt).toLocaleString()}>
-                {formatRelativeTime(backup.startedAt)}
+              <td className="px-4 py-3 text-muted-foreground text-xs">
+                <RelativeTime date={backup.startedAt} />
               </td>
               <td className="px-4 py-3 text-right">
                 <span className="flex justify-end gap-1">

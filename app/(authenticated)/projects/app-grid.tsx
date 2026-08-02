@@ -3,9 +3,9 @@
 import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { formatDistanceToNowStrict } from "date-fns";
 import { Plus, Cpu, ShieldCheck, Trash2, Package } from "lucide-react";
 import { EndpointsPopover } from "@/components/endpoints-popover";
+import { RelativeTime } from "@/components/relative-time";
 import { detectAppType } from "@/lib/ui/app-type";
 import { statusDotColor, uniformStatus } from "@/lib/ui/status-colors";
 import { conditionLabel, conditionTone, countNeedingAttention } from "@/lib/ui/conditions";
@@ -215,12 +215,12 @@ function ProjectCard({
   const deployFragment = lastDeploy && (
     lastDeploy.status === "failed" ? (
       <span className="text-status-error">
-        Deploy failed {formatDistanceToNowStrict(new Date(lastDeploy.startedAt), { addSuffix: true })}
+        Deploy failed <RelativeTime date={lastDeploy.startedAt} />
       </span>
     ) : lastDeploy.status === "running" || lastDeploy.status === "queued" ? (
       <span className="text-status-info">Deploying now</span>
     ) : (
-      <span>Deployed {formatDistanceToNowStrict(new Date(lastDeploy.startedAt), { addSuffix: true })}</span>
+      <span>Deployed <RelativeTime date={lastDeploy.startedAt} /></span>
     )
   );
 

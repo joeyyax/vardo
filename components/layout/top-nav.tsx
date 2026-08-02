@@ -2,10 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Brand } from "../brand";
 import { UserMenu } from "./user-menu";
 import { MobileSidebar } from "./mobile-sidebar";
+import { openCommandPalette } from "@/components/command-palette";
 import type { Organization } from "@/lib/types";
 
 type TopNavProps = {
@@ -57,8 +59,17 @@ export function TopNav({ currentOrgId, organizations }: TopNavProps) {
           })}
         </nav>
 
-        {/* Right: user (hidden on mobile — available in sidebar) */}
-        <div className="flex-1 flex justify-end">
+        {/* Right: search hint + user (hidden on mobile — available in sidebar) */}
+        <div className="flex-1 flex justify-end items-center gap-2">
+          <button
+            type="button"
+            onClick={openCommandPalette}
+            className="hidden lg:flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm text-sidebar-foreground/50 transition-colors hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
+          >
+            <Search className="size-3.5" aria-hidden="true" />
+            <span>Search</span>
+            <kbd className="rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px]">⌘K</kbd>
+          </button>
           <div className="hidden lg:block">
             <UserMenu
               currentOrgId={currentOrgId}
