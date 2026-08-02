@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "@/lib/messenger";
 import { Loader2, Plus, Trash2, Bell, ChevronDown, ChevronRight, Filter } from "lucide-react";
@@ -204,14 +205,17 @@ export function NotificationChannelsEditor({ orgId }: { orgId: string }) {
         </div>
       )}
       {channels.length === 0 && !showForm ? (
-        <div className="flex flex-col items-center justify-center gap-4 border border-dashed border-border rounded-lg p-12">
-          <Bell className="size-8 text-muted-foreground/50" />
-          <div className="text-center space-y-1">
-            <p className="text-sm font-medium">Stay in the loop</p>
-            <p className="text-sm text-muted-foreground">Add a notification channel to get alerted on deploy failures, backup issues, and cron errors.</p>
-          </div>
-          <Button size="sm" onClick={() => setShowForm(true)} className="squircle"><Plus className="h-4 w-4 mr-1" />Add channel</Button>
-        </div>
+        <EmptyState
+          icon={Bell}
+          title="Stay in the loop"
+          body="Add a notification channel to get alerted on deploy failures, backup issues and cron errors."
+          action={
+            <Button size="sm" onClick={() => setShowForm(true)}>
+              <Plus className="h-4 w-4 mr-1" />
+              Add channel
+            </Button>
+          }
+        />
       ) : (
         <div className="space-y-2">{channels.map(ch => (
           <div key={ch.id} className="border border-border rounded-lg p-3 bg-card space-y-2">

@@ -6,6 +6,7 @@ import {
 } from "recharts";
 import { Activity, AlertTriangle, Container, Cpu, Microchip, MemoryStick, Network, Loader2, RefreshCw, Thermometer } from "lucide-react";
 import { ChartCard } from "@/components/app-status";
+import { EmptyState } from "@/components/ui/empty-state";
 import { formatBytes, formatBytesShort, formatMemLimit, formatBytesRate, formatTime } from "@/lib/metrics/format";
 import { CHART_COLORS, chartTickStyle, TIME_RANGES, type TimeRange } from "@/lib/metrics/constants";
 import { networkRates } from "@/lib/metrics/rates";
@@ -213,13 +214,11 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled }: AppMet
   // Error state -- metrics service unreachable
   if (error && !connected && !loading && points.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
-        <AlertTriangle className="size-6 text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">Metrics unavailable</p>
-        <p className="text-xs text-muted-foreground max-w-xs text-center">
-          Could not connect to the metrics service. This may be a temporary issue.
-        </p>
-      </div>
+      <EmptyState
+        icon={AlertTriangle}
+        title="Metrics unavailable"
+        body="Could not connect to the metrics service. This may be a temporary issue."
+      />
     );
   }
 
@@ -236,13 +235,11 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled }: AppMet
   // No containers running and no history
   if (connected && containers.length === 0 && chartData.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
-        <Activity className="size-8 text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">No running containers.</p>
-        <p className="text-xs text-muted-foreground">
-          Deploy the app to see resource metrics.
-        </p>
-      </div>
+      <EmptyState
+        icon={Activity}
+        title="No running containers"
+        body="Deploy the app to see resource metrics."
+      />
     );
   }
 

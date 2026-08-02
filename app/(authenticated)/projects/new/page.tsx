@@ -8,7 +8,7 @@ export default async function NewProjectPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="type-h1">New Project</h1>
+      <h1 className="type-h1">New project</h1>
       <NewProjectForm orgId={orgData.organization.id} />
     </div>
   );

@@ -20,7 +20,7 @@ interface AddAppDropdownProps {
 export function AddAppDropdown({
   projectId,
   align = "end",
-  label = "Add App",
+  label = "Add app",
   size = "sm",
 }: AddAppDropdownProps) {
   const newAppHref = `/apps/new?project=${projectId}`;
