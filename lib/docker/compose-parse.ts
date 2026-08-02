@@ -174,6 +174,10 @@ export function parseCompose(yamlString: string): ComposeFile {
     if (Array.isArray(raw.tmpfs)) svc.tmpfs = raw.tmpfs.map(String);
     else if (typeof raw.tmpfs === "string") svc.tmpfs = [raw.tmpfs];
 
+    // Parsing is an allowlist, so an extension field has to be named here or it
+    // is dropped between the user's YAML and the deploy.
+    if (raw["x-vardo-shared"] === true) svc["x-vardo-shared"] = true;
+
     services[name] = svc;
   }
 
