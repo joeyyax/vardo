@@ -14,13 +14,18 @@ export async function GET() {
 
     const [
       [{ userCount }],
-      [{ appCount }],
+      [{ appCount, composeServiceCount }],
       [{ deploymentCount }],
       templateList,
       sparklines,
     ] = await Promise.all([
       db.select({ userCount: sql<number>`count(*)` }).from(user),
-      db.select({ appCount: sql<number>`count(*)` }).from(apps),
+      db
+        .select({
+          appCount: sql<number>`count(*)`,
+          composeServiceCount: sql<number>`count(*) filter (where ${apps.parentAppId} is not null)`,
+        })
+        .from(apps),
       db.select({ deploymentCount: sql<number>`count(*)` }).from(deployments),
       loadTemplates(),
       buildSparklines(30),
@@ -34,6 +39,7 @@ export async function GET() {
       stats: {
         userCount: Number(userCount),
         appCount: Number(appCount),
+        composeServiceCount: Number(composeServiceCount),
         deploymentCount: Number(deploymentCount),
         templateCount: templateList.length,
       },

@@ -60,10 +60,13 @@ export function MetricsTooltip({
       {payload.map((entry) => {
         const category = String(entry.dataKey ?? entry.name ?? "");
         const displayName = categoryLabels?.[category] ?? category;
+        // A null value is a gap in the series, not a zero.
         const value =
-          valueFormatter && typeof entry.value === "number"
-            ? valueFormatter(entry.value, category)
-            : String(entry.value);
+          entry.value == null
+            ? "—"
+            : valueFormatter && typeof entry.value === "number"
+              ? valueFormatter(entry.value, category)
+              : String(entry.value);
 
         const swatchColor = SWATCH_COLORS[category] ?? entry.color ?? "#888";
 
