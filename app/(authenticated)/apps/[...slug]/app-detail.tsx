@@ -691,6 +691,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           <AppUpdatesPanel
             orgId={orgId}
             appId={app.id}
+            appName={app.displayName}
             onDeploy={handleDeploy}
             deploying={deploy.deploying}
             deployed={{ [app.composeService ?? ""]: app.imageName }}

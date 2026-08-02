@@ -1,82 +1,32 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ArrowRight, RefreshCw, TriangleAlert } from "lucide-react";
+import { RefreshCw, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  MigrationDialog,
+  type MigrationPrompt,
+} from "@/components/image-updates/migration-dialog";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  UpdateRow,
+  UpdateRowHeader,
+  defaultTarget,
+  severityClass,
+  type ServiceUpdate,
+} from "@/components/image-updates/update-row";
+import { IgnoreMenu, type IgnoreChoice } from "@/components/image-updates/ignore-menu";
 import { toast } from "@/lib/messenger";
+import { requiresMigration, type MigrationPlan } from "@/lib/docker/image-updates/migration-path";
+import { describeRule } from "@/lib/docker/image-updates/ignore";
 import { pendingImageChange } from "@/lib/docker/image-updates/pending";
+import type {
+  AppUpdateStatus,
+  IgnoredUpdate,
+  ServiceUpdateStatus,
+} from "@/lib/docker/image-updates/status";
 
-type Severity = "patch" | "minor" | "major" | "build" | "unknown";
-
-type ServiceUpdate = {
-  service: string | null;
-  image: string;
-  currentTag: string;
-  status: "current" | "update" | "drift" | "unknown";
-  latestTag: string | null;
-  severity: Severity | null;
-  unorderable: string[];
-  available: string[];
-  majorAvailable: string | null;
-  majorLocked: boolean;
-  error: string | null;
-  checkedAt: string | null;
-  stale: boolean;
-};
-
-type MigrationPlan = {
-  engine: string;
-  strategy: string;
-  hops: number[];
-  needsIntermediateSteps: boolean;
-  steps: string[];
-  docs: string;
-};
-
-type MigrationPrompt = {
-  entry: ServiceUpdate;
-  tag: string;
-  plan: MigrationPlan | null;
-};
-
-/** Leading integer of a tag: `16.2-alpine` → 16. */
-function majorOf(tag: string): number | null {
-  const match = tag.match(/^v?(\d+)/);
-  return match ? parseInt(match[1], 10) : null;
-}
-
-/** Whether the row's chosen target crosses a major on a version-locked image. */
-function needsMigrationFor(entry: ServiceUpdate, target: string | null): boolean {
-  return Boolean(entry.majorLocked && target && isMajorJump(entry.currentTag, target));
-}
-
-function isMajorJump(from: string, to: string): boolean {
-  const a = majorOf(from);
-  const b = majorOf(to);
-  return a !== null && b !== null && b > a;
-}
-
-type AppUpdates = {
-  services: ServiceUpdate[];
-  updateCount: number;
-  highestSeverity: Severity | null;
-  hasUnknown: boolean;
-};
+type AppUpdates = AppUpdateStatus;
+type Severity = ServiceUpdateStatus["severity"];
 
 /**
  * One in-flight request per app, shared by the header stat and the panel.
@@ -117,16 +67,6 @@ export function useImageUpdates(orgId: string, appId: string) {
   return { data, loading, refresh };
 }
 
-/** Only a major bump earns color. A patch is routine and should read as routine. */
-function severityClass(severity: Severity | null): string {
-  return severity === "major" ? "text-status-warning" : "text-foreground";
-}
-
-function severityLabel(entry: ServiceUpdate): string {
-  if (entry.status === "drift") return "rebuilt upstream";
-  return entry.severity && entry.severity !== "unknown" ? entry.severity : "";
-}
-
 /** Compact value for the header stat strip. */
 export function AppUpdateStat({ orgId, appId }: { orgId: string; appId: string }) {
   const { data, loading } = useImageUpdates(orgId, appId);
@@ -145,7 +85,7 @@ export function AppUpdateStat({ orgId, appId }: { orgId: string; appId: string }
   }
 
   return (
-    <span className={severityClass(data.highestSeverity)}>
+    <span className={severityClass(data.highestSeverity as Severity)}>
       {data.updateCount} available
     </span>
   );
@@ -158,12 +98,14 @@ export function AppUpdateStat({ orgId, appId }: { orgId: string; appId: string }
 export function AppUpdatesPanel({
   orgId,
   appId,
+  appName,
   onDeploy,
   deploying,
   deployed,
 }: {
   orgId: string;
   appId: string;
+  appName: string;
   onDeploy: () => void;
   deploying: boolean;
   /** Image each service last deployed, keyed by compose service ("" when single-image). */
@@ -175,6 +117,7 @@ export function AppUpdatesPanel({
   /** service → tag the user picked, when it differs from the default. */
   const [chosen, setChosen] = useState<Record<string, string>>({});
   const [migration, setMigration] = useState<MigrationPrompt | null>(null);
+  const [migrationPlan, setMigrationPlan] = useState<MigrationPlan | null>(null);
 
   const actionable = (data?.services ?? []).filter(
     (entry) => entry.status === "update" || entry.status === "drift",
@@ -184,10 +127,33 @@ export function AppUpdatesPanel({
     pendingImageChange(deployed?.[entry.service ?? ""], entry.image),
   );
 
+  const ignored = data?.ignored ?? [];
+
+  async function setIgnore(entry: ServiceUpdate, choice: IgnoreChoice | null) {
+    const body = JSON.stringify({ appId, service: entry.service, ...(choice ?? {}) });
+    try {
+      const res = await fetch(`/api/v1/organizations/${orgId}/image-updates/ignores`, {
+        method: choice ? "POST" : "DELETE",
+        headers: { "content-type": "application/json" },
+        body,
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error ?? "Could not change that ignore rule");
+      toast.success(
+        choice
+          ? `Ignoring ${choice.scope === "major" ? "majors" : "updates"} for ${entry.service ?? "this image"}`
+          : `${entry.service ?? "This image"} is back in the list`,
+      );
+      refresh();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not change that ignore rule");
+    }
+  }
+
   if (loading || !data) return null;
 
   // Its own tab, so it answers rather than disappears when there is no work.
-  if (actionable.length === 0 && unverified.length === 0) {
+  if (actionable.length === 0 && unverified.length === 0 && ignored.length === 0) {
     return (
       <section
         aria-label="Image updates"
@@ -210,9 +176,8 @@ export function AppUpdatesPanel({
     );
   }
 
-  /** What the row will apply: the user's pick, else the safe default. */
   function targetTag(entry: ServiceUpdate): string | null {
-    return chosen[entry.service ?? ""] ?? entry.latestTag ?? entry.majorAvailable ?? null;
+    return defaultTarget(entry, chosen[entry.service ?? ""]);
   }
 
   async function apply(entry: ServiceUpdate, acknowledgeMigration = false) {
@@ -221,6 +186,12 @@ export function AppUpdatesPanel({
     if (!tag) {
       // A drifted floating tag has no new tag — deploying re-pulls it.
       onDeploy();
+      return;
+    }
+    // The recipe comes before the request, not after a 409.
+    if (requiresMigration(entry.image, entry.currentTag, tag) && !acknowledgeMigration) {
+      setMigrationPlan(null);
+      setMigration({ appId, appName, entry, tag });
       return;
     }
     if (entry.severity === "major" && !acknowledgeMigration && confirming !== key) {
@@ -242,7 +213,8 @@ export function AppUpdatesPanel({
       });
       const body = await res.json();
       if (res.status === 409 && body.requiresMigration) {
-        setMigration({ entry, tag, plan: body.plan ?? null });
+        setMigrationPlan(body.plan ?? null);
+        setMigration({ appId, appName, entry, tag });
         return;
       }
       if (!res.ok) throw new Error(body.error ?? "Update failed");
@@ -258,10 +230,7 @@ export function AppUpdatesPanel({
   }
 
   return (
-    <section
-      aria-label="Image updates"
-      className="squircle rounded-lg border bg-card divide-y"
-    >
+    <section aria-label="Image updates" className="squircle rounded-lg border bg-card divide-y">
       <header className="flex items-center gap-2 px-4 py-2.5">
         <h2 className="type-label text-muted-foreground/60">Image updates</h2>
         <button
@@ -274,98 +243,34 @@ export function AppUpdatesPanel({
         </button>
       </header>
 
-      {/* Names the fact in each column: these tags come from compose, not from
-          the running containers. */}
-      <div
-        aria-hidden="true"
-        className="hidden px-4 py-1.5 type-label text-muted-foreground/50 sm:grid sm:grid-cols-[minmax(6rem,10rem)_auto_1rem_13rem_minmax(0,1fr)_auto] sm:items-center sm:gap-x-3"
-      >
-        <span>Service</span>
-        <span>In compose</span>
-        <span />
-        <span>Update to</span>
-        <span />
-        <span />
-      </div>
+      <UpdateRowHeader />
 
       {actionable.map((entry) => {
         const key = entry.service ?? "";
-        const label = severityLabel(entry);
         return (
-          <div
+          <UpdateRow
             key={key}
-            className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 px-4 py-3 sm:grid-cols-[minmax(6rem,10rem)_auto_1rem_13rem_minmax(0,1fr)_auto]"
-          >
-            <span className="truncate font-mono text-xs text-muted-foreground">
-              {entry.service}
-              {/* The column that carries this is hidden on narrow screens. */}
-              <span className="sm:hidden"> · {entry.currentTag}</span>
-            </span>
-            <span className="hidden whitespace-nowrap font-mono text-sm text-muted-foreground sm:inline">
-              {entry.currentTag}
-            </span>
-            <ArrowRight
-              className="hidden size-3 text-muted-foreground/40 sm:inline"
-              aria-hidden="true"
-            />
-            {entry.available.length > 1 ? (
-              <Select
-                value={targetTag(entry) ?? undefined}
-                onValueChange={(tag) => setChosen((prev) => ({ ...prev, [key]: tag }))}
-              >
-                <SelectTrigger
-                  className="col-span-2 h-7 w-full font-mono sm:col-span-1"
-                  aria-label={`Version for ${entry.service ?? entry.image}`}
-                >
-                  {/* Children, not the selected item's own markup — otherwise the
-                      dropdown's migration marker is echoed inside the trigger. */}
-                  <SelectValue>{targetTag(entry)}</SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {entry.available.map((tag) => {
-                    const crossesMajor = entry.majorLocked && isMajorJump(entry.currentTag, tag);
-                    return (
-                      <SelectItem key={tag} value={tag} className="font-mono">
-                        {tag}
-                        {crossesMajor && (
-                          <span className="ml-2 type-label text-status-warning">
-                            needs migration
-                          </span>
-                        )}
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-            ) : (
-              <span className={`whitespace-nowrap font-mono text-sm ${severityClass(entry.severity)}`}>
-                {targetTag(entry) ?? "rebuilt"}
-              </span>
-            )}
-            {/* Never hidden by breakpoint — this is the warning that stops a
-                datastore being pinned across a major it cannot start on. */}
-            <span className="type-label truncate text-muted-foreground/50">
-              {needsMigrationFor(entry, targetTag(entry)) ? (
-                <span className="text-status-warning">Needs migration</span>
-              ) : (
-                <span className="hidden sm:inline">{label}</span>
-              )}
-            </span>
-            <Button
-              size="sm"
-              variant={confirming === key ? "default" : "outline"}
-              disabled={applying === key || deploying}
-              onClick={() => apply(entry)}
-            >
-              {confirming === key
-                ? `Confirm ${targetTag(entry)}`
-                : applying === key
-                  ? "Applying…"
-                  : "Update"}
-            </Button>
-          </div>
+            entry={entry}
+            target={targetTag(entry)}
+            onTargetChange={(tag) => setChosen((prev) => ({ ...prev, [key]: tag }))}
+            onApply={() => apply(entry)}
+            applying={applying === key}
+            disabled={deploying}
+            confirming={confirming === key}
+            ignoreSlot={
+              <IgnoreMenu
+                label={entry.service ?? entry.image}
+                disabled={deploying}
+                onChoose={(choice) => setIgnore(entry, choice)}
+              />
+            }
+          />
         );
       })}
+
+      {ignored.length > 0 && (
+        <IgnoredRows entries={ignored} onRestore={(entry) => setIgnore(entry, null)} />
+      )}
 
       {unverified.length > 0 && (
         <p className="px-4 py-2.5 text-xs text-muted-foreground">
@@ -382,15 +287,47 @@ export function AppUpdatesPanel({
 
       <MigrationDialog
         prompt={migration}
+        plan={migrationPlan}
         orgId={orgId}
-        appId={appId}
         onClose={() => setMigration(null)}
-        onConfirm={(entry) => {
+        onConfirm={(prompt) => {
           setMigration(null);
-          apply(entry, true);
+          apply(prompt.entry, true);
         }}
       />
     </section>
+  );
+}
+
+/** Updates a rule is hiding on this app, listed so the rule can be undone. */
+function IgnoredRows({
+  entries,
+  onRestore,
+}: {
+  entries: IgnoredUpdate[];
+  onRestore: (entry: ServiceUpdate) => void;
+}) {
+  return (
+    <div className="px-4 py-2.5 space-y-1.5">
+      <p className="type-label text-muted-foreground/60">Ignored</p>
+      {entries.map(({ service, rule }) => (
+        <div
+          key={service.service ?? service.image}
+          className="flex flex-wrap items-center gap-x-3 gap-y-1"
+        >
+          <span className="font-mono text-xs text-muted-foreground">
+            {service.service ?? service.image}
+          </span>
+          <span className="font-mono text-xs text-muted-foreground">
+            {service.currentTag} → {service.latestTag ?? service.majorAvailable}
+          </span>
+          <span className="type-label text-muted-foreground/50">{describeRule(rule)}</span>
+          <Button size="sm" variant="ghost" className="ml-auto" onClick={() => onRestore(service)}>
+            Stop ignoring
+          </Button>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -414,140 +351,5 @@ function UndeployedNote({
         Deploy
       </Button>
     </div>
-  );
-}
-
-/**
- * Runs the backup the migration steps ask for, rather than only naming it.
- * Git-sourced apps still need this — the code is in git, the data is not.
- */
-function BackupBeforeMigration({ orgId, appId }: { orgId: string; appId: string }) {
-  const [state, setState] = useState<"idle" | "running" | "started" | "unavailable">("idle");
-  const [detail, setDetail] = useState<string | null>(null);
-  const [gitSourced, setGitSourced] = useState(false);
-
-  async function backup() {
-    setState("running");
-    try {
-      const res = await fetch(`/api/v1/organizations/${orgId}/apps/${appId}/backup-now`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: "{}",
-      });
-      const body = await res.json();
-      if (!res.ok) {
-        // NO_VOLUMES and BIND_MOUNTS_ONLY are answers, not failures.
-        setState("unavailable");
-        setDetail(body.error ?? "Could not start a backup");
-        return;
-      }
-      setGitSourced(Boolean(body.assessment?.gitSourced));
-      setDetail((body.warnings ?? []).join(" ") || null);
-      setState("started");
-    } catch {
-      setState("unavailable");
-      setDetail("Could not reach the backup service");
-    }
-  }
-
-  if (state === "started") {
-    return (
-      <p className="type-body-sm rounded-md border border-status-success/30 bg-status-success-muted/30 p-2.5 text-muted-foreground">
-        <span className="text-status-success">Backup started.</span> Track it on the Backups tab
-        before continuing.
-        {gitSourced && " Code is in git; this captures the data volumes."}
-        {detail ? ` ${detail}` : ""}
-      </p>
-    );
-  }
-
-  if (state === "unavailable") {
-    return (
-      <p className="type-body-sm rounded-md border border-status-warning/30 bg-status-warning-muted/30 p-2.5 text-status-warning">
-        {detail} — back up by hand before continuing.
-      </p>
-    );
-  }
-
-  return (
-    <Button variant="outline" className="w-full" disabled={state === "running"} onClick={backup}>
-      {state === "running" ? "Starting backup…" : "Back up now"}
-    </Button>
-  );
-}
-
-/**
- * Shown when a pick crosses a major on an image whose data directory is tied to
- * that major. The deploy would fail on the version check, so the recipe comes
- * before the confirm rather than after the outage.
- */
-function MigrationDialog({
-  prompt,
-  orgId,
-  appId,
-  onClose,
-  onConfirm,
-}: {
-  prompt: MigrationPrompt | null;
-  orgId: string;
-  appId: string;
-  onClose: () => void;
-  onConfirm: (entry: ServiceUpdate) => void;
-}) {
-  if (!prompt) return null;
-  const { entry, tag, plan } = prompt;
-
-  return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <TriangleAlert className="size-4 text-status-warning" aria-hidden="true" />
-            {entry.currentTag} → {tag} is a data migration
-          </DialogTitle>
-          <DialogDescription>
-            {plan?.engine ?? entry.image} stores data in a format tied to its major version. Pinning
-            this tag alone will not start — the new container refuses the existing data directory.
-          </DialogDescription>
-        </DialogHeader>
-
-        {plan?.needsIntermediateSteps && (
-          <p className="text-sm text-status-warning">
-            {plan.engine} cannot jump straight there. Land on {plan.hops.join(", then ")} in order.
-          </p>
-        )}
-
-        {plan && (
-          <ol className="list-decimal space-y-1.5 pl-5 text-sm text-muted-foreground">
-            {plan.steps.map((step) => (
-              <li key={step}>{step}</li>
-            ))}
-          </ol>
-        )}
-
-        <BackupBeforeMigration orgId={orgId} appId={appId} />
-
-        <DialogFooter className="sm:justify-between">
-          {plan && (
-            <a
-              href={plan.docs}
-              target="_blank"
-              rel="noreferrer"
-              className="text-xs text-muted-foreground underline self-center"
-            >
-              Upstream upgrade notes
-            </a>
-          )}
-          <span className="flex gap-2">
-            <Button variant="outline" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={() => onConfirm(entry)}>
-              Pin {tag} anyway
-            </Button>
-          </span>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }

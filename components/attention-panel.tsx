@@ -100,7 +100,19 @@ function Subjects({ row, wide = false }: { row: AttentionRow; wide?: boolean }) 
           );
         })}
       </ul>
-      {row.footer && <p className="text-xs text-muted-foreground">{row.footer}</p>}
+      {(row.footer || row.action) && (
+        <p className="text-xs text-muted-foreground">
+          {row.footer}
+          {row.action && (
+            <Link
+              href={row.action.href}
+              className="ml-1 text-foreground underline underline-offset-2"
+            >
+              {row.action.label}
+            </Link>
+          )}
+        </p>
+      )}
     </div>
   );
 }
