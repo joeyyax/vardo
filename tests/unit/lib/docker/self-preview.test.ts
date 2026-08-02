@@ -1,5 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
+// createVardoPreview refuses to run without an isolated preview database, so
+// every suite that reaches past validation needs one.
+const PREVIEW_DB = "postgres://preview-test/db";
+beforeEach(() => {
+  process.env.PREVIEW_DATABASE_URL = PREVIEW_DB;
+});
+afterEach(() => {
+  delete process.env.PREVIEW_DATABASE_URL;
+  delete process.env.VARDO_ALLOW_PREVIEW_PROD_DB;
+});
+
 // ---------------------------------------------------------------------------
 // Hoisted mock factories
 // ---------------------------------------------------------------------------
@@ -647,5 +658,39 @@ describe("VARDO_NETWORK", () => {
     expect(occurrences).toBeGreaterThanOrEqual(2);
     expect(content).toContain("external: true");
     expect(content).not.toContain("vardo-network");
+  });
+});
+
+describe("createVardoPreview database guard", () => {
+  const args = { prNumber: 1, branch: "main", repoFullName: "joeyyax/vardo" };
+
+  it("refuses when no isolated preview database is configured", async () => {
+    delete process.env.PREVIEW_DATABASE_URL;
+    delete process.env.VARDO_ALLOW_PREVIEW_PROD_DB;
+    const { createVardoPreview } = await import("@/lib/docker/self-preview");
+    await expect(createVardoPreview(args)).rejects.toThrow(/PREVIEW_DATABASE_URL is not set/);
+  });
+
+  it("allows an isolated database", async () => {
+    process.env.PREVIEW_DATABASE_URL = "postgres://preview/db";
+    const { createVardoPreview } = await import("@/lib/docker/self-preview");
+    const err = await createVardoPreview(args).catch((e) => e);
+    expect(String(err)).not.toMatch(/PREVIEW_DATABASE_URL/);
+  });
+
+  it("allows an explicit opt-in to the production database", async () => {
+    delete process.env.PREVIEW_DATABASE_URL;
+    process.env.VARDO_ALLOW_PREVIEW_PROD_DB = "true";
+    const { createVardoPreview } = await import("@/lib/docker/self-preview");
+    const err = await createVardoPreview(args).catch((e) => e);
+    expect(String(err)).not.toMatch(/PREVIEW_DATABASE_URL/);
+  });
+
+  // Argument validation is cheap and deterministic, so it reports first.
+  it("reports an invalid argument before the database guard", async () => {
+    delete process.env.PREVIEW_DATABASE_URL;
+    delete process.env.VARDO_ALLOW_PREVIEW_PROD_DB;
+    const { createVardoPreview } = await import("@/lib/docker/self-preview");
+    await expect(createVardoPreview({ ...args, prNumber: -1 })).rejects.toThrow(/Invalid PR number/);
   });
 });
