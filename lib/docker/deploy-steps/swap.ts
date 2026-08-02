@@ -31,6 +31,7 @@ import type { DeployContext } from "../deploy-context";
 import { classifyComposeServices } from "./classify-services";
 import { publishesHostPorts } from "../host-ports";
 import { partitionBySlot, sharedProjectName, slotScopeArgs } from "../slot-partition";
+import { isSelfApp } from "../self-env";
 
 const execFileAsync = promisify(execFile);
 const NETWORK_NAME = VARDO_NETWORK;
@@ -450,9 +451,15 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
 
   // Both slots have been serving since the new one came up. Drop the old one
   // now that the new one is proven, so the cutover never leaves a gap.
-  if (canOverlapSlots) {
+  //
+  // Vardo deploying Vardo is the exception: the old slot is running this
+  // process, so stopping it here kills the deploy before it records itself.
+  // The stop is deferred to post-deploy, after the bookkeeping is durable.
+  const deferStopToPostDeploy = canOverlapSlots && isSelfApp(app.name);
+  if (canOverlapSlots && !deferStopToPostDeploy) {
     await stopOldSlot();
   }
+  ctx.stopOldSlot = deferStopToPostDeploy ? stopOldSlot : undefined;
 
   // Step 9: Update container names in DB
   if (!isLocalEnv) {
