@@ -61,6 +61,8 @@ export {
   injectNetwork,
   getTraefikRoutedServices,
   isTraefikOptedOut,
+  isTraefikSelfRouted,
+  TRAEFIK_MANUAL_LABEL,
   injectResourceLimits,
   injectGpuDevices,
   getServicesWithExternalizedVolumes,
