@@ -62,6 +62,8 @@ import { AppDebug } from "./app-debug";
 import { ComposeDetail } from "./compose-detail";
 import { AppSecurity } from "./app-security";
 import { SystemBadge } from "@/components/system-badge";
+import { tabPanelSurface } from "@/lib/ui/tab-panel";
+import { cn } from "@/lib/utils";
 
 
 import type { AppDetailProps, Environment } from "./types";
@@ -719,7 +721,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           </TabsContent>
         )}
 
-        <TabsContent value="variables" className="space-y-4">
+        <TabsContent value="variables" className={cn(tabPanelSurface, "space-y-4")}>
           {isChildService && (
             <p className="text-sm text-muted-foreground">
               These variables apply only to the{" "}
@@ -735,7 +737,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           />
         </TabsContent>
 
-        <TabsContent value="networking" className="space-y-4">
+        <TabsContent value="networking" className={cn(tabPanelSurface, "space-y-4")}>
           {isChildService && (
             <p className="text-sm text-muted-foreground">
               Domains added here route to the{" "}
@@ -763,24 +765,18 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           </TabsContent>
         )}
 
-        <TabsContent value="volumes" className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            Persistent volumes survive redeploys and container restarts. Data in non-persistent volumes is ephemeral.
-          </p>
+        <TabsContent value="volumes" className={tabPanelSurface}>
           <VolumesPanel appId={app.id} orgId={orgId} />
         </TabsContent>
 
         {featureFlags?.cron !== false && (
-          <TabsContent value="cron" className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Schedule commands to run inside this app&apos;s container on a fixed interval. Uses standard cron syntax.
-            </p>
+          <TabsContent value="cron" className={tabPanelSurface}>
             <CronManager appId={app.id} orgId={orgId} />
           </TabsContent>
         )}
 
         {featureFlags?.terminal !== false && (
-          <TabsContent value="terminal" className="space-y-4">
+          <TabsContent value="terminal" className={cn(tabPanelSurface, "space-y-4")}>
             <p className="text-sm text-muted-foreground">
               Interactive shell session inside the running container. Changes to the filesystem are lost on redeploy unless written to a persistent volume.
             </p>
@@ -795,7 +791,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         )}
 
         {featureFlags?.backups !== false && (
-          <TabsContent value="backups" className="space-y-4">
+          <TabsContent value="backups" className={cn(tabPanelSurface, "space-y-4")}>
             <p className="text-sm text-muted-foreground">
               Snapshots of this app&apos;s persistent volumes. Download or restore any backup.
             </p>
@@ -803,18 +799,18 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           </TabsContent>
         )}
 
-        <TabsContent value="security">
+        <TabsContent value="security" className={tabPanelSurface}>
           <AppSecurity appId={app.id} orgId={orgId} />
         </TabsContent>
 
         {featureFlags?.errorTracking !== false && (
-          <TabsContent value="errors" className="space-y-4">
+          <TabsContent value="errors" className={cn(tabPanelSurface, "space-y-4")}>
             <AppErrors orgId={orgId} appId={app.id} />
           </TabsContent>
         )}
 
         {isOrgAdmin(userRole) && (
-          <TabsContent value="debug">
+          <TabsContent value="debug" className={tabPanelSurface}>
             <AppDebug orgId={orgId} appId={app.id} />
           </TabsContent>
         )}

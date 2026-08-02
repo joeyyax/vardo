@@ -285,7 +285,7 @@ export function AppNetworking({
         </div>
 
         {domainOpen && (
-          <div className="flex items-end gap-3 rounded-lg border bg-card p-4">
+          <div className="flex items-end gap-3 rounded-lg border bg-background-deep p-4">
             <div className="grid gap-1.5 flex-1">
               <label className="text-xs text-muted-foreground">Domain</label>
               <input
@@ -373,7 +373,7 @@ export function AppNetworking({
 
                 if (isEditing) {
                   return (
-                    <div key={domain.id} className="flex items-end gap-3 rounded-lg border bg-card p-4">
+                    <div key={domain.id} className="flex items-end gap-3 rounded-lg border bg-background-deep p-4">
                       <div className="grid gap-1.5 flex-1">
                         <label className="text-xs text-muted-foreground">Domain</label>
                         <input
@@ -445,7 +445,7 @@ export function AppNetworking({
                 return (
               <div
                 key={domain.id}
-                className={`squircle rounded-lg border bg-card overflow-hidden ${domain.isPrimary ? "border-primary/30" : ""}`}
+                className={`squircle rounded-lg border bg-background-deep overflow-hidden ${domain.isPrimary ? "border-primary/30" : ""}`}
               >
                 <div className="flex items-center justify-between gap-4 p-4">
                   <div className="flex items-center gap-3 min-w-0">
