@@ -51,12 +51,14 @@ Steps 1 to 4 are therefore run by hand over SSH. They are the same commands the 
 ### 1. Lay out the directories the engine expects
 
 ```
-install -d -o 1001 -g 1001 /opt/vardo/apps/vardo/production/blue
+mkdir -p /opt/vardo/apps/vardo/production/blue
 git clone https://github.com/joeyyax/vardo /opt/vardo/apps/vardo/repo
 cd /opt/vardo/apps/vardo/repo && git checkout main
 ```
 
 If `repo` already exists, `git fetch origin && git reset --hard origin/main` instead.
+
+The frontend container runs as root, so ownership does not matter here — `ensureWritableDir` only chowns when it hits `EACCES`.
 
 ### 2. Stage the slot
 
