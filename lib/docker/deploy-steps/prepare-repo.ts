@@ -29,6 +29,7 @@ import {
   generateComposeForImage,
   parseCompose,
   sanitizeCompose,
+  sharedMarkerTypeErrors,
   validateCompose,
   type ComposeFile,
 } from "../compose";
@@ -67,6 +68,13 @@ type ParseAndSanitizeOpts = {
 };
 
 function parseAndSanitize(yaml: string, log: (msg: string) => void, opts?: ParseAndSanitizeOpts): ComposeFile {
+  // Before parseCompose, which drops a non-boolean marker and leaves no trace.
+  // The save routes check too, but compose read out of a git clone reaches
+  // deploy without passing through any of them.
+  const markerErrors = sharedMarkerTypeErrors(yaml);
+  if (markerErrors.length > 0) {
+    throw new DeployBlockedError(markerErrors.join("\n"));
+  }
   const compose = parseCompose(yaml);
   // Trusted orgs bypass all mount restrictions — no sanitization, no deny list.
   if (opts?.orgTrusted) {
