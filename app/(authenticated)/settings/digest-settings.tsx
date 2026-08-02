@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "@/lib/messenger";
 import { Card, CardContent } from "@/components/ui/card";
+import { RelativeTime } from "@/components/relative-time";
 import { Loader2, Mail } from "lucide-react";
 
 type DigestSettingsData = {
@@ -194,15 +195,7 @@ export function DigestSettingsEditor({ orgId }: { orgId: string }) {
 
       {settings.lastSentAt && (
         <p className="text-xs text-muted-foreground">
-          Last sent{" "}
-          {new Date(settings.lastSentAt).toLocaleDateString("en-US", {
-            weekday: "long",
-            month: "short",
-            day: "numeric",
-            hour: "numeric",
-            minute: "2-digit",
-            timeZoneName: "short",
-          })}
+          Last sent <RelativeTime date={settings.lastSentAt} />
         </p>
       )}
       </CardContent>
