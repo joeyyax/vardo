@@ -84,3 +84,23 @@ describe("networkCreateArgs", () => {
     ]);
   });
 });
+
+describe("a network declared with no config", () => {
+  it("is still claimed — `internal:` parses to null, which is a real declaration", () => {
+    const c = parseCompose(`name: vardo
+services:
+  web:
+    image: app
+    networks: [internal]
+  db:
+    image: postgres
+    x-vardo-shared: true
+    networks: [internal]
+networks:
+  internal:
+`);
+    expect(c.networks!.internal).toBeNull();
+    expect([...sharedNetworks(c)]).toEqual(["internal"]);
+    expect("internal" in c.networks!).toBe(true);
+  });
+});
