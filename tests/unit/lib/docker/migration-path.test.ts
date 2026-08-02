@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { isMajorLocked } from "@/lib/docker/image-updates/stateful-image";
-import { majorOf, migrationPathFor, planMigration } from "@/lib/docker/image-updates/migration-path";
+import {
+  isMajorJump,
+  majorOf,
+  migrationPathFor,
+  planMigration,
+  requiresMigration,
+} from "@/lib/docker/image-updates/migration-path";
 import { selectUpdateCandidate } from "@/lib/docker/image-updates/tag-version";
 
 describe("isMajorLocked", () => {
@@ -91,5 +97,38 @@ describe("planMigration", () => {
   it("returns null for an image with no major lock", () => {
     expect(migrationPathFor("redis:alpine")).toBeNull();
     expect(planMigration("redis:7", "7", "8")).toBeNull();
+  });
+});
+
+describe("requiresMigration", () => {
+  it("flags a major bump on a datastore", () => {
+    expect(requiresMigration("postgres:16", "16", "18")).toBe(true);
+    expect(requiresMigration("mysql:8", "8", "9")).toBe(true);
+  });
+
+  it("ignores moves inside a major, and downgrades", () => {
+    expect(requiresMigration("postgres:16", "16.2", "16.4")).toBe(false);
+    expect(requiresMigration("postgres:18", "18", "16")).toBe(false);
+  });
+
+  it("ignores images whose data survives a major", () => {
+    expect(requiresMigration("redis:7", "7", "8")).toBe(false);
+    expect(requiresMigration("nginx:1.25", "1.25", "2.0")).toBe(false);
+  });
+
+  it("is false without a target tag", () => {
+    expect(requiresMigration("postgres:16", "16", null)).toBe(false);
+  });
+});
+
+describe("isMajorJump", () => {
+  it("reads the leading integer through a suffix", () => {
+    expect(isMajorJump("16.2-alpine", "17-bookworm")).toBe(true);
+    expect(isMajorJump("v1", "v2")).toBe(true);
+  });
+
+  it("is false when either side has no leading integer", () => {
+    expect(isMajorJump("latest", "18")).toBe(false);
+    expect(isMajorJump("16", "alpine")).toBe(false);
   });
 });

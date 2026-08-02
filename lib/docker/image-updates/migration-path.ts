@@ -7,6 +7,8 @@
 // behind, so "16 → 18" is two migrations for them and one for Postgres.
 // ---------------------------------------------------------------------------
 
+import { isMajorLocked } from "./stateful-image";
+
 export type MigrationStrategy = "dump-restore" | "in-place-upgrade" | "reindex";
 
 export interface MigrationPath {
@@ -96,6 +98,23 @@ const PATHS: { match: RegExp; path: Omit<MigrationPath, "engine"> }[] = [
 export function majorOf(tag: string): number | null {
   const match = tag.match(/^v?(\d+)/);
   return match ? parseInt(match[1], 10) : null;
+}
+
+/** True when `to` lands on a higher major than `from`. */
+export function isMajorJump(from: string, to: string): boolean {
+  const a = majorOf(from);
+  const b = majorOf(to);
+  return a !== null && b !== null && b > a;
+}
+
+/**
+ * Whether moving this image to `to` means migrating its data directory.
+ *
+ * Read from the image rather than a cached `majorLocked` flag — rows written
+ * before that flag existed carry false, and trusting them hides the warning.
+ */
+export function requiresMigration(image: string, from: string, to: string | null): boolean {
+  return Boolean(to && isMajorLocked(image) && isMajorJump(from, to));
 }
 
 /** The migration recipe for an image, or null when it has no major lock. */
