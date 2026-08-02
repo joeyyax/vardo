@@ -4,6 +4,7 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { apps, domainChecks, domains, systemSettings } from "@/lib/db/schema";
+import { DOMAIN_FAILURES_TO_CONFIRM, isConfirmedUnreachable } from "./domain-health";
 import {
   ALERT_STATE_KEY,
   selectActiveServiceAlerts,
@@ -50,18 +51,25 @@ async function loadUnreachableDomains(orgId: string): Promise<FleetAttention["un
     .where(inArray(domainChecks.domainId, ids))
     .orderBy(desc(domainChecks.checkedAt));
 
-  const latest = new Map<string, (typeof checks)[number]>();
+  // Two most recent per domain. A single blip resolves by the next run, and
+  // calling one aborted request "unreachable" flapped domains that answered in
+  // under 100ms either side of it.
+  const recent = new Map<string, (typeof checks)[number][]>();
   for (const check of checks) {
-    if (!latest.has(check.domainId)) latest.set(check.domainId, check);
+    const seen = recent.get(check.domainId) ?? [];
+    if (seen.length < DOMAIN_FAILURES_TO_CONFIRM) {
+      seen.push(check);
+      recent.set(check.domainId, seen);
+    }
   }
 
   return orgDomains
-    .filter((d) => latest.get(d.id)?.reachable === false)
+    .filter((d) => isConfirmedUnreachable(recent.get(d.id) ?? []))
     .map((d) => ({
       id: d.id,
       domain: d.domain,
       appName: d.appName,
-      error: latest.get(d.id)?.error ?? null,
+      error: recent.get(d.id)?.[0]?.error ?? null,
     }));
 }
 
