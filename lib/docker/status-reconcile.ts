@@ -44,10 +44,13 @@ function label(c: ContainerInfo, key: string): string | undefined {
   return c.labels[`vardo.${key}`] ?? c.labels[`host.${key}`];
 }
 
-/** Compose project minus the slot suffix: paperless-production-green → paperless. */
+/**
+ * Compose project minus the `-<env>-<slot>` suffix: paperless-staging-green → paperless.
+ * `pr-<n>` is spelled out because it is the one generated env name with a hyphen.
+ */
 function composeProjectApp(c: ContainerInfo): string | undefined {
   const project = c.labels["com.docker.compose.project"];
-  return project?.replace(/-production-(blue|green|shared)$/, "");
+  return project?.replace(/-(pr-\d+|[^-]+)-(blue|green|shared)$/, "");
 }
 
 /**
