@@ -83,17 +83,25 @@ export function seriesToPoints(series: {
   const gpuMemTotalMap = new Map(series.gpuMemoryTotal || []);
   const gpuTempMap = new Map(series.gpuTemperature || []);
 
-  return timestamps.map((ts) => ({
-    timestamp: ts,
-    cpu: Math.round((cpuMap.get(ts) || 0) * 100) / 100,
-    memory: memMap.get(ts) || 0,
-    memoryLimit: memLimitMap.get(ts) || 0,
-    networkRx: rxMap.get(ts) || 0,
-    networkTx: txMap.get(ts) || 0,
-    diskTotal: diskMap.get(ts) || 0,
-    gpuUtilization: Math.round((gpuUtilMap.get(ts) || 0) * 100) / 100,
-    gpuMemoryUsed: gpuMemUsedMap.get(ts) || 0,
-    gpuMemoryTotal: gpuMemTotalMap.get(ts) || 0,
-    gpuTemperature: Math.round(gpuTempMap.get(ts) || 0),
-  }));
+  // Disk is sampled less often than CPU and memory, and it is a gauge: a bucket
+  // with no sample means unchanged, not empty. Reading it as 0 is what made the
+  // chart drop to the floor between samples.
+  let lastDisk = 0;
+
+  return timestamps.map((ts) => {
+    lastDisk = diskMap.get(ts) ?? lastDisk;
+    return {
+      timestamp: ts,
+      cpu: Math.round((cpuMap.get(ts) || 0) * 100) / 100,
+      memory: memMap.get(ts) || 0,
+      memoryLimit: memLimitMap.get(ts) || 0,
+      networkRx: rxMap.get(ts) || 0,
+      networkTx: txMap.get(ts) || 0,
+      diskTotal: lastDisk,
+      gpuUtilization: Math.round((gpuUtilMap.get(ts) || 0) * 100) / 100,
+      gpuMemoryUsed: gpuMemUsedMap.get(ts) || 0,
+      gpuMemoryTotal: gpuMemTotalMap.get(ts) || 0,
+      gpuTemperature: Math.round(gpuTempMap.get(ts) || 0),
+    };
+  });
 }
