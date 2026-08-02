@@ -31,7 +31,7 @@ import {
   pruneBuildCache,
 } from "../client";
 import { syncComposeServices } from "../compose-sync";
-import { isDeployQueueDrained } from "../deploy-concurrency";
+import { isDeployQueueDrained, releaseConcurrencySlot } from "../deploy-concurrency";
 import { acquireLock, releaseLock } from "@/lib/redis-lock";
 import { addEvent } from "@/lib/stream/producer";
 import { recordActivity } from "@/lib/activity";
@@ -63,7 +63,11 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
   // Step 10: Stop old slot containers (skipped for local environments).
   // We stop rather than down so the standby slot's containers remain on disk,
   // enabling instant rollback (compose start + routing flip) without a rebuild.
-  if (activeSlot && !isLocalEnv) {
+  //
+  // Skipped when the swap deferred the stop: the old slot is running this
+  // process, and stopping it here kills the deploy before any of the
+  // bookkeeping below. It is stopped at the very end instead.
+  if (activeSlot && !isLocalEnv && !ctx.stopOldSlot) {
     const oldSlotDir = join(appDir, activeSlot);
     const oldProjectName = `${app.name}-${ctx.envName}-${activeSlot}`;
     const oldComposeFileArgs = await slotComposeFiles(oldSlotDir);
@@ -438,18 +442,17 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
     log(`[deploy] Warning: post-deploy hooks — ${err instanceof Error ? err.message : err}`);
   }
 
-  // A self-deploy stops the container running this code, so the caller may
-  // never get to write the outcome. Record it here, then stop. The caller's
-  // write still lands if the process survives, and only adds the full log.
+  // The old slot is running this process, so this stop ends the deploy. It goes
+  // last, after every write above is durable. Anything that throws earlier
+  // leaves the old slot serving alongside the new one.
   if (ctx.stopOldSlot) {
-    try {
-      await db
-        .update(deployments)
-        .set({ status: "success", finishedAt: new Date() })
-        .where(eq(deployments.id, ctx.deploymentId));
-    } catch (err) {
-      log(`[deploy] Warning: could not record success early — ${err instanceof Error ? err.message : err}`);
+    // Hand back the concurrency slot first — the `finally` that normally does it
+    // never runs. Skipped when another deploy is queued behind us, which would
+    // otherwise start inside the process about to be stopped.
+    if (await isDeployQueueDrained()) {
+      await releaseConcurrencySlot(ctx.deploymentId).catch(() => {});
     }
+    log(`[deploy] Stopping the slot running this deploy — ${newSlot} is serving`);
     await ctx.stopOldSlot().catch(() => {});
   }
 

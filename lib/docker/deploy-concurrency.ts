@@ -22,6 +22,7 @@
 // ---------------------------------------------------------------------------
 
 import { redis } from "@/lib/redis";
+import { acquireLock } from "@/lib/redis-lock";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("deploy-concurrency");
@@ -32,6 +33,10 @@ const log = logger.child("deploy-concurrency");
 
 export const ACTIVE_KEY = "deploy:system:active";
 export const QUEUE_KEY = "deploy:system:queue";
+
+/** Marker proving a deployment's slot has already been released. */
+const releasedKey = (deploymentId: string) => `deploy:system:released:${deploymentId}`;
+const RELEASED_TTL_MS = 60 * 60_000;
 
 // ---------------------------------------------------------------------------
 // Config
@@ -176,11 +181,18 @@ export async function waitForConcurrencySlot(
 }
 
 /**
- * Release one concurrency slot. Must be called exactly once after a deploy
- * that successfully acquired a slot finishes (success, failure, or cancellation).
+ * Release one concurrency slot after a deploy that acquired one finishes
+ * (success, failure, or cancellation).
+ *
+ * Pass the deploymentId and the release is applied at most once for it, so the
+ * paths that can both fire — a force-cancel and the deploy's own unwind — do not
+ * decrement twice and let an extra deploy through.
  */
-export async function releaseConcurrencySlot(): Promise<void> {
+export async function releaseConcurrencySlot(deploymentId?: string): Promise<void> {
   try {
+    if (deploymentId && !(await acquireLock(releasedKey(deploymentId), RELEASED_TTL_MS))) {
+      return;
+    }
     await redis.eval(LUA_RELEASE, 1, ACTIVE_KEY);
   } catch (err) {
     log.warn("Failed to release concurrency slot — counter may drift until next reconciliation:", err);

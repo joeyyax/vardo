@@ -11,7 +11,8 @@ const { redisState, redisList, redisMock } = vi.hoisted(() => {
 
   const redisMock = {
     get: vi.fn(async (key: string) => redisState[key] ?? null),
-    set: vi.fn(async (key: string, value: string) => {
+    set: vi.fn(async (key: string, value: string, ...opts: (string | number)[]) => {
+      if (opts.includes("NX") && key in redisState) return null;
       redisState[key] = value;
       return "OK";
     }),
@@ -200,6 +201,20 @@ describe("deploy-concurrency", () => {
 
     it("handles missing active key gracefully", async () => {
       await expect(releaseConcurrencySlot()).resolves.not.toThrow();
+    });
+
+    it("releases once per deployment, so a force-cancel and the deploy's own unwind do not both decrement", async () => {
+      redisState[ACTIVE_KEY] = "2";
+      await releaseConcurrencySlot("deploy-1");
+      await releaseConcurrencySlot("deploy-1");
+      expect(redisState[ACTIVE_KEY]).toBe("1");
+    });
+
+    it("tracks each deployment separately", async () => {
+      redisState[ACTIVE_KEY] = "2";
+      await releaseConcurrencySlot("deploy-1");
+      await releaseConcurrencySlot("deploy-2");
+      expect(redisState[ACTIVE_KEY]).toBe("0");
     });
   });
 
