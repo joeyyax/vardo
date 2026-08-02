@@ -77,6 +77,11 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    if (parsed.data.type === "preview") {
+      const previewGate = await requirePlugin("previews");
+      if (previewGate) return previewGate;
+    }
+
     const [env] = await db
       .insert(groupEnvironments)
       .values({

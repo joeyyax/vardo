@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { getCurrentOrg } from "@/lib/auth/session";
+import { isFeatureEnabledAsync } from "@/lib/config/features";
 import {
   AccountInfo,
   PasswordManagement,
@@ -28,6 +29,10 @@ export default async function UserSettingsTabPage({
   }
 
   const validTab = tab as ValidTab;
+
+  if (validTab === "tokens" && !(await isFeatureEnabledAsync("api-tokens"))) {
+    notFound();
+  }
 
   // Tokens and notifications tabs need orgId
   let orgId: string | null = null;

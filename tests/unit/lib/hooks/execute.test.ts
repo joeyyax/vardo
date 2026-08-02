@@ -4,19 +4,35 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // Hoisted mock factories
 // ---------------------------------------------------------------------------
 
-const { mockGetHooksForEvent, mockGetInternalHandler, mockFetch, mockExecFileAsync } =
-  vi.hoisted(() => {
-    const mockGetHooksForEvent = vi.fn();
-    const mockGetInternalHandler = vi.fn();
-    const mockFetch = vi.fn();
-    const mockExecFileAsync = vi.fn();
+const {
+  mockGetHooksForEvent,
+  mockGetInternalHandler,
+  mockFetch,
+  mockExecFileAsync,
+  mockIsFeatureEnabledAsync,
+} = vi.hoisted(() => {
+  const mockGetHooksForEvent = vi.fn();
+  const mockGetInternalHandler = vi.fn();
+  const mockFetch = vi.fn();
+  const mockExecFileAsync = vi.fn();
+  const mockIsFeatureEnabledAsync = vi.fn();
 
-    return { mockGetHooksForEvent, mockGetInternalHandler, mockFetch, mockExecFileAsync };
-  });
+  return {
+    mockGetHooksForEvent,
+    mockGetInternalHandler,
+    mockFetch,
+    mockExecFileAsync,
+    mockIsFeatureEnabledAsync,
+  };
+});
 
 vi.mock("@/lib/hooks/registry", () => ({
   getHooksForEvent: mockGetHooksForEvent,
   getInternalHandler: mockGetInternalHandler,
+}));
+
+vi.mock("@/lib/config/features", () => ({
+  isFeatureEnabledAsync: mockIsFeatureEnabledAsync,
 }));
 
 vi.mock("@/lib/stream/producer", () => ({
@@ -93,6 +109,23 @@ describe("executeHooks", () => {
     vi.clearAllMocks();
     mockGetHooksForEvent.mockResolvedValue([]);
     mockGetInternalHandler.mockReturnValue(undefined);
+    mockIsFeatureEnabledAsync.mockResolvedValue(true);
+  });
+
+  // 0. Feature gate
+  describe("hooks feature flag", () => {
+    it("runs nothing and allows the action when hooks are disabled", async () => {
+      mockIsFeatureEnabledAsync.mockResolvedValue(false);
+      mockGetHooksForEvent.mockResolvedValue([
+        makeHook({ type: "script", config: { command: "echo hi" } }),
+      ]);
+
+      const result = await executeHooks("before.deploy.start", {});
+
+      expect(result).toEqual({ allowed: true, results: [] });
+      expect(mockGetHooksForEvent).not.toHaveBeenCalled();
+      expect(mockExecFileAsync).not.toHaveBeenCalled();
+    });
   });
 
   // 1. No hooks registered
