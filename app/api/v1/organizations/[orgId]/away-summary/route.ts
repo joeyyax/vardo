@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 
 import { handleRouteError } from "@/lib/api/error-response";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { requirePlugin } from "@/lib/api/require-plugin";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { db } from "@/lib/db";
 import { memberships } from "@/lib/db/schema";
@@ -28,6 +29,9 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+    const gate = await requirePlugin("away");
+    if (gate) return gate;
 
     const membership = await db.query.memberships.findFirst({
       where: eq(memberships.id, org.membership.id),
@@ -68,6 +72,9 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+    const gate = await requirePlugin("away");
+    if (gate) return gate;
 
     await markSeen(org.membership.id, new Date());
     return NextResponse.json({ ok: true });

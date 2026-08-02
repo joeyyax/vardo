@@ -35,7 +35,11 @@ export type FeatureFlag =
   | "digest"
   | "monitoring"
   | "error-tracking"
-  | "hooks";
+  | "hooks"
+  | "teams"
+  | "templates"
+  | "activity"
+  | "away";
 
 /** Section a flag is filed under on the admin Feature flags page. */
 export type FlagGroup =
@@ -207,6 +211,28 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
   "error-tracking": {
     label: "Error tracking",
     description: "Automatic error tracking via GlitchTip (Sentry-compatible).",
+    group: "observability",
+  },
+  teams: {
+    label: "Teams",
+    description:
+      "Team management: the Team page, invitations, roles and the organization switcher. Disabling hides those surfaces — existing members keep their access and can still sign in.",
+    group: "access",
+  },
+  templates: {
+    label: "Templates",
+    description: "Starter templates for new apps, offered as a starting point on the New app page.",
+    group: "deployment",
+  },
+  activity: {
+    label: "Activity log",
+    description:
+      "Record of who did what, shown at /activity. Disabling stops the writes as well as hiding the page.",
+    group: "observability",
+  },
+  away: {
+    label: "While you were away",
+    description: "Per-user summary of what changed since your last visit, surfaced in the attention bar.",
     group: "observability",
   },
 };

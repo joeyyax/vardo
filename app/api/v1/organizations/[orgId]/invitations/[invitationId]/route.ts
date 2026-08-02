@@ -7,6 +7,7 @@ import { eq, and } from "drizzle-orm";
 import { sendEmail } from "@/lib/email/send";
 import { InviteEmail } from "@/lib/email/templates/invite";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { requirePlugin } from "@/lib/api/require-plugin";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -24,6 +25,9 @@ async function handleDelete(
     const { orgId, invitationId } = await params;
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+    const gate = await requirePlugin("teams");
+    if (gate) return gate;
 
     requireOrgAdmin(org.membership.role);
 
@@ -69,6 +73,9 @@ async function handlePatch(
     const { orgId, invitationId } = await params;
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+    const gate = await requirePlugin("teams");
+    if (gate) return gate;
 
     requireOrgAdmin(org.membership.role);
 
