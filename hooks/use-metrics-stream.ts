@@ -14,6 +14,7 @@ type MetricsMeta = {
   system: unknown;
   apps: unknown[];
   projectCount?: number;
+  cpuCount?: number;
   orgDiskTotal?: number;
   [key: string]: unknown;
 };
@@ -38,6 +39,8 @@ type UseMetricsStreamReturn = {
   meta: MetricsMeta | null;
   /** Whether the SSE stream is connected */
   connected: boolean;
+  /** Whether at least one live frame has arrived — figures are zero until it does */
+  hasLiveFrame: boolean;
   /** Whether historical data is still loading */
   loading: boolean;
   /** Whether the stream is reconnecting after a disconnect */
@@ -55,6 +58,7 @@ export function useMetricsStream(
   const [containers, setContainers] = useState<ContainerPoint[]>([]);
   const [meta, setMeta] = useState<MetricsMeta | null>(null);
   const [connected, setConnected] = useState(false);
+  const [hasLiveFrame, setHasLiveFrame] = useState(false);
   const [loading, setLoading] = useState(true);
   const [reconnecting, setReconnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -150,9 +154,12 @@ export function useMetricsStream(
             system: data.system ?? prev?.system ?? null,
             apps: data.apps ?? prev?.apps ?? [],
             projectCount: data.projectCount ?? prev?.projectCount,
+            cpuCount: data.cpuCount ?? prev?.cpuCount,
             orgDiskTotal: data.orgDiskTotal ?? prev?.orgDiskTotal,
           }));
         }
+
+        setHasLiveFrame(true);
 
         // Append live point, trimming outside the current range
         const cutoff = Date.now() - RANGE_MS[timeRangeRef.current];
@@ -191,5 +198,5 @@ export function useMetricsStream(
     };
   }, [streamUrl, visKey, maxPoints]);
 
-  return { points, containers, meta, connected, loading, reconnecting, error };
+  return { points, containers, meta, connected, hasLiveFrame, loading, reconnecting, error };
 }

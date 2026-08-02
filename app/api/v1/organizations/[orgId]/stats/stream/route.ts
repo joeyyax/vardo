@@ -5,6 +5,7 @@ import { apps } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { isCollectorRunning, startCollector } from "@/lib/metrics/collector";
 import { getLatestProjectDiskUsage } from "@/lib/metrics/store";
+import { getSystemInfo } from "@/lib/docker/client";
 import { createSSEResponse } from "@/lib/api/sse";
 import { isMetricsEnabled } from "@/lib/metrics/config";
 import { subscribe } from "@/lib/metrics/broadcast";
@@ -28,9 +29,16 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const orgApps = await db.query.apps.findMany({
       where: eq(apps.organizationId, orgId),
-      columns: { id: true, name: true, displayName: true, status: true, projectId: true },
+      columns: { id: true, name: true, displayName: true, status: true, projectId: true, parentAppId: true },
     });
     const projectCount = new Set(orgApps.map((a) => a.projectId).filter(Boolean)).size;
+
+    // Denominator for the CPU figure — container percentages sum past 100 on a
+    // multi-core host.
+    let cpuCount = 0;
+    try {
+      cpuCount = (await getSystemInfo()).cpus;
+    } catch { /* skip */ }
 
     if (!isCollectorRunning()) {
       startCollector();
@@ -79,6 +87,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         sendEvent("point", {
           ...point,
           projectCount,
+          cpuCount,
           orgDiskTotal,
           apps: orgApps.map((p) => ({
             ...p,
