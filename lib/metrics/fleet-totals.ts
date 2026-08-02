@@ -1,6 +1,6 @@
-import { queryAll } from "./store-container";
+import { tsRedis } from "./ts-client";
 
-/** How far back a sample can be and still describe the fleet right now. */
+/** How old the newest sample can be and still describe the fleet now. */
 const FRESH_WINDOW_MS = 5 * 60 * 1000;
 
 export type FleetTotals = {
@@ -10,10 +10,41 @@ export type FleetTotals = {
   memoryBytes: number;
 };
 
-/** The most recent value in a series, or null when nothing landed in the window. */
-function latest(points: [number, number][]): number | null {
-  if (points.length === 0) return null;
-  return points[points.length - 1][1];
+/**
+ * Sum the last sample of every series for a metric.
+ *
+ * TS.MGET, not TS.MRANGE: containers write on their own schedules, so the
+ * newest range bucket holds whichever few happened to land on that millisecond
+ * — summing it reported the whole fleet at one container's usage. MGET takes
+ * each series' own latest point.
+ *
+ * Returns null when nothing is fresh, so a fleet that isn't being measured
+ * doesn't read as a fleet using nothing.
+ */
+async function sumLatest(metric: string, cutoffMs: number): Promise<number | null> {
+  let result: unknown;
+  try {
+    result = await tsRedis.call("TS.MGET", "FILTER", `metric=${metric}`);
+  } catch {
+    return null;
+  }
+
+  if (!Array.isArray(result) || result.length === 0) return null;
+
+  let total = 0;
+  let fresh = 0;
+  for (const series of result as [string, unknown[], [string, string]][]) {
+    const point = series?.[2];
+    if (!Array.isArray(point) || point.length < 2) continue;
+    const ts = Number(point[0]);
+    const value = Number(point[1]);
+    if (!Number.isFinite(ts) || !Number.isFinite(value)) continue;
+    if (ts < cutoffMs) continue;
+    total += value;
+    fresh++;
+  }
+
+  return fresh > 0 ? total : null;
 }
 
 /**
@@ -22,26 +53,15 @@ function latest(points: [number, number][]): number | null {
  * Reads the shared store rather than the broadcast module's in-process
  * snapshot: that variable is only filled while something is subscribed, and a
  * server component does not share a module instance with the collector.
- *
- * Returns null when no sample landed recently, so callers can say "not
- * measured" instead of reporting an empty fleet as zero usage.
  */
 export async function getFleetTotals(now = Date.now()): Promise<FleetTotals | null> {
-  const from = now - FRESH_WINDOW_MS;
+  const cutoff = now - FRESH_WINDOW_MS;
 
-  const series = async (metric: "cpu" | "memory"): Promise<[number, number][]> => {
-    try {
-      return await queryAll(metric, from, now);
-    } catch {
-      return [];
-    }
-  };
+  const [cpuPercent, memoryBytes] = await Promise.all([
+    sumLatest("cpu", cutoff),
+    sumLatest("memory", cutoff),
+  ]);
 
-  const [cpu, memory] = await Promise.all([series("cpu"), series("memory")]);
-
-  const cpuPercent = latest(cpu);
-  const memoryBytes = latest(memory);
   if (cpuPercent === null && memoryBytes === null) return null;
-
   return { cpuPercent: cpuPercent ?? 0, memoryBytes: memoryBytes ?? 0 };
 }
