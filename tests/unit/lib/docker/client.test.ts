@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizeRestartPolicy, parseDockerHealthcheck, parseExposedPorts, stripDockerProjectPrefix, resolveVolumeName, buildPruneCacheQuery } from "@/lib/docker/client";
+import { normalizeRestartPolicy, parseDockerHealthcheck, parseExposedPorts, stripDockerProjectPrefix, resolveVolumeName, buildPruneCacheQuery, summarizeDiskUsage } from "@/lib/docker/client";
 import { nanosToDuration } from "@/lib/docker/compose";
 
 // ---------------------------------------------------------------------------
@@ -190,6 +190,113 @@ describe("resolveVolumeName", () => {
     const hash = "a".repeat(64);
     const mount = { name: hash, source: `/var/lib/docker/volumes/${hash}/_data` };
     expect(resolveVolumeName(mount)).toBe(hash);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// summarizeDiskUsage — the arithmetic behind `docker system df`
+//
+// Both image figures are approximations Docker itself makes. The point is that
+// they match what an operator sees running the command, rather than being a
+// second and larger opinion. Verified figure for figure against a live host.
+// ---------------------------------------------------------------------------
+
+describe("summarizeDiskUsage", () => {
+  function image(over: Partial<{ Size: number; SharedSize: number; Containers: number }> = {}) {
+    return { Id: "sha256:x", Size: 0, SharedSize: 0, Containers: 0, ...over };
+  }
+
+  it("reports what images occupy, not the sum of their sizes", () => {
+    // Two images sharing a 90-byte layer occupy 110 bytes between them, not 200.
+    const usage = summarizeDiskUsage({
+      LayersSize: 110,
+      Images: [
+        image({ Size: 100, SharedSize: 90, Containers: 1 }),
+        image({ Size: 100, SharedSize: 90, Containers: 1 }),
+      ],
+    });
+    expect(usage.images.totalSize).toBe(110);
+  });
+
+  it("charges only the bytes an idle image holds on its own", () => {
+    // 90 of the idle image's 100 bytes are shared with the running one, so
+    // removing it frees 10 and the other 100 stay put.
+    const usage = summarizeDiskUsage({
+      LayersSize: 110,
+      Images: [
+        image({ Size: 100, SharedSize: 90, Containers: 1 }),
+        image({ Size: 100, SharedSize: 90, Containers: 0 }),
+      ],
+    });
+    expect(usage.images.reclaimable).toBe(100);
+  });
+
+  it("never reports more reclaimable than images occupy", () => {
+    const usage = summarizeDiskUsage({
+      LayersSize: 110,
+      Images: [image({ Size: 100, SharedSize: 90, Containers: 0 })],
+    });
+    expect(usage.images.reclaimable).toBeLessThanOrEqual(usage.images.totalSize);
+  });
+
+  it("clamps at zero when Docker's shared-layer accounting overshoots the total", () => {
+    const usage = summarizeDiskUsage({
+      LayersSize: 100,
+      Images: [image({ Size: 500, SharedSize: 0, Containers: 0 })],
+    });
+    expect(usage.images.reclaimable).toBe(0);
+  });
+
+  it("reproduces the live host's `docker system df` images row", () => {
+    // Aggregates measured on the production host, where the CLI prints
+    // 107.4GB total and 41.75GB (38%) reclaimable.
+    const usage = summarizeDiskUsage({
+      LayersSize: 107_357_323_923,
+      Images: [
+        image({ Size: 65_604_557_160, SharedSize: 0, Containers: 0 }),
+        image({ Size: 1_000, SharedSize: 1_000, Containers: 1 }),
+      ],
+    });
+    expect(usage.images.totalSize).toBe(107_357_323_923);
+    expect(usage.images.reclaimable).toBe(41_752_766_763);
+  });
+
+  it("leaves out build cache records whose blobs an image still holds", () => {
+    const usage = summarizeDiskUsage({
+      BuildCache: [
+        { ID: "a", Size: 100, InUse: false, Shared: false },
+        { ID: "b", Size: 200, InUse: false, Shared: true },
+        { ID: "c", Size: 400, InUse: true, Shared: false },
+      ],
+    });
+    expect(usage.buildCache.totalSize).toBe(700);
+    expect(usage.buildCache.reclaimable).toBe(100);
+  });
+
+  it("counts container writable layers and volume usage", () => {
+    const usage = summarizeDiskUsage({
+      Containers: [{ Id: "a", SizeRw: 50, SizeRootFs: 0 }],
+      Volumes: [{ Name: "v", UsageData: { Size: 25, RefCount: 0 } }],
+    });
+    expect(usage.containers.totalSize).toBe(50);
+    expect(usage.volumes.totalSize).toBe(25);
+  });
+
+  it("survives a response with every section missing", () => {
+    const usage = summarizeDiskUsage({});
+    expect(usage.total).toBe(0);
+    expect(usage.images.reclaimable).toBe(0);
+  });
+
+  it("totals the four sections", () => {
+    const usage = summarizeDiskUsage({
+      LayersSize: 100,
+      Images: [image({ Size: 100, SharedSize: 0, Containers: 1 })],
+      Containers: [{ Id: "a", SizeRw: 10, SizeRootFs: 0 }],
+      Volumes: [{ Name: "v", UsageData: { Size: 5, RefCount: 1 } }],
+      BuildCache: [{ ID: "a", Size: 2, InUse: true, Shared: false }],
+    });
+    expect(usage.total).toBe(117);
   });
 });
 
