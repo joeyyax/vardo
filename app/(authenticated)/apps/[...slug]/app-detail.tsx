@@ -319,6 +319,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         featureFlags={featureFlags}
         allTags={allTags}
         siblings={siblings}
+        allParentApps={allParentApps}
       />
     );
   }
