@@ -69,7 +69,7 @@ import { useCancelDeploy, useSlotStatus } from "./hooks/use-app-actions";
 import { appActionMenu, type AppAction, type AppActionItem } from "@/lib/ui/app-actions";
 import { AppNetworking } from "./app-networking";
 import { AppConnect } from "./app-connect";
-import { AppSettingsDialog } from "./app-settings-dialog";
+import { AppSettingsPanel } from "./app-settings-panel";
 import { AppDebug } from "./app-debug";
 import { ComposeDetail } from "./compose-detail";
 import { AppSecurity } from "./app-security";
@@ -92,7 +92,6 @@ function buildAppPath(appName: string, environments: Environment[], envId: strin
 
 export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = [], allAppNames = [], orgVarKeys = [], siblings = [], initialTab = "deployments", initialEnv, initialSubView, featureFlags, parentApp = null }: AppDetailProps) {
   const router = useRouter();
-  const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteEnvOpen, setDeleteEnvOpen] = useState(false);
   const [stopOpen, setStopOpen] = useState(false);
@@ -478,7 +477,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
             )}
             {!app.isSystemManaged && (
               <>
-                <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
+                <Button size="sm" variant="outline" onClick={() => setActiveTab("settings")}>
                   <Pencil className="mr-1.5 size-4" />
                   Edit
                 </Button>
@@ -498,7 +497,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                         <>
                           <DropdownMenuItem
                             className="text-muted-foreground"
-                            onClick={() => setEditOpen(true)}
+                            onClick={() => setActiveTab("settings")}
                           >
                             <Plus className="mr-2 size-3.5" />
                             Assign parent
@@ -756,6 +755,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                     { value: "variables", label: "Variables", count: app.envVars.length },
                     { value: "networking", label: "Networking" },
                     ...(featureFlags?.cron !== false ? [{ value: "cron", label: "Cron" }] : []),
+                    { value: "settings", label: "Settings" },
                   ],
                 },
                 {
@@ -882,6 +882,16 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           </TabsContent>
         )}
 
+        <TabsContent value="settings" className={tabPanelSurface}>
+          <AppSettingsPanel
+            app={app}
+            orgId={orgId}
+            userRole={userRole}
+            allParentApps={allParentApps}
+            handleDeploy={handleDeploy}
+          />
+        </TabsContent>
+
         {featureFlags?.terminal !== false && (
           <TabsContent value="terminal" className={cn(tabPanelSurface, "space-y-4")}>
             <p className="text-sm text-muted-foreground">
@@ -936,17 +946,6 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         onSelectEnv={setSelectedEnvId}
       />
       )}
-
-      {/* Edit Settings Dialog */}
-      <AppSettingsDialog
-        app={app}
-        orgId={orgId}
-        userRole={userRole}
-        open={editOpen}
-        onOpenChange={setEditOpen}
-        allParentApps={allParentApps}
-        handleDeploy={handleDeploy}
-      />
 
       {/* Stop Confirmation */}
       <ConfirmDeleteDialog

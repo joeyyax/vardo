@@ -39,20 +39,34 @@ export type AppCondition = {
   detail: string;
 };
 
-/** Consecutive samples per kind: positive counts agreeing, negative disagreeing. */
-export type ConditionStreaks = Partial<Record<ConditionKind, number>>;
+/** Evaluator state for one kind, carried between ticks by the caller. */
+export type ConditionStreak = {
+  /** Consecutive samples: positive counts agreeing, negative disagreeing. */
+  streak: number;
+  /** Epoch ms the current agreeing run began. Undefined while the signal is off. */
+  activeSince?: number;
+};
+
+export type ConditionStreaks = Partial<Record<ConditionKind, ConditionStreak>>;
 
 /** Fraction of the memory limit at which an app counts as under pressure. */
 export const MEMORY_PRESSURE_RATIO = 0.9;
 
 /**
- * Samples a threshold condition must hold before it is confirmed, and samples it
+ * How long a container must stay over MEMORY_PRESSURE_RATIO before it counts as
+ * sustained. A startup burst or a collector's housekeeping pass clears the ratio
+ * for a minute or two; those are spikes and the metrics chart already shows them.
+ */
+export const MEMORY_PRESSURE_SUSTAINED_MS = 10 * 60_000;
+
+/**
+ * How long a threshold condition must hold before it is confirmed, and samples it
  * must fail before it clears. Asymmetric on purpose — an app sitting on the line
  * would otherwise flip on every poll and strobe the card. Kinds absent here are
  * discrete facts and switch on the first sample.
  */
-export const HYSTERESIS: Partial<Record<ConditionKind, { enter: number; clear: number }>> = {
-  "memory-pressure": { enter: 2, clear: 4 },
+export const HYSTERESIS: Partial<Record<ConditionKind, { sustainedMs: number; clear: number }>> = {
+  "memory-pressure": { sustainedMs: MEMORY_PRESSURE_SUSTAINED_MS, clear: 4 },
 };
 
 const SEVERITY: Record<ConditionKind, ConditionSeverity> = {
@@ -103,8 +117,13 @@ export type ConditionInput = {
   cert: { domain: string; expiresAt: number; checkedAt: number } | null;
 };
 
-/** A signal, plus a severity when it differs from the kind's default. */
-type Signal = { detail: string; severity?: ConditionSeverity };
+/**
+ * A signal, plus a severity when it differs from the kind's default. `active`
+ * false is a reading that is not itself a fault — it carries no weight toward
+ * raising, and exists so a condition held open by hysteresis can report the
+ * current number instead of the one that confirmed it.
+ */
+type Signal = { detail: string; severity?: ConditionSeverity; active?: boolean };
 
 /** The raw signal for each kind this tick, before hysteresis. */
 function rawSignals(input: ConditionInput): Partial<Record<ConditionKind, Signal>> {
@@ -125,9 +144,9 @@ function rawSignals(input: ConditionInput): Partial<Record<ConditionKind, Signal
 
   if (input.memory && input.memory.limit > 0) {
     const ratio = input.memory.usage / input.memory.limit;
-    if (ratio >= MEMORY_PRESSURE_RATIO) {
-      out["memory-pressure"] = { detail: `${Math.round(ratio * 100)}% of memory limit` };
-    }
+    const over = ratio >= MEMORY_PRESSURE_RATIO;
+    const pct = `${Math.round(ratio * 100)}% of memory limit`;
+    out["memory-pressure"] = { detail: over ? pct : `${pct}, easing`, active: over };
   }
 
   if (input.security && (input.security.critical > 0 || input.security.warning > 0)) {
@@ -215,12 +234,15 @@ export function evaluateConditions(
 
   for (const kind of Object.keys(SEVERITY) as ConditionKind[]) {
     const signal = raw[kind];
-    const active = signal !== undefined;
+    const active = signal !== undefined && signal.active !== false;
     const was = prevByKind.get(kind);
 
-    const prior = streaks[kind] ?? 0;
-    const streak = active ? Math.max(prior, 0) + 1 : Math.min(prior, 0) - 1;
-    nextStreaks[kind] = streak;
+    const prior = streaks[kind];
+    const streak = active
+      ? Math.max(prior?.streak ?? 0, 0) + 1
+      : Math.min(prior?.streak ?? 0, 0) - 1;
+    const activeSince = active ? (prior?.activeSince ?? input.now) : undefined;
+    nextStreaks[kind] = { streak, activeSince };
 
     const gate = HYSTERESIS[kind];
     let held: boolean;
@@ -229,15 +251,17 @@ export function evaluateConditions(
     } else if (was) {
       held = streak > -gate.clear;
     } else {
-      held = streak >= gate.enter;
+      held = activeSince !== undefined && input.now - activeSince >= gate.sustainedMs;
     }
 
     if (!held) continue;
     conditions.push({
       kind,
       severity: signal?.severity ?? SEVERITY[kind],
-      since: was?.since ?? new Date(input.now).toISOString(),
-      // A condition kept alive by hysteresis reports the reading that confirmed it.
+      // A gated kind dates from when the reading crossed, not when it was
+      // confirmed, so "for 20 minutes" is the overage and not the record's age.
+      since: was?.since ?? new Date(activeSince ?? input.now).toISOString(),
+      // Only a tick with no reading at all falls back to the confirming one.
       detail: signal?.detail ?? was?.detail ?? "",
     });
   }
