@@ -12,6 +12,7 @@ import { promisify } from "util";
 import { readlink } from "fs/promises";
 import { join } from "path";
 import { appBaseDir, appEnvDir } from "@/lib/paths";
+import { assertAppDirOwnership } from "./app-dir-owner";
 import {
   slotComposeFiles,
 } from "./compose";
@@ -674,6 +675,14 @@ export async function stopProject(
 ): Promise<{ success: boolean; log: string }> {
   const logs: string[] = [];
   try {
+    // Every path below reaches `docker compose down` through a name-derived
+    // directory. Do not move or remove this.
+    await assertAppDirOwnership({
+      appId,
+      appName,
+      operation: removeVolumes ? "stop and remove volumes for" : "stop",
+    });
+
     if (environmentName) {
       // Stop specific environment
       const envDir = appEnvDir(appName, environmentName);

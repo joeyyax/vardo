@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { apps, projects, volumes } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { stopProject } from "./deploy";
+import { assertAppDirOwnership } from "./app-dir-owner";
 import { listVolumes, removeVolume, stripDockerProjectPrefix } from "./client";
 import { recordActivity } from "@/lib/activity";
 
@@ -124,6 +125,14 @@ export async function deleteApp(opts: {
       eq(apps.organizationId, organizationId)
     ),
     columns: { id: true, name: true, persistentVolumes: true },
+  });
+
+  // Throws before anything is torn down or removed from the database, so a
+  // refusal can't leave another org's containers running with the row gone.
+  await assertAppDirOwnership({
+    appId: app.parentAppId ?? appId,
+    appName: baseProject,
+    operation: "delete",
   });
 
   // Bring containers down WITHOUT removing volumes — always safe first step.
