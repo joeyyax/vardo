@@ -1,6 +1,10 @@
 import { NextRequest } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { getSession } from "@/lib/auth/session";
+import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { db } from "@/lib/db";
+import { deployments } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 import { startGateway } from "@/lib/sse/gateway";
 import { closeOnShutdown } from "@/lib/shutdown";
 
@@ -32,7 +36,23 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return new Response("Forbidden", { status: 403 });
+
     const deployId = url.searchParams.get("deploy") ?? undefined;
+
+    // A deploy log is only streamable through the org that owns its app.
+    if (deployId) {
+      const deployment = await db.query.deployments.findFirst({
+        where: eq(deployments.id, deployId),
+        columns: { id: true },
+        with: { app: { columns: { organizationId: true } } },
+      });
+      if (deployment?.app?.organizationId !== orgId) {
+        return new Response("Not found", { status: 404 });
+      }
+    }
+
     const lastEventId = url.searchParams.get("lastEventId") ?? undefined;
     const lastDeployId = url.searchParams.get("lastDeployId") ?? undefined;
     const lastToastId = url.searchParams.get("lastToastId") ?? undefined;

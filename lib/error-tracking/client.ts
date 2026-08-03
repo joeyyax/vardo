@@ -212,6 +212,16 @@ export async function listIssues(appName: string, opts?: { limit?: number }): Pr
   }
 }
 
+/** Get the slug of the project an issue belongs to. Null if missing or unreachable. */
+export async function getIssueProjectSlug(issueId: number): Promise<string | null> {
+  try {
+    const issue = await apiFetch<{ project?: { slug?: string } }>(`/api/0/issues/${issueId}/`);
+    return issue.project?.slug ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** Get a single issue's latest event (with stack trace). */
 export async function getIssueLatestEvent(issueId: number): Promise<GlitchTipEvent | null> {
   try {

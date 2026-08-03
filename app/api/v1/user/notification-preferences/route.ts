@@ -8,6 +8,7 @@ import {
   userDigestPreferences,
 } from "@/lib/db/schema";
 import { requireSession } from "@/lib/auth/session";
+import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { ALL_EVENT_TYPES } from "@/lib/bus/events";
@@ -41,13 +42,14 @@ const putSchema = z.discriminatedUnion("type", [
  */
 export async function GET(req: NextRequest) {
   try {
-    const session = await requireSession();
-    const userId = session.user.id;
-
     const orgId = req.nextUrl.searchParams.get("orgId");
     if (!orgId) {
       return NextResponse.json({ error: "orgId is required" }, { status: 400 });
     }
+
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    const userId = org.session.user.id;
 
     const [channels, prefs, digestPref] = await Promise.all([
       db.query.notificationChannels.findMany({
@@ -94,8 +96,7 @@ export async function GET(req: NextRequest) {
  */
 async function handlePut(req: NextRequest) {
   try {
-    const session = await requireSession();
-    const userId = session.user.id;
+    await requireSession();
 
     const body = await req.json();
     const parsed = putSchema.safeParse(body);
@@ -106,6 +107,10 @@ async function handlePut(req: NextRequest) {
         { status: 400 },
       );
     }
+
+    const org = await verifyOrgAccess(parsed.data.orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    const userId = org.session.user.id;
 
     if (parsed.data.type === "digest") {
       const { orgId, digestEnabled } = parsed.data;
