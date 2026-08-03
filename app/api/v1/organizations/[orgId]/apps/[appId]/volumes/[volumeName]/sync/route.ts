@@ -90,7 +90,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     let imageName = app.imageName;
     if (!imageName) {
       try {
-        const containers = await listContainers(app.name);
+        const containers = await listContainers(app);
         if (containers.length > 0) {
           imageName = containers[0].image;
         }
@@ -107,7 +107,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     // Find Docker volume name
     let dockerVolumeName: string | null = null;
     try {
-      const containers = await listContainers(app.name);
+      const containers = await listContainers(app);
       for (const container of containers) {
         const info = await inspectContainer(container.id);
         for (const mount of info.mounts) {
