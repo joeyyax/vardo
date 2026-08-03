@@ -78,6 +78,7 @@ vi.mock("@/lib/backups/storage-factory", () => ({
 }));
 
 import { runBackup } from "@/lib/backups/engine";
+import { EMPTY_SOURCE_MARKER } from "@/lib/backups/archive";
 import { backupJobs } from "@/lib/db/schema";
 
 // Stands in for docker/bash: writes the archive the engine then verifies.
@@ -434,6 +435,92 @@ describe("runBackup — progress events", () => {
     expect(results.map((r) => r.outcome)).toEqual(["success", "success"]);
     expect(uploadMock).toHaveBeenCalledTimes(2);
     expect(updated.filter((u) => u.set.status === "success")).toHaveLength(2);
+  });
+});
+
+// A tar.gz of an empty directory is ~87 bytes, under the size floor. Whether
+// that is correct output or a truncated archive is decided by what the
+// archiving container reported about the source, never by the size.
+describe("runBackup — tiny archives", () => {
+  const TINY = Buffer.alloc(87, 0);
+
+  /** Replaces the archiving container with a specific body, stdout and gzip verdict. */
+  function stubArchive(opts: { bytes: Buffer; stdout?: string; gzipOk?: boolean }) {
+    execFileMock.mockImplementation((...args: unknown[]) => {
+      const [file, argv] = args as [string, string[]];
+      const cb = args[args.length - 1] as (e: unknown, r: unknown) => void;
+
+      if (file === "docker" && argv[0] === "run") {
+        const mount = argv.find((a) => typeof a === "string" && a.endsWith(":/backup"))!;
+        writeFileSync(join(mount.slice(0, -":/backup".length), "volume.tar.gz"), opts.bytes);
+        return cb(null, { stdout: opts.stdout ?? "", stderr: "" });
+      }
+      if (file === "gzip" && opts.gzipOk === false) {
+        return cb(new Error("unexpected end of file"), null);
+      }
+      cb(null, { stdout: "", stderr: "" });
+    });
+  }
+
+  it("succeeds when the container reports the source empty", async () => {
+    backupJobsFindFirst.mockResolvedValue(job());
+    volumesPerApp([volume({ name: "letsencrypt" })]);
+    stubArchive({ bytes: TINY, stdout: `${EMPTY_SOURCE_MARKER}\n` });
+
+    const results = await runBackup("job-1");
+
+    expect(results[0].outcome).toBe("success");
+    expect(uploadMock).toHaveBeenCalledTimes(1);
+    const row = updated.find((u) => u.set.status === "success")!;
+    expect(String(row.set.log)).toMatch(/is empty — archived 0 files/);
+  });
+
+  it("fails on a truncated archive, which reports nothing about the source", async () => {
+    backupJobsFindFirst.mockResolvedValue(job());
+    volumesPerApp([volume({ name: "letsencrypt" })]);
+    stubArchive({ bytes: TINY });
+
+    const results = await runBackup("job-1");
+
+    expect(results[0].outcome).toBe("failed");
+    expect(results[0].error).toMatch(/87-byte file/);
+    expect(uploadMock).not.toHaveBeenCalled();
+  });
+
+  it("fails a corrupt archive even when the source was empty", async () => {
+    backupJobsFindFirst.mockResolvedValue(job());
+    volumesPerApp([volume({ name: "letsencrypt" })]);
+    stubArchive({ bytes: TINY, stdout: EMPTY_SOURCE_MARKER, gzipOk: false });
+
+    const results = await runBackup("job-1");
+
+    expect(results[0].outcome).toBe("failed");
+    expect(results[0].error).toMatch(/gzip -t failed/);
+    expect(uploadMock).not.toHaveBeenCalled();
+  });
+
+  it("still fails a tiny dump — an empty dump is never correct output", async () => {
+    backupJobsFindFirst.mockResolvedValue(job());
+    volumesPerApp([
+      volume({
+        backupStrategy: "dump",
+        backupMeta: { dumpCmd: "docker exec pg pg_dump -U u db", restoreCmd: "" },
+      }),
+    ]);
+    execFileMock.mockImplementation((...args: unknown[]) => {
+      const [file, argv] = args as [string, string[]];
+      const cb = args[args.length - 1] as (e: unknown, r: unknown) => void;
+      if (file === "bash") {
+        const dest = /> "([^"]+)"/.exec(argv[1])!;
+        writeFileSync(dest[1], TINY);
+      }
+      cb(null, { stdout: "", stderr: "" });
+    });
+
+    const results = await runBackup("job-1");
+
+    expect(results[0].outcome).toBe("failed");
+    expect(results[0].error).toMatch(/too small to be valid/);
   });
 });
 
