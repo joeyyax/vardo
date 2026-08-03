@@ -8,6 +8,7 @@
 
 import { worstCondition, type AppCondition } from "@/lib/docker/conditions";
 import { conditionLabel, conditionTone } from "@/lib/ui/conditions";
+import { restartCue } from "@/lib/ui/stability";
 
 /** How loud a row is allowed to be. Only warning and critical earn a rail. */
 export type RowSeverity = "none" | "info" | "warning" | "critical";
@@ -183,6 +184,16 @@ export function rowNote(
     };
   }
   return fallback ?? null;
+}
+
+/**
+ * The restart cue as a note, or null when the count is unread or ordinary. A
+ * row carries the count alone; the anchor it resets from is a detail-page fact.
+ */
+export function restartNote(count: number | null | undefined): RowNote | null {
+  if (count === null || count === undefined) return null;
+  const cue = restartCue({ count, since: null });
+  return cue && { label: cue.label, tone: cue.tone, detail: cue.title };
 }
 
 // ---------------------------------------------------------------------------
