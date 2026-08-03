@@ -3,7 +3,7 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { listContainers } from "@/lib/docker/client";
+import { listAppContainers } from "@/lib/docker/app-containers";
 import { createExec, startExec, resizeExec } from "@/lib/docker/exec";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import net from "node:net";
@@ -58,7 +58,16 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const app = await db.query.apps.findFirst({
       where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
-      columns: { id: true, name: true },
+      columns: {
+        id: true,
+        name: true,
+        status: true,
+        parentAppId: true,
+        composeService: true,
+        containerName: true,
+        importedContainerId: true,
+      },
+      with: { parentApp: { columns: { name: true } } },
     });
 
     if (!app) {
@@ -69,7 +78,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const searchParams = request.nextUrl.searchParams;
     let containerId = searchParams.get("container");
 
-    const containers = await listContainers(app);
+    // Narrowed to this app's own service, so a stack child cannot exec into a sibling.
+    const containers = await listAppContainers(app);
     const runningContainers = containers.filter((c) => c.state === "running");
 
     if (runningContainers.length === 0) {
@@ -83,7 +93,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       containerId = runningContainers[0].id;
     }
 
-    // Verify the container belongs to this app
     const container = runningContainers.find((c) => c.id === containerId);
     if (!container) {
       return new Response(

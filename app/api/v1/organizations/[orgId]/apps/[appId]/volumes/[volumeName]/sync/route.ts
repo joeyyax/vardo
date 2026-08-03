@@ -5,7 +5,8 @@ import { apps, volumes } from "@/lib/db/schema";
 import { verifyAppAccess } from "@/lib/api/verify-access";
 import { eq, and } from "drizzle-orm";
 import { syncFilesFromImage } from "@/lib/volumes/diff";
-import { listContainers, inspectContainer, resolveVolumeName } from "@/lib/docker/client";
+import { inspectContainer, resolveVolumeName } from "@/lib/docker/client";
+import { listAppContainers } from "@/lib/docker/app-containers";
 import { z } from "zod";
 import { recordActivity } from "@/lib/activity";
 
@@ -81,7 +82,18 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     // Get the app's image name
     const app = await db.query.apps.findFirst({
       where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
-      columns: { id: true, name: true, imageName: true, organizationId: true },
+      columns: {
+        id: true,
+        name: true,
+        imageName: true,
+        organizationId: true,
+        status: true,
+        parentAppId: true,
+        composeService: true,
+        containerName: true,
+        importedContainerId: true,
+      },
+      with: { parentApp: { columns: { name: true } } },
     });
     if (!app) {
       return NextResponse.json({ error: "App not found" }, { status: 404 });
@@ -90,7 +102,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     let imageName = app.imageName;
     if (!imageName) {
       try {
-        const containers = await listContainers(app);
+        const containers = await listAppContainers(app);
         if (containers.length > 0) {
           imageName = containers[0].image;
         }
@@ -107,7 +119,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     // Find Docker volume name
     let dockerVolumeName: string | null = null;
     try {
-      const containers = await listContainers(app);
+      const containers = await listAppContainers(app);
       for (const container of containers) {
         const info = await inspectContainer(container.id);
         for (const mount of info.mounts) {
