@@ -26,6 +26,19 @@ export type DeployStage =
   | "cleanup"
   | "done";
 
+/** The phases in the order a deploy runs them. */
+export const DEPLOY_STAGE_ORDER: DeployStage[] = [
+  "queued",
+  "clone",
+  "compose",
+  "build",
+  "deploy",
+  "healthcheck",
+  "routing",
+  "cleanup",
+  "done",
+];
+
 /**
  * Phases of an auto-rollback, named for the steps performRollback runs.
  * A rollback restores an already-built slot, so it shares no phase with a deploy.

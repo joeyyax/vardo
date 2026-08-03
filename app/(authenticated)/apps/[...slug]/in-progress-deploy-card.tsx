@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, Check, X, ChevronDown, Minus } from "lucide-react";
+import { Loader2, X, ChevronDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TerminalOutput, highlightLogLine, detectLogLevel } from "@/components/log-viewer";
@@ -10,8 +10,18 @@ import {
   DEPLOY_STAGE_KEYS,
   ROLLBACK_STAGE_KEYS,
   STAGE_LABELS,
+  stageProgress,
 } from "@/lib/ui/deploy-stage";
 import type { StageTiming } from "./hooks/use-deploy";
+
+/** Spoken status for each step, since the row states it in color and shape. */
+const STAGE_STATUS_WORDS: Record<string, string> = {
+  running: "in progress",
+  success: "done",
+  failed: "failed",
+  skipped: "skipped",
+  pending: "pending",
+};
 
 export function InProgressDeployCard({
   stages,
@@ -46,6 +56,7 @@ export function InProgressDeployCard({
   const isRollback = ROLLBACK_STAGE_KEYS.some((s) => stages[s]);
   const stageKeys = isRollback ? ROLLBACK_STAGE_KEYS : DEPLOY_STAGE_KEYS;
   const noun = isRollback ? "Rollback" : "Deployment";
+  const progress = stageProgress(stages, stageKeys);
   const runningStage = stageKeys.find((s) => stages[s] === "running");
   const failedStage = stageKeys.find((s) => stages[s] === "failed");
   const allDone = hasStages && stageKeys.filter((s) => stages[s]).every((s) => stages[s] === "success" || stages[s] === "skipped");
@@ -74,33 +85,32 @@ export function InProgressDeployCard({
             <Loader2 className="mr-1 size-3 animate-spin" />
             {cancelling ? "Cancelling" : isRollback ? "Rolling back" : "Deploying"}
           </Badge>
+          {/* One axis of emphasis: only the phase in flight carries color, so
+              finished work reads as context rather than as news. */}
           <div className="flex items-center gap-1.5 flex-wrap">
             {stageKeys.map((s, i) => {
               const status = stages[s];
               const timing = stageTimes?.[s];
+              const running = status === "running";
+              const failed = status === "failed";
               return (
                 <div key={s} className="flex items-center gap-1">
-                  {i > 0 && <span className="text-muted-foreground/30 text-xs">›</span>}
-                  {!status && <span className="size-1.5 rounded-full bg-muted-foreground/30" />}
-                  {status === "running" && <Loader2 className="size-3 animate-spin text-status-info" />}
-                  {status === "success" && <Check className="size-3 text-status-success" />}
-                  {status === "failed" && <X className="size-3 text-status-error" />}
-                  {status === "skipped" && <Minus className="size-3 text-muted-foreground/60" />}
+                  {i > 0 && <span className="text-muted-foreground/25 text-xs">·</span>}
+                  {running && <Loader2 className="size-3 animate-spin text-status-info" />}
+                  {failed && <X className="size-3 text-status-error" />}
                   <span className={`text-xs transition-colors duration-300 ${
-                    status === "running" ? "text-status-info" :
-                    status === "success" ? "text-status-success" :
-                    status === "failed" ? "text-status-error" :
-                    status === "skipped" ? "text-muted-foreground/60 line-through" :
+                    failed ? "text-status-error font-medium" :
+                    running ? "text-status-info font-medium" :
+                    status === "skipped" ? "text-muted-foreground/50 line-through" :
+                    status ? "text-muted-foreground" :
                     "text-muted-foreground/40"
                   }`}>
                     {STAGE_LABELS[s]}
                   </span>
-                  {timing && status !== "skipped" && (
-                    <span className="text-[10px] text-muted-foreground tabular-nums">
-                      {timing.endedAt
-                        ? formatDuration(timing.endedAt - timing.startedAt)
-                        : <Timer since={timing.startedAt} />}
-                    </span>
+                  {/* Shape and color are the only cues left on the row. */}
+                  <span className="sr-only">{STAGE_STATUS_WORDS[status ?? "pending"]}</span>
+                  {running && timing && (
+                    <Timer since={timing.startedAt} className="text-[10px] text-status-info/70" />
                   )}
                 </div>
               );
@@ -112,7 +122,8 @@ export function InProgressDeployCard({
         </div>
         <div className="flex items-center gap-3 shrink-0">
           {startTime && (
-            <span className="text-xs text-foreground/50">
+            <span className="text-xs text-foreground/50 tabular-nums">
+              {progress.position > 0 ? `${progress.position} of ${progress.total} · ` : ""}
               <Timer since={startTime} />
               {typicalDurationMs ? ` / usually ${formatDuration(typicalDurationMs)}` : ""}
             </span>

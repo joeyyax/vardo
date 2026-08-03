@@ -21,7 +21,7 @@ import { sharedProjectName } from "./slot-partition";
 import { readSlotPartition } from "./shared-project";
 import { recordActivity } from "@/lib/activity";
 import { DeployBlockedError } from "./errors";
-import { createDeployLogger } from "./deploy-logger";
+import { createDeployLogger, DEPLOY_STAGE_ORDER } from "./deploy-logger";
 import type { DeployStage } from "./deploy-logger";
 import type { DeployContext } from "./deploy-context";
 import {
@@ -123,12 +123,28 @@ export async function runDeployment(
       .catch(() => {});
   }
 
-  function stage(s: DeployStage, status: "running" | "success" | "failed" | "skipped") {
-    currentStage = s;
+  type StageStatus = "running" | "success" | "failed" | "skipped";
+  const stageStatus = new Map<DeployStage, StageStatus>();
+
+  function emitStage(s: DeployStage, status: StageStatus) {
+    stageStatus.set(s, status);
     opts.onStage?.(s, status);
     streamLogger.stage(s, status);
     flushLog();
     redis.set(`deploy:stage:${opts.appId}`, s, "EX", 660).catch(() => {});
+  }
+
+  function stage(s: DeployStage, status: StageStatus) {
+    // A step that opens a phase and returns without closing it would leave the
+    // progress header spinning on it for the rest of the deploy.
+    const reached = DEPLOY_STAGE_ORDER.indexOf(s);
+    if (reached > 0) {
+      for (const earlier of DEPLOY_STAGE_ORDER.slice(0, reached)) {
+        if (stageStatus.get(earlier) === "running") emitStage(earlier, "success");
+      }
+    }
+    currentStage = s;
+    emitStage(s, status);
   }
 
   function checkAbort() {
