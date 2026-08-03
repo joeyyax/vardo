@@ -24,6 +24,9 @@ export async function registerMonitoringPlugin(): Promise<void> {
         appId: context.appId as string,
         organizationId: context.organizationId as string,
         appName: context.appName as string,
+        // Without this the check falls back to the app's default environment,
+        // so a staging deploy reads production's containers.
+        envName: context.envName as string | undefined,
         log: () => "", // Drift check is non-blocking, logs to its own output
       });
       return { allowed: true, reason: "Drift check completed" };
