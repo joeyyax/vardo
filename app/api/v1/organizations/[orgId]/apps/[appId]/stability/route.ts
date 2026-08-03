@@ -7,11 +7,13 @@ import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { db } from "@/lib/db";
 import { restartReading } from "@/lib/db/app-restarts";
 import { apps } from "@/lib/db/schema";
+import { RECONCILE_INTERVAL_MS } from "@/lib/docker/status-reconcile";
 
 /**
  * The restart counter as the status reconciler last read it, with the point it
- * counts from. The same stored figure the list rows carry — an inspect here
- * would give the same app two answers, and null is not zero in either.
+ * counts from. The same stored figure the list rows and the app page carry — an
+ * inspect here would give the same app two answers, and null is not zero in any
+ * of them. API callers only: the app page reads the columns server-side.
  */
 async function handler(
   _request: NextRequest,
@@ -29,7 +31,8 @@ async function handler(
     if (!app) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     const res = NextResponse.json({ restarts: restartReading(app) });
-    res.headers.set("Cache-Control", "private, max-age=15");
+    // One reconciler tick. Anything shorter refetches a figure that cannot have moved.
+    res.headers.set("Cache-Control", `private, max-age=${RECONCILE_INTERVAL_MS / 1000}`);
     return res;
   } catch (error) {
     return handleRouteError(error, "Error reading container restarts");

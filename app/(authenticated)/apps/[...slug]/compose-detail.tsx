@@ -54,7 +54,7 @@ import { AppNetworking } from "./app-networking";
 import { AppSecurity } from "./app-security";
 import { AppErrors } from "./app-errors";
 import { AppStability } from "./app-stability";
-import type { Incident } from "@/lib/ui/stability";
+import type { Incident, RestartReading } from "@/lib/ui/stability";
 import type { LifecycleEvent } from "@/lib/ui/lifecycle";
 import { CronManager } from "./app-cron";
 import { AppDebug } from "./app-debug";
@@ -688,6 +688,7 @@ export function ComposeDetail({
   allTags = [],
   siblings = [],
   stabilityIncidents = [],
+  restarts = null,
   lifecycleEvents = [],
   allParentApps = [],
 }: {
@@ -701,6 +702,8 @@ export function ComposeDetail({
   siblings?: { id: string; name: string; displayName: string; status: string; dependsOn: string[] | null }[];
   /** Durable stability history, newest first. */
   stabilityIncidents?: Incident[];
+  /** The stored restart counter, null when there was nothing to read. */
+  restarts?: RestartReading | null;
   /** Restarts, stops and starts an operator ran, newest first. */
   lifecycleEvents?: LifecycleEvent[];
   allParentApps?: { id: string; name: string; color: string }[];
@@ -1115,6 +1118,7 @@ export function ComposeDetail({
         stack={rollupHealth(services)}
         deployStage={currentStageLabel(deploy.deployStages)}
         stabilityIncidents={stabilityIncidents}
+        restarts={restarts}
       />
 
 
@@ -1312,7 +1316,7 @@ export function ComposeDetail({
         </TabsContent>
 
         <TabsContent value="stability">
-          <AppStability orgId={orgId} app={app} incidents={stabilityIncidents} />
+          <AppStability app={app} incidents={stabilityIncidents} restarts={restarts} />
         </TabsContent>
 
         {featureFlags?.logging !== false && (

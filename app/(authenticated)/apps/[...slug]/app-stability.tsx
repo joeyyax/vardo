@@ -21,12 +21,11 @@ import {
   trendTone,
   TREND_WINDOW_MS,
   type Incident,
+  type RestartReading,
   type StabilityTrend,
 } from "@/lib/ui/stability";
-import { useRestartReading } from "./use-restarts";
 
 export type StabilityApp = {
-  id: string;
   status: string;
   statusChangedAt: Date | string | null;
   conditions: AppCondition[] | null;
@@ -52,16 +51,16 @@ function useNow(): number {
  * signals were already being collected and thrown away.
  */
 export function AppStability({
-  orgId,
   app,
   incidents,
+  restarts = null,
 }: {
-  orgId: string;
   app: StabilityApp;
   /** Durable history, newest first. */
   incidents: Incident[];
+  /** The stored restart counter, null when there was nothing to read. */
+  restarts?: RestartReading | null;
 }) {
-  const restarts = useRestartReading(orgId, app.id);
   const now = useNow();
 
   const trend = stabilityTrend(incidents, now, app.createdAt);

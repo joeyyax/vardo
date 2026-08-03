@@ -42,7 +42,8 @@ export { parseExitCode };
 
 const log = logger.child("status-reconcile");
 
-const POLL_INTERVAL_MS = 60_000;
+/** How often Docker is polled. Nothing the reconciler writes moves faster. */
+export const RECONCILE_INTERVAL_MS = 60_000;
 /** Concurrent container inspects while resolving start times. */
 const INSPECT_CONCURRENCY = 8;
 
@@ -559,7 +560,7 @@ let unregisterShutdown: (() => void) | null = null;
 export function startStatusReconciler(): void {
   if (interval) return;
 
-  log.info(`Reconciler started (${POLL_INTERVAL_MS / 1000}s interval)`);
+  log.info(`Reconciler started (${RECONCILE_INTERVAL_MS / 1000}s interval)`);
   const tick = async () => {
     if (ticking) return;
     ticking = true;
@@ -574,7 +575,7 @@ export function startStatusReconciler(): void {
 
   // Run once at startup so a stale "active" doesn't survive until the first interval.
   setTimeout(tick, 5_000);
-  interval = setInterval(tick, POLL_INTERVAL_MS);
+  interval = setInterval(tick, RECONCILE_INTERVAL_MS);
 
   // Registered from the start function, not at module scope — importing this
   // module must not wire a shutdown for a reconciler that was never started.
