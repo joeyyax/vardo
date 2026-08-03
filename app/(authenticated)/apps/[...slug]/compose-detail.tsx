@@ -26,7 +26,6 @@ import {
 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { PageToolbar } from "@/components/page-toolbar";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
@@ -44,8 +43,10 @@ import { EnvEditor } from "@/components/env-editor";
 import { AppMetrics } from "./app-metrics";
 import { AppBackupHistory } from "@/components/backups/app-backup-history";
 import { StatusIndicator, Uptime } from "@/components/app-status";
-import { Sparkline, SPARKLINE_POINTS } from "@/components/app-metrics-card";
-import { CHART_COLORS } from "@/lib/metrics/constants";
+import { AppRow } from "@/components/app-row";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { SPARKLINE_POINTS } from "@/components/app-metrics-card";
+import { readingLabel, statusRank } from "@/lib/ui/app-row";
 import type { ContainerPoint } from "@/lib/metrics/types";
 import { formatBytes, formatCores } from "@/lib/metrics/format";
 import { AppDeployPanel } from "./app-deploy-panel";
@@ -84,18 +85,23 @@ const AppTerminal = dynamic(
 );
 
 // ---------------------------------------------------------------------------
-// Service card for the Services tab
+// Service rows for the Services tab
 // ---------------------------------------------------------------------------
+
+/** The tag half of an image ref, or null when the image is untagged. */
+function imageTag(imageName: string | null): string | null {
+  if (!imageName) return null;
+  const slash = imageName.lastIndexOf("/");
+  const colon = imageName.lastIndexOf(":");
+  return colon > slash ? imageName.slice(colon + 1) : null;
+}
 
 // Repo de-emphasized, tag as a discrete badge. The badge carries
 // data-slot="image-tag" so the image update checker can annotate it.
 // Labeled because compose can pin a different tag than the one deployed.
 function ImageRef({ imageName }: { imageName: string }) {
-  const slash = imageName.lastIndexOf("/");
-  const colon = imageName.lastIndexOf(":");
-  const hasTag = colon > slash;
-  const repo = hasTag ? imageName.slice(0, colon) : imageName;
-  const tag = hasTag ? imageName.slice(colon + 1) : null;
+  const tag = imageTag(imageName);
+  const repo = tag ? imageName.slice(0, imageName.lastIndexOf(":")) : imageName;
   return (
     <span className="flex items-center gap-1.5 min-w-0">
       <span className="type-label shrink-0 text-muted-foreground/50">Deployed</span>
@@ -125,24 +131,11 @@ function PendingImageRef({ pending }: { pending: PendingImage }) {
   );
 }
 
-// Marks a service a deploy leaves running instead of replacing.
-function SharedBadge() {
+function Detail({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <Badge
-      variant="outline"
-      className="shrink-0 border-border px-1.5 py-0 text-[11px] font-medium leading-4 text-muted-foreground"
-      title="Deployed once. A deploy leaves this service running instead of replacing it."
-    >
-      Shared
-    </Badge>
-  );
-}
-
-function Stat({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex min-w-0 flex-col gap-0.5">
-      <span className="type-label text-muted-foreground/70">{label}</span>
-      <span className="text-xs tabular-nums truncate">{children}</span>
+    <div className="flex gap-3">
+      <dt className="w-16 shrink-0 text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 flex-1 break-words text-foreground/90">{children}</dd>
     </div>
   );
 }
@@ -235,89 +228,54 @@ function ServiceMenu({ service, orgId }: { service: ChildApp; orgId: string }) {
   );
 }
 
-function ServiceCard({
+/** The context a service row's dot, tag column and icon strip encode, spelled out. */
+function ServiceRowCard({
   service,
   stats,
-  cpuHistory,
   pending,
-  orgId,
 }: {
   service: ChildApp;
   stats?: { cpuPercent: number; memoryUsage: number };
-  cpuHistory?: number[];
   pending?: PendingImage | null;
-  orgId: string;
 }) {
   const primaryDomain = service.domains.find((d) => d.isPrimary) || service.domains[0];
   const running = service.status === "active";
   const ports = formatPorts(service);
+
   return (
-    <div className="squircle relative flex flex-col rounded-lg bg-card shadow-card dark:border transition-shadow duration-200 hover:shadow-card-hover overflow-hidden">
-      {/* Covers the card so the whole surface opens the service, leaving the
-          action menu above it clickable. */}
-      <Link
-        href={`/apps/${service.name}`}
-        aria-label={`Open ${service.displayName}`}
-        className="absolute inset-0 z-10"
-      />
+    <div className="w-72 space-y-2.5 text-xs">
+      <div className="flex items-center justify-between gap-3">
+        <span className="truncate font-medium text-foreground">{service.displayName}</span>
+        <StatusIndicator
+          status={service.status}
+          needsRedeploy={!!service.needsRedeploy || !!pending}
+        />
+      </div>
 
-      {/* Raised panel: identity */}
-      <div className="relative flex-1 p-4">
-        {running && cpuHistory && cpuHistory.length > 1 && (
-          <Sparkline
-            data={cpuHistory}
-            className="absolute inset-0 w-full h-full pointer-events-none"
-            style={{ color: CHART_COLORS.cpu }}
-          />
+      <div className="space-y-1 border-t pt-2">
+        {service.imageName && <ImageRef imageName={service.imageName} />}
+        {pending && <PendingImageRef pending={pending} />}
+      </div>
+
+      <dl className="space-y-1 border-t pt-2">
+        <Detail label="Service">{service.composeService ?? service.name}</Detail>
+        {running && (
+          <Detail label="Usage">
+            {readingLabel(stats?.cpuPercent, formatCores)} ·{" "}
+            {readingLabel(stats?.memoryUsage, formatBytes)}
+          </Detail>
         )}
-
-        <div className="relative flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <h3 className="type-h3 truncate">{service.displayName}</h3>
-            <div className="flex min-w-0 items-center gap-1.5">
-              <p className="font-mono text-xs text-muted-foreground/60 truncate">
-                {service.composeService ?? service.name}
-              </p>
-              {service.isShared && <SharedBadge />}
-            </div>
-          </div>
-          <div className="relative z-20 flex items-center gap-1">
-            <StatusIndicator
-              status={service.status}
-              needsRedeploy={!!service.needsRedeploy || !!pending}
-            />
-            <ServiceMenu service={service} orgId={orgId} />
-          </div>
-        </div>
-
-        <div className="relative mt-2 space-y-1">
-          {service.imageName && <ImageRef imageName={service.imageName} />}
-          {pending && <PendingImageRef pending={pending} />}
-          {primaryDomain && (
-            <p className="font-mono text-xs text-muted-foreground truncate">
-              {primaryDomain.domain}
-            </p>
-          )}
-        </div>
-      </div>
-
-      {/* Recessed stats band */}
-      <div className="grid grid-cols-4 gap-2 border-t bg-background-deep px-4 py-3">
-        <Stat label="CPU">
-          {running && stats ? formatCores(stats.cpuPercent) : "—"}
-        </Stat>
-        <Stat label="Mem">
-          {running && stats ? formatBytes(stats.memoryUsage) : "—"}
-        </Stat>
-        <Stat label="Up">
-          {running && service.containerStartedAt ? (
+        {running && service.containerStartedAt && (
+          <Detail label="Uptime">
             <Uptime since={service.containerStartedAt} />
-          ) : (
-            "—"
-          )}
-        </Stat>
-        <Stat label="Port">{ports ?? "—"}</Stat>
-      </div>
+          </Detail>
+        )}
+        {ports && <Detail label="Ports">{ports}</Detail>}
+        {primaryDomain && <Detail label="Domain">{primaryDomain.domain}</Detail>}
+        {service.isShared && (
+          <Detail label="Shared">A deploy leaves this service running</Detail>
+        )}
+      </dl>
     </div>
   );
 }
@@ -377,27 +335,50 @@ function ComposeServices({
     return { stats, histories };
   }, [snapshots, services]);
 
-  // Two columns for the typical 2-4 service stack (4 reads as an even 2x2);
-  // the third column engages only past four.
+  // One line per service, problems first. The image tag takes the tag column,
+  // and everything the card carried moves to the hover card.
   return (
-    <div
-      className={`grid items-start gap-4 sm:grid-cols-2 ${
-        services.length > 4 ? "lg:grid-cols-3" : ""
-      }`}
-    >
-      {services.map((service) => (
-        <ServiceCard
-          key={service.id}
-          service={service}
-          orgId={orgId}
-          stats={stats.get(service.id)}
-          cpuHistory={histories.get(service.id)}
-          pending={pendingImageChange(
+    <div className="@container squircle rounded-lg bg-card p-1.5 shadow-card dark:border">
+      {[...services]
+        .sort(
+          (x, y) =>
+            statusRank(x.status) - statusRank(y.status) ||
+            x.displayName.localeCompare(y.displayName),
+        )
+        .map((service) => {
+          const pending = pendingImageChange(
             service.imageName,
             pinned.get(service.composeService ?? null) ?? null,
-          )}
-        />
-      ))}
+          );
+          const tags = [imageTag(service.imageName), service.isShared ? "shared" : null].filter(
+            (t): t is string => !!t,
+          );
+          return (
+            <Tooltip key={service.id}>
+              <TooltipTrigger asChild>
+                <AppRow
+                  app={{ ...service, tags }}
+                  href={`/apps/${service.name}`}
+                  series={histories.get(service.id)}
+                  updateCount={pending ? 1 : 0}
+                  trailing={<ServiceMenu service={service} orgId={orgId} />}
+                />
+              </TooltipTrigger>
+              <TooltipContent
+                side="right"
+                align="start"
+                sideOffset={6}
+                className="bg-popover text-popover-foreground border shadow-card-hover px-3 py-2.5 [&>span]:hidden"
+              >
+                <ServiceRowCard
+                  service={service}
+                  stats={stats.get(service.id)}
+                  pending={pending}
+                />
+              </TooltipContent>
+            </Tooltip>
+          );
+        })}
     </div>
   );
 }
