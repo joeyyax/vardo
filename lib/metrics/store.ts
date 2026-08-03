@@ -26,6 +26,9 @@ export {
   getLatestProjectDiskUsage,
 } from "./store-disk";
 
+export { storeLogCounts, queryLogCounts } from "./store-errors";
+export type { LogCountSample } from "./store-errors";
+
 export {
   storeBusinessMetric,
   queryBusinessMetric,
