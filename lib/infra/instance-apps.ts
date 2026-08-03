@@ -1,0 +1,40 @@
+// ---------------------------------------------------------------------------
+// Instance infrastructure
+//
+// Vardo's own stack and the shared core services. These are the platform every
+// organization runs on, not any one tenant's apps, so their state is reported
+// once at instance level rather than inside whichever org happens to hold the
+// rows. Identity is by name, not the is_system_managed flag — the flag is
+// backfilled onto compose children and a false one there must not unclassify
+// a Vardo container.
+// ---------------------------------------------------------------------------
+
+import { isVardoStack } from "@/lib/api/system-managed";
+import { isCoreServiceApp } from "./core-services";
+
+/** True for Vardo's own containers and the shared core services. */
+export function isInstanceInfraApp(name: string | null | undefined): boolean {
+  if (!name) return false;
+  return isVardoStack(name) || isCoreServiceApp(name);
+}
+
+/**
+ * Health-probe service names to the app row each one runs as. Lets a probe
+ * failure and the app's own conditions collapse into one subject instead of
+ * reporting the same outage twice under two names.
+ */
+const PROBE_APP_NAMES: Record<string, string> = {
+  PostgreSQL: "vardo-postgres",
+  Redis: "vardo-redis",
+  Traefik: "vardo-traefik",
+  WireGuard: "vardo-wireguard",
+  cAdvisor: "cadvisor",
+  Loki: "loki",
+  Promtail: "promtail",
+  GlitchTip: "glitchtip",
+};
+
+/** App backing a health probe, or null for probes with no app row (Docker). */
+export function probeAppName(serviceName: string): string | null {
+  return PROBE_APP_NAMES[serviceName] ?? null;
+}

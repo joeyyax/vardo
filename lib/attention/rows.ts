@@ -1,7 +1,6 @@
 import "server-only";
 
 import { and, desc, eq, gte, inArray, isNull } from "drizzle-orm";
-import { formatDistanceToNowStrict } from "date-fns";
 
 import { db } from "@/lib/db";
 import { apps, backups } from "@/lib/db/schema";
@@ -10,6 +9,7 @@ import { getCooldownUntil } from "@/lib/docker/image-updates/check";
 import { getAggregateUpdateStatus } from "@/lib/docker/image-updates/status";
 import { conditionRows, type AttentionRow } from "@/lib/ui/attention";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
+import { isInstanceInfraApp } from "@/lib/infra/instance-apps";
 import { getVersionData } from "@/lib/version";
 import { activityRows, getFleetActivity } from "./activity";
 import { getFleetAttention } from "./fleet";
@@ -58,7 +58,7 @@ export async function buildAttentionRows(
   { isAppAdmin }: BuildOptions,
 ): Promise<AttentionRow[]> {
   // Parents own the compose; including children would double-count updates.
-  const appRows = await db
+  const orgApps = await db
     .select({
       id: apps.id,
       name: apps.name,
@@ -75,6 +75,10 @@ export async function buildAttentionRows(
     .from(apps)
     .where(and(eq(apps.organizationId, orgId), isNull(apps.parentAppId)));
 
+  // Vardo's own stack and the core services report at instance level, to every
+  // session. Leaving them here too would give the Vardo org two rows per event.
+  const appRows = orgApps.filter((a) => !isInstanceInfraApp(a.name));
+
   const imageUpdatesEnabled = await isFeatureEnabledAsync("image-updates");
 
   const appIds = appRows.map((a) => a.id);
@@ -88,21 +92,6 @@ export async function buildAttentionRows(
   ]);
 
   const rows = conditionRows(appRows);
-
-  if (fleet.servicesDown.length > 0) {
-    rows.push({
-      key: "service-down",
-      label: "Service down",
-      tone: "error",
-      items: fleet.servicesDown.map((s) => ({
-        id: s.id,
-        name: s.name,
-        href: "/admin",
-        detail: `Last alert ${formatDistanceToNowStrict(new Date(s.lastFired))} ago`,
-      })),
-      footer: "Platform services Vardo depends on. Check the admin overview for reachability.",
-    });
-  }
 
   if (fleet.unreachableDomains.length > 0) {
     rows.push({
