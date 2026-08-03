@@ -281,10 +281,12 @@ export async function tickStatusReconcile(): Promise<void> {
 
 let interval: NodeJS.Timeout | null = null;
 let ticking = false;
+let signalsInstalled = false;
 
 export function startStatusReconciler(): void {
   if (interval) return;
 
+  installSignalHandlers();
   log.info(`Reconciler started (${POLL_INTERVAL_MS / 1000}s interval)`);
   const tick = async () => {
     if (ticking) return;
@@ -316,6 +318,12 @@ function onShutdown(signal: string) {
   stopStatusReconciler();
 }
 
-process.once("SIGTERM", () => onShutdown("SIGTERM"));
-process.once("SIGINT", () => onShutdown("SIGINT"));
-process.once("exit", () => stopStatusReconciler());
+// Installed from the start function, not at module scope — importing this
+// module for matchContainers() must not add listeners or log a shutdown.
+function installSignalHandlers(): void {
+  if (signalsInstalled) return;
+  signalsInstalled = true;
+  process.once("SIGTERM", () => onShutdown("SIGTERM"));
+  process.once("SIGINT", () => onShutdown("SIGINT"));
+  process.once("exit", () => stopStatusReconciler());
+}
