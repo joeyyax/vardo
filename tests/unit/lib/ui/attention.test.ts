@@ -1,10 +1,13 @@
 import { describe, it, expect } from "vitest";
 
 import {
+  announceAttention,
   conditionRows,
   isInlineRow,
+  mergeAttentionRows,
   summarize,
   INLINE_SUBJECT_LIMIT,
+  type AttentionRow,
 } from "@/lib/ui/attention";
 import type { AppCondition } from "@/lib/docker/conditions";
 
@@ -157,5 +160,78 @@ describe("summarize", () => {
   it("never names activity items as bar subjects", () => {
     const s = summarize([row("deploying", "activity", 1), row("down", "error", 1)]);
     expect(s.subjects.map((i) => i.name)).toEqual(["down-0"]);
+  });
+});
+
+describe("mergeAttentionRows", () => {
+  const instanceRow: AttentionRow = {
+    key: "vardo-self-deploy",
+    label: "Vardo updating",
+    tone: "activity",
+    items: [{ id: "deploy-1", name: "Vardo" }],
+  };
+
+  it("puts instance rows ahead of the org's", () => {
+    const orgRow: AttentionRow = {
+      key: "deploying",
+      label: "Deploying",
+      tone: "activity",
+      items: [{ id: "deploy-2", name: "Blog" }],
+    };
+
+    expect(mergeAttentionRows([instanceRow], [orgRow]).map((r) => r.key)).toEqual([
+      "vardo-self-deploy",
+      "deploying",
+    ]);
+  });
+
+  // One self-deploy is one row, whichever org the viewer is scoped to.
+  it("drops an org subject the instance already reported", () => {
+    const orgRow: AttentionRow = {
+      key: "deploying",
+      label: "Deploying",
+      tone: "activity",
+      items: [
+        { id: "deploy-1", name: "Vardo" },
+        { id: "deploy-2", name: "Blog" },
+      ],
+    };
+
+    const merged = mergeAttentionRows([instanceRow], [orgRow]);
+    expect(merged.flatMap((r) => r.items.map((i) => i.id))).toEqual(["deploy-1", "deploy-2"]);
+  });
+
+  it("drops an org row left with nothing to say", () => {
+    const orgRow: AttentionRow = {
+      key: "deploying",
+      label: "Deploying",
+      tone: "activity",
+      items: [{ id: "deploy-1", name: "Vardo" }],
+    };
+
+    expect(mergeAttentionRows([instanceRow], [orgRow])).toEqual([instanceRow]);
+  });
+
+  it("renders nothing when both sources are quiet", () => {
+    expect(mergeAttentionRows([], [])).toEqual([]);
+  });
+});
+
+describe("announceAttention", () => {
+  it("says nothing about a healthy instance", () => {
+    expect(announceAttention([])).toBe("");
+  });
+
+  it("names the row and its subjects", () => {
+    expect(
+      announceAttention([
+        {
+          key: "core-service-down",
+          label: "Core service down",
+          tone: "error",
+          items: [{ id: "loki", name: "Loki" }],
+        },
+      ]),
+    ).toBe("Core service down: Loki.");
   });
 });
