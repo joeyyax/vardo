@@ -1160,7 +1160,7 @@ export function ComposeDetail({
                     { value: "stability", label: "Stability" },
                     ...(featureFlags?.logging !== false ? [{ value: "logs", label: "Logs" }] : []),
                     ...(featureFlags?.metrics !== false ? [{ value: "metrics", label: "Metrics" }] : []),
-                    ...(featureFlags?.errorTracking !== false ? [{ value: "errors", label: "Errors" }] : []),
+                    { value: "errors", label: "Errors" },
                     { value: "security", label: "Security" },
                   ],
                 },
@@ -1288,15 +1288,9 @@ export function ComposeDetail({
           </TabsContent>
         )}
 
-        {featureFlags?.errorTracking !== false && (
-          <TabsContent value="errors" className={cn(tabPanelSurface, "space-y-4")}>
-            <PerService services={services} emptyMessage="No services to show errors for.">
-              {(service) => (
-                <AppErrors key={`errors-${service.id}`} orgId={orgId} appId={service.id} />
-              )}
-            </PerService>
-          </TabsContent>
-        )}
+        <TabsContent value="errors" className={cn(tabPanelSurface, "space-y-4")}>
+          <AppErrors />
+        </TabsContent>
 
         {featureFlags?.cron !== false && (
           <TabsContent value="cron" className={cn(tabPanelSurface, "space-y-4")}>

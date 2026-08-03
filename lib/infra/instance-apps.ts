@@ -42,7 +42,6 @@ const PROBE_APP_NAMES: Record<string, string> = {
   cAdvisor: "cadvisor",
   Loki: "loki",
   Promtail: "promtail",
-  GlitchTip: "glitchtip",
 };
 
 /** App backing a health probe, or null for probes with no app row (Docker). */

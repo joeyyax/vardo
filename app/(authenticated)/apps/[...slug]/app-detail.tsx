@@ -768,7 +768,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                     { value: "stability", label: "Stability" },
                     ...(featureFlags?.logging !== false ? [{ value: "logs", label: "Logs" }] : []),
                     ...(featureFlags?.metrics !== false ? [{ value: "metrics", label: "Metrics" }] : []),
-                    ...(featureFlags?.errorTracking !== false ? [{ value: "errors", label: "Errors" }] : []),
+                    { value: "errors", label: "Errors" },
                     { value: "security", label: "Security" },
                   ],
                 },
@@ -929,11 +929,9 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           <AppSecurity appId={app.id} orgId={orgId} />
         </TabsContent>
 
-        {featureFlags?.errorTracking !== false && (
-          <TabsContent value="errors" className={cn(tabPanelSurface, "space-y-4")}>
-            <AppErrors orgId={orgId} appId={app.id} />
-          </TabsContent>
-        )}
+        <TabsContent value="errors" className={cn(tabPanelSurface, "space-y-4")}>
+          <AppErrors />
+        </TabsContent>
 
         {isOrgAdmin(userRole) && (
           <TabsContent value="debug" className={tabPanelSurface}>
