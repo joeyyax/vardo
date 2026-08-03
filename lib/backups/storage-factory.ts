@@ -10,6 +10,7 @@ import type { BackupStorage } from "./storage-port";
 import { LocalBackupStorage, type LocalStorageConfig } from "./storage-local";
 import { S3BackupStorage, type S3StorageConfig } from "./storage-s3";
 import { SshBackupStorage, type SshConfig } from "./storage-ssh";
+import { withStorageRetry } from "./storage-retry";
 
 type BackupTargetLike = {
   type: "s3" | "r2" | "b2" | "ssh" | "local";
@@ -84,13 +85,15 @@ function validateS3Config(config: Record<string, unknown>): S3StorageConfig {
 // Factory
 // ---------------------------------------------------------------------------
 
+// Every adapter is wrapped here rather than internally, so retry coverage
+// cannot be missed by a new adapter or a new call site.
 export function createBackupStorage(target: BackupTargetLike): BackupStorage {
   if (target.type === "ssh") {
-    return new SshBackupStorage(validateSshConfig(target.config));
+    return withStorageRetry(new SshBackupStorage(validateSshConfig(target.config)));
   }
   if (target.type === "local") {
-    return new LocalBackupStorage(validateLocalConfig(target.config));
+    return withStorageRetry(new LocalBackupStorage(validateLocalConfig(target.config)));
   }
   // s3, r2, and b2 all use S3-compatible APIs
-  return new S3BackupStorage(validateS3Config(target.config));
+  return withStorageRetry(new S3BackupStorage(validateS3Config(target.config)));
 }
