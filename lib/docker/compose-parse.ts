@@ -72,6 +72,33 @@ function parseFileRefs(raw: unknown): ComposeFileRef[] | undefined {
   return refs.length > 0 ? refs : undefined;
 }
 
+/** Compose accepts a scalar or a list for these; normalize to a list. */
+function parseStringList(raw: unknown): string[] | undefined {
+  if (Array.isArray(raw)) return raw.map(String);
+  if (typeof raw === "string" && raw) return [raw];
+  return undefined;
+}
+
+/**
+ * Fold `mem_limit` into `deploy.resources.limits.memory`, the one memory field
+ * the rest of the pipeline reads. An existing deploy limit wins, matching what
+ * Docker does when a service sets both.
+ */
+function foldMemLimit(svc: ComposeService, raw: Record<string, unknown>): void {
+  const memLimit = raw.mem_limit;
+  if (typeof memLimit !== "string" && typeof memLimit !== "number") return;
+  if (String(memLimit) === "") return;
+  if (svc.deploy?.resources?.limits?.memory) return;
+
+  svc.deploy = {
+    ...svc.deploy,
+    resources: {
+      ...svc.deploy?.resources,
+      limits: { ...svc.deploy?.resources?.limits, memory: String(memLimit) },
+    },
+  };
+}
+
 /**
  * Parse a YAML string into a ComposeFile.
  */
@@ -208,6 +235,28 @@ export function parseCompose(yamlString: string): ComposeFile {
     if (Array.isArray(raw.tmpfs)) svc.tmpfs = raw.tmpfs.map(String);
     else if (typeof raw.tmpfs === "string") svc.tmpfs = [raw.tmpfs];
     if (Array.isArray(raw.group_add)) svc.group_add = raw.group_add.map(String);
+    foldMemLimit(svc, raw);
+    // Additive container settings — none of them collide with what the Vardo
+    // overlay writes, so they pass straight through.
+    if (typeof raw.read_only === "boolean" && raw.read_only) svc.read_only = raw.read_only;
+    if (typeof raw.stdin_open === "boolean" && raw.stdin_open) svc.stdin_open = raw.stdin_open;
+    if (typeof raw.tty === "boolean" && raw.tty) svc.tty = raw.tty;
+    if (typeof raw.working_dir === "string" && raw.working_dir) svc.working_dir = raw.working_dir;
+    if (typeof raw.pull_policy === "string" && raw.pull_policy) svc.pull_policy = raw.pull_policy;
+    if (typeof raw.stop_grace_period === "string" && raw.stop_grace_period) {
+      svc.stop_grace_period = raw.stop_grace_period;
+    }
+    const dns = parseStringList(raw.dns);
+    if (dns) svc.dns = dns;
+    const dnsSearch = parseStringList(raw.dns_search);
+    if (dnsSearch) svc.dns_search = dnsSearch;
+    const dnsOpt = parseStringList(raw.dns_opt);
+    if (dnsOpt) svc.dns_opt = dnsOpt;
+    if (raw.sysctls && typeof raw.sysctls === "object") {
+      svc.sysctls = Array.isArray(raw.sysctls)
+        ? raw.sysctls.map(String)
+        : (raw.sysctls as Record<string, string | number>);
+    }
     // Both reference a top-level block carried through below. Dropping either
     // leaves the service pointing at a file that never gets mounted.
     const configs = parseFileRefs(raw.configs);

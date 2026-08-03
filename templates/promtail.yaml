@@ -20,7 +20,8 @@ composeContent: |
       volumes:
         - /var/run/docker.sock:/var/run/docker.sock:ro
         - /var/lib/docker/containers:/var/lib/docker/containers:ro
-      mem_limit: 128m
+      # Scales with the number of containers discovered on the host.
+      mem_limit: 256m
       # Promtail pushes to http://loki:3100 and Loki lives in its own compose
       # project. Without the shared network the push has nowhere to land.
       networks:
