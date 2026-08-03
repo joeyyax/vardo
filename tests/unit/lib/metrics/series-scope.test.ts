@@ -47,6 +47,8 @@ vi.mock("@/lib/metrics/ts-client", () => ({
   tsKey: fake.tsKey,
   ensureTimeSeries: fake.ensureTimeSeries,
   tsRedis: { call: fake.call },
+  touchRetention: async () => {},
+  forgetKey: () => {},
   RETENTION_MS: 0,
   getTsClient: () => null,
 }));

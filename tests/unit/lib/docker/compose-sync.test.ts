@@ -239,3 +239,73 @@ describe("syncComposeServices — projectId on update (existing children)", () =
     expect(stoppedCalls[0][0]).not.toHaveProperty("projectId");
   });
 });
+
+// ---------------------------------------------------------------------------
+// syncComposeServices — resource limits are UI-owned, not compose-mirrored
+// ---------------------------------------------------------------------------
+
+describe("syncComposeServices — child cpuLimit/memoryLimit", () => {
+  const COMPOSE_WITH_LIMITS: ComposeFile = {
+    services: {
+      web: {
+        name: "web",
+        image: "nginx:latest",
+        deploy: { resources: { limits: { cpus: "1", memory: "512M" } } },
+      },
+      db: { name: "db", image: "postgres:16" },
+    },
+  };
+
+  it("never touches cpuLimit/memoryLimit when updating an existing child, even when compose declares a limit", async () => {
+    mockFindFirst.mockResolvedValue({ isSystemManaged: false });
+    mockFindMany.mockResolvedValue([
+      { id: "child-web", name: "myapp-web", composeService: "web", status: "active" },
+      { id: "child-db", name: "myapp-db", composeService: "db", status: "active" },
+    ]);
+    const updateChain = makeUpdateChain();
+    mockUpdate.mockReturnValue({ set: updateChain.set });
+    vi.mocked(db.transaction).mockImplementation(
+      async (callback) =>
+        callback(db as unknown as Parameters<Parameters<typeof db.transaction>[0]>[0]),
+    );
+
+    await syncComposeServices({
+      ...BASE_OPTS,
+      projectId: "project-abc",
+      compose: COMPOSE_WITH_LIMITS,
+    });
+
+    const activeCalls = (updateChain.set.mock.calls as Array<[Record<string, unknown>]>).filter(
+      ([vals]) => vals.status === "active",
+    );
+    expect(activeCalls).toHaveLength(2);
+    for (const [vals] of activeCalls) {
+      // A UI-set limit on the child must survive a deploy untouched -- the sync
+      // update never carries cpuLimit/memoryLimit at all, compose-declared or not.
+      expect(vals).not.toHaveProperty("cpuLimit");
+      expect(vals).not.toHaveProperty("memoryLimit");
+    }
+  });
+
+  it("inserts new children with null cpuLimit/memoryLimit even when compose declares a limit", async () => {
+    mockFindFirst.mockResolvedValue({ isSystemManaged: false });
+    mockFindMany.mockResolvedValue([]);
+
+    await syncComposeServices({
+      ...BASE_OPTS,
+      projectId: "project-abc",
+      compose: COMPOSE_WITH_LIMITS,
+    });
+
+    expect(mockExecute).toHaveBeenCalledTimes(2);
+    for (const call of mockExecute.mock.calls) {
+      const chunks: unknown[] = call[0]?.queryChunks ?? [];
+      const paramValues = chunks.filter(
+        (c: unknown) => !(typeof c === "object" && c !== null && "value" in (c as Record<string, unknown>)),
+      );
+      // Matches app creation elsewhere: cpuLimit/memoryLimit start null and are
+      // only ever set through an explicit UI edit, never seeded from compose.
+      expect(paramValues.filter((v) => v === null).length).toBeGreaterThanOrEqual(2);
+    }
+  });
+});
