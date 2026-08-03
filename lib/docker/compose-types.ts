@@ -118,6 +118,17 @@ export type ComposeService = {
    * both hold one name, so it is dropped for anything that rotates.
    */
   container_name?: string;
+  read_only?: boolean;
+  stdin_open?: boolean;
+  tty?: boolean;
+  working_dir?: string;
+  /** Upstream resolvers. Docker keeps its embedded DNS on user-defined networks. */
+  dns?: string[];
+  dns_search?: string[];
+  dns_opt?: string[];
+  sysctls?: Record<string, string | number> | string[];
+  pull_policy?: string;
+  stop_grace_period?: string;
   /** Config files mounted into the container, defined under top-level `configs:`. */
   configs?: ComposeFileRef[];
   /** Secret files mounted into the container, defined under top-level `secrets:`. */
