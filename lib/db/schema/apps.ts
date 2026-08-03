@@ -81,6 +81,9 @@ export const apps = pgTable(
     // never by an ordinary write — unlike updatedAt. Null until the first
     // transition, which reads as "how long is unknown".
     statusChangedAt: timestamp("status_changed_at"),
+    // Declared off on purpose. Set and cleared only by setParked() — stopping an
+    // app does not imply it, starting or deploying one clears it.
+    parked: boolean("parked").notNull().default(false),
     // Container State.StartedAt, written by the status reconciler. Null when nothing is running.
     containerStartedAt: timestamp("container_started_at"),
     // Running container's cgroup memory limit in bytes. 0 means unlimited.

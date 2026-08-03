@@ -14,6 +14,8 @@ import {
   Container,
   Trash2,
   Square,
+  Archive,
+  ArchiveRestore,
   EllipsisVertical,
   AlertTriangle,
   Check,
@@ -347,7 +349,7 @@ function ComposeServices({
       {[...services]
         .sort(
           (x, y) =>
-            statusRank(x.status) - statusRank(y.status) ||
+            statusRank(x.status, !!x.parked) - statusRank(y.status, !!y.parked) ||
             x.displayName.localeCompare(y.displayName),
         )
         .map((service) => {
@@ -743,6 +745,25 @@ export function ComposeDetail({
     router.refresh();
   }, [orgId, app.id, router]);
 
+  const handlePark = useCallback(
+    async (parked: boolean) => {
+      try {
+        const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/park`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ parked }),
+        });
+        const data = await res.json();
+        if (!res.ok) toast.error(data.error || "Could not change this");
+        else toast.success(parked ? "Parked" : "Unparked");
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Could not change this");
+      }
+      router.refresh();
+    },
+    [orgId, app.id, router],
+  );
+
   const handleRecreate = useCallback(async () => {
     try {
       const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/recreate`, { method: "POST" });
@@ -879,6 +900,8 @@ export function ComposeDetail({
   const actions = appActionMenu({
     status: app.status,
     isChildService: false,
+    parked: !!app.parked,
+    parkRefusal: systemManagedRefusal(app, "park"),
     deploying: deploy.deploying,
     standbyAvailable: !!slotStatus?.standbyAvailable,
     hasDeployed: totalDeployments > 0,
@@ -940,6 +963,8 @@ export function ComposeDetail({
     "instant-rollback": { icon: Zap, label: "Roll back to standby" },
     rollback: { icon: Undo2, label: "Roll back to a previous deploy" },
     logs: { icon: ScrollText, label: "View logs" },
+    park: { icon: Archive, label: "Park stack" },
+    unpark: { icon: ArchiveRestore, label: "Unpark stack" },
     stop: { icon: Square, label: "Stop stack" },
   };
 
@@ -952,6 +977,8 @@ export function ComposeDetail({
     "instant-rollback": () => setRollbackOpen(true),
     rollback: handleRollback,
     logs: () => setActiveTabAndUrl("logs"),
+    park: () => { void handlePark(true); },
+    unpark: () => { void handlePark(false); },
     stop: () => setStopOpen(true),
   };
 

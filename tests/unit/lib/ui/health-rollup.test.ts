@@ -124,6 +124,27 @@ describe("rollupLabel", () => {
   it("handles an empty group", () => {
     expect(rollupLabel(rollupHealth([]), "app")).toBe("No apps");
   });
+
+  it("leaves a parked member out of the ratio rather than holding the group short", () => {
+    expect(
+      rollupLabel(rollupHealth([app("active"), app("missing", { parked: true })]), "app"),
+    ).toBe("1/1 app");
+  });
+
+  it("names a wholly parked group as parked, not stopped or crashed", () => {
+    expect(
+      rollupLabel(rollupHealth([app("stopped", { parked: true }), app("error", { parked: true })]), "service"),
+    ).toBe("Parked");
+  });
+
+  it("keeps a parked member in the app count", () => {
+    expect(rollupHealth([app("active"), app("stopped", { parked: true })])).toMatchObject({
+      total: 2,
+      active: 1,
+      stopped: 0,
+      parked: 1,
+    });
+  });
 });
 
 describe("rollupUptimeSince", () => {
@@ -161,5 +182,10 @@ describe("rollupIsSteady", () => {
     expect(rollupIsSteady(rollupHealth([app("active"), app("active")]))).toBe(true);
     expect(rollupIsSteady(rollupHealth([app("active"), app("error")]))).toBe(false);
     expect(rollupIsSteady(rollupHealth([]))).toBe(false);
+  });
+
+  it("is steady with a parked member alongside a running one", () => {
+    expect(rollupIsSteady(rollupHealth([app("active"), app("stopped", { parked: true })]))).toBe(true);
+    expect(rollupIsSteady(rollupHealth([app("stopped", { parked: true })]))).toBe(false);
   });
 });

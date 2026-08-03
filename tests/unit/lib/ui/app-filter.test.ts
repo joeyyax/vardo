@@ -88,6 +88,14 @@ describe("attentionRank", () => {
     expect(attentionRank(card("A", [{ status: "error" }]))).toBe(0);
   });
 
+  it("does not raise a card for a parked app, however it reads", () => {
+    const c = card("A", [
+      { status: "error", parked: true },
+      { status: "missing", parked: true, conditions: [{ kind: "crash-looping", severity: "critical", detail: "5 restarts", since: "" }] },
+    ]);
+    expect(attentionRank(c)).toBe(2);
+  });
+
   it("ranks a critical condition alongside a crash", () => {
     const c = card("A", [
       { status: "active", conditions: [{ kind: "crash-looping", severity: "critical", detail: "5 restarts", since: "" }] },
