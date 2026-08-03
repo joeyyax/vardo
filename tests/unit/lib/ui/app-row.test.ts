@@ -241,7 +241,7 @@ describe("restartNote", () => {
   it("gives way to a condition and to config drift", () => {
     const cue = restartNote(12);
     expect(rowNote([condition("warning")], false, cue)?.label).toBe("unhealthy");
-    expect(rowNote(null, true, cue)?.label).toBe("restart needed");
+    expect(rowNote(null, true, cue)?.label).toBe("deploy needed");
     expect(rowNote(null, false, cue)?.label).toBe("12 restarts");
   });
 
