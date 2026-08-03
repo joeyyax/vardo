@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   SHARED_MARKER,
   SlotPartitionError,
+  composeProjectApp,
+  composeProjectEnvironment,
   composeSubset,
   hasSharedServices,
   isSharedService,
@@ -175,5 +177,40 @@ describe("sharedProjectName with a pinned compose name", () => {
 
   it("honors the pin in a non-production environment that is not a preview", () => {
     expect(sharedProjectName("vardo", "staging", "vardo")).toBe("vardo");
+  });
+});
+
+describe("composeProjectApp", () => {
+  it("strips the environment and slot a deploy appends", () => {
+    expect(composeProjectApp("shop-production-green")).toBe("shop");
+    expect(composeProjectApp("shop-production-shared")).toBe("shop");
+    expect(composeProjectApp("shop-pr-42-shared")).toBe("shop");
+  });
+
+  it("leaves a pinned compose name alone", () => {
+    expect(composeProjectApp("vardo")).toBe("vardo");
+  });
+
+  it("keeps a hyphenated app name whose tail is not a slot", () => {
+    expect(composeProjectApp("gitea-mirror")).toBe("gitea-mirror");
+    expect(composeProjectApp("gitea-mirror-production-blue")).toBe("gitea-mirror");
+  });
+
+  it("round-trips every name sharedProjectName generates", () => {
+    expect(composeProjectApp(sharedProjectName("shop", "production"))).toBe("shop");
+    expect(composeProjectApp(sharedProjectName("shop", "pr-42"))).toBe("shop");
+  });
+});
+
+describe("composeProjectEnvironment", () => {
+  it("reads the environment back off a generated project name", () => {
+    expect(composeProjectEnvironment("shop-production-shared")).toBe("production");
+    expect(composeProjectEnvironment("shop-pr-42-shared")).toBe("pr-42");
+    expect(composeProjectEnvironment("shop-staging-blue")).toBe("staging");
+  });
+
+  it("is null for a pinned compose name, which encodes no environment", () => {
+    expect(composeProjectEnvironment("vardo")).toBeNull();
+    expect(composeProjectEnvironment("gitea-mirror")).toBeNull();
   });
 });
