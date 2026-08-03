@@ -188,6 +188,9 @@ export type DeployContext = {
    */
   stopOldSlot?: () => Promise<void>;
 
+  /** Set once the deploy records success — from here the new slot is live, not disposable. */
+  succeeded?: boolean;
+
   // -----------------------------------------------------------------------
   // Logging & lifecycle
   // -----------------------------------------------------------------------
