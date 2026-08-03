@@ -42,9 +42,11 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { systemManagedRefusal } from "@/lib/api/system-managed";
 import { isOrgAdmin } from "@/lib/auth/permissions";
 import { useAppEvents } from "@/hooks/use-app-events";
 import { isRefreshEvent } from "@/lib/bus/refresh";
@@ -271,6 +273,9 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
   // Child services are stack-level operations managed from the parent
   const isChildService = !!app.parentAppId;
 
+  // Set when the API would 403 the stop, so the menu offers it disabled with the reason.
+  const stopRefusal = systemManagedRefusal(app, "stop");
+
   return (
     <div className="space-y-6">
       {/* Visually-hidden live region for deploy outcome announcements */}
@@ -331,13 +336,25 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                     </>
                   )}
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    className="text-destructive focus:text-destructive"
-                    onClick={() => setStopOpen(true)}
-                  >
-                    <Square className="mr-2 size-4" />
-                    Stop
-                  </DropdownMenuItem>
+                  {stopRefusal ? (
+                    <>
+                      <DropdownMenuItem disabled>
+                        <Square className="mr-2 size-4" />
+                        Stop
+                      </DropdownMenuItem>
+                      <DropdownMenuLabel className="max-w-72 pt-0 type-body-sm font-normal whitespace-normal text-muted-foreground">
+                        {stopRefusal}
+                      </DropdownMenuLabel>
+                    </>
+                  ) : (
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onClick={() => setStopOpen(true)}
+                    >
+                      <Square className="mr-2 size-4" />
+                      Stop
+                    </DropdownMenuItem>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : (

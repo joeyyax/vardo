@@ -7,6 +7,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockInsert = vi.fn();
 const mockUpdate = vi.fn();
 const mockFindMany = vi.fn();
+const mockFindFirst = vi.fn().mockResolvedValue({ isSystemManaged: false });
 const mockExecute = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("@/lib/db", () => ({
@@ -14,6 +15,7 @@ vi.mock("@/lib/db", () => ({
     query: {
       apps: {
         findMany: (...args: unknown[]) => mockFindMany(...args),
+        findFirst: (...args: unknown[]) => mockFindFirst(...args),
       },
     },
     transaction: vi.fn(),
@@ -70,6 +72,7 @@ describe("syncComposeServices — projectId on insert (new children)", () => {
 
     // No existing children — all services will be inserted
     mockFindMany.mockResolvedValue([]);
+    mockFindFirst.mockResolvedValue({ isSystemManaged: false });
 
     // The code now uses db.execute(sql`...`) for inserts, not db.insert().values()
   });
@@ -99,6 +102,77 @@ describe("syncComposeServices — projectId on insert (new children)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// syncComposeServices — system-managed inheritance
+// ---------------------------------------------------------------------------
+
+describe("syncComposeServices — system-managed inheritance", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockFindMany.mockResolvedValue([]);
+    mockFindFirst.mockResolvedValue({ isSystemManaged: true });
+  });
+
+  it("marks new children system-managed when the parent is", async () => {
+    await syncComposeServices({
+      ...BASE_OPTS,
+      projectId: "project-abc",
+      compose: TWO_SERVICE_COMPOSE,
+    });
+
+    expect(mockExecute).toHaveBeenCalledTimes(2);
+    for (const call of mockExecute.mock.calls) {
+      const chunks: unknown[] = call[0]?.queryChunks ?? [];
+      const paramValues = chunks.filter(
+        (c: unknown) => !(typeof c === "object" && c !== null && "value" in (c as Record<string, unknown>)),
+      );
+      expect(paramValues).toContain(true);
+    }
+  });
+
+  it("carries the flag onto children that already exist", async () => {
+    mockFindMany.mockResolvedValue([
+      { id: "child-web", name: "myapp-web", composeService: "web", status: "active" },
+      { id: "child-db", name: "myapp-db", composeService: "db", status: "active" },
+    ]);
+    const updateChain = makeUpdateChain();
+    mockUpdate.mockReturnValue({ set: updateChain.set });
+
+    await syncComposeServices({
+      ...BASE_OPTS,
+      projectId: "project-abc",
+      compose: TWO_SERVICE_COMPOSE,
+    });
+
+    const activeCalls = (updateChain.set.mock.calls as Array<[Record<string, unknown>]>).filter(
+      ([vals]) => vals.status === "active",
+    );
+    expect(activeCalls).toHaveLength(2);
+    for (const [vals] of activeCalls) {
+      expect(vals).toMatchObject({ isSystemManaged: true });
+    }
+  });
+
+  it("leaves children of an ordinary parent unmanaged", async () => {
+    mockFindFirst.mockResolvedValue({ isSystemManaged: false });
+
+    await syncComposeServices({
+      ...BASE_OPTS,
+      projectId: "project-abc",
+      compose: TWO_SERVICE_COMPOSE,
+    });
+
+    for (const call of mockExecute.mock.calls) {
+      const chunks: unknown[] = call[0]?.queryChunks ?? [];
+      const paramValues = chunks.filter(
+        (c: unknown) => !(typeof c === "object" && c !== null && "value" in (c as Record<string, unknown>)),
+      );
+      expect(paramValues).toContain(false);
+      expect(paramValues).not.toContain(true);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // syncComposeServices — projectId on update (existing children)
 // ---------------------------------------------------------------------------
 
@@ -107,6 +181,8 @@ describe("syncComposeServices — projectId on update (existing children)", () =
 
   beforeEach(() => {
     vi.clearAllMocks();
+
+    mockFindFirst.mockResolvedValue({ isSystemManaged: false });
 
     // Return existing children so the update path is exercised
     mockFindMany.mockResolvedValue([
