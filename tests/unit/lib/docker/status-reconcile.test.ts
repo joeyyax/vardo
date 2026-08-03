@@ -60,6 +60,87 @@ describe("deriveStatus", () => {
       "stopped",
     );
   });
+
+  it("reports stopped when a 137 was a SIGKILL after a stop timeout", () => {
+    expect(
+      deriveStatus([container({ state: "exited", status: "Exited (137) 3 days ago" })], {
+        kind: "signal",
+        signal: "SIGKILL",
+        exitCode: 137,
+        containerId: "c1",
+        containerName: "app-1",
+        at: "2026-01-01T00:00:00.000Z",
+      }),
+    ).toBe("stopped");
+  });
+
+  it("reports stopped for a SIGTERM exit", () => {
+    expect(
+      deriveStatus([container({ state: "exited", status: "Exited (143) 3 days ago" })], {
+        kind: "signal",
+        signal: "SIGTERM",
+        exitCode: 143,
+        containerId: "c1",
+        containerName: "app-1",
+        at: "2026-01-01T00:00:00.000Z",
+      }),
+    ).toBe("stopped");
+  });
+
+  it("reports error for a host OOM kill, which is also a 137", () => {
+    expect(
+      deriveStatus([container({ state: "exited", status: "Exited (137) 3 days ago" })], {
+        kind: "oom-host",
+        exitCode: 137,
+        containerId: "c1",
+        containerName: "app-1",
+        at: "2026-01-01T00:00:00.000Z",
+      }),
+    ).toBe("error");
+  });
+
+  it("reports error for a cgroup OOM kill", () => {
+    expect(
+      deriveStatus([container({ state: "exited", status: "Exited (137) 3 days ago" })], {
+        kind: "oom-limit",
+        exitCode: 137,
+        containerId: "c1",
+        containerName: "app-1",
+        at: "2026-01-01T00:00:00.000Z",
+      }),
+    ).toBe("error");
+  });
+
+  it("reports error for a non-zero exit with no signal behind it", () => {
+    expect(
+      deriveStatus([container({ state: "exited", status: "Exited (1) 3 days ago" })], {
+        kind: "failed",
+        exitCode: 1,
+        containerId: "c1",
+        containerName: "app-1",
+        at: "2026-01-01T00:00:00.000Z",
+      }),
+    ).toBe("error");
+  });
+
+  it("keeps a flapping container an error however its last run ended", () => {
+    expect(
+      deriveStatus([container({ state: "restarting", status: "Restarting (143) 1 second ago" })], {
+        kind: "signal",
+        signal: "SIGTERM",
+        exitCode: 143,
+        containerId: "c1",
+        containerName: "app-1",
+        at: "2026-01-01T00:00:00.000Z",
+      }),
+    ).toBe("error");
+  });
+
+  it("falls back to the exit code when no reason was resolved", () => {
+    expect(
+      deriveStatus([container({ state: "exited", status: "Exited (137) 3 days ago" })], null),
+    ).toBe("error");
+  });
 });
 
 describe("parseExitCode", () => {

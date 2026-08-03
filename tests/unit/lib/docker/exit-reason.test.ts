@@ -10,7 +10,7 @@ import {
   type TerminalState,
 } from "@/lib/docker/exit-reason";
 import { exitReasonsEqual } from "@/lib/docker/status-reconcile";
-import { oomRows } from "@/lib/ui/attention";
+import { hadRecentHostOom, oomRows } from "@/lib/ui/attention";
 import type { ContainerInfo } from "@/lib/docker/client";
 
 const NOW = new Date("2026-08-03T12:00:00.000Z");
@@ -249,5 +249,27 @@ describe("oomRows", () => {
 
   it("drops a kill older than the window", () => {
     expect(oomRows([app("a", kill("oom-host", "2026-07-01T00:00:00.000Z"))], now, week)).toEqual([]);
+  });
+
+  describe("hadRecentHostOom", () => {
+    const day = 24 * 3_600_000;
+
+    it("is true for a host kill inside the window", () => {
+      expect(hadRecentHostOom([app("a", kill("oom-host"))], now, day)).toBe(true);
+    });
+
+    it("is false for a cgroup kill — that app had a limit and nothing else was at risk", () => {
+      expect(hadRecentHostOom([app("a", kill("oom-limit"))], now, day)).toBe(false);
+    });
+
+    it("is false for a deliberate stop", () => {
+      expect(hadRecentHostOom([app("a", kill("signal"))], now, day)).toBe(false);
+    });
+
+    it("is false once the host kill is older than the window", () => {
+      expect(hadRecentHostOom([app("a", kill("oom-host", "2026-08-01T00:00:00.000Z"))], now, day)).toBe(
+        false,
+      );
+    });
   });
 });

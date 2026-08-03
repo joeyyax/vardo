@@ -42,6 +42,7 @@ const EVENT_LABELS: Record<BusEventType, string> = {
   "deploy.status": "Deploy status changed",
   "app.state-changed": "App state changed",
   "app.auto-restarted": "Container auto-restarted",
+  "app.oom-killed": "Killed for memory",
   "backup.success": "Backup succeeded",
   "backup.failed": "Backup failed",
   "backup.progress": "Backup progress",
