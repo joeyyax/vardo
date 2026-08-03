@@ -116,13 +116,13 @@ function fromBytes(bytes: number): { value: number; unit: "MB" | "GB" } {
 
 function thresholdTextClass(level: ThresholdLevel): string {
   if (level === "critical") return "text-destructive font-medium";
-  if (level === "warning") return "text-amber-500 font-medium";
+  if (level === "warning") return "text-status-warning font-medium";
   return "text-muted-foreground";
 }
 
 function thresholdProgressClass(level: ThresholdLevel): string {
   if (level === "critical") return "h-1.5 [&>[data-slot=progress-indicator]]:bg-destructive";
-  if (level === "warning") return "h-1.5 [&>[data-slot=progress-indicator]]:bg-amber-500";
+  if (level === "warning") return "h-1.5 [&>[data-slot=progress-indicator]]:bg-status-warning";
   return "h-1.5";
 }
 
@@ -260,7 +260,7 @@ function VolumeDiffSection({
         {totalChanges > 0 && (
           <Badge
             variant="secondary"
-            className="text-[10px] px-1.5 py-0 h-4 bg-amber-500/10 text-amber-600 border-amber-500/20"
+            className="text-[10px] px-1.5 py-0 h-4 bg-status-warning-muted text-status-warning border-status-warning/20"
           >
             {totalChanges}
           </Badge>
@@ -289,7 +289,7 @@ function VolumeDiffSection({
           {diff && diff.modified.length > 0 && (
             <DiffFileGroup
               label="Modified"
-              icon={<FileWarning className="size-3 text-amber-500" />}
+              icon={<FileWarning className="size-3 text-status-warning" />}
               entries={diff.modified}
               syncing={syncing}
               synced={synced}
@@ -301,7 +301,7 @@ function VolumeDiffSection({
           {diff && diff.addedOnDisk.length > 0 && (
             <DiffFileGroup
               label="Added on disk"
-              icon={<FilePlus className="size-3 text-blue-500" />}
+              icon={<FilePlus className="size-3 text-status-info" />}
               entries={diff.addedOnDisk}
               syncing={syncing}
               synced={synced}
@@ -312,7 +312,7 @@ function VolumeDiffSection({
           {diff && diff.missingFromDisk.length > 0 && (
             <DiffFileGroup
               label="Missing from disk"
-              icon={<FileMinus className="size-3 text-red-500" />}
+              icon={<FileMinus className="size-3 text-status-error" />}
               entries={diff.missingFromDisk}
               syncing={syncing}
               synced={synced}
@@ -406,7 +406,7 @@ function DiffFileGroup({
                 </button>
               )}
               {synced.has(entry.path) && (
-                <Check className="size-3 text-green-500" />
+                <Check className="size-3 text-status-success" />
               )}
               <button
                 onClick={() => onIgnore(entry.path)}
@@ -719,7 +719,7 @@ export function VolumesPanel({ appId, orgId }: Props) {
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex items-center gap-4 min-w-0 flex-1">
                     {vol.type === "bind" ? (
-                      <FolderOpen aria-hidden="true" className="size-4 text-amber-500 shrink-0" />
+                      <FolderOpen aria-hidden="true" className="size-4 text-muted-foreground shrink-0" />
                     ) : (
                       <HardDrive className="size-4 text-muted-foreground shrink-0" />
                     )}
@@ -729,10 +729,7 @@ export function VolumesPanel({ appId, orgId }: Props) {
                           {vol.name}
                         </p>
                         {vol.type === "bind" ? (
-                          <Badge
-                            variant="outline"
-                            className="text-xs shrink-0 border-amber-300 text-amber-700 dark:border-amber-700 dark:text-amber-400"
-                          >
+                          <Badge variant="outline" className="text-xs shrink-0">
                             bind
                           </Badge>
                         ) : (
@@ -761,7 +758,7 @@ export function VolumesPanel({ appId, orgId }: Props) {
                         {(vol.driftCount ?? 0) > 0 && (
                           <Badge
                             variant="secondary"
-                            className="text-xs shrink-0 bg-amber-500/10 text-amber-600 border-amber-500/20"
+                            className="text-xs shrink-0 bg-status-warning-muted text-status-warning border-status-warning/20"
                           >
                             <GitCompareArrows className="mr-1 size-3" />
                             {vol.driftCount} change{vol.driftCount !== 1 ? "s" : ""}
@@ -772,7 +769,7 @@ export function VolumesPanel({ appId, orgId }: Props) {
                         {vol.mountPath}
                       </p>
                       {vol.type === "bind" && vol.source && (
-                        <p className="text-xs text-amber-600 dark:text-amber-500 font-mono mt-0.5 truncate">
+                        <p className="text-xs text-muted-foreground font-mono mt-0.5 truncate">
                           Host: {vol.source}
                         </p>
                       )}
