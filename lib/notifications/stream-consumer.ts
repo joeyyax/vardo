@@ -28,6 +28,7 @@ import {
   fetchEventPrefs,
   resolveRecipients,
 } from "./resolve-recipients";
+import { isUiOnlyEvent } from "./ui-only";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("notifications-consumer");
@@ -62,6 +63,8 @@ function channelAcceptsEvent(
 
 /** Dispatch a single event to all matching channels for an org. */
 async function dispatchEvent(orgId: string, event: BusEvent): Promise<void> {
+  if (isUiOnlyEvent(event)) return;
+
   const channels = await db.query.notificationChannels.findMany({
     where: and(
       eq(notificationChannels.organizationId, orgId),

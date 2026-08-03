@@ -58,6 +58,8 @@ import {
 } from "@/components/ui/bottom-sheet";
 import { detectAppType } from "@/lib/ui/app-type";
 import { envTypeDotColor, statusDotColor } from "@/lib/ui/status-colors";
+import { appStatusFromEvent } from "@/lib/bus/refresh";
+import type { BusEvent } from "@/lib/bus/events";
 import { Uptime, StatusIndicator, AppIcon, DeploymentStatusBadge, formatDuration } from "@/components/app-status";
 import { EndpointsPopover } from "@/components/endpoints-popover";
 import { LogViewer, DeploymentLog } from "@/components/log-viewer";
@@ -774,8 +776,8 @@ export function ProjectDetail({
   }, []);
 
   // Subscribe to per-app SSE events for real-time deploy status updates.
-  // Sets all apps to "deploying", then listens for deploy:complete on each.
-  // Falls back to polling if SSE fails.
+  // Sets all apps to "deploying", then waits for a terminal deploy event on
+  // each. Falls back to polling if SSE fails.
   const subscribeToDeployEvents = useCallback(() => {
     // Clean up any previous subscriptions
     eventSourcesRef.current.forEach((es) => es.close());
@@ -820,12 +822,13 @@ export function ProjectDetail({
         const es = new EventSource(eventsUrl);
         eventSourcesRef.current.push(es);
 
-        es.addEventListener("deploy:complete", (event) => {
+        es.addEventListener("update", (event) => {
           try {
-            const data = JSON.parse(event.data);
-            handleAppComplete(app.id, data.status || "active");
+            const data = JSON.parse(event.data) as BusEvent;
+            const status = appStatusFromEvent(data);
+            if (status) handleAppComplete(app.id, status);
           } catch {
-            handleAppComplete(app.id, "active");
+            // Skip malformed events
           }
         });
 

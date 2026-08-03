@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
   deriveStatus,
+  deployHoldsStatus,
   matchContainers,
   parseExitCode,
+  DEPLOYING_HOLD_MS,
   type ReconcilableApp,
 } from "@/lib/docker/status-reconcile";
 import type { ContainerInfo } from "@/lib/docker/client";
@@ -228,5 +230,31 @@ describe("matchContainers — non-production environments", () => {
       composeService: "db",
     };
     expect(matchContainers(dbChild, [staging])).toHaveLength(1);
+  });
+});
+
+describe("deployHoldsStatus", () => {
+  const now = new Date("2026-01-01T12:00:00Z");
+  const minutesAgo = (m: number) => new Date(now.getTime() - m * 60_000);
+
+  it("yields to a deploy that is in flight", () => {
+    expect(deployHoldsStatus({ status: "deploying", updatedAt: minutesAgo(2) }, now)).toBe(true);
+  });
+
+  it("takes the status back once the hold expires", () => {
+    expect(deployHoldsStatus({ status: "deploying", updatedAt: minutesAgo(600) }, now)).toBe(false);
+  });
+
+  it("outlasts the deploy timeout the sweeper enforces", () => {
+    expect(DEPLOYING_HOLD_MS).toBeGreaterThan(15 * 60_000);
+  });
+
+  it("takes the status back when there is no timestamp to age", () => {
+    expect(deployHoldsStatus({ status: "deploying", updatedAt: null }, now)).toBe(false);
+  });
+
+  it("does not hold any other status", () => {
+    expect(deployHoldsStatus({ status: "active", updatedAt: minutesAgo(1) }, now)).toBe(false);
+    expect(deployHoldsStatus({ status: "error", updatedAt: minutesAgo(1) }, now)).toBe(false);
   });
 });
