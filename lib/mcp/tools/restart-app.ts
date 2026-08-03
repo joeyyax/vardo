@@ -7,6 +7,7 @@ import { restartContainers, createDeployment } from "@/lib/docker/deploy";
 import { resolveDefaultEnv } from "@/lib/docker/resolve-env";
 import { slidingWindowRateLimit } from "@/lib/api/rate-limit";
 import type { McpAuthContext } from "../auth";
+import { accessDenied, canAccessOrg } from "../scope";
 
 // 10 restarts per 10 minutes per user/org pair.
 const RESTART_RATE_LIMIT = 10;
@@ -44,29 +45,19 @@ export function registerRestartApp(
       }
 
       const app = await db.query.apps.findFirst({
-        where: and(
-          eq(apps.id, appId),
-          eq(apps.organizationId, context.organizationId)
-        ),
+        where: eq(apps.id, appId),
         columns: {
           id: true,
           name: true,
           status: true,
+          organizationId: true,
           parentAppId: true,
           composeService: true,
         },
       });
 
-      if (!app) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({ error: "App not found or access denied" }),
-            },
-          ],
-          isError: true,
-        };
+      if (!app || !(await canAccessOrg(context, app.organizationId))) {
+        return accessDenied("App");
       }
 
       // An in-place `docker compose restart` only works when there are live
@@ -82,7 +73,7 @@ export function registerRestartApp(
 
         const deploymentId = await createDeployment({
           appId: deployTargetId,
-          organizationId: context.organizationId,
+          organizationId: app.organizationId,
           trigger: "api",
           triggeredBy: context.userId,
         });
@@ -92,7 +83,7 @@ export function registerRestartApp(
         const { requestDeploy } = await import("@/lib/docker/deploy-cancel");
         requestDeploy({
           appId: deployTargetId,
-          organizationId: context.organizationId,
+          organizationId: app.organizationId,
           trigger: "api",
           triggeredBy: context.userId,
           deploymentId,
@@ -136,7 +127,7 @@ export function registerRestartApp(
         const parent = await db.query.apps.findFirst({
           where: and(
             eq(apps.id, app.parentAppId),
-            eq(apps.organizationId, context.organizationId)
+            eq(apps.organizationId, app.organizationId)
           ),
           columns: { id: true, name: true },
         });

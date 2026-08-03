@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { deployments, apps } from "@/lib/db/schema";
 import { eq, and, sql } from "drizzle-orm";
 import type { McpAuthContext } from "../auth";
+import { accessDenied, canAccessOrg } from "../scope";
 import { scrubEnvValues } from "./get-deploy-logs";
 
 // Tail the last 10KB of the log for status checks — enough context
@@ -36,28 +37,17 @@ export function registerGetDeployStatus(
           finishedAt: deployments.finishedAt,
           appId: apps.id,
           appName: apps.name,
+          organizationId: apps.organizationId,
         })
         .from(deployments)
         .innerJoin(apps, eq(deployments.appId, apps.id))
         .where(
-          and(
-            eq(deployments.id, deploymentId),
-            eq(deployments.appId, appId),
-            eq(apps.organizationId, context.organizationId)
-          )
+          and(eq(deployments.id, deploymentId), eq(deployments.appId, appId))
         )
         .then((rows) => rows[0] ?? null);
 
-      if (!result) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({ error: "Deployment not found or access denied" }),
-            },
-          ],
-          isError: true,
-        };
+      if (!result || !(await canAccessOrg(context, result.organizationId))) {
+        return accessDenied("Deployment");
       }
 
       return {

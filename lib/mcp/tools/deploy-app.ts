@@ -2,10 +2,11 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { createDeployment } from "@/lib/docker/deploy";
 import { slidingWindowRateLimit } from "@/lib/api/rate-limit";
 import type { McpAuthContext } from "../auth";
+import { accessDenied, canAccessOrg } from "../scope";
 
 // Coarse abuse ceiling: 60 deploys per minute per user/org pair.
 // Bursts are never rejected as a cooldown — requestDeploy serializes rapid
@@ -51,30 +52,19 @@ export function registerDeployApp(
       }
 
       const app = await db.query.apps.findFirst({
-        where: and(
-          eq(apps.id, appId),
-          eq(apps.organizationId, context.organizationId)
-        ),
-        columns: { id: true, name: true },
+        where: eq(apps.id, appId),
+        columns: { id: true, name: true, organizationId: true },
       });
 
-      if (!app) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({ error: "App not found or access denied" }),
-            },
-          ],
-          isError: true,
-        };
+      if (!app || !(await canAccessOrg(context, app.organizationId))) {
+        return accessDenied("App");
       }
 
       // Create the deployment record. The deploy worker picks it up
       // asynchronously — we return the ID immediately for polling.
       const deploymentId = await createDeployment({
         appId,
-        organizationId: context.organizationId,
+        organizationId: app.organizationId,
         trigger: "api",
         triggeredBy: context.userId,
         environmentId,
@@ -85,7 +75,7 @@ export function registerDeployApp(
       const { requestDeploy } = await import("@/lib/docker/deploy-cancel");
       requestDeploy({
         appId,
-        organizationId: context.organizationId,
+        organizationId: app.organizationId,
         trigger: "api",
         triggeredBy: context.userId,
         deploymentId,

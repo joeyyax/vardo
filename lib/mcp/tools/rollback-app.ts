@@ -1,13 +1,14 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { apps, deployments, environments, memberships } from "@/lib/db/schema";
+import { apps, deployments, environments } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { createDeployment } from "@/lib/docker/deploy";
 import { slidingWindowRateLimit } from "@/lib/api/rate-limit";
 import { isOrgAdmin } from "@/lib/auth/permissions";
 import type { ConfigSnapshot } from "@/lib/types/deploy-snapshot";
 import type { McpAuthContext } from "../auth";
+import { accessDenied, canAccessOrg, orgRole } from "../scope";
 
 // 3 rollbacks per 10 minutes per user/org pair.
 const ROLLBACK_RATE_LIMIT = 3;
@@ -52,23 +53,12 @@ export function registerRollbackApp(
       }
 
       const app = await db.query.apps.findFirst({
-        where: and(
-          eq(apps.id, appId),
-          eq(apps.organizationId, context.organizationId)
-        ),
-        columns: { id: true, name: true },
+        where: eq(apps.id, appId),
+        columns: { id: true, name: true, organizationId: true },
       });
 
-      if (!app) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({ error: "App not found or access denied" }),
-            },
-          ],
-          isError: true,
-        };
+      if (!app || !(await canAccessOrg(context, app.organizationId))) {
+        return accessDenied("App");
       }
 
       // Local environments don't support rollback — no blue-green slots to swap
@@ -130,15 +120,11 @@ export function registerRollbackApp(
 
       // The snapshot now drives the deploy, so restoring GPU passthrough here
       // grants host hardware access — gate it like enabling GPU directly.
+      // The role that counts is the one held in the app's own org, never the
+      // token's home org — a cross-org token must not import admin rights.
       if (configSnapshot?.gpuEnabled === true) {
-        const membership = await db.query.memberships.findFirst({
-          where: and(
-            eq(memberships.userId, context.userId),
-            eq(memberships.organizationId, context.organizationId),
-          ),
-          columns: { role: true },
-        });
-        if (!membership || !isOrgAdmin(membership.role)) {
+        const role = await orgRole(context, app.organizationId);
+        if (!role || !isOrgAdmin(role)) {
           return {
             content: [
               {
@@ -156,7 +142,7 @@ export function registerRollbackApp(
       // Create the rollback deployment record and fire it asynchronously
       const newDeploymentId = await createDeployment({
         appId,
-        organizationId: context.organizationId,
+        organizationId: app.organizationId,
         trigger: "rollback",
         triggeredBy: context.userId,
       });
@@ -164,7 +150,7 @@ export function registerRollbackApp(
       const { requestDeploy } = await import("@/lib/docker/deploy-cancel");
       requestDeploy({
         appId,
-        organizationId: context.organizationId,
+        organizationId: app.organizationId,
         trigger: "rollback",
         triggeredBy: context.userId,
         deploymentId: newDeploymentId,
@@ -209,8 +195,8 @@ export function registerRollbackApp(
             });
             if (target?.envSnapshot) {
               const { decrypt, encrypt } = await import("@/lib/crypto/encrypt");
-              const plainEnv = decrypt(target.envSnapshot, context.organizationId);
-              appUpdates.envContent = encrypt(plainEnv, context.organizationId);
+              const plainEnv = decrypt(target.envSnapshot, app.organizationId);
+              appUpdates.envContent = encrypt(plainEnv, app.organizationId);
             }
           } catch { /* env restore is best-effort */ }
         }
