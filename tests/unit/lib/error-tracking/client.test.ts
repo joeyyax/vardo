@@ -171,4 +171,29 @@ describe("isGlitchTipAvailable", () => {
 
     await expect(isGlitchTipAvailable()).resolves.toBe(false);
   });
+
+  it("is true when the API answers", async () => {
+    const { isGlitchTipAvailable } = await loadClient(healthy);
+
+    await expect(isGlitchTipAvailable()).resolves.toBe(true);
+  });
+
+  // /api/0/ needs no database, so it kept answering 200 through an outage that
+  // failed every authenticated call.
+  it("is false when only the unauthenticated root answers", async () => {
+    const { isGlitchTipAvailable } = await loadClient((url) =>
+      url.endsWith("/api/0/") ? json({ version: "0" }) : djangoError(),
+    );
+
+    await expect(isGlitchTipAvailable()).resolves.toBe(false);
+  });
+
+  it("falls back to the unauthenticated root when no token is configured", async () => {
+    getErrorTrackingConfig.mockResolvedValue({ url: "http://glitchtip:8000", apiToken: "" });
+    const { isGlitchTipAvailable } = await loadClient((url) =>
+      url.endsWith("/api/0/") ? json({ version: "0" }) : json({ detail: "auth" }, 401),
+    );
+
+    await expect(isGlitchTipAvailable()).resolves.toBe(true);
+  });
 });

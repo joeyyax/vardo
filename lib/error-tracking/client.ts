@@ -23,7 +23,7 @@ async function getConfig(): Promise<{ url: string; apiToken: string; publicUrl: 
   }
   const { getErrorTrackingConfig } = await import("@/lib/system-settings");
   const config = await getErrorTrackingConfig();
-  const url = config?.url ?? DEFAULT_GLITCHTIP_URL;
+  const url = config?.url || process.env.GLITCHTIP_URL || DEFAULT_GLITCHTIP_URL;
   const result = {
     url,
     apiToken: config?.apiToken ?? "",
@@ -41,17 +41,35 @@ async function getConfig(): Promise<{ url: string; apiToken: string; publicUrl: 
 let glitchtipReady: boolean | null = null;
 let lastCheck = 0;
 
-/** Check if GlitchTip is reachable. Cached for 30s. */
+const PROBE_TIMEOUT_MS = 3000;
+
+/**
+ * Reach GlitchTip the way a real call does, and throw the way one would.
+ * `/api/0/` answers 200 off no database, so it read healthy right through an
+ * outage that 500'd every authenticated request. Without a token it is all
+ * there is to ask.
+ */
+export async function probeGlitchTip(timeoutMs = PROBE_TIMEOUT_MS): Promise<void> {
+  // The settings read needs the database an outage takes out.
+  const config = await getConfig().catch(() => null);
+  const url = config?.url || process.env.GLITCHTIP_URL || DEFAULT_GLITCHTIP_URL;
+  const apiToken = config?.apiToken ?? "";
+
+  const res = await fetch(`${url}${apiToken ? "/api/0/organizations/" : "/api/0/"}`, {
+    headers: apiToken ? { Authorization: `Bearer ${apiToken}` } : {},
+    signal: AbortSignal.timeout(timeoutMs),
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+}
+
+/** Check if GlitchTip is usable. Cached for 30s. */
 export async function isGlitchTipAvailable(): Promise<boolean> {
   const now = Date.now();
   if (glitchtipReady !== null && now - lastCheck < 30_000) return glitchtipReady;
   try {
-    const { url: baseUrl } = await getConfig();
-    const res = await fetch(`${baseUrl}/api/0/`, {
-      signal: AbortSignal.timeout(3000),
-      cache: "no-store",
-    });
-    glitchtipReady = res.ok;
+    await probeGlitchTip();
+    glitchtipReady = true;
   } catch {
     glitchtipReady = false;
   }
