@@ -351,6 +351,13 @@
       "when": 1785723340748,
       "tag": "0049_wide_madame_masque",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1785734247025,
+      "tag": "0050_wandering_shooting_star",
+      "breakpoints": true
     }
   ]
 }
