@@ -8,7 +8,7 @@ Self-hosted PaaS for managing Docker Compose deployments. Deploy anything with D
 - Automatic TLS via Let's Encrypt (Traefik)
 - Blue-green deployments with zero-downtime rollback
 - Preview environments from pull requests
-- Built-in container metrics (cAdvisor) and log aggregation (Loki)
+- Built-in container metrics (cAdvisor) and log aggregation (Loki, one tenant per org)
 - Multi-tenant with org-scoped access control
 - Scheduled backups to S3, R2, or B2
 - Cron job management per app

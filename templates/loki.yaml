@@ -13,7 +13,10 @@ composeContent: |
     loki:
       image: grafana/loki:3.4
       restart: unless-stopped
-      command: -config.file=/etc/loki/local-config.yaml
+      command: -config.file=/etc/loki/config.yaml
+      configs:
+        - source: loki-config
+          target: /etc/loki/config.yaml
       volumes:
         - loki-data:/loki
       mem_limit: 512m
@@ -28,6 +31,48 @@ composeContent: |
   networks:
     vardo-network:
       external: true
+
+  configs:
+    loki-config:
+      # Everything below schema_config matches the image's own local-config.yaml.
+      # Changing schema_config on a running instance orphans the existing index.
+      content: |
+        # One tenant per organization. Every push and every query carries
+        # X-Scope-OrgID; a request without one is rejected.
+        #
+        # Turning this on is a cutover, not a migration. Logs written before it
+        # stay where they were, under the tenant "fake", and are readable with
+        # `curl -H 'X-Scope-OrgID: fake' http://loki:3100/...`. Vardo only ever
+        # asks for a real organization, so they no longer show in the UI.
+        auth_enabled: true
+
+        server:
+          http_listen_port: 3100
+
+        common:
+          instance_addr: 127.0.0.1
+          path_prefix: /loki
+          storage:
+            filesystem:
+              chunks_directory: /loki/chunks
+              rules_directory: /loki/rules
+          replication_factor: 1
+          ring:
+            kvstore:
+              store: inmemory
+
+        schema_config:
+          configs:
+            - from: 2020-10-24
+              store: tsdb
+              object_store: filesystem
+              schema: v13
+              index:
+                prefix: index_
+                period: 24h
+
+        ruler:
+          alertmanager_url: http://localhost:9093
 
 volumes:
   - name: loki-data
