@@ -994,21 +994,25 @@ export async function pruneImages(filters?: Record<string, string[]>): Promise<{
 /**
  * Builds the /build/prune query string. `all` maps to the `-a` flag on
  * `docker builder prune` — without it the daemon only removes dangling
- * cache, not everything unused.
+ * cache, not everything unused. `keepStorage` is a ceiling in bytes: the
+ * daemon deletes the least recently used records until the cache fits under it.
  */
 export function buildPruneCacheQuery(
   filters?: Record<string, string[]>,
-  opts?: { all?: boolean },
+  opts?: { all?: boolean; keepStorage?: number },
 ): string {
   const params = new URLSearchParams();
   if (filters) params.set("filters", JSON.stringify(filters));
   if (opts?.all) params.set("all", "true");
+  // keep-storage, not reserved-space: 1.48 renamed it but still falls back to
+  // this, and older daemons read nothing else.
+  if (opts?.keepStorage) params.set("keep-storage", String(Math.floor(opts.keepStorage)));
   return params.toString() ? `?${params.toString()}` : "";
 }
 
 export async function pruneBuildCache(
   filters?: Record<string, string[]>,
-  opts?: { all?: boolean },
+  opts?: { all?: boolean; keepStorage?: number },
 ): Promise<{ spaceReclaimed: number }> {
   const query = buildPruneCacheQuery(filters, opts);
   const result = await dockerRequest<{ SpaceReclaimed: number }>("POST", `/build/prune${query}`);

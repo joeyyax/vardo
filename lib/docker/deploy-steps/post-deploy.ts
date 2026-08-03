@@ -41,6 +41,7 @@ import { recordActivity } from "@/lib/activity";
 import { volumeThreshold } from "@/lib/volumes/threshold";
 import { DeployBlockedError } from "../errors";
 import {
+  BUILD_CACHE_MAX_BYTES,
   COMPOSE_DOWN_TIMEOUT,
   POST_DEPLOY_DELAY,
   DOCKER_CLEANUP_TIMEOUT,
@@ -176,11 +177,16 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
         }
 
         try {
-          // A week, not a day: at 24h the first deploy after a quiet weekend
-          // throws away the base layers every build starts from.
-          const { spaceReclaimed: cacheReclaimed } = await pruneBuildCache({ until: ["168h"] });
+          // A size ceiling, not an age window. An age window reclaims nothing on
+          // a host deploying several times a day, because nothing gets that old.
+          const { spaceReclaimed: cacheReclaimed } = await pruneBuildCache(undefined, {
+            keepStorage: BUILD_CACHE_MAX_BYTES,
+          });
           if (cacheReclaimed > 0) {
-            log(`[deploy] Pruned build cache, reclaimed ${formatBytes(cacheReclaimed)}`);
+            log(
+              `[deploy] Build cache over ${formatBytes(BUILD_CACHE_MAX_BYTES)}, ` +
+                `reclaimed ${formatBytes(cacheReclaimed)}`,
+            );
           }
         } catch {
           // Build cache pruning is optional
