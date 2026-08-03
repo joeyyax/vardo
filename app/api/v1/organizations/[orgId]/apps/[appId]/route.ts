@@ -5,6 +5,7 @@ import { apps, projects } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { stopProject } from "@/lib/docker/deploy";
+import { assertAppDirOwnership, AppDirOwnershipError } from "@/lib/docker/app-dir-owner";
 import { recordActivity } from "@/lib/activity";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { isOrgAdmin } from "@/lib/auth/permissions";
@@ -229,6 +230,17 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
         { error: "This service is part of a compose stack and can't be deleted on its own. Remove it from the stack's compose file and redeploy." },
         { status: 409 }
       );
+    }
+
+    // The stop below swallows failures, so the ownership refusal is surfaced
+    // here — deleting the row anyway would strand another app's containers.
+    try {
+      await assertAppDirOwnership({ appId, appName: app.name, operation: "delete" });
+    } catch (err) {
+      if (err instanceof AppDirOwnershipError) {
+        return NextResponse.json({ error: err.message }, { status: 409 });
+      }
+      throw err;
     }
 
     // Stop containers and remove volumes before deleting
