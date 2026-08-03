@@ -24,8 +24,10 @@ import {
   HardDrive,
   Server,
   AlertCircle,
+  Trash2,
 } from "lucide-react";
 import { toast } from "@/lib/messenger";
+import { formatBytes } from "@/lib/metrics/format";
 
 type ServiceStatus = {
   name: string;
@@ -38,6 +40,11 @@ type ServiceStatus = {
 type MaintenanceStatus = {
   services: ServiceStatus[];
   hasVardoDir: boolean;
+};
+
+type BuildCacheStatus = {
+  size: number | null;
+  reclaimable: number | null;
 };
 
 type MountPair = { source: string; destination: string };
@@ -77,10 +84,14 @@ export function MaintenanceSettings() {
   const [restarting, setRestarting] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
   const [savingMounts, setSavingMounts] = useState(false);
+  const [buildCache, setBuildCache] = useState<BuildCacheStatus | null>(null);
+  const [loadingBuildCache, setLoadingBuildCache] = useState(true);
+  const [reclaiming, setReclaiming] = useState(false);
 
   useEffect(() => {
     void fetchStatus();
     void fetchMounts();
+    void fetchBuildCache();
   }, []);
 
   async function fetchStatus() {
@@ -112,6 +123,37 @@ export function MaintenanceSettings() {
       // keep defaults
     } finally {
       setLoadingMounts(false);
+    }
+  }
+
+  async function fetchBuildCache() {
+    try {
+      const res = await fetch("/api/v1/admin/maintenance/build-cache");
+      if (res.ok) {
+        setBuildCache(await res.json());
+      }
+    } catch {
+      // leave buildCache as-is — unknown, not zero
+    } finally {
+      setLoadingBuildCache(false);
+    }
+  }
+
+  async function handleReclaimBuildCache() {
+    setReclaiming(true);
+    try {
+      const res = await fetch("/api/v1/admin/maintenance/build-cache", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "Failed to reclaim build cache");
+        return;
+      }
+      toast.success(`Reclaimed ${formatBytes(data.reclaimed)}`);
+      void fetchBuildCache();
+    } catch {
+      toast.error("Failed to reclaim build cache");
+    } finally {
+      setReclaiming(false);
     }
   }
 
@@ -356,6 +398,78 @@ export function MaintenanceSettings() {
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                 <AlertDialogAction onClick={() => void handleUpdate()}>
                   Update
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </CardContent>
+      </Card>
+
+      {/* Build cache */}
+      <Card className="squircle">
+        <CardHeader>
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <Trash2 className="size-4" aria-hidden="true" />
+            Build Cache
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Docker build cache accumulates with every app build. Reclaiming it removes
+            unused layers and does not affect running services.
+          </p>
+          {loadingBuildCache ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+              Checking reclaimable space...
+            </div>
+          ) : buildCache?.reclaimable === null || buildCache?.reclaimable === undefined ? (
+            <div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400">
+              <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
+              Reclaimable space is unknown — Docker did not report build cache usage.
+            </div>
+          ) : (
+            <p className="text-sm">
+              <span className="font-medium">{formatBytes(buildCache.reclaimable)}</span>{" "}
+              <span className="text-muted-foreground">reclaimable</span>
+              {buildCache.size !== null && (
+                <span className="text-muted-foreground"> of {formatBytes(buildCache.size)} total</span>
+              )}
+            </p>
+          )}
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                disabled={reclaiming || loadingBuildCache}
+                className="squircle"
+              >
+                {reclaiming ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                    Reclaiming...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="size-4" aria-hidden="true" />
+                    Reclaim build cache
+                  </>
+                )}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent size="sm">
+              <AlertDialogHeader>
+                <AlertDialogTitle>Reclaim build cache?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {buildCache?.reclaimable != null
+                    ? `This will remove all unused build cache, freeing approximately ${formatBytes(buildCache.reclaimable)}. This cannot be undone.`
+                    : "Reclaimable space is currently unknown. This will remove all unused build cache. This cannot be undone."}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={() => void handleReclaimBuildCache()}>
+                  Reclaim
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
