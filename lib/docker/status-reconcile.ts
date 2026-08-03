@@ -15,7 +15,12 @@ import { db } from "@/lib/db";
 import { statusChange } from "@/lib/db/app-status";
 import { apps } from "@/lib/db/schema";
 import { recordActivity } from "@/lib/activity/record";
-import { listAllContainers, inspectContainer, type ContainerInfo } from "./client";
+import {
+  listAllContainers,
+  inspectContainer,
+  type ContainerInfo,
+  type ContainerInspect,
+} from "./client";
 import { logger } from "@/lib/logger";
 import { memoryLimitDrifted } from "./limit-drift";
 import { matchContainers } from "./container-match";
@@ -140,9 +145,60 @@ export function exitReasonsEqual(a: ExitReason | null, b: ExitReason | null | un
   return a.kind === b.kind && a.exitCode === b.exitCode && a.containerName === b.containerName;
 }
 
+/**
+ * The restart figure a row should carry, from one reading per container and the
+ * figure already stored. Null when the app has no containers: there is no
+ * counter to read, and null must never be read back as zero restarts.
+ *
+ * A container that did not answer keeps the stored figure rather than reporting
+ * a total that is missing one of its parts.
+ */
+export function restartCountFor(
+  counts: (number | null)[],
+  stored: number | null,
+): number | null {
+  if (counts.length === 0) return null;
+  if (counts.some((c) => c === null)) return stored;
+  return counts.reduce<number>((total, c) => total + (c ?? 0), 0);
+}
+
 // ---------------------------------------------------------------------------
 // Tick
 // ---------------------------------------------------------------------------
+
+/**
+ * One inspect per container for the whole pass. A decomposed parent matches
+ * every container its children match, so without this each is inspected twice.
+ */
+type InspectCache = (id: string) => Promise<ContainerInspect>;
+
+function inspectCache(): InspectCache {
+  const seen = new Map<string, Promise<ContainerInspect>>();
+  return (id) => {
+    let pending = seen.get(id);
+    if (!pending) {
+      pending = inspectContainer(id);
+      seen.set(id, pending);
+    }
+    return pending;
+  };
+}
+
+/** Docker's restart counter per container, null for one that did not answer. */
+function readRestartCounts(
+  matched: ContainerInfo[],
+  inspect: InspectCache,
+): Promise<(number | null)[]> {
+  return Promise.all(
+    matched.map(async (c) => {
+      try {
+        return (await inspect(c.id)).restartCount;
+      } catch {
+        return null;
+      }
+    }),
+  );
+}
 
 /**
  * Why this app's containers are down. Only containers that ended badly are
@@ -156,11 +212,12 @@ export function exitReasonsEqual(a: ExitReason | null, b: ExitReason | null | un
 async function resolveExitReason(
   matched: ContainerInfo[],
   now: Date,
+  inspect: InspectCache,
 ): Promise<ExitReason | null> {
   const reasons: ExitReason[] = [];
   for (const c of exitCandidates(matched)) {
     try {
-      const info = await inspectContainer(c.id);
+      const info = await inspect(c.id);
       const reason = exitReasonFor(
         {
           containerId: c.id,
@@ -230,6 +287,7 @@ const RECONCILE_COLUMNS = {
   containerStartedAt: true,
   lastRunningAt: true,
   containerMemoryLimit: true,
+  containerRestartCount: true,
   memoryLimit: true,
   needsRedeploy: true,
   exitReason: true,
@@ -243,13 +301,25 @@ function loadReconcileRows(where?: SQL) {
 type ReconcileApp = Awaited<ReturnType<typeof loadReconcileRows>>[number];
 
 /** What one app's row should say, measured against what Docker reports. */
-async function computeAppUpdate(app: ReconcileApp, containers: ContainerInfo[], now: Date) {
+async function computeAppUpdate(
+  app: ReconcileApp,
+  containers: ContainerInfo[],
+  now: Date,
+  inspect: InspectCache,
+) {
   // A deploy in flight owns the status until it finishes, or until the
   // hold expires — a stranded "deploying" must not be permanent.
   if (deployHoldsStatus(app, now)) return null;
 
   const matched = matchContainers(app, containers);
   let observed = deriveStatus(matched);
+
+  // Counted from the containers this row matches: its own service for a
+  // compose child, every service under it for the parent.
+  const restartCount = restartCountFor(
+    await readRestartCounts(matched, inspect),
+    app.containerRestartCount,
+  );
 
   let startedAt: Date | null = null;
   let memoryLimit: number | null = null;
@@ -259,7 +329,7 @@ async function computeAppUpdate(app: ReconcileApp, containers: ContainerInfo[], 
     const running = matched.find((c) => c.state === "running");
     if (running) {
       try {
-        const info = await inspectContainer(running.id);
+        const info = await inspect(running.id);
         const parsed = new Date(info.state.startedAt);
         if (!isNaN(parsed.getTime())) startedAt = parsed;
         memoryLimit = info.memoryBytes;
@@ -281,7 +351,7 @@ async function computeAppUpdate(app: ReconcileApp, containers: ContainerInfo[], 
       };
     }
   } else {
-    exitReason = await resolveExitReason(matched, now);
+    exitReason = await resolveExitReason(matched, now, inspect);
     // Re-read with the reason the same inspect produced: a deliberate
     // stop is not a crash, and only the reason can say which this was.
     observed = deriveStatus(matched, exitReason);
@@ -296,6 +366,7 @@ async function computeAppUpdate(app: ReconcileApp, containers: ContainerInfo[], 
     observed === app.status &&
     startedAt?.getTime() === app.containerStartedAt?.getTime() &&
     memoryLimit === app.containerMemoryLimit &&
+    restartCount === app.containerRestartCount &&
     needsRedeploy === !!app.needsRedeploy &&
     exitReasonsEqual(exitReason, app.exitReason);
 
@@ -309,6 +380,7 @@ async function computeAppUpdate(app: ReconcileApp, containers: ContainerInfo[], 
     observed,
     startedAt,
     memoryLimit,
+    restartCount,
     needsRedeploy,
     exitReason,
     running: observed === "active",
@@ -336,6 +408,7 @@ async function applyAppUpdate(u: AppUpdate, now: Date): Promise<void> {
       ...statusChange(u.observed, now),
       containerStartedAt: u.startedAt,
       containerMemoryLimit: u.memoryLimit,
+      containerRestartCount: u.restartCount,
       needsRedeploy: u.needsRedeploy,
       exitReason: u.exitReason,
       // Stamped only while running and never cleared, so it survives the
@@ -378,9 +451,10 @@ export async function reconcileAppNow(appId: string): Promise<ObservedStatus | n
     );
 
     const now = new Date();
+    const inspect = inspectCache();
     let observed: ObservedStatus | null = null;
     for (const app of rows) {
-      const update = await computeAppUpdate(app, containers, now);
+      const update = await computeAppUpdate(app, containers, now, inspect);
       if (!update) continue;
       if (app.id === appId) observed = update.observed;
       if (!update.touchOnly) await applyAppUpdate(update, now);
@@ -406,9 +480,10 @@ export async function tickStatusReconcile(): Promise<void> {
 
   const now = new Date();
   const limit = pLimit(INSPECT_CONCURRENCY);
+  const inspect = inspectCache();
 
   const updates = await Promise.all(
-    rows.map((app) => limit(() => computeAppUpdate(app, containers, now))),
+    rows.map((app) => limit(() => computeAppUpdate(app, containers, now, inspect))),
   );
 
   const settled = updates.filter((u) => u !== null);
