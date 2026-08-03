@@ -59,14 +59,19 @@ const { dbMock, isFeatureEnabledMock, readFileMock, execFileAsyncMock, execFileM
     async (cb: (tx: typeof txMock) => Promise<void>) => cb(txMock)
   );
 
+  // Guards the "vardo" name against another org before the upserts run.
+  const appFindFirstFn = vi.fn().mockResolvedValue(undefined);
+
   const dbMock = {
     select: selectFn,
     insert: insertFn,
     update: updateFn,
     transaction: transactionFn,
+    query: { apps: { findFirst: appFindFirstFn } },
     _limitFn: limitFn,
     _insertResponses: insertResponses,
     _makeInsertChain: makeInsertChain,
+    _appFindFirst: appFindFirstFn,
   };
 
   const isFeatureEnabledMock = vi.fn();
@@ -140,6 +145,9 @@ describe("ensureVardoProject", () => {
     dbMock._insertResponses.splice(0);
     dbMock._insertResponses.push([{ id: "proj-1" }], [{ id: "app-1" }]);
 
+    // Default: nothing else holds the "vardo" name
+    dbMock._appFindFirst.mockResolvedValue(undefined);
+
     // Reset select chain to return org-1 by default
     const limitFn = vi.fn(async () => [{ id: "org-1" }]);
     const orderByFn = vi.fn(() => ({ limit: limitFn }));
@@ -208,6 +216,28 @@ describe("ensureVardoProject", () => {
     await ensureVardoProject();
 
     expect(dbMock.insert).toHaveBeenCalled();
+  });
+
+  it("registers when this org already holds the vardo name", async () => {
+    isFeatureEnabledMock.mockResolvedValue(true);
+    process.env["VARDO_HOME_DIR"] = "/opt/vardo";
+    readFileMock.mockResolvedValue("services:\n  vardo:\n    image: vardo\n");
+    dbMock._appFindFirst.mockResolvedValue({ organizationId: "org-1" });
+
+    await ensureVardoProject();
+
+    expect(dbMock.insert).toHaveBeenCalled();
+  });
+
+  it("bails when another org holds the vardo name", async () => {
+    isFeatureEnabledMock.mockResolvedValue(true);
+    process.env["VARDO_HOME_DIR"] = "/opt/vardo";
+    readFileMock.mockResolvedValue("services:\n  vardo:\n    image: vardo\n");
+    dbMock._appFindFirst.mockResolvedValue({ organizationId: "org-other" });
+
+    await ensureVardoProject();
+
+    expect(dbMock.insert).not.toHaveBeenCalled();
   });
 
   it("proceeds without git info when git commands fail", async () => {
