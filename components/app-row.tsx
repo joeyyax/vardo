@@ -2,20 +2,28 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Cpu, Package, ShieldCheck, Trash2 } from "lucide-react";
+import { CircleDashed, Cpu, Package, ShieldCheck } from "lucide-react";
 
-import { worstCondition, type AppCondition } from "@/lib/docker/conditions";
-import { conditionLabel, conditionTone } from "@/lib/ui/conditions";
+import { type AppCondition } from "@/lib/docker/conditions";
 import { statusDotColor } from "@/lib/ui/status-colors";
 import {
   compactUptime,
+  primaryDomain,
   railClass,
+  rowNote,
   rowSeverity,
+  sourceRef,
   sparkPath,
   sparklineTone,
   statusWord,
   statusWordTone,
   tagLabels,
+  ROW_DOMAIN_CELL,
+  ROW_NAME_CELL,
+  ROW_NOTE_CELL,
+  ROW_SOURCE_CELL,
+  ROW_TRAILING_CELL,
+  type RowNote,
 } from "@/lib/ui/app-row";
 
 export type AppRowApp = {
@@ -26,11 +34,13 @@ export type AppRowApp = {
   needsRedeploy?: boolean | null;
   priority?: "critical" | "standard" | "disposable" | null;
   gpuEnabled?: boolean | null;
+  imageName?: string | null;
+  gitUrl?: string | null;
+  domains?: { domain: string; isPrimary?: boolean | null }[] | null;
   tags?: string[];
 };
 
-/** Fills the condition column when nothing worse is true. */
-export type RowNote = { label: string; tone: string; title?: string };
+export type { RowNote };
 
 // Ticks slowly: the column reads in minutes and above, and a ledger renders a
 // hundred of these. Client-only so server and client never disagree.
@@ -66,9 +76,10 @@ function RowSparkline({ data }: { data: number[] }) {
 }
 
 /**
- * One app or service on one ~30px line. Columns are fixed from the uptime
- * figure rightwards so a stack of rows aligns; the tag column drops out on
- * narrow containers and the hover card carries it instead.
+ * One app or service on one ~30px line. Columns are fixed from the source
+ * reference rightwards so a stack of rows aligns, and each column drops out at
+ * the width where the columns left of it stop fitting — decoration first, the
+ * name last.
  */
 export function AppRow({
   app,
@@ -100,19 +111,11 @@ export function AppRow({
   const severity = rowSeverity(app.status, app.conditions, !!app.needsRedeploy);
   const rail = railClass(severity);
   const word = statusWord(app.status, sharedStatus);
-  const worst = worstCondition(app.conditions ?? []);
   const running = app.status === "active";
 
-  const shownNote: RowNote | null = worst
-    ? { label: conditionLabel(worst), tone: conditionTone(worst.severity), title: worst.detail }
-    : app.needsRedeploy
-      ? {
-          label: "restart needed",
-          tone: "text-status-warning",
-          title: "Config changed since the last deploy",
-        }
-      : (note ?? null);
-
+  const shownNote = rowNote(app.conditions, app.needsRedeploy, note);
+  const source = sourceRef(app);
+  const domain = primaryDomain(app.domains);
   const tags = tagLabels(app.tags ?? []);
 
   return (
@@ -131,53 +134,59 @@ export function AppRow({
             className={`absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full ${rail}`}
           />
         )}
+        {/* Compose children share their parent's name; the elbow says whose. */}
+        {indented && (
+          <span
+            aria-hidden="true"
+            className="absolute left-3.5 top-0 h-1/2 w-2 rounded-bl-[3px] border-b border-l border-border"
+          />
+        )}
 
         <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${statusDotColor(app.status)}`} />
-        <span className="truncate">{app.displayName}</span>
+        <span className={ROW_NAME_CELL}>{app.displayName}</span>
+        {indented && <span className="sr-only">, compose service</span>}
         {running && <span className="sr-only">, Running</span>}
 
         {word && <span className={`shrink-0 font-normal ${statusWordTone(app.status)}`}>{word}</span>}
-        {/* Takes only the space the name and the fixed columns leave, so a long
-            condition truncates and the name never does. */}
+        {/* Weighed to give up width long before the name does. */}
         {shownNote && (
-          <span
-            className={`min-w-0 flex-1 truncate font-normal ${shownNote.tone}`}
-            title={shownNote.title}
-          >
+          <span className={`${ROW_NOTE_CELL} font-normal ${shownNote.tone}`} title={shownNote.detail}>
             {shownNote.label}
           </span>
         )}
 
-        <span className="ml-auto flex shrink-0 items-center gap-2.5 font-normal">
+        <span className={`${ROW_TRAILING_CELL} font-normal text-muted-foreground/70`}>
+          {/* The two facts that used to leave the middle of a wide row empty. */}
+          <span className={`${ROW_SOURCE_CELL} hidden @[52rem]:block`}>{source ?? ""}</span>
+          <span className={`${ROW_DOMAIN_CELL} hidden @[68rem]:block`}>{domain ?? ""}</span>
           {tags.shown.length > 0 && (
             <span className="hidden max-w-32 truncate text-muted-foreground/60 @[34rem]:inline">
               {tags.shown.join(" ")}
               {tags.overflow > 0 && ` +${tags.overflow}`}
             </span>
           )}
-          <span className="hidden w-9 text-right tabular-nums text-muted-foreground/70 @[20rem]:inline">
+          {/* The figure outranks the squiggle: uptime holds at every width. */}
+          <span className="w-9 shrink-0 text-right tabular-nums">
             {running && app.containerStartedAt ? <RowUptime since={app.containerStartedAt} /> : ""}
           </span>
           <span
-            className={`flex h-[18px] w-16 items-center justify-end ${sparklineTone(severity)}`}
+            className={`hidden h-[18px] w-16 shrink-0 items-center justify-end @[26rem]:flex ${sparklineTone(severity)}`}
             aria-hidden="true"
           >
             {series && <RowSparkline data={series} />}
           </span>
-          <span className="flex w-14 items-center justify-end gap-1.5">
+          {/* Attributes stay achromatic; only the actionable update takes a hue. */}
+          <span className="flex shrink-0 items-center justify-end gap-1.5 @[26rem]:w-14">
             {updateCount > 0 && (
               <Package className="size-3 text-status-update" aria-label="Update available" />
             )}
             {app.priority === "critical" && (
-              <ShieldCheck className="size-3 text-status-critical" aria-label="Critical priority" />
+              <ShieldCheck className="size-3" aria-label="Critical priority" />
             )}
             {app.priority === "disposable" && (
-              <Trash2 className="size-3 text-status-disposable" aria-label="Disposable priority" />
+              <CircleDashed className="size-3" aria-label="Disposable priority" />
             )}
-            {/* Achromatic until the GPU sweep tokens land. */}
-            {app.gpuEnabled && (
-              <Cpu className="size-3 text-muted-foreground" aria-label="GPU passthrough enabled" />
-            )}
+            {app.gpuEnabled && <Cpu className="size-3" aria-label="GPU passthrough enabled" />}
           </span>
         </span>
       </Link>

@@ -217,7 +217,7 @@ function ProjectCard({
   );
 
   return (
-    <div className="squircle relative flex flex-col rounded-lg bg-card shadow-card dark:border transition-shadow hover:shadow-card-hover overflow-hidden">
+    <div className="@container squircle relative flex flex-col rounded-lg bg-card shadow-card dark:border transition-shadow hover:shadow-card-hover overflow-hidden">
       {/* Whole-card click target; interactive children stack above it */}
       <Link
         href={`/projects/${project.name}`}
@@ -239,7 +239,8 @@ function ProjectCard({
         )}
 
         <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-2">
+          {/* Wraps rather than truncating: the title outranks the rollup beside it. */}
+          <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
             <div className="flex items-center gap-2 min-w-0">
               <h3 className="text-base font-semibold truncate">{project.displayName}</h3>
               {isSystem && <SystemBadge compact className="shrink-0" />}
@@ -336,9 +337,11 @@ function ProjectCard({
                 />
                 </TooltipTrigger>
                 <TooltipContent
-                  side="right"
+                  /* Anchored under the row: side="right" collided and flipped onto the nav rail. */
+                  side="bottom"
                   align="start"
-                  sideOffset={6}
+                  sideOffset={4}
+                  collisionPadding={12}
                   className="bg-popover text-popover-foreground border shadow-card-hover px-3 py-2.5 [&>span]:hidden"
                 >
                   <AppRowCard
