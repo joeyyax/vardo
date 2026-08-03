@@ -447,3 +447,36 @@ describe("resolveCompose — per-child domain targeting (decomposed children)", 
     expect(ctx.compose.services.worker.networks ?? []).not.toContain("vardo-network");
   });
 });
+
+describe("resolveCompose — restart policy", () => {
+  const stack: ComposeFile = {
+    services: {
+      web: { name: "web", image: "app:latest" },
+      postgres: { name: "postgres", image: "postgres:17", restart: "no" },
+    },
+  };
+  const fresh = () => ({ ...stack, services: { ...stack.services } });
+
+  it("applies the app's restart policy column", async () => {
+    const ctx = makeCtx(fresh(), makeApp({ restartPolicy: "on-failure" }));
+    await resolveCompose(ctx);
+
+    expect(ctx.compose.services.web.restart).toBe("on-failure");
+    expect(ctx.compose.services.postgres.restart).toBe("on-failure");
+  });
+
+  it("gives a service with no declared policy the default", async () => {
+    const ctx = makeCtx(fresh(), makeApp({ restartPolicy: null }));
+    await resolveCompose(ctx);
+
+    expect(ctx.compose.services.web.restart).toBe("unless-stopped");
+  });
+
+  it("leaves the bare compose carrying the author's own value", async () => {
+    const ctx = makeCtx(fresh(), makeApp({ restartPolicy: "unless-stopped" }));
+    await resolveCompose(ctx);
+
+    expect(ctx.compose.services.postgres.restart).toBe("unless-stopped");
+    expect(ctx.bareCompose.services.postgres.restart).toBe("no");
+  });
+});

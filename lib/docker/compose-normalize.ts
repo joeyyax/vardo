@@ -31,11 +31,15 @@ export type NormalizeResult = {
 export type NormalizeOptions = {
   /** Service names that have domains configured (routed via Traefik). */
   routedServices?: Set<string>;
-  /** The app's desired restart policy (default: "unless-stopped"). */
-  restartPolicy?: string;
+  /** The app's restart policy column (default: "unless-stopped"). */
+  restartPolicy?: string | null;
   /** Skip host port stripping (e.g., user explicitly opted out). */
   keepHostPorts?: boolean;
 };
+
+/** Restart policies Docker accepts. Anything else is a bad column value. */
+const VALID_RESTART = /^(no|always|unless-stopped|on-failure(:\d+)?)$/;
+const DEFAULT_RESTART = "unless-stopped";
 
 // ---------------------------------------------------------------------------
 // Routed service detection
@@ -77,7 +81,7 @@ export function normalizeCompose(
   }
 
   // 2. Normalize restart policies
-  result = normalizeRestart(result, opts.restartPolicy ?? "unless-stopped", changes);
+  result = normalizeRestart(result, opts.restartPolicy ?? DEFAULT_RESTART, changes);
 
   return { compose: result, changes };
 }
@@ -121,11 +125,9 @@ function normalizeHostPorts(
 }
 
 /**
- * Normalize restart policies across all services.
- * - Missing → set to target policy
- * - "no" → set to target policy (services should restart in production)
- * - "always" → downgraded to "unless-stopped"
- * - "unless-stopped" / "on-failure" → left as-is
+ * Normalize restart policies across all services. Precedence: a service's own
+ * `restart:` wins, except "always" (unsafe here) and "no" (overridden unless
+ * the app column also says "no"); otherwise the app column, then the default.
  */
 function normalizeRestart(
   compose: ComposeFile,
@@ -133,7 +135,10 @@ function normalizeRestart(
   changes: NormalizeChange[],
 ): ComposeFile {
   const services = { ...compose.services };
-  const safePolicy = targetPolicy === "always" ? "unless-stopped" : targetPolicy;
+  // The column is free text, and an unrecognized value would fail every
+  // service's `docker compose up`.
+  const requested = VALID_RESTART.test(targetPolicy) ? targetPolicy : DEFAULT_RESTART;
+  const safePolicy = requested === "always" ? "unless-stopped" : requested;
 
   for (const [name, svc] of Object.entries(services)) {
     if (!svc.restart) {
@@ -145,7 +150,7 @@ function normalizeRestart(
         after: safePolicy,
         reason: "Restart policy set — services should restart on failure in production",
       });
-    } else if (svc.restart === "no") {
+    } else if (svc.restart === "no" && safePolicy !== "no") {
       services[name] = { ...svc, restart: safePolicy };
       changes.push({
         service: name,
