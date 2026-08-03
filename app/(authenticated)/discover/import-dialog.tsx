@@ -234,7 +234,7 @@ export function ImportDialog({
         ) : (
           <div className="space-y-5 py-1">
             {isHostNetwork && (
-              <div role="alert" className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+              <div role="alert" className="flex gap-2 rounded-lg border border-status-warning/30 bg-status-warning-muted p-3 text-sm text-status-warning">
                 <AlertTriangle aria-hidden="true" className="size-4 shrink-0 mt-0.5" />
                 <span>
                   This container uses host networking — no port mapping or automatic domain
@@ -393,7 +393,7 @@ export function ImportDialog({
                         >
                           <div className="flex items-center gap-1.5 flex-wrap">
                             {isBind ? (
-                              <FolderOpen aria-hidden="true" className="size-3 shrink-0 text-amber-500" />
+                              <FolderOpen aria-hidden="true" className="size-3 shrink-0 text-status-warning" />
                             ) : (
                               <HardDrive aria-hidden="true" className="size-3 shrink-0 text-muted-foreground" />
                             )}
@@ -403,7 +403,7 @@ export function ImportDialog({
                             {isBind ? (
                               <Badge
                                 variant="outline"
-                                className="text-[10px] px-1.5 py-0 h-4 border-amber-300 text-amber-700 dark:border-amber-700 dark:text-amber-400 shrink-0"
+                                className="text-[10px] px-1.5 py-0 h-4 border-status-warning/40 text-status-warning shrink-0"
                               >
                                 bind
                               </Badge>
@@ -417,7 +417,7 @@ export function ImportDialog({
                             )}
                           </div>
                           {isBind ? (
-                            <p className="text-[10px] text-amber-600 dark:text-amber-500 font-mono truncate pl-4">
+                            <p className="text-[10px] text-status-warning font-mono truncate pl-4">
                               Host: {m.source}
                             </p>
                           ) : (
@@ -432,7 +432,7 @@ export function ImportDialog({
                 </div>
 
                 {hasSelectedBindMounts && (
-                  <div role="alert" className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                  <div role="alert" className="flex gap-2 rounded-lg border border-status-warning/30 bg-status-warning-muted p-3 text-xs text-status-warning">
                     <AlertTriangle aria-hidden="true" className="size-3.5 shrink-0 mt-0.5" />
                     <span>
                       Bind mounts reference host paths — they&apos;ll be included in the generated
