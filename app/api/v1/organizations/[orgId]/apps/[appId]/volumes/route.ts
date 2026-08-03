@@ -3,7 +3,8 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps, volumes } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { listContainers, inspectContainer, resolveVolumeName } from "@/lib/docker/client";
+import { inspectContainer, resolveVolumeName } from "@/lib/docker/client";
+import { listAppContainers } from "@/lib/docker/app-containers";
 import { z } from "zod";
 import { nanoid } from "nanoid";
 import { exec } from "child_process";
@@ -55,7 +56,16 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     const app = await db.query.apps.findFirst({
       where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
-      columns: { id: true, name: true },
+      columns: {
+        id: true,
+        name: true,
+        status: true,
+        parentAppId: true,
+        composeService: true,
+        containerName: true,
+        importedContainerId: true,
+      },
+      with: { parentApp: { columns: { name: true } } },
     });
 
     if (!app) {
@@ -73,7 +83,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const dockerVolumes: VolumeInfo[] = [];
     const seenMounts = new Set<string>();
     try {
-      const containers = await listContainers(app);
+      const containers = await listAppContainers(app);
       for (const container of containers) {
         try {
           const info = await inspectContainer(container.id);

@@ -743,14 +743,6 @@ export async function getContainerStats(containerId: string): Promise<ContainerS
   };
 }
 
-/**
- * List all running containers that belong to a project.
- * Uses the `vardo.project` label set during deploy.
- */
-export async function getProjectContainers(projectName: string): Promise<ContainerInfo[]> {
-  return listContainers(projectName);
-}
-
 // ---------------------------------------------------------------------------
 // System Disk Usage
 // ---------------------------------------------------------------------------
