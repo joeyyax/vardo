@@ -6,7 +6,7 @@
 // ---------------------------------------------------------------------------
 
 import { listContainers, type ContainerInfo, type ContainerScope } from "./client";
-import { matchContainers, type ReconcilableApp } from "./status-reconcile";
+import { matchContainers, type ReconcilableApp } from "./container-match";
 
 /** An app row as far as container lookup is concerned, plus the stack it belongs to. */
 export type ContainerOwnerApp = ReconcilableApp & {
