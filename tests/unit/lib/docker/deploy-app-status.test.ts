@@ -52,6 +52,8 @@ vi.mock("@/lib/docker/deploy-logger", () => ({
   createDeployLogger: () => ({
     log: (line: string) => line,
     stage: vi.fn(),
+    getStage: () => "clone",
+    flush: vi.fn(async () => {}),
   }),
 }));
 vi.mock("@/lib/docker/deploy-steps", () => ({

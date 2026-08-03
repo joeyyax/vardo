@@ -178,6 +178,8 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
         deploymentId: result.deploymentId,
         success: result.success,
         durationMs: result.durationMs,
+        status: result.status,
+        error: result.error,
       });
     });
   } catch (error) {
