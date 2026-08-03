@@ -107,6 +107,11 @@ describe("availableAppTabs", () => {
     expect(tabs).not.toContain("compose");
   });
 
+  it("gives settings a section of its own, not a dialog", () => {
+    expect(availableAppTabs(plainApp)).toContain("settings");
+    expect(resolveAppTab("settings", plainApp)).toBe("settings");
+  });
+
   it("only offers connect when the app publishes connection info", () => {
     expect(availableAppTabs(plainApp)).not.toContain("connect");
     expect(availableAppTabs(context({ hasConnectionInfo: true }))).toContain("connect");
