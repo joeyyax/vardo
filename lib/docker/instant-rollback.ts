@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { statusChange } from "@/lib/db/app-status";
 import { apps, deployments } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { rm, symlink, rename } from "fs/promises";
@@ -247,7 +248,7 @@ export async function performInstantRollback(
       const containerName = parsed.Name || `${standbyProjectName}-${parsed.Service}-1`;
       await db
         .update(apps)
-        .set({ containerName, status: "active", updatedAt: new Date() })
+        .set({ containerName, ...statusChange("active") })
         .where(eq(apps.id, appId));
     }
   } catch { /* best-effort */ }

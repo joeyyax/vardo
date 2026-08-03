@@ -7,6 +7,7 @@
 // ---------------------------------------------------------------------------
 
 import { db } from "@/lib/db";
+import { statusChange } from "@/lib/db/app-status";
 import { apps, deployments, projects } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
@@ -178,7 +179,7 @@ export function runAsyncContainerMigration(params: MigrationParams): void {
 
             await tx
               .update(apps)
-              .set({ status: "active", updatedAt: new Date() })
+              .set(statusChange("active"))
               .where(eq(apps.id, appId));
           });
 
@@ -233,7 +234,7 @@ export function runAsyncContainerMigration(params: MigrationParams): void {
 
           await db
             .update(apps)
-            .set({ status: "active", updatedAt: new Date() })
+            .set(statusChange("active"))
             .where(eq(apps.id, appId));
 
           addEvent(orgId, {

@@ -15,7 +15,7 @@ export async function registerErrorTrackingPlugin(): Promise<void> {
     if (ready) {
       log.info("GlitchTip connected");
     } else {
-      log.warn("GlitchTip not reachable — error tracking will be unavailable until it starts");
+      log.warn("GlitchTip did not answer — unreachable, or its API token is missing or rejected");
     }
   } catch (err) {
     log.warn("Failed to check GlitchTip availability:", err);
