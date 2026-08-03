@@ -34,7 +34,7 @@ type ComposeReviewProps = {
 
 const severityIcon: Record<Finding["severity"], React.ReactNode> = {
   info: <CheckCircle2 className="h-4 w-4 text-muted-foreground shrink-0" />,
-  warning: <AlertCircle className="h-4 w-4 text-amber-500 shrink-0" />,
+  warning: <AlertCircle className="h-4 w-4 text-status-warning shrink-0" />,
   critical: <AlertCircle className="h-4 w-4 text-destructive shrink-0" />,
 };
 
@@ -188,7 +188,7 @@ export function ComposeReview({
             {needsReview.length > 0 && (
               <div className="space-y-2">
                 <h4 className="text-sm font-medium flex items-center gap-2">
-                  <AlertCircle className="h-4 w-4 text-amber-500" />
+                  <AlertCircle className="h-4 w-4 text-status-warning" />
                   Needs review
                   <Badge variant="outline" className="text-xs">{needsReview.length}</Badge>
                 </h4>
@@ -205,7 +205,7 @@ export function ComposeReview({
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <h4 className="text-sm font-medium flex items-center gap-2">
-                    <Info className="h-4 w-4 text-blue-500" />
+                    <Info className="h-4 w-4 text-status-info" />
                     Environment variables
                     <Badge variant="outline" className="text-xs">{envCandidates.length}</Badge>
                   </h4>
@@ -311,7 +311,7 @@ function EnvFindingRow({
           className="mt-0.5 shrink-0"
         />
       ) : (
-        <Info className="h-4 w-4 text-blue-500 shrink-0" />
+        <Info className="h-4 w-4 text-status-info shrink-0" />
       )}
       <div className="min-w-0">
         <p className="text-sm font-mono">{finding.detail.key as string}</p>
