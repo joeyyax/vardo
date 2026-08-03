@@ -65,7 +65,8 @@ vi.mock("@/lib/redis", () => ({
 vi.mock("@/lib/stream/producer", () => ({ addEvent: vi.fn().mockResolvedValue("1-0") }));
 vi.mock("@/lib/activity", () => ({ recordActivity: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/lib/hooks/execute", () => ({ executeHooks: hooksMock }));
-vi.mock("@/lib/docker/deploy-logger", () => ({
+vi.mock("@/lib/docker/deploy-logger", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/docker/deploy-logger")>()),
   createDeployLogger: () => ({
     log: (line: string) => line,
     stage: vi.fn(),
@@ -94,7 +95,7 @@ vi.mock("@/lib/docker/rollback-target", () => ({
 vi.mock("@/lib/notifications/dispatch", () => ({ emit: vi.fn() }));
 
 import { runDeployment } from "@/lib/docker/deploy";
-import { build } from "@/lib/docker/deploy-steps";
+import { build, prepareRepo } from "@/lib/docker/deploy-steps";
 
 const OPTS = {
   appId: "app-1",
@@ -226,5 +227,24 @@ describe("runDeployment log persistence", () => {
     const flushes = events.filter((e) => e.kind === "log-flush");
     expect(events.some((e) => e.kind === "row")).toBe(false);
     expect(flushes.at(-1)?.detail).toContain("[deploy] cloned");
+  });
+});
+
+describe("runDeployment open stages", () => {
+  it("closes a phase a step left open when the next one starts", async () => {
+    vi.mocked(prepareRepo).mockImplementation(async (ctx) => ctx);
+    vi.mocked(build).mockImplementation(async (ctx) => {
+      ctx.stage("deploy", "running");
+      return ctx;
+    });
+    onStage.mockClear();
+
+    await runDeployment("dep-1", { ...OPTS, onStage });
+
+    const calls = stageCalls();
+    const closed = calls.findIndex(([s, status]) => s === "clone" && status === "success");
+    const opened = calls.findIndex(([s, status]) => s === "deploy" && status === "running");
+    expect(closed).toBeGreaterThanOrEqual(0);
+    expect(closed).toBeLessThan(opened);
   });
 });

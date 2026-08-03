@@ -48,7 +48,8 @@ vi.mock("@/lib/redis", () => ({
 }));
 vi.mock("@/lib/stream/producer", () => ({ addEvent: addEventMock }));
 vi.mock("@/lib/activity", () => ({ recordActivity: vi.fn().mockResolvedValue(undefined) }));
-vi.mock("@/lib/docker/deploy-logger", () => ({
+vi.mock("@/lib/docker/deploy-logger", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/docker/deploy-logger")>()),
   createDeployLogger: () => ({
     log: (line: string) => line,
     stage: vi.fn(),

@@ -637,7 +637,9 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
       });
     }
   } else if (app.composeContent) {
-    // Direct compose content
+    // Direct compose content — nothing to clone
+    ctx.stage("clone", "skipped");
+    ctx.stage("compose", "running");
     compose = parseAndSanitize(app.composeContent, log, { allowBindMounts: projectAllowBindMounts, allowDockerSocket: projectAllowDockerSocket, orgTrusted });
     log(`[deploy] Parsed compose content`);
     await detectAndPersistComposeVolumes(compose, ctx.appId, ctx.organizationId, new Set(appVolumes.map(v => v.name)), log);
