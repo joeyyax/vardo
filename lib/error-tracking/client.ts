@@ -166,7 +166,7 @@ export async function ensureProjectDSN(appName: string): Promise<string | null> 
     const keys = await apiFetch<GlitchTipDSNKey[]>(`/api/0/projects/${orgSlug}/${project.slug}/keys/`);
     return keys[0]?.dsn?.public ?? null;
   } catch (err) {
-    log.error(`Failed to ensure GlitchTip project for "${appName}":`, err);
+    log.warn(`Skipping DSN for "${appName}":`, err instanceof Error ? err.message : err);
     return null;
   }
 }
@@ -177,10 +177,10 @@ export async function ensureProjectDSN(appName: string): Promise<string | null> 
 
 /** List recent issues for a GlitchTip project. */
 export async function listIssues(appName: string, opts?: { limit?: number }): Promise<GlitchTipIssue[]> {
-  const org = await ensureOrganization();
   const limit = opts?.limit ?? 25;
 
   try {
+    const org = await ensureOrganization();
     const issues = await apiFetch<GlitchTipIssue[]>(
       `/api/0/projects/${org.slug}/${appName}/issues/?limit=${limit}`,
     );
@@ -235,6 +235,25 @@ export async function getIssueLatestEvent(issueId: number): Promise<GlitchTipEve
 // HTTP helpers
 // ---------------------------------------------------------------------------
 
+/** Longest error body kept in a message. */
+const MAX_ERROR_BODY = 200;
+
+function contentTypeOf(res: Response): string {
+  return res.headers.get("content-type")?.split(";")[0]?.trim() || "unknown";
+}
+
+/** Status and content type of a failed response. JSON bodies are appended, truncated; other bodies are not. */
+async function describeFailure(res: Response): Promise<string> {
+  const contentType = contentTypeOf(res);
+  if (!contentType.includes("json")) return `${res.status} (${contentType})`;
+
+  const body = await res.text().then((t) => t.trim()).catch(() => "");
+  if (!body) return `${res.status} (${contentType})`;
+
+  const snippet = body.length > MAX_ERROR_BODY ? `${body.slice(0, MAX_ERROR_BODY)}…` : body;
+  return `${res.status}: ${snippet}`;
+}
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const { url: baseUrl, apiToken } = await getConfig();
   const headers: HeadersInit = { "Content-Type": "application/json" };
@@ -249,9 +268,13 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`GlitchTip API ${res.status}: ${text}`);
+    throw new Error(`GlitchTip API ${await describeFailure(res)}`);
   }
 
-  return res.json() as Promise<T>;
+  const text = await res.text();
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(`GlitchTip API ${res.status}: expected JSON, got ${contentTypeOf(res)}`);
+  }
 }
