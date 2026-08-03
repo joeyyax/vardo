@@ -201,7 +201,10 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 
       // Also include base vars (environmentId IS NULL) if cloning from production
       const sourceEnv = await db.query.environments.findFirst({
-        where: eq(environments.id, parsed.data.cloneFrom),
+        where: and(
+          eq(environments.id, parsed.data.cloneFrom),
+          eq(environments.appId, appId),
+        ),
         columns: { type: true },
       });
       if (sourceEnv?.type === "production") {
