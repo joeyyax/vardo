@@ -166,6 +166,16 @@ type ExitSubject = {
  * that outran its grace period is indistinguishable by exit code and is not an
  * incident, so only Docker's own OOMKilled flag counts.
  */
+/**
+ * Whether the kernel picked a victim on this host recently. Containers with no
+ * limit are the pool it picks from, so this promotes that row out of neutral.
+ */
+export function hadRecentHostOom(apps: ExitSubject[], now: number, windowMs: number): boolean {
+  return apps.some(
+    (a) => a.exitReason?.kind === "oom-host" && now - Date.parse(a.exitReason.at) <= windowMs,
+  );
+}
+
 export function oomRows(apps: ExitSubject[], now: number, windowMs: number): AttentionRow[] {
   const host: AttentionItem[] = [];
   const limit: AttentionItem[] = [];

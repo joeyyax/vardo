@@ -12,7 +12,7 @@
 
 export const EVENT_CATEGORIES = {
   deploy: ["deploy.success", "deploy.failed", "deploy.rollback", "deploy.status"],
-  app: ["app.state-changed", "app.auto-restarted"],
+  app: ["app.state-changed", "app.auto-restarted", "app.oom-killed"],
   backup: ["backup.success", "backup.failed"],
   cron: ["cron.failed"],
   volume: ["volume.drift"],
@@ -290,6 +290,24 @@ export type AppAutoRestartedEvent = {
   gaveUp: boolean;
 };
 
+/**
+ * The kernel killed a container for memory. `oom-host` is the machine running
+ * out and picking a victim; `oom-limit` is the container hitting its own cap.
+ */
+export type AppOomKilledEvent = {
+  type: "app.oom-killed";
+  title: string;
+  message: string;
+  appId: string;
+  appName: string;
+  containerName: string;
+  containerId: string;
+  kind: "oom-host" | "oom-limit";
+  exitCode: number;
+  /** ISO timestamp the container finished. */
+  at: string;
+};
+
 // ---------------------------------------------------------------------------
 // Union types
 // ---------------------------------------------------------------------------
@@ -316,7 +334,8 @@ export type BusEvent =
   | BackupProgressEvent
   | DeployStatusEvent
   | AppStateChangedEvent
-  | AppAutoRestartedEvent;
+  | AppAutoRestartedEvent
+  | AppOomKilledEvent;
 
 export type BusEventType = BusEvent["type"];
 

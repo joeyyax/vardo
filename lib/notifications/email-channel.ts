@@ -127,6 +127,7 @@ export class EmailNotificationChannel implements NotificationChannel {
         });
 
       case "app.auto-restarted":
+      case "app.oom-killed":
       case "system.service-down":
       case "system.disk-alert":
       case "system.restart-loop":
